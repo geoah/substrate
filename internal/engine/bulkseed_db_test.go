@@ -159,8 +159,9 @@ func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 	}
 }
 
-// Register is the registration a person makes: the seed, then the
-// credential and the token in the same transaction. Its
+// Register is the registration a person makes: the seed, then the token in
+// the same transaction, while the person's sign-in goes beside the
+// repository, sealing nothing in it (decision 0274). Its
 // seed runs in bulk and writes what the per-record path writes, the
 // entries after it land at the same seqs, the whole transaction is one
 // frame in the table and in the files, and a rebuild reproduces the fold.
@@ -230,7 +231,7 @@ func TestRegisterSeedsInBulkAsThePerRecordPathDoes(t *testing.T) {
 		seedIsWhole(t, ds, "after the registration")
 		seedEntriesAreOneTransaction(t, svc, repo, "after the registration")
 		report := mustVerify(t, svc, repo)
-		if report.SealedOpened != report.SealedRows || report.SealedRows == 0 {
+		if !report.OK || report.SealedRows != 0 {
 			t.Fatalf("after the registration: %d sealed rows, %d opened", report.SealedRows, report.SealedOpened)
 		}
 		filesAgree(t, svc, repo, "after the registration")

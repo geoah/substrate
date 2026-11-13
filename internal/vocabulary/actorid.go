@@ -68,6 +68,9 @@ func ActorProperties(a substrate.Actor, personName string) map[string]any {
 	switch props["type"] {
 	case substrate.ActorTypePerson:
 		props["name"] = personName
+		if identity, ok := strings.CutPrefix(s, substrate.PersonActorPrefix); ok {
+			props["identity"] = identity
+		}
 	case substrate.ActorTypeSystem:
 		props["name"] = "substrate"
 	case substrate.ActorTypeApp:
@@ -108,6 +111,11 @@ func ActorKeyFrom(props map[string]any) (substrate.Actor, bool) {
 	}
 	switch props["type"] {
 	case substrate.ActorTypePerson:
+		// The first person's record names their identity too: the caller
+		// that holds the record's id tells it apart (engine actorKeyIn).
+		if identity, _ := props["identity"].(string); identity != "" {
+			return substrate.PersonActor(identity), true
+		}
 		return substrate.ActorPerson, true
 	case substrate.ActorTypeSystem:
 		return substrate.ActorSystem, true

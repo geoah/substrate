@@ -1,5 +1,6 @@
 /** The substrate's door: registration behind an invite code, login, the
  * password-factor credential changes, and the token records that ARE sessions.
+ * A sign-in names a person, who picks a repository (decision 0274).
  *
  * These endpoints carry NO `/api` prefix — they sit at the root
  * (`/register`, `/login`, `/password`, `/totp`, `/tokens`). The password-factor
@@ -10,9 +11,11 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { doorNamesAPerson } from "./discovery"
 import { request } from "./http"
 import { appHoldsSession, clearSession, getToken, getTokenId } from "./session"
 import type {
+  IdentityInfo,
   MintedToken,
   OperationalList,
   TokenInfo,
@@ -31,29 +34,54 @@ export function normalizeCode(input: string): string | null {
   return new RegExp(`^\\d{${CODE_DIGITS}}$`).test(code) ? code : null
 }
 
+// ── the person ───────────────────────────────────────────────────────────
+
+/** The fields a door request names its person by: `identity`, or on a server
+ * from before identities, the sign-in name as `repository`
+ * (doorNamesAPerson). */
+function person(
+  identity: string
+): { identity: string } | { repository: string } {
+  return doorNamesAPerson() ? { identity } : { repository: identity }
+}
+
+/** The person a token acts for: their name, whether their sign-in asks for a
+ * code, and the repositories they may open. */
+export function getIdentity(): Promise<IdentityInfo> {
+  return request<IdentityInfo>("GET", "/identity")
+}
+
+export const identityQueryOptions = queryOptions({
+  queryKey: ["identity"],
+  queryFn: getIdentity,
+})
+
 // ── registration ────────────────────────────────────────────────────────────
 
-/** Step one of registration: the invite code and a repository name buy a TOTP
- * seed. It writes NOTHING — the caller holds the seed and hands it back with
- * one code, so an abandoned registration leaves no row. */
+/** Step one of registration: the invite code and the name the person will
+ * sign in with buy a TOTP seed. It writes NOTHING — the caller holds the seed
+ * and hands it back with one code, so an abandoned registration leaves no
+ * row. */
 export function registerEnroll(
   inviteCode: string,
-  repository: string
+  identity: string
 ): Promise<TOTPEnrollment> {
   return request<TOTPEnrollment>(
     "POST",
     "/register/enroll",
-    { inviteCode, repository },
+    { inviteCode, ...person(identity) },
     { anonymous: true }
   )
 }
 
 export interface RegisterInput {
   inviteCode: string
-  /** The repository to create, which BECOMES its authority and is the login
-   * name: `ada.example.com`, or a bare label the substrate completes under
-   * its own host. Permanent. */
-  repository: string
+  /** The name the person will sign in with: `ada.example.com`, or a bare
+   * label the substrate completes under its own host. */
+  identity: string
+  /** The repository to create, which BECOMES its authority: absent takes
+   * the person's name. Permanent. */
+  repository?: string
   password: string
   totpSecret: string
   totpCode: string
@@ -79,11 +107,15 @@ export function olderServersRecoveryKey(
   return typeof key === "string" && key !== "" ? key : undefined
 }
 
-/** Step two: the same code proves the seed, and one transaction creates the
- * repository, the sealed material, the credential and the first token.
- * Registration ends LOGGED IN — the response carries the token secret. */
+/** Step two: the same code proves the seed, and one creation act makes the
+ * person, their repository and the first token. Registration ends LOGGED IN
+ * — the response carries the token secret. */
 export function register(input: RegisterInput): Promise<RegisterResult> {
-  return request<RegisterResult>("POST", "/register", input, {
+  const { identity, repository, ...rest } = input
+  const body = doorNamesAPerson()
+    ? input
+    : { ...rest, repository: repository ?? identity }
+  return request<RegisterResult>("POST", "/register", body, {
     anonymous: true,
   })
 }
@@ -91,28 +123,34 @@ export function register(input: RegisterInput): Promise<RegisterResult> {
 // ── login ─────────────────────────────────────────────────────────────────
 
 /** The login request as the door decodes it (`substrate.LoginRequest`): the
- * repository, the two factors and the label of the token the login mints. */
+ * person, the repository they open where they may open several, the two
+ * factors and the label of the token the login mints. */
 export interface LoginRequest {
-  repository: string
+  identity: string
+  repository?: string
   password: string
   totpCode: string
   label?: string
 }
 
 /** Login mints a token RECORD and returns its secret once: there is no session
- * concept beside it, the console holds a token like every other client. */
+ * concept beside it, the console holds a token like every other client. A
+ * person who may open several repositories and names none is refused with
+ * `repository_required` and the list, and their code is not spent: the same
+ * call naming one signs in. */
 export function login(
-  repository: string,
+  identity: string,
   password: string,
   totpCode: string,
-  label = "console"
+  label = "console",
+  repository?: string
 ): Promise<MintedToken> {
-  return request<MintedToken>(
-    "POST",
-    "/login",
-    { repository, password, totpCode, label } satisfies LoginRequest,
-    { anonymous: true }
-  )
+  const body: LoginRequest | Record<string, string> = !doorNamesAPerson()
+    ? { repository: identity, password, totpCode, label }
+    : repository
+      ? { identity, repository, password, totpCode, label }
+      : { identity, password, totpCode, label }
+  return request<MintedToken>("POST", "/login", body, { anonymous: true })
 }
 
 // ── password-factor credential changes ──────────────────────────────────────
@@ -121,7 +159,7 @@ export function login(
  * the body. A bearer token alone is refused with 403 — so these calls are
  * deliberately anonymous. */
 export function changePassword(
-  repository: string,
+  identity: string,
   password: string,
   totpCode: string,
   newPassword: string,
@@ -131,47 +169,54 @@ export function changePassword(
     "POST",
     "/password",
     signOutEverywhere
-      ? { repository, password, totpCode, newPassword, signOutEverywhere }
-      : { repository, password, totpCode, newPassword },
+      ? {
+          ...person(identity),
+          password,
+          totpCode,
+          newPassword,
+          signOutEverywhere,
+        }
+      : { ...person(identity), password, totpCode, newPassword },
     { anonymous: true }
   )
 }
 
 /** Ends every token the person holds: every browser and script signed in,
  * every token minted from one, and every app's and assistant's access, this
- * browser's included (decision 0272). Both current factors travel in the
- * body, like the credential changes: it is how an account is taken back from
- * a leaked token, so a token is no evidence for it. */
+ * browser's included (decision 0272), in every repository they open. Both
+ * current factors travel in the body, like the credential changes: it is how
+ * an account is taken back from a leaked token, so a token is no evidence
+ * for it. */
 export function signOutEverywhere(
-  repository: string,
+  identity: string,
   password: string,
   totpCode: string
 ): Promise<SessionCredential> {
   return request<SessionCredential>(
     "POST",
     "/signout/everywhere",
-    { repository, password, totpCode },
+    { ...person(identity), password, totpCode },
     { anonymous: true }
   )
 }
 
 /** Re-enrollment step one: prove both current factors, receive a fresh seed. */
 export function totpEnroll(
-  repository: string,
+  identity: string,
   password: string,
   totpCode: string
 ): Promise<TOTPEnrollment> {
   return request<TOTPEnrollment>(
     "POST",
     "/totp/enroll",
-    { repository, password, totpCode },
+    { ...person(identity), password, totpCode },
     { anonymous: true }
   )
 }
 
 /** Re-enrollment step two: the new seed proved by one of its own codes. */
 export async function totpChange(
-  repository: string,
+  identity: string,
   password: string,
   totpCode: string,
   newTotpSecret: string,
@@ -180,15 +225,17 @@ export async function totpChange(
   await request<SessionCredential>(
     "POST",
     "/totp",
-    { repository, password, totpCode, newTotpSecret, newTotpCode },
+    { ...person(identity), password, totpCode, newTotpSecret, newTotpCode },
     { anonymous: true }
   )
 }
 
-/** Delete the repository for good: every record, token and file, and the
- * name is free to register again. Both current factors travel in the body,
- * like the credential changes, so a leaked token cannot do it. */
+/** Delete a repository for good: every record, token and file, and the name
+ * is free to register again. The person's factors travel in the body, like
+ * the credential changes, so a leaked token cannot do it; a person whose last
+ * repository it was goes with it. */
 export async function deleteRepository(
+  identity: string,
   repository: string,
   password: string,
   totpCode: string
@@ -196,7 +243,9 @@ export async function deleteRepository(
   await request<void>(
     "POST",
     "/repository/delete",
-    { repository, password, totpCode },
+    doorNamesAPerson()
+      ? { identity, repository, password, totpCode }
+      : { repository, password, totpCode },
     { anonymous: true }
   )
 }

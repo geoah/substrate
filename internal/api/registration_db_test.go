@@ -33,8 +33,14 @@ func TestRegistrationHasNoKeyStep(t *testing.T) {
 		keys = append(keys, k)
 	}
 	slices.Sort(keys)
-	if want := []string{"repository", "secret", "token"}; !slices.Equal(keys, want) {
+	// The person the registration made names itself beside the repository
+	// (decision 0274); no recovery key or its public half comes back.
+	if want := []string{"identity", "repository", "secret", "token"}; !slices.Equal(keys, want) {
 		t.Fatalf("registration answered %v, want %v and nothing else", keys, want)
+	}
+	var identity string
+	if err := json.Unmarshal(answer["identity"], &identity); err != nil || identity != repository {
+		t.Fatalf("registration named the person %s, want %q, the name it was given", answer["identity"], repository)
 	}
 	var token string
 	if err := json.Unmarshal(answer["secret"], &token); err != nil || token == "" {
@@ -54,12 +60,12 @@ func TestRegistrationHasNoKeyStep(t *testing.T) {
 	// The old request shape is refused at the door, naming the field.
 	other := testdb.RepositoryLabel(t) + "2.example.com"
 	rec = env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": other,
+		"inviteCode": testInviteCode, "identity": other,
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
 	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": other, "password": authPassword,
+		"inviteCode": testInviteCode, "identity": other, "password": authPassword,
 		"totpSecret": enrollment.Secret, "totpCode": env.code(t, enrollment.Secret),
 		"recoveryPublicKey": "age1k8ddys8rfmyge6g525zffjvmzjgp9cth7aked27g5p0fanvme3jsfz2eky",
 	})

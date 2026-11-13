@@ -181,6 +181,10 @@ const ReasonStaleRevision = "stale_revision"
 // and on `unavailable`.
 const ReasonInDoubt = "in_doubt"
 
+// ReasonRepositoryRequired is the ErrorPayload reason of a
+// RepositoryRequiredError (auth.go), on `conflict`.
+const ReasonRepositoryRequired = "repository_required"
+
 // ReasonFirstAttemptRunning and ReasonFirstAttemptLanded are the
 // ErrorPayload reasons of ErrFirstAttemptRunning and ErrFirstAttemptLanded,
 // on `conflict`.
@@ -201,6 +205,7 @@ var ErrorReasons = []string{
 	ReasonKeyRefused,
 	ReasonObservedRederiving,
 	ReasonQuota,
+	ReasonRepositoryRequired,
 	ReasonSetAside,
 	ReasonStaleRevision,
 }
@@ -230,6 +235,10 @@ type ErrorPayload struct {
 	ProblemDetails []ProblemDetail `json:"problemDetails,omitempty"`
 	Head           *int64          `json:"head,omitempty"`
 	Generation     string          `json:"generation,omitempty"`
+	// Repositories are the repositories a person may open, on a sign-in
+	// refused with ReasonRepositoryRequired: one of them goes in the
+	// request's `repository`.
+	Repositories []RepositoryChoice `json:"repositories,omitempty"`
 }
 
 // ProblemDetail is the field-addressable form of one validation problem. The

@@ -53,9 +53,8 @@ variable, and send it as a header. In `~/.cursor/mcp.json`:
 
 ## What an assistant can do
 
-Most of what the owner does in the console: read every record, the token and
-credential records among them (their secrets are digests and redacted
-values); write any record but those and the protected
+Most of what the owner does in the console: read every record, the token
+records among them (their secrets are digests and redacted values); write any record but those and the protected
 `substrate.reamde.dev/core/secret` records (a secret-typed property of
 another kind, such as a provider's `apiKey`, is written like any other);
 declare and change kinds, triggers,

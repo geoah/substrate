@@ -26,17 +26,25 @@ type Service interface {
 	// --- the door ---
 	//
 	// Registration is two calls and one write. BeginRegistration issues a
-	// TOTP enrollment for a repository and creates NOTHING; Register takes it
+	// TOTP enrollment for an identity and creates NOTHING; Register takes it
 	// back with one code and a password, and only then does anything durable
-	// exist. An abandoned registration leaves no row, no seed and no record.
-	// The invite code gating both is the HTTP layer's (it holds the config).
-	BeginRegistration(ctx context.Context, repository string) (TOTPEnrollment, error)
+	// exist: the identity, its repository, and the first token. An abandoned
+	// registration leaves no row, no seed and no record. The invite code
+	// gating both is the HTTP layer's (it holds the config).
+	BeginRegistration(ctx context.Context, identity string) (TOTPEnrollment, error)
 	Register(ctx context.Context, in RegisterInput) (RegisterResult, error)
 
-	// Login verifies repository + password + TOTP and MINTS A TOKEN RECORD,
-	// returning its secret exactly once (ruling RB-5: sessions ARE token
-	// records; there is no session concept beside them).
-	Login(ctx context.Context, in LoginInput) (TokenInfo, string, error)
+	// Login verifies an identity's password and TOTP, picks the repository
+	// it opens, and MINTS A TOKEN RECORD there, returning its secret exactly
+	// once (ruling RB-5: sessions ARE token records; there is no session
+	// concept beside them). A person in several repositories who names none
+	// is refused with RepositoryRequiredError, listing them.
+	Login(ctx context.Context, in LoginInput) (MintedToken, error)
+
+	// Identity is the person behind an identity id: the name they sign in
+	// with, whether they have a second factor, and the repositories they may
+	// open.
+	Identity(ctx context.Context, id string) (IdentityInfo, error)
 
 	// ChangePassword and the TOTP re-enrollment pair carry the
 	// password-factor rule: each takes BOTH current factors in

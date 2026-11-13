@@ -7,8 +7,8 @@ kinds, get, apply, add, patch, delete, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
-substratectl register --server https://substrate.example --repository ada.example.com
-substratectl login --repository ada.example.com
+substratectl register --server https://substrate.example --identity ada.example.com
+substratectl login --identity ada.example.com
 substratectl kinds                        # every declared kind
 substratectl get ada.example.com/tasks/task            # list a collection
 substratectl get ada.example.com/tasks/task t9 -o yaml  # one record, apply-able envelope
@@ -73,10 +73,13 @@ it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
 registration possible. `--skip-totp` registers without a second factor, which
-the owner can turn on later in the console's Settings. `--repository` names the repository, which BECOMES its
-authority: the home of every package you declare kinds in, and the name you
-log in with. A name carrying a dot is taken as it is; a bare label is
-completed under the substrate's own host, and `register` prints the result.
+the owner can turn on later in the console's Settings. `--identity` is the
+name you sign in with, and the repository registration creates takes it too
+unless `--repository` names another; the repository's name BECOMES its
+authority: the home of every package you declare kinds in. A command that
+names only `--repository`, as one from before identities does, names you
+after it. A name carrying a dot is taken as it is; a bare label is completed
+under the substrate's own host, and `register` prints the result.
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
@@ -84,8 +87,12 @@ Against a substrate that verifies no second factor
 entirely: `substratectl` reads `GET /.well-known/substrate/server.json` first
 and stops asking for something nothing checks.
 
-`substratectl login` presents the password and mints a token record, which it stores
-as the current context. Where the account has a second factor the substrate
+`substratectl login --identity <name>` presents the password and mints a
+token record in your repository, which it stores as the current context. A
+person who may open several repositories names one with `--repository` (its
+name or id), or is shown them and asked; with `--password-stdin` there is
+nobody to ask, and `login` says to name one. Without `--identity` it signs in
+as `--repository`, else the context's person, else it asks. Where the account has a second factor the substrate
 answers `totp_required`, and `login` then asks for the code and sends it;
 `--totp-code` sends one up front. `substratectl logout` revokes that token record and then
 forgets it, because a session is its [token record](auth.md#tokens).
@@ -109,8 +116,8 @@ headlessly, and a password is never an argument.
 
 Config lives at `~/.config/substratectl/config.yaml`, mode 0600 in a 0700 directory
 (`SUBSTRATECTL_CONFIG` and `XDG_CONFIG_HOME` are respected). It holds one **context**
-per substrate: a name, the server, the repository, the token, and the token's
-id so `logout` can revoke the very token it forgets. No URL names the
+per substrate: a name, the server, the repository, the person's name, the
+token, and the token's id so `logout` can revoke the very token it forgets. No URL names the
 repository: the token implies it, and there is nothing else to configure.
 
 `SUBSTRATE_SERVER` and `SUBSTRATE_TOKEN` override the file, and flags override

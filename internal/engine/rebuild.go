@@ -210,6 +210,11 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if owed > 0 {
 		ds.kickIndexReprojection()
 	}
+	// The replay brought the person actors back from the history, and the
+	// index follows them before anything else is admitted (people.go).
+	if err := s.derivePeople(ctx, repo.ID); err != nil {
+		return report, err
+	}
 	report.Took = time.Since(started)
 	return report, nil
 }

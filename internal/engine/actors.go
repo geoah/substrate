@@ -43,6 +43,11 @@ func actorKeyIn(ctx context.Context, q dbx, id string) substrate.Actor {
 	if key, ok := vocabulary.ActorKeyOf(id); ok {
 		return key
 	}
+	// The first person's record names their identity, as another person's
+	// does; its id is what makes it the first.
+	if id == actorID(substrate.ActorPerson) {
+		return substrate.ActorPerson
+	}
 	var raw []byte
 	err := q.QueryRowContext(ctx, `SELECT props FROM records WHERE kind = $1 AND id = $2`, kindActor, id).Scan(&raw)
 	if err == nil {
@@ -108,7 +113,7 @@ func (t *txn) ensureActors(keys ...substrate.Actor) error {
 // onBehalfOfKey is the hand a write by actor acts for, as linksOf links it.
 func (t *txn) onBehalfOfKey(actor substrate.Actor) substrate.Actor {
 	if substrate.ActorTypeOf(actor) == substrate.ActorTypeApp {
-		return substrate.ActorPerson
+		return t.ds.personActorFor(t.ctx, substrate.ActorPerson)
 	}
 	return t.onBehalfOf
 }
@@ -131,13 +136,21 @@ func (t *txn) ensureActor(key substrate.Actor) error {
 		return nil
 	}
 	id := actorID(key)
-	row, err := t.loadRow(eref{Kind: kindActor, ID: id}, false)
+	person := substrate.IsPerson(key)
+	row, err := t.loadRow(eref{Kind: kindActor, ID: id}, person)
 	if err != nil {
 		return err
 	}
 	if row != nil && row.DeletedAt == nil && row.Props["disabled"] != true {
 		t.standing(id)
 		return nil
+	}
+	// A person's actor the history took out stays out (people.go): the next
+	// boot would let back in the person it still names. Nothing a person's
+	// token writes reaches here, since the index names nobody whose actor is
+	// out; work that acts for them is refused.
+	if person && row != nil {
+		return fmt.Errorf("%w: the person this acts for was taken out of the repository, and nothing acts for them again", substrate.ErrForbidden)
 	}
 	props := vocabulary.ActorProperties(key, t.ds.Repository().Authority)
 	if row != nil {
@@ -302,8 +315,11 @@ func (ds *dataset) actingForLine(ctx context.Context, kind, id, query string) (c
 		return ctx, fmt.Errorf("read whom %s %s acts for: %w", kind, id, err)
 	case behalf != "":
 		return substrate.WithOnBehalfOf(ctx, actorKeyIn(ctx, ds.db, behalf)), nil
-	case substrate.ActorTypeOf(actorKeyIn(ctx, ds.db, actor)) == substrate.ActorTypePerson:
-		return substrate.WithOnBehalfOf(ctx, substrate.ActorPerson), nil
+	}
+	// A person's own line acts for that person, whichever person of the
+	// repository they are (people.go).
+	if key := actorKeyIn(ctx, ds.db, actor); substrate.ActorTypeOf(key) == substrate.ActorTypePerson {
+		return substrate.WithOnBehalfOf(ctx, key), nil
 	}
 	return substrate.WithOnBehalfOf(ctx, ""), nil
 }
@@ -325,7 +341,7 @@ func (t *txn) linksOf(actor substrate.Actor) writeLinks {
 	switch substrate.ActorTypeOf(actor) {
 	case substrate.ActorTypePerson:
 	case substrate.ActorTypeApp:
-		l.onBehalfOf = actorID(substrate.ActorPerson)
+		l.onBehalfOf = actorID(t.ds.personActorFor(t.ctx, substrate.ActorPerson))
 	default:
 		if t.onBehalfOf != "" && substrate.CanonicalActor(t.onBehalfOf) != substrate.CanonicalActor(actor) {
 			l.onBehalfOf = actorID(t.onBehalfOf)

@@ -50,7 +50,7 @@ func TestAPasswordChangeWhoseSignOutDidNotFinishSaysSo(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			env := newStubEnvOn(t, halfSignOutService{&stubService{ds: stubDataset{}}, c.err})
 			rec := env.do(t, http.MethodPost, "/password", "", map[string]any{
-				"repository": stubRepository, "password": "the-current-password", "totpCode": "123456",
+				"identity": stubRepository, "password": "the-current-password", "totpCode": "123456",
 				"newPassword": "a-new-and-longer-password", "signOutEverywhere": true,
 			})
 			wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)

@@ -43,9 +43,16 @@ data:
       type: string
       description: the name the hand reads as, its repository's name for the
         person
+    # A person names their identity, the sign-in the server holds and the one
+    # link that leaves the repository: a person is in the repository while a
+    # live person actor here names them (decision 0274).
+    identity:
+      type: string
+      description: the sign-in this person signs in with, held by the server,
+        for a person
     # What the hand is, one link for each type that has one: the code that
-    # runs for a function and an agent, the package for a package. A person's
-    # sign-in is held by the server, and an app is named by its publisher.
+    # runs for a function and an agent, the package for a package. An app is
+    # named by its publisher.
     function:
       type: reference
       kind: substrate.reamde.dev/core/function

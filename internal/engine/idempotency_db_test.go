@@ -356,12 +356,13 @@ func TestIdempotencyKeyOutlivesTheToken(t *testing.T) {
 	if _, _, err := svc.Authenticate(ctx, secret); !errors.Is(err, substrate.ErrAuth) {
 		t.Fatalf("the revoked token still authenticates: %v", err)
 	}
-	next, nextSecret, err := svc.Login(ctx, substrate.LoginInput{
-		Repository: user.repository, Password: user.password, TOTPCode: user.code(t), Label: "again",
+	minted, err := svc.Login(ctx, substrate.LoginInput{
+		Identity: user.repository, Repository: user.repository, Password: user.password, TOTPCode: user.code(t), Label: "again",
 	})
 	if err != nil {
 		t.Fatalf("login: %v", err)
 	}
+	next, nextSecret := minted.Token, minted.Secret
 	ds2, _, err := svc.Authenticate(ctx, nextSecret)
 	if err != nil {
 		t.Fatalf("authenticate the new token: %v", err)

@@ -303,7 +303,7 @@ describe("RegisterPage", () => {
       })
     )
     const [, init] = fetchMock.mock.calls[0]
-    expect(JSON.parse((init as RequestInit).body as string).repository).toBe(
+    expect(JSON.parse((init as RequestInit).body as string).identity).toBe(
       "ada.example.org"
     )
     expect(getRepository()).toBe("ada.example.org")
@@ -384,7 +384,7 @@ describe("RegisterPage", () => {
     expect(url).toBe("/register/enroll")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
     })
     expect(screen.getByText("SEED")).toBeTruthy()
     expect(screen.getByLabelText("One-time code")).toBeTruthy()
@@ -414,7 +414,7 @@ describe("RegisterPage", () => {
     expect(url).toBe("/register")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "SEED",
       totpCode: "123456",
@@ -440,7 +440,7 @@ describe("RegisterPage", () => {
     expect(url).toBe("/register")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
@@ -624,7 +624,7 @@ describe("RegisterPage", () => {
     // says it skips one rather than sending an empty seed.
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
@@ -660,7 +660,7 @@ describe("RegisterPage", () => {
     expect(url).toBe("/register")
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       inviteCode: "",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
@@ -887,6 +887,8 @@ describe("RegisterPage where the operator supplies keys", () => {
  * whether there is a second step at all. */
 describe("RegisterPage and the door's own answer", () => {
   const fetchMock = vi.fn<typeof fetch>()
+  /** The door of a server that names a person (decision 0274). */
+  const AUTH = { name: "auth", stability: "stable", revision: 3 }
 
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock)
@@ -911,7 +913,10 @@ describe("RegisterPage and the door's own answer", () => {
       const url = String(input)
       if (url === "/.well-known/substrate/server.json") {
         await discovered
-        return jsonResponse(200, { registration: { totpRequired: false } })
+        return jsonResponse(200, {
+          registration: { totpRequired: false },
+          features: [AUTH],
+        })
       }
       if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
       return jsonResponse(201, MINT)
@@ -953,7 +958,7 @@ describe("RegisterPage and the door's own answer", () => {
     // (jsdom serves from `localhost`), because the reader left it derived.
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
       inviteCode: "INV-1",
-      repository: "geoah.localhost",
+      identity: "geoah.localhost",
       password: PASSWORD,
       totpSecret: "",
       totpCode: "",
@@ -969,6 +974,7 @@ describe("RegisterPage and the door's own answer", () => {
         return jsonResponse(200, {
           registration: { totpRequired: false },
           features: [
+            AUTH,
             {
               name: "operatorDefaults",
               stability: "experimental",
@@ -986,6 +992,28 @@ describe("RegisterPage and the door's own answer", () => {
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
     )
+  })
+
+  it("names the repository, not a person, to a server whose door predates identities", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === "/.well-known/substrate/server.json")
+        return jsonResponse(200, {
+          registration: { totpRequired: false },
+          features: [{ ...AUTH, revision: 2 }],
+        })
+      return jsonResponse(201, MINT)
+    })
+    render(<RegisterPage />)
+    await screen.findByRole("button", { name: "Create your Substrate" })
+    registerInOneStep()
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/register"
+    )!
+    const body = JSON.parse((call[1] as RequestInit).body as string)
+    expect(body.repository).toBe("geoah.localhost")
+    expect(body.identity).toBeUndefined()
   })
 
   it("keeps the enrollment step where discovery never answers", async () => {

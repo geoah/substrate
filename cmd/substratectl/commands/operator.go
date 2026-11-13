@@ -88,20 +88,35 @@ func (a *app) openEngineExclusive(ctx context.Context) (engine.Operator, error) 
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false)
 }
 
-// openEngineWrite opens the substrate engine for a command that WRITES sealed
-// material (user reset). The credential key is REQUIRED, with no escape: a
-// keyless engine would store the password hash and the TOTP seed under a
-// plain-marked DEK wrap the server later accepts. The refusal is here, before
-// a password is typed, rather than at the write. Like openEngineExclusive it
-// needs the server stopped.
+// openEngineWrite opens the substrate engine for a command that must open
+// every sealed file under the key (repository snapshot). The credential key is
+// REQUIRED, with no escape. Like openEngineExclusive it needs the server
+// stopped.
 func (a *app) openEngineWrite(ctx context.Context) (engine.Operator, error) {
 	credKey := os.Getenv(credentialKeyEnv)
 	if credKey == "" {
 		return nil, fmt.Errorf(
-			"refusing to reset: set %s to the key the server runs with. The reset writes sealed material, and without the key it would land under a plain-marked wrap",
+			"refusing: set %s to the key the server runs with; this command opens sealed material under it",
 			credentialKeyEnv)
 	}
 	return a.openEngineWithKey(ctx, credKey, false)
+}
+
+// openEngineSignIn opens the substrate engine for the write that touches no
+// repository, a person's sign-in (user reset, decision 0274): beside a
+// running server, as openEngineReadOnly does, since no directory is written.
+// The credential key is REQUIRED, with no escape: the new password hash and
+// seed are sealed under it, and a keyless engine would seal them under a
+// plain-marked wrap the server later accepts. The refusal is here, before a
+// password is typed, rather than at the write.
+func (a *app) openEngineSignIn(ctx context.Context) (engine.Operator, error) {
+	credKey := os.Getenv(credentialKeyEnv)
+	if credKey == "" {
+		return nil, fmt.Errorf(
+			"refusing to reset: set %s to the key the server runs with. The reset seals the new factors under it, and without the key they would land under a plain-marked wrap",
+			credentialKeyEnv)
+	}
+	return a.openEngineWithKey(ctx, credKey, true)
 }
 
 // openEngineWithKey is the shared opener the three hats route through.
@@ -206,7 +221,7 @@ func lockHint(err error) error {
 	if err == nil || !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild` and `repository rotate-generation` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table
@@ -284,6 +299,26 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 			return nil, err
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// repositorySignIns are the names of the people who may open each repository,
+// by repository id.
+func repositorySignIns(ctx context.Context, db *sql.DB) (map[string][]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT l.repository_id, i.name FROM identity_repositories l
+		JOIN identities i ON i.id = l.identity ORDER BY i.name`)
+	if err != nil {
+		return nil, controlPlaneError(err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string][]string{}
+	for rows.Next() {
+		var repository, name string
+		if err := rows.Scan(&repository, &name); err != nil {
+			return nil, err
+		}
+		out[repository] = append(out[repository], name)
 	}
 	return out, rows.Err()
 }

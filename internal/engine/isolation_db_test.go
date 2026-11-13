@@ -567,10 +567,13 @@ func TestRepositoryIsolation(t *testing.T) {
 			`INSERT INTO records (kind, id, title) VALUES ('task', 'orphan', 'nowhere')`); err == nil {
 			t.Fatal("an unscoped insert was accepted")
 		}
-		// The control-plane table is maintenance's alone: substrate_app has no
-		// grant on it at all, so the repository ledger is not even readable.
-		if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM repositories`).Scan(&n); err == nil {
-			t.Fatalf("substrate_app read the control-plane table (%d rows)", n)
+		// The control-plane tables are maintenance's alone: substrate_app has
+		// no grant on them at all, so the repository ledger and the people's
+		// sign-ins are not even readable.
+		for _, table := range []string{"repositories", "identities", "identity_repositories"} {
+			if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM `+table).Scan(&n); err == nil {
+				t.Fatalf("substrate_app read the control-plane table %s (%d rows)", table, n)
+			}
 		}
 	})
 

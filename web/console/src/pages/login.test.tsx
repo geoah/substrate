@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   clearSession,
+  getIdentityName,
   getToken,
   getTokenId,
   getRepository,
@@ -96,7 +97,7 @@ const CODE_ASKED = {
 }
 
 function signIn() {
-  fireEvent.change(screen.getByLabelText("Your address"), {
+  fireEvent.change(screen.getByLabelText("Your name"), {
     target: { value: "geoah" },
   })
   fireEvent.change(screen.getByLabelText("Password"), {
@@ -132,9 +133,9 @@ describe("LoginPage", () => {
     fetchMock.mockReset()
   })
 
-  it("asks for the repository and password, and no code until the substrate does", () => {
+  it("asks for the name and password, and no code until the substrate does", () => {
     render(<LoginPage />)
-    expect(screen.getByLabelText("Your address")).toBeTruthy()
+    expect(screen.getByLabelText("Your name")).toBeTruthy()
     expect(screen.getByLabelText("Password")).toBeTruthy()
     expect(screen.queryByLabelText("One-time code")).toBeNull()
   })
@@ -175,10 +176,10 @@ describe("LoginPage", () => {
     expect(document.querySelector('img[src="/substrate.svg"]')).not.toBeNull()
   })
 
-  it("fills the repository an app named in its login_hint", () => {
+  it("fills the name an app named in its login_hint", () => {
     loginSearch.login_hint = "ada.example.org"
     render(<LoginPage />)
-    expect(screen.getByLabelText<HTMLInputElement>("Your address").value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>("Your name").value).toBe(
       "ada.example.org"
     )
   })
@@ -196,7 +197,7 @@ describe("LoginPage", () => {
     expect(url).toBe("/login")
     const body = JSON.parse((init as RequestInit).body as string)
     expect(body).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "correct horse battery",
       totpCode: "",
       label: "console",
@@ -225,9 +226,53 @@ describe("LoginPage", () => {
       (fetchMock.mock.calls[1][1] as RequestInit).body as string
     )
     expect(body).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "correct horse battery",
       totpCode: "123456",
+      label: "console",
+    })
+  })
+
+  it("offers the repositories of a person in several, and signs in to the one picked", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: "conflict",
+            reason: "repository_required",
+            message: "name the repository to open",
+            repositories: [
+              { id: "rnd-one", name: "one.example.com" },
+              { id: "rnd-two", name: "two.example.com" },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(201, {
+          ...MINT,
+          repository: "two.example.com",
+          identity: "geoah.example.com",
+        })
+      )
+    render(<LoginPage />)
+    signIn()
+    fireEvent.click(
+      await screen.findByRole("button", { name: "two.example.com" })
+    )
+    expect(screen.getByRole("button", { name: "one.example.com" })).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    expect(getRepository()).toBe("two.example.com")
+    expect(getIdentityName()).toBe("geoah.example.com")
+    const body = JSON.parse(
+      (fetchMock.mock.calls[1][1] as RequestInit).body as string
+    )
+    expect(body).toEqual({
+      identity: "geoah",
+      repository: "rnd-two",
+      password: "correct horse battery",
+      totpCode: "",
       label: "console",
     })
   })
@@ -288,7 +333,7 @@ describe("LoginPage", () => {
     ).toBeNull()
   })
 
-  it("names the address and password on a refused first step", async () => {
+  it("names the name and password on a refused first step", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(401, {
         error: { code: "auth", message: "invalid credentials" },
@@ -296,7 +341,7 @@ describe("LoginPage", () => {
     )
     render(<LoginPage />)
     signIn()
-    await screen.findByText(/address or password is wrong/i)
+    await screen.findByText(/name or password is wrong/i)
     expect(screen.queryByLabelText("One-time code")).toBeNull()
     expect(getToken()).toBeNull()
     expect(navigate).not.toHaveBeenCalled()
@@ -313,7 +358,7 @@ describe("LoginPage", () => {
     render(<LoginPage />)
     signIn()
     await enterCode()
-    await screen.findByText(/address, password or code is wrong/i)
+    await screen.findByText(/name, password or code is wrong/i)
     expect(screen.getByLabelText<HTMLInputElement>("One-time code").value).toBe(
       ""
     )

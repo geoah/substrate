@@ -41,7 +41,7 @@ type authAccount struct {
 func authRegister(t *testing.T, env *dbEnv, repository string, factor bool) authAccount {
 	t.Helper()
 	ctx := context.Background()
-	in := substrate.RegisterInput{Repository: repository, Password: authPassword, SkipTOTP: !factor, Label: "test"}
+	in := substrate.RegisterInput{Identity: repository, Repository: repository, Password: authPassword, SkipTOTP: !factor, Label: "test"}
 	if factor {
 		enrollment, err := env.svc.BeginRegistration(ctx, repository)
 		if err != nil {
@@ -70,12 +70,12 @@ func (a authAccount) login(t *testing.T, env *dbEnv, password string) map[string
 func authRegisterAtTheDoor(t *testing.T, env *dbEnv, repository string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": repository,
+		"inviteCode": testInviteCode, "identity": repository,
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
 	return env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": repository, "password": authPassword,
+		"inviteCode": testInviteCode, "identity": repository, "password": authPassword,
 		"totpSecret": enrollment.Secret, "totpCode": env.code(t, enrollment.Secret),
 	})
 }
@@ -87,7 +87,7 @@ func TestRegisterThenLogin(t *testing.T) {
 
 	// Step one issues the enrollment and writes nothing.
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": label,
+		"inviteCode": testInviteCode, "identity": label,
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
@@ -101,7 +101,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	// Step two commits, and registration ends logged in.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": label,
+		"inviteCode": testInviteCode, "identity": label,
 		"password":   authPassword,
 		"totpSecret": enrollment.Secret, "totpCode": env.code(t, enrollment.Secret),
 		"label": "console",
@@ -142,7 +142,7 @@ func TestRegistrationMaySkipTheSecondFactor(t *testing.T) {
 	env := newDBEnv(t, withoutRepository())
 	label := testdb.RepositoryLabel(t)
 	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": label,
+		"inviteCode": testInviteCode, "identity": label,
 		"password": authPassword, "skipTotp": true,
 	})
 	wantStatus(t, rec, http.StatusCreated)
@@ -158,7 +158,7 @@ func TestRegistrationMaySkipTheSecondFactor(t *testing.T) {
 	// demands a code the account does not have.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": label, "password": authPassword,
+		"identity": label, "password": authPassword,
 		"newPassword": "a-new-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -182,7 +182,7 @@ func TestLoginWithoutACodeAsksForOne(t *testing.T) {
 
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": acct.repository, "password": authPassword,
+		"identity": acct.repository, "password": authPassword,
 		"newPassword": "a-new-correct-horse",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeTOTPRequired)
@@ -219,13 +219,13 @@ func TestRegistrationAdmitsWithoutACodeWhenNoneIsConfigured(t *testing.T) {
 	env := newDBEnv(t, withoutRepository(), withConfig(func(c *Config) { c.InviteCode = "" }))
 	label := testdb.RepositoryLabel(t)
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": "", "repository": label,
+		"inviteCode": "", "identity": label,
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": "anything-at-all", "repository": label,
+		"inviteCode": "anything-at-all", "identity": label,
 		"password":   authPassword,
 		"totpSecret": enrollment.Secret, "totpCode": env.code(t, enrollment.Secret),
 	})
@@ -246,7 +246,7 @@ func TestCredentialChangeTakesBothCurrentFactors(t *testing.T) {
 	const changed = "a-brand-new-passphrase"
 
 	rec := env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 		"newPassword": changed,
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -261,7 +261,7 @@ func TestCredentialChangeTakesBothCurrentFactors(t *testing.T) {
 	// A wrong current password is refused whatever else is right.
 	env.clock.advance(authStep)
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 		"newPassword": "another-passphrase-again",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
@@ -276,7 +276,7 @@ func TestDeleteRepositoryTakesBothFactorsAndFreesTheName(t *testing.T) {
 	acct := authRegister(t, env, testdb.Repository(t), true)
 
 	rec := env.do(t, http.MethodPost, "/repository/delete", "", map[string]any{
-		"repository": acct.repository, "password": "wrong", "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "repository": acct.repository, "password": "wrong", "totpCode": env.code(t, acct.seed),
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 	if _, err := env.svc.Dataset(ctx, acct.repository); err != nil {
@@ -288,7 +288,7 @@ func TestDeleteRepositoryTakesBothFactorsAndFreesTheName(t *testing.T) {
 
 	env.clock.advance(authStep)
 	rec = env.do(t, http.MethodPost, "/repository/delete", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 	})
 	wantStatus(t, rec, http.StatusNoContent)
 	if _, err := env.svc.Dataset(ctx, acct.repository); err == nil {
@@ -310,7 +310,7 @@ func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 	acct := authRegister(t, env, testdb.Repository(t), true)
 
 	rec := env.do(t, http.MethodPost, "/totp/enroll", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 	})
 	wantStatus(t, rec, http.StatusOK)
 	enrollment := decodeJSON[substrate.TOTPEnrollment](t, rec)
@@ -320,7 +320,7 @@ func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 
 	env.clock.advance(authStep)
 	rec = env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 		"newTotpSecret": enrollment.Secret, "newTotpCode": "",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
@@ -329,7 +329,7 @@ func TestTOTPReenrollmentIsTwoSteps(t *testing.T) {
 	// current factors here.
 	env.clock.advance(authStep)
 	rec = env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"repository": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
+		"identity": acct.repository, "password": authPassword, "totpCode": env.code(t, acct.seed),
 		"newTotpSecret": enrollment.Secret, "newTotpCode": env.code(t, enrollment.Secret),
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -381,7 +381,7 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 
 	// A password and no code changes the password.
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": acct.repository, "password": authPassword,
+		"identity": acct.repository, "password": authPassword,
 		"newPassword": "a-new-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusOK)
@@ -390,7 +390,7 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 	// not evidence here and the missing factor is not why.
 	env.clock.advance(defaultAuthInterval + time.Millisecond)
 	rec = env.do(t, http.MethodPost, "/password", acct.token, map[string]any{
-		"repository": acct.repository, "newPassword": "another-correct-horse",
+		"identity": acct.repository, "newPassword": "another-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusForbidden)
 }
@@ -409,7 +409,7 @@ func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 		t.Fatalf("discovery must require the second factor by default: %+v", doc["registration"])
 	}
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": acct.repository, "password": authPassword,
+		"identity": acct.repository, "password": authPassword,
 		"newPassword": "a-new-correct-horse",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeTOTPRequired)

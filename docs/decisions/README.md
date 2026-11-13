@@ -239,7 +239,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
 | [0072](0072-reserve-a-purged-record-id-against-reuse.md) | Reserve a purged record id so a later write cannot take it | rejected |
 | [0073](0073-idempotency-keys-live-in-a-postgres-table-not-the-changelog.md) | Idempotency keys live in a Postgres table, not the changelog | accepted |
-| [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | accepted |
+| [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | superseded |
 | [0075](0075-v1-ships-the-fs-blob-backend-alone.md) | v1 ships the `fs` blob backend alone, and `SUBSTRATE_BLOB_STORE` is gone | accepted |
 | [0076](0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md) | A bundle ships its settings as core `setting` and `secret` records | accepted |
 | [0077](0077-the-llm-kinds-live-in-their-own-seeded-package.md) | The LLM kinds live in their own seeded package, `substrate.reamde.dev/llm` | accepted |
@@ -427,6 +427,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
 | [0273](0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md) | Body is an ordinary property, and no property name is stored apart | accepted |
+| [0274](0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md) | A person signs in as an identity beside the repositories, and picks the repository | accepted |
 | [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |

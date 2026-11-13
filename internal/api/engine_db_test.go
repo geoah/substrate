@@ -62,6 +62,8 @@ type dbEnv struct {
 	*testEnv
 	// svc is the engine itself; the handler talks to it through seamService.
 	svc substrate.Service
+	// dsn is the test's database, for a state no route can make.
+	dsn string
 	// ds is the repository's dataset, for arranging state and reading it back
 	// underneath the API.
 	ds         substrate.Dataset
@@ -143,13 +145,14 @@ func newDBEnv(t *testing.T, opts ...dbOption) *dbEnv {
 		engine.WithUnitSeed(false),
 		engine.WithRecordSeed(false),
 	}, o.engine...)
-	svc, err := engine.Open(ctx, dbTemplate.Clone(t), all...)
+	dsn := dbTemplate.Clone(t)
+	svc, err := engine.Open(ctx, dsn, all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 
-	env := &dbEnv{svc: svc}
+	env := &dbEnv{svc: svc, dsn: dsn}
 	var served substrate.Service = seamService{Service: svc, env: env}
 	for _, fn := range o.service {
 		served = fn(served)

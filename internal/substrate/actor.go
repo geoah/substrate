@@ -137,8 +137,11 @@ func IsBundleActor(a Actor) bool {
 	return strings.HasPrefix(string(a), BundleActorPrefix) && len(string(a)) > len(BundleActorPrefix)
 }
 
-// IsPerson reports whether actor is the repository's person.
-func IsPerson(a Actor) bool { return a == ActorPerson }
+// IsPerson reports whether actor is a person of the repository: its first,
+// or another a person's actor names by their identity (PersonActor).
+func IsPerson(a Actor) bool {
+	return a == ActorPerson || strings.HasPrefix(string(a), PersonActorPrefix)
+}
 
 type assistantKey struct{}
 
@@ -214,9 +217,18 @@ const (
 // ActorTypes are the six, in the order a reader lists them.
 var ActorTypes = []string{ActorTypePerson, ActorTypeApp, ActorTypeFunction, ActorTypeAgent, ActorTypePackage, ActorTypeSystem}
 
-// ActorPerson is the key of the repository's one person, whichever of its
-// tokens it writes through: which client a write came from is on its token.
+// ActorPerson is the key of the repository's first person, the one its
+// creation wrote, whichever of their tokens they write through: which client
+// a write came from is on its token.
 const ActorPerson Actor = "person"
+
+// PersonActorPrefix marks the key of a person of the repository other than
+// its first, named by their identity's id.
+const PersonActorPrefix = "person:"
+
+// PersonActor is the key of the person whose identity is identity, when they
+// are not the repository's first person (ActorPerson).
+func PersonActor(identity string) Actor { return Actor(PersonActorPrefix + identity) }
 
 // CanonicalActor is the key of the actor record a writing hand is. The doors,
 // and any label a person's request once claimed for itself, are the person; the engine's hands (`substrate`, `substrate.oauth`,
@@ -231,6 +243,8 @@ func CanonicalActor(a Actor) Actor {
 	case a == ActorPerson, a == "api", a == "console", a == "substratectl":
 		// The three doors a person's request once named itself by.
 		return ActorPerson
+	case strings.HasPrefix(s, PersonActorPrefix) && len(s) > len(PersonActorPrefix):
+		return a
 	case s == HostActorNamespace || strings.HasPrefix(s, HostActorNamespace+".") || strings.HasPrefix(s, "policy:"):
 		return ActorSystem
 	case a == ActorSeed:
@@ -255,7 +269,7 @@ func ActorTypeOf(a Actor) string {
 	c := CanonicalActor(a)
 	s := string(c)
 	switch {
-	case c == ActorPerson:
+	case IsPerson(c):
 		return ActorTypePerson
 	case c == ActorSystem:
 		return ActorTypeSystem

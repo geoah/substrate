@@ -132,8 +132,10 @@ var featureTable = []feature{
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route
 	// because it is every route's refusal. Revision 3: the reason
-	// `set_aside`, a repository the server's start set aside.
-	{name: "errors", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}},
+	// `set_aside`, a repository the server's start set aside. Revision 4: the
+	// reason `repository_required` and the payload's `repositories`, a
+	// sign-in that must name one (decision 0274).
+	{name: "errors", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
 	// change links the actor record that wrote it, the one it acted for
@@ -185,8 +187,7 @@ var featureTable = []feature{
 	// The sign-in door: registering, signing in, the credential changes and
 	// the tokens.
 	{
-		name: "auth", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST},
-		notice: "Before 1.0, sign-in names a person, who then picks a repository.",
+		name: "auth", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST},
 		routes: []string{
 			"POST /register/enroll",
 			"POST /register",
@@ -198,6 +199,7 @@ var featureTable = []feature{
 			"POST /signout/everywhere",
 			"POST /tokens",
 			"GET /tokens",
+			"GET /identity",
 			"DELETE /tokens/{id}",
 		},
 	},

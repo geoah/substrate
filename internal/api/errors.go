@@ -171,9 +171,15 @@ func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg str
 // wherever it surfaces.
 func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
+	var pick *substrate.RepositoryRequiredError
 	switch {
 	case errors.Is(err, substrate.ErrWriteInDoubt):
 		return inDoubtProblem(err)
+	case errors.As(err, &pick):
+		return http.StatusConflict, substrate.ErrorPayload{
+			Code: codeConflict, Reason: substrate.ReasonRepositoryRequired,
+			Message: "this person may open several repositories: send the sign-in again naming one in `repository`", Repositories: pick.Repositories,
+		}
 	case errors.As(err, &ve):
 		// The one reason that arrives as a value: one outside the closed set
 		// is not sent, and the client acts on the code.

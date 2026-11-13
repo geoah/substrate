@@ -190,15 +190,17 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 			// strings and the field-addressed split (substrate.ErrorPayload).
 			// Dropping either leaves the renderer with less than the wire
 			// carried (#547).
-			ProblemDetails []substrate.ProblemDetail `json:"problemDetails"`
-			Head           *int64                    `json:"head"`
-			Generation     string                    `json:"generation"`
+			ProblemDetails []substrate.ProblemDetail    `json:"problemDetails"`
+			Head           *int64                       `json:"head"`
+			Generation     string                       `json:"generation"`
+			Repositories   []substrate.RepositoryChoice `json:"repositories"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err == nil && (env.Error.Code != "" || env.Error.Message != "") {
 		ae.Code, ae.Reason, ae.Message, ae.Problems = env.Error.Code, env.Error.Reason, env.Error.Message, env.Error.Problems
 		ae.ProblemDetails = env.Error.ProblemDetails
 		ae.Head, ae.Generation = env.Error.Head, env.Error.Generation
+		ae.Repositories = env.Error.Repositories
 		return ae
 	}
 	if raw != "" {
@@ -451,16 +453,19 @@ func vocabularyBody(docs []map[string]any, opts vocabularyOptions) map[string]an
 // server: the caller holds the seed and hands it back with one code.
 type registerBeginRequest struct {
 	InviteCode string `json:"inviteCode"`
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
 }
 
 // registerRequest is the registration commit — the only call that creates
 // anything.
 type registerRequest struct {
 	InviteCode string `json:"inviteCode"`
-	// Repository is the name of the repository to create, which BECOMES its
-	// authority: a bare label is completed under the substrate's own host.
-	Repository string `json:"repository"`
+	// Identity is the name the person signs in with, and Repository the
+	// name of the repository to create, which BECOMES its authority; absent,
+	// it is the identity's. A bare label is completed under the substrate's
+	// own host.
+	Identity   string `json:"identity"`
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
@@ -471,10 +476,12 @@ type registerRequest struct {
 	Label    string `json:"label,omitempty"`
 }
 
-// factors is both current factors presented directly, which is what a login
-// authenticates with. A bearer token is never a substitute.
+// factors is a person's identity and both current factors presented
+// directly, which is what a sign-in authenticates with; a sign-in may pick a
+// repository. A bearer token is never a substitute.
 type factors struct {
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
@@ -485,9 +492,10 @@ type factors struct {
 type tokenResult struct {
 	Token  substrate.TokenInfo `json:"token"`
 	Secret string              `json:"secret"`
-	// Repository is the repository the door resolved the request's name to.
-	// Login and registration echo it; a `POST /tokens` mint does not.
+	// Repository and Identity are the names the door resolved the request's
+	// to. Login and registration echo them; a `POST /tokens` mint does not.
 	Repository string `json:"repository,omitempty"`
+	Identity   string `json:"identity,omitempty"`
 }
 
 // discoveryDoc is the slice of GET /.well-known/substrate/server.json the

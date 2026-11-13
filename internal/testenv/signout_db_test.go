@@ -181,11 +181,11 @@ func TestSigningOutEverywhereEndsEveryToken(t *testing.T) {
 	anonymous := map[string]string{"Content-Type": "application/json", "Authorization": ""}
 	clock.Advance(engine.TOTPPeriod)
 	if status, _, _ := e.DoRaw(http.MethodPost, "/signout/everywhere",
-		[]byte(`{"repository":"`+e.Repository+`"}`), map[string]string{"Content-Type": "application/json"}); status != http.StatusForbidden {
+		[]byte(`{"identity":"`+e.Repository+`"}`), map[string]string{"Content-Type": "application/json"}); status != http.StatusForbidden {
 		t.Fatalf("a sign out everywhere with a bearer and no password answered %d, want 403", status)
 	}
 	clock.Advance(engine.TOTPPeriod)
-	body, _ := json.Marshal(map[string]string{"repository": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode()})
+	body, _ := json.Marshal(map[string]string{"identity": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode()})
 	status, raw, _ := e.DoRaw(http.MethodPost, "/signout/everywhere", body, anonymous)
 	var answer substrate.SessionCredential
 	if err := json.Unmarshal(raw, &answer); status != http.StatusOK || err != nil || answer.SignedOut == nil || *answer.SignedOut < 3 {
@@ -213,7 +213,7 @@ func TestAPasswordChangeCanSignOutEverywhere(t *testing.T) {
 	old := e.Token
 	clock.Advance(engine.TOTPPeriod)
 	body, _ := json.Marshal(map[string]any{
-		"repository": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode(),
+		"identity": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode(),
 		"newPassword": "a-new-and-longer-password", "signOutEverywhere": true,
 	})
 	status, raw, _ := e.DoRaw(http.MethodPost, "/password", body, map[string]string{"Content-Type": "application/json", "Authorization": ""})
@@ -234,11 +234,12 @@ func TestAPasswordChangeCanSignOutEverywhere(t *testing.T) {
 // password may have changed, never that it did. Its commit landed, so the
 // new password signs in and finishes the sign-out.
 func TestAPasswordChangeInDoubtSaysThePasswordMayHaveChanged(t *testing.T) {
-	// The request's first commit spends the code; its second is the
-	// password write, whose answer is lost.
+	// The request's first commit is the password write, whose answer is
+	// lost: the code it spends is the identity's, which no repository
+	// commits (decision 0274).
 	var armed atomic.Bool
 	var commits atomic.Int32
-	lose := func() bool { return armed.Load() && commits.Add(1) == 2 }
+	lose := func() bool { return armed.Load() && commits.Add(1) == 1 }
 	clock := &engine.TestClock{}
 	e := testenv.Start(t, testenv.WithRepository(detailsAuthority), testenv.WithClock(clock.Now),
 		testenv.WithEngineOptions(engine.WithTestCommitInDoubt(lose)))
@@ -250,14 +251,14 @@ func TestAPasswordChangeInDoubtSaysThePasswordMayHaveChanged(t *testing.T) {
 		t.Fatalf("open the repository: %v", err)
 	}
 	body, _ := json.Marshal(map[string]any{
-		"repository": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode(),
+		"identity": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode(),
 		"newPassword": "a-new-and-longer-password", "signOutEverywhere": true,
 	})
 	armed.Store(true)
 	status, raw, _ := e.DoRaw(http.MethodPost, "/password", body, map[string]string{"Content-Type": "application/json", "Authorization": ""})
 	armed.Store(false)
-	if commits.Load() != 2 {
-		t.Fatalf("the password change made %d commits, want 2: the code's, then the password's", commits.Load())
+	if commits.Load() != 1 {
+		t.Fatalf("the password change made %d commits, want 1: the password's", commits.Load())
 	}
 	var refused substrate.ErrorEnvelope
 	if err := json.Unmarshal(raw, &refused); err != nil || status != http.StatusInternalServerError ||
@@ -270,7 +271,7 @@ func TestAPasswordChangeInDoubtSaysThePasswordMayHaveChanged(t *testing.T) {
 	}
 
 	clock.Advance(engine.TOTPPeriod)
-	signout, _ := json.Marshal(map[string]string{"repository": e.Repository, "password": "a-new-and-longer-password", "totpCode": e.TOTPCode()})
+	signout, _ := json.Marshal(map[string]string{"identity": e.Repository, "password": "a-new-and-longer-password", "totpCode": e.TOTPCode()})
 	status, raw, _ = e.DoRaw(http.MethodPost, "/signout/everywhere", signout, map[string]string{"Content-Type": "application/json", "Authorization": ""})
 	var answer substrate.SessionCredential
 	if err := json.Unmarshal(raw, &answer); status != http.StatusOK || err != nil || answer.SignedOut == nil || *answer.SignedOut < 1 {
@@ -325,7 +326,7 @@ func TestAMintWhoseBodyArrivesAfterTheSignOutMintsNothing(t *testing.T) {
 	}
 
 	clock.Advance(engine.TOTPPeriod)
-	signout, _ := json.Marshal(map[string]string{"repository": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode()})
+	signout, _ := json.Marshal(map[string]string{"identity": e.Repository, "password": signoutPassword, "totpCode": e.TOTPCode()})
 	if status, raw, _ := e.DoRaw(http.MethodPost, "/signout/everywhere", signout,
 		map[string]string{"Content-Type": "application/json", "Authorization": ""}); status != http.StatusOK {
 		t.Fatalf("sign out everywhere: %d %s", status, raw)

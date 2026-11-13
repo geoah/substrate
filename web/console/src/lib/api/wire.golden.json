@@ -773,11 +773,18 @@
     "message": true,
     "problemDetails": false,
     "problems": false,
-    "reason": false
+    "reason": false,
+    "repositories": false
   },
   "FunctionCalled": {
     "effects": true,
     "output": true
+  },
+  "IdentityInfo": {
+    "id": true,
+    "name": true,
+    "repositories": true,
+    "secondFactor": true
   },
   "InputStatus": {
     "description": false,
@@ -816,9 +823,10 @@
     "title": false
   },
   "LoginRequest": {
+    "identity": true,
     "label": false,
     "password": true,
-    "repository": true,
+    "repository": false,
     "totpCode": true
   },
   "MarkInput": {
@@ -826,6 +834,7 @@
     "properties": true
   },
   "MintedToken": {
+    "identity": false,
     "repository": false,
     "secret": true,
     "token": true
@@ -955,18 +964,24 @@
     "refs": false
   },
   "RegisterInput": {
+    "identity": true,
     "inviteCode": true,
     "label": false,
     "password": true,
-    "repository": true,
+    "repository": false,
     "skipTotp": false,
     "totpCode": true,
     "totpSecret": true
   },
   "RegisterResult": {
+    "identity": false,
     "repository": false,
     "secret": true,
     "token": true
+  },
+  "RepositoryChoice": {
+    "id": true,
+    "name": true
   },
   "RepositoryConversion": {
     "expr": false,
@@ -999,7 +1014,7 @@
     "semantic": false
   },
   "SessionCredential": {
-    "repository": true,
+    "identity": true,
     "signedOut": false
   },
   "SetupItem": {
@@ -1108,6 +1123,7 @@
     "createdAt": true,
     "expiresAt": false,
     "id": true,
+    "identity": false,
     "label": true,
     "retired": false,
     "scopes": false

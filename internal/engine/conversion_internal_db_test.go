@@ -37,9 +37,9 @@ const convertedActor = "api.converted"
 // chain the binary carries, which every repository here is written at.
 var testDialect = chainDialect(conversionSteps) + 1
 
-// personActor is the person's actor record id, the actor the API's writes
+// personActorID is the person's actor record id, the actor the API's writes
 // link, which the test's step respells.
-var personActor = actorID(substrate.ActorPerson)
+var personActorID = actorID(substrate.ActorPerson)
 
 func testConversion() Option {
 	return func(o *options) {
@@ -51,7 +51,7 @@ func testConversion() Option {
 // respellAPIActor is idempotent, as every step must be: a converted line has
 // no link to the person left to respell.
 func respellAPIActor(e *changelogfile.Entry) error {
-	if e.Actor == personActor {
+	if e.Actor == personActorID {
 		e.Actor = convertedActor
 	}
 	dec := json.NewDecoder(bytes.NewReader(e.Payload))
@@ -62,7 +62,7 @@ func respellAPIActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p[foldPayloadKey].([]any)
 	for _, raw := range effects {
-		if eff, ok := raw.(map[string]any); ok && eff["setBy"] == personActor {
+		if eff, ok := raw.(map[string]any); ok && eff["setBy"] == personActorID {
 			eff["setBy"] = convertedActor
 		}
 	}
@@ -177,7 +177,7 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 			if !bytes.Equal(sum[:], row.hash) {
 				t.Errorf("seq %d: the stamped checksum is not the line's", e.Seq)
 			}
-			if bytes.Contains(e.Payload, []byte(`"setBy": "`+personActor+`"`)) || bytes.Contains(e.Payload, []byte(`"setBy":"`+personActor+`"`)) || e.Actor == personActor {
+			if bytes.Contains(e.Payload, []byte(`"setBy": "`+personActorID+`"`)) || bytes.Contains(e.Payload, []byte(`"setBy":"`+personActorID+`"`)) || e.Actor == personActorID {
 				t.Errorf("seq %d still spells the actor api: %s", e.Seq, e.Payload)
 			}
 			if e.Actor == convertedActor {
@@ -216,7 +216,7 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(body, []byte(`"setBy":"`+personActor+`"`)) {
+		if bytes.Contains(body, []byte(`"setBy":"`+personActorID+`"`)) {
 			t.Errorf("the archive's %s still spells the actor api", o.Key)
 		}
 	}
@@ -529,7 +529,7 @@ func holdRestoredAt(t *testing.T, svc substrate.Service, repo string, dialect in
 			switch e.Actor {
 			case actor:
 				spelled++
-			case personActor, convertedActor, thirdActor:
+			case personActorID, convertedActor, thirdActor:
 				t.Errorf("seq %d spells the actor %q at dialect %d", e.Seq, e.Actor, dialect)
 			}
 			after = e.Seq
@@ -1334,7 +1334,7 @@ func TestAStepThatLeavesALineLeavesItsChecksum(t *testing.T) {
 		after, kept, rewritten := sums(), 0, 0
 		for seq, was := range before {
 			switch {
-			case !strings.HasSuffix(was, " "+personActor):
+			case !strings.HasSuffix(was, " "+personActorID):
 				if after[seq] != was {
 					t.Errorf("seq %d, not the person's: %s became %s", seq, was, after[seq])
 				}

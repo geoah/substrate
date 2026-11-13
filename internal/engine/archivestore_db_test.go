@@ -326,7 +326,7 @@ func TestALateManifestAfterADeletionRestoresNothing(t *testing.T) {
 	}
 	waitStep(t)
 	if err := svc.DeleteRepository(ctx, substrate.LoginInput{
-		Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+		Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t),
 	}); err != nil {
 		t.Fatal(err)
 	}

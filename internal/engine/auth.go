@@ -2,26 +2,26 @@ package engine
 
 // THE DOOR.
 //
-// A user is a `repositories` row, and everything else about them is a RECORD
-// in the repository they own:
+// A person is an IDENTITY, a control-plane row beside the repositories
+// (identities.go, decision 0274): the name they sign in with, the argon2id
+// password hash and the second factor's seed, sealed under the identity's own
+// key and never in any repository's history, and the rows that say which
+// repositories the identity opens. A sign-in names the person, who picks one
+// of those repositories. What the person does there is records of the
+// repository:
 //
-//   - `substrate.reamde.dev/core/credential`, the one row, id `self` — the
-//     repository it admits to plus two refs into the sealed store. The material itself (an argon2id
-//     password hash, a TOTP seed) is NEVER in the changelog and never in a record's
-//     data, so the changelog carries an audit trail — "the credential changed at T"
-//     — and nothing crackable.
-//   - `substrate.reamde.dev/core/token`, one per token — a label, the SHA-256 of the
-//     secret and an optional expiry. Nothing records use, so authenticating
-//     writes nothing. Sessions ARE these records; login mints one and hands
-//     back its secret once.
+//   - `substrate.reamde.dev/core/token`, one per token — a label, the SHA-256
+//     of the secret, an optional expiry and the identity it acts for.
+//     Nothing records use, so authenticating writes nothing. Sessions ARE
+//     these records; login mints one and hands back its secret once.
 //
 // THE MAINT-POOL PATHS ARE ENUMERATED HERE AND NOWHERE ELSE. Authentication
-// cannot start from a repository scope — a login knows a repository name and a
-// bearer knows a hash — so exactly four reads run on the BYPASSRLS pool with
-// an explicit `repository` predicate: `repositoryByID` (login),
-// `credentialOf` + `authMaterial` (the factors), and `tokenByHash` (every
-// authenticated request, joined to its repositories row so one round trip
-// answers both). Everything they lead to runs scoped.
+// cannot start from a repository scope — a login knows a person's name and a
+// bearer knows a hash — so these reads run on the BYPASSRLS pool:
+// `identityByName` and `identityRepositories` (login), `identityMaterial`
+// (the factors), and `tokenByHash` (every authenticated request, joined to
+// its repositories row so one round trip answers both, with an explicit
+// `repository` predicate). Everything they lead to runs scoped.
 
 import (
 	"context"
@@ -35,6 +35,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,16 +44,14 @@ import (
 	"github.com/geoah/substrate/internal/authorize"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const (
-	// kindCredential is the singleton auth record and credentialID its only
-	// id: one repository, one user, one credential.
-	kindCredential = "substrate.reamde.dev/core/credential"
-	credentialID   = "self"
-
-	// The sealed-store refs the credential record points at are namespaced so
-	// a connector credential and a password hash can never collide on one.
+	// The sealed-store refs a credential record pointed at, namespaced so a
+	// connector credential and a password hash could never collide on one. A
+	// repository not opened since decision 0274 still holds them, and verify
+	// reads them as the secret refs they are.
 	sealedAuthPrefix = "auth:"
 
 	// minPasswordLength is the only password policy v1 has. Length is the
@@ -164,186 +163,27 @@ var dummyPasswordHash = func() string {
 	return h
 }()
 
-// --- the sealed auth material ----------------------------------------------
+// --- the factors -------------------------------------------------------------
 
 // totpMaterial is the sealed TOTP payload: the seed and the last consumed
 // step. They live together because they are one fact — a code is one-time —
-// and because keeping the replay counter out of the changelog is what stops a login
-// from writing an entry.
+// and because keeping the replay counter beside the seed is what lets a
+// sign-in spend a code without writing anything else.
 type totpMaterial struct {
 	Secret string `json:"secret"`
 	Step   int64  `json:"step"`
 }
 
-// authMaterial is a user's factors as the login path needs them: the stored
-// password hash, the TOTP seed and step, and the refs they came from. An empty
-// totpRef is an account registered without a second factor.
+// authMaterial is a person's factors as the factor check reads them off their
+// identity (identities.go): the password hash and the second factor, and the
+// `updated_at` they were read at, which is the compare-and-swap baseline of a
+// credential change. An empty seed is an identity without a second factor.
 type authMaterial struct {
-	passwordRef  string
+	identity     string
+	name         string
 	passwordHash string
-	totpRef      string
 	totp         totpMaterial
-}
-
-// newAuthRef mints an unguessable sealed-store ref. Rotation writes a NEW ref
-// rather than overwriting one, so the credential record's own data moves and
-// the changelog records a real change — the audit trail RB-5 asks for.
-func newAuthRef(kind string) (string, error) {
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	return sealedAuthPrefix + kind + ":" + hex.EncodeToString(raw), nil
-}
-
-// credentialOf reads a repository's credential record on the MAINTENANCE pool
-// — one of the four enumerated cross-scope reads, because a login has no
-// repository scope yet. It returns the two sealed refs.
-func (s *service) credentialOf(ctx context.Context, repoID string) (passwordRef, totpRef string, err error) {
-	var props []byte
-	err = s.maint.QueryRowContext(ctx, `
-		SELECT props FROM records
-		WHERE repository = $1 AND kind = $2 AND id = $3 AND deleted_at IS NULL`,
-		repoID, kindCredential, credentialID).Scan(&props)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", fmt.Errorf("%w: no credential", substrate.ErrAuth)
-	}
-	if err != nil {
-		return "", "", err
-	}
-	var m map[string]any
-	if err := json.Unmarshal(props, &m); err != nil {
-		return "", "", err
-	}
-	str := func(k string) string { v, _ := m[k].(string); return v }
-	return str("passwordRef"), str("totpRef"), nil
-}
-
-// authMaterialOf opens both sealed rows for a repository, on the maintenance
-// pool for the same reason credentialOf is there.
-func (s *service) authMaterialOf(ctx context.Context, repoID string) (authMaterial, error) {
-	var m authMaterial
-	passwordRef, totpRef, err := s.credentialOf(ctx, repoID)
-	if err != nil {
-		return m, err
-	}
-	m.passwordRef, m.totpRef = passwordRef, totpRef
-	hash, err := s.openSealed(ctx, repoID, passwordRef)
-	if err != nil {
-		return m, err
-	}
-	m.passwordHash = string(hash)
-	if totpRef == "" {
-		return m, nil
-	}
-	raw, err := s.openSealed(ctx, repoID, totpRef)
-	if err != nil {
-		return m, err
-	}
-	if err := json.Unmarshal(raw, &m.totp); err != nil {
-		return m, fmt.Errorf("substrate/engine: unreadable totp material: %w", err)
-	}
-	return m, nil
-}
-
-// openSealed reads and unseals one row by ref, on the maintenance pool. The
-// payload opens under the repository's DEK; the host-key fallback for material
-// sealed before DEKs existed is tried only while the row is not yet marked
-// DEK-only (0059).
-func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, error) {
-	if ref == "" {
-		return nil, fmt.Errorf("%w: credential incomplete", substrate.ErrAuth)
-	}
-	// The keys and the payload come from ONE snapshot. A first open that
-	// adopts a DEK and re-keys the store commits between two separate reads
-	// otherwise, and the login would try the re-keyed payload with the DEK it
-	// read a moment before (none), or the old payload against the marker set
-	// after it. Adoption commits before the re-key and the marker after it,
-	// so no snapshot holds a re-keyed payload without its DEK.
-	tx, err := s.maint.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	keys, err := s.repoKeysOn(ctx, tx, repoID)
-	if err != nil {
-		return nil, err
-	}
-	var payload []byte
-	var owner eref
-	err = tx.QueryRowContext(ctx,
-		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2`,
-		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: credential material missing", substrate.ErrAuth)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return openRepoPayload(payload, keys.dek, sealedAAD(ref, owner.Kind, owner.ID))
-}
-
-// consumeTOTPStep spends a code by recording its step on the sealed TOTP row.
-// The row is taken FOR UPDATE and the step re-read under that lock, so two
-// logins racing on one code cannot both win it — a code is one-time, which is
-// the whole reason the step lives beside the seed. It writes no changelog entry: a
-// replay counter is not a change to the credential.
-func (s *service) consumeTOTPStep(ctx context.Context, repo Repository, ref string, to int64) (bool, error) {
-	repoID := repo.ID
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return false, err
-	}
-	tx, wc, err := beginWrite(ctx, s.maint)
-	if err != nil {
-		return false, err
-	}
-	defer wc.release()
-	defer func() { _ = tx.Rollback() }()
-	var payload []byte
-	var owner eref
-	err = tx.QueryRowContext(ctx,
-		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
-		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	keys, err := s.repoKeysOn(ctx, tx, repoID)
-	if err != nil {
-		return false, err
-	}
-	dek := keys.dek
-	aad := sealedAAD(ref, owner.Kind, owner.ID)
-	raw, err := openRepoPayload(payload, dek, aad)
-	if err != nil {
-		return false, err
-	}
-	var m totpMaterial
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return false, err
-	}
-	if to <= m.Step {
-		return false, nil
-	}
-	m.Step = to
-	sealed, err := s.sealRepoPayload(dek, mustJSON(m), aad)
-	if err != nil {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE sealed SET payload = $3, updated_at = now() WHERE repository = $1 AND ref = $2`,
-		repoID, ref, sealed); err != nil {
-		return false, err
-	}
-	// The step lives in the sealed row and nowhere in the changelog; the
-	// archive copies the row as it copies every sealed value.
-	if err := ds.commitSealed(tx, wc); err != nil {
-		return false, err
-	}
-	return true, nil
+	version      time.Time
 }
 
 func mustJSON(v any) []byte {
@@ -356,33 +196,40 @@ func mustJSON(v any) []byte {
 
 // --- registration ----------------------------------------------------------
 
-// BeginRegistration issues a TOTP enrollment for a repository and writes
+// BeginRegistration issues a TOTP enrollment for an identity and writes
 // NOTHING: the caller holds the seed and proves possession by returning it
 // with one code (Register). An abandoned registration therefore leaves no
 // durable trace at all — no row to expire, no pending state to sweep.
-func (s *service) BeginRegistration(ctx context.Context, repository string) (substrate.TOTPEnrollment, error) {
-	if err := validRepositoryAuthority(repository); err != nil {
+func (s *service) BeginRegistration(ctx context.Context, identity string) (substrate.TOTPEnrollment, error) {
+	if err := validIdentityName(identity); err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return newEnrollment(repository)
+	return newEnrollment(identity)
 }
 
-func newEnrollment(repository string) (substrate.TOTPEnrollment, error) {
+// newEnrollment issues a seed whose authenticator entry is labeled with the
+// name the person signs in with.
+func newEnrollment(identity string) (substrate.TOTPEnrollment, error) {
 	seed, err := NewTOTPSecret()
 	if err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return substrate.TOTPEnrollment{Secret: seed, URI: TOTPEnrollmentURI(repository, seed)}, nil
+	return substrate.TOTPEnrollment{Secret: seed, URI: TOTPEnrollmentURI(identity, seed)}, nil
 }
 
-// Register creates the user: ONE creation act
-// writes the seeded repository, the sealed material, the credential record and
-// the first token — so a registration ends logged in — and the control-plane
-// row that makes the user exist is the last thing written
-// (createSeededRepository holds the atomicity story). A failed registration
-// creates nothing.
+// Register creates the person and their repository in ONE creation act: the
+// seeded repository, its first token, and, with the control-plane row that
+// makes the repository exist, the identity and the row that lets it open the
+// repository (createSeededRepositoryFor holds the atomicity story). So a
+// registration ends signed in, and a failed one creates nothing.
 func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (substrate.RegisterResult, error) {
 	var zero substrate.RegisterResult
+	if in.Repository == "" {
+		in.Repository = in.Identity
+	}
+	if err := validIdentityName(in.Identity); err != nil {
+		return zero, err
+	}
 	if err := validPassword(in.Password); err != nil {
 		return zero, err
 	}
@@ -390,26 +237,32 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err != nil {
 		return zero, err
 	}
+	// A cheap early no before the argon2id work and the creation: the unique
+	// index is the truth, and the insert beside the repository's row is
+	// what a race loses on.
+	if _, err := s.identityByName(ctx, s.maint, in.Identity); err == nil {
+		return zero, errIdentityTaken(in.Identity)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return zero, err
+	}
 	hash, err := hashPassword(ctx, in.Password)
 	if err != nil {
 		return zero, err
 	}
+	s.afterProof("register")
 	var out substrate.RegisterResult
+	person, err := s.newIdentityRow(in.Identity, hash, totpMaterial{Secret: seed, Step: step})
+	if err != nil {
+		return zero, err
+	}
 	label := in.Label
 	if label == "" {
 		label = "login"
 	}
-	out.Repository = in.Repository
-	repo, err := s.createSeededRepository(ctx, in.Repository, func(t *txn) error {
-		// Fresh account: no prior credential to compare against, so no CAS.
-		if err := t.writeCredential(credentialWrite{
-			repository: in.Repository, passwordHash: hash,
-			totp: totpMaterial{Secret: seed, Step: step},
-		}); err != nil {
-			return err
-		}
+	out.Repository, out.Identity = in.Repository, in.Identity
+	repo, err := s.createSeededRepositoryFor(ctx, in.Repository, &person, func(t *txn) error {
 		var terr error
-		out.Token, out.Secret, terr = t.mintToken(substrate.MintTokenInput{Label: label})
+		out.Token, out.Secret, terr = t.mintToken(substrate.MintTokenInput{Label: label, Identity: person.ID})
 		return terr
 	})
 	if err != nil {
@@ -429,7 +282,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 // is stored as consumed, so the code that registered cannot also log in.
 //
 // A registration that skips the factor commits none, and an empty seed is what
-// writeCredential reads as "no factor". The skip is explicit, so a client that
+// an identity reads as "no factor". The skip is explicit, so a client that
 // lost its enrollment on the way is refused rather than registered without one.
 // With the factor disabled (WithInsecureDisableTOTP) no code is asked for, and
 // a registration that sends no seed has none either: a seed nobody holds would
@@ -478,241 +331,299 @@ func validPassword(p string) error {
 	return nil
 }
 
-// --- login and the password-factor rule ------------------------------------
-
-// verifyFactors is the ONE place both factors are checked, so /login, the
-// password change and the TOTP re-enrollment cannot drift apart (ruling
-// RB-6 needs them identical). It answers the SAME error for an unknown
-// repository, a wrong password and a wrong code, and does the same argon2id
-// and HMAC work on every path so the timing says nothing either.
-//
-// The one other answer is ErrTOTPRequired: the password is right, the account
-// has a second factor and no code came. It is what lets a client ask for the
-// password first and the code only of an account that has one, and it is
-// given only to a caller who already proved the password.
-func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (Repository, authMaterial, error) {
-	authErr := fmt.Errorf("%w: bad repository, password or code", substrate.ErrAuth)
-	repo, rerr := s.repositoryByAuthority(ctx, in.Repository)
-	material := authMaterial{passwordHash: dummyPasswordHash, totp: totpMaterial{}}
-	key := dummyTOTPKey
-	hasFactor := false
-	if rerr == nil {
-		if got, err := s.authMaterialOf(ctx, repo.ID); err == nil {
-			material = got
-			hasFactor = got.totpRef != ""
-			if k, err := decodeTOTPSecret(got.totp.Secret); err == nil && len(k) >= totpMinSeedBytes {
-				key = k
-			}
-		}
+// validIdentityName is the grammar a sign-in name is held to: a repository
+// name's, so it keeps the DNS-style form another server could one day vouch
+// for (decision 0274).
+func validIdentityName(name string) error {
+	switch {
+	case name == "":
+		return fmt.Errorf("%w: a sign-in needs a name: a hostname you control, such as ada.example.com", substrate.ErrValidation)
+	case !vocabulary.ValidRepositoryAuthority(name):
+		return fmt.Errorf("%w: sign-in name %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, name)
+	case len(name) > vocabulary.MaxIDLen:
+		return fmt.Errorf("%w: sign-in name %q is longer than %d bytes", substrate.ErrValidation, name, vocabulary.MaxIDLen)
 	}
-	passwordOK := verifyPassword(ctx, material.passwordHash, in.Password)
-	step, codeOK := totpVerify(key, in.TOTPCode, s.now(), material.totp.Step)
-	// The dev escape hatch (WithInsecureDisableTOTP), and an account
-	// registered without a second factor: the code is still evaluated above,
-	// so the work and the timing are unchanged, and only the VERDICT is
-	// dropped. Nothing is consumed either — a step spent here would
-	// invalidate codes the enrolled authenticator is still showing, which is
-	// what would make turning the factor back on a lockout.
-	if s.totpDisabled || !hasFactor {
-		if rerr != nil || !passwordOK {
-			return Repository{}, authMaterial{}, authErr
-		}
-		// Past the factors, and before anything behind this door writes: a
-		// deletion or an enrollment opens nothing that would refuse it.
-		if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
-			return Repository{}, authMaterial{}, err
-		}
-		return repo, material, nil
-	}
-	if rerr != nil || !passwordOK {
-		return Repository{}, authMaterial{}, authErr
-	}
-	if normalizeTOTPCode(in.TOTPCode) == "" {
-		return Repository{}, authMaterial{}, substrate.ErrTOTPRequired
-	}
-	if !codeOK {
-		return Repository{}, authMaterial{}, authErr
-	}
-	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
-		return Repository{}, authMaterial{}, err
-	}
-	// The code is spent BEFORE anything is handed out, under the sealed row's
-	// own lock, so two requests racing on one code cannot both win.
-	won, err := s.consumeTOTPStep(ctx, repo, material.totpRef, step)
-	if err != nil {
-		return Repository{}, authMaterial{}, err
-	}
-	if !won {
-		return Repository{}, authMaterial{}, authErr
-	}
-	// The verified material is returned so a credential change writes from the
-	// SAME read it authenticated against — the refs are the compare-and-swap
-	// baseline, and the just-consumed step is what the seed carries forward.
-	material.totp.Step = step
-	return repo, material, nil
+	return nil
 }
 
-// Login verifies both factors and mints a token record: the session IS that
-// record, so a logout is a delete and a revoke is the same
-// write from somewhere else.
-func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate.TokenInfo, string, error) {
-	var zero substrate.TokenInfo
-	repo, material, err := s.verifyFactors(ctx, in)
-	if err != nil {
-		// Only under a name that exists, so a guessed one adds no series.
-		if errors.Is(err, substrate.ErrAuth) && s.repositoryExists(ctx, in.Repository) {
-			countAuth(in.Repository, "login_failed")
-		}
-		return zero, "", err
-	}
-	s.afterProof("login")
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return zero, "", err
-	}
-	label := in.Label
-	if label == "" {
-		label = "login"
-	}
-	var info substrate.TokenInfo
-	var secret string
-	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if err := t.factorsStand(material); err != nil {
-			return err
-		}
-		var err error
-		info, secret, err = t.mintToken(substrate.MintTokenInput{Label: label})
-		return err
-	})
-	if err != nil {
-		return zero, "", err
-	}
-	countAuth(repo.Authority, "login")
-	return info, secret, nil
-}
+// --- sign-in and the password-factor rule ----------------------------------
 
-// afterProof runs the factor doors' test seam between a request's proof and
-// its act (WithTestAfterProof).
+// afterProof runs the factor doors' test seam, once a request has proved
+// the factors and before it acts.
 func (s *service) afterProof(door string) {
 	if s.testAfterProof != nil {
 		s.testAfterProof(door)
 	}
 }
 
-// factorsStand is the fence of every door that proved the factors before it
-// acts: inside the act's transaction, under the changelog lock every change
-// of the factors takes (writeCredential), the credential is still the one the
-// request proved. A password change (alone or with a sign out everywhere), a
-// new second factor or an operator's reset that landed between the proof and
-// the act refuses the act, so nothing the old factors began survives them. A
-// sign out everywhere that changes no factor leaves the factors standing: a
-// request proving them is a new sign-in, as one a moment later would be.
-func (t *txn) factorsStand(proved authMaterial) error {
-	row, err := t.loadRow(eref{Kind: kindCredential, ID: credentialID}, false)
-	if err != nil {
-		return err
-	}
-	ref := func(name string) string {
-		if row == nil || row.DeletedAt != nil {
-			return ""
+// errBadFactors is the one answer every refused factor gets: an unknown
+// name, a wrong password and a wrong code are indistinguishable.
+var errBadFactors = fmt.Errorf("%w: bad identity, password or code", substrate.ErrAuth)
+
+// checkFactors is the ONE place both factors are checked, so the sign-in, the
+// password change and the TOTP re-enrollment cannot drift apart (ruling RB-6
+// needs them identical). It answers the SAME error for an unknown identity, a
+// wrong password and a wrong code, and does the same argon2id and HMAC work on
+// every path so the timing says nothing either.
+//
+// The one other answer is ErrTOTPRequired: the password is right, the person
+// has a second factor and no code came. It is what lets a client ask for the
+// password first and the code only of a person who has one, and it is given
+// only to a caller who already proved the password.
+//
+// It spends nothing: the step the code matched is returned, and spendCode
+// spends it once the caller is sure to go on, so a sign-in refused for want
+// of a repository leaves the code good for the request sent again. -1 is
+// nothing to spend.
+func (s *service) checkFactors(ctx context.Context, in substrate.LoginInput) (authMaterial, int64, error) {
+	row, rerr := s.identityByName(ctx, s.maint, in.Identity)
+	material := authMaterial{passwordHash: dummyPasswordHash}
+	key := dummyTOTPKey
+	hasFactor := false
+	if rerr == nil {
+		got, err := s.identityMaterial(row)
+		if err == nil {
+			material = got
+			hasFactor = got.totp.Secret != ""
+			if k, err := decodeTOTPSecret(got.totp.Secret); err == nil && len(k) >= totpMinSeedBytes {
+				key = k
+			}
+		} else {
+			rerr = err
 		}
-		s, _ := row.Props[name].(string)
-		return s
 	}
-	if row == nil || row.DeletedAt != nil ||
-		ref("passwordRef") != proved.passwordRef || ref("totpRef") != proved.totpRef {
-		return errFactorsChanged
+	passwordOK := verifyPassword(ctx, material.passwordHash, in.Password)
+	step, codeOK := totpVerify(key, in.TOTPCode, s.now(), material.totp.Step)
+	// The dev escape hatch (WithInsecureDisableTOTP), and a person registered
+	// without a second factor: the code is still evaluated above, so the work
+	// and the timing are unchanged, and only the VERDICT is dropped. Nothing
+	// is spent either — a step spent here would invalidate codes the enrolled
+	// authenticator is still showing, which is what would make turning the
+	// factor back on a lockout.
+	if s.totpDisabled || !hasFactor {
+		if rerr != nil || !passwordOK {
+			return authMaterial{}, -1, errBadFactors
+		}
+		return material, -1, nil
 	}
-	return nil
+	if rerr != nil || !passwordOK {
+		return authMaterial{}, -1, errBadFactors
+	}
+	if normalizeTOTPCode(in.TOTPCode) == "" {
+		return authMaterial{}, -1, substrate.ErrTOTPRequired
+	}
+	if !codeOK {
+		return authMaterial{}, -1, errBadFactors
+	}
+	return material, step, nil
 }
 
-// credentialStandsOn is factorsStand for an act outside the repository's
-// changelog, a repository's erase: the credential row is read FOR UPDATE in
-// the transaction that records that the deletion began, which waits for a
-// factor change writing that row and keeps the next one waiting until the
-// deletion is decided.
-func credentialStandsOn(ctx context.Context, tx *sql.Tx, repository string, proved authMaterial) error {
-	var passwordRef, totpRef sql.NullString
-	err := tx.QueryRowContext(ctx, `
-		SELECT props->>'passwordRef', props->>'totpRef' FROM records
-		WHERE repository = $1 AND kind = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
-		repository, kindCredential, credentialID).Scan(&passwordRef, &totpRef)
-	if errors.Is(err, sql.ErrNoRows) {
-		return errFactorsChanged
-	}
+// spendCode spends the code checkFactors matched, under the identity row's
+// lock, so two requests racing on one code cannot both win. The material
+// then carries the step forward, which is what a credential change keeps.
+func (s *service) spendCode(ctx context.Context, m *authMaterial, step int64) error {
+	won, err := s.spendIdentityCode(ctx, m.identity, m.version, step)
 	if err != nil {
 		return err
 	}
-	if passwordRef.String != proved.passwordRef || totpRef.String != proved.totpRef {
-		return errFactorsChanged
+	if !won {
+		return errBadFactors
+	}
+	if step >= 0 {
+		m.totp.Step = step
 	}
 	return nil
 }
 
-// errFactorsChanged refuses an act whose proof the factors outlived.
-var errFactorsChanged = fmt.Errorf("%w: the password or the second factor changed after this request proved them", substrate.ErrAuth)
+// verifyFactors checks both factors and spends the code: the credential
+// changes' evidence. The verified material is returned so a change writes
+// from the SAME read it authenticated against.
+func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (authMaterial, error) {
+	m, step, err := s.checkFactors(ctx, in)
+	if err != nil {
+		return authMaterial{}, err
+	}
+	if err := s.spendCode(ctx, &m, step); err != nil {
+		return authMaterial{}, err
+	}
+	return m, nil
+}
+
+// pickRepository is the repository a sign-in opens: the one named, which the
+// person must be able to open, else the person's one repository. A person in
+// several who names none is told which they may open, and one in none is
+// refused; both are told only after the factors were proved.
+func (s *service) pickRepository(ctx context.Context, identity, named string) (Repository, error) {
+	repos, err := s.identityRepositories(ctx, s.maint, identity)
+	if err != nil {
+		return Repository{}, err
+	}
+	if named != "" {
+		for _, repo := range repos {
+			if repo.ID == named || repo.Authority == named {
+				return repo, nil
+			}
+		}
+		return Repository{}, fmt.Errorf("%w: this person may not open repository %s", substrate.ErrForbidden, named)
+	}
+	switch len(repos) {
+	case 0:
+		return Repository{}, fmt.Errorf("%w: this person is in no repository", substrate.ErrForbidden)
+	case 1:
+		return repos[0], nil
+	}
+	choices := make([]substrate.RepositoryChoice, len(repos))
+	for i, repo := range repos {
+		choices[i] = substrate.RepositoryChoice{ID: repo.ID, Name: repo.Authority}
+	}
+	return Repository{}, &substrate.RepositoryRequiredError{Repositories: choices}
+}
+
+// Login verifies a person's factors, picks the repository the sign-in opens
+// and mints a token record there, naming the person: the session IS that
+// record, so a sign-out is a delete and a revoke is the same write from
+// somewhere else. The mint runs under the identity's row, held to the
+// factors the request proved and to the person still opening the
+// repository, so a sign-in proved before a password change and a sign out
+// everywhere mints nothing after them.
+func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate.MintedToken, error) {
+	var zero substrate.MintedToken
+	m, step, err := s.checkFactors(ctx, in)
+	if err != nil {
+		if errors.Is(err, substrate.ErrAuth) {
+			s.countFailedSignIn(ctx, in.Identity)
+		}
+		return zero, err
+	}
+	repo, err := s.pickRepository(ctx, m.identity, in.Repository)
+	if err != nil {
+		return zero, err
+	}
+	// Past the factors, and before the code is spent: a repository the start
+	// set aside is refused by name.
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		return zero, err
+	}
+	if err := s.spendCode(ctx, &m, step); err != nil {
+		return zero, err
+	}
+	s.afterProof("login")
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return zero, err
+	}
+	hold, err := s.holdFactors(ctx, m.identity, m.version)
+	if err != nil {
+		return zero, err
+	}
+	defer func() { _ = hold.Rollback() }()
+	if ok, err := mayOpen(ctx, hold, m.identity, repo.ID); err != nil {
+		return zero, err
+	} else if !ok {
+		return zero, fmt.Errorf("%w: this person may not open repository %s", substrate.ErrForbidden, repo.Authority)
+	}
+	label := in.Label
+	if label == "" {
+		label = "login"
+	}
+	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: label, Identity: m.identity})
+	if err != nil {
+		return zero, err
+	}
+	countAuth(repo.Authority, "login")
+	return substrate.MintedToken{Token: info, Secret: secret, Repository: repo.Authority, Identity: m.name}, nil
+}
+
+// countFailedSignIn counts a refused sign-in against each repository the
+// named identity may open, and only under a name that exists, so a guessed
+// one adds no series. The lookup runs whether the name exists or not, so it
+// adds the same round trip to both and the timing still tells nothing.
+func (s *service) countFailedSignIn(ctx context.Context, name string) {
+	rows, err := s.maint.QueryContext(ctx, `
+		SELECT p.authority FROM identities i
+		JOIN identity_repositories l ON l.identity = i.id
+		JOIN repositories p ON p.id = l.repository_id
+		WHERE i.name = $1`, name)
+	if err != nil {
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var authority string
+		if rows.Scan(&authority) == nil {
+			countAuth(authority, "login_failed")
+		}
+	}
+	// A count lost to a failed read is a count, not a refusal.
+	_ = rows.Err()
+}
 
 // ChangePassword rewrites the password hash. It takes the CURRENT password
 // and code in its input and nothing else: a bearer token is not evidence
 // here, which is what keeps a leaked token's blast radius the data rather
-// than the account.
+// than the account. It writes the identity's row and nothing else.
 func (s *service) ChangePassword(ctx context.Context, in substrate.LoginInput, newPassword string) error {
 	if err := validPassword(newPassword); err != nil {
 		return err
 	}
-	repo, material, err := s.verifyFactors(ctx, in)
+	m, err := s.verifyFactors(ctx, in)
 	if err != nil {
 		return err
 	}
 	s.afterProof("password")
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return err
-	}
-	_, err = ds.rewritePassword(ctx, in.Repository, material, newPassword)
+	_, err = s.rewritePassword(ctx, m, newPassword)
 	return err
 }
 
 // rewritePassword writes a new password hash for factors already verified.
-func (ds *dataset) rewritePassword(ctx context.Context, repository string, material authMaterial, newPassword string) (authMaterial, error) {
-	// argon2 stays OUTSIDE the write's lock; the verified refs ride in as the
-	// compare-and-swap baseline so a concurrent rotation is a conflict, not a
-	// silent overwrite.
+// argon2id runs outside the row's lock, and the factors' `updated_at` rides
+// in as the compare-and-swap baseline, so a concurrent change is a conflict,
+// not a silent overwrite. The second factor carries over with the step just
+// spent, or the code that proved this change could be replayed at the next.
+// It answers the factors' new version.
+func (s *service) rewritePassword(ctx context.Context, m authMaterial, newPassword string) (time.Time, error) {
 	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
-		return authMaterial{}, err
+		return time.Time{}, err
 	}
-	// The second factor is unchanged, so the seed carries over — with its
-	// consumed step, or the code just spent could be replayed at the new
-	// credential. The write reconciles that step against anything a concurrent
-	// login advanced.
-	wrote := material
-	err = ds.rewriteCredential(ctx, credentialWrite{
-		repository: repository, passwordHash: hash, totp: material.totp,
-		expectPasswordRef: material.passwordRef, expectTotpRef: material.totpRef, casEnabled: true,
-		wrote: &wrote,
+	return s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: m.identity, passwordHash: hash, totp: m.totp, expect: m.version, cas: true,
 	})
-	return wrote, err
 }
 
-// DeleteRepository verifies both current factors and erases the repository
-// whole: its rows, its control-plane row and its directory, blobs and spool
-// included. Nothing is kept, so the name is free for the next registration.
+// DeleteRepository verifies a person's factors and erases the repository
+// they name whole: its rows, its control-plane row and its directory, blobs
+// and spool included. Nothing is kept, so the name is free for the next
+// registration. The person's identity goes with its last repository; another
+// person who could open it keeps theirs.
 //
 // It holds the authority's registration lock and its open slot across the
 // erase, so no registration of the name and no open of the repository can
 // start on rows that are being deleted. Requests already running on the
 // dataset fail on its closed pool rather than write into a scope that is
-// going away.
+// going away. The erase holds the identity's row first, to the factors this
+// request proved, so a delete proved before they changed erases nothing.
 func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput) error {
 	if s.readOnly {
 		return ErrDirectoryReadOnly
 	}
-	repo, material, err := s.verifyFactors(ctx, in)
+	if in.Repository == "" {
+		return fmt.Errorf("%w: name the repository to delete in `repository`", substrate.ErrValidation)
+	}
+	m, err := s.verifyFactors(ctx, in)
 	if err != nil {
 		return err
 	}
 	s.afterProof("delete")
+	repo, err := s.pickRepository(ctx, m.identity, in.Repository)
+	if err != nil {
+		return err
+	}
+	// Past the factors, and before anything behind this door writes: a
+	// repository the start set aside is refused by name.
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		return err
+	}
 	cp, unlock, err := s.lockRegistration(ctx, repo.Authority)
 	if err != nil {
 		return err
@@ -723,29 +634,27 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 		return err
 	}
 	defer releaseOpen()
-	if err := s.eraseRepositoryOn(ctx, cp, repo.ID, func(tx *sql.Tx) error {
-		return credentialStandsOn(ctx, tx, repo.ID, material)
-	}); err != nil {
+	if err := s.eraseRepositoryOn(ctx, cp, repo.ID, eraseFor{person: m.identity, proved: &m.version}); err != nil {
 		return err
 	}
 	s.lease.release(repo.ID)
 	s.unitGraphs.forget(repo.ID)
-	s.log.Info("substrate: repository deleted by its owner", "repository", repo.ID)
+	s.log.Info("substrate: repository deleted by a person who could open it", "repository", repo.ID)
 	forgetUsage(repo.Authority)
 	return nil
 }
 
 // BeginTOTPReenrollment verifies the current factors and issues a candidate
-// seed, writing nothing: an abandoned re-enrollment cannot lock a user out of
-// their own account.
+// seed, writing nothing: an abandoned re-enrollment cannot lock a person out.
 func (s *service) BeginTOTPReenrollment(ctx context.Context, in substrate.LoginInput) (substrate.TOTPEnrollment, error) {
-	if _, _, err := s.verifyFactors(ctx, in); err != nil {
+	m, err := s.verifyFactors(ctx, in)
+	if err != nil {
 		return substrate.TOTPEnrollment{}, err
 	}
-	return newEnrollment(in.Repository)
+	return newEnrollment(m.name)
 }
 
-// ReenrollTOTP swaps the second factor, or enrolls the first one of an account
+// ReenrollTOTP swaps the second factor, or enrolls the first one of a person
 // registered without: the current factors AND one code from the candidate
 // seed, so the swap cannot land on a seed nobody holds.
 func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, newSecret, newCode string) error {
@@ -762,195 +671,278 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 	if !ok {
 		return fmt.Errorf("%w: that code does not match the new enrollment", substrate.ErrAuth)
 	}
-	repo, material, err := s.verifyFactors(ctx, in)
+	m, err := s.verifyFactors(ctx, in)
 	if err != nil {
 		return err
 	}
 	s.afterProof("totp")
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return err
-	}
 	// The password is unchanged, so its hash carries over untouched — a
-	// re-enrollment must not need the plaintext to keep it. The NEW seed starts
-	// at the code just proven, and the verified refs are the CAS baseline so a
-	// concurrent password change cannot be silently reverted by this write.
-	return ds.rewriteCredential(ctx, credentialWrite{
-		repository: in.Repository, passwordHash: material.passwordHash,
-		totp:              totpMaterial{Secret: seed, Step: step},
-		expectPasswordRef: material.passwordRef, expectTotpRef: material.totpRef, casEnabled: true,
+	// re-enrollment must not need the plaintext to keep it. The NEW seed
+	// starts at the code just proven, and the verified `updated_at` is the
+	// baseline, so a concurrent password change is not silently reverted.
+	_, err = s.rewriteIdentityFactors(ctx, factorWrite{
+		identity: m.identity, passwordHash: m.passwordHash,
+		totp:   totpMaterial{Secret: seed, Step: step},
+		expect: m.version, cas: true,
 	})
+	return err
 }
 
-// ResetUser is the operator's door for a user who lost both factors: fresh
-// sealed material and a new credential record, an ordinary changelog entry
-// attributed to the substrate. It is off substrate.Service on purpose —
-// `substratectl user reset` on the box is the only caller (B8), and nothing
-// reachable from the network resets an account.
-func (s *service) ResetUser(ctx context.Context, repository, newPassword string) (substrate.TOTPEnrollment, error) {
+// ErrResetNeedsTheWriter is the reset's refusal beside a running server of a
+// repository whose history names no person: giving it one writes a person's
+// actor into the repository, which only its writer may.
+var ErrResetNeedsTheWriter = fmt.Errorf("%w: the reset writes the repository a person's actor, which needs the server stopped", substrate.ErrConflict)
+
+// ResetUser is the operator's door for a person who lost both factors: a new
+// password and a new second factor's enrollment, written to the identity's
+// row and nowhere else, so it runs beside a serving server. name is an
+// identity's name, or a repository's name or id that no identity may open
+// yet (one restored without its people), which gets an identity named
+// `createAs`, or its own name when that is empty: the person its first
+// person's actor names, under the same id, so the tokens the directory
+// carried authenticate again; a repository whose actor names a person this
+// server holds has its person, and the reset makes no other (restoredPerson).
+// A repository whose history took its person out gets a new person with an
+// actor of their own, which only the repository's writer writes: beside a
+// running server the reset refuses with ErrResetNeedsTheWriter, and the
+// operator's command opens as the writer, which the boot refuses while a
+// server runs.
+// It is off
+// substrate.Service on purpose — `substratectl user reset` on the box is the
+// only caller (B8), and nothing reachable from the network resets a sign-in.
+func (s *service) ResetUser(ctx context.Context, name, newPassword, createAs string) (substrate.TOTPEnrollment, error) {
 	var zero substrate.TOTPEnrollment
 	if err := validPassword(newPassword); err != nil {
-		return zero, err
-	}
-	repo, err := s.repositoryByKey(ctx, repository)
-	if err != nil {
-		return zero, err
-	}
-	enrollment, err := newEnrollment(repo.Authority)
-	if err != nil {
 		return zero, err
 	}
 	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
 		return zero, err
 	}
-	ds, err := s.open(ctx, repo)
+	row, err := s.identityByName(ctx, s.maint, name)
+	switch {
+	case err == nil:
+		enrollment, err := newEnrollment(row.Name)
+		if err != nil {
+			return zero, err
+		}
+		// Authoritative and rare: no compare-and-swap, it deliberately
+		// overwrites whatever is there for a person who lost both factors.
+		_, err = s.rewriteIdentityFactors(ctx, factorWrite{
+			identity: row.ID, passwordHash: hash, totp: totpMaterial{Secret: enrollment.Secret},
+		})
+		return enrollment, err
+	case !errors.Is(err, substrate.ErrNotFound):
+		return zero, err
+	}
+	repo, rerr := s.repositoryByKey(ctx, name)
+	if rerr != nil {
+		return zero, fmt.Errorf("%w: no identity or repository %s", substrate.ErrNotFound, name)
+	}
+	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return zero, err
 	}
-	// The operator's reset is authoritative and rare — no compare-and-swap: it
-	// deliberately overwrites whatever is there for a user who lost both factors.
-	if err := ds.rewriteCredential(ctx, credentialWrite{
-		repository: repo.Authority, passwordHash: hash,
-		totp: totpMaterial{Secret: enrollment.Secret},
-	}); err != nil {
+	defer func() { _ = tx.Rollback() }()
+	// One reset of a repository at a time: its row is locked, and who its
+	// person is is read under that lock, so two resets naming two people
+	// cannot both give it one.
+	var locked string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM repositories WHERE id = $1 FOR UPDATE`, repo.ID).Scan(&locked); errors.Is(err, sql.ErrNoRows) {
+		return zero, fmt.Errorf("%w: no repository %s", substrate.ErrNotFound, name)
+	} else if err != nil {
 		return zero, err
+	}
+	plan, err := s.restoredPerson(ctx, tx, repo, createAs)
+	if err != nil {
+		return zero, err
+	}
+	if !plan.missing {
+		people, err := repositoryIdentities(ctx, tx, repo.ID)
+		if err != nil {
+			return zero, err
+		}
+		if len(people) > 0 {
+			return zero, fmt.Errorf("%w: repository %s already has a sign-in: reset it by the name it signs in with", substrate.ErrConflict, repo.label())
+		}
+	}
+	switch {
+	case createAs != "":
+	case plan.missing && validIdentityName(plan.name) == nil:
+		createAs = plan.name
+	default:
+		createAs = repo.Authority
+	}
+	if err := validIdentityName(createAs); err != nil {
+		return zero, err
+	}
+	enrollment, err := newEnrollment(createAs)
+	if err != nil {
+		return zero, err
+	}
+	if plan.writeActor && s.readOnly {
+		return zero, fmt.Errorf("%w: repository %s names no person in its history", ErrResetNeedsTheWriter, repo.label())
+	}
+	s.afterProof("reset")
+	person, err := s.newIdentityRowAs(plan.id, createAs, hash, totpMaterial{Secret: enrollment.Secret})
+	if err != nil {
+		return zero, err
+	}
+	if err := insertIdentity(ctx, tx, &person); err != nil {
+		return zero, err
+	}
+	// The person's actor commits before the identity and its index row, so
+	// the index is never ahead of it (people.go): the first person's, when it
+	// is live and names nobody, else a new one of theirs, never the one the
+	// history took out. A reset cut short between the two leaves an actor
+	// naming an identity this server does not hold, which admits nobody, and
+	// the same reset run again gives the repository that identity under the
+	// same id (restoredPerson). The other order would leave the name held by
+	// an identity no actor names, which a second run could not take.
+	finish := func(err error) error { return err }
+	if plan.writeActor {
+		key := substrate.PersonActor(person.ID)
+		if plan.firstUnnamed {
+			key = substrate.ActorPerson
+		}
+		ds, err := s.open(ctx, repo)
+		if err != nil {
+			return zero, err
+		}
+		finish = func(err error) error {
+			return fmt.Errorf("%w (the repository's history may now name its new person: run the reset again, and it finishes under the same identity)", err)
+		}
+		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			return t.namePersonActor(key, person.ID, person.Name)
+		}); err != nil {
+			if errors.Is(err, substrate.ErrWriteInDoubt) {
+				return zero, finish(err)
+			}
+			return zero, err
+		}
+	}
+	if err := linkIdentity(ctx, tx, person.ID, repo.ID); err != nil {
+		return zero, finish(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return zero, finish(err)
 	}
 	return enrollment, nil
 }
 
-// credentialWrite is a pending credential rewrite in its UNSEALED form. The
-// password hash is precomputed (argon2id is expensive and must not run under
-// the credential lock); the TOTP is sealed INSIDE the write, after its step is
-// reconciled with what is stored. When casEnabled, the write asserts the
-// credential still points at the refs the caller verified against — a
-// concurrent rotation is a CONFLICT, not a silent overwrite that undoes it.
-type credentialWrite struct {
-	repository   string
-	passwordHash string
-	totp         totpMaterial
-	// expectPasswordRef/expectTotpRef are the refs the verification read. When
-	// casEnabled they are the compare-and-swap baseline; a mismatch means
-	// another rotation landed first, so this one refuses.
-	expectPasswordRef string
-	expectTotpRef     string
-	casEnabled        bool
-	// wrote, when set, receives the refs the write minted: the factors a
-	// request that changed them goes on to act under (SignOutEverywhere).
-	wrote *authMaterial
+// resetPlan is what a reset of a repository that has no sign-in gives it:
+// the identity's id ("" for a new one), and whether the reset writes the
+// person's actor, because the repository's history names no person. missing
+// says the identity is one a live actor names and this server does not
+// hold, which the reset gives back whoever else signs in, under name, the
+// name the actor carries.
+type resetPlan struct {
+	id                       string
+	writeActor, firstUnnamed bool
+	missing                  bool
+	name                     string
 }
 
-// errCredentialConflict marks a credential rewrite that lost a race with a
-// concurrent one: the refs it verified against are no longer current, so it
-// REFUSES rather than overwriting the winner. The caller re-proves the factors
-// and retries — the alternative is silently undoing someone else's rotation.
-var errCredentialConflict = fmt.Errorf("%w: the credential changed concurrently — re-authenticate and retry", substrate.ErrConflict)
-
-// writeCredential is the transaction half: under the per-repository credential
-// lock, it compare-and-swaps on the current refs (when asked), reconciles the
-// TOTP step so it can never regress, seals the fresh material and swaps the
-// record's two refs — deleting the old sealed rows in the same transaction. It
-// is used on its own (a rotation) and inside the creation transaction
-// (registration), which is why it is a txn method and not a dataset one.
-func (t *txn) writeCredential(cw credentialWrite) error {
-	// Under the changelog lock the transaction already holds (rows.go
-	// changelogLockKey), so this key never sits ahead of another writer's
-	// append.
-	if err := t.lockKey("credential"); err != nil {
-		return err
+// restoredPerson reads the actors' word on a repository's person, under the
+// reset's lock. A live person actor naming an identity this server does not
+// hold is a person a restore did not bring (an export carries only the
+// person who took it, and a restore leaves out a person whose name another
+// person here holds, or whose sign-in does not open): the reset gives that
+// person back under that id, whoever else signs in, so their tokens
+// authenticate again. With several such actors, as is the one whose name
+// createAs is, and nothing else picks. With none, a live person actor
+// naming an identity this server holds is the repository's person, whatever
+// the index says: the reset is refused, naming them, and makes no other. A
+// repository from before identities whose first person's actor names nobody
+// yet gets a new identity, which its first open writes onto that actor. Any
+// other repository names no person in its history, and the reset writes the
+// person's actor itself.
+func (s *service) restoredPerson(ctx context.Context, q dbx, repo Repository, createAs string) (resetPlan, error) {
+	actors, err := personActorsOf(ctx, q, repo.ID)
+	if err != nil {
+		return resetPlan{}, err
 	}
-	var curP, curT sql.NullString
-	if err := t.row(`SELECT props->>'passwordRef', props->>'totpRef' FROM records
-		WHERE kind = $1 AND id = $2`, kindCredential, credentialID).Scan(&curP, &curT); err != nil &&
-		!errors.Is(err, sql.ErrNoRows) {
-		return err
+	named := make([]string, 0, len(actors))
+	for _, a := range actors {
+		if a.identity != "" {
+			named = append(named, a.identity)
+		}
 	}
-	if cw.casEnabled && (curP.String != cw.expectPasswordRef || curT.String != cw.expectTotpRef) {
-		// A rotation landed between our verification and this write. Refuse
-		// rather than overwrite it — the caller re-authenticates and retries.
-		return errCredentialConflict
+	held, err := heldIdentities(ctx, q, named)
+	if err != nil {
+		return resetPlan{}, err
 	}
-	// Step monotonicity: a concurrent login may have consumed a LATER code on
-	// the same seed after our read, advancing the stored step under its own row
-	// lock. Never write a step below what is stored for the same secret, or a
-	// spent code could be replayed at the new credential.
-	step := cw.totp.Step
-	if curT.String != "" && cw.totp.Secret != "" {
-		if raw, err := t.openSealedRef(curT.String); err == nil {
-			var cur totpMaterial
-			if json.Unmarshal(raw, &cur) == nil && cur.Secret == cw.totp.Secret && cur.Step > step {
-				step = cur.Step
+	isHeld := make(map[string]bool, len(held))
+	for _, id := range held {
+		isHeld[id] = true
+	}
+	var missing []personActor
+	for _, a := range actors {
+		if a.identity != "" && !isHeld[a.identity] && vocabulary.ValidIdentityID(a.identity) {
+			missing = append(missing, a)
+		}
+	}
+	if len(missing) > 0 {
+		pick := slices.IndexFunc(missing, func(a personActor) bool { return a.name == createAs })
+		if pick < 0 && len(missing) > 1 {
+			names := make([]string, len(missing))
+			for i, a := range missing {
+				names[i] = a.name
 			}
+			return resetPlan{}, fmt.Errorf("%w: repository %s has %d people nobody here signs in as (%s): name one with --identity", substrate.ErrConflict, repo.label(), len(missing), strings.Join(names, ", "))
 		}
+		pick = max(pick, 0)
+		return resetPlan{id: missing[pick].identity, missing: true, name: missing[pick].name}, nil
 	}
-	// Seal fresh material now, under the lock: AES-GCM is cheap; only argon2id
-	// (already done by the caller) is kept outside. New refs on every write are
-	// the audit trail RB-5 asks for.
-	//
-	// hashRef, not passwordRef: the ref is no secret, the record stores it in
-	// clear, and a password-named variable flowing into the props map makes
-	// CodeQL treat every props read of every record as a password.
-	hashRef, err := newAuthRef("password")
+	if len(held) > 0 {
+		who := held[0]
+		if row, err := s.identityByID(ctx, q, held[0]); err == nil {
+			who = row.Name
+		}
+		return resetPlan{}, fmt.Errorf("%w: repository %s has its person, %s: reset them by the name they sign in with", substrate.ErrConflict, repo.label(), who)
+	}
+	first, err := firstPersonOf(ctx, q, repo.ID)
 	if err != nil {
-		return err
+		return resetPlan{}, err
 	}
-	sealedPassword, err := t.ds.sealPayload([]byte(cw.passwordHash),
-		sealedAAD(hashRef, kindCredential, credentialID))
+	before, err := fromBeforeIdentities(ctx, q, repo.ID)
 	if err != nil {
-		return err
+		return resetPlan{}, err
 	}
-	material := map[string][]byte{hashRef: sealedPassword}
-	props := map[string]any{"repository": cw.repository, "passwordRef": hashRef}
-	// An empty seed is an account without a second factor: no sealed row and
-	// no totpRef, so the record itself says the account has none.
-	if cw.totp.Secret != "" {
-		totpRef, err := newAuthRef("totp")
-		if err != nil {
-			return err
-		}
-		sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}),
-			sealedAAD(totpRef, kindCredential, credentialID))
-		if err != nil {
-			return err
-		}
-		material[totpRef] = sealedTOTP
-		props["totpRef"] = totpRef
+	if before && (!first.exists || (first.live && first.identity == "")) {
+		return resetPlan{}, nil
 	}
-	if cw.wrote != nil {
-		cw.wrote.passwordRef = hashRef
-		cw.wrote.totpRef, _ = props["totpRef"].(string)
+	id, err := vocabulary.NewIdentityID()
+	if err != nil {
+		return resetPlan{}, err
 	}
-	for ref, payload := range material {
-		var updated time.Time
-		if err := t.row(`
-			INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
-			VALUES ($1, $2, $3, $4, now()) RETURNING updated_at`,
-			ref, kindCredential, credentialID, payload).Scan(&updated); err != nil {
-			return fmt.Errorf("substrate/engine: seal credential material: %w", err)
-		}
+	return resetPlan{id: id, writeActor: true, firstUnnamed: first.live && first.identity == ""}, nil
+}
+
+// Identity is the person behind an identity id, as their own token reads it.
+func (s *service) Identity(ctx context.Context, id string) (substrate.IdentityInfo, error) {
+	row, err := s.identityByID(ctx, s.maint, id)
+	if err != nil {
+		return substrate.IdentityInfo{}, err
 	}
-	if _, err := t.put(substrate.PutInput{
-		Kind: kindCredential, ID: credentialID, Properties: props,
-	}); err != nil {
-		return err
+	repos, err := s.identityRepositories(ctx, s.maint, id)
+	if err != nil {
+		return substrate.IdentityInfo{}, err
 	}
-	for _, ref := range []string{curP.String, curT.String} {
-		if ref == "" {
-			continue
-		}
-		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
-			return err
-		}
+	out := substrate.IdentityInfo{
+		ID: row.ID, Name: row.Name, SecondFactor: len(row.TOTP) > 0,
+		Repositories: make([]substrate.RepositoryChoice, len(repos)),
 	}
-	return nil
+	for i, repo := range repos {
+		out.Repositories[i] = substrate.RepositoryChoice{ID: repo.ID, Name: repo.Authority}
+	}
+	return out, nil
 }
 
 // openSealedRef reads and unseals one sealed row by ref, INSIDE the
-// transaction and FOR UPDATE, so the credential rewrite reconciles the TOTP
-// step against the freshest stored value. The row lock is what serializes this
-// read with a concurrent login's consumeTOTPStep (which also takes it FOR
-// UPDATE): without it, a login could advance the step between this read and the
-// swap's DELETE, and the new credential would regress to the stale step.
+// transaction and FOR UPDATE, so a compare-and-swap of a sealed value
+// (write.go) reads the freshest stored one and no concurrent writer moves it
+// between this read and the swap.
 func (t *txn) openSealedRef(ref string) ([]byte, error) {
 	var payload []byte
 	var owner eref
@@ -959,14 +951,6 @@ func (t *txn) openSealedRef(ref string) ([]byte, error) {
 		return nil, err
 	}
 	return t.ds.openPayload(payload, sealedAAD(ref, owner.Kind, owner.ID))
-}
-
-// rewriteCredential is writeCredential's outer half: one transaction on the
-// repository's own pool, attributed to the substrate.
-func (ds *dataset) rewriteCredential(ctx context.Context, cw credentialWrite) error {
-	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		return t.writeCredential(cw)
-	})
 }
 
 // --- tokens ----------------------------------------------------------------
@@ -986,10 +970,14 @@ func (ds *dataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (
 	var info substrate.TokenInfo
 	var secret string
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if err := t.principalStands(); err != nil {
+		person, err := t.principalStands()
+		if err != nil {
 			return err
 		}
-		var err error
+		// A token minted on another's word acts for that token's person.
+		if in.Identity == "" {
+			in.Identity = person
+		}
 		info, secret, err = t.mintToken(in)
 		return err
 	})
@@ -999,24 +987,26 @@ func (ds *dataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (
 	return info, secret, nil
 }
 
-// principalStands refuses a mint whose token no longer stands: the token
-// that asked for it (`POST /tokens`) or approved it (an app's code exchange,
-// which mints standing on the approving token) was revoked, or its person
-// signed out everywhere, after the request was authenticated. It is read
+// principalStands refuses a mint whose token no longer authenticates: the
+// token that asked for it (`POST /tokens`) or approved it (an app's code
+// exchange, which mints standing on the approving token) was revoked, its
+// person signed out everywhere, its time ran out, or its person may no longer
+// open the repository, after the request was authenticated. It is read
 // inside the mint's transaction, which holds the changelog lock a sign-out
 // holds, so no token is minted on one the sign-out ended (decision 0272). A
-// mint with no principal stands on its factors (a login, fenced by
-// factorsStand) or on nothing that can end (the seed).
-func (t *txn) principalStands() error {
+// mint with no principal stands on its factors (a login, held by
+// holdFactors) or on nothing that can end (the seed). It answers the
+// identity the standing token acts for, which the mint inherits.
+func (t *txn) principalStands() (string, error) {
 	if t.principal == "" {
-		return nil
+		return "", nil
 	}
 	row, err := t.loadRow(eref{Kind: kindToken, ID: t.principal}, false)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if row == nil || row.DeletedAt != nil {
-		return fmt.Errorf("%w: the token this request stands on was revoked, or its person signed out everywhere", substrate.ErrAuth)
+		return "", fmt.Errorf("%w: the token this request stands on was revoked, or its person signed out everywhere", substrate.ErrAuth)
 	}
 	// Expired is as gone, by the rule authentication reads it by
 	// (resolveToken): a request authenticated just before the token's time
@@ -1024,11 +1014,26 @@ func (t *txn) principalStands() error {
 	if stamp, _ := row.Props["expiresAt"].(string); stamp != "" {
 		exp, err := time.Parse(time.RFC3339, stamp)
 		if err != nil || nowUTC().After(exp) {
-			return fmt.Errorf("%w: the token this request stands on expired", substrate.ErrAuth)
+			return "", fmt.Errorf("%w: the token this request stands on expired", substrate.ErrAuth)
 		}
 	}
-	return nil
+	person, _ := row.Props["identity"].(string)
+	if person != "" {
+		ok, err := mayOpen(t.ctx, t.ds.svc.maint, person, t.ds.info.ID)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", errPersonMayNotOpen
+		}
+	}
+	return person, nil
 }
+
+// errPersonMayNotOpen refuses a token whose person may no longer open its
+// repository: one restored from a server whose people are not this one's, or
+// one whose person was taken out of the repository.
+var errPersonMayNotOpen = fmt.Errorf("%w: the person this token acts for may not open its repository", substrate.ErrAuth)
 
 // mintToken is the transaction half, so a registration can mint its first
 // token in the same commit that creates the repository.
@@ -1099,6 +1104,9 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if in.AppLocal {
 		props["appLocal"] = true
 	}
+	if in.Identity != "" {
+		props["identity"] = in.Identity
+	}
 	ent, err := t.put(substrate.PutInput{Kind: kindToken, Properties: props})
 	if err != nil {
 		return zero, "", err
@@ -1115,6 +1123,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 		Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
 		AppPackages: in.AppPackages, AppSoftwareVersion: in.AppSoftwareVersion, AppAddons: in.AppAddons, AppCheckedAt: appCheckTime(in.ClientID),
 		AppAuthority: in.AppAuthority, AppAuthorityFromFile: in.AppAuthorityFromFile, AppLocal: in.AppLocal,
+		Identity: in.Identity,
 	}, secret, nil
 }
 
@@ -1125,7 +1134,8 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		SELECT id, props->>'label', props->>'expiresAt', props->'scopes',
 		       props->>'clientId', props->>'clientName', created_at,
 		       props->>'appAuthority', COALESCE((props->>'appLocal')::boolean, false),
-		       COALESCE((props->>'appAuthorityFromFile')::boolean, false), props
+		       COALESCE((props->>'appAuthorityFromFile')::boolean, false), props,
+		       COALESCE(props->>'identity', '')
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -1138,7 +1148,7 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 		var info substrate.TokenInfo
 		var label, expires, clientID, clientName, appAuthority sql.NullString
 		var scopes, build []byte
-		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build); err != nil {
+		if err := rows.Scan(&info.ID, &label, &expires, &scopes, &clientID, &clientName, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build, &info.Identity); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
@@ -1252,7 +1262,8 @@ func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking
 	if _, err := hex.DecodeString(rest); err != nil {
 		return nil, zero, fmt.Errorf("%w: malformed token", substrate.ErrAuth)
 	}
-	repo, info, err := s.cachedTokenByHash(ctx, hashToken(tokenSecret))
+	hash := hashToken(tokenSecret)
+	repo, info, err := s.cachedTokenByHash(ctx, hash)
 	if err != nil {
 		return nil, zero, err
 	}
@@ -1266,6 +1277,18 @@ func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking
 		// the API maps it to a 5xx instead of a misleading "invalid token".
 		return nil, zero, fmt.Errorf("open repository %s: %w", repo.label(), err)
 	}
+	// A token from before identities names its person at the repository's
+	// first open (nameTokensPeople), which may be this one: the request acts
+	// for whom the token names now, or an export it asked for would carry
+	// nobody and GET /identity would answer nobody.
+	if info.Identity == "" {
+		if _, info, err = s.cachedTokenByHash(ctx, hash); err != nil {
+			return nil, zero, err
+		}
+		if info.Retired && !revoking {
+			return nil, zero, fmt.Errorf("%w: retired token grant", substrate.ErrAuth)
+		}
+	}
 	return ds, info, nil
 }
 
@@ -1278,7 +1301,9 @@ var tokenRepositoryColumns = "p." + strings.ReplaceAll(repositoryColumns, ", ", 
 // records props index serves it rather than a scan of every repository, and
 // joins the repositories row the token lives in, so a request costs one round
 // trip on the maintenance pool. A token whose repository row is gone matches
-// nothing.
+// nothing. A token naming a person authenticates only while that person may
+// open its repository; one naming none is from before identities, and the
+// open names it after the repository's person (nameTokensPeople).
 func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, substrate.TokenInfo, error) {
 	var zero substrate.TokenInfo
 	var info substrate.TokenInfo
@@ -1289,12 +1314,16 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 		       r.id, r.props->>'label', r.props->>'hash', r.props->>'expiresAt',
 		       r.props->'scopes', r.props->>'clientId', r.props->>'clientName', r.created_at,
 		       r.props->>'appAuthority', COALESCE((r.props->>'appLocal')::boolean, false),
-		       COALESCE((r.props->>'appAuthorityFromFile')::boolean, false), r.props
+		       COALESCE((r.props->>'appAuthorityFromFile')::boolean, false), r.props,
+		       COALESCE(r.props->>'identity', ''),
+		       COALESCE(r.props->>'identity', '') = '' OR EXISTS (SELECT 1 FROM identity_repositories l
+		           WHERE l.identity = r.props->>'identity' AND l.repository_id = r.repository)
 		FROM records r JOIN repositories p ON p.id = r.repository
 		WHERE r.kind = $1 AND r.deleted_at IS NULL AND r.props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash)
+	var member bool
 	repo, err := scanRepositoryRow(func(dest ...any) error {
-		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build)...)
+		return row.Scan(append(dest, &info.ID, &label, &got, &expires, &scopes, &clientID, &clientName, &info.Created, &appAuthority, &info.AppLocal, &info.AppAuthorityFromFile, &build, &info.Identity, &member)...)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
@@ -1304,6 +1333,9 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (Repository, sub
 	}
 	if subtle.ConstantTimeCompare([]byte(got.String), []byte(hash)) != 1 {
 		return Repository{}, zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
+	}
+	if !member {
+		return Repository{}, zero, errPersonMayNotOpen
 	}
 	info.Label = label.String
 	info.ClientID, info.ClientName, info.AppAuthority = clientID.String, clientName.String, appAuthority.String

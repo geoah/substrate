@@ -76,10 +76,12 @@ func lostSecretsLogin(t *testing.T, srv *httptest.Server, body map[string]any) i
 
 // A repository exported under one host key restores under another only as
 // the operator says: refused, naming the key and the variable, until it is
-// listed; then without its secrets. Every record arrives, the bearer the
-// owner holds still reads them, the provider's key reads unset, and the
-// owner's password, a secret, signs in nowhere. The same export under the key
-// it was written under arrives with its secrets.
+// listed; then without its secrets. Every record arrives and the provider's
+// key reads unset. The owner's sign-in, sealed under the other key too, is
+// left out, so their password signs in nowhere and the bearer they hold acts
+// for nobody here, until the operator's reset gives them back under the
+// identity their actor names. The same export under the key it was written
+// under arrives with its secrets and its taker.
 func TestAnExportRestoresUnderAnotherHostKeyWithoutItsSecrets(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withoutRepository())
@@ -118,9 +120,18 @@ func TestAnExportRestoresUnderAnotherHostKeyWithoutItsSecrets(t *testing.T) {
 		t.Fatalf("an unlisted restore under another key = %v, want refused naming the key and %s", err, engine.ImportWithoutSecretsVar)
 	}
 
-	_, srv, err := lostSecretsBoot(t, env, archive, other, engine.WithImportWithoutSecrets(repository))
+	moved, srv, err := lostSecretsBoot(t, env, archive, other, engine.WithImportWithoutSecrets(repository))
 	if err != nil {
 		t.Fatalf("a listed restore under another key: %v", err)
+	}
+	if status, _ := lostSecretsGet(t, srv, lostProviderPath, token); status != http.StatusUnauthorized {
+		t.Fatalf("the bearer before the reset = %d, want 401: its person stayed behind", status)
+	}
+	if status := lostSecretsLogin(t, srv, login); status != http.StatusUnauthorized {
+		t.Fatalf("a login with the password that stayed behind = %d, want 401", status)
+	}
+	if _, err := moved.(engine.Operator).ResetUser(ctx, repository, "a password after the move", ""); err != nil {
+		t.Fatalf("give the owner back: %v", err)
 	}
 	status, provider = lostSecretsGet(t, srv, lostProviderPath, token)
 	if status != http.StatusOK {
@@ -129,9 +140,6 @@ func TestAnExportRestoresUnderAnotherHostKeyWithoutItsSecrets(t *testing.T) {
 	props := provider["properties"].(map[string]any)
 	if _, ok := props["apiKey"]; ok || props["label"] != "OpenAI" {
 		t.Fatalf("the provider restored without its secrets reads %v, want its label and no key", props)
-	}
-	if status := lostSecretsLogin(t, srv, login); status != http.StatusUnauthorized {
-		t.Fatalf("a login with the password that stayed behind = %d, want 401", status)
 	}
 
 	_, same, err := lostSecretsBoot(t, env, archive, dbCredentialKey, engine.WithImportWithoutSecrets(repository))

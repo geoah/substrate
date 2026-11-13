@@ -246,7 +246,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 			Properties: map[string]substrate.Cond{"hash": {In: []any{"a", "b"}}},
 		}},
 		"exists probe on another type's secret": {Filter: substrate.Filter{
-			Properties: map[string]substrate.Cond{"passwordRef": {Exists: ptr(true)}},
+			Properties: map[string]substrate.Cond{"apiKey": {Exists: ptr(true)}},
 		}},
 		"ordering oracle": {
 			Filter:  substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/token"}},

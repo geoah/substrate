@@ -74,6 +74,10 @@ type fakeSubstrate struct {
 	// noFactor is an account registered without a second factor: a login
 	// with no code signs in rather than being asked for one.
 	noFactor bool
+	// repositories, when set, are the repositories the person signing in may
+	// open: a login naming none of them is answered 409 repository_required
+	// with the list, as the door answers a person in several.
+	repositories []string
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
@@ -702,21 +706,33 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var label string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
-	// The repository the way the server answers it: the name as sent when it
-	// carries a dot, else that label under the host the request reached.
-	var repository string
-	_ = json.Unmarshal(f.lastBody["repository"], &repository)
-	repository = vocabulary.RepositoryAuthority(repository, r.Host)
+	// The names the way the server answers them: as sent when they carry a
+	// dot, else that label under the host the request reached, and the
+	// repository named after the person unless the request names it.
+	identity, repository := f.names(r)
 	answer := map[string]any{
 		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
 		"secret":     fakeSecret,
 		"repository": repository,
+		"identity":   identity,
 	}
 	if f.olderServerKey != "" {
 		answer["recoveryKey"] = f.olderServerKey
 		answer["recoveryPublicKey"] = "age1older"
 	}
 	writeJSON(w, http.StatusCreated, answer)
+}
+
+// names reads a door request's person and repository as the server
+// completes them.
+func (f *fakeSubstrate) names(r *http.Request) (identity, repository string) {
+	_ = json.Unmarshal(f.lastBody["identity"], &identity)
+	_ = json.Unmarshal(f.lastBody["repository"], &repository)
+	identity = vocabulary.RepositoryAuthority(identity, r.Host)
+	if repository == "" {
+		return identity, identity
+	}
+	return identity, vocabulary.RepositoryAuthority(repository, r.Host)
 }
 
 // handleLogin mints a token record and hands back its secret once. There is no
@@ -735,11 +751,26 @@ func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
 		return
 	}
-	var label string
+	var label, named string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
+	_ = json.Unmarshal(f.lastBody["repository"], &named)
+	if named == "" && len(f.repositories) > 0 {
+		choices := make([]substrate.RepositoryChoice, len(f.repositories))
+		for i, name := range f.repositories {
+			choices[i] = substrate.RepositoryChoice{ID: fmt.Sprintf("rnd-%d", i), Name: name}
+		}
+		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{
+			"code": "conflict", "reason": substrate.ReasonRepositoryRequired,
+			"message": "name the repository to open", "repositories": choices,
+		}})
+		return
+	}
+	identity, repository := f.names(r)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":  substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
-		"secret": fakeSecret,
+		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
+		"secret":     fakeSecret,
+		"repository": repository,
+		"identity":   identity,
 	})
 }
 
@@ -756,7 +787,7 @@ func (f *fakeSubstrate) handleSignOutEverywhere(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"repository": "geoah.example.com", "signedOut": 3})
+	writeJSON(w, http.StatusOK, map[string]any{"identity": "geoah.example.com", "signedOut": 3})
 }
 
 func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {

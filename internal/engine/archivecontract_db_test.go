@@ -1129,7 +1129,7 @@ func TestATakeEndsWithItsRestoreAndADeletionEndsATake(t *testing.T) {
 			}
 			waitStep(t)
 			if err := deleting.DeleteRepository(ctx, substrate.LoginInput{
-				Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+				Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t),
 			}); err != nil {
 				t.Fatalf("delete: %v", err)
 			}
@@ -1571,7 +1571,7 @@ func TestADeletionMarkStopsADatabaseRestoredFromBeforeTheDeletion(t *testing.T) 
 	// recorded it, under the mark alone.
 	store.setHold(func(op, key string) bool { return op == "delete" || (op == "put" && isManifestKey(key)) })
 	waitStep(t)
-	if err := svc.DeleteRepository(ctx, substrate.LoginInput{Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); !errors.Is(err, errLost) {
+	if err := svc.DeleteRepository(ctx, substrate.LoginInput{Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); !errors.Is(err, errLost) {
 		t.Fatalf("the deletion whose deletes were lost: %v", err)
 	}
 	store.setHold(holdNothing)
@@ -1656,7 +1656,7 @@ func TestADeletionMarkCoversEveryArchiveBeforeIt(t *testing.T) {
 	// The backup, which records the older archive, deletes the repository.
 	restored := reopenWith(t, backup, root, with...)
 	waitStep(t)
-	if err := restored.DeleteRepository(ctx, substrate.LoginInput{Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); err != nil {
+	if err := restored.DeleteRepository(ctx, substrate.LoginInput{Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); err != nil {
 		t.Fatal(err)
 	}
 	id := ds.Repository().ID
@@ -1699,7 +1699,7 @@ func TestADeletedRepositoryComesBackOnlyByAnExplicitImport(t *testing.T) {
 	saved := t.TempDir()
 	copyDir(t, root+"/archive", saved)
 	waitStep(t)
-	if err := svc.DeleteRepository(ctx, substrate.LoginInput{Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); err != nil {
+	if err := svc.DeleteRepository(ctx, substrate.LoginInput{Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t)}); err != nil {
 		t.Fatal(err)
 	}
 	_ = svc.Close()

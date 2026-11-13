@@ -40,7 +40,7 @@ func TestAnAppsCodeIsExchangedStandingOnTheTokenThatApprovedIt(t *testing.T) {
 	rec := e.approve(id, []string{"read:" + personKind}, 30)
 	wantStatus(t, rec, http.StatusOK)
 	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)
-	body, _ := json.Marshal(map[string]string{"repository": acct.repository, "password": authPassword, "totpCode": e.db.code(t, acct.seed)})
+	body, _ := json.Marshal(map[string]string{"identity": acct.repository, "password": authPassword, "totpCode": e.db.code(t, acct.seed)})
 	wantStatus(t, e.do(http.MethodPost, "/signout/everywhere", "", body, "application/json"), http.StatusOK)
 
 	tok := e.exchange(tokenForm(code))

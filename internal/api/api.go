@@ -359,6 +359,7 @@ func New(cfg Config) http.Handler {
 			r.Use(h.requireAuth)
 			r.Post("/tokens", h.postMintToken)
 			r.Get("/tokens", h.getTokens)
+			r.Get("/identity", h.getIdentity)
 			r.Delete("/tokens/{id}", h.deleteToken)
 		})
 	})

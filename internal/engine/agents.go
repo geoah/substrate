@@ -797,8 +797,8 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 			continue
 		}
 		// The settlement is the lost run's: it acts for whom that run's lease
-		// line names.
-		rctx, err := ds.actingForRun(ctx, id)
+		// line names, unless they are no longer there.
+		rctx, err := ds.settling(ds.actingForRun(ctx, id))
 		if err != nil {
 			return fmt.Errorf("settle lost thread %s: %w", id, err)
 		}
@@ -930,8 +930,8 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 	}
 	for _, id := range ids {
 		// The settlement is the interrupted run's: it acts for whom that
-		// run's lease line names.
-		rctx, err := ds.actingForRun(ctx, id)
+		// run's lease line names, unless they are no longer there.
+		rctx, err := ds.settling(ds.actingForRun(ctx, id))
 		if err != nil {
 			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
 		}

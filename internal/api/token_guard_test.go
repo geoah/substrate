@@ -22,8 +22,8 @@ const (
 	loginPath         = "/login"
 )
 
-func loginBody(username, password, code string) map[string]any {
-	return map[string]any{"repository": username, "password": password, "totpCode": code}
+func loginBody(identity, password, code string) map[string]any {
+	return map[string]any{"identity": identity, "password": password, "totpCode": code}
 }
 
 // guardLoginSvc counts the logins that reach the service and refuses each,
@@ -34,9 +34,9 @@ type guardLoginSvc struct {
 	logins atomic.Int32
 }
 
-func (s *guardLoginSvc) Login(context.Context, substrate.LoginInput) (substrate.TokenInfo, string, error) {
+func (s *guardLoginSvc) Login(context.Context, substrate.LoginInput) (substrate.MintedToken, error) {
 	s.logins.Add(1)
-	return substrate.TokenInfo{}, "", substrate.ErrAuth
+	return substrate.MintedToken{}, substrate.ErrAuth
 }
 
 func newGuardEnv(t *testing.T) (*testEnv, *guardLoginSvc) {
@@ -87,7 +87,7 @@ func TestLoginRateLimitIsGlobal(t *testing.T) {
 func TestAuthBodyIsBounded(t *testing.T) {
 	env, svc := newGuardEnv(t)
 	rec := env.do(t, http.MethodPost, loginPath, "", map[string]any{
-		"repository": stubRepository, "password": strings.Repeat("a", 2<<20), "totpCode": "000000",
+		"identity": stubRepository, "password": strings.Repeat("a", 2<<20), "totpCode": "000000",
 	})
 	wantErrorCode(t, rec, http.StatusRequestEntityTooLarge, codeBadRequest)
 	if n := svc.logins.Load(); n != 0 {

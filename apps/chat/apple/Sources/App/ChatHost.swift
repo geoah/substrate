@@ -132,12 +132,14 @@ final class ChatHost {
         try await adopt(oauth.signIn(server: probe.origin, repository: probe.repository, keepingRejectedIn: .chat))
     }
 
-    /// The password door, for a server without app authorization.
-    func signIn(server: URL, repository: String, password: String, totp: String?) async throws {
-        let result = try await SubstrateClient(server: server).login(
-            repository: repository, password: password, totp: totp,
-            label: Self.tokenLabel)
-        try await adopt(Session(server: server, repository: result.repository, secret: result.secret, tokenID: result.token.id))
+    /// The password door, for a server without app authorization: the name
+    /// the person signs in with, sent as the probed door names it, and the
+    /// repository the person picked where the door asked them to.
+    func signIn(_ probe: ServerProbe.Result, name: String, repository: String? = nil, password: String, totp: String?) async throws {
+        let result = try await SubstrateClient(server: probe.origin).login(
+            name: name, repository: repository ?? probe.repository, password: password, totp: totp,
+            label: Self.tokenLabel, door: probe.discovery)
+        try await adopt(Session(server: probe.origin, repository: result.repository, secret: result.secret, tokenID: result.token.id))
     }
 
     /// The flow again on the same server with the whole request: a change of

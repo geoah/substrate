@@ -13,8 +13,13 @@ import (
 // a signature substratectl calls.
 type Operator interface {
 	substrate.Service
-	// ResetUser replaces a repository's password and TOTP seed (auth.go).
-	ResetUser(ctx context.Context, repository, newPassword string) (substrate.TOTPEnrollment, error)
+	// ResetUser replaces an identity's password and TOTP seed, or gives a
+	// repository no identity may open one, named createAs (auth.go).
+	ResetUser(ctx context.Context, name, newPassword, createAs string) (substrate.TOTPEnrollment, error)
+	// AddPerson lets an identity open a repository: a person actor of theirs
+	// there, then the server's index of it (people.go). Nothing on the
+	// network adds a person.
+	AddPerson(ctx context.Context, identityName, repository string) error
 	// RebuildRepository replays a repository's changelog into its fold
 	// (rebuild.go).
 	RebuildRepository(ctx context.Context, repository string) (RebuildReport, error)

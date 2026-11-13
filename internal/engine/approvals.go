@@ -386,8 +386,8 @@ func (ds *dataset) settleInterruptedApprovals(ctx context.Context) error {
 			continue
 		}
 		// The report is the approval's: it acts for whom the line that wrote
-		// the approval names.
-		ctx, err := ds.actingFor(ctx, vocabulary.KindLLMApproval, row.ID)
+		// the approval names, unless they are no longer there.
+		ctx, err := ds.settling(ds.actingFor(ctx, vocabulary.KindLLMApproval, row.ID))
 		if err != nil {
 			return fmt.Errorf("settle interrupted approval %s: %w", row.ID, err)
 		}

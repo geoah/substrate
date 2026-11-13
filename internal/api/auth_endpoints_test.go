@@ -18,7 +18,7 @@ import (
 func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 	env := newStubEnvOn(t, &stubService{})
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": "wrong", "repository": "ada",
+		"inviteCode": "wrong", "identity": "ada",
 	})
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
@@ -31,11 +31,11 @@ func TestRegistrationIsGatedByTheInviteCode(t *testing.T) {
 func TestCredentialChangesRefuseABearerTokenAlone(t *testing.T) {
 	env := newStubEnv(t, nil)
 	for path, body := range map[string]map[string]any{
-		"/password":          {"repository": stubRepository, "newPassword": "a-brand-new-passphrase"},
-		"/totp/enroll":       {"repository": stubRepository},
-		"/repository/delete": {"repository": stubRepository},
+		"/password":          {"identity": stubRepository, "newPassword": "a-brand-new-passphrase"},
+		"/totp/enroll":       {"identity": stubRepository},
+		"/repository/delete": {"identity": stubRepository, "repository": stubRepository},
 		"/totp": {
-			"repository": stubRepository, "newTotpSecret": "JBSWY3DPEHPK3PXP",
+			"identity": stubRepository, "newTotpSecret": "JBSWY3DPEHPK3PXP",
 			"newTotpCode": "123456",
 		},
 	} {

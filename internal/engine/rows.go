@@ -581,7 +581,7 @@ func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
 
 func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier {
 	switch {
-	case substrate.CanonicalActor(actor) == substrate.ActorPerson:
+	case substrate.IsPerson(substrate.CanonicalActor(actor)):
 		return substrate.TierOwner
 	// The engine's own hand is resolved before the registry, so a declaration
 	// cannot move it: `tier:` is data an installed bundle writes.

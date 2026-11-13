@@ -108,15 +108,16 @@ func (a *app) repositoryListCommand() *cobra.Command {
 		Short: "List every repository on this substrate",
 		Long: `List the control-plane table: one row per repository, and the whole of it.
 
-The authority is the repository's name, what its user signs in with and
-every other command here takes. The id is its key: the directory under
-SUBSTRATE_DATA_ROOT is named by it, and so is the webhook address the server
-gives out. created_at is the admission record, since the invite code is the
-only door and there is nothing else to record. ARCHIVED is the mark the
-server's last archive pass left: the seq its archive holds every line up to,
-and how long ago it was written ("never" before the first pass, or with the
-archive off). How far that is behind the server's own head is the
-substrate_archive_* metrics.
+The authority is the repository's name, which every other command here takes.
+The id is its key: the directory under SUBSTRATE_DATA_ROOT is named by it, and
+so is the webhook address the server gives out. SIGN-INS are the names of the
+people who may open it (decision 0274); a repository nobody can sign in to
+shows none, and ` + "`user reset`" + ` gives it one. created_at is the admission
+record, since the invite code is the only door and there is nothing else to
+record. ARCHIVED is the mark the server's last archive pass left: the seq its
+archive holds every line up to, and how long ago it was written ("never"
+before the first pass, or with the archive off). How far that is behind the
+server's own head is the substrate_archive_* metrics.
 
 The state is read from the writer leases in pg_locks, beside a running
 server: serving when a server holds the repository's lease; set aside when
@@ -136,6 +137,10 @@ every other one, and not imported while none does.`,
 			}
 			defer func() { _ = db.Close() }()
 			rows, err := listRepositoryRows(cmd.Context(), db)
+			if err != nil {
+				return err
+			}
+			people, err := repositorySignIns(cmd.Context(), db)
 			if err != nil {
 				return err
 			}
@@ -179,6 +184,7 @@ every other one, and not imported while none does.`,
 					entry := map[string]any{
 						"authority":      r.Authority,
 						"id":             r.ID,
+						"identities":     append([]string{}, people[r.ID]...),
 						"createdAt":      r.CreatedAt.Format(time.RFC3339),
 						"dekKeyId":       r.DEKKeyID,
 						"archivedSeq":    r.ArchivedSeq,
@@ -204,8 +210,12 @@ every other one, and not imported while none does.`,
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE\tARCHIVED\tSTATE")
+			fmt.Fprintln(tw, "AUTHORITY\tID\tSIGN-INS\tCREATED\tAGE\tARCHIVED\tSTATE")
 			for _, r := range rows {
+				signIns := strings.Join(people[r.ID], ",")
+				if signIns == "" {
+					signIns = "-"
+				}
 				archived := "never"
 				if !r.ArchivedAt.IsZero() {
 					archived = fmt.Sprintf("seq %d, %s ago", r.ArchivedSeq, humanAge(a.now(), r.ArchivedAt))
@@ -213,15 +223,15 @@ every other one, and not imported while none does.`,
 						archived += fmt.Sprintf(", %d blob(s) missing", r.ArchiveMissing)
 					}
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt), archived, state[r.ID])
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					r.Authority, r.ID, signIns, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt), archived, state[r.ID])
 			}
 			for _, d := range dirs {
 				name := d.Authority
 				if name == "" {
 					name = "-"
 				}
-				fmt.Fprintf(tw, "%s\t%s\t-\t-\t-\t%s\n", name, d.ID, d.State)
+				fmt.Fprintf(tw, "%s\t%s\t-\t-\t-\t-\t%s\n", name, d.ID, d.State)
 			}
 			return tw.Flush()
 		},

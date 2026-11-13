@@ -43,6 +43,7 @@ var rmEvery = map[int]string{
 	9:  "link_actors",
 	10: "name_writers_by_actor_type",
 	11: "drop_a_body_its_kind_does_not_declare",
+	12: "move_the_sign_in_out_of_the_repository",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen

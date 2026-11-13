@@ -202,8 +202,9 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * to SAVE it first, so when step two reveals the authenticator QR the manager
  * attaches the one-time password to the login it just created rather than to
  * some existing item. Step two proves one code and commits the whole user in
- * one transaction — the repository, the sealed material, the credential and the
- * first token — ending LOGGED IN, because the response carries that token.
+ * one creation act — the person, their repository and the first token, the
+ * one name naming both (decision 0274) — ending LOGGED IN, because the
+ * response carries that token.
  * Step two may also be skipped: the account is created without a second
  * factor, which Settings turns on later (decision 0237).
  *
@@ -351,7 +352,7 @@ export function RegisterPage() {
     try {
       const minted = await register({
         inviteCode: inviteCode.trim(),
-        repository: authority,
+        identity: authority,
         password,
         totpSecret: skip ? "" : (enrollment?.totpSecret ?? ""),
         totpCode: normalized,
@@ -366,7 +367,8 @@ export function RegisterPage() {
       saveSession(
         minted.secret,
         minted.repository ?? authority,
-        minted.token.id
+        minted.token.id,
+        minted.identity ?? authority
       )
       setRegistered(minted.repository ?? authority)
     } catch (err) {

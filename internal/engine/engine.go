@@ -68,6 +68,8 @@ type options struct {
 	// shippedRefusal is the shipped upgrade's test seam
 	// (WithTestShippedUpgradeRefusal).
 	shippedRefusal func(repository string) []string
+	// peopleFault is the start's people pass's test seam (identityboot.go).
+	peopleFault func(repository string) error
 	// repositoryConns caps the pool every repository shares
 	// (WithRepositoryConnections).
 	repositoryConns int
@@ -647,6 +649,9 @@ type service struct {
 	testArchiveFault func(stage string) error
 	// testShippedRefusal is the options' shipped upgrade seam (seed.go).
 	testShippedRefusal func(repository string) []string
+	// testPeopleFault is the options' people pass seam (identityboot.go):
+	// an error fails that repository's pass.
+	testPeopleFault func(repository string) error
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
@@ -759,6 +764,26 @@ type service struct {
 	// fail AFTER the seed transaction commits and BEFORE the control-plane row —
 	// the exact crash window the erase-and-sweep guarantees cover.
 	testFailAfterSeed func() error
+	// testFailAfterRow, when set (tests only), fails a creation after its
+	// control-plane row and its person are written.
+	testFailAfterRow func() error
+	// testIndexFault, when set (tests only), runs before each attempt to
+	// write a person's index row after their actor committed (people.go
+	// indexPerson); an error fails that attempt.
+	testIndexFault func() error
+	// testPersonInDoubt, when set (tests only), is told what the index's
+	// reconciliation after an addition in doubt found: whether the live
+	// actor names the identity.
+	testPersonInDoubt func(named bool)
+	// testAfterErase, when set (tests only), runs once an erase has
+	// committed: a crash there must leave nothing the erase owed.
+	testAfterErase func(repository string)
+	// restoredCopies is, for each person a restore in this process wrote,
+	// the version of the factors it wrote (archiveidentities.go): a row
+	// still at that version is the restore's copy, which a later copy of
+	// the person replaces.
+	restoredMu     sync.Mutex
+	restoredCopies map[string]time.Time
 	// testOpenWaits, when set (tests only), runs when claimOpen finds the
 	// repository's slot held and is about to wait for it.
 	testOpenWaits func(repository string)
@@ -1080,6 +1105,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		archiveProcess:        process,
 		testArchiveFault:      o.archiveFault,
 		testShippedRefusal:    o.shippedRefusal,
+		testPeopleFault:       o.peopleFault,
 		conversion:            conversionSteps,
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
@@ -1327,6 +1353,16 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			return nil, err
 		}
 		if err := s.reconcileRepositories(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
+		// Every repository a release before identities left with its sign-in
+		// as a record of its own gets an identity, from that record, before
+		// anyone signs in (identityboot.go).
+		if err := s.giveRepositoriesIdentities(ctx); err != nil {
 			s.lease.close()
 			repoPool.Close()
 			_ = maint.Close()
@@ -1670,6 +1706,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// the rows, and only then does the shipped-vocabulary upgrade append what
 	// a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
+		ds.loadPeople,
 		ds.runRepositoryMigrations,
 		ds.loadStoredVocabulary,
 		// The unit uses' rule before the seed: where the stored uses are
@@ -1695,6 +1732,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// The shipped records after the upgrade, which declares the kinds a
 		// newer binary's records are of (recordseed.go).
 		ds.ensureShippedRecords,
+		// After the upgrade, which declares the identity a person's actor
+		// names and the person a token acts for (people.go).
+		ds.settlePeople,
 		ds.ensureTriggerCursors,
 		ds.reportOpenShippedWebhooks,
 		ds.settleInterruptedSyncs,
@@ -1764,10 +1804,11 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 //
 // It is
 // the seed of the shipped vocabulary, the repository's own description of
-// itself, and whatever the caller adds — registration passes the sealed
-// material, the credential record and the first token — as ONE transaction in
+// itself, and whatever the caller adds — registration passes the recovery key
+// and the first token — as ONE transaction in
 // the new repository's changelog, followed by the `repositories` row that makes the
-// user exist.
+// user exist, and in the same control-plane transaction the person's identity
+// and the row that lets it open the repository.
 //
 // ATOMICITY. The two sides live in two pools by construction: the repository's
 // own rows are written by `substrate_app` under the repository's scope, and
@@ -1801,6 +1842,15 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 // The cleanup is ownership-checked on top (eraseFailedCreation): a creation
 // that wrote no row erases nothing while a row holds the authority.
 func (s *service) createSeededRepository(ctx context.Context, authority string, extra func(*txn) error) (Repository, error) {
+	return s.createSeededRepositoryFor(ctx, authority, nil, extra)
+}
+
+// createSeededRepositoryFor is createSeededRepository with the person it is
+// created for: their identity, not yet written, is inserted with the
+// repository's control-plane row and allowed to open it, in the one
+// transaction that is the creation's commit point, so the person and the
+// repository exist together or not at all (decision 0274).
+func (s *service) createSeededRepositoryFor(ctx context.Context, authority string, person *identityRow, extra func(*txn) error) (Repository, error) {
 	var zero Repository
 	if err := validRepositoryAuthority(authority); err != nil {
 		return zero, err
@@ -1908,7 +1958,12 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// decides what a failure may erase (eraseFailedCreation).
 	inserted := false
 	fail := func(stage string, cause error) (Repository, error) {
-		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted); cerr != nil {
+		// The person was inserted with the row, and is this creation's alone.
+		var made string
+		if inserted && person != nil {
+			made = person.ID
+		}
+		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted, made); cerr != nil {
 			s.log.Error("substrate: could not erase a half-made repository",
 				"repository", repo.ID, "stage", stage, "error", cerr)
 		}
@@ -1956,6 +2011,13 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		if err := t.ensureActors(substrate.ActorSystem, substrate.ActorPerson); err != nil {
 			return err
 		}
+		// The person the repository is created for is its first person, and
+		// that actor names their identity (people.go).
+		if person != nil {
+			if err := t.namePersonActor(substrate.ActorPerson, person.ID, authority); err != nil {
+				return err
+			}
+		}
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			if err := t.seedDefaultProviders(); err != nil {
 				return err
@@ -1992,10 +2054,15 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		}
 	}
 
-	if err := s.insertRepositoryRow(ctx, cp, &repo); err != nil {
+	if err := s.insertRepositoryRow(ctx, cp, &repo, person); err != nil {
 		return fail("control-plane row", err)
 	}
 	inserted = true
+	if s.testFailAfterRow != nil {
+		if err := s.testFailAfterRow(); err != nil {
+			return fail("after the control-plane row", err)
+		}
+	}
 	// The repository exists, so the lease is this process's to keep.
 	leased = false
 	return repo, nil

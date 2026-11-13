@@ -194,21 +194,88 @@ import FoundationNetworking
         stub.on("POST", "/login", status: 401, json: #"{"error":{"code":"auth","message":"invalid repository, password or code"}}"#)
         stub.on("POST", "/login", status: 201, json: #"{"token":{"id":"tok-1"},"secret":"sub_x","repository":"ada.example.com"}"#)
         let c = client(stub, token: nil)
+        let door = Discovery(server: .init(version: "v0.122.0"))
         do {
-            _ = try await c.login(repository: "ada", password: "pw", totp: nil, label: "test")
+            _ = try await c.login(name: "ada", password: "pw", totp: nil, label: "test", door: door)
             Issue.record("a login the server asked a code of succeeded")
         } catch let refused as LoginRefused {
             #expect(refused.codeRequired)
         }
         do {
-            _ = try await c.login(repository: "ada", password: "pw", totp: "000000", label: "test")
+            _ = try await c.login(name: "ada", password: "pw", totp: "000000", label: "test", door: door)
             Issue.record("a refused login succeeded")
         } catch let refused as LoginRefused {
             #expect(!refused.codeRequired)
             #expect(refused.localizedDescription == "invalid repository, password or code")
         }
-        let result = try await c.login(repository: "ada", password: "pw", totp: "123456", label: "test")
+        let result = try await c.login(name: "ada", password: "pw", totp: "123456", label: "test", door: door)
         #expect(result.secret == "sub_x")
+        #expect(result.identity == nil)
+    }
+
+    /// A person who may open several repositories and named none is refused
+    /// with the repositories to pick from, typed; the same sign-in naming the
+    /// one picked, with the same factors, signs in. A conflict of another
+    /// kind stays the server's error.
+    @Test func aLoginOfAPersonInSeveralRepositoriesOffersThem() async throws {
+        let stub = StubTransport()
+        stub.on(
+            "POST", "/login", status: 409,
+            json:
+                #"{"error":{"code":"conflict","reason":"repository_required","message":"name one","repositories":[{"id":"rnd-a","name":"ada.example.com"},{"id":"rnd-n","name":"notes.example.com"}]}}"#
+        )
+        stub.on(
+            "POST", "/login", status: 201, json: #"{"token":{"id":"tok-1"},"secret":"sub_x","repository":"notes.example.com","identity":"ada.example.com"}"#)
+        stub.on("POST", "/login", status: 409, json: #"{"error":{"code":"conflict","message":"another conflict"}}"#)
+        let c = client(stub, token: nil)
+        let door = Discovery(server: .init(version: "v1.0.0"), features: [.init(name: "auth", stability: "stable", revision: 3)])
+        var picked: RepositoryChoiceRequired.Choice?
+        do {
+            _ = try await c.login(name: "ada.example.com", password: "pw", totp: "123456", label: "test", door: door)
+            Issue.record("a sign-in naming no repository of several succeeded")
+        } catch let choice as RepositoryChoiceRequired {
+            #expect(choice.repositories.map(\.name) == ["ada.example.com", "notes.example.com"])
+            picked = choice.repositories.last
+        }
+        let result = try await c.login(
+            name: "ada.example.com", repository: picked?.id, password: "pw", totp: "123456", label: "test", door: door)
+        #expect(result.repository == "notes.example.com")
+        let bodies = try stub.sent("POST", "/login").map {
+            try JSONSerialization.jsonObject(with: $0.httpBody ?? Data()) as? [String: String] ?? [:]
+        }
+        #expect(bodies.last?["repository"] == "rnd-n")
+        #expect(bodies.last?["totpCode"] == "123456")
+        do {
+            _ = try await c.login(name: "ada.example.com", password: "pw", totp: nil, label: "test", door: door)
+            Issue.record("a conflict succeeded")
+        } catch let server as ServerError {
+            #expect(server.status == 409 && server.message == "another conflict")
+        }
+    }
+
+    /// A door that names a person (decision 0274) is sent `identity`, and the
+    /// repository where the sign-in names one; an older door is sent the
+    /// name as `repository`, which it reads as the sign-in name.
+    @Test func aLoginNamesThePersonWhereTheDoorDoes() async throws {
+        let stub = StubTransport()
+        stub.on(
+            "POST", "/login", status: 201, json: #"{"token":{"id":"tok-1"},"secret":"sub_x","repository":"notes.example.com","identity":"ada.example.com"}"#)
+        stub.on("POST", "/login", status: 201, json: #"{"token":{"id":"tok-2"},"secret":"sub_y","repository":"ada.example.com"}"#)
+        let c = client(stub, token: nil)
+        let current = Discovery(server: .init(version: "v1.0.0"), features: [.init(name: "auth", stability: "stable", revision: 3)])
+        let result = try await c.login(
+            name: "ada.example.com", repository: "notes.example.com", password: "pw", totp: nil, label: "test", door: current)
+        #expect(result.identity == "ada.example.com")
+        let older = Discovery(server: .init(version: "v0.123.1"), features: [.init(name: "auth", stability: "stable", revision: 2)])
+        _ = try await c.login(name: "ada.example.com", password: "pw", totp: nil, label: "test", door: older)
+        let bodies = try stub.sent("POST", "/login").map {
+            try JSONSerialization.jsonObject(with: $0.httpBody ?? Data()) as? [String: String] ?? [:]
+        }
+        #expect(bodies.count == 2)
+        #expect(bodies.first?["identity"] == "ada.example.com")
+        #expect(bodies.first?["repository"] == "notes.example.com")
+        #expect(bodies.last?["identity"] == nil)
+        #expect(bodies.last?["repository"] == "ada.example.com")
     }
 
     @Test func aWebhookDeliveryCarriesTheTokenAndWaitsOutABusyDoor() async throws {

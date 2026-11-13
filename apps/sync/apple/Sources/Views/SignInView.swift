@@ -22,6 +22,11 @@ struct SignInView: View {
     /// The server answered that this account has a second factor: the code
     /// field is shown and the next sign-in carries it.
     @State private var codeAsked = false
+    /// The server answered that the person may open several repositories and
+    /// named none (decision 0274): the pick is shown, and the next sign-in
+    /// names the one picked with the factors already given.
+    @State private var choices: [RepositoryChoiceRequired.Choice] = []
+    @State private var chosen = ""
     @State private var busy = false
     @State private var problem: String?
     /// The name's DNS lookup did not answer: Continue reads Try Again.
@@ -75,13 +80,18 @@ struct SignInView: View {
                             + ReviewChangesSections.choosing(host: probe.host, setsUp: true))
                 }
             } else if probe != nil {
-                Section("Your repository") {
-                    LabeledContent("Repository") {
+                Section("Sign in") {
+                    LabeledContent("Name") {
                         TextField("you.example.com", text: $repository)
                             .textContentType(.username)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .multilineTextAlignment(.trailing)
+                            .onChange(of: repository) {
+                                // Another name is another person: their repositories are theirs.
+                                choices = []
+                                chosen = ""
+                            }
                     }
                     LabeledContent("Password") {
                         SecureField("Required", text: $password)
@@ -96,13 +106,23 @@ struct SignInView: View {
                                 .multilineTextAlignment(.trailing)
                         }
                     }
+                    if !choices.isEmpty {
+                        Picker("Repository", selection: $chosen) {
+                            ForEach(choices) { choice in
+                                Text(choice.name).tag(choice.id)
+                            }
+                        }
+                    }
                 }
                 Section {
                     Button(action: signIn) {
                         WideLabel(title: "Sign In", systemImage: "person.badge.key", busy: busy)
                     }
                     .primaryAction()
-                    .disabled(busy || repository.isEmpty || password.isEmpty || (codeAsked && code.isEmpty))
+                    .disabled(
+                        busy || repository.isEmpty || password.isEmpty || (codeAsked && code.isEmpty)
+                            || (!choices.isEmpty && chosen.isEmpty)
+                    )
                     .buttonRow()
                 }
             } else {
@@ -160,19 +180,26 @@ struct SignInView: View {
     }
 
     private func signIn() {
-        guard let server = probe?.origin else { return }
+        guard let probe else { return }
+        let server = probe.origin
         busy = true
         problem = nil
         Task {
             defer { busy = false }
             do {
                 try await model.signIn(
-                    server: server, repository: repository.trimmingCharacters(in: .whitespaces),
+                    probe, name: repository.trimmingCharacters(in: .whitespaces),
+                    repository: chosen.isEmpty ? nil : chosen,
                     password: password, totp: codeAsked ? code : nil)
                 password = ""
                 code = ""
             } catch let refused as LoginRefused where refused.codeRequired && !codeAsked {
                 codeAsked = true
+            } catch let choice as RepositoryChoiceRequired {
+                // The door spent no code: the same factors sign in once a
+                // repository is picked.
+                choices = choice.repositories
+                chosen = choice.repositories.first?.id ?? ""
             } catch {
                 code = ""
                 problem = explain(error, server: server)

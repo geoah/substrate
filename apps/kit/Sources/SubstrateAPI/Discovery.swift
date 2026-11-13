@@ -254,4 +254,11 @@ public struct Discovery: Codable, Hashable, Sendable {
     /// Whether the server says it serves app authorization (decision 0194).
     /// Its OAuth metadata is the authority on what that covers.
     public var servesApps: Bool { feature("apps") != nil || endpoints.authorize != nil }
+
+    /// Whether the server's door names a person (`auth` at revision 3,
+    /// decision 0274): a sign-in sends `identity`, the name the person signs
+    /// in with. An older door takes that name as `repository` and refuses
+    /// `identity`, and every person there signs in with their repository's
+    /// name.
+    public var doorNamesAPerson: Bool { serves("auth", atLeast: 3) }
 }

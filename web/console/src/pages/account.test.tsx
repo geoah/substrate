@@ -28,6 +28,7 @@ vi.mock("@/lib/api/discovery", () => ({
   // run against a server that does not list it.
   discoveryQueryOptions: { queryKey: ["discovery"], queryFn: () => null },
   hasFeature: () => false,
+  doorNamesAPerson: () => true,
 }))
 // The unverified mark beside the name reads the repository record; its own
 // test is verify-domain-row.test.tsx.
@@ -43,40 +44,26 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-/** The credential read Settings asks whether the account has a second factor
- * of: the TOTP ref is there, redacted, exactly while it has one. */
-const CREDENTIAL_KEY = [
-  "record",
-  "substrate.reamde.dev",
-  "core",
-  "credential",
-  "self",
-]
-
-/** A query client whose credential read has already answered, so no case's
- * fetch mock has to serve it. */
-function answeredClient(hasFactor = true): QueryClient {
+/** A query client whose read of the person has already answered, so no
+ * case's fetch mock has to serve it: their sign-in asks for a code exactly
+ * while they have a second factor. */
+function answeredClient(hasFactor = true, name = "geoah"): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   })
-  client.setQueryData(CREDENTIAL_KEY, {
-    id: "self",
-    kind: "substrate.reamde.dev/core/credential",
-    properties: {
-      repository: "geoah",
-      passwordRef: "<redacted>",
-      ...(hasFactor && { totpRef: "<redacted>" }),
-    },
-    labels: {},
-    version: 1,
+  client.setQueryData(["identity"], {
+    id: "idn-0000000000000000000000000",
+    name,
+    secondFactor: hasFactor,
+    repositories: [{ id: "rnd-0000000000000000000000000", name: "geoah" }],
   })
   return client
 }
 
-/** The rows, with the credential read already answered. */
-function renderRows(hasFactor = true) {
+/** The rows, with the person read already answered. */
+function renderRows(hasFactor = true, name?: string) {
   render(
-    <QueryClientProvider client={answeredClient(hasFactor)}>
+    <QueryClientProvider client={answeredClient(hasFactor, name)}>
       <AccountRows />
     </QueryClientProvider>
   )
@@ -104,13 +91,14 @@ describe("AccountRows", () => {
     fetchMock.mockReset()
   })
 
-  it("shows the signed-in repository", () => {
+  it("shows the signed-in repository, which is the sign-in name of a session that kept none", () => {
     renderRows()
-    expect(screen.getByText("geoah")).toBeTruthy()
+    expect(screen.getAllByText("geoah")).toHaveLength(2)
+    expect(screen.getByText("The name you sign in with.")).toBeTruthy()
   })
 
   it("changes the password with the password factor in the body", async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { identity: "geoah" }))
     renderRows()
     const card = within(open("Change…", "Change your password"))
     fireEvent.change(card.getByLabelText("Current password"), {
@@ -136,7 +124,7 @@ describe("AccountRows", () => {
       ([url]) => String(url) === "/password"
     )!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "123456",
       newPassword: "hunter2hunter2",
@@ -169,7 +157,7 @@ describe("AccountRows", () => {
       fetchMock.mock.calls.some(([url]) => String(url) === "/totp/enroll")
     ).toBe(true)
 
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { identity: "geoah" }))
     fireEvent.change(card.getByLabelText("Code from the new secret"), {
       target: { value: "222 222" },
     })
@@ -184,7 +172,7 @@ describe("AccountRows", () => {
       ([url]) => String(url) === "/totp"
     )!
     expect(JSON.parse((change[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "111111",
       newTotpSecret: "NEWSEED",
@@ -213,12 +201,12 @@ describe("AccountRows", () => {
       ([url]) => String(url) === "/totp/enroll"
     )!
     expect(JSON.parse((begin[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "",
     })
 
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, { repository: "geoah" }))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { identity: "geoah" }))
     fireEvent.change(card.getByLabelText("Code from your app"), {
       target: { value: "222 222" },
     })
@@ -232,7 +220,7 @@ describe("AccountRows", () => {
       ([url]) => String(url) === "/totp"
     )!
     expect(JSON.parse((change[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "",
       newTotpSecret: "NEWSEED",
@@ -248,7 +236,7 @@ describe("AccountRows", () => {
 
   it("drops the code field and the re-enrollment where no factor is verified", async () => {
     policy.totpRequired = false
-    fetchMock.mockResolvedValue(jsonResponse(200, { repository: "geoah" }))
+    fetchMock.mockResolvedValue(jsonResponse(200, { identity: "geoah" }))
     renderRows()
     // Nothing to replace, so the re-enrollment is not offered at all.
     expect(
@@ -284,10 +272,105 @@ describe("AccountRows", () => {
       ([url]) => String(url) === "/password"
     )!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
-      repository: "geoah",
+      identity: "geoah",
       password: "old-passphrase",
       totpCode: "",
       newPassword: "hunter2hunter2",
+    })
+  })
+})
+
+describe("a person whose name is not the repository's", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", fetchMock)
+    clearSession()
+    // An app's sign-in keeps no name: the person's read says it.
+    saveSession("substrate_tok_current", "geoah", "tok-1")
+    policy.totpRequired = true
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    fetchMock.mockReset()
+    navigate.mockReset()
+  })
+
+  it("shows the repository and the name the person signs in with, each with its label", () => {
+    renderRows(true, "geoah.example.com")
+    expect(screen.getByText("geoah")).toBeTruthy()
+    expect(screen.getByText("geoah.example.com")).toBeTruthy()
+    expect(
+      screen.getByRole("button", { name: "Copy the name you sign in with" })
+    ).toBeTruthy()
+  })
+
+  it("names the person in a password change", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { identity: "geoah.example.com" })
+    )
+    renderRows(true, "geoah.example.com")
+    const card = within(open("Change…", "Change your password"))
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "old-passphrase" },
+    })
+    fireEvent.change(card.getByLabelText("Current code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.change(card.getByLabelText("New password"), {
+      target: { value: "hunter2hunter2" },
+    })
+    fireEvent.change(card.getByLabelText("Confirm new password"), {
+      target: { value: "hunter2hunter2" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Change password" }))
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url) === "/password")
+      ).toBe(true)
+    )
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/password"
+    )!
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      identity: "geoah.example.com",
+      password: "old-passphrase",
+      totpCode: "123456",
+      newPassword: "hunter2hunter2",
+    })
+  })
+
+  it("names the person and the repository in a delete", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }))
+    render(
+      <QueryClientProvider client={answeredClient(true, "geoah.example.com")}>
+        <DeleteRepositoryRow />
+      </QueryClientProvider>
+    )
+    const card = within(open("Delete…", "Delete your Substrate"))
+    fireEvent.change(card.getByLabelText("Confirm the name"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "old-passphrase" },
+    })
+    fireEvent.change(card.getByLabelText("Current code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Delete forever" }))
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/register", replace: true })
+    )
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/repository/delete"
+    )!
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      identity: "geoah.example.com",
+      repository: "geoah",
+      password: "old-passphrase",
+      totpCode: "123456",
     })
   })
 })
@@ -344,6 +427,7 @@ describe("DeleteRepositoryRow", () => {
       ([url]) => String(url) === "/repository/delete"
     )!
     expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      identity: "geoah",
       repository: "geoah",
       password: "old-passphrase",
       totpCode: "123456",

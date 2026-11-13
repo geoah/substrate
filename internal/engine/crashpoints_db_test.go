@@ -263,7 +263,7 @@ func TestADeletionCutShortAtEachStepIsFinishedByTheNextBoot(t *testing.T) {
 			}
 			waitStep(t)
 			if err := stopped.DeleteRepository(ctx, substrate.LoginInput{
-				Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+				Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t),
 			}); !errors.Is(err, errKilledHere) {
 				t.Fatalf("the deletion did not die %s: %v", stage, err)
 			}
@@ -322,7 +322,7 @@ func TestADeletionTheArchiveDoesNotAnswerIsFinishedAtTheNextStart(t *testing.T) 
 	}
 	waitStep(t)
 	if err := unreachable.DeleteRepository(ctx, substrate.LoginInput{
-		Repository: repository, Password: testPassword, TOTPCode: user.code(t),
+		Identity: repository, Repository: repository, Password: testPassword, TOTPCode: user.code(t),
 	}); !errors.Is(err, errUnreachable) {
 		t.Fatalf("a deletion the archive does not answer: %v, want the store's error", err)
 	}

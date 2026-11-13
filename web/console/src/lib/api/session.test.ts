@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   clearSession,
+  getIdentityName,
   getRepository,
   getToken,
   getTokenId,
@@ -29,6 +30,22 @@ describe("session", () => {
     expect(hasSession()).toBe(true)
     clearSession()
     expect(getToken()).toBeNull()
+  })
+
+  it("keeps the person's name beside the repository, and reads the repository's for a session that kept none", () => {
+    saveSession(
+      "substrate_tok_x",
+      "notes.example.com",
+      "tok-1",
+      "ada.example.com"
+    )
+    expect(getRepository()).toBe("notes.example.com")
+    expect(getIdentityName()).toBe("ada.example.com")
+    saveSession("substrate_tok_y", "notes.example.com", "tok-2")
+    expect(getIdentityName()).toBe("notes.example.com")
+    clearSession()
+    expect(getIdentityName()).toBeNull()
+    expect(localStorage.getItem("substrate.identity")).toBeNull()
   })
 
   it("sessionExpired drops the token and fires the handler", () => {
@@ -101,6 +118,8 @@ describe("session in the Apple app", () => {
   it("reads the app's sign-in and keeps none of its own", () => {
     expect(getToken()).toBe("substrate_tok_app")
     expect(getRepository()).toBe("ada.example.com")
+    // An app that gives no person's name: theirs is the repository's.
+    expect(getIdentityName()).toBe("ada.example.com")
     expect(getTokenId()).toBe("tok-app")
     expect(hasSession()).toBe(true)
     expect(localStorage.getItem("substrate.token")).toBeNull()

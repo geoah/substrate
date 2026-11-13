@@ -4,7 +4,8 @@ package engine
 // a tar holding one archive of its own (decision 0279), an id minted at the
 // export under `repositories/<id>/`, with the blobs, the sealed values, the
 // webhook spool, the history in pieces and the manifest last, as of one
-// committed point. Put in a store, it is the newest archive there, so a
+// committed point. The manifest carries the sign-in of the person who took
+// it and nobody else's (archiveidentities.go). Put in a store, it is the newest archive there, so a
 // boot with no rows for the repository restores from it. The point is a read snapshot of
 // the table; the lines up to its head never change, so they are read after
 // it, while writes go on. A blob's bytes are held against collection from
@@ -105,6 +106,13 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	}
 	if e.manifest, err = ds.svc.manifestOf(ctx, repo, tx); err != nil {
 		return nil, err
+	}
+	// The person who takes it, and nobody else: the other people's sign-ins
+	// are theirs, not the export's (archiveidentities.go).
+	if taker := substrate.IdentityFrom(ctx); taker != "" {
+		if e.manifest.Identities, err = ds.svc.manifestIdentities(ctx, ds.info.ID, taker); err != nil {
+			return nil, err
+		}
 	}
 	e.manifest.Head, e.manifest.Epoch = head, 1
 	// An archive of its own, past the one the database writes, so it is the

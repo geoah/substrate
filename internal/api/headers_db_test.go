@@ -43,14 +43,14 @@ func TestCredentialResponsesAreNeverStored(t *testing.T) {
 	}
 
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": repository,
+		"inviteCode": testInviteCode, "identity": repository,
 	})
 	wantNoStore("register enroll (the TOTP seed)", rec, http.StatusOK)
 	seed := decodeJSON[substrate.TOTPEnrollment](t, rec).Secret
 
 	pace()
 	rec = env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": repository, "password": password,
+		"inviteCode": testInviteCode, "identity": repository, "password": password,
 		"totpSecret": seed, "totpCode": env.code(t, seed),
 	})
 	wantNoStore("register (the first secret)", rec, http.StatusCreated)
@@ -74,18 +74,18 @@ func TestCredentialResponsesAreNeverStored(t *testing.T) {
 
 	pace()
 	rec = env.do(t, http.MethodPost, "/totp/enroll", "", map[string]any{
-		"repository": repository, "password": password, "totpCode": env.code(t, seed),
+		"identity": repository, "password": password, "totpCode": env.code(t, seed),
 	})
 	wantNoStore("TOTP enroll (the candidate seed)", rec, http.StatusOK)
 	next := decodeJSON[substrate.TOTPEnrollment](t, rec).Secret
 	pace()
 	wantNoStore("TOTP swap", env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"repository": repository, "password": password, "totpCode": env.code(t, seed),
+		"identity": repository, "password": password, "totpCode": env.code(t, seed),
 		"newTotpSecret": next, "newTotpCode": env.code(t, next),
 	}), http.StatusOK)
 	pace()
 	wantNoStore("password change", env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": repository, "password": password, "totpCode": env.code(t, next),
+		"identity": repository, "password": password, "totpCode": env.code(t, next),
 		"newPassword": "a-brand-new-passphrase",
 	}), http.StatusOK)
 

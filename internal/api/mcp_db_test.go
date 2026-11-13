@@ -2,14 +2,17 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -199,7 +202,10 @@ func TestAnAssistantNeverWritesTheAuthMaterialOrRemovesAPackage(t *testing.T) {
 				t.Fatalf("%s of %s = %v, want forbidden", name, kind, err)
 			}
 		}
-		if got := env.get(t, kind, "x"); got != nil {
+		// The credential kind is declared only by a repository registered
+		// before identities (decision 0274), so the read is refused here as
+		// well as found empty.
+		if got, err := env.ds.Get(ctx, kind, "x"); err == nil {
 			t.Fatalf("a refused write stored %s/x: %+v", kind, got)
 		}
 	}
@@ -294,6 +300,95 @@ func TestAnAssistantSignsInForTheDoor(t *testing.T) {
 	}
 	wantStatus(t, rpc(t, env.h, res.AccessToken, "initialize", nil), http.StatusOK)
 	wantStatus(t, appScopedDo(t, env, http.MethodGet, "/api/v1/records", res.AccessToken, nil, ""), http.StatusForbidden)
+}
+
+// An assistant's sign-in at the door is its person's (decision 0274): the
+// token the approval mints acts for the person whose session approved it, so
+// that person's sign out everywhere ends it, and the door refuses it after.
+func TestAnAssistantsTokenActsForThePersonWhoApprovedIt(t *testing.T) {
+	t.Parallel()
+	env := newDBEnv(t, withAppFlow(), withoutRepository())
+	acct := authRegister(t, env, testdb.Repository(t), false)
+	ds, session, err := env.svc.Authenticate(context.Background(), acct.token)
+	if err != nil || session.Identity == "" {
+		t.Fatalf("the registration's token = %+v (%v), want one naming its person", session, err)
+	}
+	env.repository, env.ds, env.token = acct.repository, ds, acct.token
+
+	params := appRequest("")
+	delete(params, "scope")
+	params["resource"] = "https://substrate.example.com/mcp"
+	id := appScopedPark(t, env, params)
+	wantStatus(t, appScopedShow(t, env, id), http.StatusOK)
+	rec := appScopedApprove(t, env, id, []string{"mcp"}, 0)
+	wantStatus(t, rec, http.StatusOK)
+	form := tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect))
+	form.Set("resource", "https://substrate.example.com/mcp")
+	tok := appScopedExchange(t, env, form)
+	wantStatus(t, tok, http.StatusOK)
+	res := decodeJSON[tokenResponse](t, tok)
+	_, assistant, err := env.svc.Authenticate(context.Background(), res.AccessToken)
+	if err != nil || assistant.Identity != session.Identity {
+		t.Fatalf("the assistant's token acts for %q (%v), want the approving person %q", assistant.Identity, err, session.Identity)
+	}
+	wantStatus(t, rpc(t, env.h, res.AccessToken, "initialize", nil), http.StatusOK)
+
+	rec = env.do(t, http.MethodPost, "/signout/everywhere", "", map[string]any{"identity": acct.repository, "password": authPassword})
+	wantStatus(t, rec, http.StatusOK)
+	wantStatus(t, rpc(t, env.h, res.AccessToken, "initialize", nil), http.StatusUnauthorized)
+}
+
+// An assistant's token, and an app's code, stand on a person who may open
+// the repository: taken out of it, the person's assistant is refused at the
+// MCP door, and a code they approved exchanges for nothing. Nothing at 1.0
+// takes a person out of a repository; an operator or a later release may.
+func TestAnAssistantOfAPersonWhoLeftTheRepositoryIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	env := newDBEnv(t, withAppFlow(), withoutRepository())
+	acct := authRegister(t, env, testdb.Repository(t), false)
+	ds, _, err := env.svc.Authenticate(ctx, acct.token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.repository, env.ds, env.token = acct.repository, ds, acct.token
+	approve := func() url.Values {
+		params := appRequest("")
+		delete(params, "scope")
+		params["resource"] = "https://substrate.example.com/mcp"
+		id := appScopedPark(t, env, params)
+		wantStatus(t, appScopedShow(t, env, id), http.StatusOK)
+		rec := appScopedApprove(t, env, id, []string{"mcp"}, 0)
+		wantStatus(t, rec, http.StatusOK)
+		form := tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect))
+		form.Set("resource", "https://substrate.example.com/mcp")
+		return form
+	}
+	tok := appScopedExchange(t, env, approve())
+	wantStatus(t, tok, http.StatusOK)
+	assistant := decodeJSON[tokenResponse](t, tok).AccessToken
+	later := approve()
+	before, err := ds.Tokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := sql.Open("pgx", env.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(ctx, `DELETE FROM identity_repositories WHERE repository_id = (SELECT id FROM repositories WHERE authority = $1)`, acct.repository); err != nil {
+		t.Fatalf("take the person out of the repository: %v", err)
+	}
+
+	wantStatus(t, rpc(t, env.h, assistant, "initialize", nil), http.StatusUnauthorized)
+	if rec := appScopedExchange(t, env, later); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_grant") {
+		t.Fatalf("a code approved by a person who left, exchanged: %d %s, want 400 invalid_grant", rec.Code, rec.Body.String())
+	}
+	if after, err := ds.Tokens(ctx); err != nil || len(after) != len(before) {
+		t.Fatalf("the refused exchange left %d tokens from %d (%v)", len(after), len(before), err)
+	}
 }
 
 // A pasted token for an assistant is minted by the owner with scopes

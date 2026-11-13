@@ -36,3 +36,10 @@ data:
     expiresAt:
       type: datetime
       description: when the token stops authenticating; absent = until deleted
+    # Not the binary before the move's: the test boots this tree's code over
+    # that tree, and this tree's registration names the person a token acts
+    # for (decision 0274).
+    identity:
+      type: string
+      managed: true
+      description: the id of the identity of the person the token acts for

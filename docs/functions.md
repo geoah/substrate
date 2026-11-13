@@ -1734,7 +1734,7 @@ repository.
   delivery a hand is already retrying, and a retry by hand of one the rerun
   is running answers `409`. A disabled trigger, one whose callable does not
   resolve, or one whose agent is at a spend cap keeps its interrupted
-  delivery parked for a hand or the next start, and an operator's process (`repository rebuild`, `user reset`)
+  delivery parked for a hand or the next start, and an operator's process (`repository rebuild`)
   reruns nothing
   ([decision 0151](decisions/0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)).
   `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE

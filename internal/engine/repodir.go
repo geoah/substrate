@@ -529,6 +529,10 @@ type restoreAdmission struct {
 	// open, as the record of their loss, and marks the row for the open to
 	// clear them (lostsecrets.go).
 	leftBehind bool
+	// leftOut names the people the manifest carries whose sign-in does not
+	// open under this host's key, in a repository the operator listed: the
+	// restore leaves them out (archiveidentities.go).
+	leftOut map[string]bool
 }
 
 // admitRestore is EVERY REFUSAL A RESTORE CAN MAKE, made here and nowhere
@@ -574,7 +578,7 @@ func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, se
 		// Nothing opens under the DEK the restore mints: every sealed value
 		// and every spooled request is left behind.
 		adm.mint, adm.cause, adm.leftBehind = true, err, true
-		return adm, nil
+		return adm, s.admitIdentities(m, &adm)
 	}
 	// Every sealed value must open under that DEK: a repository's payloads
 	// are bound-framed under it and nothing else (0059), so one that does not
@@ -588,7 +592,7 @@ func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, se
 		}
 		adm.leftBehind = true
 	}
-	return adm, nil
+	return adm, s.admitIdentities(m, &adm)
 }
 
 // restoreRow checks a manifest a restore reads (a 0.x directory's, or an
@@ -667,7 +671,7 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
 		return fail(err)
 	}
-	if err := s.insertRestoredRow(ctx, repo, m, head, rec, adm.leftBehind); err != nil {
+	if err := s.insertRestoredRow(ctx, repo, m, head, rec, adm); err != nil {
 		return fail(err)
 	}
 	// The row is in, marked, and the import that follows is idempotent: a
@@ -687,9 +691,11 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 // changelog nobody had claimed, stamps nothing, as the writer had not), and
 // the import marker at head, and the record (rule 8): the new archive the
 // repository's passes write, and the manifest a restore reads from, so an
-// import a boot finishes reads that one snapshot. The scoped rows take their
-// repository from the transaction's own setting, as a scoped connection's do.
-func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord, leftBehind bool) error {
+// import a boot finishes reads that one snapshot, and the people the manifest
+// carries (archiveidentities.go), so no crash leaves the repository without
+// them. The scoped rows take their repository from the transaction's own
+// setting, as a scoped connection's do.
+func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord, adm restoreAdmission) error {
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -699,7 +705,7 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id, secrets_left_behind)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		repo.ID, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
-		nullString(repo.DEKKeyID), leftBehind); err != nil {
+		nullString(repo.DEKKeyID), adm.leftBehind); err != nil {
 		return fmt.Errorf("create the row from the manifest: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `SELECT set_config('substrate.repository', $1, true)`, repo.ID); err != nil {
@@ -721,7 +727,15 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 	if _, err := tx.ExecContext(ctx, `INSERT INTO archive_records (archive, source) VALUES ($1, nullif($2, ''))`, rec.archive, rec.source); err != nil {
 		return fmt.Errorf("record the repository's new archive: %w", err)
 	}
-	return tx.Commit()
+	remember, err := s.restoreIdentities(ctx, tx, m, adm.leftOut)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	remember()
+	return nil
 }
 
 // reconcileArchive is pass 2 (the header): every repository the archive
