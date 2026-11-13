@@ -246,8 +246,7 @@ enum value a client should stop offering
 A choice that binds later code is written down as a
 [decision record](decisions/README.md), and a record is `accepted` or
 `rejected` before its code is in a release: no record is `proposed` while
-the code it describes is on `main`
-([not in force yet](#what-is-not-in-force-yet)).
+the code it describes is on `main`.
 
 ## Offline use
 
@@ -335,5 +334,3 @@ The code does not hold these clauses today:
 - **A package's code has no interface version.** A function names its
   `runtime`, `python` or `host`, and nothing else about what it is written
   against. The published image carries one Python release.
-- **Some decision records are still `proposed` while their code is in the
-  binary.** [The index](decisions/README.md) gives each record's status.

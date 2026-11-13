@@ -1,7 +1,8 @@
 ---
-status: proposed
-date: 2026-10-06
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0150
 ---
 
 # 0147. A pass runs its schedule triggers in a lane beside its record triggers
