@@ -454,9 +454,12 @@ func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
 	}
 }
 
-// A sample INSTALLED verbatim is held under the SHIPPED id, which no route
-// does any more but a provider's `requires:` still may. The listing has to
-// see that one too, or the console offers an add that already ran.
+// A sample INSTALLED verbatim is held under the SHIPPED id: the removed
+// install route did that, and a repository that used it still holds one. No
+// door installs a sample verbatim now (a provider's `requires:` leaves one
+// unmet rather than install it), so this calls the catalog's Install
+// directly to stand in for that stored copy. The listing has to see it, or
+// the console offers an add that already ran.
 func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
 	t.Parallel()
 	cat := catalogWithOtherReadinglist(t)

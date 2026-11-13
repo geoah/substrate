@@ -229,7 +229,7 @@
   {
     "name": "mcp",
     "stability": "experimental",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "* /mcp",
       "GET /.well-known/oauth-protected-resource/mcp"

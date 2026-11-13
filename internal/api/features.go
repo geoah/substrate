@@ -241,7 +241,7 @@ var featureTable = []feature{
 	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
 	// experimental while the protocol's stateless revision and the tool set
 	// settle.
-	{name: "mcp", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceMCP}, routes: []string{
+	{name: "mcp", stability: substrate.StabilityExperimental, revision: 2, surfaces: []string{surfaceMCP}, routes: []string{
 		"* /mcp",
 		"GET /.well-known/oauth-protected-resource/mcp",
 	}},
