@@ -79,7 +79,8 @@ import (
 //     (repodir.go), as it holds the blob bytes.
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
-//     they are kept rather than re-bought from the provider.
+//     they are kept rather than re-bought from the provider. Those of a
+//     record the replay left no row of go (dropOrphanVectors).
 //   - oauth_flows, RUNTIME STATE: a consent flow in flight is a nonce and a
 //     PKCE verifier with an expiry, which has no meaning in the changelog; an
 //     interrupted flow is started again.
@@ -197,6 +198,9 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 		return report, err
 	}
 	if err := t.rebuild(log, &report); err != nil {
+		return report, err
+	}
+	if err := dropOrphanVectors(ctx, t.tx); err != nil {
 		return report, err
 	}
 	// Every row was just folded under this binary's rules (fold.go foldFTS).

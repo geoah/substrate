@@ -51,20 +51,20 @@ func (l *loader) parseMovedFrom(where string, d map[string]any, t *Kind) {
 }
 
 // MovedFromProblems reports what a move cannot honor, given the declaration the
-// repository HOLDS for the old kind. The two property sets must be IDENTICAL.
+// repository HOLDS for the old kind. The rows travel with their properties
+// untouched and under their own names, so the new kind must declare every
+// property the old one does: one it lacks would be a value dropped by a key
+// nobody wrote, and a property taken over under a new name is refused too,
+// because the move copies the old key and the destination's coercion refuses a
+// key it does not declare.
 //
-// A property the old kind declares and the new one does not would be a value
-// dropped by a key nobody wrote, because the rows travel with their properties
-// untouched and under their own names. A property the NEW kind declares and the
-// old one does not would be a shape the plan never said it was installing: the
-// carried rows hold no value for it, so a `required` one refuses every row at
-// the put and an optional one is a change that belongs in its own apply, where
-// the ordinary guards and the ordinary conversions can see it. A property the
-// new kind takes over under a new name is refused too: the move copies the old
-// key and the destination's coercion refuses a key it does not declare.
+// The new kind may declare properties the old one lacks (decision record
+// 0257): the carried rows hold no value for one, which an optional property
+// admits. A REQUIRED one would refuse every carried row at the put, so it is
+// refused here.
 //
-// Move first, change after. `old` may be nil, which is the ordinary case on a
-// fresh repository: there is nothing to move and nothing to refuse.
+// `old` may be nil, which is the ordinary case on a fresh repository: there is
+// nothing to move and nothing to refuse.
 func MovedFromProblems(old, moved *Kind) []string {
 	if old == nil || moved == nil || moved.MovedFrom == "" {
 		return nil
@@ -78,9 +78,9 @@ func MovedFromProblems(old, moved *Kind) []string {
 		}
 	}
 	for _, pname := range moved.PropOrder {
-		if _, ok := old.Props[pname]; !ok {
+		if _, ok := old.Props[pname]; !ok && moved.Props[pname].Required {
 			problems = append(problems, fmt.Sprintf(
-				"kind %s: data.movedFrom names %s, which does not declare %q: a move carries the rows unchanged, so add the property in a later apply where the ordinary guards can see it",
+				"kind %s: data.movedFrom names %s, which does not declare %q, and this kind requires it: a move carries the rows unchanged, so make the property optional, or require it in a later apply where the ordinary guards can see it",
 				moved.Identity, moved.MovedFrom, pname))
 		}
 	}

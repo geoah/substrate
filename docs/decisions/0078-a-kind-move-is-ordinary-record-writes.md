@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-12
 decision-makers: George Antoniadis
+amended-by: 0257
 ---
 
 # 0078. A kind move is ordinary record writes

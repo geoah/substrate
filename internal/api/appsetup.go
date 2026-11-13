@@ -285,9 +285,16 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+	app, err := checkedByAnApp(ctx)
+	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
+	}
+	if app {
+		if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
 	}
 	principal := substrate.PrincipalFrom(ctx)
 	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
@@ -312,6 +319,33 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 	}
 	h.checks.keep(principal, raw, h.now(), out)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// checkedByAnApp reports whether the request's token is an app's, the one
+// kind of token with a build for a check to record. A scoped app's token
+// carries its client id in the request, a full-access app's only on its
+// record. An owner's own token asks too and sees every row (docs/apps.md),
+// and has no build: recording one is refused for a token with no client id.
+// A token missing from the list was revoked after the request signed in, and
+// is refused as the build's record refuses it: it is nobody's to answer.
+func checkedByAnApp(ctx context.Context) (bool, error) {
+	if substrate.ClientIDFrom(ctx) != "" {
+		return true, nil
+	}
+	if _, scoped := substrate.ScopesFrom(ctx); scoped {
+		return false, nil
+	}
+	tokens, err := DatasetFrom(ctx).Tokens(ctx)
+	if err != nil {
+		return false, err
+	}
+	id := substrate.PrincipalFrom(ctx)
+	for _, t := range tokens {
+		if t.ID == id {
+			return t.ClientID != "", nil
+		}
+	}
+	return false, fmt.Errorf("%w: a live token is required", substrate.ErrForbidden)
 }
 
 // check plans a check's answer for the request's token.
@@ -356,8 +390,12 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 			}
 		}
 	}
-	h.refreshBelowFloor(ctx, owner, details)
-	rows, _, err := appsetup.Plan(ctx, owner, h.packages, details, opts)
+	h.refreshBelowFloor(ctx, owner, details, opts.ActionOnly)
+	packages := h.packages
+	if packages != nil && len(opts.ActionOnly) > 0 {
+		packages = shippedOnly{Catalog: packages, shipped: h.catalog, withheld: opts.ActionOnly}
+	}
+	rows, _, err := appsetup.Plan(ctx, owner, packages, details, opts)
 	if err != nil {
 		return substrate.AuthorizationCheckResult{}, err
 	}
@@ -395,6 +433,33 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	return out, nil
 }
 
+// shippedOnly is the approval's catalog with each package in withheld, one
+// the token's scopes do not name, resolved through the binary's closures
+// alone. The check answers that row `unknown`, and resolving it through its
+// publisher's document would let an app with any access make the server fetch
+// a document for a package it does not reach. A package nothing resolves is
+// planned no further than its action.
+type shippedOnly struct {
+	appsetup.Catalog
+	shipped  *catalog.Catalog
+	withheld map[string]bool
+}
+
+func (c shippedOnly) ResolveFor(ctx context.Context, id string, atLeast int64, ds substrate.Dataset) (*catalog.Bundle, error) {
+	if c.withheld[id] && !c.ships(id) {
+		return nil, fmt.Errorf("%w: %s is not resolved for a token whose scopes do not name it", catalog.ErrNotPublished, id)
+	}
+	return c.Catalog.ResolveFor(ctx, id, atLeast, ds)
+}
+
+func (c shippedOnly) ships(id string) bool {
+	if c.shipped == nil {
+		return false
+	}
+	_, ok := c.shipped.ByID(id)
+	return ok
+}
+
 // checkRow cuts a planned row to what a check answers. A row the token may
 // see keeps its action, what blocks it, a package's versions and the package
 // a webhook delivers to; one it may not see is `unknown` and carries only
@@ -430,8 +495,11 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 // its publisher lists, where the catalog applies that on its own (decision
 // 0213): a kinds-only, additive upgrade lands now and the row answers
 // `none`. One the catalog cannot refresh is left for the plan to say what
-// it needs, with the reason in the log.
-func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail) {
+// it needs, with the reason in the log. A package in withheld, one the
+// token's scopes do not name, is not refreshed: an app may not make the
+// server fetch a publisher's document and upgrade a package it has nothing
+// to do with by naming it in a check.
+func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail, withheld map[string]bool) {
 	floors := authorize.PackageFloors(details)
 	if h.refresher == nil || h.packages == nil || len(floors) == 0 {
 		return
@@ -446,7 +514,7 @@ func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, d
 		held[statuses[i].ID] = appsetup.HeldRelease(&statuses[i])
 	}
 	for _, id := range slices.Sorted(maps.Keys(floors)) {
-		if held[id] == 0 || held[id] >= floors[id] {
+		if withheld[id] || held[id] == 0 || held[id] >= floors[id] {
 			continue
 		}
 		b, err := h.packages.ResolveFor(ctx, id, floors[id], ds)

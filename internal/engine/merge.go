@@ -59,6 +59,9 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	if winnerRef == loserRef {
 		return nil, fmt.Errorf("%w: cannot merge a record into itself", substrate.ErrValidation)
 	}
+	if err := t.refuseInstalledPolicyWrite(winnerRef.Kind, substrate.OpMerge); err != nil {
+		return nil, err
+	}
 	winnerID, loserID := winnerRef.ID, loserRef.ID
 	first, second := winnerRef, loserRef
 	if second.less(first) {
@@ -510,6 +513,9 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 	}
 	winnerRef := referenceTargetOf(rec, "winner")
 	loserRef := referenceTargetOf(rec, "loser")
+	if err := t.refuseInstalledPolicyWrite(loserRef.Kind, substrate.OpSplit); err != nil {
+		return nil, err
+	}
 	moved, _ := rec.Props["moved"].(map[string]any)
 	if winnerRef.ID == "" || loserRef.ID == "" {
 		return nil, fmt.Errorf("%w: merge record %s is incomplete", substrate.ErrValidation, mergeID)

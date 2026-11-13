@@ -196,7 +196,7 @@ func TestABuildsVersionAndFloorsRideTheToken(t *testing.T) {
 }
 
 // A CHECK RECORDS THE BUILD AND REFRESHES WHAT IT HOLDS BELOW THE FLOOR: the
-// floors and the version land on the calling token before the answer, and a
+// floors and the version land on the calling app's token before the answer, and a
 // document-published package the repository holds below the floor the app
 // asks for is refreshed from its publisher before the plan, so an upgrade the
 // catalog applies on its own answers `none`. A package held at the floor, one
@@ -204,6 +204,9 @@ func TestABuildsVersionAndFloorsRideTheToken(t *testing.T) {
 func TestACheckRecordsTheBuildAndRefreshesAPackageBelowItsFloor(t *testing.T) {
 	e, refresher := publishingEnv(t)
 	ds := e.svc.datasets[fakeRepository]
+	// A build is an app's to record: the check is asked with an app's
+	// full-access token. The owner's own token asks too and has none.
+	app := e.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ClientID, i.ClientName = appClientID, "Sync" })
 	e.repo.mu.Lock()
 	e.repo.statuses[dpTraining] = substrate.BundleStatus{ID: dpTraining, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
 	e.repo.statuses[appleHealthPkg] = substrate.BundleStatus{ID: appleHealthPkg, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
@@ -212,7 +215,7 @@ func TestACheckRecordsTheBuildAndRefreshesAPackageBelowItsFloor(t *testing.T) {
 	{"type":"package","package":"` + appleHealthPkg + `","version":5},
 	{"type":"package","package":"` + applePkg + `","version":3}]`
 	body := `{"scope":"read:~/notes/*","details":` + details + `,"softwareVersion":"1.4.0"}`
-	got := e.check(e.owner, []byte(body))
+	got := e.check(app, []byte(body))
 	if asked := refresher.list(); strings.Join(asked, ",") != fakeRepository+" "+dpTraining {
 		t.Fatalf("refreshed %v, want the published package below its floor alone", asked)
 	}
@@ -231,7 +234,7 @@ func TestACheckRecordsTheBuildAndRefreshesAPackageBelowItsFloor(t *testing.T) {
 	e.repo.mu.Lock()
 	e.repo.statuses[dpTraining] = substrate.BundleStatus{ID: dpTraining, Installed: true, Enabled: true, Version: 3, ShippedVersion: 3}
 	e.repo.mu.Unlock()
-	got = e.check(e.owner, []byte(`{"scope":"read:~/notes/*","details":`+details+`}`))
+	got = e.check(app, []byte(`{"scope":"read:~/notes/*","details":`+details+`}`))
 	if asked := refresher.list(); len(asked) != 1 {
 		t.Fatalf("a package at its floor was refreshed: %v", asked)
 	}
@@ -249,12 +252,22 @@ func TestACheckRecordsTheBuildAndRefreshesAPackageBelowItsFloor(t *testing.T) {
 	e.repo.statuses[dpTraining] = substrate.BundleStatus{ID: dpTraining, Installed: true, Enabled: true, Version: 1, ShippedVersion: 1}
 	e.repo.mu.Unlock()
 	refresher.err = fmt.Errorf("%w: the document could not be read", substrate.ErrUnavailable)
-	if row := e.check(e.owner, []byte(body)).Setup[0]; row.Action != substrate.SetupUpgrade || row.Package.Held != 1 {
+	if row := e.check(app, []byte(body)).Setup[0]; row.Action != substrate.SetupUpgrade || row.Package.Held != 1 {
 		t.Fatalf("after a failed refresh the row = %+v %+v", row, row.Package)
 	}
 	// A build the token cannot record is the check's answer.
 	ds.errs = map[string]error{"RecordAppBuild": fmt.Errorf("%w: the database refused the write", substrate.ErrUnavailable)}
-	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, []byte(body), "application/json"), http.StatusServiceUnavailable)
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", app, []byte(body), "application/json"), http.StatusServiceUnavailable)
+	// The owner's check records nothing, so that refusal never reaches it.
+	ds.mu.Lock()
+	recorded := len(ds.builds)
+	ds.mu.Unlock()
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/check", e.owner, []byte(body), "application/json"), http.StatusOK)
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	if len(ds.builds) != recorded {
+		t.Fatalf("the owner's check recorded a build: %+v", ds.builds[recorded:])
+	}
 }
 
 // A DOCUMENT-PUBLISHED PACKAGE ROW NAMES ITS PUBLISHER on the approval page,

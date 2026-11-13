@@ -20,9 +20,9 @@ package engine
 // which is a license no repository token holds.
 //
 // WHAT IT REFUSES, as plan blockers the boot reports and skips on:
-//   - a property set that is not identical to the old kind's, in either
-//     direction (the rows travel with their properties untouched and under
-//     their own names);
+//   - a property the old kind declares and the new one does not, and a
+//     required one only the new kind declares (the rows travel with their
+//     properties untouched and under their own names);
 //   - ANY destination row at a moving id, live or tombstoned, so the write path
 //     never merges into a standing record and never resurrects a dead one;
 //   - an old kind that is a mapping source or declares a `subject:` reference,
@@ -30,6 +30,10 @@ package engine
 //   - a reference declaration left pinned at the old kind;
 //   - a REQUIRED `mustExist` cycle among the rows being carried, which no order
 //     of writes satisfies.
+//
+// The first and the third are asked only while the old kind holds live rows
+// (decision record 0257): an old kind left declared and empty, as every
+// repository that predates a shipped move keeps one, carries nothing.
 //
 // IDEMPOTENT: the move is classified from the LIVE rows, so a second boot finds
 // none and plans nothing.
@@ -132,10 +136,11 @@ func userDoorMoveGuards(moves []kindMove) []string {
 	return problems
 }
 
-// moveGuards is everything a move is refused for that needs no live row: the
-// shapes the two declarations cannot reconcile, the sets of moves that cannot
+// moveGuards is everything a move is refused for that the declarations
+// decide: the shapes the two cannot reconcile, the sets of moves that cannot
 // be ordered at all, and the old kinds whose recompute would write under the
-// move's admission bypass.
+// move's admission bypass. It is asked about the moves that carry rows alone
+// (carrying).
 func moveGuards(current *vocabulary.Registry, moves []kindMove) []string {
 	var problems []string
 	seen := map[string]string{}
@@ -165,6 +170,18 @@ func moveGuards(current *vocabulary.Registry, moves []kindMove) []string {
 		problems = append(problems, mappingMoveGuards(current, m, old)...)
 	}
 	return problems
+}
+
+// carrying is the moves whose old kind holds a live row to carry, resolved by
+// planMoves under the door's reader.
+func carrying(moves []kindMove) []kindMove {
+	var out []kindMove
+	for _, m := range moves {
+		if len(m.ids) > 0 {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // mappingMoveGuards refuses a move out of a kind the mapping graph touches. A
