@@ -164,6 +164,10 @@ type options struct {
 	// Postgres commit, so a test can fail a step or stop the process there.
 	// Tests only.
 	commitFault func(stage string) error
+	// measureHook is the measured-value checks' test seam (measured.go): a
+	// hook run with the writing actor each time one of them does work.
+	// Tests only.
+	measureHook func(actor substrate.Actor, check string)
 	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
 	// with the partial directory after each copy step (snapshot.go).
 	snapshotFault func(stage, dir string) error
@@ -691,6 +695,9 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testMeasureHook is the options' measured-value seam (measured.go).
+	// Tests only.
+	testMeasureHook func(actor substrate.Actor, check string)
 	// testBulkFault and testSeedPath are the options' bulk seed seams
 	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
 	testBulkFault func(stage string) error
@@ -940,6 +947,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		conversion:        conversionSteps,
 		maxDialect:        maxChangelogDialect,
 		testCommitFault:   o.commitFault,
+		testMeasureHook:   o.measureHook,
 		testBulkFault:     o.bulkFault,
 		testSeedPath:      o.seedPath,
 		testSnapshotFault: o.snapshotFault,
@@ -1496,6 +1504,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.upgradeShippedVocabulary,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
+		ds.loadObservedKinds,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		// The shipped records after the upgrade, which declares the kinds a
