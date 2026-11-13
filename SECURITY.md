@@ -75,9 +75,14 @@ unless you ask it not to.
   presents the token and neither factor, `POST /tokens` mints another token from
   an existing one with no password and no code (the authenticated twin of
   login), and function bodies a user installs run with the user's data in reach.
-- **Documented absences.** No sharing, no second user reading your repository,
-  no erasure or retention policy, one replica only. Each is written down in
-  [running a substrate](docs/operations.md) as a decision.
+- **Documented absences.** What the server does not do is listed in
+  [running a substrate](docs/operations.md#what-it-does-not-do): no evidence
+  against the host operator that history was not altered, one server process
+  per database, no going back to an older server, and no server for people
+  who do not know its operator, which hold for every 1.x release
+  ([stability](docs/stability.md)); and today one sign-in per repository with
+  no sharing, and no erasure or retention. A report that one of them is
+  missing tells us nothing new.
 - Findings from a scanner with no reachable attack behind them: a missing
   hardening header, a TLS setting on a proxy this repository does not ship, a
   dependency advisory the code never calls.
