@@ -1842,6 +1842,12 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 			if err := t.seedDefaultProviders(); err != nil {
 				return err
 			}
+			// Born with its continuations in this binary's order: migration
+			// 7 finds the mark at the first open and writes nothing. The put
+			// below is the entry that carries it.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annContinuationOrder, substrate.IdentityOrder); err != nil {
+				return err
+			}
 			_, err := t.put(substrate.PutInput{
 				Kind: kindRepository, ID: repo.ID,
 				Properties: map[string]any{"name": authority, "authority": authority, "lifecycle": "active"},
