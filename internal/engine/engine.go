@@ -679,6 +679,10 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
+	// keyingLeases are the writer leases the boot's keying took under
+	// repositories' names, held until the boot check has published each of
+	// those repositories under its id (repositoryid.go).
+	keyingLeases []string
 	// conversion is the conversion chain this service runs, and maxDialect
 	// the changelog dialect it converts to and stamps (conversion.go): the
 	// binary's own, or a test's.
@@ -1157,6 +1161,16 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// boot. A read-only process skips it: the check writes, and the server
 	// that owns the directories runs it at its own boot.
 	if !s.readOnly {
+		// Every repository a release before ids left keyed by its name takes
+		// its id first, rows and directory (repositoryid.go), so the check
+		// below finds each directory under the key its row names.
+		if err := s.keyRepositories(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 		if err := s.reconcileRepositories(ctx); err != nil {
 			s.lease.close()
 			repoPool.Close()
@@ -1164,6 +1178,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			_ = admin.Close()
 			return nil, err
 		}
+		// Every row the keying moved and every directory it imported is
+		// published under its id now, so the names it held go.
+		s.releaseKeyingLeases()
 	}
 	return s, nil
 }
@@ -1282,6 +1299,9 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 // plus a request are enough to make that happen — so the SECOND caller waits
 // for the first's answer instead of racing it.
 func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
+	if !vocabulary.ValidRepositoryID(repo.ID) {
+		return nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
+	}
 	cached, release, err := s.claimOpen(ctx, repo.ID)
 	if cached != nil || err != nil {
 		return cached, err
@@ -1378,20 +1398,20 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	// The repository's DEK for the dataset's lifetime, unwrapped from the
 	// control-plane row.
 	keys, err := s.repoKeys(ctx, repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.label(), err)
 	}
 	dek := keys.dek
 	dir, err := s.repositoryDir(repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	ds := &dataset{
 		svc:        s,
@@ -1416,14 +1436,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// repository that had a row then; this covers the ones registered since.
 	if err := s.lease.acquire(ctx, repo.ID); err != nil {
 		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	// The directory before every step that writes: the writer opens at the
 	// file's head, which must be the table's, or the ladder's first append
 	// would land on a file that is not at the seq it claims (repodir.go).
 	if err := ds.openDirectory(ctx); err != nil {
 		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It
@@ -1449,7 +1469,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		m, err := s.ensureManifest(ctx, dir, repo, db)
 		if err != nil {
 			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 		}
 		ds.manifest = m
 	}
@@ -1510,16 +1530,16 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
-	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
-	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
-	unregisterInventory := metrics.RegisterInventory(repo.ID, ds.inventory)
+	unregisterDB := metrics.RegisterDBStats("repository:"+repo.Authority, db)
+	unregisterSpool := metrics.RegisterWebhookSpool(repo.Authority, ds.spoolStats)
+	unregisterInventory := metrics.RegisterInventory(repo.Authority, ds.inventory)
 	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory() }
 	return ds, nil
 }
 
-// Dataset opens a repository's dataset by its id, the authority.
+// Dataset opens a repository's dataset by its id, or by its name.
 func (s *service) Dataset(ctx context.Context, repository string) (substrate.Dataset, error) {
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -1539,10 +1559,10 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 	return repo.info(), nil
 }
 
-// createSeededRepository is THE creation act. The repository's id IS its
-// authority (decision 0046): the control-plane row's primary key, every scope,
-// the DEK wrap's binding, the directory under the data root and the fs blob
-// path are all the one name the registration chose. Nothing is minted.
+// createSeededRepository is THE creation act. The repository takes the
+// authority the registration chose as its name, and a minted id as its key
+// (decision 0261): the control-plane row's primary key, every scope, the DEK
+// wrap's binding, the directory under the data root and the fs blob path.
 //
 // It is
 // the seed of the shipped vocabulary, the repository's own description of
@@ -1597,9 +1617,13 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// it does). The authority is checked BEFORE anything is written under it,
 	// because rows land in its scope, and a scope that already belongs to
 	// somebody would be somebody else's data.
-	if _, err := s.repositoryByIDOn(ctx, cp, authority); err == nil {
+	if _, err := s.repositoryByAuthorityOn(ctx, cp, authority); err == nil {
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return zero, err
+	}
+	id, err := vocabulary.NewRepositoryID()
+	if err != nil {
 		return zero, err
 	}
 	// OPEN'S SLOT BEFORE THE ROW, held until the directory is written or the
@@ -1611,7 +1635,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// the open's flock and erases a repository the open already serves.
 	// The slot is taken before the lease, so a failure hands the lease back
 	// before a waiting open runs.
-	cached, releaseOpen, err := s.claimOpen(ctx, authority)
+	cached, releaseOpen, err := s.claimOpen(ctx, id)
 	if err != nil {
 		return zero, err
 	}
@@ -1627,7 +1651,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// repository that process is already serving. Taken here, an
 	// in-progress registration cannot be claimed by anybody, and
 	// reconcileRow's own ask below finds it held by this process.
-	leased, err := s.lease.acquireNew(ctx, authority)
+	leased, err := s.lease.acquireNew(ctx, id)
 	// A creation that fails releases only the lease IT took: this process is
 	// not the writer of a repository that does not exist. acquireNew reports
 	// false for one this process already held, which is never this
@@ -1636,17 +1660,17 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// replaced a dead one, whose predecessor's leases are not back yet.
 	defer func() {
 		if leased {
-			s.lease.release(authority)
+			s.lease.release(id)
 		}
 	}()
 	if err != nil {
 		return zero, err
 	}
-	repo := Repository{ID: authority, Authority: authority}
+	repo := Repository{ID: id, Authority: authority}
 	// A creation starts the graph revision at 0 again, so whatever this
-	// process cached under the name (a creation that failed) is not this
+	// process cached under the key (a creation that failed) is not this
 	// repository's (unitgraph.go).
-	s.unitGraphs.forget(authority)
+	s.unitGraphs.forget(id)
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -1768,33 +1792,33 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	return repo, nil
 }
 
-// validRepositoryID is the grammar a repository id is held to at BOTH doors,
-// registration (validRepositoryAuthority) and the boot import of a directory
-// (repodir.go): the authority grammar every kind carries
-// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The authority is
-// the repository's id everywhere (decision record 0052), including the id of
-// its self-description record, and a record id is at most MaxIDLen bytes
-// where DNS would admit 253; a directory the import accepted past the cap
-// would be a repository whose self-description no write could address.
-func validRepositoryID(authority string) error {
+// validRepositoryName is the grammar a repository's name is held to at BOTH
+// doors, registration (validRepositoryAuthority) and the boot import of a
+// directory (repodir.go): the authority grammar every kind carries
+// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The name is the
+// id of the repository's own `core/authority` record, and a record id is at
+// most MaxIDLen bytes where DNS would admit 253; a directory the import
+// accepted past the cap would be a repository whose authority record no write
+// could address.
+func validRepositoryName(authority string) error {
 	switch {
 	case authority == "":
 		return fmt.Errorf("%w: a repository needs an authority: a hostname you control, such as ada.example.com", substrate.ErrValidation)
 	case !vocabulary.ValidRepositoryAuthority(authority):
 		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, authority)
 	case len(authority) > vocabulary.MaxIDLen:
-		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository id may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
+		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository's name may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
 	}
 	return nil
 }
 
 // validRepositoryAuthority is the door a repository's own authority passes
-// through once, at creation: validRepositoryID, and one namespace refused on
+// through once, at creation: validRepositoryName, and one namespace refused on
 // top. `substrate.reamde.dev` and everything under it is where the shipped
 // vocabulary publishes, so a repository claiming a name there would be a
 // user-owned authority that reads as shipped.
 func validRepositoryAuthority(authority string) error {
-	if err := validRepositoryID(authority); err != nil {
+	if err := validRepositoryName(authority); err != nil {
 		return err
 	}
 	if authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority) {

@@ -14,6 +14,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Registration is two calls and ONE durable write: the enrollment creates
@@ -40,8 +41,8 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 		t.Fatalf("registration token = %+v, secret %q", tok, secret)
 	}
 	repos, err := svc.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != testdb.Repository(t) || repos[0].Authority != testdb.Repository(t) {
-		t.Fatalf("repositories = %v (err %v)", repos, err)
+	if err != nil || len(repos) != 1 || !vocabulary.ValidRepositoryID(repos[0].ID) || repos[0].Authority != testdb.Repository(t) {
+		t.Fatalf("repositories = %v (err %v), want one under a minted id named %s", repos, err, testdb.Repository(t))
 	}
 
 	// The token registration returned works, and it is a RECORD in the
@@ -50,8 +51,8 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate the registration token: %v", err)
 	}
-	if info.ID != tok.ID || ds.Repository().ID != testdb.Repository(t) {
-		t.Fatalf("authenticated as %+v in %q", info, ds.Repository().ID)
+	if info.ID != tok.ID || ds.Repository().ID != repos[0].ID || ds.Repository().Authority != testdb.Repository(t) {
+		t.Fatalf("authenticated as %+v in %+v", info, ds.Repository())
 	}
 	// The repository's self-description carries the authority it owns, so a
 	// client that only speaks the record API can learn where its kinds live.
@@ -256,16 +257,17 @@ func TestConcurrentRegistrationsForOneAuthorityKeepTheWinner(t *testing.T) {
 		t.Fatalf("want one winner and one refused registration, got %v", errs)
 	}
 	repos, err := svc.Repositories(ctx)
-	if err != nil || len(repos) != 1 || repos[0].ID != authority {
+	if err != nil || len(repos) != 1 || repos[0].Authority != authority {
 		t.Fatalf("repositories = %+v (%v), want %s alone", repos, err, authority)
 	}
+	id := repos[0].ID
 	// The winner's repository opens, describes itself, and its changelog and
 	// directory are intact: the loser erased nothing of the winner's.
 	ds, err := svc.Dataset(ctx, authority)
 	if err != nil {
 		t.Fatalf("the winner's repository does not open: %v", err)
 	}
-	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", authority)
+	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", id)
 	if err != nil || self.Properties["authority"] != authority {
 		t.Fatalf("the winner's self-description: %+v, %v", self, err)
 	}
@@ -273,9 +275,9 @@ func TestConcurrentRegistrationsForOneAuthorityKeepTheWinner(t *testing.T) {
 	if !report.OK || report.Head == 0 || report.FileHead != report.Head {
 		t.Fatalf("the winner's changelog does not verify: %+v", report)
 	}
-	dir := filepath.Join(engine.DataRootOf(svc), changelogfile.RepositoriesDir, authority)
+	dir := filepath.Join(engine.DataRootOf(svc), changelogfile.RepositoriesDir, id)
 	m, err := changelogfile.ReadManifest(dir)
-	if err != nil || m.Authority != authority {
+	if err != nil || m.ID != id || m.Authority != authority {
 		t.Fatalf("the winner's manifest: %+v, %v", m, err)
 	}
 }
@@ -591,8 +593,10 @@ func TestTokenLookupScopesTheRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate beta: %v", err)
 	}
-	if alphaDS.Repository().ID != "alpha.example.com" || betaDS.Repository().ID != "beta.example.com" {
-		t.Fatalf("tokens resolved to %q and %q", alphaDS.Repository().ID, betaDS.Repository().ID)
+	if alphaDS.Repository().ID != repositoryIDByName(t, svc, "alpha.example.com") ||
+		betaDS.Repository().ID != repositoryIDByName(t, svc, "beta.example.com") ||
+		alphaDS.Repository().ID == betaDS.Repository().ID {
+		t.Fatalf("tokens resolved to %+v and %+v", alphaDS.Repository(), betaDS.Repository())
 	}
 	importVocabulary(t, alphaDS, "tasks")
 	task := mustPut(t, alphaDS, owner, substrate.PutInput{

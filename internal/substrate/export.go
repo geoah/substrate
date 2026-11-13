@@ -24,8 +24,10 @@ type Export interface {
 // head seq and checksum its snapshot.json records, with what the stream
 // carries counted.
 type ExportPoint struct {
-	// Authority is the repository's id, the directory the archive lays out
-	// under `repositories/`.
+	// ID is the repository's id, the directory the archive lays out under
+	// `repositories/`, and Authority its name, which the download is named
+	// after.
+	ID        string
 	Authority string
 	// Head is the seq of the last committed entry in the stream, and HeadHash
 	// that entry's checksum in hex; both are recorded in the stream's

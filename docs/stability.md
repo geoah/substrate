@@ -196,7 +196,10 @@ line carries, and the layout of the files
 ([the stored format](stored-format.md)). Its key sets are closed, so a server
 refuses a key it does not know rather than drop it. A new op, effect or key
 raises the
-[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in). A
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in). The
+directory and every table are keyed by the repository's id, never by its
+name, so a change of name moves no stored data
+([decision 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)). A
 1.x server opens what any earlier 1.x release wrote, converting it once where
 a shape changed, and 2.0 opens what the last 1.x release wrote. Each release
 keeps a directory its own server wrote, and every later release is tested

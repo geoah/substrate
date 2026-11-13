@@ -37,6 +37,7 @@ var rmEvery = map[int]string{
 	3: "name_units_by_unit_records",
 	4: "name_applet_runtimes",
 	5: "remove_reply_relay_contacts",
+	6: "key_the_repository_record_by_its_id",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen
@@ -82,7 +83,8 @@ func rmClearLedger(t *testing.T, dsn, repo string) {
 		t.Fatal(err)
 	}
 	defer func() { _ = maint.Close() }()
-	if _, err := maint.ExecContext(context.Background(), `DELETE FROM repository_migrations WHERE repository = $1`, repo); err != nil {
+	if _, err := maint.ExecContext(context.Background(),
+		`DELETE FROM repository_migrations WHERE repository = (SELECT id FROM repositories WHERE authority = $1 OR id = $1)`, repo); err != nil {
 		t.Fatalf("clear the ledger: %v", err)
 	}
 }

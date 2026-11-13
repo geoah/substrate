@@ -30,7 +30,7 @@ func (s *service) RotateHistoryGeneration(ctx context.Context, repository string
 	if s.readOnly {
 		return RotateReport{}, ErrDirectoryReadOnly
 	}
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return RotateReport{}, err
 	}

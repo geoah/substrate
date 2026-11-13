@@ -22,8 +22,9 @@ import (
 func TestASecondWriterOfARepositoryIsRefusedAtOpen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds, dsn := newDatasetWithDSN(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "the first writer's"}})
+	id := repositoryIDByName(t, svc, testdb.Repository(t))
 
 	_, err := engine.OpenForTest(t, ctx, dsn,
 		engine.WithKindsFS(engine.SeedKinds),
@@ -36,9 +37,14 @@ func TestASecondWriterOfARepositoryIsRefusedAtOpen(t *testing.T) {
 		t.Fatalf("the refusal must be the lease's: %v", err)
 	}
 	// The refusal NAMES the repository and says what the rule is, because the
-	// person reading it is looking at a server that will not start.
+	// person reading it is looking at a server that will not start: by its
+	// name, which is what they know, and by its id, which the lock in
+	// pg_locks is keyed by.
 	if !strings.Contains(err.Error(), testdb.Repository(t)) {
 		t.Fatalf("the refusal does not name the repository: %v", err)
+	}
+	if !strings.Contains(err.Error(), "hashtext(current_schema() || '|writer|' || '"+id+"')") {
+		t.Fatalf("the refusal does not name the lock by the repository's id %s: %v", id, err)
 	}
 	if !strings.Contains(err.Error(), "One server per database") {
 		t.Fatalf("the refusal does not say the rule: %v", err)

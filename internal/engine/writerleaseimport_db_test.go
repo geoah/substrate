@@ -58,12 +58,13 @@ func leaseHeld(t *testing.T, dsn, repository string) (release func()) {
 	return release
 }
 
-// repositoryRows is how many control-plane rows name an authority, read from
-// the tamperer's seat: the control-plane table is outside row level security.
-func repositoryRows(t *testing.T, dsn, authority string) int {
+// repositoryRows is how many control-plane rows hold a repository id, read
+// from the tamperer's seat: the control-plane table is outside row level
+// security.
+func repositoryRows(t *testing.T, dsn, id string) int {
 	t.Helper()
 	var n int
-	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM repositories WHERE id = $1`, authority).Scan(&n); err != nil {
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM repositories WHERE id = $1`, id).Scan(&n); err != nil {
 		t.Fatalf("count the control-plane rows: %v", err)
 	}
 	return n
@@ -160,9 +161,14 @@ func TestAFailedImportReleasesTheLease(t *testing.T) {
 		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
-		engine.WithTestImportFault(0, func(string) error {
-			// Mid-import, from a session of its own: the importer must be
-			// holding the key it took before it published the row.
+		engine.WithTestImportFault(0, func(stage string) error {
+			// Mid-import, after a batch of rows committed, from a session of
+			// its own: the importer must be holding the key it took before it
+			// published the row. The stage before the row (the name held, the
+			// writer lease not yet taken) is not that point.
+			if stage != engine.ImportAfterBatch {
+				return nil
+			}
 			heldDuring = !leaseKeyIsFree(t, dsn2, id)
 			return diskFull
 		}))

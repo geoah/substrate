@@ -40,7 +40,7 @@ func TestBlobReadOfCorruptBytesAnswers500NamingTheDigest(t *testing.T) {
 	root := t.TempDir()
 	env := newDBEnv(t, withEngine(engine.WithDataRoot(root)))
 	digest := blobPut(t, env, "/api/"+APIVersion+"/blobs", "payload", map[string]string{"Content-Type": "text/plain"}).Digest
-	stored := filepath.Join(root, "repositories", env.repository, "blobs", digest)
+	stored := filepath.Join(root, "repositories", env.ds.Repository().ID, "blobs", digest)
 	if err := os.WriteFile(stored, []byte("PAYLOAD"), 0o600); err != nil {
 		t.Fatalf("damage the stored bytes: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestBlobReadOfCorruptBytesAnswers500NamingTheDigest(t *testing.T) {
 		t.Fatalf("the refusal carries the blob's headers: %v", rec.Header())
 	}
 	wantOneErrorLog(t, logs, "request failed", map[string]string{
-		"method": http.MethodGet, "route": route, "repository": env.repository,
+		"method": http.MethodGet, "route": route, "repository": env.ds.Repository().ID,
 	})
 	if line := logs.at(slog.LevelError)[0]; !strings.Contains(line.attrs["error"], digest) {
 		t.Fatalf("the ERROR line does not name %s: %v", digest, line.attrs)

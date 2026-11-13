@@ -1595,7 +1595,9 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		t.Fatal("the first sync did not mirror the workout the delivery deletes")
 	}
 
-	authority := ds.Repository().Authority
+	// The address the substrate gives out is keyed by the repository's id
+	// (decision 0261), and the deliveries below arrive at it.
+	id := ds.Repository().ID
 	request := func(signWith string, at time.Time) substrate.WebhookRequest {
 		body, _ := json.Marshal(map[string]any{
 			"user_id": 4021873, "id": whoopDeletedWorkout, "type": "workout.deleted", "trace_id": "t-door",
@@ -1625,13 +1627,13 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 		t.Fatal("no whoop-webhook trigger status")
 		return substrate.TriggerStatus{}
 	}
-	if got, want := status().WebhookPath, "/webhooks/"+authority+"/whoop-webhook"; got != want {
+	if got, want := status().WebhookPath, "/webhooks/"+id+"/whoop-webhook"; got != want {
 		t.Fatalf("the webhook path is %q, want %q", got, want)
 	}
 	refused := func(name string, req substrate.WebhookRequest) {
 		t.Helper()
 		blobs, runs := countLive(t, ds, "substrate.reamde.dev/core/blob"), countLive(t, ds, "substrate.reamde.dev/core/triggerrun")
-		if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", req); !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signature refused") {
+		if _, err := svc.ReceiveWebhook(ctx, id, "whoop-webhook", "", req); !errors.Is(err, substrate.ErrNotFound) || !strings.Contains(err.Error(), "signature refused") {
 			t.Fatalf("%s: err = %v, want the door's one refusal for a keyless trigger's signature", name, err)
 		}
 		if n := countLive(t, ds, "substrate.reamde.dev/core/blob"); n != blobs {
@@ -1662,7 +1664,7 @@ func TestWhoopWebhookThroughTheDoor(t *testing.T) {
 	refused("a delivery another secret signed", request("not-the-client-secret", time.Now()))
 	refused("a delivery signed ten minutes ago", request(secret, time.Now().Add(-10*time.Minute)))
 
-	if _, err := svc.ReceiveWebhook(ctx, authority, "whoop-webhook", "", request(secret, time.Now())); err != nil {
+	if _, err := svc.ReceiveWebhook(ctx, id, "whoop-webhook", "", request(secret, time.Now())); err != nil {
 		t.Fatalf("the door refused a signed request: %v", err)
 	}
 	deadline := time.Now().Add(30 * time.Second)

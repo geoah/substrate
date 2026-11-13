@@ -461,7 +461,8 @@ func TestWebhookDelivery(t *testing.T) {
 		for _, st := range statuses {
 			paths[st.ID] = st.WebhookPath
 		}
-		if paths["hook-open"] != "/webhooks/"+authority+"/hook-open" || paths["hook-keyed"] != "/webhooks/"+authority+"/hook-keyed" {
+		id := ds.Repository().ID
+		if paths["hook-open"] != "/webhooks/"+id+"/hook-open" || paths["hook-keyed"] != "/webhooks/"+id+"/hook-keyed" {
 			t.Fatalf("webhook paths = %v", paths)
 		}
 		if paths["hook-record"] != "" {

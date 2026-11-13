@@ -37,7 +37,9 @@ that is unset) and refuses without it before touching anything. The ones
 that open the repository directory (`verify`, `rebuild`, `reembed`,
 `reindex`, `snapshot`, `rotate-generation` and `user reset`) also need
 `SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
-`repository inspect` reports a missing root instead of refusing. The one
+`repository inspect` reports a missing root instead of refusing. Each takes
+the repository by its name or by its id, and `repository list` prints both:
+the directory under the data root is named by the id. The one
 exception is `repository rewrap`, which opens a copied repository directory
 with the user's recovery key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs
 no database at all.
@@ -331,7 +333,7 @@ functions, so it is the `trigger` subcommands that drive it: `status` shows
 each trigger's kind, callable, enabled flag, cursor and the head it lags,
 lag, last fire, parked count, pending count, last error and, for a
 webhook trigger, the public path its `WEBHOOK` column prints
-(`/webhooks/<authority>/<trigger-id>`, the URL an external service POSTs to);
+(`/webhooks/<repository id>/<trigger-id>`, the URL an external service POSTs to);
 `parked` lists the deliveries it gave up on, `retry` re-runs one and clears it
 however the delivery settles, and `forget` drops one that can never be
 delivered again without running anything; `replay`

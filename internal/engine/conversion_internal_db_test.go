@@ -58,8 +58,9 @@ func respellAPIActor(e *changelogfile.Entry) error {
 }
 
 // convertSource is a repository written at dialect 1: a contact the API wrote.
+// repo is its name, and id the key its directory is named by.
 type convertSource struct {
-	dsn, root, repo string
+	dsn, root, repo, id string
 }
 
 func writeConvertSource(t *testing.T) convertSource {
@@ -70,9 +71,11 @@ func writeConvertSource(t *testing.T) convertSource {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if _, err := svc.CreateRepository(ctx, src.repo); err != nil {
+	info, err := svc.CreateRepository(ctx, src.repo)
+	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
+	src.id = info.ID
 	ds, err := svc.Dataset(ctx, src.repo)
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
@@ -242,7 +245,7 @@ func crashConversion(t *testing.T, src convertSource, stage string) {
 		t.Fatalf("the boot did not stop %s: %v", stage, err)
 	}
 	if stage == betweenTheRenames {
-		dir := filepath.Join(src.root, changelogfile.RepositoriesDir, src.repo)
+		dir := filepath.Join(src.root, changelogfile.RepositoriesDir, src.id)
 		if err := os.Rename(changelogfile.ChangelogDir(dir), changelogfile.PreviousDir(dir)); err != nil {
 			t.Fatal(err)
 		}

@@ -25,7 +25,8 @@ import (
 
 // RewrapReport is what one rewrap did.
 type RewrapReport struct {
-	// Repository is the authority, the repository's id.
+	// Repository is the repository's name, its authority, as the manifest
+	// names it.
 	Repository string `json:"repository"`
 	// RecoveryKeySeq is the changelog seq of the recoverykey write whose
 	// sealedKey the identity opened.
@@ -92,7 +93,7 @@ func RewrapRepositoryDir(repoDir, identity, newKey string) (RewrapReport, error)
 	if err != nil {
 		return report, err
 	}
-	if m.DEK, err = sealWith(aead, dek, dekAAD(m.Authority)); err != nil {
+	if m.DEK, err = sealWith(aead, dek, dekAAD(m.Key())); err != nil {
 		return report, err
 	}
 	// The wrap names the key it is now under; the sealed-store marker is the

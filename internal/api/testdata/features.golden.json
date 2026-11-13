@@ -48,7 +48,7 @@
   {
     "name": "triggers",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "DELETE /api/v1/substrate.reamde.dev/core/trigger/{id}/parked/{fid}",
       "GET /api/v1/substrate.reamde.dev/core/trigger/status",
@@ -57,8 +57,8 @@
       "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/replay",
       "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/run",
       "POST /api/v1/substrate.reamde.dev/core/trigger/{id}/wake",
-      "POST /webhooks/{authority}/{trigger}",
-      "POST /webhooks/{authority}/{trigger}/{key}"
+      "POST /webhooks/{repository}/{trigger}",
+      "POST /webhooks/{repository}/{trigger}/{key}"
     ]
   },
   {

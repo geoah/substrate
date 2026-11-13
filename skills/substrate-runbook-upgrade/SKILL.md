@@ -132,7 +132,7 @@ substratectl sync status                               # connected provider acco
 Then search the user's own code for what an upgrade note can break: routes
 under `/api/v1/`, `substratectl` invocations, kind references
 (`<authority>/<package>/<name>`), agent tool names, and webhook URLs
-(`/webhooks/<authority>/<trigger-id>`).
+(`/webhooks/<repository>/<trigger-id>`, the repository by its id or its name).
 
 An operator also records how the server runs (compose, the image tag, or a
 binary), every process that opens the same database, and the repositories it

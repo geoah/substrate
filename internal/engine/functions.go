@@ -3470,7 +3470,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
-			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
+			st.WebhookPath = webhookPath(ds.Repository().ID, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx, `
 			WITH f AS (

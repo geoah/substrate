@@ -35,8 +35,10 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	if info.ID != testdb.Repository(t) {
-		t.Fatalf("repository = %+v", info)
+	// The name is the authority and the id is minted beside it (decision
+	// 0261): the two never coincide.
+	if !vocabulary.ValidRepositoryID(info.ID) || info.Authority != testdb.Repository(t) {
+		t.Fatalf("repository = %+v, want a minted id and the authority %q", info, testdb.Repository(t))
 	}
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err == nil {
 		t.Fatal("expected a duplicate-repository error")
@@ -140,7 +142,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
-	if info2.ID != tok.ID || authDS.Repository().ID != testdb.Repository(t) {
+	if info2.ID != tok.ID || authDS.Repository().ID != info.ID {
 		t.Fatalf("authenticated as %+v / %s", info2, authDS.Repository().ID)
 	}
 	if _, _, err := svc2.Authenticate(ctx, "substrate_tok_deadbeef"); err == nil {

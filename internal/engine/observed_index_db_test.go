@@ -1604,7 +1604,7 @@ func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
 		t.Errorf("%d counter rows hold a step, want the second reading's alone", steps)
 	}
 	// The table refuses a row missing any of it.
-	repo := testdb.Repository(t)
+	repo := r.ds.Repository().ID
 	for _, x := range []struct{ what, columns, values string }{
 		{"a number without its digits", `n, bounded, sum, min, max, covered_ms`, `1, 0, 1, 1, 1, 0`},
 		{"a first and last point without their record", `n, bounded, first_ts, last_ts, covered_ms`, `1, 0, now(), now(), 0`},

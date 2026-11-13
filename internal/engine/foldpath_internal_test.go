@@ -86,6 +86,7 @@ var foldWriteSites = map[string]string{
 	"rebuild.go:rebuild":                 "clears every fold table before the replay fills them again",
 	"repositories.go:eraseRepositoryOn":  "erases a whole repository, changelog included",
 	"repositories.go:sweepOrphans":       "erases the rows of a repository with no control-plane row, which nothing can reach",
+	"repositoryid.go:keyRow":             "moves a repository's rows from its name to its id, the scope a rebuild writes them under",
 	"embedprovider.go:pruneUnembeddable": "its tables are embeddings and embed_queue, neither a fold table",
 }
 

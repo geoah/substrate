@@ -10,10 +10,11 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The data root's layout: `<root>/repositories/<authority>/` holds one
-// repository, with its changelog, blobs and sealed records in the three
-// subdirectories and the manifest at its top. The repository's authority
-// (decision 0046) is its id, so the directory is named by it.
+// The data root's layout: `<root>/repositories/<id>/` holds one repository,
+// with its changelog, blobs and sealed records in the three subdirectories
+// and the manifest at its top. The directory is named by the repository's id
+// (decision 0261); one a release before ids wrote is named by its authority
+// until the boot converts it.
 const (
 	RepositoriesDir = "repositories"
 	ChangelogSubdir = "changelog"
@@ -21,17 +22,24 @@ const (
 	SealedSubdir    = "sealed"
 )
 
-// ErrRepositoryAuthority is returned for a repository id that is not an
-// authority (vocabulary.ValidRepositoryAuthority): lowercase DNS labels with
-// at least one dot, so it is always one path segment under the root.
-var ErrRepositoryAuthority = errors.New("changelogfile: not a repository authority")
+var (
+	// ErrRepositoryAuthority is returned for a repository name that is not an
+	// authority (vocabulary.ValidRepositoryAuthority): lowercase DNS labels
+	// with at least one dot.
+	ErrRepositoryAuthority = errors.New("changelogfile: not a repository authority")
+	// ErrRepositoryKey is returned for a directory key that is neither a
+	// repository id (vocabulary.ValidRepositoryID) nor, for a directory from
+	// before ids, an authority. Either is always one path segment.
+	ErrRepositoryKey = errors.New("changelogfile: not a repository id")
+)
 
-// checkRepositoryAuthority holds a repository id to the grammar the engine
-// admits at registration. The same rule is checked in internal/blobbytes,
-// where the id is a path segment for the same reason.
-func checkRepositoryAuthority(id string) error {
-	if !vocabulary.ValidRepositoryAuthority(id) {
-		return fmt.Errorf("%w: %q", ErrRepositoryAuthority, id)
+// checkRepositoryKey holds a directory's key to the grammar of a repository
+// id, or of the authority a directory from before ids is named by. The same
+// rule is checked in internal/blobbytes, where the key is a path segment for
+// the same reason.
+func checkRepositoryKey(key string) error {
+	if !vocabulary.ValidRepositoryID(key) && !vocabulary.ValidRepositoryAuthority(key) {
+		return fmt.Errorf("%w: %q", ErrRepositoryKey, key)
 	}
 	return nil
 }
@@ -46,13 +54,13 @@ func checkRoot(root string) error {
 	return nil
 }
 
-// RepoDir is the directory of the repository whose authority is id under
-// root, `<root>/repositories/<authority>`.
+// RepoDir is the directory of the repository keyed id under root,
+// `<root>/repositories/<id>`.
 func RepoDir(root, id string) (string, error) {
 	if err := checkRoot(root); err != nil {
 		return "", err
 	}
-	if err := checkRepositoryAuthority(id); err != nil {
+	if err := checkRepositoryKey(id); err != nil {
 		return "", err
 	}
 	return filepath.Join(filepath.Clean(root), RepositoriesDir, id), nil
@@ -83,19 +91,20 @@ func EnsureRepoDir(root, id string) (string, error) {
 	return dir, nil
 }
 
-// ListRepositoryDirs returns the authorities of the repository directories
-// under root, in name order. A missing `repositories/` lists as empty; files
-// and dot-prefixed directories (a filesystem's `.snapshot`, a sync tool's
-// state) are ignored, because no authority starts with a dot; any other
-// directory whose name is not an authority is refused, because a directory
-// the boot check silently skipped would be a repository that never imports.
+// ListRepositoryDirs returns the keys of the repository directories under
+// root, in name order: ids, and the authorities of directories from before
+// ids, which the boot converts. A missing `repositories/` lists as empty;
+// files and dot-prefixed directories (a filesystem's `.snapshot`, a sync
+// tool's state) are ignored, because no key starts with a dot; any other
+// directory whose name is not a key is refused, because a directory the boot
+// check silently skipped would be a repository that never imports.
 func ListRepositoryDirs(root string) ([]string, error) {
 	names, err := listDirs(root)
 	if err != nil {
 		return nil, err
 	}
 	for _, name := range names {
-		if err := checkRepositoryAuthority(name); err != nil {
+		if err := checkRepositoryKey(name); err != nil {
 			return nil, err
 		}
 	}

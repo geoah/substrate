@@ -578,7 +578,7 @@ deliver to, `<issuer>/webhooks/<repository>/<trigger>`.
   {"type": "package", "package": "providers.substrate.reamde.dev/applehealth", "version": 5},
   {"type": "account", "kind": "providers.substrate.reamde.dev/applehealth/account", "id": "phone-1a2b3c4d"},
   {"type": "webhook", "trigger": "applehealth-webhook",
-   "url": "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"}
+   "url": "https://ada.example.com/webhooks/rnd-0vrkvsgbs6bnz2sjy4196kccck/applehealth-webhook"}
 ]
 ```
 
@@ -855,7 +855,7 @@ A `webhook:<trigger>` scope names one webhook trigger by its id. An app
 never asks for it in `scope`, which refuses it: only an approved `webhook`
 authorization detail puts it on a token. Under it:
 
-- `POST /webhooks/{authority}/{trigger}` takes the token as
+- `POST /webhooks/{repository}/{trigger}` takes the token as
   `Authorization: Bearer` in place of the trigger's key. The door admits the
   delivery when the token is live, opens the repository the path names and
   holds `webhook:` for that trigger; any other bearer is read as a key, so a

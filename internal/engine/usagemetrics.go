@@ -45,14 +45,15 @@ func (ds *dataset) countChanges(pending []pendingEntry) {
 	for _, e := range pending {
 		sums[key{e.Kind, e.Op, e.Actor}]++
 	}
-	id := ds.Repository().ID
+	id := ds.Repository().Authority
 	repo := metrics.Repository(id)
 	for k, n := range sums {
 		metrics.Changes.WithLabelValues(repo, metrics.Name(id, k.kind), k.op, metrics.ActorClass(k.actor)).Add(n)
 	}
 }
 
-// countAuth records one account event of the repository named id.
+// countAuth records one account event of the repository named name. Every
+// series names a repository by its name, as the kinds it labels do.
 func countAuth(id, event string) {
 	metrics.AuthEvents.WithLabelValues(metrics.Repository(id), event).Inc()
 }
@@ -64,17 +65,17 @@ func forgetUsage(id string) {
 	metrics.ForgetRepository(id)
 }
 
-// repositoryExists reports whether a repository is named id. Every path
+// repositoryExists reports whether a repository is named name. Every path
 // asks it after the factors were judged, existing name or not, so it adds
 // the same round trip to both and the timing still tells nothing.
-func (s *service) repositoryExists(ctx context.Context, id string) bool {
-	_, err := s.repositoryByID(ctx, id)
+func (s *service) repositoryExists(ctx context.Context, name string) bool {
+	_, err := s.repositoryByAuthority(ctx, name)
 	return err == nil
 }
 
 // countInvocation records one function body run under the mode that ran it.
 func (ds *dataset) countInvocation(fn *vocabulary.Function, mode string, elapsed time.Duration, err error) {
-	id := ds.Repository().ID
+	id := ds.Repository().Authority
 	name := metrics.Name(id, fn.Identity())
 	outcome := "ok"
 	if err != nil {
@@ -102,13 +103,13 @@ func (l *agentLoop) countRun(res *substrate.AgentResult, err error) {
 	if err == nil && res != nil {
 		status = res.Status
 	}
-	id := l.ds.Repository().ID
+	id := l.ds.Repository().Authority
 	metrics.AgentRuns.WithLabelValues(metrics.Repository(id), metrics.Name(id, l.ag.Identity()), invocationMode(l.in.mode), status).Inc()
 }
 
 // countUsage records one completion's tokens and its priced cost.
 func (l *agentLoop) countUsage(u *llm.Usage, cost float64) {
-	id := l.ds.Repository().ID
+	id := l.ds.Repository().Authority
 	repo, agent, provider := metrics.Repository(id), metrics.Name(id, l.ag.Identity()), metrics.Provider(id, l.provider.id)
 	// An operator entry's models are the operator's choice, and the shipped
 	// records' are public: either is in clear.

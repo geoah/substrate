@@ -101,7 +101,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	var wrapped []byte
-	if err := db.QueryRow(`SELECT dek FROM repositories WHERE id = 'ada.example.com'`).Scan(&wrapped); err != nil {
+	if err := db.QueryRow(`SELECT dek FROM repositories WHERE authority = 'ada.example.com'`).Scan(&wrapped); err != nil {
 		t.Fatalf("read wrapped dek: %v", err)
 	}
 	if len(wrapped) == 0 {

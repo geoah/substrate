@@ -217,7 +217,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |
 | [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
-| [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | accepted |
+| [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | superseded |
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | superseded |
 | [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
 | [0055](0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md) | A retired name is a declared reservation, never inferred from a prune | accepted |
@@ -413,4 +413,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
 | [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
 | [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |
+| [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
 | [0263](0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md) | The API's tests of engine behavior run on the real engine, and its stand-in is deleted | accepted |

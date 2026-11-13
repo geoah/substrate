@@ -262,7 +262,8 @@ EOF
 ```
 
 A `webhook` source instead makes the trigger a public endpoint,
-`POST /webhooks/<authority>/<trigger-id>`, and the callable receives the
+`POST /webhooks/<repository>/<trigger-id>` (the repository's id, as
+`trigger status` prints it, or its name), and the callable receives the
 request (headers, query, body or parsed multipart parts, file parts stored
 as blobs) on its envelope. The endpoint is open unless the trigger sets
 `source.webhook.key`; GitHub-style signatures verify inside the function,

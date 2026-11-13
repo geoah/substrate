@@ -452,7 +452,7 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 		        deleted_at IS NOT NULL, coalesce(array_to_string(finalizers, ','), ''),
 		        coalesce(at::text, ''), coalesce(ends_at::text, ''), coalesce(due_at::text, ''),
 		        coalesce(states::text, '')
-		 FROM records WHERE repository = $1 ORDER BY kind, id`, repository)
+		 FROM records WHERE repository = (SELECT r.id FROM repositories r WHERE r.authority = $1) ORDER BY kind, id`, repository)
 	if err != nil {
 		t.Fatalf("read the fold: %v", err)
 	}
@@ -481,7 +481,8 @@ type manager struct {
 }
 
 // managerOf reads one property's manager row straight from the ledger: the
-// move's promise is that all three columns travel with the value.
+// move's promise is that all three columns travel with the value. The
+// repository is named by its name, and the ledger is keyed by its id.
 func managerOf(t *testing.T, dsn, repository, kind, id, property string) manager {
 	t.Helper()
 	db, err := sql.Open("pgx", dsn)
@@ -492,7 +493,8 @@ func managerOf(t *testing.T, dsn, repository, kind, id, property string) manager
 	var m manager
 	err = db.QueryRow(
 		`SELECT actor, tier, coalesce(principal, '') FROM property_managers
-		 WHERE repository = $1 AND record_kind = $2 AND record_id = $3 AND property = $4`,
+		 WHERE repository = (SELECT r.id FROM repositories r WHERE r.authority = $1)
+		   AND record_kind = $2 AND record_id = $3 AND property = $4`,
 		repository, kind, id, property).Scan(&m.actor, &m.tier, &m.principal)
 	if err != nil {
 		return manager{}

@@ -1009,7 +1009,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 				}
 			}
 			if !ds.svc.foreignPackages {
-				if err := authorizeNewPackage(*actor, stored, ds.scope.Repository, g); err != nil {
+				if err := authorizeNewPackage(*actor, stored, ds.info.Authority, g); err != nil {
 					return nil, err
 				}
 			}
