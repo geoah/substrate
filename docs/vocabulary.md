@@ -1171,6 +1171,12 @@ properties:
           - value: editor
 ```
 
+Three names are reserved and refused as a link property: `ref`, which holds
+the referent's path; `target`, held for a referent a read may one day inline;
+and `repository`, held for the repository a referent lives in, once a
+reference can point into another one. A kind's own property may still be named
+`repository`.
+
 A write sends them beside the value's `ref` key, and the engine coerces each
 one exactly as it coerces a record's own property, against the declared
 datatype, enum set, pattern and bounds. An undeclared name answers `422`, on
