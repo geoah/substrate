@@ -1316,6 +1316,14 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 			l.errf("%s: %q is the reserved key holding the referent record", pwhere, ReferenceTargetField)
 			continue
 		}
+		if pname == ReferenceRepositoryField {
+			// Reserved beside `ref` for the repository a referent lives in,
+			// which a value will carry once a reference can point into another
+			// repository. A link property of this name would hold that key's
+			// place before anything writes it.
+			l.errf("%s: %q is the reserved key naming the repository the referent lives in; name the link property otherwise", pwhere, ReferenceRepositoryField)
+			continue
+		}
 		pd := asMapOrNil(pdef)
 		if pd == nil {
 			// No bare-datatype shorthand here, and that is deliberate: the

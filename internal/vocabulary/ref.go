@@ -42,6 +42,14 @@ const ReferenceValueKey = "ref"
 // value, so the reservation costs a declaration one word and nothing else.
 const ReferenceTargetField = "target"
 
+// ReferenceRepositoryField is the third reserved link-property name: the key
+// a reference value will carry beside `ref` to say which repository its
+// referent lives in, once a reference can point into another one (the 1.0
+// review, #1313, F4). Nothing writes or reads it yet. It is reserved now
+// because a name added to the value after 1.0 could collide with a link
+// property a package already declared.
+const ReferenceRepositoryField = "repository"
+
 // KindRef renders a kind reference from its parts. An empty authority and
 // package render the bare shorthand form — there is no `local/` prefix.
 func KindRef(authority, pkg, name string) string {
