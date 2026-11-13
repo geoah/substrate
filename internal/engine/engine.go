@@ -155,6 +155,9 @@ type options struct {
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
 	importBatch int
+	// conversion replaces the conversion chain (conversion.go), so a test
+	// converts through a step no release carries. Tests only.
+	conversion []conversionStep
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
@@ -676,6 +679,11 @@ type service struct {
 	// (repodir.go importEntries, refoldFromFiles). Tests only.
 	testImportFault func(stage string) error
 	testImportBatch int
+	// conversion is the conversion chain this service runs, and maxDialect
+	// the changelog dialect it converts to and stamps (conversion.go): the
+	// binary's own, or a test's.
+	conversion []conversionStep
+	maxDialect int
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
@@ -925,6 +933,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 
 		testImportFault:   o.importFault,
 		testImportBatch:   o.importBatch,
+		conversion:        conversionSteps,
+		maxDialect:        maxChangelogDialect,
 		testCommitFault:   o.commitFault,
 		testBulkFault:     o.bulkFault,
 		testSeedPath:      o.seedPath,
@@ -944,6 +954,13 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testReprojectionHook:     o.reprojectionHook,
 		testReprojectionPageHook: o.reprojectionPageHook,
 		testInadmissible:         o.inadmissible,
+	}
+	if o.conversion != nil {
+		if err := checkConversionSteps(o.conversion); err != nil {
+			_ = admin.Close()
+			return nil, fmt.Errorf("substrate/engine: the conversion chain: %w", err)
+		}
+		s.conversion, s.maxDialect = o.conversion, chainDialect(o.conversion)
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —

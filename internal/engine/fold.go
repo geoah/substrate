@@ -1377,8 +1377,13 @@ func foldOpsOf(ch substrate.Change) ([]foldOp, error) {
 	// UseNumber: scanChange hands the payload over with its numbers spelled as
 	// stored, and this second decode must not flatten them through float64 on
 	// the way into the effects' open maps (Set, Labels, Props, Value).
+	//
+	// The effects' key set is closed, as the line's is (changelogfile.Decode):
+	// a field this binary does not know is a value it would drop, so the
+	// entry is refused rather than folded short (docs/stored-format.md).
 	dec := json.NewDecoder(bytes.NewReader(encoded))
 	dec.UseNumber()
+	dec.DisallowUnknownFields()
 	var ops []foldOp
 	if err := dec.Decode(&ops); err != nil {
 		return nil, fmt.Errorf("substrate/engine: seq %d carries an unreadable fold: %w", ch.Seq, err)

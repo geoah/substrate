@@ -494,6 +494,19 @@ first label.
   add-and-deprecate. `deprecated: true` is the marker, on a property, a
   reference or one enum value. CI runs `mise run kinds:check` and refuses the
   merge otherwise.
+- **A changed stored shape ships a conversion step.** The repository
+  directory is the export's contract
+  ([docs/stored-format.md](docs/stored-format.md)): the manifest, a line's
+  keys, every effect and its fields, each a closed set. A shape the history
+  already holds changes only through a step,
+  `internal/engine/conversion_NNNN_<name>.go`, that raises
+  `maxChangelogDialect` and rewrites each line in place at the boot check:
+  the one writer that rewrites a line. It lands with a test of what the lines
+  become, and the server reads one shape. Each release keeps the directory
+  its own server wrote (`mise run release:keep <tag>`), `TestKeptDirectories`
+  imports every one, and `frozen:check` refuses an edit to a kept directory
+  or a landed step
+  ([0260](docs/decisions/0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md)).
 - **A kind titles itself from a property it declares.** The built-in `title`
   every record carries is derived storage, never a kind's input: a kind with a
   heading declares its own property (`name`, `summary`, `subject`) and renders

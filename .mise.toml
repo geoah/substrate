@@ -552,10 +552,11 @@ description = "Refuse a kinds/ or samples/ change that skips a version bump, or 
 run = ".mise/kindscheck.sh"
 
 # `frozen:check` is the same shape as `kinds:check` and not in `lint` for the
-# same reason: it reads the diff. What it holds is the pair of things this tree
-# writes once, a landed migration and an accepted decision record.
+# same reason: it reads the diff. What it holds is what this tree writes once:
+# a landed migration or conversion step, a kept directory and an accepted
+# decision record.
 [tasks."frozen:check"]
-description = "Refuse an edit to a landed migration or an accepted decision record"
+description = "Refuse an edit to a landed migration, a conversion step, a kept directory or an accepted decision record"
 run = ".mise/frozencheck.sh"
 
 # The third of that shape: a discovery feature's revision against the base
@@ -1197,6 +1198,16 @@ run = "goreleaser check"
 [tasks."release:snapshot"]
 description = "Full release dry run: builds everything, publishes nothing"
 run = "goreleaser release --snapshot --clean --skip=publish"
+
+[tasks."release:keep"]
+description = "Keep a released tag's repository directory and the records it served under internal/testenv/testdata/kept/<tag>"
+# Run once per release, after the tag exists (docs/releasing.md): it builds
+# the tag, not the tree, runs it in Linux against a throwaway Postgres and
+# drives it through every sort of change the stored format holds. About six
+# minutes, most of it the release's GC sweep. TestKeptDirectories imports
+# every directory kept here under the current code (docs/stored-format.md).
+usage = 'arg "<tag>" help="The release tag, vX.Y.Z"'
+run = '.mise/keptdir.sh "$usage_tag"'
 
 [tasks."repo:settings"]
 description = "Apply .github/rulesets/main.json and the merge buttons to the GitHub repository (admin only; --dry-run prints)"

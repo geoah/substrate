@@ -107,6 +107,19 @@ is automated on purpose: it is the QA step.
    tree and stamps the build with the commit it runs from. An app it
    refuses (no App Store Connect record yet) is named before anything
    builds.
+9. **Keep its directory.** Once the tag exists, from a tree with Docker:
+
+   ```bash
+   git fetch --tags
+   mise run release:keep vX.Y.Z
+   ```
+
+   It builds the tag, runs it against a throwaway Postgres, drives it
+   through every sort of change the stored format holds, and writes
+   `internal/testenv/testdata/kept/vX.Y.Z` (about six minutes, most of it
+   the release's GC sweep). Land it in a pull request titled
+   `test(testenv): keep the vX.Y.Z directory`. From then on every change is
+   tested importing it ([kept directories](stored-format.md#kept-directories)).
 
 A pull request merged to `main` while the release pull request is open is
 fine: the next run regenerates the release pull request with the new line.

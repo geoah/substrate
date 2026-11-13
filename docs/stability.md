@@ -190,10 +190,17 @@ refuses the package by that number
 
 ### Stored data
 
-A new op or fold effect in the changelog raises the
+A repository's directory, which the recovery export hands out, has a written
+format: the manifest, the changelog's lines and their checksum, every effect a
+line carries, and the layout of the files
+([the stored format](stored-format.md)). Its key sets are closed, so a server
+refuses a key it does not know rather than drop it. A new op, effect or key
+raises the
 [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in). A
 1.x server opens what any earlier 1.x release wrote, converting it once where
-a shape changed, and 2.0 opens what the last 1.x release wrote.
+a shape changed, and 2.0 opens what the last 1.x release wrote. Each release
+keeps a directory its own server wrote, and every later release is tested
+importing it ([kept directories](stored-format.md#kept-directories)).
 
 ### A package's code
 
@@ -210,8 +217,10 @@ It refuses one written by a later release, by name
 ([upgrading the binary](operations.md#upgrading-the-binary)).
 
 Database migrations only go forward, and none undoes another. A change to a
-stored shape ships with a conversion that runs once for each repository. The
-server never reads two shapes of the same thing.
+stored shape ships with a conversion that runs once for each repository, at
+the boot check, before the repository is served
+([conversions](stored-format.md#conversions)). The server never reads two
+shapes of the same thing.
 
 ## Going back
 
