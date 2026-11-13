@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0192
 ---
 
 # 0187. Linked sources are one device, read from their highest-ranked source

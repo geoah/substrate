@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0192
 ---
 
 # 0175. A record view draws tiles, trends and tables from one batched read per block, and a band is view data

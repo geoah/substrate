@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0192
 ---
 
 # 0184. A record view grows by adding a field, never by retyping one

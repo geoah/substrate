@@ -37,7 +37,8 @@ status, the message and the problems stay what they were, so a client that
 matches the old words keeps working and one that knows no reason acts on
 the code, as [the error docs](../api.md#errors) promise. A new code would
 change what every older client reads for a refusal it already handles, and
-widen a set that is closed at thirteen. A marker in `problemDetails` would
+widen a set that is closed (at thirteen codes when this was written). A
+marker in `problemDetails` would
 move the shape of every problem detail, and a client would walk a list to
 answer a question about the whole refusal. Reading the record after the
 refusal costs a round trip and races the next write.

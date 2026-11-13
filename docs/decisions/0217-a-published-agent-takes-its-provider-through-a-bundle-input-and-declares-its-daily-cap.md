@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0242
 ---
 
 # 0217. A published agent takes its provider through a bundle input and declares its daily cap
