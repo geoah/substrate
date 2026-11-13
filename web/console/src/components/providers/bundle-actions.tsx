@@ -24,6 +24,7 @@ import {
 
 import { ImportRefusal } from "@/components/import-refusal"
 import { CodeChanges } from "@/components/packages/outside-code"
+import { OUTSIDE_CODE_WORDS } from "@/lib/app-setup"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, PauseDialog } from "@/components/ui/confirm-dialog"
@@ -73,6 +74,7 @@ import {
   blockerWords,
   readyMappings,
   REIMPORT_WARNING,
+  takeRunsOutsideCode,
   reviewNeeded,
   stepLines,
   upgradeHolders,
@@ -561,6 +563,12 @@ export function LossyUpgradeDialog({
             </>
           ) : null}
           .
+        </p>
+      )}
+      {takeRunsOutsideCode(row, []) && (
+        <p className="text-xs">
+          <span className="font-medium">Code: experimental.</span>{" "}
+          {OUTSIDE_CODE_WORDS}
         </p>
       )}
       <CodeChanges changes={upgrade?.codeChanges} />

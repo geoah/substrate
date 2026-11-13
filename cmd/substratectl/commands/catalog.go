@@ -32,6 +32,9 @@ func (a *app) takeBundle(cmd *cobra.Command, id, verb, past string, allowDataLos
 	if err != nil {
 		return err
 	}
+	if err := a.noteOutsideCode(cmd.Context(), cl, id); err != nil {
+		return err
+	}
 	var body any
 	if allowDataLoss {
 		confirm, err := a.confirmedUpgrade(cmd.Context(), cl, id)
@@ -260,6 +263,88 @@ type catalogRow struct {
 	// Upgrade is the motion an upgrade would make here and the guard lines it
 	// is refused on, when the server previewed one.
 	Upgrade *substrate.BundleUpgrade `json:"upgrade,omitempty"`
+	// Code is `experimental` where taking the package runs code a publisher
+	// outside this server published (outsideCode), whatever the package's
+	// own stability label says (docs/stability.md).
+	Code string `json:"code,omitempty"`
+}
+
+// codeExperimental is the code's label where it comes from outside.
+const codeExperimental = "experimental"
+
+// outsideCodeWords is the qualification printed where a person takes such a
+// package, the words the console shows beside the same label.
+const outsideCodeWords = "Its code comes from a publisher outside this server, and such code is experimental: how an approval reviews it and how the server confines it may change in any release."
+
+// outsideCode reports whether taking the catalog entry id runs code a
+// publisher outside this server published: its own closure's functions, or
+// those of a package the take brings first, one not held here or held below
+// what the catalog lists. A publisher's document is what marks an entry as
+// another's (its publisher), the fact the console's approval and package
+// pages read too.
+func outsideCode(items []substrate.CatalogItem, id string) bool {
+	byID := make(map[string]substrate.CatalogItem, len(items))
+	for _, e := range items {
+		byID[e.ID] = e
+	}
+	seen := map[string]bool{}
+	var runs func(id string, taken bool) bool
+	runs = func(id string, taken bool) bool {
+		e, ok := byID[id]
+		if !ok || seen[id] {
+			return false
+		}
+		seen[id] = true
+		if !taken && e.Installed && (e.Upgrade == nil || !e.Upgrade.Available) {
+			return false
+		}
+		if e.Publisher != nil && len(e.Closure.Functions) > 0 {
+			return true
+		}
+		for _, req := range e.Requires {
+			if runs(req, false) {
+				return true
+			}
+		}
+		return false
+	}
+	return runs(id, true)
+}
+
+// noteOutsideCode prints the code's label before a take of a package whose
+// code comes from outside. It reads the package's own catalog entry, and the
+// entries of what the take brings first, never the whole catalog: the take
+// stays the bare POST, and a refusal is still the server's. An id the
+// catalog does not list is left to the take's refusal.
+func (a *app) noteOutsideCode(ctx context.Context, cl *client, id string) error {
+	var entries []substrate.CatalogItem
+	seen := map[string]bool{}
+	next := []string{id}
+	for len(next) > 0 {
+		at := next[0]
+		next = next[1:]
+		if seen[at] {
+			continue
+		}
+		seen[at] = true
+		var e substrate.CatalogItem
+		err := cl.do(ctx, http.MethodGet, apiPrefix+"/catalog/"+url.PathEscape(at), nil, nil, &e)
+		var ae *apiError
+		switch {
+		case errors.As(err, &ae) && ae.Status == http.StatusNotFound:
+			continue
+		case err != nil:
+			return err
+		}
+		entries = append(entries, e)
+		if at == id || !e.Installed || (e.Upgrade != nil && e.Upgrade.Available) {
+			next = append(next, e.Requires...)
+		}
+	}
+	if outsideCode(entries, id) {
+		fmt.Fprintf(a.out, "%s: code %s. %s\n", id, codeExperimental, outsideCodeWords)
+	}
+	return nil
 }
 
 // tierSeed is the row word for the package the binary seeds and upgrades
@@ -344,7 +429,11 @@ flag.`,
 				return err
 			}
 			for _, e := range cat.Items {
-				rows = append(rows, catalogRow{ID: e.ID, Tier: e.Tier, Installed: e.Installed, Version: e.Version, Upgrade: e.Upgrade})
+				row := catalogRow{ID: e.ID, Tier: e.Tier, Installed: e.Installed, Version: e.Version, Upgrade: e.Upgrade}
+				if outsideCode(cat.Items, e.ID) {
+					row.Code = codeExperimental
+				}
+				rows = append(rows, row)
 			}
 			switch output {
 			case "", "table":
@@ -364,9 +453,15 @@ flag.`,
 // them.
 func printCatalogTable(w io.Writer, rows []catalogRow) error {
 	tw := newTable(w)
-	fmt.Fprintln(tw, "PACKAGE\tTIER\tINSTALLED\tVERSION\tUPGRADE")
+	fmt.Fprintln(tw, "PACKAGE\tTIER\tINSTALLED\tVERSION\tUPGRADE\tCODE")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%t\t%d\t%s\n", r.ID, r.Tier, r.Installed, r.Version, upgradeCell(r.Tier, r.Upgrade))
+		// A row whose code is not another's leaves the last cell out, so no
+		// padding trails its upgrade cell.
+		line := fmt.Sprintf("%s\t%s\t%t\t%d\t%s", r.ID, r.Tier, r.Installed, r.Version, upgradeCell(r.Tier, r.Upgrade))
+		if r.Code != "" {
+			line += "\t" + r.Code
+		}
+		fmt.Fprintln(tw, line)
 	}
 	if err := tw.Flush(); err != nil {
 		return err

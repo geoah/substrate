@@ -63,7 +63,7 @@ func TestUserDoorMoveGuardsNameTheKey(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("lines = %q, want one per implied move", lines)
 	}
-	if !strings.Contains(lines[0], "movedFrom is honored for the shipped vocabulary only") ||
+	if !strings.Contains(lines[0], "a kind is renamed only by the packages this server ships") ||
 		!strings.Contains(lines[0], "a.example.com/old/x") {
 		t.Fatalf("the refusal does not name the key and the kind: %q", lines[0])
 	}

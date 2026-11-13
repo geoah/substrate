@@ -1872,6 +1872,10 @@ them like anything else.
 
 ### Code from outside authorities
 
+Code from outside publishers is `experimental` at 1.0
+([stability](stability.md#a-packages-code)): how it is reviewed and confined
+below may change in any release, whatever the package's own label says.
+
 A package installed from an authority document carries `publishedFrom` on
 its package record. Its functions reach only exact DNS hosts and wildcard
 suffixes (`*.example.com`) in `permissions.network`. No declaration means

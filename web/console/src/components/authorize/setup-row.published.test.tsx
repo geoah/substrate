@@ -132,3 +132,38 @@ it("says a package nothing publishes can't be done, in the server's words", () =
   expect(screen.queryByText(/stays on your server/)).toBeNull()
   expect(screen.queryByText(/Installs/)).toBeNull()
 })
+
+it("says its code is experimental where a publisher outside this server ships it", () => {
+  mount({
+    ...row,
+    package: {
+      ...row.package!,
+      functions: [{ id: "substrate.reamde.dev/core/function/training/plan" }],
+    },
+  })
+  expect(screen.getByText("Code: experimental.")).toBeTruthy()
+  // The publisher's own label is not what says it.
+  expect(screen.queryByText(/stable/i)).toBeNull()
+})
+
+it("says so where a package it brings first is one", () => {
+  mount({
+    ...row,
+    package: {
+      ...row.package!,
+      requires: [
+        {
+          ...row.package!.requires![0],
+          publisher: row.package!.publisher,
+        },
+      ],
+    },
+  })
+  expect(screen.getByText("Code: experimental.")).toBeTruthy()
+})
+
+it("says nothing of code this server ships", () => {
+  // Training ships no code, and Health is this server's own.
+  mount(row)
+  expect(screen.queryByText("Code: experimental.")).toBeNull()
+})

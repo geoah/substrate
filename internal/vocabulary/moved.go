@@ -86,3 +86,12 @@ func MovedFromProblems(old, moved *Kind) []string {
 	}
 	return problems
 }
+
+// KindRenameRefusal is the answer to a `movedFrom` a publisher's package
+// declares, at every door but the boot upgrade of the packages this server
+// ships (decision 0269): other repositories hold records of the old kind
+// under its name, so the refusal says what to do instead.
+func KindRenameRefusal(to, from string) string {
+	return fmt.Sprintf("kind %s: data.movedFrom renames %s, and a kind is renamed only by the packages this server ships: other repositories hold records of it under its name. Keep %s declared, mark it `deprecated: true`, and declare %s beside it without movedFrom",
+		to, from, from, to)
+}

@@ -57,6 +57,9 @@ import {
   upgradeBlocked,
   upgradeMotion,
   pendingShippedUpgrades,
+  takeRunsOutsideCode,
+  type BundleRow,
+  type RequirementNode,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
@@ -1791,5 +1794,73 @@ describe("what a sample's mappings link", () => {
     expect(readyMappings(mapped).map((m) => m.id)).toEqual([
       "s.example.com/people/fromlinear",
     ])
+  })
+})
+
+// Code a publisher outside this server published is `experimental` at 1.0,
+// where a person takes it: a package a publisher's document published whose
+// closure runs functions, or one that brings such a package first. The
+// binary's own packages, a package with no code and a requirement already
+// held are not labelled.
+describe("takeRunsOutsideCode", () => {
+  const publisher = {
+    authority: "tools.example.com",
+    documentUrl: "https://tools.example.com/.well-known/substrate.json",
+  }
+  const closure = (functions: string[] | null) => ({
+    kinds: null,
+    traits: null,
+    functions,
+    agents: null,
+    mappings: null,
+    records: null,
+    triggers: null,
+  })
+  const row = (id: string, over: Partial<CatalogItem> = {}): BundleRow => ({
+    key: id,
+    id,
+    name: id.split("/").pop()!,
+    authority: id.split("/")[0],
+    package: id.split("/").pop()!,
+    installed: false,
+    requires: [],
+    catalog: {
+      id,
+      name: id.split("/").pop()!,
+      authority: id.split("/")[0],
+      package: id.split("/").pop()!,
+      description: "",
+      version: 1,
+      tier: "published",
+      installed: false,
+      closure: closure(null),
+      ...over,
+    },
+  })
+  const node = (r: BundleRow, present: boolean): RequirementNode => ({
+    package: r.id,
+    present,
+    row: r,
+    requires: [],
+  })
+  const outside = row("tools.example.com/sync", {
+    publisher,
+    closure: closure(["tools.example.com/sync/pull"]),
+  })
+  const words = row("tools.example.com/words", { publisher })
+  const shipped = row("providers.substrate.reamde.dev/google", {
+    closure: closure(["providers.substrate.reamde.dev/google/sync"]),
+  })
+
+  it("labels a published package whose closure runs functions", () => {
+    expect(takeRunsOutsideCode(outside, [])).toBe(true)
+  })
+  it("leaves a package with no functions, and one the binary ships", () => {
+    expect(takeRunsOutsideCode(words, [])).toBe(false)
+    expect(takeRunsOutsideCode(shipped, [])).toBe(false)
+  })
+  it("labels a package that brings such code first, and not one whose requirement is held", () => {
+    expect(takeRunsOutsideCode(words, [node(outside, false)])).toBe(true)
+    expect(takeRunsOutsideCode(words, [node(outside, true)])).toBe(false)
   })
 })

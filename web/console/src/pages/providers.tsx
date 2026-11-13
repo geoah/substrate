@@ -84,9 +84,11 @@ import {
   upgradeAvailable,
   upgradeBlocked,
   blockerWords,
+  takeRunsOutsideCode,
   type BundleRow,
   type RequirementNode,
 } from "@/lib/bundles"
+import { OUTSIDE_CODE_WORDS } from "@/lib/app-setup"
 import { rowOffers, servedModels } from "@/lib/llm-models"
 import { LLM_PROVIDER_SEED } from "@/lib/llm-provider-seed"
 import {
@@ -409,6 +411,11 @@ function ProviderRow({
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
           <span className={LINE_TONE[standing.tone]}>{standing.line}</span>
+          {standing.tone === "add" && takeRunsOutsideCode(row, chain) && (
+            <span title={OUTSIDE_CODE_WORDS}>
+              Code <span className="text-muted-foreground">experimental</span>
+            </span>
+          )}
           {entry.updateAvailable && (
             <Pill tone="accent" dot={false}>
               Update available

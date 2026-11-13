@@ -349,9 +349,10 @@ func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
 	}
 }
 
-// Without the flag the install is the bare POST it always was: no preview is
-// read and no body is sent, so a lossy upgrade is the server's 403, which the
-// CLI renders with the hint naming the flag this command carries.
+// Without the flag the install is the bare POST it always was: the catalog
+// is not read for a plan and no body is sent, so a lossy upgrade is the
+// server's 403, which the CLI renders with the hint naming the flag this
+// command carries. (It reads the package's own entry for the code's label.)
 func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -462,5 +463,93 @@ data:
 	h.mustRun("apply", "-f", file, "--allow-data-loss")
 	if _, ok := lastConfirm(t, h); ok {
 		t.Fatal("a lossless plan was confirmed")
+	}
+}
+
+// Where a person takes a package, the CLI says when its code comes from a
+// publisher outside this server: a publisher's document published it and its
+// closure runs functions, or it brings first a package that does. The
+// binary's own providers, a package that runs no code and a requirement
+// already held as listed carry no label.
+func outsideCodeCatalog() []substrate.CatalogItem {
+	publisher := &substrate.AuthorizationPackagePublisher{Authority: "tools.example.com", Name: "Example Tools"}
+	entry := func(id string, pub *substrate.AuthorizationPackagePublisher, functions []string, requires ...string) substrate.CatalogItem {
+		authority, pkg, _ := strings.Cut(id, "/")
+		return substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{
+			ID: id, Name: pkg, Authority: authority, Package: pkg, Version: 1, Tier: substrate.TierPublished,
+			Publisher: pub, Requires: requires, Closure: substrate.CatalogClosure{Functions: functions},
+		}}
+	}
+	held := entry("tools.example.com/base", publisher, []string{"tools.example.com/base/fetch"})
+	held.Installed = true
+	return []substrate.CatalogItem{
+		entry("tools.example.com/sync", publisher, []string{"tools.example.com/sync/pull"}),
+		entry("tools.example.com/words", publisher, nil),
+		entry("tools.example.com/bundle", publisher, nil, "tools.example.com/sync"),
+		entry("tools.example.com/over", publisher, nil, "tools.example.com/base"),
+		held,
+		entry("providers.substrate.reamde.dev/google", nil, []string{"providers.substrate.reamde.dev/google/sync"}),
+	}
+}
+
+func TestCatalogLabelsCodeFromOutsideThisServer(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.shippedStatus = 404
+	h.fake.catalog = outsideCodeCatalog()
+	stdout, _ := h.mustRun("catalog")
+	for id, want := range map[string]bool{
+		"tools.example.com/sync":                true,
+		"tools.example.com/bundle":              true,
+		"tools.example.com/base":                true,
+		"tools.example.com/words":               false,
+		"tools.example.com/over":                false,
+		"providers.substrate.reamde.dev/google": false,
+	} {
+		line := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(id) + `\s.*$`).FindString(stdout)
+		if line == "" {
+			t.Fatalf("no row for %s:\n%s", id, stdout)
+		}
+		if got := strings.HasSuffix(strings.TrimSpace(line), "experimental"); got != want {
+			t.Errorf("%s: labeled experimental %v, want %v:\n%s", id, got, want, line)
+		}
+	}
+	if !strings.Contains(stdout, "CODE") {
+		t.Errorf("the table names no CODE column:\n%s", stdout)
+	}
+	stdout, _ = h.mustRun("catalog", "-o", "json")
+	var rows []catalogRow
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if want := r.ID == "tools.example.com/sync" || r.ID == "tools.example.com/bundle" || r.ID == "tools.example.com/base"; (r.Code == "experimental") != want {
+			t.Errorf("%s: json code %q, want experimental %v", r.ID, r.Code, want)
+		}
+	}
+}
+
+func TestInstallSaysCodeFromOutsideThisServerIsExperimental(t *testing.T) {
+	for id, want := range map[string]bool{
+		"tools.example.com/bundle":              true,
+		"tools.example.com/over":                false,
+		"providers.substrate.reamde.dev/google": false,
+	} {
+		t.Run(id, func(t *testing.T) {
+			h := newHarness(t)
+			h.writeConfig()
+			h.fake.catalog = outsideCodeCatalog()
+			stdout, _ := h.mustRun("install", id)
+			label := id + ": code experimental. " + outsideCodeWords
+			if strings.Contains(stdout, label) != want {
+				t.Errorf("install printed the label %v, want %v:\n%s", !want, want, stdout)
+			}
+			if want && strings.Index(stdout, label) > strings.Index(stdout, id+" installed") {
+				t.Errorf("the label follows the install it qualifies:\n%s", stdout)
+			}
+			if contains(h.fake.doorRequests(), "GET /api/v1/catalog") {
+				t.Errorf("the install read the whole catalog: %v", h.fake.doorRequests())
+			}
+		})
 	}
 }
