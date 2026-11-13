@@ -1761,7 +1761,11 @@ delivered twice and nothing an older source skipped is delivered late; a schedul
 and fires the newest one it missed, or, where its `missed` is `all`, each
 one it missed, oldest first, at most ten per pass; a parked
 failure keeps the id `…/parked` listed, so a saved retry still names it, and
-a parked drain resumes from its last committed page. A paged drain that stopped
+a parked drain resumes from its last committed page, unless the directory was
+written by a release before record ids sorted in byte order: its history
+carries no mark of the order its drains' continuations are in, so every drain
+holding one starts over from its first page at the repository's first open
+(repository migration 7). A paged drain that stopped
 between pages without parking (a crash, or a shutdown mid-drain) starts over
 from its first page: a middle page's entry names the cursor by its SHA-256 and
 leaves the bytes in the database, and only a park carries them into the

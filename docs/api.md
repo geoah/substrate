@@ -719,7 +719,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   ([above](#who-points-at-a-record-referencing)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
-a JSON list of `{property, desc}`). A number sorts as a number and an instant
+a JSON list of `{property, desc}`). A kind and an id sort in plain byte order,
+whatever the database's locale: upper case before lower case, and punctuation
+by its byte. A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to the root of its linear component
@@ -859,14 +861,16 @@ reads declared since, which the same request now reaches (a cursor is bound to
 the request the client sent, never to what its grant narrowed it to). For an
 app's token, the request now reaches nothing it can read, as when the one kind
 it read no longer has the purpose or binds the trait it asks for; the same
-request without a cursor answers an empty page. Or an earlier release minted
-the token: the token carries the version of its own format, and a server
-refuses a version it did not mint rather than reading it as its own. A server
-upgrade can therefore end every walk in progress once, with a `410`. A request
-the server would refuse as a fresh one gets that refusal with a cursor too:
-one that names a kind since removed, or a trait whose last implementer went,
-or, for an app's token, a kind it may no longer read, answers what the same
-request without a cursor answers (`404`, `422`).
+request without a cursor answers an empty page. Or the token was cut in
+another order of kinds and ids: it carries, as its version, the order a
+record's kind and id compare in, and a server refuses a token cut in an order
+it does not compare in rather than resume it in its own. An upgrade that
+changes that order, as the one that put kinds and ids in byte order did, ends
+every walk in progress once, with a `410`. A request the server would refuse
+as a fresh one gets that refusal with a cursor too: one that names a kind
+since removed, or a trait whose last implementer went, or, for an app's token,
+a kind it may no longer read, answers what the same request without a cursor
+answers (`404`, `422`).
 The [window read](#the-window-read)'s token follows the same rules.
 
 ### Addressing a page by its number

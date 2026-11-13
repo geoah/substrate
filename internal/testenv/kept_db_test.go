@@ -123,6 +123,7 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	e.Token = fixture.Token
 
 	upgraded := keptUpgrade(t, e, want.Head)
+	keptAnnotations(t, e, root, fixture.Repository, want.Head, upgraded)
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
 	dropped := keptConvert(&want, conversions, keptDialect(t, dir, fixture.Repository))
@@ -216,6 +217,14 @@ type keptTouch struct {
 	entries []keptEntry
 	created bool
 	purged  bool
+	// annotations is each annotation effect of those entries, which the
+	// change feed does not carry, read from the directory's own lines.
+	annotations []keptAnnotation
+}
+
+type keptAnnotation struct {
+	key   string
+	value any // nil clears it
 }
 
 type keptEntry struct {
@@ -327,6 +336,24 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 	} else {
 		delete(want, "propertyMeta")
 	}
+	if len(k.annotations) > 0 {
+		ann, _ := want["annotations"].(map[string]any)
+		if ann == nil {
+			ann = map[string]any{}
+		}
+		for _, a := range k.annotations {
+			if a.value == nil {
+				delete(ann, a.key)
+			} else {
+				ann[a.key] = a.value
+			}
+		}
+		if len(ann) > 0 {
+			want["annotations"] = ann
+		} else {
+			delete(want, "annotations")
+		}
+	}
 	if wrote {
 		want["kindVersion"] = kindVersion(fmt.Sprint(want["kind"]))
 		// The title is derived storage (decision 0016), a function of the
@@ -425,6 +452,59 @@ func keptUpgrade(t *testing.T, e *testenv.Env, head int64) map[string]*keptTouch
 		}
 	}
 	return out
+}
+
+// keptAnnotations adds to each record the annotation effects of the entries
+// after the release's head, read from the imported directory's lines: an
+// effect the change feed leaves out, and one the boot writes (repository
+// migration 7's mark).
+func keptAnnotations(t *testing.T, e *testenv.Env, root, repository string, head int64, upgraded map[string]*keptTouch) {
+	t.Helper()
+	ds, err := e.Service.Dataset(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(filepath.Join(root, "repositories", ds.Repository().ID)))
+	if err != nil {
+		t.Fatalf("open the imported changelog: %v", err)
+	}
+	err = log.Walk(func(entry changelogfile.Entry) error {
+		if entry.Seq <= head {
+			return nil
+		}
+		var p struct {
+			Fold []struct {
+				Kind  string          `json:"kind"`
+				Ref   string          `json:"ref"`
+				ID    string          `json:"id"`
+				Key   string          `json:"key"`
+				Value json.RawMessage `json:"value"`
+			} `json:"fold"`
+		}
+		if err := json.Unmarshal(entry.Payload, &p); err != nil {
+			return err
+		}
+		for _, f := range p.Fold {
+			if f.Kind != "annotation" {
+				continue
+			}
+			a := keptAnnotation{key: f.Key}
+			if len(f.Value) > 0 {
+				if err := json.Unmarshal(f.Value, &a.value); err != nil {
+					return err
+				}
+			}
+			path := f.Ref + "/" + f.ID
+			if upgraded[path] == nil {
+				upgraded[path] = &keptTouch{}
+			}
+			upgraded[path].annotations = append(upgraded[path].annotations, a)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the imported changelog: %v", err)
+	}
 }
 
 // keptRead reads every record the current code serves, live and tombstoned,
@@ -679,8 +759,9 @@ func copyKept(t *testing.T, src, dst string) {
 
 // The comparison of a record the boot rewrote takes nothing from what the
 // current code serves: a manager row at another tier or time, another kind
-// version, a value no entry wrote, a write that is not the boot's, or one
-// that moved a value an owner set, each fails. It needs no database.
+// version, a value or an annotation no entry wrote, a write that is not the
+// boot's, or one that moved a value an owner set, each fails. It needs no
+// database.
 func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 	t.Parallel()
 	const t0, t1 = "2026-11-13T00:00:00Z", "2026-11-13T01:00:00Z"
@@ -712,6 +793,17 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 	if d := touch("substrate", "shipped").check(release, now(nil), kindVersion); len(d) != 0 {
 		t.Fatalf("the record the entry describes was refused: %v", d)
 	}
+	marked := func() *keptTouch {
+		k := touch("substrate", "shipped")
+		k.annotations = []keptAnnotation{{key: "substrate/mark", value: float64(2)}}
+		return k
+	}
+	mark := func(v string) func(m map[string]any) {
+		return func(m map[string]any) { m["annotations"] = map[string]any{"substrate/mark": json.Number(v)} }
+	}
+	if d := marked().check(release, now(mark("2")), kindVersion); len(d) != 0 {
+		t.Fatalf("the annotation the entry set was refused: %v", d)
+	}
 	meta := func(m map[string]any) map[string]any {
 		return m["propertyMeta"].(map[string]any)["shipped"].(map[string]any)
 	}
@@ -724,6 +816,8 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		"another manager":                {touch("substrate", "shipped"), now(func(m map[string]any) { meta(m)["manager"] = "api" })},
 		"another kind version":           {touch("substrate", "shipped"), now(func(m map[string]any) { m["kindVersion"] = json.Number("1") })},
 		"a value no entry wrote":         {touch("substrate", "shipped"), now(func(m map[string]any) { m["properties"].(map[string]any)["owned"] = "9" })},
+		"an annotation no entry wrote":   {touch("substrate", "shipped"), now(mark("2"))},
+		"another annotation value":       {marked(), now(mark("3"))},
 		"a write that is not the boot's": {touch("api", "shipped"), now(nil)},
 		"a write over the owner's value": {touch("substrate", "owned"), now(nil)},
 	} {

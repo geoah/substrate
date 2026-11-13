@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -457,6 +458,416 @@ func TestAnInterruptedReprojectionResumesAtTheNextOpen(t *testing.T) {
 	}
 	if pending := pendingReprojectionsOf(t, ds2); len(pending) != 0 {
 		t.Errorf("the pass left %v owed", pending)
+	}
+}
+
+// Migration 0021 put record ids in byte order, so a pass the locale's order
+// stopped after `b` still owes `Zed`, which now sorts before `b`: resumed from
+// its checkpoint it would skip `Zed` for good and delete the request. The
+// migration starts every pending pass from the first row, so the next open
+// re-derives every row the pass owed. The upgrade is the migration's own SQL,
+// run over the staged checkpoint: its columns are byte order already, so the
+// reset is what acts.
+func TestTheByteOrderMigrationRestartsAPassTheOldOrderStopped(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+
+	tree := reprojTree(t)
+	patchProvider(t, tree, reprojPeer, "99")
+	svc1 := openReprojTree(t, dsn, root, tree)
+	if _, err := svc1.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	d1, err := svc1.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds1 := d1.(*dataset)
+	mustPutInternal(t, ds1, substrate.PutInput{
+		Kind: reprojProvider, ID: "hub", Properties: map[string]any{"label": "the hub", "wire": "openai"},
+	})
+	// The locale orders them a, b, Zed, zz; bytes order them Zed, a, b, zz.
+	owed := []string{"a", "b", "Zed", "zz"}
+	for _, id := range owed {
+		mustPutInternal(t, ds1, substrate.PutInput{
+			Kind: reprojProvider, ID: id, Properties: map[string]any{"label": "provider " + id, "wire": "openai", "peer": "hub"},
+		})
+	}
+	if _, err := ds1.db.ExecContext(ctx, `DELETE FROM refs WHERE src_kind = $1`, reprojProvider); err != nil {
+		t.Fatal(err)
+	}
+	// A pass under the locale's order committed the pages through `b`, but
+	// stands here for one whose rows were never derived, so every row it
+	// owes, and every row it had done, shows whether it ran.
+	if _, err := ds1.db.ExecContext(ctx, `
+		INSERT INTO index_reprojections (kind, refs, refs_properties, fts, after_id)
+		VALUES ($1, true, $2::text[], false, 'b')`, reprojProvider, []string{"peer"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgrade, err := migrationsFS.ReadFile("migrations/0021_identity_columns_byte_order.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDBOf(t, dsn).ExecContext(ctx, string(upgrade)); err != nil {
+		t.Fatalf("run 0021 again: %v", err)
+	}
+
+	svc2 := openReprojTree(t, dsn, root, tree)
+	defer func() { _ = svc2.Close() }()
+	d2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds2 := d2.(*dataset)
+	waitReprojection(t, ds2)
+	rows, err := ds2.db.QueryContext(ctx, `SELECT src FROM refs WHERE src_kind = $1 AND property = 'peer' ORDER BY src`, reprojProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rederived []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		rederived = append(rederived, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	if strings.Join(rederived, ",") != "Zed,a,b,zz" {
+		t.Errorf("after the upgrade the pass re-derived %v, want every row it owed: Zed, a, b, zz", rederived)
+	}
+	if pending := pendingReprojectionsOf(t, ds2); len(pending) != 0 {
+		t.Errorf("the pass left %v owed", pending)
+	}
+}
+
+// The migration does not run beside a server that holds a repository
+// (TestTheByteOrderMigrationRefusesWhileAServerHoldsARepository). Behind that
+// rule the request's fence still holds a pass whose process took no writer
+// lease, which no server does and a test may: paused after `b` across the
+// migration, it would resume after `b` in byte order and skip `Zed`. The
+// migration moves the fence with the checkpoint, so that pass's advance and
+// its delete match nothing, the restarted request survives it, and the next
+// pass re-derives every row.
+func TestTheByteOrderMigrationFencesAPassPausedAcrossIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+
+	tree := reprojTree(t)
+	patchProvider(t, tree, reprojPeer, "99")
+	svc1 := openReprojTree(t, dsn, root, tree)
+	if _, err := svc1.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	d1, err := svc1.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds1 := d1.(*dataset)
+	mustPutInternal(t, ds1, substrate.PutInput{
+		Kind: reprojProvider, ID: "hub", Properties: map[string]any{"label": "the hub", "wire": "openai"},
+	})
+	for _, id := range []string{"a", "b", "Zed", "zz"} {
+		mustPutInternal(t, ds1, substrate.PutInput{
+			Kind: reprojProvider, ID: id, Properties: map[string]any{"label": "provider " + id, "wire": "openai", "peer": "hub"},
+		})
+	}
+	if _, err := ds1.db.ExecContext(ctx, `DELETE FROM refs WHERE src_kind = $1`, reprojProvider); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds1.db.ExecContext(ctx, `
+		INSERT INTO index_reprojections (kind, refs, refs_properties, fts, after_id)
+		VALUES ($1, true, $2::text[], false, 'b')`, reprojProvider, []string{"peer"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The next open's pass reads the request (after `b`) and pauses before
+	// its first page, until the migration has committed.
+	paused, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	hook := func(ctx context.Context, kind string) error {
+		if kind != reprojProvider {
+			return nil
+		}
+		once.Do(func() {
+			close(paused)
+			<-release
+		})
+		return nil
+	}
+	svc2 := openReprojTree(t, dsn, root, tree, WithTestReprojectionHook(hook), WithTestSkipWriterLease())
+	defer func() { _ = svc2.Close() }()
+	d2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds2 := d2.(*dataset)
+	<-paused
+	upgrade, err := migrationsFS.ReadFile("migrations/0021_identity_columns_byte_order.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDBOf(t, dsn).ExecContext(ctx, string(upgrade)); err != nil {
+		t.Fatalf("run 0021 beside the paused pass: %v", err)
+	}
+	close(release)
+	waitReprojection(t, ds2)
+
+	rows, err := ds2.db.QueryContext(ctx, `SELECT src FROM refs WHERE src_kind = $1 AND property = 'peer' ORDER BY src`, reprojProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rederived []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		rederived = append(rederived, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	if strings.Join(rederived, ",") != "Zed,a,b,zz" {
+		t.Errorf("the rows re-derived around a pass paused across the migration: %v, want Zed, a, b, zz", rederived)
+	}
+	if pending := pendingReprojectionsOf(t, ds2); len(pending) != 0 {
+		t.Errorf("the passes left %v owed", pending)
+	}
+}
+
+// No server runs while migration 0021 does. A server before it, holding a
+// repository, holds positions in memory that compare the columns it changes:
+// its search reindex paused after `a, b` in the locale's order owes `Zed`, and
+// its reprojection paused before its first page owes every row after `b`.
+// Each would resume in byte order past `Zed` and record its pass as done. So
+// the migration refuses while that server holds the repository's writer
+// lease, names the repository, and changes nothing. Once the server is gone
+// it runs, and the next server's passes start over and finish: every row
+// re-derived, the search index recorded as done, nothing owed.
+func TestTheByteOrderMigrationRefusesWhileAServerHoldsARepository(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+
+	tree := reprojTree(t)
+	patchProvider(t, tree, reprojPeer, "99")
+	svc1 := openReprojTree(t, dsn, root, tree)
+	if _, err := svc1.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	d1, err := svc1.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds1 := d1.(*dataset)
+	waitReprojection(t, ds1)
+	mustPutInternal(t, ds1, substrate.PutInput{
+		Kind: reprojProvider, ID: "hub", Properties: map[string]any{"label": "the hub", "wire": "openai"},
+	})
+	for _, id := range []string{"a", "b", "Zed", "zz"} {
+		mustPutInternal(t, ds1, substrate.PutInput{
+			Kind: reprojProvider, ID: id, Properties: map[string]any{"label": "provider " + id, "wire": "openai", "peer": "hub"},
+		})
+	}
+	// Both passes owe every row: the refs are gone with a request after `b`,
+	// and every row's `fts` is stale under a search index of an older version.
+	for _, stmt := range []string{
+		`DELETE FROM refs WHERE src_kind = '` + reprojProvider + `'`,
+		`INSERT INTO index_reprojections (kind, refs, refs_properties, fts, after_id)
+			VALUES ('` + reprojProvider + `', true, ARRAY['peer'], false, 'b')`,
+		`UPDATE records SET fts = to_tsvector('english', 'plantedstale')`,
+		`UPDATE search_index SET version = 1`,
+	} {
+		if _, err := ds1.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw := rawDBOf(t, dsn)
+	stageTheLocaleOrder(t, raw)
+
+	// The server before the migration: its reindex pauses before its second
+	// page of providers, its reprojection before its first.
+	reindexed, reprojected := make(chan struct{}), make(chan struct{})
+	var pages atomic.Int32
+	var once sync.Once
+	svc2 := openReprojTree(t, dsn, root, tree,
+		WithTestSearchReindex(2, func(ctx context.Context, kind string) error {
+			if kind != reprojProvider || pages.Add(1) != 2 {
+				return nil
+			}
+			close(reindexed)
+			<-ctx.Done()
+			return ctx.Err()
+		}),
+		WithTestReprojectionHook(func(ctx context.Context, kind string) error {
+			if kind != reprojProvider {
+				return nil
+			}
+			once.Do(func() { close(reprojected) })
+			<-ctx.Done()
+			return ctx.Err()
+		}))
+	defer func() { _ = svc2.Close() }()
+	d2, err := svc2.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-reindexed
+	<-reprojected
+
+	// The migration as the boot applies it: the runner's own step, its
+	// transaction and its row in the ledger, with 0021 pending again.
+	var byteOrder migration
+	all, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range all {
+		if m.Version == 21 {
+			byteOrder = m
+		}
+	}
+	apply := func() error {
+		conn, err := raw.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = conn.Close() }()
+		return applyMigration(ctx, conn, byteOrder)
+	}
+	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 21`); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := func() string {
+		var after string
+		var requested time.Time
+		if err := d2.(*dataset).db.QueryRowContext(ctx, `SELECT after_id, requested_at FROM index_reprojections WHERE kind = $1`,
+			reprojProvider).Scan(&after, &requested); err != nil {
+			t.Fatal(err)
+		}
+		return after + " " + requested.UTC().Format(time.RFC3339Nano)
+	}
+	ledger := func() string {
+		rows, err := raw.QueryContext(ctx, `SELECT version, sha256 FROM schema_migrations ORDER BY version`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var v int
+			var sum string
+			if err := rows.Scan(&v, &sum); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%d:%s", v, sum))
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(out, ",")
+	}
+	checkpointBefore, ledgerBefore := checkpoint(), ledger()
+	if err := apply(); err == nil || !strings.Contains(err.Error(), "stop every running server") {
+		t.Fatalf("0021 beside a server that holds the repository: %v, want it refused", err)
+	}
+	var collation string
+	if err := raw.QueryRowContext(ctx, `
+		SELECT c.collname FROM pg_attribute a JOIN pg_collation c ON c.oid = a.attcollation
+		WHERE a.attrelid = 'records'::regclass AND a.attname = 'id'`).Scan(&collation); err != nil || collation != "default" {
+		t.Errorf("after the refusal records.id sorts by %q (%v), want the database's own collation still", collation, err)
+	}
+	if got := checkpoint(); got != checkpointBefore || !strings.HasPrefix(got, "b ") {
+		t.Errorf("after the refusal the reprojection's checkpoint is %q, want it as it was, %q", got, checkpointBefore)
+	}
+	if got := ledger(); got != ledgerBefore {
+		t.Errorf("after the refusal the ledger of applied migrations is\n %s\nwant\n %s", got, ledgerBefore)
+	}
+
+	// The server is gone, its passes unfinished. A release before ids held
+	// the lease under the repository's name, and that refuses too.
+	if err := svc2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	named, err := raw.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var held bool
+	if err := named.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+writerLeaseKeySQL+`)`, repo).Scan(&held); err != nil || !held {
+		t.Fatalf("hold the lease under the name %s: %v, %v", repo, held, err)
+	}
+	if err := apply(); err == nil || !strings.Contains(err.Error(), "holds repository "+repo) {
+		t.Errorf("0021 beside a lease held under the name: %v, want it refused", err)
+	}
+	if _, err := named.ExecContext(ctx, `SELECT pg_advisory_unlock(`+writerLeaseKeySQL+`)`, repo); err != nil {
+		t.Fatal(err)
+	}
+	if err := named.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// With no server left the migration runs, and the next server's passes
+	// finish what both owed.
+	if err := apply(); err != nil {
+		t.Fatalf("0021 once the server is gone: %v", err)
+	}
+	if got := ledger(); !strings.Contains(got, fmt.Sprintf("21:%s", byteOrder.SHA256)) {
+		t.Errorf("after the migration the ledger is %s, want 0021 recorded", got)
+	}
+	svc3 := openReprojTree(t, dsn, root, tree)
+	defer func() { _ = svc3.Close() }()
+	d3, err := svc3.Dataset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds3 := d3.(*dataset)
+	waitReindex(t, ds3)
+	waitReprojection(t, ds3)
+	if left := underivedRows(t, ds3); len(left) != 0 {
+		t.Errorf("the search index left %v underived", left)
+	}
+	if v := searchIndexVersionOf(t, ds3); v != searchIndexVersion {
+		t.Errorf("the search index is recorded at version %d, want %d", v, searchIndexVersion)
+	}
+	rows, err := ds3.db.QueryContext(ctx, `SELECT src FROM refs WHERE src_kind = $1 AND property = 'peer' ORDER BY src`, reprojProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rederived []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		rederived = append(rederived, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	if strings.Join(rederived, ",") != "Zed,a,b,zz" {
+		t.Errorf("the rows re-derived after the migration: %v, want Zed, a, b, zz", rederived)
+	}
+	if pending := pendingReprojectionsOf(t, ds3); len(pending) != 0 {
+		t.Errorf("the passes left %v owed", pending)
 	}
 }
 
