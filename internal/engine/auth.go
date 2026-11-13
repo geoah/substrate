@@ -660,9 +660,11 @@ func (s *service) afterProof(door string) {
 // factorsStand is the fence of every door that proved the factors before it
 // acts: inside the act's transaction, under the changelog lock every change
 // of the factors takes (writeCredential), the credential is still the one the
-// request proved. A sign out everywhere, a password change, a new second
-// factor or an operator's reset that landed between the proof and the act
-// refuses the act, so nothing the old factors began survives them.
+// request proved. A password change (alone or with a sign out everywhere), a
+// new second factor or an operator's reset that landed between the proof and
+// the act refuses the act, so nothing the old factors began survives them. A
+// sign out everywhere that changes no factor leaves the factors standing: a
+// request proving them is a new sign-in, as one a moment later would be.
 func (t *txn) factorsStand(proved authMaterial) error {
 	row, err := t.loadRow(eref{Kind: kindCredential, ID: credentialID}, false)
 	if err != nil {

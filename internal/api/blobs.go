@@ -246,14 +246,15 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 		writeUnavailable(w, time.Second, "blob store is busy, retry")
 		return
 	}
-	// The wait for a slot may be long: a token revoked or lapsed meanwhile
-	// reads nothing.
-	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+	info, data, err := ds.GetBlob(ctx, digest)
+	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	info, data, err := ds.GetBlob(ctx, digest)
-	if err != nil {
+	// A long transfer reads its token before its headers, afresh: one revoked
+	// or lapsed while the request waited for a slot or the store read the
+	// bytes gets an ordinary refusal and none of them.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
@@ -277,10 +278,10 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(blobTransferDeadline))
 	w.WriteHeader(http.StatusOK)
 	// The bytes go out a chunk at a time, and the token is read again
-	// between chunks: a large blob a client is still reading stops when its
-	// token is revoked or its person signs out everywhere. Its status line is
-	// gone by then, so the response is cut, which a client reads as a body
-	// that ended early.
+	// before each chunk after the first, at most once a second: a large blob
+	// a client is still reading stops when its token is revoked or its person
+	// signs out everywhere. Its status line is gone by then, so the response
+	// is cut, which a client reads as a body that ended early.
 	for len(data) > 0 {
 		n := min(len(data), blobChunk)
 		if _, err := w.Write(data[:n]); err != nil {

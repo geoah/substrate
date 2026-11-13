@@ -39,6 +39,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
+	// A long transfer reads its token before its headers, afresh: one that
+	// died while the point was pinned is an ordinary refusal, and the pin is
+	// let go, as a written export lets it go.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		export.Close()
+		writeSubstrateError(w, r, err)
+		return
+	}
 	point := export.Point()
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment",
@@ -83,7 +91,7 @@ var errShuttingDown = errors.New("the server is shutting down")
 // archive of many gigabytes outlasts any shutdown budget, and none starts
 // once the token that asked for it no longer stands (decision 0272): an
 // archive is the whole repository, and a person signing out everywhere wants
-// it stopped.
+// it stopped. It reads the token between writes, at most once a second.
 type exportWriter struct {
 	ctx      context.Context
 	w        io.Writer

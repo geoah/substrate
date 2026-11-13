@@ -47,6 +47,8 @@ func (d *exportingDataset) Export(context.Context) (substrate.Export, error) {
 
 func (e *cannedExport) Point() substrate.ExportPoint { return e.point }
 
+func (e *cannedExport) Close() {}
+
 func (e *cannedExport) WriteTo(w io.Writer) (int64, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)

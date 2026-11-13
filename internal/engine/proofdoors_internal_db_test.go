@@ -58,9 +58,15 @@ func (h *heldDoor) in() substrate.LoginInput {
 }
 
 // run starts act, waits until its request proved the factors, changes the
-// password from another request, lets the held one act, and answers its
-// error.
+// password and signs out everywhere from another request, lets the held one
+// act, and answers its error.
 func (h *heldDoor) run(t *testing.T, act func() error) error {
+	return h.runAcross(t, act, "a-password-changed-meanwhile")
+}
+
+// runAcross is run with the sign-out's new password, none for a sign out
+// everywhere that changes no factor.
+func (h *heldDoor) runAcross(t *testing.T, act func() error, newPassword string) error {
 	t.Helper()
 	done := make(chan error, 1)
 	go func() { done <- act() }()
@@ -71,8 +77,8 @@ func (h *heldDoor) run(t *testing.T, act func() error) error {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the request never proved its factors")
 	}
-	if _, err := h.s.SignOutEverywhere(context.Background(), h.in(), "a-password-changed-meanwhile"); err != nil {
-		t.Fatalf("the password change and sign out everywhere meanwhile: %v", err)
+	if _, err := h.s.SignOutEverywhere(context.Background(), h.in(), newPassword); err != nil {
+		t.Fatalf("the sign out everywhere meanwhile: %v", err)
 	}
 	close(h.release)
 	select {
@@ -119,6 +125,25 @@ func TestASignInHeldAfterItsProofMintsNothingAfterASignOut(t *testing.T) {
 	}
 }
 
+// A sign out everywhere that changes no factor ends the tokens that exist
+// when it commits and leaves the factors standing: a sign-in that proved
+// them is a new sign-in, whenever it completes, as one sent a moment later
+// would be.
+func TestASignInHeldAcrossASignOutThatChangesNoFactorIsANewSignIn(t *testing.T) {
+	t.Parallel()
+	h := openHeldDoor(t, "login")
+	err := h.runAcross(t, func() error {
+		_, _, err := h.s.Login(context.Background(), h.in())
+		return err
+	}, "")
+	if err != nil {
+		t.Fatalf("a sign-in held across a sign out everywhere that changed no factor: %v, want it to complete", err)
+	}
+	if n := h.liveTokens(t); n != 1 {
+		t.Fatalf("%d tokens stand, want the held sign-in's alone", n)
+	}
+}
+
 func TestAPasswordChangeHeldAfterItsProofChangesNothing(t *testing.T) {
 	t.Parallel()
 	h := openHeldDoor(t, "password")
@@ -158,7 +183,13 @@ func TestASignOutHeldAfterItsProofEndsNothing(t *testing.T) {
 		_, err := h.s.SignOutEverywhere(context.Background(), h.in(), "")
 		done <- err
 	}()
-	<-h.proved
+	select {
+	case <-h.proved:
+	case err := <-done:
+		t.Fatalf("the sign-out ended before it proved its factors: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sign-out never proved its factors")
+	}
 	// The factors change meanwhile, and a sign-in under the new ones stands.
 	if err := h.s.ChangePassword(context.Background(), h.in(), "a-password-changed-meanwhile"); err != nil {
 		t.Fatalf("the password change meanwhile: %v", err)
@@ -170,7 +201,12 @@ func TestASignOutHeldAfterItsProofEndsNothing(t *testing.T) {
 	}
 	before := h.liveTokens(t)
 	close(h.release)
-	wantFactorsChanged(t, "a sign out everywhere", <-done)
+	select {
+	case err := <-done:
+		wantFactorsChanged(t, "a sign out everywhere", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the held sign-out never finished")
+	}
 	if n := h.liveTokens(t); n != before {
 		t.Fatalf("%d tokens stand after the refused sign-out, want the %d before it", n, before)
 	}

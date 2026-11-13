@@ -188,6 +188,13 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	if !rs.hasFrom {
 		from = rs.head.Seq
 	}
+	// A stream reads its token before its first byte, afresh: one revoked
+	// while the cursor was resolved is an ordinary refusal, not a 200 with a
+	// bookmark and a terminal frame.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
 
 	setStreamHeaders(w)
 	w.WriteHeader(http.StatusOK)
