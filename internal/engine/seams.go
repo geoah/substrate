@@ -48,6 +48,15 @@ func WithTestRetryClock(now func() time.Time) Option {
 	return func(o *options) { o.retryNow = now }
 }
 
+// WithTestScheduleClock is the clock a schedule trigger's due occurrences
+// are read on (dataset.scheduleNow): what a pass fires and what a status
+// read counts as owed. Every record timestamp stays on the wall clock. A
+// test holds it inside one hour, so an hourly rule's latest occurrence does
+// not move under it.
+func WithTestScheduleClock(now func() time.Time) Option {
+	return func(o *options) { o.scheduleNow = now }
+}
+
 // TOTPPeriod is the verifier's step, for a test that moves its clock one.
 const TOTPPeriod = totpPeriod
 

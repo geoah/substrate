@@ -175,6 +175,7 @@ def main(input, host):
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
+				"missed": "all",
 			}},
 			"callable": vocabulary.RecordPath(kindFunction, pkg+"/hourly"),
 		},

@@ -63,8 +63,10 @@ func TestAScheduleFireRunsWhileOlderFiresAreParked(t *testing.T) {
 		t.Fatalf("pending = %d after the pass, want 0", pending)
 	}
 
-	// The body recovers: s+1h runs once more, settles, and retires every
-	// park at or before it.
+	// The body recovers, and the trigger owes the latest alone: s+1h runs
+	// once more, settles, and retires every park at or before it. (One
+	// that states `all` would keep s parked for its own retry.)
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
 	rewindSchedule(t, ds, supersedeSync, s)
 	processOnce(t, ds)

@@ -1758,7 +1758,8 @@ A record trigger comes back at the last delivery it acknowledged, or at its
 last edit if that is later, and the next pass re-reads the rows after it,
 which matched nothing under the source that scanned them, so nothing is
 delivered twice and nothing an older source skipped is delivered late; a schedule trigger comes back at the occurrence it last fired
-and fires the ones it missed, oldest first, at most ten per pass; a parked
+and fires the newest one it missed, or, where its `missed` is `all`, each
+one it missed, oldest first, at most ten per pass; a parked
 failure keeps the id `…/parked` listed, so a saved retry still names it, and
 a parked drain resumes from its last committed page. A paged drain that stopped
 between pages without parking (a crash, or a shutdown mid-drain) starts over

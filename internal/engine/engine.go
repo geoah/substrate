@@ -251,6 +251,9 @@ type options struct {
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
+	// scheduleNow is the clock a schedule trigger's due occurrences are read
+	// on (seams.go WithTestScheduleClock); the wall clock when nil.
+	scheduleNow func() time.Time
 	// retryNow is the clock the walk of temporary failures reads a retry's
 	// due time on (seams.go WithTestRetryClock); the wall clock when nil.
 	retryNow func() time.Time
@@ -596,6 +599,9 @@ type service struct {
 	foreignPackages bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
+	// scheduleNow is the clock a schedule's due occurrences are read on
+	// (dataset.scheduleNow).
+	scheduleNow func() time.Time
 	// retryNow is the temporary-failure walk's clock (temporaryretry.go),
 	// never nil.
 	retryNow func() time.Time
@@ -886,6 +892,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.healthNow == nil {
 		o.healthNow = time.Now
 	}
+	if o.scheduleNow == nil {
+		o.scheduleNow = time.Now
+	}
 	if o.retryNow == nil {
 		o.retryNow = time.Now
 	}
@@ -983,6 +992,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
 		retryNow:           o.retryNow,
+		scheduleNow:        o.scheduleNow,
 		foreignPackages:    o.foreignPackages,
 		laneWorkers:        o.laneWorkers,
 		chatTurnsPerPerson: o.chatTurnsPerPerson,

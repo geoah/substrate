@@ -1344,10 +1344,19 @@ data:
   already there.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
-  guard. Every occurrence fires once, oldest first: a trigger that missed
-  occurrences (the server down, the trigger disabled, a repository restored
-  to an older fire state) catches up at most ten per dispatcher pass, however
-  long the pass lasts, and none is coalesced away.
+  guard. Optional `missed` says what the trigger does with occurrences it
+  missed while the server was down, the trigger disabled or a repository
+  restored to an older fire state
+  ([0267](decisions/0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md)).
+  `latest`, the default, fires the newest due occurrence alone, and the fire
+  state moves over the ones before it: a sync that was off for a week runs
+  once, not 168 times. `all` fires every occurrence once, oldest first, at
+  most ten per dispatcher pass however long the pass lasts, and none is
+  coalesced away: the choice for a trigger whose every occurrence is work of
+  its own, such as a reminder per occurrence. A failed occurrence of an
+  `all` schedule stays parked when a later one settles, for its own retry. A
+  trigger an edit makes a schedule takes its fire state at that edit, as a
+  created one does, so its first fire is the next occurrence.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is
@@ -1730,6 +1739,10 @@ repository.
   work the settled fire just did. A webhook request's park and an agent run
   a stop interrupted are never retired this way
   ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)).
+  Nor is another occurrence's park, when the schedule states `missed: all`
+  as the settling occurrence commits, whatever it stated when that run
+  began: every occurrence of it is owed, so each failed one waits for its
+  own retry, the automatic one of a temporary failure or yours.
   A record trigger's park is retired only by a delivery that stamps a sync
   (the record's kind binds `sync` and the callable is a function of the
   kind's own package): when one settles ok, and the body left the record at

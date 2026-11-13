@@ -1059,7 +1059,8 @@ type settlement struct {
 	callable string
 	// supersedes is the occurrence a schedule fire delivers, dispatched or
 	// retried, zero on every other delivery: once it settles, the trigger's
-	// parked fires at or before it retire with it (retireSupersededFires).
+	// parked fires at or before it retire with it, unless the trigger states
+	// `missed: all` when it commits (retireSupersededFires).
 	supersedes time.Time
 	// superseded is the parked fires this settlement holds in runningClaims
 	// while it retires them; release gives them back.
@@ -1290,7 +1291,10 @@ func (s *settlement) release() {
 
 // retireSupersededFires retires, once a schedule occurrence settles, every
 // parked fire of the same trigger at or before that occurrence (decision
-// 0142). A schedule fire carries nothing a later one does not carry again,
+// 0142), for a trigger that owes the latest occurrence alone; one that
+// states `missed: all` retires only the settled occurrence's own older parks
+// (scheduleOwesAll). A schedule fire
+// carries nothing a later one does not carry again,
 // so a retry of the parked fire repeats work the settled one did: a
 // provider's scheduled sync drains whatever is due when it runs. The rows
 // are DELETED through the unpark fold a delivered retry writes, on the
@@ -1315,6 +1319,26 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 	if s.supersedes.IsZero() {
 		return 0, nil
 	}
+	// The trigger's `missed` decides, as it stands when this settlement
+	// commits and not as the run that settles loaded it: an owner may change
+	// it while the body runs. It is read under the changelog lock, which
+	// every write takes to append, so an edit committed before the read is
+	// seen and one after waits for this transaction: a repository's writes
+	// are one after another, and that order is the whole of it.
+	if err := t.lockChangelog(); err != nil {
+		return 0, err
+	}
+	owesAll, err := t.scheduleOwesAll(s.trigger)
+	if err != nil {
+		return 0, err
+	}
+	// Under `all` the settled occurrence retires its own older parks alone
+	// (a restore or a fire state moved back can leave one), never another
+	// occurrence's.
+	bound := `fire_id COLLATE "C" <= $8`
+	if owesAll {
+		bound = `fire_id COLLATE "C" = $8`
+	}
 	// Held elsewhere: every id in runningClaims but the ones this settlement
 	// took on an attempt that rolled back.
 	held := []int64{}
@@ -1334,7 +1358,7 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 		SELECT id FROM trigger_failures
 		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5, $6, $7)
 		  AND fire_id ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
-		  AND fire_id COLLATE "C" <= $8
+		  AND `+bound+`
 		  AND id NOT IN (SELECT jsonb_array_elements_text($9::jsonb)::bigint)
 		ORDER BY id LIMIT $10`,
 		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
@@ -1836,7 +1860,7 @@ func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord
 // the pass began is not fired again.
 func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline, limit int, pass *passStart) (ran, fired int, err error) {
 	if at, known := pass.firedAt(lt.ID); known {
-		owes, err := ds.owesAfter(lt.ID, lt.Schedule, lt.CreatedAt, at, nowUTC())
+		owes, err := ds.owesAfter(lt.ID, lt.Schedule, lt.CreatedAt, at, ds.scheduleNow())
 		if err != nil || !owes {
 			return 0, 0, err
 		}
@@ -1845,7 +1869,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 	if err != nil {
 		return 0, 0, err
 	}
-	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), limit)
+	due, err := ds.scheduleDue(ctx, lt, lastFire, limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1901,6 +1925,27 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		lastFire = at
 	}
 	return ran, fired, nil
+}
+
+// scheduleDue is what a pass fires of the trigger's occurrences after
+// lastFire: every due one, oldest first and at most limit, for a trigger
+// whose `missed` is `all`; the newest due one alone otherwise, the fire state
+// jumping over the ones before it (decision 0267).
+func (ds *dataset) scheduleDue(ctx context.Context, lt loadedTrigger, lastFire time.Time, limit int) ([]time.Time, error) {
+	if lt.Schedule.Missed == scheduleMissedAll {
+		return ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow(), limit)
+	}
+	// A walk still counting fires nothing: the newest it has counted is not
+	// yet the latest, and the next pass resumes the count.
+	latest, passed, ok, walking, err := ds.latestDue(ctx, lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow())
+	if err != nil || !ok || walking {
+		return nil, err
+	}
+	if passed > 0 {
+		ds.svc.log.Info("substrate: schedule fires the latest occurrence it missed and passes over the rest",
+			"repository", ds.Repository().ID, "trigger", lt.ID, "fire", fireID(latest), "passed", passed)
+	}
+	return []time.Time{latest}, nil
 }
 
 // scheduleLateAfter is how far past its occurrence a schedule fire may begin
@@ -2126,8 +2171,23 @@ func (ds *dataset) logFireYield(triggerID, swap, fid string) {
 // settled or parked past: the ones this process is delivering now (inFlight)
 // and the rest (pending), which wait for a dispatcher pass to reach them.
 // At most scheduleOwedCap are counted.
-func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
-	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
+func (ds *dataset) owedFires(ctx context.Context, lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
+	if lt.Schedule.Missed != scheduleMissedAll {
+		// The next pass fires the latest due occurrence alone, but a fire
+		// this process started before a newer one fell due is still in flight
+		// until it settles, and it is no longer the latest. A walk still
+		// counting owes the latest it has not reached.
+		inFlight = ds.firingAfter(lt.ID, lastFire)
+		latest, _, ok, walking, err := ds.latestDue(ctx, lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow())
+		if err != nil {
+			return 0, 0, err
+		}
+		if ok && (walking || !ds.isFiring(lt.ID, fireID(latest))) {
+			pending = 1
+		}
+		return pending, inFlight, nil
+	}
+	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow(), scheduleOwedCap)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2139,6 +2199,27 @@ func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inF
 		}
 	}
 	return pending, inFlight, nil
+}
+
+// firingAfter counts the schedule occurrences after lastFire this process is
+// delivering now for one trigger. An occurrence an agent fire claimed has
+// moved the fire state to it, so it is not after lastFire and is counted
+// where the claim is.
+func (ds *dataset) firingAfter(triggerID string, lastFire time.Time) int64 {
+	prefix := fireKey(triggerID, "")
+	ds.firingMu.Lock()
+	defer ds.firingMu.Unlock()
+	var n int64
+	for key, count := range ds.firing {
+		fid, ok := strings.CutPrefix(key, prefix)
+		if !ok || count <= 0 {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, fid); err == nil && at.After(lastFire) {
+			n++
+		}
+	}
+	return n
 }
 
 // fireSettlement settles a dispatched fire: for a schedule occurrence the
@@ -2159,6 +2240,29 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 		s.supersedes = at.UTC()
 	}
 	return s
+}
+
+// scheduleNow is the time a schedule trigger's due occurrences are read at:
+// the wall clock, or a test's (WithTestScheduleClock).
+func (ds *dataset) scheduleNow() time.Time {
+	if ds.svc == nil || ds.svc.scheduleNow == nil {
+		return nowUTC()
+	}
+	return ds.svc.scheduleNow().UTC().Truncate(time.Microsecond)
+}
+
+// scheduleOwesAll reports whether the trigger, as its record stands in this
+// transaction, is a schedule that states `missed: all`: one whose every
+// occurrence is owed, so a settled occurrence retires none of its older
+// parks (decision 0267). A trigger that is gone owes nothing.
+func (t *txn) scheduleOwesAll(triggerID string) (bool, error) {
+	var missed sql.NullString
+	err := t.row(`SELECT props->'source'->'schedule'->>'missed' FROM records
+		WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`, typeTrigger, triggerID).Scan(&missed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return missed.String == scheduleMissedAll, err
 }
 
 // deliverFire runs one schedule occurrence or webhook fire through the
@@ -3488,7 +3592,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			// dispatcher skips (disabled, unparseable, unresolvable) owes
 			// none it is going to run, and its Error or Enabled says why.
 			if st.LastFire != nil && lt.Enabled && st.Error == "" {
-				if owedPending, owedInFlight, err = ds.owedFires(lt, *st.LastFire); err != nil {
+				if owedPending, owedInFlight, err = ds.owedFires(ctx, lt, *st.LastFire); err != nil {
 					return nil, err
 				}
 			}
