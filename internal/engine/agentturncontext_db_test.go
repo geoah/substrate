@@ -218,3 +218,43 @@ func msgText(m map[string]any) string {
 	}
 	return ""
 }
+
+// The repository's zone setting is held where a write names it to a name
+// the IANA database holds, spelled as it spells it, as every timezone
+// value is: a file of a host's tzdata (`posixrules`) and another case are
+// refused, whatever this host loads. A stored value a write leaves out is
+// left as it is (finding 2 of step 33's second review).
+func TestTheZoneSettingIsHeldToTheIANASpellingWhereAWriteNamesIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	for _, zone := range []string{"posixrules", "europe/Athens", "Europe/athens"} {
+		err := putTimezoneSetting(t, ds, zone)
+		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "spelled as the IANA database spells it") {
+			t.Fatalf("setting %q: err = %v, want a validation refusal naming the spelling", zone, err)
+		}
+	}
+	if err := putTimezoneSetting(t, ds, "Europe/Athens"); err != nil {
+		t.Fatalf("setting Europe/Athens: %v", err)
+	}
+	// A value an earlier release admitted, folded as it folded it.
+	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
+		if _, err := tx.fold(foldOp{Kind: foldRecord, Ref: kindSetting, ID: timezoneSettingID, Delta: &rowDelta{
+			Set: map[string]any{"value": "posixrules"},
+		}}); err != nil {
+			return err
+		}
+		return tx.appendChange(substrate.ActorAPI, substrate.OpPatch, timezoneSettingID, kindSetting, nil)
+	}); err != nil {
+		t.Fatalf("fold an earlier release's zone: %v", err)
+	}
+	patched, err := ds.Patch(ctx, substrate.ActorAPI, kindSetting, timezoneSettingID, substrate.PatchInput{
+		Properties: map[string]any{"description": "where the owner lives"},
+	})
+	if err != nil {
+		t.Fatalf("a write that leaves the stored zone out: %v", err)
+	}
+	if patched.Properties["value"] != "posixrules" {
+		t.Fatalf("the stored zone became %v, want it left as it was", patched.Properties["value"])
+	}
+}

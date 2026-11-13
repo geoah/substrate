@@ -230,7 +230,11 @@ func (t *txn) admitRestored(sp *applySpec, name string, p *vocabulary.Property, 
 		s, isText := v.(string)
 		return v, isText && s == "", nil
 	}
-	kept, err := t.coercer().prop(sp.ty, name, p, v)
+	// The value is the record's own, which the request leaves out, so a
+	// time zone stays as it is stored (checkZoneName).
+	c := t.coercer()
+	c.storedZones = true
+	kept, err := c.prop(sp.ty, name, p, v)
 	if err != nil {
 		return nil, false, nil
 	}

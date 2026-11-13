@@ -88,11 +88,15 @@ func zoneOf(row *erow, err error) *time.Location {
 	return loc
 }
 
-// guardTimezoneSetting holds the repository's zone to what the engine reads
-// it as: an empty value (UTC) or a zone this server loads.
+// guardTimezoneSetting holds a repository zone a write names to what every
+// host reads the same: an empty value (UTC), or a name the IANA database
+// holds, spelled as it spells it (zoneNamed), that this server loads.
 func guardTimezoneSetting(value string) error {
 	if value == "" {
 		return nil
+	}
+	if value != "Local" && !zoneNamed(value) {
+		return fmt.Errorf("%w: setting %s: %q is not an IANA time zone name, spelled as the IANA database spells it", substrate.ErrValidation, timezoneSettingID, value)
 	}
 	if _, err := loadZone(value); err != nil {
 		return fmt.Errorf("%w: setting %s: %w", substrate.ErrValidation, timezoneSettingID, err)

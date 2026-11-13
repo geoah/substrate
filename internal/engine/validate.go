@@ -30,11 +30,14 @@ var reDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // coerceProps validates a write's properties against the type and returns
 // them in their stored (JSON-safe, normalised) form. A nil value is a
 // delete marker and passes through.
-// coercer holds written values to their declarations. It carries no state: a
-// quantity is held to its shape alone, and the write transaction resolves
-// its unit through the repository's graph (quantitywrite.go
-// resolveQuantities, decision 0186).
-type coercer struct{}
+// coercer holds written values to their declarations. A quantity is held to
+// its shape alone, and the write transaction resolves its unit through the
+// repository's graph (quantitywrite.go resolveQuantities, decision 0186).
+// storedZones is set where the values are ones a record already holds (a
+// restore keeping what its request leaves out): a time zone is then kept as
+// it is stored, whatever this host loads, because a zone a record holds is
+// never removed or changed by a write that does not carry it.
+type coercer struct{ storedZones bool }
 
 // coercer is how the dataset's writes hold values.
 func (ds *dataset) coercer() coercer { return coercer{} }
@@ -557,7 +560,7 @@ func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected an E.164 phone number")
 		}
 	case vocabulary.DatatypeTimezone:
-		if err := checkZoneName(s); err != nil {
+		if err := checkZoneName(s); err != nil && !c.storedZones {
 			return nil, err
 		}
 	case vocabulary.DatatypeRecurrence:
@@ -615,16 +618,22 @@ func heldToValues(dt vocabulary.Datatype) bool {
 }
 
 // checkZoneName holds a time zone value to a name that means the same zone on
-// every host. time.LoadLocation reads "Local" as the server's own zone and the
-// empty string as UTC, so a record holding either would change meaning when
-// the repository moves. A record that already holds one is still served, and a
-// write that leaves the property alone still lands.
+// every host: one the IANA database holds, spelled as it spells it
+// (zoneNamed), before it is loaded. time.LoadLocation reads "Local" as the
+// server's own zone, the empty string as UTC, and anything the host's own
+// zone files answer to, so a record holding any of those would change
+// meaning when the repository moves. A record that already holds one is
+// still served, a write that leaves the property alone still lands, and a
+// restore keeps it (coercer.storedZones).
 func checkZoneName(s string) error {
 	switch s {
 	case "":
 		return fmt.Errorf("expected an IANA time zone name, and the empty string names no zone: leave the property out, or write UTC")
 	case "Local":
 		return fmt.Errorf(`expected an IANA time zone name, and "Local" is the server's own zone, which differs from host to host: write the zone's IANA name`)
+	}
+	if !zoneNamed(s) {
+		return fmt.Errorf("expected an IANA time zone name, spelled as the IANA database spells it")
 	}
 	if _, err := time.LoadLocation(s); err != nil {
 		return fmt.Errorf("expected an IANA time zone name")
