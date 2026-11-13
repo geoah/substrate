@@ -349,6 +349,9 @@ func (t *txn) fold(op foldOp) (foldResult, error) {
 	if err != nil || !res.changed {
 		return res, err
 	}
+	if op.Ref == kindToken {
+		t.tokensMoved = true
+	}
 	if res.version > 0 {
 		op.Version = json.Number(strconv.FormatInt(res.version, 10))
 	}

@@ -64,10 +64,10 @@ func TestAnAppsActorHoldsAtTheOwnerTierAndWritesInTheForeground(t *testing.T) {
 	if got := ds.actorTier(app); got != substrate.TierOwner {
 		t.Fatalf("an app's actor resolves to the %s tier, want owner", got)
 	}
-	if !ds.ownerFirst(ctx, app, false) {
+	if !ds.personFirst(ctx, app, false) {
 		t.Fatal("an app's write waits behind background writers")
 	}
-	if ds.ownerFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
+	if ds.personFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
 		t.Fatal("installed code went ahead of background writers: the test proves nothing")
 	}
 }

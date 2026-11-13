@@ -108,6 +108,12 @@ type Config struct {
 	// requests per (client IP, repository), per repository and globally; zero
 	// selects the default.
 	AuthInterval time.Duration
+	// RequestsPerPerson is how many requests a second one person may send
+	// once their token is read, and RequestBurstPerPerson how many they may
+	// send at once (SUBSTRATE_REQUESTS_PER_PERSON,
+	// SUBSTRATE_REQUEST_BURST_PER_PERSON). Zero paces nothing.
+	RequestsPerPerson     float64
+	RequestBurstPerPerson int
 	// Metrics mounts the Prometheus exposition at GET /metrics, unauthenticated
 	// and DB-free like /healthz (SUBSTRATE_METRICS=1). The instruments record
 	// either way; this decides only whether the port SERVES them. Off, the
@@ -154,9 +160,12 @@ type Config struct {
 }
 
 type handler struct {
-	svc          substrate.Service
-	now          func() time.Time
-	authRate     *rateLimiter
+	svc      substrate.Service
+	now      func() time.Time
+	authRate *rateLimiter
+	// personRate paces each person's requests once their token is read
+	// (personrate.go).
+	personRate   *personRate
 	inviteCode   string
 	totpDisabled bool
 	// operatorDefaults lists the operator defaults read in discovery.
@@ -217,6 +226,7 @@ func New(cfg Config) http.Handler {
 		svc:          cfg.Service,
 		now:          now,
 		authRate:     newRateLimiter(interval, now),
+		personRate:   newPersonRate(cfg.RequestsPerPerson, cfg.RequestBurstPerPerson, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,

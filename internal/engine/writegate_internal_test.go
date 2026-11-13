@@ -12,7 +12,7 @@ import (
 func gateState(g *writeGate) (admitted bool, queued, owners int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.admitted, len(g.queue), g.owners
+	return g.admitted, len(g.queue), g.people
 }
 
 // waitGate polls the gate until cond holds, or fails after a bound.

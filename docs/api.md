@@ -2538,7 +2538,7 @@ The code set is closed. The client-error codes:
 | `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). |
 | `totp_required` | 401 | A login or a credential change with the right password and no code, on an account that has a second factor: send it again with the code ([logging in](auth.md#logging-in)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
-| `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
+| `rate_limited` | 429  | Slow down; the response carries `Retry-After`. The sign-in door paces its attempts, and every request with a token is paced per person ([`SUBSTRATE_REQUESTS_PER_PERSON`](operations.md#configuration)). |
 
 `bad_request` is also the code on a `405` (a wrong method at an `/api` path),
 on a `413` (a request body past its cap) and on the `431` a webhook request

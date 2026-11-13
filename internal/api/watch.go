@@ -163,7 +163,9 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 // resumes from the last seq it read. Each frame has streamWriteDeadline to
 // reach the client.
 func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter, annotate bool) {
-	ctx := r.Context()
+	// The stream follows the tail, so the dataset may answer it and every
+	// other stream of the repository from one read per change.
+	ctx := substrate.WithTailRead(r.Context())
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")

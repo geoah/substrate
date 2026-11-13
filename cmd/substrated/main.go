@@ -248,6 +248,7 @@ func run() error {
 		engine.WithRepositoryConnections(cfg.RepositoryConnections),
 		engine.WithOrphanCollection(cfg.OrphanGrace),
 		engine.WithTriggerLaneWorkers(cfg.TriggerLaneWorkers),
+		engine.WithChatTurnsPerPerson(cfg.ChatTurnsPerPerson),
 		engine.WithHealthFailingAfter(cfg.HealthFailingAfter),
 	}
 	if cfg.OrphanGrace > 0 {
@@ -377,6 +378,9 @@ func run() error {
 		DomainResolver:   resolver,
 		Metrics:          cfg.Metrics,
 		Draining:         draining,
+
+		RequestsPerPerson:     cfg.RequestsPerPerson,
+		RequestBurstPerPerson: cfg.RequestBurstPerPerson,
 	})
 	if cfg.Metrics {
 		// Loud, and at boot, like the other doors: this port answers /metrics

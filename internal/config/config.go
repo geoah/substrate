@@ -126,6 +126,21 @@ type Config struct {
 	// which fires one schedule at a time, to MaxTriggerLaneWorkers.
 	TriggerLaneWorkers int `envconfig:"SUBSTRATE_TRIGGER_LANE_WORKERS" default:"4"`
 
+	// RequestsPerPerson is how many requests a second one person may send
+	// once their token is read, and RequestBurstPerPerson how many they may
+	// send at once; past them a request answers 429 with a Retry-After. A
+	// person is a repository's sign-in today. The defaults sit far above
+	// what a person clicking through the console, or an app syncing a
+	// device, sends, and bound a script left running in a loop. A rate of 0
+	// paces nothing; a negative rate, or a burst below 1 beside a positive
+	// rate, is refused.
+	RequestsPerPerson     float64 `envconfig:"SUBSTRATE_REQUESTS_PER_PERSON" default:"100"`
+	RequestBurstPerPerson int     `envconfig:"SUBSTRATE_REQUEST_BURST_PER_PERSON" default:"500"`
+	// ChatTurnsPerPerson is how many chat turns with an agent one person runs
+	// at once. Each holds a model call and outlives the client that started
+	// it. 0 is the default; a negative value is refused.
+	ChatTurnsPerPerson int `envconfig:"SUBSTRATE_CHAT_TURNS_PER_PERSON" default:"4"`
+
 	// HealthFailingAfter is how long every delivery of a trigger must have
 	// parked, since its newest ok run, before the dispatcher opens the
 	// trigger's `trigger.failing/<trigger id>` alert and its status reads
@@ -276,6 +291,12 @@ func (c Config) Validate() error {
 	}
 	if c.TriggerLaneWorkers < 1 || c.TriggerLaneWorkers > MaxTriggerLaneWorkers {
 		return fmt.Errorf("SUBSTRATE_TRIGGER_LANE_WORKERS is %d: it is how many schedule fires one repository's dispatcher pass runs at once, so it is at least 1 and at most %d, the deliveries the whole process runs at once (4 is the default)", c.TriggerLaneWorkers, MaxTriggerLaneWorkers)
+	}
+	if c.RequestsPerPerson < 0 || (c.RequestsPerPerson > 0 && c.RequestBurstPerPerson < 1) {
+		return fmt.Errorf("SUBSTRATE_REQUESTS_PER_PERSON is %v and SUBSTRATE_REQUEST_BURST_PER_PERSON is %d: they are how many requests a second one person may send and how many at once, so the rate is 0 (no pacing) or positive, and a positive rate takes a burst of at least 1 (100 and 500 are the defaults)", c.RequestsPerPerson, c.RequestBurstPerPerson)
+	}
+	if c.ChatTurnsPerPerson < 0 {
+		return fmt.Errorf("SUBSTRATE_CHAT_TURNS_PER_PERSON is %d: it is how many chat turns one person runs at once, so it is at least 1, and 0 is the default of 4", c.ChatTurnsPerPerson)
 	}
 	if c.HealthFailingAfter <= 0 {
 		return fmt.Errorf("SUBSTRATE_HEALTH_FAILING_AFTER is %s: it is how long every delivery of a trigger must have parked before the trigger reads failing and its alert opens, and it must be a positive duration (1h is the default)", c.HealthFailingAfter)

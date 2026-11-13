@@ -104,3 +104,11 @@ func WithTestCommitInDoubt(fail func() bool) Option {
 }
 
 var errTestCommitInDoubt = errors.New("substrate/engine: the test lost the commit's answer")
+
+// WithTestChangeReadHook runs fn with the repository each time a stream
+// following the changelog's tail (substrate.WithTailRead) reads the table's
+// rows (changetail.go): the read every stream of a repository shares, or the
+// read of one whose cursor is below the shared window.
+func WithTestChangeReadHook(fn func(repository string)) Option {
+	return func(o *options) { o.changeReadHook = fn }
+}

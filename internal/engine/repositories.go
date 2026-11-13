@@ -417,7 +417,11 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	if _, err := tx.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s (repositories): %w", id, err)
 	}
-	if err := tx.Commit(); err != nil {
+	err = tx.Commit()
+	// The repository's tokens went with it, and a cached one would open a
+	// repository that is gone.
+	s.tokens.empty()
+	if err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
 	}
 	if residue, err := repositoryResidue(ctx, cp, id); err != nil {

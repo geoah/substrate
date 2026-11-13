@@ -10,13 +10,13 @@ import (
 )
 
 // The bounds after which a queued background writer becomes eligible for
-// admission while owner writes are still on their way to the changelog lock:
-// backgroundMaxOwnerPasses owner entries since it queued, or backgroundMaxWait
+// admission while a person's writes are still on their way to the changelog lock:
+// backgroundMaxPersonPasses entries of a person's write since it queued, or backgroundMaxWait
 // in the queue. Eligible is not admitted: it still waits for the background
 // writer admitted before it to take the lock.
 var (
-	backgroundMaxOwnerPasses = 8
-	backgroundMaxWait        = 2 * time.Second
+	backgroundMaxPersonPasses = 8
+	backgroundMaxWait         = 2 * time.Second
 )
 
 // writeGate orders the writers that go through inTx into one dataset's
@@ -27,15 +27,15 @@ var (
 // Background writers (every internal write, and every write at the bundle or
 // machine tier) are admitted one at a time, from before the pool connection
 // until the changelog lock, so at most one of them waits on the lock. None is
-// admitted while an owner write is on its way to the lock until the head of
+// admitted while a person's write is on its way to the lock until the head of
 // the queue becomes eligible under the bounds above. The bounds cover neither
 // the wait for a pool connection nor the wait on the lock.
 //
-// An owner write (ownerFirst: in practice an owner's put, patch or delete of a
+// A person's write (personFirst: in practice a person's put, patch or delete of a
 // data record through the API or the console, the webhook spool drain's
 // admission of a request the door already answered, and a detached chat
 // turn's settle after a failed write or model call) is not queued: it goes straight
-// on to the lock, and owner writes do not wait for one another here. It still
+// on to the lock, and people's writes do not wait for one another here. It still
 // waits for the transaction holding the lock and at most one admitted
 // background writer; priority never shortens the transaction already holding
 // the lock.
@@ -54,10 +54,11 @@ type writeGate struct {
 	admitted bool
 	// queue is the background writers waiting for admission, oldest first.
 	queue []*gateWaiter
-	// owners counts the owner writes between their entry and the changelog
-	// lock; ownerEntries counts every owner entry, for the pass bound.
-	owners       int
-	ownerEntries uint64
+	// people counts the people's writes between their entry and the
+	// changelog lock; personEntries counts every such entry, for the pass
+	// bound.
+	people        int
+	personEntries uint64
 }
 
 // gateWaiter is one queued background writer. Every field but ready is read
@@ -65,23 +66,23 @@ type writeGate struct {
 type gateWaiter struct {
 	// ready is closed when the writer is admitted.
 	ready chan struct{}
-	// entries is the gate's ownerEntries when the writer queued.
+	// entries is the gate's personEntries when the writer queued.
 	entries uint64
 	// overdue is set once the writer has waited maxWait.
 	overdue  bool
 	admitted bool
 }
 
-// ownerFirst reports whether a write goes ahead of waiting background writers
+// personFirst reports whether a write goes ahead of waiting background writers
 // at the write gate: a request's own write at the owner tier, or a write on a
 // context withForegroundWrites marked. Other internal writes and the
 // substrate's reserved hands (bundle:, function:, agent:, substrate) are
 // background whatever tier a declaration gives them.
-func (ds *dataset) ownerFirst(ctx context.Context, actor substrate.Actor, internal bool) bool {
+func (ds *dataset) personFirst(ctx context.Context, actor substrate.Actor, internal bool) bool {
 	if foreground, _ := ctx.Value(foregroundWritesKey{}).(bool); foreground {
 		return true
 	}
-	// An app's write is a request somebody waits on, like the owner's own,
+	// An app's write is a request somebody waits on, like a person's own,
 	// though its actor is reserved.
 	if internal || (substrate.ReservedActor(actor) && !substrate.IsAppActor(actor)) {
 		return false
@@ -91,7 +92,7 @@ func (ds *dataset) ownerFirst(ctx context.Context, actor substrate.Actor, intern
 
 type foregroundWritesKey struct{}
 
-// withForegroundWrites marks ctx's writes as owner writes at the write gate,
+// withForegroundWrites marks ctx's writes as a person's at the write gate,
 // whatever their actor. It is for the internal writes that record a request
 // a caller outside the substrate was already answered for: the webhook spool
 // drain's admission, which settles the request's blobs and parks it in one
@@ -102,8 +103,8 @@ type foregroundWritesKey struct{}
 // detached chat turn's settle after a failed write or model call
 // (agentloop.go settleAfterFailure): one row, written only on that failure,
 // whose thread otherwise stays `running` until its lease expires. Each
-// waiting settle holds one pool connection, and at most maxRunningChatTurns
-// of them wait at once.
+// waiting settle holds one pool connection, and at most the chat turns its
+// people run at once (chatTurnsPerPerson) wait at once.
 func withForegroundWrites(ctx context.Context) context.Context {
 	return context.WithValue(ctx, foregroundWritesKey{}, true)
 }
@@ -114,24 +115,24 @@ func withForegroundWrites(ctx context.Context) context.Context {
 // background writer whose ctx ends while it waits leaves the queue and
 // returns ctx.Err(); one that was admitted at the moment it gave up hands the
 // admission on.
-func (g *writeGate) enter(ctx context.Context, owner bool) (func(), error) {
+func (g *writeGate) enter(ctx context.Context, person bool) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	g.mu.Lock()
-	if owner {
-		g.owners++
-		g.ownerEntries++
+	if person {
+		g.people++
+		g.personEntries++
 		g.admitNext()
 		g.mu.Unlock()
-		return passOnce(g.ownerLeft), nil
+		return passOnce(g.personLeft), nil
 	}
-	if !g.admitted && len(g.queue) == 0 && g.owners == 0 {
+	if !g.admitted && len(g.queue) == 0 && g.people == 0 {
 		g.admitted = true
 		g.mu.Unlock()
 		return passOnce(g.backgroundLeft), nil
 	}
-	w := &gateWaiter{ready: make(chan struct{}), entries: g.ownerEntries}
+	w := &gateWaiter{ready: make(chan struct{}), entries: g.personEntries}
 	g.queue = append(g.queue, w)
 	g.mu.Unlock()
 
@@ -161,14 +162,14 @@ func (g *writeGate) enter(ctx context.Context, owner bool) (func(), error) {
 }
 
 // admitNext admits the oldest queued background writer if no other is
-// admitted and either no owner write is on its way or that writer has waited
+// admitted and either no person's write is on its way or that writer has waited
 // past a fairness bound. Every change to the gate's state calls it, under mu.
 func (g *writeGate) admitNext() {
 	if g.admitted || len(g.queue) == 0 {
 		return
 	}
 	head := g.queue[0]
-	if g.owners > 0 && !head.overdue && g.ownerEntries-head.entries < uint64(g.passes()) {
+	if g.people > 0 && !head.overdue && g.personEntries-head.entries < uint64(g.passes()) {
 		return
 	}
 	g.queue = slices.Delete(g.queue, 0, 1)
@@ -184,10 +185,10 @@ func (g *writeGate) backgroundLeft() {
 	g.admitNext()
 }
 
-func (g *writeGate) ownerLeft() {
+func (g *writeGate) personLeft() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.owners--
+	g.people--
 	g.admitNext()
 }
 
@@ -195,7 +196,7 @@ func (g *writeGate) passes() int {
 	if g.maxPasses > 0 {
 		return g.maxPasses
 	}
-	return backgroundMaxOwnerPasses
+	return backgroundMaxPersonPasses
 }
 
 func (g *writeGate) wait() time.Duration {

@@ -160,6 +160,12 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 			r.Method+" is not served at "+mcpPath+": it holds no session and opens no stream")
 		return
 	}
+	// The door is paced as the routes are, once per request: what its tools
+	// request in process carries the charge.
+	if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID) {
+		return
+	}
+	ctx = withPaced(ctx)
 	body, ok := readBody(w, r, mcpBody)
 	if !ok {
 		return

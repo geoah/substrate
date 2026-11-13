@@ -83,6 +83,9 @@ type dataset struct {
 	// record holds it wrapped to the user's age recipient.
 	dek   []byte
 	watch *broadcaster
+	// tail is the one reader of the changelog's tail the repository's
+	// streams share (changetail.go).
+	tail changeTail
 	// observedKinds is the kinds holding an observed segment (measured.go),
 	// so a record of any other kind leaves the fold without a probe.
 	observedKinds observedKinds
@@ -176,10 +179,10 @@ type dataset struct {
 	// jobs is the background calls agent loops of this process started, by
 	// thread (agentjobs.go).
 	jobs agentJobs
-	// chatTurns counts the detached chat turns this process runs for the
-	// repository, from admission to settle (agents.go ChatAgent), against
-	// maxRunningChatTurns.
-	chatTurns atomic.Int32
+	// chatTurns counts the detached chat turns this process runs for each
+	// person of the repository, from admission to settle (agents.go
+	// ChatAgent), against the service's chatTurnsPerPerson.
+	chatTurns personSlots
 	// firing counts the schedule occurrences this process is delivering now,
 	// keyed by fireKey (functions.go startFire). A function fire writes no
 	// row until it settles or parks, so without it a status read shows an
@@ -551,8 +554,11 @@ type txn struct {
 	// wc is the context tx was begun under (beginWrite): the request's until
 	// commitAndMirror starts, the commit budget's from then on. Nil on a
 	// transaction that commits some other way.
-	wc    *writeCtx
-	actor substrate.Actor
+	wc *writeCtx
+	// tokensMoved is set when the transaction folded a token record, so the
+	// token cache empties as it ends (tokencache.go).
+	tokensMoved bool
+	actor       substrate.Actor
 	// tier is the transaction's manager tier — the WRITE CONTEXT's standing
 	// against mapping recompute. Resolved once at inTx from the
 	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
@@ -757,11 +763,11 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 		return err
 	}
 	// The write gate before the pool connection (writegate.go): a background
-	// writer waits there holding nothing while an owner write is on its way
+	// writer waits there holding nothing while a person's write is on its way
 	// to the changelog lock, and one background writer at a time goes on to
 	// it. The pass is given back once the lock is held, and on every exit
 	// before that.
-	pass, err := ds.gate.enter(ctx, ds.ownerFirst(ctx, actor, internal))
+	pass, err := ds.gate.enter(ctx, ds.personFirst(ctx, actor, internal))
 	if err != nil {
 		return err
 	}
@@ -828,7 +834,17 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.settleChecksums(); err != nil {
 		return err
 	}
-	if err := ds.commitAndMirror(tx, t); err != nil {
+	err = ds.commitAndMirror(tx, t)
+	if errors.Is(err, substrate.ErrWriteInDoubt) {
+		ds.commitDoubted()
+	}
+	if t.tokensMoved {
+		// Before the write answers, whether or not its commit landed: an
+		// emptied cache costs a read, a stale one a revoked token's use
+		// (tokencache.go).
+		ds.svc.tokens.empty()
+	}
+	if err != nil {
 		return err
 	}
 	ds.mu.RLock()
@@ -1204,6 +1220,33 @@ func (b *broadcaster) signal(seq int64) {
 		return
 	}
 	b.timer = time.AfterFunc(300*time.Millisecond, b.flush)
+}
+
+// commitDoubted follows a commit whose answer was lost: it may have landed,
+// and it signaled nothing. The streams' window opens again at the table's
+// head (changetail.go), and the streams wake to read it.
+func (ds *dataset) commitDoubted() {
+	ds.tail.reset()
+	ds.watch.nudge()
+}
+
+// nudge wakes every subscriber without moving the signaled seq. A commit in
+// doubt may not have landed, and a seq claimed for it could be taken by the
+// next write; the read the nudge wakes finds out which (changetail.go).
+func (b *broadcaster) nudge() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.timer != nil {
+		return
+	}
+	b.timer = time.AfterFunc(300*time.Millisecond, b.flush)
+}
+
+// lastSignaled is the highest seq a commit has signaled.
+func (b *broadcaster) lastSignaled() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.last
 }
 
 func (b *broadcaster) flush() {
