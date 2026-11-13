@@ -46,7 +46,7 @@ import FoundationNetworking
             #expect(everything.writes(c.kind, purpose: c.purpose) == c.writes, "write:* writes \(c.kind)")
         }
         // The guard is the kind, not the purpose.
-        for k in ["token", "credential", "secret", "recoverykey"] {
+        for k in ["token", "credential", "secret"] {
             let kind = "substrate.reamde.dev/core/\(k)"
             #expect(!everything.reads(kind, purpose: "primary") && !everything.writes(kind, purpose: "primary"))
             #expect(!Grants(["read:\(kind)"]).reads(kind, purpose: "internal"))

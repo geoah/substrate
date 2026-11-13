@@ -53,7 +53,7 @@ func TestCredentialResponsesAreNeverStored(t *testing.T) {
 		"inviteCode": testInviteCode, "repository": repository, "password": password,
 		"totpSecret": seed, "totpCode": env.code(t, seed),
 	})
-	wantNoStore("register (the first secret and the recovery key)", rec, http.StatusCreated)
+	wantNoStore("register (the first secret)", rec, http.StatusCreated)
 	tok := decodeJSON[substrate.Registered](t, rec).Secret
 
 	pace()

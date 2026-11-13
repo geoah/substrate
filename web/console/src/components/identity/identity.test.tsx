@@ -187,7 +187,7 @@ describe("ReferenceValue", () => {
       <ReferenceValue value={{ ref: "substrate.reamde.dev/core/kind/*" }} />
     )
     const pattern = await screen.findByText(
-      "Every kind, except the token, credential, secret and recoverykey kinds"
+      "Every kind, except the token, credential and secret kinds"
     )
     expect(pattern.closest("[data-slot=kind-pattern]")?.textContent).toContain(
       "*"
@@ -220,7 +220,7 @@ describe("ReferenceValue", () => {
     ).toBeTruthy()
     expect(
       screen.getByText(
-        "Every kind in the package substrate.reamde.dev/core, except the token, credential, secret and recoverykey kinds"
+        "Every kind in the package substrate.reamde.dev/core, except the token, credential and secret kinds"
       )
     ).toBeTruthy()
     expect(document.body.textContent).not.toContain("Untitled")

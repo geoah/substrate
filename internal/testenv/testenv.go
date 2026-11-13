@@ -101,16 +101,15 @@ type Env struct {
 type Option func(*options)
 
 type options struct {
-	repository        string
-	password          string
-	recoveryPublicKey string
-	dsn               string
-	dataRoot          string
-	credentialKey     string
-	kindsDir          string
-	engine            []engine.Option
-	now               func() time.Time
-	noRegister        bool
+	repository    string
+	password      string
+	dsn           string
+	dataRoot      string
+	credentialKey string
+	kindsDir      string
+	engine        []engine.Option
+	now           func() time.Time
+	noRegister    bool
 }
 
 // WithUser names the repository Start registers and the password its user
@@ -127,13 +126,6 @@ func WithUser(repository, password string) Option {
 // repository's authority (decision 0210).
 func WithRepository(repository string) Option {
 	return func(o *options) { o.repository = repository }
-}
-
-// WithRecoveryPublicKey registers with a client-minted age recipient, the way
-// substratectl does, so the test holds the identity that opens the
-// repository's sealed files on a host with another credential key.
-func WithRecoveryPublicKey(recipient string) Option {
-	return func(o *options) { o.recoveryPublicKey = recipient }
 }
 
 // WithDSN opens the engine over an existing schema instead of a fresh one:
@@ -265,7 +257,7 @@ func Start(t testing.TB, opts ...Option) *Env {
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 	if !o.noRegister {
-		env.register(o.repository, o.password, o.recoveryPublicKey)
+		env.register(o.repository, o.password)
 	}
 	return env
 }
@@ -338,21 +330,20 @@ func (e *Env) Login(repository, password, code string) (int, []byte) {
 // RegisterUser registers another repository on the same substrate and returns
 // an Env authenticated as its user: the server, the clock and the schema are
 // shared, the Session is theirs. A bare repository label is completed under
-// the listener's host; an empty recovery recipient has the server mint the
-// pair. The copy cannot Stop the substrate.
-func (e *Env) RegisterUser(repository, password, recoveryPublicKey string) *Env {
+// the listener's host. The copy cannot Stop the substrate.
+func (e *Env) RegisterUser(repository, password string) *Env {
 	e.t.Helper()
 	other := *e
 	other.Session = &Session{Repository: repository}
 	other.stop = nil
-	other.register(repository, password, recoveryPublicKey)
+	other.register(repository, password)
 	return &other
 }
 
 // register walks the real registration: enroll for a TOTP seed, then commit
 // with a code derived from it. Registration ends holding a token, so there is
 // no separate login.
-func (e *Env) register(repository, password, recoveryPublicKey string) {
+func (e *Env) register(repository, password string) {
 	e.t.Helper()
 	var enrollment substrate.TOTPEnrollment
 	e.mustJSON(http.MethodPost, "/register/enroll", map[string]any{
@@ -367,7 +358,6 @@ func (e *Env) register(repository, password, recoveryPublicKey string) {
 	e.mustJSON(http.MethodPost, "/register", substrate.RegisterRequest{
 		InviteCode: InviteCode, Repository: repository, Password: password,
 		TOTPSecret: enrollment.Secret, TOTPCode: code, Label: "testenv",
-		RecoveryPublicKey: recoveryPublicKey,
 	}, &out)
 	if out.Secret == "" {
 		e.t.Fatal("testenv: registration returned no token secret")

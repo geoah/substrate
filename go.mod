@@ -3,7 +3,6 @@ module github.com/geoah/substrate
 go 1.27.4
 
 require (
-	filippo.io/age v1.3.2
 	github.com/aws/aws-sdk-go-v2 v1.47.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.14
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.7
@@ -36,7 +35,6 @@ require (
 require (
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
-	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20261006220739-8c912ac31dd4 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
@@ -85,6 +83,7 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

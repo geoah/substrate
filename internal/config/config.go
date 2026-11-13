@@ -188,6 +188,13 @@ type Config struct {
 	// names its repository does not own.
 	InsecureAllowForeignPackages bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES" default:"false"`
 
+	// ImportWithoutSecrets names the repositories, each by its name or its
+	// id and separated by commas, that the boot imports without their
+	// secrets when this host's credential key does not open them (decision
+	// 0264): the operator's acceptance of the loss, after the refusal named
+	// the key the directory was written under. Empty imports nothing so.
+	ImportWithoutSecrets string `envconfig:"SUBSTRATE_IMPORT_WITHOUT_SECRETS" default:""`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.

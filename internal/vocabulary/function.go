@@ -335,30 +335,28 @@ func ValidTypeGlob(pat string) bool {
 
 // --- kind grants (decision record 0080) ---------------------------------------
 
-// AuthKinds are the four core kinds a GLOB never reaches. They hold the
+// AuthKinds are the three core kinds a GLOB never reaches. They hold the
 // repository's own auth material, so `*` means "everything the owner has",
 // not "everything, including the keys to the substrate". An entry that spells
 // one out still grants it: the carve-out is on the glob, not on the kind. The
 // exception is a `writes` entry naming one of ownerOnlyKinds, which the loader
 // refuses.
 var AuthKinds = map[string]bool{
-	CoreKind("token"):       true,
-	CoreKind("credential"):  true,
-	CoreKind("secret"):      true,
-	CoreKind("recoverykey"): true,
+	CoreKind("token"):      true,
+	CoreKind("credential"): true,
+	CoreKind("secret"):     true,
 }
 
 // ownerOnlyKinds are the auth kinds a `permissions.writes` entry may not name
 // even spelled out, each with the reason its refusal gives. The engine refuses
-// every non-internal put and patch of all three and a token delete below the
+// every non-internal put and patch of both and a token delete below the
 // owner tier (engine/write.go softDeleteIf), so such a grant could only ever
 // revoke the owner's sign-in or promise a write nothing honors. `secret` is
 // absent on purpose: it is a bundle's own configuration, which the owner
 // fills through the ordinary surface.
 var ownerOnlyKinds = map[string]string{
-	CoreKind("token"):       "tokens are the owner's alone, and no function or agent may revoke or write one",
-	CoreKind("credential"):  "the login credential is the owner's alone, and only the auth endpoints write it",
-	CoreKind("recoverykey"): "the recovery key is the owner's alone, and only registration writes it",
+	CoreKind("token"):      "tokens are the owner's alone, and no function or agent may revoke or write one",
+	CoreKind("credential"): "the login credential is the owner's alone, and only the auth endpoints write it",
 }
 
 // writesEntryProblem is grantEntryProblem for a `permissions.writes` entry:

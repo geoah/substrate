@@ -43,10 +43,10 @@ describe("kindPointer", () => {
 describe("kindPatternGrant", () => {
   it("names the auth kinds a glob over core leaves out", () => {
     expect(kindPatternGrant("*")).toBe(
-      "Every kind, except the token, credential, secret and recoverykey kinds"
+      "Every kind, except the token, credential and secret kinds"
     )
     expect(kindPatternGrant("substrate.reamde.dev/*")).toBe(
-      "Every kind published by substrate.reamde.dev, except the token, credential, secret and recoverykey kinds"
+      "Every kind published by substrate.reamde.dev, except the token, credential and secret kinds"
     )
     expect(kindPatternGrant("substrate.reamde.dev/llm/*")).toBe(
       "Every kind in the package substrate.reamde.dev/llm"

@@ -173,8 +173,7 @@ func caseAuth(c *C) {
 			ID    string `json:"id"`
 			Label string `json:"label"`
 		} `json:"token"`
-		Secret      string `json:"secret"`
-		RecoveryKey string `json:"recoveryKey"`
+		Secret string `json:"secret"`
 		// Repository is the authority the label resolved to: what the
 		// operator hat addresses, where the door took the bare label.
 		Repository string `json:"repository"`
@@ -185,13 +184,21 @@ func caseAuth(c *C) {
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, &regOut)
 	c.requiref(status == http.StatusCreated, "register answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(strings.HasPrefix(regOut.Secret, "substrate_tok_"), "token secret has the wrong shape")
-	c.requiref(regOut.RecoveryKey != "", "register minted no recovery key (none was supplied)")
+	// A registration hands over no key (decision record 0264): the data key
+	// is wrapped under the host's credential key alone. Only the field names
+	// are read, so the secret beside them never reaches the report.
+	var regFields map[string]json.RawMessage
+	c.requiref(json.Unmarshal(raw, &regFields) == nil, "register answered a body that is not a JSON object")
+	for _, field := range []string{"recoveryKey", "recoveryPublicKey"} {
+		_, answered := regFields[field]
+		c.requiref(!answered, "register answered `%s`; a registration has no key step", field)
+	}
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
 	c.requiref(regOut.Repository != "", "register echoed no repository authority")
 	r.authority = regOut.Repository
 	bindSamples(r.authority)
 	r.rep.Repository, r.rep.Password = r.repository, r.password
-	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.repository, regOut.Token.ID)
+	c.stepf("registered `%s`: repository created, first token `%s` minted, and no key beside it", r.repository, regOut.Token.ID)
 
 	// The minted token opens the repository; no token opens nothing.
 	var toks struct {

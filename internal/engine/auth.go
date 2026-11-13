@@ -50,11 +50,6 @@ const (
 	kindCredential = "substrate.reamde.dev/core/credential"
 	credentialID   = "self"
 
-	// kindRecoveryKey is the singleton recovery record: the age recipient the
-	// user enrolled and the repository's DEK wrapped to it.
-	kindRecoveryKey = "substrate.reamde.dev/core/recoverykey"
-	recoveryKeyID   = "self"
-
 	// The sealed-store refs the credential record points at are namespaced so
 	// a connector credential and a password hash can never collide on one.
 	sealedAuthPrefix = "auth:"
@@ -398,22 +393,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err != nil {
 		return zero, err
 	}
-	// The recovery pair: a client that generated its own identity sends only
-	// the recipient and the identity never touches the server; a bare
-	// registration asks the server to mint the pair, and the identity is
-	// returned once below, never stored. Parsed BEFORE anything durable
-	// exists, so a bad recipient refuses cleanly.
-	out := substrate.RegisterResult{RecoveryPublicKey: in.RecoveryPublicKey}
-	if out.RecoveryPublicKey == "" {
-		identity, publicKey, err := generateRecoveryIdentity()
-		if err != nil {
-			return zero, err
-		}
-		out.RecoveryKey, out.RecoveryPublicKey = identity, publicKey
-	}
-	if _, err := wrapDEKToRecipient(make([]byte, 32), out.RecoveryPublicKey); err != nil {
-		return zero, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-	}
+	var out substrate.RegisterResult
 	label := in.Label
 	if label == "" {
 		label = "login"
@@ -425,9 +405,6 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 			repository: in.Repository, passwordHash: hash,
 			totp: totpMaterial{Secret: seed, Step: step},
 		}); err != nil {
-			return err
-		}
-		if err := t.writeRecoveryKey(out.RecoveryPublicKey); err != nil {
 			return err
 		}
 		var terr error
@@ -488,25 +465,6 @@ func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, e
 		return "", 0, fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
 	}
 	return seed, step, nil
-}
-
-// writeRecoveryKey wraps the repository's DEK to the enrolled age recipient
-// and writes the recoverykey singleton: the changelog-borne half of the
-// recovery story, ciphertext only the user's identity opens.
-func (t *txn) writeRecoveryKey(publicKey string) error {
-	wrapped, err := wrapDEKToRecipient(t.ds.dek, publicKey)
-	if err != nil {
-		return err
-	}
-	_, err = t.put(substrate.PutInput{
-		Kind: kindRecoveryKey, ID: recoveryKeyID,
-		Properties: map[string]any{
-			"algorithm": recoveryAlgorithm,
-			"publicKey": publicKey,
-			"sealedKey": base64.StdEncoding.EncodeToString(wrapped),
-		},
-	})
-	return err
 }
 
 func validPassword(p string) error {

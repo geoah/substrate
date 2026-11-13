@@ -41,9 +41,7 @@ unless you ask it not to.
 - **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value or a
   provider OAuth token reaching a response, a log line, another repository, or a
   record a token can read. A secret-typed property reads back `<redacted>`
-  everywhere; anything else is a finding. The registration response is the one
-  deliberate disclosure, handing back a server-minted recovery key exactly
-  once, so that key reaching any other call is a finding too.
+  everywhere; anything else is a finding.
 - **Sandbox escape under `SUBSTRATE_SANDBOX=enforce`.** A function body
   reaching the filesystem, the network or another process past what
   [the sandbox](docs/functions.md#the-sandbox) says it may.

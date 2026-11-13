@@ -206,9 +206,8 @@ type MintTokenInput struct {
 	AppAddons []AppAddon
 }
 
-// MintedToken is what a login and a `POST /tokens` answer with: the token
-// record and its secret, shown this once. Registration answers the same
-// fields with the recovery material beside them.
+// MintedToken is what a login, a registration and a `POST /tokens` answer
+// with: the token record and its secret, shown this once.
 type MintedToken struct {
 	Token  TokenInfo `json:"token"`
 	Secret string    `json:"secret"`
@@ -261,19 +260,12 @@ type RegisterRequest struct {
 	SkipTOTP bool `json:"skipTotp,omitempty"`
 	// Label names the token registration mints; absent, the door's default.
 	Label string `json:"label,omitempty"`
-	// RecoveryPublicKey is the client-generated age recipient; absent asks
-	// the server to mint the pair and return the identity once.
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
 // Registered is what a registration answers: the mint, whose `repository` is
-// the one that was created, and the recovery material. RecoveryKey is present
-// only when the server generated the pair, shown this once like the token
-// secret beside it.
+// the one that was created.
 type Registered struct {
 	MintedToken
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
 // TOTPEnrollment is a candidate second factor: the base32 seed and the
@@ -303,28 +295,16 @@ type RegisterInput struct {
 	SkipTOTP bool
 	// Label names the token registration mints, exactly as login's does.
 	Label string
-	// RecoveryPublicKey is the age recipient the repository's data-encryption
-	// key wraps to, generated CLIENT-SIDE so the matching identity never
-	// touches the server. Empty asks the server to generate the pair and
-	// return the identity once in RegisterResult.RecoveryKey.
-	RecoveryPublicKey string
 }
 
-// RegisterResult is what a registration hands back: the first token, its
-// secret shown once, and the recovery material.
+// RegisterResult is what a registration hands back: the first token and its
+// secret, shown once.
 type RegisterResult struct {
 	Token  TokenInfo
 	Secret string
 	// Repository is the repository that was created, echoed so a client that
 	// sent a bare label learns the authority it got.
 	Repository string
-	// RecoveryKey is the age identity that opens the repository's recovery
-	// wrap, present ONLY when the server generated the pair (the input named
-	// no recipient). Shown once, never stored.
-	RecoveryKey string
-	// RecoveryPublicKey is the enrolled age recipient, whichever side
-	// generated it.
-	RecoveryPublicKey string
 }
 
 // LoginInput is BOTH factors presented directly: it authenticates /login and

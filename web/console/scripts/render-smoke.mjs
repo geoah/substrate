@@ -385,12 +385,6 @@ const routes = [
       await expect(page, '"Create your Substrate" button', () => create.click())
       await shows(
         page,
-        '"Save your recovery key" heading',
-        pageTitle(page, "Save your recovery key")
-      )
-      await page.getByRole("button", { name: "Saved, continue" }).click()
-      await shows(
-        page,
         '"What should we call you?" heading',
         pageTitle(page, "What should we call you?")
       )
@@ -409,7 +403,7 @@ const routes = [
           `the owner's contact is named ${JSON.stringify(named)}, not ${JSON.stringify(owner)}`
         )
       }
-      return `registered ${repository}, kept the recovery key, named the owner's contact, "Your substrate"`
+      return `registered ${repository}, named the owner's contact, "Your substrate"`
     },
   },
   {

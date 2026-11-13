@@ -170,7 +170,7 @@ func TestSigningOutEverywhereEndsEveryToken(t *testing.T) {
 	assistant := mintFull(t, e, "assistant", []string{"mcp"})
 	signIn := e.Token
 
-	other := e.RegisterUser("someone-else", signoutPassword, "")
+	other := e.RegisterUser("someone-else", signoutPassword)
 	others := openStream(t, other, ctx, "/api/v1/changes?watch=1")
 
 	ownSignIn := openStream(t, e, ctx, notesWatch())

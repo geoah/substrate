@@ -2035,6 +2035,9 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 			}
 		}
 	}
+	if err := t.settleSecretsLeftBehind(ty, owner, row, accepted); err != nil {
+		return nil, err
+	}
 	if len(drop) == 0 {
 		return accepted, nil
 	}

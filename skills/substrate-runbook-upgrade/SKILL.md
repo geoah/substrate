@@ -74,15 +74,24 @@ token) migrate nothing.
 
 ## Keep secrets out of the conversation
 
-Two secrets matter in an upgrade, and each has one owner:
+One secret matters in an upgrade, and the operator owns it:
 
-- **`SUBSTRATE_CREDENTIAL_KEY`** is the operator's. It unwraps the key every
-  repository on the host is sealed under. The operator confirms it is stored
-  in their own secret storage, apart from the data backups.
-- **The recovery key** is the user's, handed to them at registration. It
-  opens their export on any host. The user confirms they still have it.
+- **`SUBSTRATE_CREDENTIAL_KEY`** unwraps the key every repository on the host
+  is sealed under, and nothing else does. A backup restored without it is
+  refused, or, by the operator's choice, comes back without its secrets:
+  every connected account to reconnect, every API key to enter again, and
+  the owner's password to reset. The operator confirms it is stored in
+  their own secret storage, apart from the data backups.
 
-Ask each owner to confirm; never ask to see either. Never put a secret, a
+A user who registered on an older release was handed a second key at
+registration, an `AGE-SECRET-KEY-1…` line. The release that removes it
+changes this for them: the key opens nothing on the upgraded server, no
+command reads it, and the upgrade drops the copy of the repository's data
+key it opened from the repository's history. A backup taken before that
+upgrade still carries the copy, so the old key stays as secret as the
+backups it opens. Tell the user so, and plan no restore around it.
+
+Ask the operator to confirm; never ask to see the key. Never put a secret, a
 token or a password into a message, the plan, a log, or a file in a code
 repository.
 
@@ -391,7 +400,7 @@ let its GC sweep erase them (about five minutes after boot), stop it again
 and retake the backup. Then confirm that the operator holds
 `SUBSTRATE_CREDENTIAL_KEY` apart from the backup (on compose it is
 `/keys/credential.key` in the `substrate-keys` volume, unless the
-environment sets one), and that the user holds their recovery key.
+environment sets one).
 
 **Show the user:** where the backup is, what it holds, and the point each
 snapshot recorded or the mark each archive holds.
@@ -639,5 +648,5 @@ takes the same explicit yes.
   refusal.
 - Never pass `--allow-data-loss` without the user's explicit yes to the
   steps it confirms.
-- Never put `SUBSTRATE_CREDENTIAL_KEY`, the recovery key, a token or a
-  password into a message, the plan, a log or a file in a code repository.
+- Never put `SUBSTRATE_CREDENTIAL_KEY`, a token or a password into a
+  message, the plan, a log or a file in a code repository.

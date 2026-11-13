@@ -37,7 +37,7 @@ type keyedByName struct {
 	spool           string
 }
 
-func writeKeyedByName(t *testing.T) keyedByName {
+func writeKeyedByName(t *testing.T, seed ...func(ds *dataset)) keyedByName {
 	t.Helper()
 	ctx := context.Background()
 	k := keyedByName{dsn: MigratedDSN(t), root: t.TempDir(), name: testdb.Repository(t)}
@@ -59,6 +59,9 @@ func writeKeyedByName(t *testing.T) keyedByName {
 		Kind: "substrate.reamde.dev/core/contact", ID: fid("ada"), Properties: map[string]any{"name": "Ada"},
 	}); err != nil {
 		t.Fatal(err)
+	}
+	for _, fn := range seed {
+		fn(ds)
 	}
 	// The repository's own record under the name, where a release before
 	// ids wrote it.

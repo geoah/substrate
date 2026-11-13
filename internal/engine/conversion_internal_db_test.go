@@ -1,12 +1,13 @@
 package engine
 
-// The conversion chain carries no step yet, so these tests run it through one
-// no release ships: dialect 2 respells the actor `api` as `api.converted`, on
-// the line and in each effect that names it. That is the shape of what a
-// later step does (the plan's steps 11, 15 and 21 rewrite history lines): a
-// line rewritten in place, its checksum recomputed, the fold rebuilt from it.
-// A step that lands copies this test's form: a repository written at the
-// dialect before, the conversion, and what the lines and the records became.
+// These tests run the chain through one step no release ships, after the
+// steps the binary carries (testDialect): it respells the actor `api` as
+// `api.converted`, on the line and in each effect that names it, which every
+// repository written here holds. That is the shape of what a real step does:
+// a line rewritten in place, its checksum recomputed, the fold rebuilt from
+// it. A step that lands copies this test's form: a repository written at the
+// dialect before, the conversion, and what the lines and the records became
+// (conversion_0002_drop_recovery_wrap_test.go holds step 2's lines).
 
 import (
 	"bytes"
@@ -32,9 +33,14 @@ import (
 
 const convertedActor = "api.converted"
 
+// testDialect is the dialect the test step converts to: the one after the
+// chain the binary carries, which every repository here is written at.
+var testDialect = chainDialect(conversionSteps) + 1
+
 func testConversion() Option {
 	return func(o *options) {
-		o.conversion = []conversionStep{{Dialect: 2, Name: "respell_the_api_actor", Line: respellAPIActor}}
+		o.conversion = append(append([]conversionStep(nil), conversionSteps...),
+			conversionStep{Dialect: testDialect, Name: "respell_the_api_actor", Line: respellAPIActor})
 	}
 }
 
@@ -132,10 +138,11 @@ func openConverting(t *testing.T, dsn, root, archived string, opts ...Option) (s
 	}, opts...)...)
 }
 
-// holdConverted holds a repository to a finished conversion: the stamp at 2,
-// every line of the table converted and stamped with its own checksum, the
-// fold rebuilt from the converted lines, and the archive, once a pass ran,
-// holding the converted lines under dialect 2 and nothing under dialect 1.
+// holdConverted holds a repository to a finished conversion: the stamp at
+// testDialect, every line of the table converted and stamped with its own
+// checksum, the fold rebuilt from the converted lines, and the archive, once
+// a pass ran, holding the converted lines under testDialect and nothing
+// under a dialect before it.
 func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 	t.Helper()
 	ctx := context.Background()
@@ -145,8 +152,8 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 	}
 	ds := d.(*dataset)
 	stamp, err := readChangelogDialect(ctx, ds.db)
-	if err != nil || stamp != 2 {
-		t.Fatalf("stamp %d (%v), want 2", stamp, err)
+	if err != nil || stamp != testDialect {
+		t.Fatalf("stamp %d (%v), want %d", stamp, err, testDialect)
 	}
 	converted := 0
 	for after := int64(0); ; {
@@ -189,8 +196,8 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 		t.Fatalf("archive after the conversion: %v", err)
 	}
 	src, err := openNewestArchive(ctx, ds.svc.archive, ds.info.ID, nil)
-	if err != nil || src.manifest.ChangelogDialect != 2 {
-		t.Fatalf("the archive's manifest after a pass: %v, want dialect 2", err)
+	if err != nil || src.manifest.ChangelogDialect != testDialect {
+		t.Fatalf("the archive's manifest after a pass is at dialect %d (%v), want %d", src.manifest.ChangelogDialect, err, testDialect)
 	}
 	prefix := changelogfile.ArchivePrefix(ds.info.ID, src.archive)
 	listed, err := ds.svc.archive.List(ctx, prefix+changelogfile.ChangelogSubdir+"/")
@@ -198,8 +205,8 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 		t.Fatal(err)
 	}
 	for _, o := range listed {
-		if !strings.HasPrefix(o.Key, prefix+changelogfile.ChangelogSubdir+"/2/") {
-			t.Errorf("the archive still holds %s, which is not under dialect 2", o.Key)
+		if !strings.HasPrefix(o.Key, fmt.Sprintf("%s%s/%d/", prefix, changelogfile.ChangelogSubdir, testDialect)) {
+			t.Errorf("the archive still holds %s, which is not under dialect %d", o.Key, testDialect)
 		}
 		body, err := archive.ReadAll(ctx, ds.svc.archive, o.Key)
 		if err != nil {
@@ -1112,7 +1119,7 @@ func TestAReadOnlyOpenRefusesAnUnconvertedHistory(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	if _, err := svc.Dataset(context.Background(), src.repo); !errors.Is(err, ErrConversionPending) {
-		t.Fatalf("a read-only open of a dialect-1 history under a dialect-2 binary: %v, want ErrConversionPending", err)
+		t.Fatalf("a read-only open of a history below the binary's dialect: %v, want ErrConversionPending", err)
 	}
 }
 

@@ -39,10 +39,12 @@ type historySource interface {
 	Cursor(ctx context.Context, after int64) (historyCursor, error)
 	// Sealed is every sealed value the source holds.
 	Sealed(ctx context.Context) ([]changelogfile.SealedRecord, error)
-	// CopyFiles puts every blob the source holds that the server's store
-	// lacks into it, and every spooled webhook request into the
-	// repository's directory.
-	CopyFiles(ctx context.Context, local blobbytes.Store, dir string) error
+	// CopyFiles reads every blob the source holds that local lacks into it,
+	// and hands every spooled webhook request it selects to spool. The
+	// import's local is the server's store and its spool the repository's
+	// directory; a take's admission reads the same objects into neither
+	// (admitSource).
+	CopyFiles(ctx context.Context, local blobbytes.Store, spool func(file string, data []byte) error) error
 	// String names the source for a log line.
 	String() string
 }
@@ -91,7 +93,9 @@ func (d dirSource) Sealed(context.Context) ([]changelogfile.SealedRecord, error)
 	return changelogfile.ReadSealed(d.dir)
 }
 
-func (d dirSource) CopyFiles(context.Context, blobbytes.Store, string) error { return nil }
+func (d dirSource) CopyFiles(context.Context, blobbytes.Store, func(string, []byte) error) error {
+	return nil
+}
 
 func (d dirSource) String() string { return d.dir }
 
@@ -252,7 +256,7 @@ func (a *archiveSource) Sealed(ctx context.Context) ([]changelogfile.SealedRecor
 // CopyFiles brings in the spool the manifest selects and the bytes of every
 // blob the archive holds, one object per digest, each held to its digest as
 // the blob store takes it.
-func (a *archiveSource) CopyFiles(ctx context.Context, local blobbytes.Store, repoDir string) error {
+func (a *archiveSource) CopyFiles(ctx context.Context, local blobbytes.Store, spool func(file string, data []byte) error) error {
 	for _, name := range a.manifest.Spool {
 		file, _, ok := changelogfile.ParseSpoolObjectName(name)
 		if !ok {
@@ -262,7 +266,7 @@ func (a *archiveSource) CopyFiles(ctx context.Context, local blobbytes.Store, re
 		if err != nil {
 			return fmt.Errorf("%w: the spooled request %s the manifest selects: %w", errArchiveUnreadable, file, err)
 		}
-		if err := changelogfile.WriteSpoolFile(repoDir, file, data); err != nil {
+		if err := spool(file, data); err != nil {
 			return err
 		}
 	}
@@ -461,7 +465,9 @@ func (ds *dataset) takeHistory(ctx context.Context, src historySource) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	if err := src.CopyFiles(ctx, local, dir); err != nil {
+	if err := src.CopyFiles(ctx, local, func(file string, data []byte) error {
+		return changelogfile.WriteSpoolFile(dir, file, data)
+	}); err != nil {
 		return 0, err
 	}
 	sealed, err := src.Sealed(ctx)
@@ -489,12 +495,29 @@ func (ds *dataset) insertFrom(ctx context.Context, src historySource, after int6
 	// nothing until the import is done, and a long history takes minutes.
 	ds.svc.log.Info("substrate: importing a repository's history",
 		"repository", ds.scope.Repository, "from", src.String(), "rows", src.Head()-after, "head", src.Head())
+	prog := ds.svc.progress("importing the changelog rows", "repository", ds.scope.Repository, "head", src.Head())
+	return readHistory(ctx, src, after, batch, func(entries []changelogfile.Entry) error {
+		if err := ds.insertEntries(ctx, entries); err != nil {
+			return err
+		}
+		prog.tick(changelogfile.Position{Seq: entries[len(entries)-1].Seq})
+		return ds.importFault(importAfterBatch)
+	})
+}
+
+// readHistory reads src's lines after `after`, batch at a time, each checked
+// as its cursor reads it (an archive's piece against its hash, every line
+// against its own sum and the run the piece's name says), and hands each
+// batch to put. It is the import's one reading of a source's history, and a
+// take's admission runs it too, with a put that keeps nothing
+// (admitSource), so what it refuses is refused before a take removes
+// anything. It reports how many lines it read.
+func readHistory(ctx context.Context, src historySource, after int64, batch int, put func([]changelogfile.Entry) error) (int64, error) {
 	cur, err := src.Cursor(ctx, after)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = cur.Close() }()
-	prog := ds.svc.progress("importing the changelog rows", "repository", ds.scope.Repository, "head", src.Head())
 	var n int64
 	for {
 		entries, err := cur.Next(batch)
@@ -502,18 +525,13 @@ func (ds *dataset) insertFrom(ctx context.Context, src historySource, after int6
 			return n, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
 		}
 		if len(entries) == 0 {
-			break
+			return n, nil
 		}
-		if err := ds.insertEntries(ctx, entries); err != nil {
+		if err := put(entries); err != nil {
 			return n, err
 		}
 		n += int64(len(entries))
-		prog.tick(changelogfile.Position{Seq: entries[len(entries)-1].Seq})
-		if err := ds.importFault(importAfterBatch); err != nil {
-			return n, err
-		}
 	}
-	return n, nil
 }
 
 // finishImport converts the history and rebuilds the fold when the marker

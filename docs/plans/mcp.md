@@ -20,7 +20,7 @@ The owner gives their assistant one address, `https://<server>/mcp`,
 approves it once on the console's approval page, and the assistant can do
 what the owner does in the console, through tools, with these exceptions:
 it never writes, mints or revokes the auth material (tokens, credentials,
-secrets, recovery keys), never sees a webhook's key, never uninstalls or
+secrets), never sees a webhook's key, never uninstalls or
 purges a package, never exports the repository, never connects a provider
 account and never answers another app's approval. It reads what the owner
 reads, the token and credential records among them, whose secrets are
@@ -178,7 +178,7 @@ its writes keep its own actor; code it runs writes under a `function:` or
 wrapper that refuses:
 
 - a put, patch, delete or merge of `substrate.reamde.dev/core/token`,
-  `/credential`, `/secret` or `/recoverykey`, and a decision on a change
+  `/credential` or `/secret`, and a decision on a change
   request whose target is one, since the accept writes it under the
   owner's hand;
 - a trigger's webhook key: cut from every trigger read back and from the

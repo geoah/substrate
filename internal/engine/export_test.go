@@ -681,6 +681,25 @@ func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, 
 // DEKAAD builds the additional data the control-plane DEK wrap binds to.
 func DEKAAD(repoID string) []byte { return dekAAD(repoID) }
 
+// WithoutConversionSteps opens a binary that carries no conversion step: its
+// changelog dialect is 1, and the first append claims an unclaimed history
+// that a binary carrying a step converts and claims at its boot. It is the
+// regime the stamp's own tests describe, whatever the chain grows to.
+func WithoutConversionSteps() Option {
+	return func(o *options) { o.conversion = []conversionStep{} }
+}
+
+// ChangelogDialectOf is the changelog dialect a service writes: the last of
+// its conversion chain.
+func ChangelogDialectOf(svc substrate.Service) int { return svc.(*service).maxDialect }
+
+// OpenPayloadWithKey opens one sealed payload, or a DEK wrap, under the
+// supplied key, presenting aad as the row's binding, so a test reads what is
+// stored underneath the engine.
+func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
+	return openRepoPayload(payload, key, aad)
+}
+
 // SealWithKey seals raw under key bound to aad, the way the host credential
 // key wraps a DEK, so a test can build a directory another binary wrote.
 func SealWithKey(key, raw, aad []byte) ([]byte, error) {

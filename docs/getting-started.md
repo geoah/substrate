@@ -60,14 +60,8 @@ substratectl register --repository ada.example.com --invite-code CODE \
 code, and signing in asks for the password alone.
 
 Underneath, registration is two HTTP calls, and only the second writes
-anything. The response carries the token secret, shown exactly once, and a
-recovery key exists either way: `substratectl register` generates the pair
-itself and hands you the key (saved to 1Password when `op` is signed in,
-printed once otherwise), the console generates it in the browser and shows it
-beside the password so a password manager saves the two together, while a raw HTTP request that names no
-`recoveryPublicKey` gets a one-time server-minted `recoveryKey` back.
-[Users, tokens, and actors](auth.md) documents the wire, recovery fields
-included.
+anything. The response carries the token secret, shown exactly once.
+[Users, tokens, and actors](auth.md) documents the wire.
 
 ## Log in
 

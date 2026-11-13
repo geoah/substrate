@@ -366,8 +366,8 @@ data:
               # An entry may be a kind or one of the trigger selector's globs
               # (`*`, `<authority>/*`, `<authority>/<package>/*`), which cover
               # kinds the repository gains later. A GLOB never reaches
-              # `token`, `credential`, `secret` or `recoverykey`: those are
-              # granted only by an entry that spells one out (record 0080).
+              # `token`, `credential` or `secret`: those are granted only by
+              # an entry that spells one out (record 0080).
               description: the record kinds every read is held to, each a
                 kind or a glob over them
             budgets:

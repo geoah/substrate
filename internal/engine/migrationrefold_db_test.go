@@ -116,6 +116,7 @@ var refoldLedgerFloors = map[string]string{
 	"remove_reply_relay_contacts":         "0019_operator_spend_reservations",
 	"key_the_repository_record_by_its_id": "0020_repository_ids",
 	"start_paged_drains_over":             "0021_identity_columns_byte_order",
+	"purge_the_recovery_key":              "0023_secrets_left_behind",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

@@ -43,12 +43,17 @@ whose head is the seq the archive holds every line up to. The server pins the
 point in one read of the database and streams the history afterwards, so
 writing goes on during the download.
 
-The archive carries no host key. Its sealed files are ciphertext under the
-repository's data key, which the manifest holds wrapped under the server's
-SUBSTRATE_CREDENTIAL_KEY. To restore on a host with the same credential key,
-extract the tar into the archive the server reads (SUBSTRATE_ARCHIVE, by
-default <SUBSTRATE_DATA_ROOT>/archive) with the server stopped, and boot: a
-repository the archive holds and the database does not is restored from it.
+The archive carries no host key. Its sealed values (the login's password
+hash and TOTP seed, every account's OAuth token, every secret property) are
+ciphertext under the repository's data key, which the manifest holds wrapped
+under the server's SUBSTRATE_CREDENTIAL_KEY and nowhere else. To restore on a
+host with the same credential key, extract the tar into the archive the
+server reads (SUBSTRATE_ARCHIVE, by default <SUBSTRATE_DATA_ROOT>/archive)
+with the server stopped, and boot: a repository the archive holds and the
+database does not is restored from it. A host with another key refuses it at
+boot; listing the repository (its name or its id) in
+SUBSTRATE_IMPORT_WITHOUT_SECRETS restores it without them: every record and
+every line of history arrives, and the secrets read unset.
 
 The file is named by the server (<authority>-<head>.tar) unless -o names one;
 an existing file is never overwritten. -o - writes the archive to stdout and

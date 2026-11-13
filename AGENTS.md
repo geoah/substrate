@@ -223,7 +223,7 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, repository, password, TOTP enroll (--skip-totp for none), recovery key (auto-saved to 1Password when `op` is signed in)
+bin/substratectl register                    # invite code, repository, password, TOTP enroll (--skip-totp for none)
 bin/substratectl login --repository <yours>  # password, then a TOTP code if the account has one; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition

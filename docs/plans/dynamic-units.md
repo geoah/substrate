@@ -1046,8 +1046,9 @@ as follows.
 - Two test seams: `WithTestSeedPath` reports which path each seed took and
   why the per-record one, and `WithTestBulkFault` fails the flush after a
   named table. The bulk tests (internal/engine/bulkseed_db_test.go) cover
-  Register with its credential, recovery key and token beside the seed,
-  in bulk and per record, entry by entry; a planned refresh and a
+  Register with its credential, `recoverykey` record (until decision 0264
+  removed it) and token beside the seed, in bulk and per record, entry by
+  entry; a planned refresh and a
   tombstone forcing the per-record path at the open; a row, a tombstone
   and a former id each declining a run (bulkwrite_internal_db_test.go); a
   fault after the records, refs and entries of a registration's flush,

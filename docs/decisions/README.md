@@ -219,7 +219,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
 | [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | superseded |
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | superseded |
-| [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
+| [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | superseded |
 | [0055](0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md) | A retired name is a declared reservation, never inferred from a prune | accepted |
 | [0056](0056-a-change-cursor-is-a-seq-under-a-history-generation.md) | A change cursor is a seq under a history generation | accepted |
 | [0057](0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md) | A changelog line names its transaction, and an unfinished transaction is cut whole | accepted |
@@ -417,6 +417,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
 | [0262](0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md) | Postgres alone confirms a write, and an archive is copied after the commit | accepted |
 | [0263](0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md) | The API's tests of engine behavior run on the real engine, and its stand-in is deleted | accepted |
+| [0264](0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md) | A repository's secrets travel with its host key, or are left behind by the operator's choice | accepted |
 | [0265](0265-a-package-names-the-function-interface-its-code-is-written-against.md) | A package names the function interface its code is written against | accepted |
 | [0266](0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md) | A temporary failure is retried over minutes, and the body says which it is | accepted |
 | [0267](0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md) | A schedule trigger says what it does with runs it missed, and runs the latest by default | accepted |

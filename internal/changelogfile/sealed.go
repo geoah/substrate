@@ -104,6 +104,37 @@ func PendingSealed(repoDir string) ([]string, error) {
 	return out, nil
 }
 
+// ReadPendingSealed decodes every pending file under sealed/, each held to its
+// name as ReadSealed holds a record's file.
+func ReadPendingSealed(repoDir string) ([]SealedRecord, error) {
+	names, err := PendingSealed(repoDir)
+	if err != nil {
+		return nil, err
+	}
+	dir := SealedDir(repoDir)
+	out := make([]SealedRecord, 0, len(names))
+	for _, name := range names {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			return nil, err
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		var rec SealedRecord
+		if err := dec.Decode(&rec); err != nil {
+			return nil, fmt.Errorf("changelogfile: decode sealed/%s: %w", name, err)
+		}
+		if err := checkSealedRef(rec.Ref); err != nil {
+			return nil, fmt.Errorf("sealed/%s: %w", name, err)
+		}
+		if SealedFileName(rec.Ref)+pendingSuffix != name {
+			return nil, fmt.Errorf("%w: sealed/%s holds ref %q", ErrSealedName, name, rec.Ref)
+		}
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
 // DiscardPendingSealed removes every pending file under sealed/ and returns
 // how many it removed: a staged write whose commit the directory never saw.
 // A boot runs it after the table has been written out, so a pending file

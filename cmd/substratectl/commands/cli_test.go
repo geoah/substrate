@@ -531,6 +531,43 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 	}
 }
 
+// Registration has no key step (decision record 0264): the repository's data
+// key is wrapped under the host's credential key alone, so the commit carries
+// no recipient, nothing hands the caller a key, and no flag brings one.
+func TestRegisterHasNoRecoveryKeyStep(t *testing.T) {
+	h := newHarness(t)
+	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
+	out, errOut := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
+	if raw, sent := h.fake.lastBody["recoveryPublicKey"]; sent {
+		t.Errorf("the commit sent recoveryPublicKey %s", raw)
+	}
+	for _, printed := range []string{out, errOut} {
+		if strings.Contains(printed, "AGE-SECRET-KEY-") || strings.Contains(strings.ToLower(printed), "recipient") {
+			t.Errorf("register handed over a key:\n%s", printed)
+		}
+	}
+	_, _, err := h.run("register", "--server", h.server, "--recovery-public-key", "age1example")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --recovery-public-key") {
+		t.Errorf("--recovery-public-key: err = %v, want an unknown flag", err)
+	}
+}
+
+// A server below `auth` revision 2 still mints a recovery key for a
+// registration that names no recipient and answers with it once: the command
+// hands it over, since that answer is the only copy.
+func TestRegisterHandsOverTheKeyAnOlderServerMinted(t *testing.T) {
+	h := newHarness(t)
+	h.fake.olderServerKey = "AGE-SECRET-KEY-1OLDER"
+	h.stdin.WriteString("hunter2\nhunter2\n123456\n")
+	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--repository", "geoah")
+	if !strings.Contains(out, "recovery key: AGE-SECRET-KEY-1OLDER") || !strings.Contains(out, "shown once") {
+		t.Fatalf("register did not hand over the key the older server minted:\n%s", out)
+	}
+	if raw, sent := h.fake.lastBody["recoveryPublicKey"]; sent {
+		t.Errorf("the commit sent recoveryPublicKey %s", raw)
+	}
+}
+
 // The stored context carries the repository's AUTHORITY, the public name a
 // webhook URL is built from. `register` records the one the server answered
 // with, and `login`, which is told no authority at all, must carry the stored

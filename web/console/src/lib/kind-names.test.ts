@@ -40,7 +40,7 @@ describe("kind display names", () => {
     ["webdocument", "Web document", "Web documents"],
     ["recordmergerequest", "Record merge request", "Record merge requests"],
     ["recordpatchpolicy", "Record patch policy", "Record patch policies"],
-    ["recoverykey", "Recovery key", "Recovery keys"],
+    ["recovery", "Recovery", "Recoveries"],
     ["consolepreference", "Console preference", "Console preferences"],
     ["codeofconduct", "Code of conduct", "Codes of conduct"],
     ["repository", "Repository", "Repositories"],

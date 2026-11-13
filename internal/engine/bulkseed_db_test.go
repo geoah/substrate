@@ -160,7 +160,7 @@ func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 }
 
 // Register is the registration a person makes: the seed, then the
-// credential, the recovery key and the token in the same transaction. Its
+// credential and the token in the same transaction. Its
 // seed runs in bulk and writes what the per-record path writes, the
 // entries after it land at the same seqs, the whole transaction is one
 // frame in the table and in the files, and a rebuild reproduces the fold.

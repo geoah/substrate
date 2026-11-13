@@ -320,7 +320,7 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-1 today, the ops, fold effects and entry frame this release writes: the record
+2 today, the ops, fold effects and entry frame this release writes: the record
 ops and the `delivery` op with the seven effects a trigger's bookkeeping
 replays through
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
@@ -330,6 +330,9 @@ every `record` delta carrying the kind version that wrote the row
 ([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md))
 and every `manager` effect carrying the stamp a property rename moved with it
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
+Dialect 2 spells nothing dialect 1 did not: it is a history
+[conversion step 2](stored-format.md#conversions) has emptied of the recovery
+wrap.
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread, and a change to a shape the history already
 holds ships a [conversion step](stored-format.md#conversions) to it, which

@@ -62,10 +62,10 @@ declare and change kinds, triggers,
 functions and agents; install providers and import samples; run functions,
 chat with agents, run syncs; merge and split records; read and store files.
 
-What it never does: write, mint or revoke tokens, credentials, secrets or
-recovery keys, or accept a change request that would; read a webhook's
-key; export the repository; connect a provider account (the owner does
-that in the console, since it needs their browser); verify a domain;
+What it never does: write, mint or revoke tokens, credentials or secrets,
+or accept a change request that would; read a webhook's key; export the
+repository; connect a provider account (the owner does that in the console,
+since it needs their browser); verify a domain;
 answer another app's approval; uninstall or purge a package.
 
 Code an assistant declares runs as the owner's code does, and reaches what

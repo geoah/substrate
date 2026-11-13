@@ -136,8 +136,8 @@ func openSecret(t *testing.T, dsn, ref string) string {
 	return openSecretUnder(t, dsn, ref, engine.TestCredentialKeyBytes)
 }
 
-// openSecretUnder is openSecret with the host key named: the restoring host's
-// key after a rewrap.
+// openSecretUnder is openSecret with the host key named: the key of the host
+// the repository was imported on.
 func openSecretUnder(t *testing.T, dsn, ref string, hostKey []byte) string {
 	t.Helper()
 	db := rawDB(t, dsn)
