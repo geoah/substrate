@@ -344,6 +344,9 @@ func (ds *dataset) enqueueReembed(ctx context.Context, provider *embedProvider, 
 // the closure admits and a re-embed runs. The live write skips the same
 // records for the same reason.
 func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time) (int, error) {
+	if err := dropOrphanVectors(ctx, q); err != nil {
+		return 0, err
+	}
 	// No pair (no row and no operator entry, or two claiming rows) and then no
 	// stored vector is current: whatever pair bought it, the folded records
 	// do not name it.
@@ -371,6 +374,26 @@ func (ds *dataset) reconcileEmbeddings(ctx context.Context, q dbx, at time.Time)
 		return total, err
 	}
 	return total, nil
+}
+
+// dropOrphanVectors deletes the vectors and the queued embeds of every record
+// the fold holds no row of, live or tombstoned, whatever its kind's admission.
+// A replayed purge leaves them (rows.go hardDelete), and the reconcile walks
+// the registry's kinds alone, so a purge the directory holds of a record whose
+// kind the registry no longer knows would otherwise leave its vectors in an
+// older database restored beside it.
+func dropOrphanVectors(ctx context.Context, q dbx) error {
+	for _, stmt := range []string{
+		`DELETE FROM embeddings e WHERE NOT EXISTS (
+			SELECT 1 FROM records r WHERE r.repository = e.repository AND r.kind = e.record_kind AND r.id = e.record_id)`,
+		`DELETE FROM embed_queue e WHERE NOT EXISTS (
+			SELECT 1 FROM records r WHERE r.repository = e.repository AND r.kind = e.record_kind AND r.id = e.record_id)`,
+	} {
+		if _, err := q.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("substrate/engine: drop the vectors of records the fold does not hold: %w", err)
+		}
+	}
+	return nil
 }
 
 // pruneUnembeddable deletes the chunks and the queue rows of every

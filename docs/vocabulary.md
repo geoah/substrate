@@ -538,11 +538,14 @@ tombstones the old rows: one transaction, ordinary record writes, one `move`
 step on the conversion plan saying how many records travelled ([decision
 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The old kind
 stays declared and empty, never pruned and never retired, and a second open
-finds nothing to move. The two kinds declare the same properties, because the
-rows travel with their properties untouched: a property only one of them
-declares, or one the new kind takes over under a new name, refuses the move.
+finds nothing to move. The rows travel with their properties untouched, so a
+property the old kind declares and the new one does not, one the new kind
+takes over under a new name, or one only the new kind declares and requires,
+refuses the move; an optional property only the new kind declares is admitted.
 A kind a `recordmapping` names at either end, or one that declares a subject
-reference, is not moved. Through `POST …/vocabulary/apply` the key is stored
+reference, is not moved. These checks are asked only while the old kind holds
+live rows: an old kind left declared and empty trips none of them ([decision
+0257](decisions/0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md)). Through `POST …/vocabulary/apply` the key is stored
 and no records move: a `movedFrom:` naming a kind the repository still
 declares is refused, naming the shipped tree as the one path that moves
 records in this build. This is how the agent runtime's four kinds left `core`

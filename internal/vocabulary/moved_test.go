@@ -78,13 +78,13 @@ func TestMovedFromAdmitsAKindThisTreeNoLongerShips(t *testing.T) {
 	}
 }
 
-// The compatibility half: the two property sets must be IDENTICAL. The rows
-// travel with their properties untouched and under their own names, so a
-// property the old kind declares and the new one does not is a value dropped by
-// a key nobody wrote; a property the new kind declares and the old one does not
-// is a shape the plan never said it was installing; and a rename is neither,
-// because the move copies the old key. Move first, change after.
-func TestMovedFromProblemsDemandIdenticalPropertySets(t *testing.T) {
+// The compatibility half. The rows travel with their properties untouched and
+// under their own names, so a property the old kind declares and the new one
+// does not is a value dropped by a key nobody wrote, and a rename is refused
+// because the move copies the old key. The new kind may add a property the old
+// one lacks, unless it requires it: a carried row holds no value for one
+// (decision record 0257). Move first, change after.
+func TestMovedFromProblemsRefuseADroppedOrRequiredProperty(t *testing.T) {
 	old := &vocabulary.Kind{
 		Identity:  "ada.example.com/old/widget",
 		PropOrder: []string{"kept", "gone", "renamed"},
@@ -95,17 +95,23 @@ func TestMovedFromProblemsDemandIdenticalPropertySets(t *testing.T) {
 	moved := &vocabulary.Kind{
 		Identity:  "ada.example.com/crew/widget",
 		MovedFrom: "ada.example.com/old/widget",
-		PropOrder: []string{"kept", "renamedNow", "added"},
+		PropOrder: []string{"kept", "renamedNow", "added", "demanded"},
 		Props: map[string]*vocabulary.Property{
 			"kept":       {Name: "kept"},
 			"renamedNow": {Name: "renamedNow", RenamedFrom: "renamed"},
 			"added":      {Name: "added"},
+			"demanded":   {Name: "demanded", Required: true},
 		},
 	}
 	joined := strings.Join(vocabulary.MovedFromProblems(old, moved), " ")
-	for _, want := range []string{`"gone"`, `"renamed"`, `"renamedNow"`, `"added"`} {
+	for _, want := range []string{`"gone"`, `"renamed"`, `"demanded"`} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("problems do not name %s: %s", want, joined)
+		}
+	}
+	for _, admitted := range []string{`"added"`, `"renamedNow"`} {
+		if strings.Contains(joined, admitted) {
+			t.Errorf("an optional property only the new kind declares is refused: %s in %s", admitted, joined)
 		}
 	}
 	// An identical pair is no problem at all.
