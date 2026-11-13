@@ -122,6 +122,22 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	ctx = r.Context()
+	// A stream outlives this check: the lease reads the token again before
+	// the stream writes on, and whenever the repository's changelog moves, so
+	// a revoked or expired token stops every stream it opened, a full
+	// token's, an assistant's and an app's alike.
+	tokenID := tok.ID
+	lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
+		_, again, err := h.svc.Authenticate(ctx, secret)
+		if err != nil {
+			return err
+		}
+		if again.ID != tokenID {
+			return substrate.ErrAuth
+		}
+		return nil
+	}}
+	ctx = withTokenLease(ctx, lease)
 	if scope.IsMCP(tok.Scopes) {
 		// An assistant's token (decision 0230): the owner's tier, no scope
 		// mark, at the MCP door alone, on the dataset that keeps the auth
@@ -153,21 +169,6 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
-		// A stream outlives this check: the lease reads the token again
-		// before the stream writes on, so a revoked or expired app token
-		// stops a watch or an agent stream it opened.
-		tokenID := tok.ID
-		lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
-			_, again, err := h.svc.Authenticate(ctx, secret)
-			if err != nil {
-				return err
-			}
-			if again.ID != tokenID {
-				return substrate.ErrAuth
-			}
-			return nil
-		}}
-		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
 		// The full client id beside the actor: the label and annotation
 		// namespace the app keeps, which its host-only actor does not tell

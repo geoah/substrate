@@ -262,6 +262,14 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if !open {
 				return
 			}
+			// The changelog moved, and a revoke or a sign out everywhere is
+			// one way it moves: the token is read again (from the cache a
+			// token write empties) before anything else is written.
+			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+				frame()
+				writeWatchError(enc, flusher, err)
+				return
+			}
 			if err := drain(); err != nil {
 				if !errors.Is(err, errClientGone) {
 					frame()

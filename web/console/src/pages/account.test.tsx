@@ -22,7 +22,13 @@ vi.mock("@tanstack/react-router", () => ({
 
 /** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
 const policy = vi.hoisted(() => ({ inviteRequired: true, totpRequired: true }))
-vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+vi.mock("@/lib/api/discovery", () => ({
+  useAuthPolicy: () => policy,
+  // Signing out everywhere is offered by the discovery read; these cases
+  // run against a server that does not list it.
+  discoveryQueryOptions: { queryKey: ["discovery"], queryFn: () => null },
+  hasFeature: () => false,
+}))
 // The unverified mark beside the name reads the repository record; its own
 // test is verify-domain-row.test.tsx.
 vi.mock("@/components/identity/unverified-mark", () => ({

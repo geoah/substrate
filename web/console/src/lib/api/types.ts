@@ -1440,6 +1440,9 @@ export interface AuthorizationAnswer {
  * again. */
 export interface SessionCredential {
   repository: string
+  /** How many tokens a sign out everywhere ended, where the request asked
+   * for one (decision 0272). */
+  signedOut?: number
 }
 
 /** A mint (login, registration or `POST /tokens`): the record, plus the secret

@@ -801,7 +801,8 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 			Repository: authority, Dataset: ds, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: approvedName(doc),
 			Details: details, AppAuthority: verifiedAuthority(doc),
-			AppAddons: appsetup.WaitingAddons(selectedRows),
+			AppAddons:  appsetup.WaitingAddons(selectedRows),
+			ApprovedBy: substrate.PrincipalFrom(ctx),
 		}, nil
 	}
 	// The publisher the page showed is checked again before anything is
@@ -1207,8 +1208,10 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		scopes = nil
 	}
 	// The token records what the app's build asked for (decision 0213): the
-	// floor of each package detail and its software version.
-	info, secret, err := c.Approval.Dataset.MintToken(ctx, substrate.MintTokenInput{
+	// floor of each package detail and its software version. It is minted
+	// standing on the token that approved it, so a sign out everywhere, or a
+	// revoke of that token, since the approval mints nothing (decision 0272).
+	info, secret, err := c.Approval.Dataset.MintToken(substrate.WithPrincipal(ctx, c.Approval.ApprovedBy), substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
 		AppAuthority: c.Approval.AppAuthority, AppAuthorityFromFile: c.Approval.AppAuthority != "" && c.Request.Document.Publisher.FromFile,
@@ -1216,6 +1219,11 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		AppPackages: authorize.PackageFloors(c.Approval.Details), AppSoftwareVersion: c.Request.SoftwareVersion,
 		AppAddons: c.Approval.AppAddons,
 	})
+	if errors.Is(err, substrate.ErrAuth) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant",
+			"the sign-in that approved this app was revoked, or its owner signed out everywhere, since the approval; start again")
+		return
+	}
 	if err != nil {
 		status, code := http.StatusInternalServerError, "server_error"
 		if errors.Is(err, substrate.ErrUnavailable) {

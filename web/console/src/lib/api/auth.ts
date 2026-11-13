@@ -116,16 +116,37 @@ export function login(
 /** The password-factor rule (RB-6): the CURRENT password and code travel in
  * the body. A bearer token alone is refused with 403 — so these calls are
  * deliberately anonymous. */
-export async function changePassword(
+export function changePassword(
   repository: string,
   password: string,
   totpCode: string,
-  newPassword: string
-): Promise<void> {
-  await request<SessionCredential>(
+  newPassword: string,
+  signOutEverywhere = false
+): Promise<SessionCredential> {
+  return request<SessionCredential>(
     "POST",
     "/password",
-    { repository, password, totpCode, newPassword },
+    signOutEverywhere
+      ? { repository, password, totpCode, newPassword, signOutEverywhere }
+      : { repository, password, totpCode, newPassword },
+    { anonymous: true }
+  )
+}
+
+/** Ends every token the person holds: every browser and script signed in,
+ * every token minted from one, and every app's and assistant's access, this
+ * browser's included (decision 0272). Both current factors travel in the
+ * body, like the credential changes: it is how an account is taken back from
+ * a leaked token, so a token is no evidence for it. */
+export function signOutEverywhere(
+  repository: string,
+  password: string,
+  totpCode: string
+): Promise<SessionCredential> {
+  return request<SessionCredential>(
+    "POST",
+    "/signout/everywhere",
+    { repository, password, totpCode },
     { anonymous: true }
   )
 }

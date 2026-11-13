@@ -54,6 +54,13 @@ type Service interface {
 	// register again.
 	DeleteRepository(ctx context.Context, in LoginInput) error
 
+	// SignOutEverywhere takes both current factors, like the credential
+	// changes, and ends every token the person holds, answering how many:
+	// every sign-in, every token minted from one, every assistant's and
+	// every app's. With newPassword set, the password changes first, under
+	// the same verification.
+	SignOutEverywhere(ctx context.Context, in LoginInput, newPassword string) (int, error)
+
 	// Authenticate resolves a bearer secret to its dataset and token: one
 	// SHA-256 lookup ACROSS repositories, which is what scopes the request to
 	// the repository holding the matching token record.

@@ -178,8 +178,10 @@ POST /login
 **There is no session concept beside the token.** A session _is_ a token
 record: the console holds one exactly like a script does, logging out revokes
 it, and there is no sessions table to reap. One consequence worth stating: a
-password change does not sign anything out. Live tokens survive it, because a
-token is data access and the credential is the account.
+password change signs nothing out unless it asks to. Live tokens survive it,
+because a token is data access and the credential is the account; a change
+that sends `"signOutEverywhere": true` also
+[signs out everywhere](#signing-out-everywhere).
 
 Every failure (an unknown repository, a wrong password, a wrong code) answers
 one identical `401 auth`, and the engine does the same password-hashing and
@@ -232,7 +234,11 @@ Five things follow from a token being a record:
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
-  `substratectl token revoke`.
+  `substratectl token revoke`. Every stream the token opened ends too: a
+  watch on the records route or the change feed, a chat's stream and a
+  thread's events read their token again whenever the repository's changelog
+  moves, which a revoke does, and end with an `auth` error (a terminal frame
+  on a watch, an `error` event with `"code": "auth"` on an agent stream).
 - **Only the owner revokes a token.** The engine refuses a token delete from
   installed code with `403 forbidden`, whatever its grant names: a
   function's `delete` effect, an agent's `write` built-in, and a policy
@@ -257,6 +263,45 @@ Present one on every request under `/api`:
 ```http
 Authorization: Bearer substrate_tok_…
 ```
+
+## Signing out everywhere
+
+A full-access token can mint another with no password (`POST /tokens`),
+mint an assistant's token, and approve an app, so revoking a token that
+leaked does not end the leak: whatever it made meanwhile still works.
+Signing out everywhere does. It ends every token the person holds, in one
+write:
+
+| Token | Ended | Why |
+| --- | --- | --- |
+| From `/login` or `/register` | yes | It is a sign-in. |
+| Minted from another through `POST /tokens` | yes | A leaked token can mint one, so a sign-out that left it would leave the leak a way back. |
+| An assistant's, for the MCP door (`scopes: ["mcp"]`) | yes | It reaches everything but the auth material, and a full token can mint one. |
+| An app's, from the authorization flow | yes | A full token can approve an app, `full` access included, so the same reason holds. The app asks to be approved again. |
+
+This browser or script is one of them: after a sign out everywhere every
+client signs in again. Sign-in tokens still have no expiry; this is how they
+end at once.
+
+```http
+POST /signout/everywhere
+{"repository": "ada.example.com", "password": "…", "totpCode": "123456"}
+→ 200 {"repository": "ada.example.com", "signedOut": 4}
+```
+
+It takes both current factors in the body and refuses a bearer token, like
+the credential changes below: it is how a person takes the account back from
+a leaked token, so a token is no evidence for it. A password change does the
+same in the same request with `"signOutEverywhere": true`, because the code
+it carries is spent once; its answer carries `signedOut` too. Every open
+stream of every ended token ends with an `auth` error as soon as the sign-out
+commits. Nothing a token set going before it mints afterwards: a token is
+minted standing on the token that asked for it (`POST /tokens`) or approved
+it (an app's code, exchanged after the approval), checked in the mint's own
+transaction, so a mint whose request was authenticated before the sign-out,
+or a code approved before it, is refused. The console offers it under Settings, Signed in, and as an option of
+the password change, and `substratectl logout --everywhere` runs it
+([0272](decisions/0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md)).
 
 ## The credential, and the password-factor rule
 
@@ -306,10 +351,13 @@ console's Settings offers it as **Turn on**. There is no call that turns a
 factor off again; the operator's [reset](#losing-both-factors) issues a new
 one.
 
-This is the one rule that bounds what a leaked token can do. Without it, any
-leaked token could rotate the password and outlive its own revocation; with it,
-a token's blast radius is the data, never the account. It is also why the
-console's Settings page sends no bearer token at all on either change.
+This rule keeps a leaked token from taking the account: without it, a leaked
+token could rotate the password and lock its owner out. It does not stop the
+token from minting more tokens, an assistant's included, or approving an app,
+so revoking the leaked token alone does not end the leak;
+[signing out everywhere](#signing-out-everywhere) does, and it takes the
+factors for the same reason. It is also why the console's Settings page sends
+no bearer token at all on any of these changes.
 
 The generic record API cannot touch either auth kind: the credential cannot be
 put, patched, or deleted through REST or the CLI's record surface,

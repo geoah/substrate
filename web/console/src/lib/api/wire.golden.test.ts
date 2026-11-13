@@ -953,7 +953,10 @@ const loginRequest: Shape<LoginRequest> = {
   label: false,
 }
 
-const sessionCredential: Shape<SessionCredential> = { repository: true }
+const sessionCredential: Shape<SessionCredential> = {
+  repository: true,
+  signedOut: false,
+}
 
 const registerResult: Shape<RegisterResult> = {
   ...mintedToken,
@@ -1007,6 +1010,7 @@ const agentEvent: Shape<AgentEvent> = {
   covered: false,
   result: false,
   error: false,
+  code: false,
   turn: false,
   status: false,
   job: false,

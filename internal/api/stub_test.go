@@ -15,9 +15,12 @@ import (
 // A test that needs a method embeds stubDataset (or stubService) in a type
 // of its own and writes that one method; a handler path that reaches a
 // method nobody wrote calls through a nil interface and panics, which the
-// recovery middleware answers 500, and the test fails on its status. What a
-// write stores or refuses is the engine's, and is tested on a dbEnv
-// (engine_db_test.go).
+// recovery middleware answers 500, and the test fails on its status. In an
+// agent stream's handler (a chat, a thread's events) the same panic ends the
+// test binary instead (`fatal error: unknown caller pc`), so a test whose
+// handler opens a stream writes every method the stream calls, WatchSignal
+// among them, on its type. What a write stores or refuses is the engine's,
+// and is tested on a dbEnv (engine_db_test.go).
 
 const (
 	// stubToken is the one bearer a stubService accepts.

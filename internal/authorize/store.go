@@ -154,6 +154,10 @@ type Approval struct {
 	// Details are what the approval set up, or found in place, which the
 	// token response lists.
 	Details []substrate.AuthorizationDetail
+	// ApprovedBy is the id of the token that approved: the exchange mints
+	// standing on it, so a code approved by a token since revoked, or by a
+	// person who signed out everywhere since, mints nothing.
+	ApprovedBy string
 }
 
 // Code is a code's bookkeeping.

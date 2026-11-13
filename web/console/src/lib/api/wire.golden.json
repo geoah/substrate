@@ -40,6 +40,7 @@
   "AgentEvent": {
     "args": false,
     "callable": false,
+    "code": false,
     "covered": false,
     "error": false,
     "id": false,
@@ -976,7 +977,8 @@
     "semantic": false
   },
   "SessionCredential": {
-    "repository": true
+    "repository": true,
+    "signedOut": false
   },
   "SetupItem": {
     "code": true,

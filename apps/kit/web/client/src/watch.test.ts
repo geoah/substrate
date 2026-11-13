@@ -136,6 +136,31 @@ describe("follow", () => {
     }
   })
 
+  it("signs out on an auth frame, without opening again", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        ndjson([
+          '{"bookmark":3,"generation":"g1"}',
+          '{"error":{"code":"auth","message":"the token was revoked"}}',
+        ])
+      )
+    )
+    vi.stubGlobal("fetch", fetcher)
+    const events: WatchEvent[] = []
+    const abort = new AbortController()
+    follow(
+      new SubstrateClient("https://substrate.example.com"),
+      ["a.example/p/k"],
+      null,
+      (e) => events.push(e),
+      abort.signal,
+      { pauses: [0] }
+    )
+    await vi.waitFor(() => expect(events.at(-1)).toEqual({ type: "signedOut" }))
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    abort.abort()
+  })
+
   it("stops on a 401 and on a missing scope", async () => {
     for (const [res, type] of [
       [new Response("{}", { status: 401 }), "signedOut"],

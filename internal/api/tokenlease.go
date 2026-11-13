@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -10,12 +11,14 @@ import (
 )
 
 // A token is checked once, at the door, and most requests end within
-// seconds. A stream does not: a change feed watch or an agent stream an
-// app's token opened would carry on after the owner revoked the token or its
-// approved lifetime ran out (decision 0195). The lease is that token's
-// standing for the rest of the stream: its expiry, checked on every call, and
-// its record, read again through Authenticate, so a revoked token stops the
-// stream before it writes anything more.
+// seconds. A stream does not: a watch or an agent stream would carry on
+// after its token was revoked, the person signed out everywhere, or the
+// token's lifetime ran out (decisions 0195 and 0272). The lease is that
+// token's standing for the rest of the stream: its expiry, checked on every
+// call, and its record, read again through Authenticate (a read of the token
+// cache, which a token write empties), so a dead token stops the stream
+// before it writes anything more. Every stream reads it again whenever its
+// repository's changelog moves, which a revoke and a sign-out do.
 type tokenLease struct {
 	recheck func(context.Context) error
 	expires *time.Time
@@ -34,8 +37,7 @@ func withTokenLease(ctx context.Context, l *tokenLease) context.Context {
 	return context.WithValue(ctx, ctxKeyLease, l)
 }
 
-// leaseFrom is the request's lease, nil for a token the door does not lease
-// (a full-access token, which has no approved lifetime and is the owner's).
+// leaseFrom is the request's lease, nil for a request no token opened.
 func leaseFrom(ctx context.Context) *tokenLease {
 	l, _ := ctx.Value(ctxKeyLease).(*tokenLease)
 	return l
@@ -43,7 +45,9 @@ func leaseFrom(ctx context.Context) *tokenLease {
 
 // alive answers nil while the token stands. The expiry is checked on every
 // call; the record is read again when the last read is older than every, so
-// zero reads it every time.
+// zero reads it every time. Only a refusal ends the lease: a read that could
+// not be made (a database that did not answer) leaves the stream running,
+// and the next call reads again.
 func (l *tokenLease) alive(ctx context.Context, every time.Duration) error {
 	if l == nil {
 		return nil
@@ -59,7 +63,10 @@ func (l *tokenLease) alive(ctx context.Context, every time.Duration) error {
 		return nil
 	}
 	if err := l.recheck(ctx); err != nil {
-		return errLeaseEnded
+		if errors.Is(err, substrate.ErrAuth) {
+			return errLeaseEnded
+		}
+		return nil
 	}
 	l.mu.Lock()
 	l.checked = now

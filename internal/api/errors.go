@@ -221,6 +221,12 @@ func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 		}
 	}
+	writeProblem(w, r, err, status, p)
+}
+
+// writeProblem writes the problem err maps to, logging a 5xx as
+// writeSubstrateError says, for a door that words the problem itself.
+func writeProblem(w http.ResponseWriter, r *http.Request, err error, status int, p substrate.ErrorPayload) {
 	if status == http.StatusServiceUnavailable {
 		writeUnavailableCause(w, r, err, p)
 		return
