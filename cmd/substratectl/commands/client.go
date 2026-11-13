@@ -64,6 +64,7 @@ const (
 	pathRegister       = "/register"
 	pathLogin          = "/login"
 	pathTokens         = "/tokens"
+	pathSignOutAll     = "/signout/everywhere"
 )
 
 // client is the REST client for one substrate context.
@@ -575,6 +576,19 @@ func (c *client) tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 
 // revokeToken deletes the token record — which is the whole of revocation: no
 // row means no access, and there is no revocation list to consult.
+// signOutEverywhere ends every token the person holds. Like the credential
+// changes it presents both factors and no token.
+func (c *client) signOutEverywhere(ctx context.Context, in factors) (int, error) {
+	var out substrate.SessionCredential
+	if err := c.do(ctx, http.MethodPost, pathSignOutAll, nil, in, &out); err != nil {
+		return 0, err
+	}
+	if out.SignedOut == nil {
+		return 0, nil
+	}
+	return *out.SignedOut, nil
+}
+
 func (c *client) revokeToken(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, pathTokens+"/"+url.PathEscape(id), nil, nil, nil)
 }

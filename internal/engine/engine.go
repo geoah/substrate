@@ -178,6 +178,10 @@ type options struct {
 	// tokenProofAttempt replaces how long one attempt at that proof waits.
 	// Tests only.
 	tokenProofAttempt time.Duration
+	// afterProof is the factor doors' test seam (auth.go afterProof): a hook
+	// run with the door's name once a request has proved the factors and
+	// before it acts. Tests only.
+	afterProof func(door string)
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
@@ -732,6 +736,8 @@ type service struct {
 	testCommitTx          func(commit func() error) error
 	testTokenProof        func() error
 	testTokenProofAttempt time.Duration
+	// testAfterProof is the options' factor-door seam (auth.go). Tests only.
+	testAfterProof func(door string)
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
@@ -996,6 +1002,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		conversion:            conversionSteps,
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
+		testAfterProof:        o.afterProof,
 		testCommitTx:          o.commitTx,
 		testTokenProof:        o.tokenProof,
 		testTokenProofAttempt: o.tokenProofAttempt,

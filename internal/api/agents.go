@@ -153,14 +153,43 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 	draining := h.draining
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
+	// A revoke and a sign out everywhere move the changelog, so the stream
+	// reads its token again whenever it moves, and ends with its token.
+	var signals <-chan int64
+	if ds := DatasetFrom(ctx); ds != nil {
+		signals = ds.WatchSignal(ctx)
+	}
 	for {
 		select {
+		case _, open := <-signals:
+			if !open {
+				signals = nil
+				continue
+			}
+			// Before the first event nothing is written yet, so a token that
+			// no longer stands is an ordinary refusal, never a pending
+			// request.
+			if !started {
+				if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+					return false, err
+				}
+				continue
+			}
+			if leaseEnded(ctx, enc, flusher, frame, 0) {
+				return true, nil
+			}
 		case ev := <-events:
 			if !started {
+				// The token is read before the first event goes out, as
+				// before every later one: the first event of a token that
+				// died while its turn was starting is never delivered.
+				if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+					return false, err
+				}
 				started, draining = true, h.draining
 				setStreamHeaders(w)
 				w.WriteHeader(http.StatusOK)
-			} else if leaseEnded(ctx, enc, flusher, frame) {
+			} else if leaseEnded(ctx, enc, flusher, frame, leaseAgentEvery) {
 				// The turn runs on; the token that watched it no longer stands.
 				return true, nil
 			}
@@ -184,16 +213,20 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 				// text, which a client cannot tell from a successful (if
 				// empty) settle.
 				frame()
-				if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Error: err.Error()}) == nil {
+				_, p := problemFor(err)
+				if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Code: p.Code, Error: err.Error()}) == nil {
 					flusher.Flush()
 				}
 			}
 			return true, nil
 		case <-ticker.C:
 			if !started {
+				if err := leaseFrom(ctx).alive(ctx, leaseAgentEvery); err != nil {
+					return false, err
+				}
 				continue
 			}
-			if leaseEnded(ctx, enc, flusher, frame) {
+			if leaseEnded(ctx, enc, flusher, frame, leaseAgentEvery) {
 				return true, nil
 			}
 			frame()
@@ -213,16 +246,16 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 	}
 }
 
-// leaseEnded ends an app token's agent stream once the token no longer
-// stands (tokenlease.go), with an error event a client reads as the sign-in
-// ending. The record is read at most every leaseAgentEvery.
-func leaseEnded(ctx context.Context, enc *json.Encoder, flusher http.Flusher, frame func()) bool {
-	err := leaseFrom(ctx).alive(ctx, leaseAgentEvery)
+// leaseEnded ends an agent stream once its token no longer stands
+// (tokenlease.go), with an error event whose code, `auth`, a client reads as
+// the sign-in ending. The record is read at most every `every`.
+func leaseEnded(ctx context.Context, enc *json.Encoder, flusher http.Flusher, frame func(), every time.Duration) bool {
+	err := leaseFrom(ctx).alive(ctx, every)
 	if err == nil {
 		return false
 	}
 	frame()
-	if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Error: err.Error()}) == nil {
+	if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Code: codeAuth, Error: err.Error()}) == nil {
 		flusher.Flush()
 	}
 	return true

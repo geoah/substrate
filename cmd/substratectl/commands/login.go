@@ -126,13 +126,27 @@ configure.
 }
 
 func (a *app) logoutCommand() *cobra.Command {
-	return &cobra.Command{
+	var (
+		everywhere    bool
+		code          string
+		passwordStdin bool
+	)
+	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Revoke the stored token and forget it",
+		Short: "Revoke the stored token and forget it, or sign out everywhere",
 		Long: `Revoke the token in the current context and remove it from the config.
 
 Revoking is deleting the token record: no row means no access. The context's
-server and repository stay, so logging back in is one command.`,
+server and repository stay, so logging back in is one command.
+
+--everywhere ends every token the person holds instead: every browser and
+script signed in, every token minted from one, and every app's and
+assistant's access, this one included. Use it when a token may have leaked.
+It asks for the password, and a TOTP code where the account has a second
+factor, because a token is no evidence for it.
+
+  substratectl logout --everywhere
+  substratectl logout --everywhere --totp-code 123456 --password-stdin < password`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.config()
@@ -142,6 +156,9 @@ server and repository stay, so logging back in is one command.`,
 			ctx, err := a.resolveContext()
 			if err != nil {
 				return err
+			}
+			if everywhere {
+				return a.signOutEverywhere(cmd, cfg, ctx, code, passwordStdin)
 			}
 			if ctx.Token == "" {
 				return errors.New("no stored token: nothing to log out of")
@@ -183,6 +200,55 @@ server and repository stay, so logging back in is one command.`,
 			return nil
 		},
 	}
+	f := cmd.Flags()
+	f.BoolVar(&everywhere, "everywhere", false, "end every token the person holds, this one included (asks for the password)")
+	f.StringVar(&code, "totp-code", "", "with --everywhere: current 6-digit code (prompted for when omitted and the account has a second factor)")
+	f.BoolVar(&passwordStdin, "password-stdin", false, "with --everywhere: read the password from stdin (one line) instead of prompting")
+	return cmd
+}
+
+// signOutEverywhere is `logout --everywhere`: both factors, the same
+// two-step code prompt a login uses, then the context forgets its token,
+// which the sign-out ended with the rest.
+func (a *app) signOutEverywhere(cmd *cobra.Command, cfg *Config, ctx Context, code string, passwordStdin bool) error {
+	repository, err := a.askRepository(ctx.Repository)
+	if err != nil {
+		return err
+	}
+	password, err := a.secret(passwordStdin, "Password: ")
+	if err != nil {
+		return err
+	}
+	if code != "" {
+		if code, err = normalizeCode(code); err != nil {
+			return err
+		}
+	}
+	cl := newClient(ctx.Server, "", a.hc)
+	in := factors{Repository: repository, Password: password, TOTPCode: code}
+	ended, err := cl.signOutEverywhere(cmd.Context(), in)
+	if code == "" && isCodeRequired(err) {
+		if in.TOTPCode, err = a.askCode("", "TOTP code: "); err != nil {
+			return err
+		}
+		ended, err = retryWhenPaced(cmd.Context(), a, func() (int, error) {
+			return cl.signOutEverywhere(cmd.Context(), in)
+		})
+	}
+	if err != nil {
+		return authError(err)
+	}
+	if cfg.forgetToken(ctx.Name) {
+		if err := a.saveConfig(cfg); err != nil {
+			return err
+		}
+	}
+	noun := "tokens"
+	if ended == 1 {
+		noun = "token"
+	}
+	fmt.Fprintf(a.out, "signed out everywhere on %s: %d %s ended\n", ctx.Server, ended, noun)
+	return nil
 }
 
 // defaultTokenLabel names the token this machine holds, so a token list reads

@@ -7,9 +7,12 @@
  * the data, never the account. So both forms ask for the password even though
  * you are plainly signed in.
  *
- * Live tokens SURVIVE a password change: a token is data access, the credential
- * is the account. Signing a browser or a script out is the Signed in section's
- * job. */
+ * Live tokens SURVIVE a password change unless it also signs out everywhere:
+ * a token is data access, the credential is the account. Signing one browser
+ * or script out is the Signed in section's job, and signing out everywhere
+ * (every token, this browser's included, decision 0272) is its last row and
+ * the password change's option, offered where the server lists `auth` at
+ * revision 2. */
 
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -36,16 +39,51 @@ import {
   changePassword,
   deleteRepository,
   normalizeCode,
+  signOutEverywhere,
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useAuthPolicy } from "@/lib/api/discovery"
+import {
+  discoveryQueryOptions,
+  hasFeature,
+  useAuthPolicy,
+} from "@/lib/api/discovery"
 import { recordQueryOptions } from "@/lib/api/records"
 import { clearSession, getRepository } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 8
+
+/** The `auth` revision that added signing out everywhere: the route, and the
+ * password change's option. */
+const SIGN_OUT_EVERYWHERE_REVISION = 2
+
+/** Whether the server can sign the person out everywhere. A console bundled
+ * in an app may talk to an older one. */
+function useSignOutEverywhereOffered(): boolean {
+  const discovery = useQuery(discoveryQueryOptions)
+  return hasFeature(discovery.data, "auth", SIGN_OUT_EVERYWHERE_REVISION)
+}
+
+/** After a sign out everywhere this browser's token is gone too: forget it
+ * and go to the sign-in page. */
+function useSignedOutEverywhere(): (ended: number | undefined) => void {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  return (ended) => {
+    clearSession()
+    queryClient.clear()
+    toast.add({
+      type: "success",
+      title:
+        ended === undefined
+          ? "Signed out everywhere."
+          : `Signed out everywhere: ${ended} ${ended === 1 ? "sign-in" : "sign-ins"} ended.`,
+    })
+    void navigate({ to: "/login", replace: true })
+  }
+}
 
 /** The credential record. Its TOTP ref, redacted on every read, is there
  * exactly while the account has a second factor (decision 0237). */
@@ -133,7 +171,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
       {afterName}
       <SettingRow
         title="Password"
-        description={`Changing it needs your current password${codeOwed ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}
+        description={`Changing it needs your current password${codeOwed ? " and a code" : ""}. Browsers, scripts and apps stay signed in unless you also sign out everywhere.`}
         control={
           <Button
             variant="outline"
@@ -230,6 +268,121 @@ export function DeleteRepositoryRow() {
         <DeleteRepositoryForm repository={repository} codeOwed={codeOwed} />
       )}
     </SettingRow>
+  )
+}
+
+/** Settings' last Signed in row: one action that ends every token the
+ * person holds, this browser's included. Offered where the server lists
+ * `auth` at revision 2. */
+export function SignOutEverywhereRow() {
+  const repository = getRepository() ?? ""
+  const codeOwed = useCodeOwed()
+  const offered = useSignOutEverywhereOffered()
+  const [open, setOpen] = useState(false)
+  if (!offered) return null
+  return (
+    <SettingRow
+      title="Sign out everywhere"
+      description="Ends every sign-in, every token you made, and every app’s and assistant’s access, this browser included. Use it if a sign-in may have leaked."
+      control={
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Cancel" : "Sign out everywhere…"}
+        </Button>
+      }
+    >
+      {open && (
+        <SignOutEverywhereForm repository={repository} codeOwed={codeOwed} />
+      )}
+    </SettingRow>
+  )
+}
+
+function SignOutEverywhereForm({
+  repository,
+  codeOwed,
+}: {
+  repository: string
+  codeOwed: boolean
+}) {
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setBusy] = useState(false)
+  const signedOut = useSignedOutEverywhere()
+
+  const canSubmit =
+    repository !== "" &&
+    password.length > 0 &&
+    (!codeOwed || normalizeCode(code) !== null)
+
+  async function submit() {
+    const normalized = codeOwed ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
+    setError(null)
+    setBusy(true)
+    try {
+      const answer = await signOutEverywhere(repository, password, normalized)
+      signedOut(answer.signedOut)
+    } catch (err) {
+      setError(describe(err))
+      setCode("")
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form
+      aria-label="Sign out everywhere"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="out-password">Current password</FieldLabel>
+          <Input
+            id="out-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {codeOwed && (
+          <Field>
+            <FieldLabel htmlFor="out-code">Current code</FieldLabel>
+            <Input
+              id="out-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <Button type="submit" disabled={!canSubmit || isBusy}>
+            {isBusy && <Spinner />}
+            Sign out everywhere
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
   )
 }
 
@@ -365,8 +518,11 @@ function PasswordForm({
   const [code, setCode] = useState("")
   const [next, setNext] = useState("")
   const [confirm, setConfirm] = useState("")
+  const [everywhere, setEverywhere] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
+  const offered = useSignOutEverywhereOffered()
+  const signedOut = useSignedOutEverywhere()
 
   const matches = next.length > 0 && next === confirm
   const canSubmit =
@@ -382,7 +538,17 @@ function PasswordForm({
     setError(null)
     setBusy(true)
     try {
-      await changePassword(repository, password, normalized, next)
+      const answer = await changePassword(
+        repository,
+        password,
+        normalized,
+        next,
+        offered && everywhere
+      )
+      if (offered && everywhere) {
+        signedOut(answer.signedOut)
+        return
+      }
       toast.add({
         type: "success",
         title: "Password changed. You stay signed in everywhere.",
@@ -463,6 +629,29 @@ function PasswordForm({
             <FieldError errors={[{ message: "The two passwords differ." }]} />
           )}
         </Field>
+        {offered && (
+          <Field>
+            <div className="flex items-start gap-2">
+              <input
+                id="pw-everywhere"
+                type="checkbox"
+                checked={everywhere}
+                onChange={(e) => setEverywhere(e.target.checked)}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <div className="flex flex-col gap-0.5">
+                <FieldLabel htmlFor="pw-everywhere">
+                  Also sign out everywhere
+                </FieldLabel>
+                <FieldDescription>
+                  Ends every sign-in, every token you made, and every app’s and
+                  assistant’s access, this browser included. You sign in again
+                  with the new password.
+                </FieldDescription>
+              </div>
+            </div>
+          </Field>
+        )}
         <Field>
           <Button type="submit" disabled={!canSubmit || isBusy}>
             {isBusy && <Spinner />}

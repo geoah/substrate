@@ -52,7 +52,11 @@ import {
   type ThemePreference,
 } from "@/lib/console-preferences"
 import { changeServer, checkForUpdates, nativeShell } from "@/lib/shell"
-import { AccountRows, DeleteRepositoryRow } from "@/pages/account"
+import {
+  AccountRows,
+  DeleteRepositoryRow,
+  SignOutEverywhereRow,
+} from "@/pages/account"
 import { ApiTokens, AppTokenRows, SignedInRows } from "@/pages/tokens"
 import { ExternalLink } from "@/components/external-link"
 
@@ -447,6 +451,7 @@ export function ConsoleSettingsPage() {
         <ShellAppRow />
         <ShellPrivacyRow />
         <SignedInRows />
+        <SignOutEverywhereRow />
       </SettingsSection>
       <SettingsSection
         title="Apps"

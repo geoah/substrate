@@ -603,9 +603,14 @@ export function watchChanges(opts: {
             if (!line) continue
             if (line.error) {
               // The reserved terminal frame: surface it and stop — a silent
-              // reconnect would hammer a stream the server just closed.
+              // reconnect would hammer a stream the server just closed. An
+              // `auth` frame is the stream's token ending (revoked, or a sign
+              // out everywhere): the session is over, as on a 401.
               if (line.error.code === "compacted") compacted(line.error.message)
-              else opts.onStatus?.("stopped", line.error.message)
+              else if (line.error.code === "auth") {
+                sessionExpired()
+                opts.onStatus?.("off", "session expired")
+              } else opts.onStatus?.("stopped", line.error.message)
               ctrl.abort()
               terminated = true
               break

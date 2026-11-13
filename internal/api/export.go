@@ -39,6 +39,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
+	// A long transfer reads its token before its headers, afresh: one that
+	// died while the point was pinned is an ordinary refusal, and the pin is
+	// let go, as a written export lets it go.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		export.Close()
+		writeSubstrateError(w, r, err)
+		return
+	}
 	point := export.Point()
 	w.Header().Set("Content-Type", "application/x-tar")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment",
@@ -49,7 +57,7 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	// is a cut body, never a request that got no answer.
 	rc := http.NewResponseController(w)
 	_ = rc.Flush()
-	if _, err := export.WriteTo(&exportWriter{w: w, rc: rc, draining: h.draining}); err != nil {
+	if _, err := export.WriteTo(&exportWriter{ctx: ctx, w: w, rc: rc, draining: h.draining}); err != nil {
 		// A client that leaves mid-stream fails the next write to it with an
 		// error carrying no context.Canceled, so the request's own context is
 		// what says the client went away. net/http cancels that context on
@@ -57,6 +65,8 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 		// apart first.
 		attrs := append(requestLogAttrs(r), "head", point.Head, "error", err)
 		switch {
+		case errors.Is(err, errLeaseEnded):
+			slog.Info("export aborted mid-stream: its token was revoked or ran out", attrs...)
 		case errors.Is(err, os.ErrDeadlineExceeded):
 			slog.Warn("export aborted mid-stream: the client stopped reading", attrs...)
 		case errors.Is(ctx.Err(), context.Canceled):
@@ -76,10 +86,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 var errShuttingDown = errors.New("the server is shutting down")
 
 // exportWriter is the export's view of the response: every write has
-// streamWriteDeadline to reach the client, and none starts once the server is
+// streamWriteDeadline to reach the client, none starts once the server is
 // shutting down, because http.Server.Shutdown waits for the export and an
-// archive of many gigabytes outlasts any shutdown budget.
+// archive of many gigabytes outlasts any shutdown budget, and none starts
+// once the token that asked for it no longer stands (decision 0272): an
+// archive is the whole repository, and a person signing out everywhere wants
+// it stopped. It reads the token between writes, at most once a second.
 type exportWriter struct {
+	ctx      context.Context
 	w        io.Writer
 	rc       *http.ResponseController
 	draining <-chan struct{}
@@ -90,6 +104,9 @@ func (e *exportWriter) Write(p []byte) (int, error) {
 	case <-e.draining:
 		return 0, errShuttingDown
 	default:
+	}
+	if err := leaseFrom(e.ctx).alive(e.ctx, leaseTransferEvery); err != nil {
+		return 0, err
 	}
 	_ = e.rc.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
 	return e.w.Write(p)

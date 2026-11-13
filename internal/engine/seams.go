@@ -124,6 +124,13 @@ func WithTestTokenProofAttempt(d time.Duration) Option {
 	return func(o *options) { o.tokenProofAttempt = d }
 }
 
+// WithTestAfterProof runs fn with the door's name (`login`, `password`,
+// `totp`, `signout`, `delete`) once a request has proved the factors and
+// before it acts, so a test can hold it there while the factors change.
+func WithTestAfterProof(fn func(door string)) Option {
+	return func(o *options) { o.afterProof = fn }
+}
+
 // WithTestCommitInDoubt answers a write's commit with an error after Postgres
 // committed it, for each write fail reports true: the shape of a connection
 // lost at the commit's answer (dataset.go commitAndMirror), the

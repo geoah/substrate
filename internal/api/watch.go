@@ -188,6 +188,13 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	if !rs.hasFrom {
 		from = rs.head.Seq
 	}
+	// A stream reads its token before its first byte, afresh: one revoked
+	// while the cursor was resolved is an ordinary refusal, not a 200 with a
+	// bookmark and a terminal frame.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
 
 	setStreamHeaders(w)
 	w.WriteHeader(http.StatusOK)
@@ -266,6 +273,14 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			// either: a draining stream sends no batch more.
 			if h.isDraining() {
 				flusher.Flush()
+				return
+			}
+			// The changelog moved, and a revoke or a sign out everywhere is
+			// one way it moves: the token is read again (from the cache a
+			// token write empties) before anything else is written.
+			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+				frame()
+				writeWatchError(enc, flusher, err)
 				return
 			}
 			if err := drain(); err != nil {

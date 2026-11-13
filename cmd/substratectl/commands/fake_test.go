@@ -232,6 +232,7 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /register/enroll", f.handleRegisterEnroll)
 	mux.HandleFunc("POST /register", f.handleRegister)
 	mux.HandleFunc("POST /login", f.handleLogin)
+	mux.HandleFunc("POST "+pathSignOutAll, f.handleSignOutEverywhere)
 	mux.HandleFunc("POST /tokens", f.handleMint)
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
@@ -717,6 +718,22 @@ func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"token":  substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
 		"secret": fakeSecret,
 	})
+}
+
+// handleSignOutEverywhere answers as the door does: the same two-step code,
+// then the count of tokens it ended.
+func (f *fakeSubstrate) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if f.authFails(w) {
+		return
+	}
+	var code string
+	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
+	if code == "" && !f.totpDisabled && !f.noFactor {
+		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"repository": "geoah.example.com", "signedOut": 3})
 }
 
 func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {

@@ -1053,7 +1053,7 @@ them:
 | `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
 | `functions` | `stable` | The function call ([functions](functions.md)). |
 | `bundles` | `stable` | Bundle status and `bind`, and the catalog with its install and import ([bundles](bundles.md)). |
-| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens` and `/repository/delete` ([users and tokens](auth.md)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
 | `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
 | `merge` | `beta` | `POST /api/v1/merge` and `POST /api/v1/split`. |
@@ -2547,7 +2547,7 @@ The code set is closed. The client-error codes:
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
-| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). |
+| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). A stream whose token is revoked, or whose person signs out everywhere, ends with it too ([signing out everywhere](auth.md#signing-out-everywhere)). |
 | `totp_required` | 401 | A login or a credential change with the right password and no code, on an account that has a second factor: send it again with the code ([logging in](auth.md#logging-in)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`. The sign-in door paces its attempts, and every request with a token is paced per person ([`SUBSTRATE_REQUESTS_PER_PERSON`](operations.md#configuration)). |

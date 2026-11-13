@@ -18,6 +18,10 @@ type Export interface {
 	// after the first byte leaves w holding an incomplete archive, which the
 	// reader tells by the missing `snapshot.json`, the last entry.
 	WriteTo(w io.Writer) (int64, error)
+	// Close lets go of what the pin holds for an export that will not be
+	// written. WriteTo lets go of it when it returns, so Close after it does
+	// nothing.
+	Close()
 }
 
 // ExportPoint is the committed point an export holds: the repository and the

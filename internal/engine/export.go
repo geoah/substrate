@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -48,6 +49,10 @@ var (
 type export struct {
 	ds  *dataset
 	ctx context.Context
+	// released lets go of the export slot and the blob hold once, whether
+	// WriteTo or Close gets there first: a second release would clear the
+	// slot of an export started since.
+	released sync.Once
 	// point is the pinned point; snapshot is the snapshot.json that records
 	// it, written last.
 	point    substrate.ExportPoint
@@ -190,6 +195,15 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 // Point is the pinned point (substrate.Export).
 func (e *export) Point() substrate.ExportPoint { return e.point }
 
+// Close lets go of the repository's export slot and the blob hold
+// (substrate.Export).
+func (e *export) Close() {
+	e.released.Do(func() {
+		e.ds.holdExportBlobs(nil)
+		e.ds.exporting.Store(false)
+	})
+}
+
 // WriteTo streams the tar (substrate.Export) and releases the repository's
 // export slot when it returns, however it returns. The order is the order a
 // restore needs and the order the operator's snapshot copies: the manifest,
@@ -197,8 +211,7 @@ func (e *export) Point() substrate.ExportPoint { return e.point }
 // snapshot.json last, so an archive that ends early lacks the file that
 // vouches for it.
 func (e *export) WriteTo(w io.Writer) (int64, error) {
-	defer e.ds.exporting.Store(false)
-	defer e.ds.holdExportBlobs(nil)
+	defer e.Close()
 	cw := &countingWriter{w: w}
 	tw := tar.NewWriter(cw)
 	err := e.write(tw)

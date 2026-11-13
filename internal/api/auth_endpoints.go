@@ -47,6 +47,18 @@ type passwordRequest struct {
 	Password    string `json:"password"`
 	TOTPCode    string `json:"totpCode"`
 	NewPassword string `json:"newPassword"`
+	// SignOutEverywhere ends every token the person holds once the password
+	// changed (postSignOutEverywhere), in the same request, because the code
+	// it carries is spent once.
+	SignOutEverywhere bool `json:"signOutEverywhere,omitempty"`
+}
+
+// signOutRequest is the sign out everywhere: the repository and its two
+// current factors, nothing else.
+type signOutRequest struct {
+	Repository string `json:"repository"`
+	Password   string `json:"password"`
+	TOTPCode   string `json:"totpCode"`
 }
 
 type totpBeginRequest struct {
@@ -250,14 +262,74 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	if !h.factorsPresented(w, req.Password) {
 		return
 	}
-	err := h.svc.ChangePassword(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
-	}, req.NewPassword)
-	if err != nil {
+	in := substrate.LoginInput{Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode}
+	if req.SignOutEverywhere {
+		if req.NewPassword == "" {
+			writeError(w, http.StatusUnprocessableEntity, codeValidation, "newPassword is required")
+			return
+		}
+		ended, err := h.svc.SignOutEverywhere(r.Context(), in, req.NewPassword)
+		if errors.Is(err, substrate.ErrSignOutIncomplete) {
+			writeSignOutIncomplete(w, r, err)
+			return
+		}
+		if err != nil {
+			writeAuthFailure(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository, SignedOut: &ended})
+		return
+	}
+	if err := h.svc.ChangePassword(r.Context(), in, req.NewPassword); err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
+}
+
+// writeSignOutIncomplete answers a password change whose sign out everywhere
+// did not finish with which half landed and the way on, whatever the cause
+// (which the log keeps). A write in doubt keeps its status and reason
+// (decision 0271), and its message never says the password changed, since it
+// may not have.
+func writeSignOutIncomplete(w http.ResponseWriter, r *http.Request, err error) {
+	status, p := http.StatusInternalServerError, substrate.ErrorPayload{
+		Code:    codeInternal,
+		Message: "the password changed, and signing out everywhere did not finish: sign out everywhere again with the new password",
+	}
+	if errors.Is(err, substrate.ErrWriteInDoubt) {
+		status, p = inDoubtProblem(err)
+		p.Message = "the password may have changed, and signing out everywhere may not have finished: sign out everywhere again, with the new password or, if it is refused, the old one"
+	}
+	writeProblem(w, r, err, status, p)
+}
+
+// postSignOutEverywhere ends every token the person holds: every sign-in,
+// every token minted from one, every assistant's and every app's, so a
+// leaked token and whatever it minted or approved stop at once, open streams
+// included. It takes both current factors in the body, like the credential
+// changes: it is how a person gets their account back from a leaked token,
+// so a token is no evidence for it.
+func (h *handler) postSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
+	var req signOutRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	repository := repositoryOf(r, req.Repository)
+	if !h.authGate(w, r, repository, costRequest) {
+		return
+	}
+	if !h.factorsPresented(w, req.Password) {
+		return
+	}
+	ended, err := h.svc.SignOutEverywhere(r.Context(), substrate.LoginInput{
+		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
+	}, "")
+	if err != nil {
+		writeAuthFailure(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository, SignedOut: &ended})
 }
 
 // postDeleteRepository erases the repository whole and frees its name. Like

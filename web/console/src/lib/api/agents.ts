@@ -27,7 +27,12 @@ import {
   request,
 } from "./http"
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type Page, type SubstrateRecord } from "./types"
+import {
+  ApiError,
+  type Page,
+  type ServerErrorCode,
+  type SubstrateRecord,
+} from "./types"
 import { LLM_MODEL_KIND } from "@/lib/core-kinds"
 
 /** The agent rows — declared agents, one per `substrate.reamde.dev/core/agent` record. */
@@ -411,6 +416,9 @@ export interface AgentEvent {
   result?: AgentResult
   /** Rides the error event: a post-200 loop failure. */
   error?: string
+  /** Rides an error event the stream itself ends with: the error's code,
+   * `auth` where the stream's token no longer stands. */
+  code?: ServerErrorCode
   /** Rides delta, toolStarted and toolFinished: the `turn` ordinal the
    * matching `llm/message` row carries or will carry. An attach after reading
    * the rows drops every replayed event at or below the highest turn held. */
@@ -561,6 +569,13 @@ export async function readAgentStream(
         Boolean(event.error || event.text))
     if (isError) {
       errored = true
+      // The stream's token no longer stands (revoked, or the person signed
+      // out everywhere): the session is over, as on a 401.
+      if (event.kind === "error" && event.code === "auth") {
+        sessionExpired()
+        handlers.onError?.(new ApiError("auth", "session expired", 401))
+        return
+      }
       handlers.onError?.(
         new Error(event.error || event.text || "the agent run failed")
       )
