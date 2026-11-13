@@ -21,12 +21,15 @@ var (
 	// confirm it (decision 0067).
 	ErrLossyConversion = errors.New("substrate: lossy conversion refused")
 	ErrValidation      = errors.New("substrate: validation failed")
-	// ErrStaleHistory is a list cursor minted under another history
-	// generation: a restore replaced the changelog since, so the positions
-	// the cursor carries mean nothing here. The client lists again. It wraps
-	// ErrValidation so a caller that only knows the older sentinel still
-	// refuses it; the API answers it as the changelog's own 410.
-	ErrStaleHistory = fmt.Errorf("%w: cursor from another history", ErrValidation)
+	// ErrStaleHistory is a list cursor this server cannot resume, through no
+	// doing of the client's: it was minted under another history generation
+	// (a restore replaced the changelog since), or the filter and order it
+	// was cut from now resolve to another order (a declaration or a unit
+	// changed), or by another version of the cursor's format. The client
+	// lists again. It wraps ErrValidation so a caller that only knows the
+	// older sentinel still refuses it; the API answers it as the changelog's
+	// own 410.
+	ErrStaleHistory = fmt.Errorf("%w: the cursor cannot be resumed", ErrValidation)
 	ErrForbidden    = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
 	// ErrGated marks a write a policy HELD rather than refused: it converted
 	// into a recordpatchrequest awaiting review, and the message names it. The
@@ -117,6 +120,15 @@ var (
 	// ErrRestartRequired, and the payload's reason is ReasonKeyRefused. The
 	// message names the vendor and where to add a key.
 	ErrKeyRefused = errors.New("substrate: the provider refused its key")
+	// ErrWriteInDoubt marks an error that follows a write whose commit may
+	// have landed: the commit was sent and its answer was lost, or Postgres
+	// committed and a step after it failed (decision 0165). The engine wraps
+	// it together with the cause, so the cause still decides the status; the
+	// payload's reason is ReasonInDoubt. A write's error without it rolled
+	// back. The client reads the record, or repeats the request under the
+	// same Idempotency-Key, which answers the first attempt's outcome if it
+	// landed.
+	ErrWriteInDoubt = errors.New("substrate: the write may have landed")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -138,6 +150,10 @@ const ReasonKeyRefused = "key_refused"
 // carries no reason.
 const ReasonStaleRevision = "stale_revision"
 
+// ReasonInDoubt is the ErrorPayload reason of ErrWriteInDoubt, on `internal`
+// and on `unavailable`.
+const ReasonInDoubt = "in_doubt"
+
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
 	Error ErrorPayload `json:"error"`
@@ -151,7 +167,8 @@ type ErrorEnvelope struct {
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
 // set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`,
-// ReasonQuota on `guard`, and ReasonStaleRevision on `validation`.
+// ReasonQuota on `guard`, ReasonStaleRevision on `validation`, and
+// ReasonInDoubt on `internal` and `unavailable`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

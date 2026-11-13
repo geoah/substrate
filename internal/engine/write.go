@@ -121,11 +121,8 @@ func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in sub
 	// request, so no ceiling travels into it.
 	if ty, err := ds.resolveType(in.Kind); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
-			// A declaration write is admission, not one of the operations
-			// the key store covers (idempotency.go): refused rather than
-			// ignored, so a client never reads a silent no-op as a promise.
-			if substrate.IdempotencyKeyFrom(ctx) != "" {
-				return nil, fmt.Errorf("%w: Idempotency-Key is not accepted on a vocabulary kind; a declaration is addressed by its own id", substrate.ErrValidation)
+			if err := refuseKeyOnDeclaration(ctx); err != nil {
+				return nil, err
 			}
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
@@ -138,25 +135,54 @@ func (ds *dataset) putInternal(ctx context.Context, actor substrate.Actor, in su
 }
 
 func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	run := func(t *txn) (*substrate.Record, error) {
+	op := idemCreate
+	if in.ID != "" {
+		op = idemPut
+	}
+	return ds.recordTx(ctx, actor, internal, op, in, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		return t.put(in)
+	})
+}
+
+// recordTx runs a write of one record. An internal write (the seed, a token
+// mint) runs on whatever context reached it and never consults a request's
+// key; every other one runs through idempotentRecordTx under op, keyed by
+// input.
+func (ds *dataset) recordTx(ctx context.Context, actor substrate.Actor, internal bool, op idempotentOp, input any, fn func(*txn) (*substrate.Record, error)) (*substrate.Record, error) {
+	if !internal {
+		return ds.idempotentRecordTx(ctx, actor, op, input, fn)
 	}
-	if internal {
-		// An internal put (the seed, a token mint) runs on whatever context
-		// reached it and never consults a request's key.
-		var out *substrate.Record
-		err := ds.inTx(ctx, actor, true, func(t *txn) error {
-			e, err := run(t)
-			out = e
-			return err
-		})
-		if err != nil {
-			return nil, err
-		}
-		return out, nil
+	var out *substrate.Record
+	err := ds.inTx(ctx, actor, true, func(t *txn) error {
+		e, err := fn(t)
+		out = e
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return ds.idempotentRecordTx(ctx, actor, idemCreate, in, run)
+	return out, nil
+}
+
+// keyedAddress is what a patch or a delete is keyed by: the record it
+// addresses and the request's own input, so the same key sent at another
+// record is another request.
+type keyedAddress struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Input any    `json:"input"`
+}
+
+// refuseKeyOnDeclaration refuses an Idempotency-Key on a write of a
+// vocabulary kind: a declaration write is admission, not one of the
+// operations the key store covers (idempotency.go), so the key is refused
+// rather than ignored, and a client never reads a silent no-op as a promise.
+func refuseKeyOnDeclaration(ctx context.Context) error {
+	if substrate.IdempotencyKeyFrom(ctx) != "" {
+		return fmt.Errorf("%w: Idempotency-Key is not accepted on a vocabulary kind; a declaration is addressed by its own id", substrate.ErrValidation)
+	}
+	return nil
 }
 
 func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
@@ -564,6 +590,9 @@ func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ,
 	// type says which rows are schema rows; no peek by bare id exists.
 	if ty, err := ds.resolveType(typ); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
+			if err := refuseKeyOnDeclaration(ctx); err != nil {
+				return nil, err
+			}
 			existing, err := ds.Get(ctx, ty.Identity, id)
 			if err != nil {
 				return nil, err
@@ -586,16 +615,13 @@ func (ds *dataset) patchInternal(ctx context.Context, actor substrate.Actor, typ
 }
 
 func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+	out, err := ds.recordTx(ctx, actor, internal, idemPatch, keyedAddress{Kind: typ, ID: id, Input: in}, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		ty, err := t.resolveType(typ)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		e, err := t.patch(eref{Kind: ty.Identity, ID: id}, in)
-		out = e
-		return err
+		return t.patch(eref{Kind: ty.Identity, ID: id}, in)
 	})
 	var dc *diffConflict
 	if errors.As(err, &dc) {
@@ -2967,6 +2993,9 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 	// closure must hold without it, and a type with live instances refuses
 	// (schemawrite.go).
 	if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
+		if err := refuseKeyOnDeclaration(ctx); err != nil {
+			return nil, err
+		}
 		existing, err := ds.Get(ctx, ty.Identity, id)
 		if err != nil {
 			return nil, err
@@ -2983,27 +3012,22 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 }
 
 func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, purge bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+	input := keyedAddress{Kind: ref.Kind, ID: ref.ID, Input: substrate.DeleteInput{IfVersion: ifVersion, Purge: purge}}
+	return ds.recordTx(ctx, actor, internal, idemDelete, input, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		e, err := t.softDeleteIf(ref, ifVersion)
-		out = e
 		if err != nil || !purge {
-			return err
+			return e, err
 		}
 		// A former id resolves to the merge winner, and a purge cannot be
 		// undone: purging through a loser's id would hard-delete the winner.
 		// Refuse it as a put through a former id is refused, naming the
 		// canonical id, and roll the tombstone back with it.
 		if e.ID != ref.ID {
-			return fmt.Errorf("%w: %s is a former id of %s: purge the canonical id", substrate.ErrConflict, ref.ID, e.ID)
+			return nil, fmt.Errorf("%w: %s is a former id of %s: purge the canonical id", substrate.ErrConflict, ref.ID, e.ID)
 		}
-		return t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
+		return e, t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // softDelete tombstones one record inside the caller's transaction — the

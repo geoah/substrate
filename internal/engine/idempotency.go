@@ -35,7 +35,8 @@ import (
 // Two shapes of operation write the row differently, and the difference is
 // what a concurrent retry sees:
 //
-//   - A create, a merge and a split run in ONE transaction. The key is read
+//   - A create, a put, a patch, a delete, a merge and a split run in ONE
+//     transaction. The key is read
 //     first without a lock; a miss goes into the transaction, which reads it
 //     again as the race guard and settles the row beside the effect
 //     (idempotentRecordTx). inTx holds the repository's changelog lock from
@@ -76,7 +77,12 @@ import (
 type idempotentOp string
 
 const (
+	// idemCreate is a put under an id the server assigns, idemPut one at
+	// the id the request names.
 	idemCreate       idempotentOp = "create"
+	idemPut          idempotentOp = "put"
+	idemPatch        idempotentOp = "patch"
+	idemDelete       idempotentOp = "delete"
 	idemFunctionCall idempotentOp = "function.call"
 	idemAgentCall    idempotentOp = "agent.call"
 	idemMerge        idempotentOp = "merge"
@@ -215,6 +221,15 @@ func newOwner() (string, error) {
 	return newID()
 }
 
+// keyedRecord is the outcome a one-transaction operation stores: the record
+// it answered, and whether the write created it, which is not on the
+// record's wire form and decides a put's status. An outcome stored before
+// the flag existed reads as not created.
+type keyedRecord struct {
+	substrate.Record
+	Created bool `json:"created,omitempty"`
+}
+
 // idempotentRecordTx is inTx for the one-transaction operations that answer a
 // record. Without a key on ctx it is inTx exactly. With one, a live stored row
 // answers (or refuses) before any lock is taken; a miss goes into the
@@ -245,11 +260,12 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 		return nil, err
 	}
 	answer := func(row *idempotencyRow) (*substrate.Record, error) {
-		var replayed substrate.Record
+		var replayed keyedRecord
 		if err := row.replay(key, fingerprint, &replayed); err != nil {
 			return nil, err
 		}
-		return &replayed, nil
+		replayed.Record.Created = replayed.Created
+		return &replayed.Record, nil
 	}
 	if row, err := idempotencyRead(ctx, ds.db, op, key, nowUTC()); err != nil {
 		return nil, err
@@ -276,7 +292,11 @@ func (ds *dataset) idempotentRecordTx(ctx context.Context, actor substrate.Actor
 			return err
 		}
 		out = e
-		raw, err := idempotencyOutcome(e)
+		var outcome any = e
+		if e != nil {
+			outcome = keyedRecord{Record: *e, Created: e.Created}
+		}
+		raw, err := idempotencyOutcome(outcome)
 		if err != nil {
 			return err
 		}

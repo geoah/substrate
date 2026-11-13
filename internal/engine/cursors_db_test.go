@@ -274,7 +274,7 @@ func TestListRefusesACursorFromAnotherHistory(t *testing.T) {
 	// The same cursor, as a client that saved it before a restore would
 	// resend it: the head it carries belongs to a history this dataset does
 	// not hold, so the page is refused rather than handed a stale head.
-	q.After = encodeKeyset(tok.O, tok.K, tok.H, "another-history")
+	q.After = encodeKeyset(tok.R, tok.O, tok.K, tok.H, "another-history")
 	if _, err := ds.List(ctx, q); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a cursor from another generation listed: %v", err)
 	}

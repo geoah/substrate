@@ -142,6 +142,8 @@ func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg str
 func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	switch {
+	case errors.Is(err, substrate.ErrWriteInDoubt):
+		return inDoubtProblem(err)
 	case errors.As(err, &ve):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: ve.Reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
 	case errors.Is(err, substrate.ErrValidation):
@@ -181,6 +183,23 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	default:
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}
 	}
+}
+
+// inDoubtMessage is what a write whose commit may have landed answers in
+// place of the masked "internal error": the cause is the server's, and what
+// the client needs is what it may conclude.
+const inDoubtMessage = "the write may have landed: the server lost the database's answer to its commit, or a step after the commit failed; read the record, or repeat the request under the same Idempotency-Key"
+
+// inDoubtProblem answers an error that followed a commit that may have landed
+// (substrate.ErrWriteInDoubt) with the reason in_doubt: 503 where the
+// repository now refuses writes until a restart, and 500 otherwise. No other
+// code carries it, because no refusal of the request itself reaches the
+// commit.
+func inDoubtProblem(err error) (int, substrate.ErrorPayload) {
+	if errors.Is(err, substrate.ErrRestartRequired) {
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonInDoubt, Message: err.Error()}
+	}
+	return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Reason: substrate.ReasonInDoubt, Message: inDoubtMessage}
 }
 
 // writeSubstrateError maps the engine's sentinel errors onto the wire

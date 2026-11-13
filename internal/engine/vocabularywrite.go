@@ -3011,7 +3011,7 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 	if e, ok := written[docKey(doc)]; ok {
 		return e, nil
 	}
-	return ds.Get(ctx, ty.Identity, in.ID)
+	return getAfterCommit(ds.Get(ctx, ty.Identity, in.ID))
 }
 
 // patchSchemaRecord merges a patch's properties over the stored row and runs
@@ -3055,7 +3055,7 @@ func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor,
 	if e, ok := written[docKey(doc)]; ok {
 		return e, nil
 	}
-	return ds.Get(ctx, existing.Kind, existing.ID)
+	return getAfterCommit(ds.Get(ctx, existing.Kind, existing.ID))
 }
 
 // deleteVocabularyRecord removes one declaration through admission: the closure
@@ -3087,7 +3087,17 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 	if _, err := ds.applyVocabularyBatch(ctx, actor, b); err != nil {
 		return nil, err
 	}
-	return ds.Get(ctx, existing.Kind, existing.ID)
+	return getAfterCommit(ds.Get(ctx, existing.Kind, existing.ID))
+}
+
+// getAfterCommit is the read a declaration write answers with once its batch
+// committed: an error there follows a write that landed, so it is marked in
+// doubt rather than answered as a write that failed.
+func getAfterCommit(rec *substrate.Record, err error) (*substrate.Record, error) {
+	if err != nil {
+		return nil, inDoubt(err)
+	}
+	return rec, nil
 }
 
 // documentFromProps rebuilds the loader document a generic write carries: the

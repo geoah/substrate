@@ -20,7 +20,8 @@ export class SubstrateError extends Error {
   readonly insufficientScope: boolean
   /** The envelope's machine-readable reason beside `code`, where the server
    * gives one: `stale_revision` (a newer write of the record landed first),
-   * `quota`, `key_refused`, `observed_rederiving`. */
+   * `in_doubt` (the write may have landed), `quota`, `key_refused`,
+   * `observed_rederiving`. */
   readonly reason?: string
 
   constructor(

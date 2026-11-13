@@ -439,6 +439,15 @@ split keeps those edits. Every one of them is the safe read-then-conditional-wri
 primitive, and every one moves the version it checked, so a retry under the
 same precondition is a `conflict` rather than a silent second effect.
 
+A version counts the writes of one record's life, not of its id. After a
+purge, the one `?purge=true` runs or the sweep's, a `put` at the same id
+creates a fresh record at version 1, so a guard of `ifVersion: 1` a client
+saved before the purge passes against the new record. Providers rely on
+reusing an id that way, so the server does not reserve a purged id
+([decision 0072](decisions/0072-reserve-a-purged-record-id-against-reuse.md)).
+A client that must know it is still writing the record it read compares the
+record's `createdAt` as well as its version.
+
 ```http
 DELETE /api/v1/samples.substrate.reamde.dev/people/person/9f2k?ifVersion=4
 POST   /api/v1/merge   {"kind": "samples.substrate.reamde.dev/people/person",
@@ -486,6 +495,10 @@ and the client cannot tell that from a merge somebody else made.
 
 Those five operations take the `Idempotency-Key` request header: the client's
 name for one attempt, any string up to 255 bytes (a UUID is the usual choice).
+So do `put`, `patch` and `delete` at a record's path, since revision 2 of the
+`records` feature, for the retry a guard alone cannot make safe: a guarded
+write whose answer was lost and that is sent again meets the version its first
+attempt moved, and its `conflict` may be its own.
 A function or agent body hands its own external effects an idempotency key
 derived from the client's, so a retry presents the same key downstream too.
 
@@ -502,7 +515,9 @@ The contract, per key:
 
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
-  (`201` for the record a create, a merge or a split made, `200` for a call), for 24 hours from
+  (`201` for the record a create, a merge or a split made, and for a `put`
+  that created its record; `200` for any other `put`, a `patch`, a `delete`
+  and a call), for 24 hours from
   the moment the first attempt's outcome committed (not from when the request
   arrived); after that the key is free again. The key is
   looked up before the callable is resolved or admitted, so the repeat
@@ -510,13 +525,17 @@ The contract, per key:
   redeclared in between.
 - The key binds to the repository and the operation, never to the token: a
   retry after `logout` and `login` still matches, and the same string sent to
-  `/merge` and to a create is two keys.
+  `/merge` and to a create is two keys. A `put`, a `patch` and a `delete` are
+  three operations, and each binds the key to the record it addresses as
+  well as the body, so the same key at another record is a different
+  request.
 - The same key with a different body is `409 conflict`. So is a repeat that
   arrives while the first function or agent call is still running: the
   server does not hold the second request open for a body of unknown length,
-  and the client retries after the first answers. A create, merge or split
-  runs inside the repository's one write transaction, so its repeat waits for
-  that commit and then answers the stored outcome. A running call's claim on
+  and the client retries after the first answers. A create, `put`, `patch`,
+  `delete`, merge or split runs inside the repository's one write
+  transaction, so its repeat waits for that commit and then answers the
+  stored outcome. A running call's claim on
   its key lasts its own deadline plus a minute of slack (a function call adds
   two minutes for provisioning a PEP 723 body before its timeout starts); a
   claim a dead server left behind is cleared when the repository next opens.
@@ -534,12 +553,14 @@ The contract, per key:
   failed is `409 conflict` naming that thread.
 - A stored outcome is capped at 1 MiB. A larger one is not kept: the effect
   still ran once, and the repeat is `409 conflict` saying the outcome was not
-  retained. For a create, merge or split the message names the record the
-  first attempt wrote, so the client reads it instead.
+  retained. For a write of a record the message names the record the first
+  attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
-  `vocabulary/apply`, catalog import and `POST /tokens` do not take the header,
-  and a `POST /api/v1/records` whose `kind` is a vocabulary kind (`kind`,
-  `trait`, ...) refuses it (`422`): a declaration is addressed by its own id.
+  `vocabulary/apply`, catalog import and `POST /tokens` do not take the header.
+  A write of a vocabulary kind (`kind`, `trait`, ...) refuses it (`422`),
+  through `POST /api/v1/records` or at the record's path: a declaration is
+  addressed by its own id. So does a bundle's lifecycle `PATCH` (`400`),
+  which is a transition and not a record write.
 
 The key store is a Postgres table, `idempotency_keys`, and not part of the
 changelog: a repository restored from its directory alone
@@ -558,6 +579,28 @@ The `people` and `tasks` samples ship mappings onto their own `person` and
 `task`, so those two are server-assigned from the moment the mappings land
 ([Suggested mappings](bundles.md#suggested-mappings)), and `Idempotency-Key`
 on the `POST` is the one safe create for them.
+
+### What a client may conclude after a failure
+
+A write of one record (`put`, `patch`, `delete`, a create, `merge`, `split`)
+runs in one transaction, so it lands whole or not at all. What a client may
+conclude when it does not get the answer it expected:
+
+| After | It may conclude |
+| --- | --- |
+| A timeout on a `put` at an id it chose, with no guard | Retry. A `put` that changes nothing adds nothing to the changelog. |
+| A timeout on a guarded write, sent with an `Idempotency-Key` | Retry under the same key within 24 hours. If the first attempt landed, the retry answers its outcome. |
+| A timeout on a guarded write, sent without a key | Nothing. A retry's `conflict` may be its own first attempt: read the record and compare. |
+| A timeout on a create, a function or agent call, a merge or a split, sent with a key | Retry under the same key within 24 hours. |
+| `500 internal` or `503 unavailable` with the reason `in_doubt` | The write may have landed: the server lost the database's answer to its commit, or a step after the commit failed. Read the record, or retry under the same key. |
+| Any other error on a write of one record | It did not land. A function or agent call is not one record: its body may have committed effects before the error, as [above](#idempotency-and-retries) says. |
+| A dropped watch | Resume from the saved position: in order, nothing skipped, possibly a repeat. A `410 compacted` means list again ([the changelog](changelog.md#watching)). |
+| A `410 compacted` on a list page | List again from the first page ([pagination](#pagination)). |
+
+One case is not detected. A database restored from a dump keeps the history
+generation the dump held, so a client resuming a cursor it saved after the
+dump was taken resumes silently wrong, unless the operator runs the step the
+restore procedure names ([backups](operations.md#backups)).
 
 ## The filter grammar
 
@@ -801,6 +844,18 @@ different order or a different predicate is refused (`422 validation`) rather
 than silently seeking past rows the new predicate admits and answering a short
 page that looked complete. An exhausted list carries no `cursor` at all: there
 is no next page.
+
+A token the server can no longer resume, through nothing the client did, is
+refused with one answer, `410 compacted`, carrying the `head` and
+`generation` to start over from: list again from the first page. Three causes
+lead there. The history was replaced since the walk began (a restore). The
+same `filter` and `orderBy` now order the rows differently, because a
+declaration or a [unit](units.md) they read changed: installing a package
+that declares a property the order reads, for one. Or an earlier release
+minted the token: the token carries the version of its own format, and a
+server refuses a version it did not mint rather than reading it as its own.
+A server upgrade can therefore end every walk in progress once, with a `410`.
+The [window read](#the-window-read)'s token follows the same rules.
 
 ### Addressing a page by its number
 
@@ -2509,7 +2564,7 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has four members: `observed_rederiving` on `unavailable`,
+set is closed and has five members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
@@ -2518,6 +2573,12 @@ working key ([operator defaults](#operator-defaults)); `quota` on
 and `stale_revision` on `validation`, a write whose `revision` is below the
 stored one, so a newer write of the record landed first and this one never
 lands ([observations](observations.md#the-rules-the-substrate-refuses)).
+`in_doubt` on `internal` and on `unavailable`, since revision 2 of the
+`errors` feature, says a write may have landed: the server lost the
+database's answer to its commit, or a step after the commit failed, and an
+error without it on a write of one record means the write rolled back
+([what a client may conclude](#what-a-client-may-conclude-after-a-failure),
+[decision 0271](decisions/0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2546,7 +2607,7 @@ One more code answers a cursor from a history the server no longer holds:
 `compacted` (410) answers a `from=` or `before=` the changelog cannot resume,
 below the retention [horizon](changelog.md#frames-and-the-horizon), above the
 head, or under a history generation the server does not hold, and a list
-`after=` cursor minted under another generation. Its problem object names the
+`after=` cursor the server cannot resume ([pagination](#pagination)). Its problem object names the
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 

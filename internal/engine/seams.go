@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -84,3 +85,22 @@ const (
 func WithTestInvokeHook(fn func(function string)) Option {
 	return func(o *options) { o.invokeHook = fn }
 }
+
+// WithTestCommitInDoubt answers a write's commit with an error after Postgres
+// committed it, for each write fail reports true: the shape of a connection
+// lost at the commit's answer (dataset.go commitAndMirror), the
+// CommitInDoubt stage of the in-package commit seam. The write's error path
+// runs as it would for a real loss, and the next write catches the directory
+// up.
+func WithTestCommitInDoubt(fail func() bool) Option {
+	return func(o *options) {
+		o.commitFault = func(stage string) error {
+			if stage == commitInDoubt && fail() {
+				return errTestCommitInDoubt
+			}
+			return nil
+		}
+	}
+}
+
+var errTestCommitInDoubt = errors.New("substrate/engine: the test lost the commit's answer")

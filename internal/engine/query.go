@@ -571,6 +571,10 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if b.units != nil {
 		signature += "|units@" + strconv.FormatInt(b.units.revision, 10)
 	}
+	// The request's own filter and orderBy, apart from what they resolve to:
+	// a cursor replayed under another request is the client's mistake, and
+	// one whose request now resolves to another order is not.
+	request := requestSignature(q.OrderBy, q.Filter)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize
@@ -618,13 +622,22 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		if err != nil {
 			return nil, err
 		}
+		// Each refusal below but the request's own is the one list-again
+		// answer (substrate.ErrStaleHistory, a 410): the client did nothing
+		// wrong, and the only way on is the first page again.
+		if tok.V != keysetVersion {
+			return nil, fmt.Errorf("%w: the cursor was minted by another version of the server's paging; list again", substrate.ErrStaleHistory)
+		}
+		if tok.R != request {
+			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
+		}
 		if tok.O != signature {
 			was, _, _ := strings.Cut(tok.O, "|units@")
 			now, _, _ := strings.Cut(signature, "|units@")
 			if was == now {
-				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so start the walk again", substrate.ErrValidation)
+				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so list again", substrate.ErrStaleHistory)
 			}
-			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
+			return nil, fmt.Errorf("%w: this filter and orderBy order the rows differently than when the cursor was minted, because a declaration changed; list again", substrate.ErrStaleHistory)
 		}
 		if len(tok.K) != len(terms) {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
@@ -729,7 +742,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 			// (decision 0194); the page it hands off to drops it too.
 			head = 0
 		}
-		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, head, page.Generation)
+		page.Cursor = encodeKeyset(request, signature, got[len(got)-1].keys, head, page.Generation)
 	}
 	pageRows := make([]*erow, len(got))
 	for i, s := range got {
@@ -2396,6 +2409,13 @@ func afterKey(b *builder, t orderTerm, v *string) string {
 // own new snapshot, or an insert during paging is lost. Zero (an empty
 // changelog first page) is omitted.
 type keyset struct {
+	// V is the token's format, keysetVersion when this server minted it. A
+	// token of another format cannot be read, and is the list-again refusal.
+	V int `json:"v,omitempty"`
+	// R is the request the walk was cut from (requestSignature), apart from
+	// the resolved order O: a mismatch on R is the client's, one on O alone
+	// is the server's.
+	R string    `json:"r,omitempty"`
 	O string    `json:"o"`
 	K []*string `json:"k"`
 	H int64     `json:"h,omitempty"`
@@ -2403,8 +2423,13 @@ type keyset struct {
 	G string `json:"g,omitempty"`
 }
 
-func encodeKeyset(order string, keys []*string, head int64, generation string) string {
-	raw, _ := json.Marshal(keyset{O: order, K: keys, H: head, G: generation})
+// keysetVersion is the format of the list continuation token this server
+// mints. It moves when what a token says changes, so a token an earlier
+// server minted is refused as list again and never read as this one.
+const keysetVersion = 1
+
+func encodeKeyset(request, order string, keys []*string, head int64, generation string) string {
+	raw, _ := json.Marshal(keyset{V: keysetVersion, R: request, O: order, K: keys, H: head, G: generation})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
