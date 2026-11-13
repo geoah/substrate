@@ -1042,6 +1042,11 @@ type settlement struct {
 	// started is when the dispatch began the delivery; zero on a retry,
 	// which measures from its own start.
 	started time.Time
+	// unattended is the walk's automatic retry of a temporary failure
+	// (temporaryretry.go): the delivery runs its callable only where no
+	// person needs to see it first (autoRetryable), checked against the one
+	// it is about to run.
+	unattended bool
 	// sync is the delivery's hand on a `sync`-trait record (sync.go): set
 	// by deliver once the guard passed on a record whose kind binds the
 	// trait, nil for every other delivery.
@@ -1562,6 +1567,11 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	// pass resolved when it loaded its triggers (triggers.go refreshCallable).
 	if err := ds.refreshCallable(tr); err != nil {
 		return res, err
+	}
+	// An unattended retry runs this callable, the one just resolved, and
+	// nothing resolves it again before it runs.
+	if settle != nil && settle.unattended && !autoRetryable(tr) {
+		return res, errNotUnattended
 	}
 	envelope, err := ds.deliveryEnvelope(ctx, ch)
 	if err != nil {
@@ -3871,6 +3881,9 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 		}
 		var res deliverResult
 		res, derr = ds.deliver(ctx, tr, ch, -1, depth, resume, settle)
+		if errors.Is(derr, errNotUnattended) {
+			return 0, derr
+		}
 		n = res.ran
 		if derr == nil && res.skipped {
 			// THE GUARD NO LONGER MATCHES, and a skip is a settled delivery,

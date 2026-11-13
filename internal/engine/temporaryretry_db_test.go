@@ -222,7 +222,14 @@ func TestAPermanentFailureIsStillSetAside(t *testing.T) {
 	if !parkedAlert(t, ds) {
 		t.Fatal("a delivery set aside for a person raised no alert")
 	}
+	// An ordinary exception says nothing of whether it may pass, so the
+	// dispatch still tries it three times before it sets it aside, as before
+	// the waits (the step's disclosed deviation): only a failure that says it
+	// is temporary skips that.
 	attempts := rows[0].Attempts
+	if attempts != 3 {
+		t.Fatalf("a permanent failure parked after %d attempts, want the dispatch's three", attempts)
+	}
 	setOutage(t, ds, "up")
 	clock.Advance(2 * time.Hour)
 	process(t, ds)

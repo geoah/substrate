@@ -788,35 +788,77 @@ type lateTimer struct {
 
 func (c lateTimer) Deadline() (time.Time, bool) { return c.deadline, true }
 
-// A host call that returns past the invocation's deadline ends it as timed
-// out even when the deadline's timer has not fired. Before, the child was
-// handed the reply, answered, and the late timer lost the select to it: a
-// body whose agent settled at their shared deadline then succeeded
+// A host call that returns past a deadline ends the invocation there, even
+// when the deadline's timer has not fired. Before, the child was handed the
+// reply, answered, and the late timer lost the select to it: a body whose
+// agent settled at their shared deadline then succeeded
 // (TestAgentRunSettlesAtTheCallersDeadline, 7 failures on main's coverage
-// job from 2026-10-10 to 2026-11-06).
-func TestAHostCallPastTheDeadlineEndsTheInvocation(t *testing.T) {
-	r := New()
-	spec := Spec{
-		Repository: "t1", Function: "late.g.test",
-		Runtime: "python",
-		Source: `
+// job from 2026-10-10 to 2026-11-06). Whose deadline it was decides the
+// answer: the invocation's own allowance running out is the temporary
+// timeout, and a caller's earlier deadline is the caller's own end, which a
+// retry of the body would not change.
+func TestAHostCallPastADeadlineEndsTheInvocation(t *testing.T) {
+	late := func(t *testing.T, timeoutMs int, ctx context.Context) error {
+		t.Helper()
+		r := New()
+		spec := Spec{
+			Repository: "t1", Function: "late.g.test",
+			Runtime: "python",
+			Source: `
 def main(input, host):
     host.get("g.test/widgets/widget", "w1")
     return {"output": "late"}
 `,
-		TimeoutMs: 5000,
-		ReadTypes: []string{"g.test/widgets/widget"},
+			TimeoutMs: timeoutMs,
+			ReadTypes: []string{"g.test/widgets/widget"},
+		}
+		if err := r.Warm(context.Background(), spec); err != nil {
+			t.Fatalf("warm: %v", err)
+		}
+		backend := slowGetBackend{fakeBackend: widgetBackend(), pause: 400 * time.Millisecond}
+		res, err := r.Invoke(ctx, spec, testInput(), backend)
+		if err == nil {
+			t.Fatalf("a body whose host call returned past the deadline succeeded: %+v", res)
+		}
+		return err
 	}
-	if err := r.Warm(context.Background(), spec); err != nil {
-		t.Fatalf("warm: %v", err)
+	t.Run("its own allowance", func(t *testing.T) {
+		err := late(t, 200, context.Background())
+		if !Temporary(err) || !strings.Contains(err.Error(), "invocation exceeded") {
+			t.Fatalf("a body past its own allowance = %v, want the temporary timeout", err)
+		}
+	})
+	t.Run("a caller's earlier deadline", func(t *testing.T) {
+		timer, fire := context.WithCancel(context.Background())
+		defer fire()
+		ctx := lateTimer{Context: timer, deadline: time.Now().Add(200 * time.Millisecond)}
+		err := late(t, 5000, ctx)
+		if Temporary(err) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("a body past its caller's deadline, inside its own five seconds = %v, want the caller's end", err)
+		}
+	})
+}
+
+// An exchange past its own allowance answers the one temporary timeout,
+// whichever exit found it; before then, the exit's own error stands.
+func TestAnExchangePastItsAllowanceIsTheTemporaryTimeout(t *testing.T) {
+	spent := allowance{timeout: time.Second, until: time.Now().Add(-time.Millisecond)}
+	open := allowance{timeout: time.Second, until: time.Now().Add(time.Hour)}
+	for name, exit := range map[string]error{
+		"the child exited":             errors.New("runner: child exited mid-request"),
+		"a reply the child never read": fmt.Errorf("runner: reply to child: %w", syscall.EPIPE),
+		"a frame that went nowhere":    fmt.Errorf("%w: %w", errChildGone, syscall.EPIPE),
+		"the caller's end":             context.DeadlineExceeded,
+	} {
+		if got := spent.ended(exit); !Temporary(got) || !strings.Contains(got.Error(), "invocation exceeded 1s") {
+			t.Errorf("%s past the allowance = %v, want the temporary timeout", name, got)
+		}
+		if got := open.ended(exit); !errors.Is(got, exit) || Temporary(got) {
+			t.Errorf("%s inside the allowance = %v, want it as it was", name, got)
+		}
 	}
-	timer, fire := context.WithCancel(context.Background())
-	defer fire()
-	ctx := lateTimer{Context: timer, deadline: time.Now().Add(200 * time.Millisecond)}
-	backend := slowGetBackend{fakeBackend: widgetBackend(), pause: 400 * time.Millisecond}
-	res, err := r.Invoke(ctx, spec, testInput(), backend)
-	if err == nil || !strings.Contains(err.Error(), "exceeded") {
-		t.Fatalf("a body whose host call returned past its deadline: %+v, %v", res, err)
+	if spent.ended(nil) != nil {
+		t.Error("a finished exchange past its allowance answered an error")
 	}
 }
 
@@ -1236,7 +1278,7 @@ func TestRoundtripOnRetiredProcessIsChildGone(t *testing.T) {
 	}
 	r.sweep(nowPlus(idleTTL + 1))
 	in := testInput()
-	_, err = p.roundtrip(ctx, windowSpec.timeout(),
+	_, err = p.roundtrip(ctx, allowance{timeout: windowSpec.timeout(), until: time.Now().Add(windowSpec.timeout())},
 		frame{Op: "invoke", ID: windowSpec.Key(), Input: &in}, &readState{spec: windowSpec})
 	if !errors.Is(err, errChildGone) {
 		t.Fatalf("roundtrip on a swept process: %v, want errChildGone", err)

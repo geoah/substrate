@@ -93,7 +93,7 @@ func (r *Runner) pythonProc(ctx context.Context, spec Spec) (*proc, error) {
 	bound := registerBound(spec)
 	rctx, cancel := context.WithTimeout(ctx, bound)
 	defer cancel()
-	resp, err := p.roundtrip(rctx, bound, frame{Op: "register", ID: key, Source: spec.Source}, nil)
+	resp, err := p.roundtrip(rctx, allowance{timeout: bound, until: time.Now().Add(bound)}, frame{Op: "register", ID: key, Source: spec.Source}, nil)
 	if err != nil {
 		p.kill()
 		if ctx.Err() != nil {

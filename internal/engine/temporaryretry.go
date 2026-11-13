@@ -67,6 +67,10 @@ func autoRetryable(tr *trigger) bool {
 	return tr.Agent == nil && tr.Callable != nil && len(tr.Callable.Caps.Agents) == 0 && len(tr.Callable.Caps.Call) == 0
 }
 
+// errNotUnattended stops an unattended retry whose callable, as it stands when
+// it is about to run, may run an agent: the row is set aside for a person.
+var errNotUnattended = errors.New("the trigger's callable may run an agent, so it is not retried unattended")
+
 // waitedCause is the error a waiting row's text carries after its mark and
 // due time.
 func waitedCause(lastError string) string {
@@ -149,12 +153,20 @@ func (ds *dataset) retryWaiting(ctx context.Context, tr *trigger, id int64) {
 		return
 	}
 	// The trigger's callable is read as it stands now: one edited since the
-	// park to a function that may run an agent is not run unattended.
+	// park to a function that may run an agent is not run unattended. A
+	// record delivery reads it again as it runs (deliver), and checks that
+	// one, which is the one it runs.
 	if !autoRetryable(tr) {
 		ds.setAsideWaiting(ctx, tr, f)
 		return
 	}
-	if _, err := ds.retryHeldFailure(ctx, tr, f, settle); err != nil && !errors.Is(err, substrate.ErrParked) {
+	settle.unattended = true
+	_, err = ds.retryHeldFailure(ctx, tr, f, settle)
+	if errors.Is(err, errNotUnattended) {
+		ds.setAsideWaiting(ctx, tr, f)
+		return
+	}
+	if err != nil && !errors.Is(err, substrate.ErrParked) {
 		ds.svc.log.Warn("substrate: the automatic retry of a temporary failure did not run",
 			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "failure", id, "error", err)
 	}
