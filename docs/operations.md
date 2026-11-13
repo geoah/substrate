@@ -2024,13 +2024,35 @@ not bind a superuser and an operator DSN usually is one — without that,
 
 ## What it does not do
 
-No sharing, no second user reading your repository, no cross-repository query.
-No erasure, compaction, or retention policy: the changelog keeps everything, and the
-horizon stays 0. No signatures and no hash chain: the per-entry checksum
-catches corruption, and nothing stored is evidence against the host operator,
-who holds the database, the data root and the credential key alike
-([the checksum](changelog.md#the-checksum-and-the-segment-files)).
-Each of those is a deliberate absence, not an oversight.
+This list describes the server as it is today. [Stability](stability.md)
+says what a release may change, and the first four below hold for every 1.x
+release.
+
+- **No evidence that history was not altered.** The per-entry checksum
+  catches corruption. Nothing is signed and there is no hash chain, so
+  nothing stored is evidence against the host operator, who holds the
+  database, the data root and the credential key alike
+  ([the checksum](changelog.md#the-checksum-and-the-segment-files)).
+- **One server process per database.** A second is refused at open
+  ([one writer per repository](#one-writer-per-repository-and-a-second-is-refused)),
+  so there is no standby, and an upgrade stops the old process before the
+  new one serves.
+- **No going back to an older server** once a newer one stamped a repository
+  or migrated the database. The way back is the copy taken before the upgrade
+  ([going back](stability.md#going-back)).
+- **No server for strangers.** A server is for one household, or for people
+  who trust each other and its operator
+  ([who may share a server](#who-may-share-a-server)).
+
+And today:
+
+- **One sign-in per repository.** There is no second person in a
+  repository, no sharing between two, and no query across two. What else
+  reads a repository does so on its owner's token or approval: an app, an
+  assistant, the owner's own functions and agents.
+- **No erasure, compaction or retention.** The changelog keeps every entry,
+  a delete leaves the values it removed in history, and the
+  [horizon](changelog.md#frames-and-the-horizon) stays 0.
 
 ## Publisher refresh
 

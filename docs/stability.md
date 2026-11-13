@@ -299,9 +299,10 @@ No label covers these, and any release may change them:
 - **Console layouts**: the record views and collection views the `console`
   package ships.
 - **Model lists**: the `llm/provider` rows and `llm/model` records the binary
-  writes and keeps current.
-- **Vendor mappings**: the contact mappings `core` ships for each provider's
-  people.
+  writes and keeps current, with the prices they carry.
+- **Vendor mappings**: the nine contact mappings `core` ships, which map the
+  people of Apple, Google, Slack, GitHub, Linear and Beeper onto
+  `core/contact`.
 - **Applets**: the `applets` package and its routes.
 
 One rule protects a person's edits across all of that shipped content: a
