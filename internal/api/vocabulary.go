@@ -200,6 +200,17 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 // server log line and nothing a repository token can see. It sits at the
 // version root beside `/vocabulary/apply`, because it is about the shipped
 // declarations and names no kind (decision 0033).
+// getRetention answers every declared kind's retention, in reference order.
+func (h *handler) getRetention(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	items, err := DatasetFrom(ctx).KindRetentions(ctx)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.Listed(items))
+}
+
 func (h *handler) getVocabularyUpgrade(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)

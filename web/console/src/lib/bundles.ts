@@ -38,6 +38,7 @@ import type {
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 import { shortDateTime } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
+import { retentionText } from "@/lib/retention"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
@@ -646,9 +647,25 @@ export function needsConfirmation(upgrade: BundleUpgrade | undefined): boolean {
 /** Whether the publisher's changes need the reader's review before the
  * upgrade is taken (decision 0220): code that changed, shown as diffs, or
  * what the server marked for review without a diff, a kind removed, a
- * function's reach grown, a held version the document no longer lists. */
-export function reviewNeeded(upgrade: BundleUpgrade | undefined): boolean {
+ * function's reach grown, a held version the document no longer lists. The
+ * install binds such a review to the version and digest the preview named. */
+export function publisherReviewNeeded(
+  upgrade: BundleUpgrade | undefined
+): boolean {
   return Boolean(upgrade?.codeChanges?.length || upgrade?.reviewRequired)
+}
+
+/** Whether the upgrade needs the reader's review before it is taken: the
+ * publisher's changes, or history the upgrade would keep for less time,
+ * whatever the package's tier (decision 0282). A provider or a sample the
+ * binary ships has no publisher's digest to bind the review to, so its
+ * review is bound by reading the preview again at the click
+ * (`sameShortenings`). */
+export function reviewNeeded(upgrade: BundleUpgrade | undefined): boolean {
+  return (
+    publisherReviewNeeded(upgrade) ||
+    Boolean(upgrade?.retentionShortens?.length)
+  )
 }
 
 /** Whether a click on the upgrade asks first, for either reason. */
@@ -669,8 +686,12 @@ export function expectationOf(
 
 /** The body the door takes with an upgrade that asks first: the plan's
  * confirmation where it hands one out, and the reviewed version where the
- * preview names one. Undefined when the upgrade asks nothing, or when it
- * asks and the preview gave nothing to bind the answer to. */
+ * preview names one. An upgrade that asks only because it keeps history for
+ * less time answers an empty body where the preview has neither, which the
+ * door takes as the bare POST: it takes no consent to a shortening, and the
+ * click binds it instead (`sameShortenings`). Undefined when the upgrade
+ * asks nothing, or when it asks for a confirmation or a publisher's review
+ * and the preview gave nothing to bind the answer to. */
 export function confirmationOf(
   upgrade: BundleUpgrade | undefined
 ): BundleInstallRequest | undefined {
@@ -679,8 +700,37 @@ export function confirmationOf(
     ? { planHash: upgrade.planHash, changelogSeq: upgrade.changelogSeq ?? 0 }
     : undefined
   const expect = expectationOf(upgrade)
-  if (!confirm && !expect) return undefined
+  if (!confirm && !expect) {
+    return needsConfirmation(upgrade) || publisherReviewNeeded(upgrade)
+      ? undefined
+      : {}
+  }
   return { ...(confirm && { confirm }), ...(expect && { expect }) }
+}
+
+/** Whether a fresh preview keeps the same history for less time as the one
+ * the reader reviewed, at the same version: what binds the review of a
+ * shortening where no publisher's digest does. */
+export function sameShortenings(
+  reviewed: BundleUpgrade | undefined,
+  fresh: BundleUpgrade | undefined
+): boolean {
+  return (
+    reviewed?.to === fresh?.to &&
+    retentionShortLines(reviewed).join("\n") ===
+      retentionShortLines(fresh).join("\n")
+  )
+}
+
+/** The kinds whose history an upgrade would keep for less time, one line
+ * each, for the review that asks first because of them (decision 0282):
+ * "example.com/journal/entry: all of it → 30 days". */
+export function retentionShortLines(
+  upgrade: BundleUpgrade | undefined
+): string[] {
+  return (upgrade?.retentionShortens ?? []).map(
+    (c) => `${c.kind}: ${retentionText(c.from)} → ${retentionText(c.to)}`
+  )
 }
 
 /** The declarations an upgrade moves, one line each, for a review that

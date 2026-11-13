@@ -948,6 +948,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.guardSettingWrite(sp); err != nil {
 		return nil, err
 	}
+	// A `retention` override's value holds to the declaration's grammar, one
+	// live record per kind (retention.go).
+	if err := t.guardRetentionWrite(sp); err != nil {
+		return nil, err
+	}
 	// A packed observed record's `stats` is the engine's and its `unit` is
 	// stored as a table code (observed.go): both settle before the managed
 	// check reads the write.

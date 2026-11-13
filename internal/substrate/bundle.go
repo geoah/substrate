@@ -121,6 +121,14 @@ type BundleUpgrade struct {
 	ReviewRequired   bool                  `json:"reviewRequired,omitempty"`
 
 	CodeChanges []BundleCodeChange `json:"codeChanges,omitempty"`
+	// RetentionShortens lists every kind the repository declares whose
+	// history the upgrade would keep for less time, compared by the effective
+	// retention (the owner's override, else the declaration's own key, else
+	// its package header's, else all) and by how long each keeps, so a
+	// respelling is no change. A shortening is never a safe addition: a
+	// published package's automatic refresh leaves it for the owner's review
+	// (decision 0282).
+	RetentionShortens []RetentionChange `json:"retentionShortens,omitempty"`
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a

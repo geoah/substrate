@@ -97,12 +97,16 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 23: every failure the sync writes reads as a sentence for the owner,
   # with Linear's raw words on a second line; a rejected key and a refused
   # team are recognised.
   # 24: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 24
+  # 25: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 26: `config` and `account` keep all of their history, as kinds the owner
+  #    writes, not the package's 30 days (decision record 0282).
+  version: 26
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -151,6 +155,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
+  # The owner's connection settings: every entry is kept, as for any kind a
+  # person writes, not the package's 30 days (decision record 0282).
+  retention: all
   description: >-
     The API key and address your Linear workspace connects through. The Linear
     API key this bundle spends and the API origin it may be sent to. The bundle's
@@ -206,6 +213,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: >-
     Your Linear workspace, connected here. One connected Linear workspace:
     the owner's sync toggles, the workspace and the member the API key turned

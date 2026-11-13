@@ -64,6 +64,11 @@ var wireTypes = map[string]any{
 	"RecordFilter": Filter{},
 	"KindInfo":     KindInfo{},
 	"KindLabel":    KindLabel{},
+	// How long each kind's history is kept (decision 0282): the kind page
+	// shows it.
+	"KindRetention": KindRetention{},
+	// The console's RetentionChange (types.ts) mirrors it.
+	"RetentionChange": RetentionChange{},
 	// A blob's manifest: what PUT /blobs answers and what a blobref property
 	// resolves to on a read. The console uploads blobs and reads them back.
 	"BlobInfo": BlobInfo{},

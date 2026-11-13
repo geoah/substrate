@@ -72,7 +72,7 @@
   {
     "name": "bundles",
     "stability": "stable",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "GET /api/v1/catalog",
       "GET /api/v1/catalog/{id}",
@@ -130,6 +130,14 @@
       "GET /api/v1/vocabulary/upgrade",
       "POST /api/v1/vocabulary/apply",
       "POST /api/v1/vocabulary/plan"
+    ]
+  },
+  {
+    "name": "retention",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/retention"
     ]
   },
   {

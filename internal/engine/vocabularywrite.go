@@ -1807,6 +1807,11 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	if g.Dialect != 0 {
 		header["dialect"] = g.Dialect
 	}
+	// The stated retention alone, as the label: absent stores nothing and
+	// reads as all (decision 0282).
+	if g.Retention != "" {
+		header["retention"] = g.Retention
+	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
 			"source":               g.Source,

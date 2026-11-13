@@ -20,8 +20,13 @@ data:
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger. A direct call of a networked function writes
     one with mode call and no trigger, never pruned.
-  version: 21
+  version: 22
   purpose: internal
+  # Bookkeeping: what the substrate wrote about its own runs, which nobody
+  # reads back after a week. The run's latest state is always kept, and the
+  # positions a trigger resumes from are delivery entries, never records of
+  # this kind (decision record 0283, amending 0064).
+  retention: P7D
   names:
     singular: triggerrun
   # The title reads the STRING and not `callableRef`: a reference renders the

@@ -140,8 +140,11 @@ shape. A feature may be withdrawn. The records written through it are not
 lost, and they stay readable through the records route.
 
 History is the changelog entries older than a record's latest state. It is
-kept for as long as the kind's retention says
-([not in force yet](#what-is-not-in-force-yet)).
+kept for as long as the kind's retention says: a kind states `all`, `none` or
+a length of time, its package header may state it for its kinds, and a
+repository may override it per kind
+([the reserved keys](vocabulary.md#the-reserved-keys)). Nothing drops an
+entry by it yet ([not in force yet](#what-is-not-in-force-yet)).
 
 ## Only additions, surface by surface
 
@@ -377,6 +380,6 @@ The code does not hold these clauses today:
   Until then a break ships as it does today, as an entry under BREAKING
   CHANGES in the release's section of `CHANGELOG.md` with the steps to
   follow, and with no notice a release ahead.
-- **History is complete, and no kind has a retention.** Nothing prunes or
-  compacts a changelog, `changelog.horizon` in discovery is 0, and a
-  declaration has no key for a retention.
+- **History is complete.** A kind states its retention and a repository may
+  override it, and nothing prunes or compacts a changelog by it yet:
+  `changelog.horizon` in discovery is 0.

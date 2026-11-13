@@ -269,6 +269,19 @@ rolling value names its window and `n`, the buckets in it with a value
 (`rolling(7,n=6,avg of sum)=8123 steps`). `-o json` and `-o yaml` print the
 answer whole.
 
+### How long history is kept
+
+`substratectl retention [kind]` lists how long each kind's history is kept
+past each record's latest state, from `GET /api/v1/retention`: `all`,
+`none` or an ISO 8601 duration such as `P30D`. `DECLARED` is what the kind's
+declaration states (its own `retention`, else its package header's; `-`
+reads as all), `OVERRIDE` is this repository's
+`substrate.reamde.dev/core/retention` record for the kind, and `EFFECTIVE`
+is the one that applies ([retention](vocabulary.md#the-reserved-keys)). An override
+is an ordinary record: `apply` one whose `appliesTo` names the kind's
+declaration and whose `retention` is the value, `delete` it to go back to
+the declared one. Nothing drops an entry by it yet.
+
 ## Writing
 
 - `apply -f FILE` applies YAML manifests (`---`-separated; `-` reads stdin). A
@@ -480,6 +493,15 @@ taking it brings first ([stability](stability.md)), and `add` prints the
 same before it adds.
 `substratectl apply --allow-data-loss` does the same for a vocabulary change
 of your own. `-o json` prints the same rows, `keptBy` on each.
+
+An upgrade that keeps some kind's history for less time
+([retention](vocabulary.md#the-reserved-keys)) is refused by `add
+<package>` before it reaches the route, naming each kind with what it keeps
+now and after (`…/contact: all -> P30D`).
+`--allow-shorter-history` takes it, and prints the same lines. Nothing is
+removed until a release that compacts history, and an override of a kind's
+retention (`substratectl retention`) keeps its history whatever the upgrade
+says.
 
 ## Exporting
 

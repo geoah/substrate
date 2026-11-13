@@ -77,7 +77,7 @@ A quarantined package has a stored declaration closure the loader could not admi
 
 ## Upgrades and mappings
 
-`packages` action `upgrades` previews shipped changes. A catalog `item` also reports what taking that entry would change and any blockers. A sample and a published package both take their offered update through `add` again. Check `modified` before replacing an owner's edited sample. Do not treat an upgrade offer as proof that admission will succeed, or work around a lossy-conversion refusal.
+`packages` action `upgrades` previews shipped changes. A catalog `item` also reports what taking that entry would change and any blockers. A sample and a published package both take their offered update through `add` again. Check `modified` before replacing an owner's edited sample. Do not treat an upgrade offer as proof that admission will succeed, or work around a lossy-conversion refusal. An update whose preview lists `retentionShortens` keeps those kinds' history for less time: `add` refuses it, naming each kind, and the person takes it on the package's page in the console, where each is listed for review. Tell them; do not take it another way.
 
 `substrate.reamde.dev/core/recordmapping` declares how source records map onto target records. Catalog suggested mappings can wait for a source package. For a hand-authored batch, `apply` with `holdWaitingMappings: true` holds back suggested mappings whose source kind is absent from both the repository and the batch, commits the rest, and reports `heldMappings`. Use the same flag with `plan: true` to preview. A present but incompatible source is not held back; it still refuses the batch. Without the flag, a missing source can refuse the whole batch.
 

@@ -33,6 +33,9 @@ type Dataset interface {
 	// the segments a request addresses spell the reference this resolves, with
 	// nothing to look up in between (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
+	// KindRetentions answers how long each declared kind's history is kept
+	// in the repository: declared, overridden and in effect (decision 0282).
+	KindRetentions(ctx context.Context) ([]KindRetention, error)
 
 	// --- units (decision 0186) ---
 	// Units answers the repository's unit and conversion records as one

@@ -1,5 +1,5 @@
 {
-  "dialect": 5,
+  "dialect": 6,
   "keys": {
     "agentBudgetKeys": [
       "deadlineSeconds",
@@ -271,6 +271,7 @@
       "dialect",
       "interface",
       "package",
+      "retention",
       "retired",
       "stability",
       "version"
@@ -369,6 +370,7 @@
       "package",
       "properties",
       "purpose",
+      "retention",
       "retired",
       "traits",
       "version"
@@ -381,6 +383,7 @@
     "packageDataKeys": {
       "dialect": 3,
       "interface": 3,
+      "retention": 6,
       "stability": 3
     },
     "propKeys": {
@@ -388,6 +391,9 @@
     },
     "referencePropKeys": {
       "writer": 5
+    },
+    "typeDataKeys": {
+      "retention": 6
     }
   }
 }

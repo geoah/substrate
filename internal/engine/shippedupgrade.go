@@ -451,6 +451,11 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 	if err != nil {
 		return nil, substrate.ConversionPlan{}, err
 	}
+	carried, err := countCarriedOverrides(q, st.moves)
+	if err != nil {
+		return nil, substrate.ConversionPlan{}, err
+	}
+	grants += carried
 	st.conversions.moves, st.conversions.grantPatches = planned, grants
 	lines = append(lines, moveLines...)
 	plan, err := st.conversions.wire(q, ceiling, false)

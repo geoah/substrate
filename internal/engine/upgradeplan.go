@@ -289,6 +289,11 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	if plan.Blockers, err = st.guards(q); err != nil {
 		return plan, err
 	}
+	overrides, err := ds.retentionOverrides(ctx)
+	if err != nil {
+		return plan, err
+	}
+	plan.RetentionShortens = retentionShortenings(ds.registry(), st.candidate, overrides)
 	// The conversion plan the install would run, counted now: the steps, the
 	// work, whether it is lossy, and the hash and changelog head a
 	// confirmation names (convert.go, decision 0067). A plan above the work

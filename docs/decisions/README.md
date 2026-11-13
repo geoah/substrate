@@ -430,4 +430,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |
 | [0281](0281-a-repository-the-start-finds-damaged-is-set-aside-in-memory-and-the-rest-serve.md) | A repository the start finds damaged is set aside in memory, and the rest serve | accepted |
+| [0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md) | A kind declares how long its history is kept, and a repository may override it | accepted |
+| [0283](0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md) | Trigger run records keep a week of history, and positions stay in the log | accepted |
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |

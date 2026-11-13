@@ -147,6 +147,8 @@ import type {
   InputStatus,
   KindInfo,
   KindLabel,
+  KindRetention,
+  RetentionChange,
   LinkedRecord,
   MintedToken,
   OAuthStarted,
@@ -334,6 +336,20 @@ const kindInfo: Shape<KindInfo> = {
 const kindLabel: Shape<KindLabel> = {
   singular: true,
   plural: true,
+}
+
+const kindRetention: Shape<KindRetention> = {
+  kind: true,
+  declared: false,
+  override: false,
+  overrideId: false,
+  effective: true,
+}
+
+const retentionChange: Shape<RetentionChange> = {
+  kind: true,
+  from: true,
+  to: true,
 }
 
 const blobInfo: Shape<BlobInfo> = {
@@ -1168,6 +1184,7 @@ const bundleUpgrade: Shape<BundleUpgrade> = {
   holders: false,
   reviewRequired: false,
   codeChanges: false,
+  retentionShortens: false,
   candidateVersion: false,
   candidateDigest: false,
   ...conversionPlan,
@@ -1435,6 +1452,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
   KindLabel: kindLabel,
+  KindRetention: kindRetention,
+  RetentionChange: retentionChange,
   BlobInfo: blobInfo,
   DomainProof: domainProof,
   DomainCheck: domainCheck,

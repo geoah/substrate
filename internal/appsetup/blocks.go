@@ -115,6 +115,17 @@ func upgradeConfirm(id string) *packageProblem {
 	}
 }
 
+// upgradeShortensHistory is an upgrade that keeps some kind's history for
+// less time (decision 0282): its provider page lists each kind for review,
+// and an approval would take it unseen.
+func upgradeShortensHistory(id string) *packageProblem {
+	return &packageProblem{
+		reason: substrate.BlockUpgradeNeedsReview, fix: ProviderPage(id),
+		itself:   "Updating this package would keep some history for less time, which its page in the console lists for you to review first.",
+		requirer: "Updating a package it needs first would keep some history for less time, which its page in the console lists for you to review first.",
+	}
+}
+
 // reachesPastScopes is a package whose code reads or writes what the scopes
 // left checked do not cover (decision 0215), each uncovered reach named
 // with the scope that would cover it. There is no fix: the app asks for

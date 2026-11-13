@@ -93,6 +93,13 @@ func (s *scopedDataset) kinds(ctx context.Context) (map[string]substrate.KindInf
 	return s.registry, s.regErr
 }
 
+// KindRetentions is the owner's: a scoped app's token reads no kind's
+// retention, as it reads no declaration it was not granted. A full-access
+// app's token is not scoped (decision 0204) and never reaches this.
+func (s *scopedDataset) KindRetentions(context.Context) ([]substrate.KindRetention, error) {
+	return nil, errScope("the retention of the repository's kinds")
+}
+
 func internalKind(k substrate.KindInfo) bool {
 	p, _ := k.Definition["purpose"].(string)
 	return p == vocabulary.PurposeInternal

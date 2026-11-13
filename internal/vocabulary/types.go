@@ -779,6 +779,11 @@ type Kind struct {
 	// applies the default for the kind's purpose.
 	IDs string
 
+	// Retention is the kind's declared `retention:` (decision record 0282),
+	// empty where the declaration says nothing. Read it through
+	// Registry.RetentionOf, which falls back to the package header's.
+	Retention string
+
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.
 	HotColumns map[string]bool
@@ -969,6 +974,10 @@ type Package struct {
 	// every one is read by every dialect. A header may state more, never
 	// less.
 	NeedsDialect int64
+	// Retention is the header's `retention:` for the kinds that state none
+	// (decision record 0282), empty where it states none. Always empty on an
+	// authority row.
+	Retention string
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.

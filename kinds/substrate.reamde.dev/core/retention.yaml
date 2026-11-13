@@ -1,0 +1,39 @@
+# One repository's own answer to how long one kind's history is kept, in
+# place of what the kind declares (decision record 0282). The declaration's
+# `retention` is the publisher's default; this is the owner's choice, so it is
+# a record and not an edit of a declaration a token may not write.
+#
+# One live record per kind: the engine refuses a second that names a kind
+# another already does (engine/retention.go), so the record to change is the
+# one already there. Deleting it restores what the kind declares. The value is
+# held to the same grammar as the declaration's key, and nothing drops an
+# entry by it yet: the compaction that does is a later step.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/retention
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    How long this repository keeps the history of one kind's records past
+    each record's latest state, in place of what the kind declares. Delete
+    it and the kind's own retention applies again.
+  purpose: internal
+  names:
+    singular: retention
+  displayTemplate: "{appliesTo}: {retention}"
+  properties:
+    # A reference to the kind's DECLARATION, as a record view's `appliesTo`:
+    # the import's rehoming rewrites it with the kind it names. A dangling one
+    # is admitted, as every reference is, and applies to nothing until the
+    # kind is declared.
+    appliesTo:
+      type: reference
+      kind: substrate.reamde.dev/core/kind
+      required: true
+      description: the kind whose history this keeps
+    retention:
+      type: string
+      required: true
+      description: how long the kind's history is kept past each record's
+        latest state — all, none or an ISO 8601 duration such as P30D

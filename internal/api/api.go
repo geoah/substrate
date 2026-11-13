@@ -591,6 +591,10 @@ func (h *handler) mountResources(r chi.Router) {
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
+			// How long each kind's history is kept here: declared, overridden
+			// and in effect (decision 0282). An override is a record of
+			// `core/retention`, written through the records routes.
+			r.Get("/retention", h.getRetention)
 			// Merge joins two records of one kind; split reverses a merge.
 			// Creating the command record performs the operation, so these are
 			// actions, not the recordmerge/recordsplit collections.
