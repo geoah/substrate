@@ -37,7 +37,10 @@ func TestAScheduleFireThatRetiresTheLastParkResolvesTheAlert(t *testing.T) {
 		t.Fatalf("the alert of %s is %v after two parks, want open", supersedeSync, got)
 	}
 
-	// s+1h settles and retires both parks: nothing of the trigger stands.
+	// The trigger owes the latest alone: s+1h settles and retires both
+	// parks, so nothing of the trigger stands. (One that states `all` would
+	// keep s parked, and its alert open.)
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
 	rewindSchedule(t, ds, supersedeSync, s)
 	processOnce(t, ds)

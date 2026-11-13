@@ -71,7 +71,14 @@ export type ToolOrigin =
   | { kind: "other"; authority: string }
 
 export type TriggerSourceArm =
-  | { arm: "schedule"; recurrence: string; timezone?: string }
+  | {
+      arm: "schedule"
+      recurrence: string
+      timezone?: string
+      /** What the trigger does with runs it missed: `latest` (absent too)
+       * runs the newest alone, `all` runs each (decision 0267). */
+      missed?: "latest" | "all"
+    }
   | { arm: "record"; kinds: string[]; ops: string[]; when: string }
   | { arm: "webhook" }
   | { arm: "unknown" }
@@ -162,6 +169,9 @@ export function triggerSource(record: SubstrateRecord): TriggerSourceArm {
         typeof schedule.recurrence === "string" ? schedule.recurrence : "",
       timezone:
         typeof schedule.timezone === "string" ? schedule.timezone : undefined,
+      ...(schedule.missed === "all" || schedule.missed === "latest"
+        ? { missed: schedule.missed }
+        : {}),
     }
   }
   const rec = source.record as Record<string, unknown> | undefined
@@ -610,7 +620,11 @@ export function toolStarts(tool: Tool, label: KindLabeler): ToolStart[] {
           ...base,
           kind: "schedule",
           label: "On a schedule",
-          detail: cadenceWords(t.source.recurrence),
+          // The default, the newest missed run alone, goes unsaid.
+          detail:
+            t.source.missed === "all"
+              ? `${cadenceWords(t.source.recurrence)}, and each run it missed`
+              : cadenceWords(t.source.recurrence),
         })
         break
       case "record": {

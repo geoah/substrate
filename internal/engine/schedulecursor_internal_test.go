@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
@@ -209,7 +211,7 @@ func TestScheduleReadersWalkTheTriggersCursor(t *testing.T) {
 	}
 
 	ds := &dataset{}
-	if _, _, err := ds.owedFires(lt, nowUTC().Add(-3*time.Hour)); err != nil {
+	if _, _, err := ds.owedFires(context.Background(), lt, nowUTC().Add(-3*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if !walked(ds) {
@@ -248,5 +250,83 @@ func TestPruneActivityDropsTheCursorsOfRemovedTriggers(t *testing.T) {
 	defer ds.scheduleCursorsMu.Unlock()
 	if len(ds.scheduleCursors) != 1 || ds.scheduleCursors["kept"] == nil {
 		t.Fatalf("cursors after the prune: %v, want only kept's", ds.scheduleCursors)
+	}
+}
+
+// The latest of a trigger's missed occurrences is counted from the fire state
+// to now, at most latestDueSteps per call: a call that reaches the bound answers walking,
+// the next resumes where it stopped, and the count reached is kept, so a
+// status read asked again with the fire state unchanged counts only what
+// fell due since, without walking the rule again from its anchor. A done
+// context stops the walk. Package-level latestDueSteps: no t.Parallel.
+func TestALatestWalkIsBoundedResumedAndKept(t *testing.T) {
+	prev := latestDueSteps
+	latestDueSteps = 1000
+	defer func() { latestDueSteps = prev }()
+	ctx := context.Background()
+	anchor := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	src := &scheduleSource{Recurrence: "FREQ=MINUTELY", StartsAt: &anchor}
+	now := anchor.Add(3*24*time.Hour + 30*time.Second)
+	want := anchor.Add(3 * 24 * time.Hour)
+	ds := &dataset{}
+
+	calls := 0
+	for {
+		calls++
+		latest, passed, ok, walking, err := ds.latestDue(ctx, "minutely", src, anchor, anchor, now)
+		if err != nil || !ok {
+			t.Fatalf("call %d: ok %v, err %v", calls, ok, err)
+		}
+		if walking {
+			if calls > 10 {
+				t.Fatal("the walk never reached now")
+			}
+			continue
+		}
+		if !latest.Equal(want) || passed != 3*24*60-1 {
+			t.Fatalf("latest %s passing %d, want %s passing %d", latest, passed, want, 3*24*60-1)
+		}
+		break
+	}
+	if calls != 5 {
+		t.Fatalf("the walk of 4320 occurrences took %d calls, want 5 at 1000 a call", calls)
+	}
+
+	// Asked again with the fire state unchanged: the same answer, from the
+	// count kept, on the iterator the walk left.
+	c := ds.scheduleCursorOf("minutely")
+	inner, stepped := c.next, 0
+	counting := func() (time.Time, bool) { stepped++; return inner() }
+	c.next = counting
+	latest, passed, ok, walking, err := ds.latestDue(ctx, "minutely", src, anchor, anchor, now)
+	if err != nil || !ok || walking || !latest.Equal(want) || passed != 3*24*60-1 {
+		t.Fatalf("asked again: %s passing %d (ok %v, walking %v, %v)", latest, passed, ok, walking, err)
+	}
+	if reflect.ValueOf(c.next).Pointer() != reflect.ValueOf(counting).Pointer() {
+		t.Fatal("asked again with the fire state unchanged, the walk started over from the rule's anchor")
+	}
+
+	// Two minutes on, only the two that fell due are counted.
+	stepped = 0
+	latest, passed, _, _, err = ds.latestDue(ctx, "minutely", src, anchor, anchor, now.Add(2*time.Minute))
+	if err != nil || !latest.Equal(want.Add(2*time.Minute)) || passed != 3*24*60+1 {
+		t.Fatalf("two minutes on: %s passing %d (%v)", latest, passed, err)
+	}
+	if stepped > 3 {
+		t.Fatalf("two minutes on, the walk stepped %d occurrences, want the new ones alone", stepped)
+	}
+
+	// A status read of a walk still counting owes the latest it has not
+	// reached.
+	lt := loadedTrigger{trigger: &trigger{ID: "fresh", Enabled: true, Schedule: src}, CreatedAt: anchor}
+	pending, _, err := (&dataset{}).owedFires(ctx, lt, anchor)
+	if err != nil || pending != 1 {
+		t.Fatalf("a walk still counting owes %d (%v), want 1", pending, err)
+	}
+
+	done, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, _, _, _, err := (&dataset{}).latestDue(done, "minutely", src, anchor, anchor, now); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a done context walked on: %v", err)
 	}
 }
