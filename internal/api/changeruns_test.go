@@ -1,205 +1,60 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 // The history as run summaries (`runs=1`): consecutive rows of the filtered
-// feed with one actor, kind and verb, each read to its end.
+// feed with one actor, kind and verb, each read to its end. The runs are the
+// engine's changelog folded (changeruns_db_test.go); the refusals here are
+// the handler's own.
 
 const (
 	runTask   = "samples.substrate.reamde.dev/tasks/task"
 	runPerson = "samples.substrate.reamde.dev/people/person"
 )
 
-// seedRun commits n changes by one actor to one kind, oldest first, each on
-// its own record unless record is set.
-func seedRun(ds *fakeDataset, n int, actor substrate.Actor, kind string, op substrate.Op, payload map[string]any, record string) {
+// seedRun writes n changes by one actor to one kind, oldest first, through
+// the dataset's own verbs. A put writes record, or a new record each time
+// when record is empty; a patch patches record and a delete tombstones it.
+// Every put and patch names the record afresh, so each one is a change. The
+// payload a row carries is the engine's to stamp (substrate.RunVerb reads
+// it), so payload is never sent: a put whose created flag disagrees with the
+// one payload expects is refused. Its callers hand it no *testing.T, so a
+// refused write panics.
+func seedRun(ds substrate.Dataset, n int, actor substrate.Actor, kind string, op substrate.Op, payload map[string]any, record string) {
+	ctx := context.Background()
 	for range n {
-		id := record
-		if id == "" {
-			id = fmt.Sprintf("r%d", len(ds.changes)+1)
+		name := map[string]any{"name": fmt.Sprintf("%s %d", op, seedRunNames.Add(1))}
+		var err error
+		switch op {
+		case substrate.OpPut:
+			var rec *substrate.Record
+			if rec, err = ds.Put(ctx, actor, substrate.PutInput{Kind: kind, ID: record, Properties: name}); err == nil && rec.Created != (payload["created"] == true) {
+				err = fmt.Errorf("the put created=%v, want the payload %v", rec.Created, payload)
+			}
+		case substrate.OpPatch:
+			_, err = ds.Patch(ctx, actor, kind, record, substrate.PatchInput{Properties: name})
+		case substrate.OpDelete:
+			_, err = ds.Delete(ctx, actor, kind, record, substrate.DeleteInput{})
+		default:
+			err = fmt.Errorf("seedRun writes no %s", op)
 		}
-		ds.commit(substrate.Change{
-			TS: time.Unix(int64(len(ds.changes)+1), 0).UTC(), Actor: actor, Op: op,
-			RecordID: id, Kind: kind, Payload: payload,
-		})
-		<-ds.signals
-	}
-}
-
-func getRuns(t *testing.T, env *testEnv, query string) substrate.ChangeRunPage {
-	t.Helper()
-	rec := env.do(t, http.MethodGet, "/api/v1/changes?runs=1&"+query, env.svc.token(fakeRepository), nil)
-	wantStatus(t, rec, http.StatusOK)
-	return decodeJSON[substrate.ChangeRunPage](t, rec)
-}
-
-// A run longer than one storage batch still comes back whole: the page does
-// not end inside it, so the oldest run's count is exact.
-func TestChangeRunsCountARunPastTheBatch(t *testing.T) {
-	env := newTestEnv(t)
-	ds := env.svc.datasets[fakeRepository]
-	created := map[string]any{"created": true}
-	seedRun(ds, 3, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
-	seedRun(ds, changeBatch+100, "console", runTask, substrate.OpPut, created, "")
-	seedRun(ds, 2, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
-
-	page := getRuns(t, env, "first=2")
-	if len(page.Runs) != 2 {
-		t.Fatalf("runs = %+v, want 2", page.Runs)
-	}
-	newest, long := page.Runs[0], page.Runs[1]
-	if newest.Count != 2 || newest.Kind != runPerson || newest.NewestSeq != int64(changeBatch+105) {
-		t.Fatalf("newest run = %+v", newest)
-	}
-	if long.Count != changeBatch+100 || long.Records != changeBatch+100 || long.Verb != substrate.RunVerbCreate ||
-		long.Actor != "console" || long.NewestSeq != int64(changeBatch+103) || long.OldestSeq != 4 || long.RecordID != "" {
-		t.Fatalf("long run = %+v, want %d creates over seqs 4..%d", long, changeBatch+100, changeBatch+103)
-	}
-	if !long.OldestTS.Equal(time.Unix(4, 0)) {
-		t.Fatalf("long run oldestTs = %v", long.OldestTS)
-	}
-	if page.Cursor != 4 {
-		t.Fatalf("cursor = %d, want 4 (more rows lie below)", page.Cursor)
-	}
-	if page.Head != int64(changeBatch+105) || page.Generation != ds.generation {
-		t.Fatalf("head = %d generation = %q", page.Head, page.Generation)
-	}
-
-	// The cursor walks on to the run below, and the bottom has no cursor.
-	page = getRuns(t, env, fmt.Sprintf("first=2&before=%d&generation=%s", page.Cursor, ds.generation))
-	if len(page.Runs) != 1 || page.Runs[0].Count != 3 || page.Runs[0].OldestSeq != 1 || page.Cursor != 0 {
-		t.Fatalf("second page = %+v", page)
-	}
-}
-
-// The verb splits a put on its payload and reads a patch as an update, and a
-// run that touched one record names it.
-func TestChangeRunsGroupByVerb(t *testing.T) {
-	env := newTestEnv(t)
-	ds := env.svc.datasets[fakeRepository]
-	seedRun(ds, 2, substrate.ActorAPI, runTask, substrate.OpPut, map[string]any{"created": true}, "")
-	seedRun(ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, nil, "t1")
-	seedRun(ds, 2, substrate.ActorAPI, runTask, substrate.OpPatch, nil, "t1")
-	seedRun(ds, 1, substrate.ActorAPI, runTask, substrate.OpPut, map[string]any{"restored": true}, "t9")
-	seedRun(ds, 1, substrate.ActorAPI, runTask, substrate.OpDelete, nil, "t9")
-
-	page := getRuns(t, env, "")
-	type want struct {
-		verb     string
-		count    int
-		records  int
-		recordID string
-	}
-	wants := []want{
-		{substrate.RunVerbDelete, 1, 1, "t9"},
-		{substrate.RunVerbRestore, 1, 1, "t9"},
-		{substrate.RunVerbUpdate, 3, 1, "t1"},
-		{substrate.RunVerbCreate, 2, 2, ""},
-	}
-	if len(page.Runs) != len(wants) {
-		t.Fatalf("runs = %+v, want %d", page.Runs, len(wants))
-	}
-	for i, w := range wants {
-		got := page.Runs[i]
-		if got.Verb != w.verb || got.Count != w.count || got.Records != w.records || got.RecordID != w.recordID {
-			t.Fatalf("run %d = %+v, want %+v", i, got, w)
-		}
-	}
-	if page.Cursor != 0 {
-		t.Fatalf("cursor = %d on an exhausted walk", page.Cursor)
-	}
-}
-
-// Runs are consecutive in the FILTERED feed: a row the filter drops does not
-// break a run around it.
-func TestChangeRunsFoldOverTheFilter(t *testing.T) {
-	env := newTestEnv(t)
-	ds := env.svc.datasets[fakeRepository]
-	created := map[string]any{"created": true}
-	seedRun(ds, 2, substrate.ActorAPI, runTask, substrate.OpPut, created, "")
-	seedRun(ds, 1, substrate.ActorAPI, runPerson, substrate.OpPut, created, "")
-	seedRun(ds, 2, substrate.ActorAPI, runTask, substrate.OpPut, created, "")
-
-	page := getRuns(t, env, "")
-	if len(page.Runs) != 3 {
-		t.Fatalf("unfiltered runs = %+v, want 3", page.Runs)
-	}
-	page = getRuns(t, env, "kinds="+runTask)
-	if len(page.Runs) != 1 || page.Runs[0].Count != 4 || page.Runs[0].NewestSeq != 5 || page.Runs[0].OldestSeq != 1 {
-		t.Fatalf("filtered runs = %+v, want one run of 4 over seqs 1..5", page.Runs)
-	}
-}
-
-// `runs` is a history read with one value, held to the same cursor rules.
-func TestChangeRunsRefusals(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	seedChanges(env.svc.datasets[fakeRepository], 3)
-	for _, q := range []string{"runs=true", "runs=1&watch=1", "runs=1&from=1", "runs=1&first=0"} {
-		rec := env.do(t, http.MethodGet, "/api/v1/changes?"+q, tok, nil)
-		wantStatus(t, rec, http.StatusBadRequest)
-	}
-	// A continuation without its generation is the history page's compacted
-	// refusal, not an answer from another history.
-	rec := env.do(t, http.MethodGet, "/api/v1/changes?runs=1&before=2", tok, nil)
-	wantStatus(t, rec, http.StatusGone)
-}
-
-// Two assistants on one device both write as `app:local`: the runs split on
-// the token behind them and the owner's read names each by its token, while
-// an `api` run is named by its token's label and a person's door is never
-// split or named (decision 0230).
-func TestChangeRunsSplitAndNameTheTokenBehindAnApp(t *testing.T) {
-	env := newTestEnv(t)
-	ds := env.svc.datasets[fakeRepository]
-	ds.records["tokclaude"] = &substrate.Record{ID: "tokclaude", Kind: tokenType, Properties: map[string]any{"clientName": "Claude Code", "label": "claude.ai"}}
-	ds.records["tokcodex"] = &substrate.Record{ID: "tokcodex", Kind: tokenType, Properties: map[string]any{"clientName": "Codex", "label": "chatgpt.com"}}
-	ds.records["tokcursor"] = &substrate.Record{ID: "tokcursor", Kind: tokenType, Properties: map[string]any{"label": "Cursor"}}
-	created := map[string]any{"created": true}
-	commit := func(n int, actor substrate.Actor, principal string) {
-		for range n {
-			ds.commit(substrate.Change{
-				TS: time.Unix(int64(len(ds.changes)+1), 0).UTC(), Actor: actor, Op: substrate.OpPut,
-				RecordID: fmt.Sprintf("r%d", len(ds.changes)+1), Kind: runTask, Payload: created, Principal: principal,
-			})
-			<-ds.signals
-		}
-	}
-	commit(2, substrate.AppActorLocal, "tokclaude")
-	commit(3, substrate.AppActorLocal, "tokcodex")
-	commit(1, substrate.ActorAPI, "tokcursor")
-	commit(2, "console", "tok1")
-	commit(1, "console", "tok2")
-
-	page := getRuns(t, env, "first=10")
-	want := []struct {
-		actor substrate.Actor
-		count int
-		name  string
-	}{{"console", 3, ""}, {substrate.ActorAPI, 1, "Cursor"}, {substrate.AppActorLocal, 3, "Codex"}, {substrate.AppActorLocal, 2, "Claude Code"}}
-	if len(page.Runs) != len(want) {
-		t.Fatalf("runs = %+v, want %d", page.Runs, len(want))
-	}
-	for i, w := range want {
-		if r := page.Runs[i]; r.Actor != w.actor || r.Count != w.count || r.PrincipalName != w.name {
-			t.Fatalf("run %d = %+v, want %s ×%d named %q", i, r, w.actor, w.count, w.name)
-		}
-	}
-	// An assistant reading the history names no token.
-	for _, r := range runsAs(t, env, assistantToken(env.svc)) {
-		if r.PrincipalName != "" {
-			t.Fatalf("an assistant's read named a token: %+v", r)
+		if err != nil {
+			panic(fmt.Sprintf("seed %s %s/%s: %v", op, kind, record, err))
 		}
 	}
 }
+
+// seedRunNames numbers the names seedRun writes, across calls and tests.
+var seedRunNames atomic.Int64
 
 // runsAs reads the runs through the MCP door's own route, as an assistant.
 func runsAs(t *testing.T, env *testEnv, token string) []substrate.ChangeRun {
@@ -211,4 +66,17 @@ func runsAs(t *testing.T, env *testEnv, token string) []substrate.ChangeRun {
 	env.h.ServeHTTP(rec, req)
 	wantStatus(t, rec, http.StatusOK)
 	return decodeJSON[substrate.ChangeRunPage](t, rec).Runs
+}
+
+// `runs` is a history read with one value, held to the same cursor rules.
+func TestChangeRunsRefusals(t *testing.T) {
+	env := newStubEnv(t, changesStub{})
+	for _, q := range []string{"runs=true", "runs=1&watch=1", "runs=1&from=1", "runs=1&first=0"} {
+		rec := env.do(t, http.MethodGet, "/api/v1/changes?"+q, stubToken, nil)
+		wantStatus(t, rec, http.StatusBadRequest)
+	}
+	// A continuation without its generation is the history page's compacted
+	// refusal, not an answer from another history.
+	rec := env.do(t, http.MethodGet, "/api/v1/changes?runs=1&before=2", stubToken, nil)
+	wantStatus(t, rec, http.StatusGone)
 }

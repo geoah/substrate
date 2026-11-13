@@ -61,7 +61,7 @@ func consoleDir(t *testing.T) string {
 func siteHandler(t *testing.T, s *site.Site) http.Handler {
 	t.Helper()
 	return New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  consoleDir(t),
 		Site:    s,
@@ -255,7 +255,7 @@ func TestSiteBrandsTheConsoleShell(t *testing.T) {
 	}
 	branded := func(s *site.Site) http.Handler {
 		return New(Config{
-			Service: newFakeService(),
+			Service: &stubService{},
 			Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 			WebDir:  dir,
 			Site:    s,

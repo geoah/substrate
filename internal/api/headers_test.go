@@ -8,9 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 // wantSecurityHeaders fails unless rec carries every browser-facing
@@ -117,10 +114,8 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>console"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	svc := newFakeService()
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	env := &testEnv{svc: svc, h: New(Config{Service: svc, Now: clock.now, WebDir: dir}), clock: clock}
-	tok := svc.token(fakeRepository)
+	env := newStubEnv(t, newRecordsRecorder(), func(c *Config) { c.WebDir = dir })
+	tok := stubToken
 
 	for _, c := range []struct {
 		name, method, path, token string
@@ -150,81 +145,6 @@ func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	if got := cspSources(csp, "object-src"); strings.Join(got, " ") != "'none'" {
 		t.Errorf("console object-src = %q, want 'none' (CSP %q)", got, csp)
 	}
-}
-
-// Every route that takes or hands back a credential answers no-store, the
-// refusals among them: a rate-limited attempt, a wrong password and a missing
-// bearer are responses a shared cache must not keep either.
-func TestCredentialResponsesAreNeverStored(t *testing.T) {
-	env := newTestEnv(t)
-	password := env.svc.passwords[fakeRepository]
-	tok := env.svc.token(fakeRepository)
-	pace := func() { env.clock.advance(defaultAuthInterval + time.Millisecond) }
-
-	wantNoStore := func(name string, rec *httptest.ResponseRecorder, status int) {
-		t.Helper()
-		wantStatus(t, rec, status)
-		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-			t.Errorf("%s: Cache-Control = %q, want no-store", name, got)
-		}
-	}
-
-	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": "ada",
-	})
-	wantNoStore("register enroll (the TOTP seed)", rec, http.StatusOK)
-	seed := decodeJSON[substrate.TOTPEnrollment](t, rec).Secret
-
-	pace()
-	wantNoStore("register (the first secret and the recovery key)", env.do(t, http.MethodPost, registerPath, "", map[string]any{
-		"inviteCode": testInviteCode, "repository": "ada", "password": "correct-horse-battery-staple",
-		"totpSecret": seed, "totpCode": fakeCode("ada.example.com"),
-	}), http.StatusCreated)
-
-	pace()
-	wantNoStore("login", env.do(t, http.MethodPost, loginPath, "",
-		loginBody(fakeRepository, password, fakeCode(fakeRepository))), http.StatusCreated)
-	wantNoStore("login, rate limited", env.do(t, http.MethodPost, loginPath, "",
-		loginBody(fakeRepository, password, fakeCode(fakeRepository))), http.StatusTooManyRequests)
-	pace()
-	wantNoStore("login, wrong password", env.do(t, http.MethodPost, loginPath, "",
-		loginBody(fakeRepository, "wrong", fakeCode(fakeRepository))), http.StatusUnauthorized)
-
-	rec = env.do(t, http.MethodPost, "/tokens", tok, map[string]any{"label": "script"})
-	wantNoStore("mint a token", rec, http.StatusCreated)
-	minted := decodeJSON[substrate.MintedToken](t, rec)
-	wantNoStore("list tokens", env.do(t, http.MethodGet, "/tokens", tok, nil), http.StatusOK)
-	// The fake mints no token record, so the revoke answers 404: the route's
-	// header, not the delete, is what is under test.
-	wantNoStore("revoke a token", env.do(t, http.MethodDelete, "/tokens/"+minted.Token.ID, tok, nil), http.StatusNotFound)
-	wantNoStore("mint without a bearer", env.do(t, http.MethodPost, "/tokens", "", nil), http.StatusUnauthorized)
-
-	pace()
-	rec = env.do(t, http.MethodPost, "/totp/enroll", "", map[string]any{
-		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
-	})
-	wantNoStore("TOTP enroll (the candidate seed)", rec, http.StatusOK)
-	pace()
-	wantNoStore("TOTP swap", env.do(t, http.MethodPost, "/totp", "", map[string]any{
-		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
-		"newTotpSecret": decodeJSON[substrate.TOTPEnrollment](t, rec).Secret, "newTotpCode": "123456",
-	}), http.StatusOK)
-	pace()
-	wantNoStore("password change", env.do(t, http.MethodPost, "/password", "", map[string]any{
-		"repository": fakeRepository, "password": password, "totpCode": fakeCode(fakeRepository),
-		"newPassword": "a-brand-new-passphrase",
-	}), http.StatusOK)
-
-	wantNoStore("oauth start", env.do(t, http.MethodPost, "/api/v1/oauth/start", tok,
-		map[string]any{"record": "providers.substrate.reamde.dev/google/account/owner"}), http.StatusNotFound)
-	wantNoStore("oauth start without a bearer", env.do(t, http.MethodPost, "/api/v1/oauth/start", "", nil), http.StatusUnauthorized)
-	wantNoStore("oauth callback", getCallback(callbackHandler(callbackRecord, nil, "https://console.example.com")), http.StatusOK)
-
-	exporting, ds, exportToken := exportEnv(t)
-	wantNoStore("export", exporting.do(t, http.MethodGet, "/api/v1/export", exportToken, nil), http.StatusOK)
-	wantNoStore("export without a bearer", exporting.do(t, http.MethodGet, "/api/v1/export", "", nil), http.StatusUnauthorized)
-	ds.exportErr = substrate.ErrUnavailable
-	wantNoStore("export, refused", exporting.do(t, http.MethodGet, "/api/v1/export", exportToken, nil), http.StatusServiceUnavailable)
 }
 
 var (
@@ -279,10 +199,8 @@ func TestOAuthReturnPageScriptRunsByItsNonceAlone(t *testing.T) {
 // response ever allows credentials, because the wildcard is safe only while
 // nothing authenticates by cookie.
 func TestAnyOriginMayCallTheAPI(t *testing.T) {
-	svc := newFakeService()
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	h := New(Config{Service: svc, Now: clock.now})
-	tok := svc.token(fakeRepository)
+	h := newStubEnv(t, newRecordsRecorder()).h
+	tok := stubToken
 	const origin = "https://app.example.com"
 
 	for _, path := range []string{recordsPath, "/login", "/.well-known/substrate/server.json"} {

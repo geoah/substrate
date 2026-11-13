@@ -18,11 +18,11 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// webhookSvc wraps the fake service with a webhook door that admits every
+// webhookSvc is the stub service with a webhook door that admits every
 // trigger but the ones in refused, recording what it was handed and
 // answering a canned outcome.
 type webhookSvc struct {
-	*fakeService
+	*stubService
 	mu      sync.Mutex
 	calls   []webhookCall
 	fid     string
@@ -59,7 +59,7 @@ func (s *webhookSvc) ReceiveWebhook(_ context.Context, authority, trigger, key s
 }
 
 func webhookHandler(fid string, err error) (*webhookSvc, http.Handler) {
-	svc := &webhookSvc{fakeService: newFakeService(), fid: fid, err: err}
+	svc := &webhookSvc{stubService: &stubService{}, fid: fid, err: err}
 	return svc, New(Config{Service: svc})
 }
 
@@ -571,7 +571,7 @@ func (s *slowHookSvc) ReceiveWebhook(ctx context.Context, _, _, _ string, _ subs
 // context while the service records the delivery.
 func TestWebhookEmptyDeliveryOutlivesTheBodyDeadline(t *testing.T) {
 	d := shortBodyDeadlines(t)
-	svc := &slowHookSvc{webhookSvc: &webhookSvc{fakeService: newFakeService()}, hold: 4 * d, canceled: make(chan bool, 1)}
+	svc := &slowHookSvc{webhookSvc: &webhookSvc{stubService: &stubService{}}, hold: 4 * d, canceled: make(chan bool, 1)}
 	srv := httptest.NewServer(New(Config{Service: svc}))
 	defer srv.Close()
 	resp, err := srv.Client().Post(srv.URL+"/webhooks/geoah.example.com/t", "application/json", http.NoBody)

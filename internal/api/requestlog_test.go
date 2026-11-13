@@ -11,13 +11,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 // logCapture is a slog handler that keeps every record, at every level, so a
-// test reads what the server logged. The api tests run serially, which is
-// what makes swapping the default logger safe.
+// test reads what the server logged. A test that captures is serial: no
+// parallel test runs beside it, which is what makes swapping the default
+// logger safe.
 type logCapture struct {
 	mu   sync.Mutex
 	recs []slog.Record
@@ -97,23 +97,48 @@ func wantOneErrorLog(t *testing.T, logs *logCapture, msg string, attrs map[strin
 	}
 }
 
+// errRequestLogBoom is a failure no sentinel names: the 500 the handler
+// answers for a fault it does not recognize.
+var errRequestLogBoom = errors.New("boom")
+
+// requestLogFailingPut is a repository whose every write fails with err: the
+// fault (a full disk, a refused restart, a context the server or the client
+// canceled) the log line names, which the engine cannot be made to produce on
+// demand.
+type requestLogFailingPut struct {
+	stubKinds
+	err error
+}
+
+func (d requestLogFailingPut) Put(context.Context, substrate.Actor, substrate.PutInput) (*substrate.Record, error) {
+	return nil, d.err
+}
+
+// requestLogUnavailable is a service whose bearer check fails with err: a
+// token lookup the database refused, a repository that will not open.
+type requestLogUnavailable struct {
+	*stubService
+	err error
+}
+
+func (s requestLogUnavailable) Authenticate(context.Context, string) (substrate.Dataset, substrate.TokenInfo, error) {
+	return nil, substrate.TokenInfo{}, s.err
+}
+
 // A 500 names the request it failed: the method, chi's route pattern (never
 // the path with an id in it) and the repository, because a "request failed"
 // line without them cannot be traced to anything.
 func TestRequestFailedLogNamesTheRoute(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	env := newStubEnv(t, requestLogFailingPut{stubKinds: newStubKinds(personKind), err: errRequestLogBoom})
 	logs := captureLogs(t)
 
-	ds.errs["Put"] = errBoom
-	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
+	rec := env.do(t, http.MethodPost, recordsPath, stubToken, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 	wantOneErrorLog(t, logs, "request failed", map[string]string{
 		"method":     http.MethodPost,
 		"route":      recordsPath,
-		"repository": fakeRepository,
-		"error":      errBoom.Error(),
+		"repository": stubRepository,
+		"error":      errRequestLogBoom.Error(),
 		// The id the response carries, so a client's report joins this line.
 		"request": rec.Header().Get(requestIDHeader),
 	})
@@ -139,9 +164,7 @@ func TestAnUnavailableAnswerIsLoggedOnce(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			env := newTestEnv(t)
-			tok := env.svc.token(fakeRepository)
-			env.svc.datasets[fakeRepository].errs["Put"] = tc.err
+			env := newStubEnv(t, requestLogFailingPut{stubKinds: newStubKinds(personKind), err: tc.err})
 			logs := captureLogs(t)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -149,14 +172,14 @@ func TestAnUnavailableAnswerIsLoggedOnce(t *testing.T) {
 			if tc.clientGone {
 				cancel()
 			}
-			rec := serveWith(env.h, ctx, http.MethodPost, recordsPath, tok,
+			rec := serveWith(env.h, ctx, http.MethodPost, recordsPath, stubToken,
 				`{"kind":"`+personKind+`","properties":{"title":"x"}}`)
 			wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 			if got := rec.Header().Get("Retry-After"); got != tc.retryAfter {
 				t.Fatalf("Retry-After = %q, want %s", got, tc.retryAfter)
 			}
 			wantOneLogLine(t, logs, tc.level, tc.msg, map[string]string{
-				"method": http.MethodPost, "route": recordsPath, "repository": fakeRepository,
+				"method": http.MethodPost, "route": recordsPath, "repository": stubRepository,
 				"error": tc.err.Error(), "request": rec.Header().Get(requestIDHeader),
 			})
 		})
@@ -180,12 +203,10 @@ func TestTheBearerChecksUnavailableLogsItsCause(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			env := newTestEnv(t)
-			tok := env.svc.token(fakeRepository)
-			env.svc.authErr = tc.err
+			env := newStubEnvOn(t, requestLogUnavailable{stubService: &stubService{}, err: tc.err})
 			logs := captureLogs(t)
 
-			rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+			rec := env.do(t, http.MethodGet, recordsPath, stubToken, nil)
 			wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 			if body := rec.Body.String(); strings.Contains(body, tc.err.Error()) {
 				t.Fatalf("the 503 showed the client its cause: %s", body)
@@ -240,9 +261,7 @@ func TestClientCancellationIsNotLoggedAsAnError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			env := newTestEnv(t)
-			tok := env.svc.token(fakeRepository)
-			env.svc.datasets[fakeRepository].errs["Put"] = tc.err
+			env := newStubEnv(t, requestLogFailingPut{stubKinds: newStubKinds(personKind), err: tc.err})
 			logs := captureLogs(t)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -250,7 +269,7 @@ func TestClientCancellationIsNotLoggedAsAnError(t *testing.T) {
 			if tc.clientGone {
 				cancel()
 			}
-			rec := serveWith(env.h, ctx, http.MethodPost, recordsPath, tok,
+			rec := serveWith(env.h, ctx, http.MethodPost, recordsPath, stubToken,
 				`{"kind":"`+personKind+`","properties":{"title":"x"}}`)
 			wantStatus(t, rec, http.StatusInternalServerError)
 
@@ -292,56 +311,12 @@ func TestExportAbortLogsTheClientLeavingAtDebug(t *testing.T) {
 
 			if !clientGone {
 				wantOneErrorLog(t, logs, "export aborted mid-stream", map[string]string{
-					"method": http.MethodGet, "route": "/api/" + APIVersion + exportRoute, "repository": fakeRepository,
+					"method": http.MethodGet, "route": "/api/" + APIVersion + exportRoute, "repository": stubRepository,
 				})
 				return
 			}
 			if errs := logs.at(slog.LevelError); len(errs) != 0 {
 				t.Fatalf("an export the client left was logged at ERROR: %+v", errs)
-			}
-		})
-	}
-}
-
-// A catalog listing the client abandons cancels its upgrade previews; that is
-// not an ERROR line either, while a preview that fails on its own is one
-// naming the route.
-func TestCatalogPreviewCanceledByTheClientIsNotAnError(t *testing.T) {
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	for _, clientGone := range []bool{false, true} {
-		t.Run(fmt.Sprintf("client_gone=%v", clientGone), func(t *testing.T) {
-			base := newFakeService()
-			previewErr := errBoom
-			if clientGone {
-				previewErr = fmt.Errorf("upgrade preview: %w", context.Canceled)
-			}
-			h := New(Config{Service: &upgradeErrService{fakeService: base, err: previewErr}, Now: (&testClock{}).now, Catalog: cat})
-			logs := captureLogs(t)
-
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			if clientGone {
-				cancel()
-			}
-			serveWith(h, ctx, http.MethodGet, "/api/v1/catalog", base.token(fakeRepository), "")
-
-			errs := logs.at(slog.LevelError)
-			if clientGone {
-				if len(errs) != 0 {
-					t.Fatalf("a preview the client canceled was logged at ERROR: %+v", errs)
-				}
-				return
-			}
-			if len(errs) == 0 {
-				t.Fatal("a failed preview logged no ERROR line")
-			}
-			for _, l := range errs {
-				if l.msg != "catalog: upgrade preview failed" || l.attrs["route"] != "/api/v1/catalog" || l.attrs["method"] != http.MethodGet {
-					t.Errorf("ERROR line = %q %v, want the preview failure naming GET /api/v1/catalog", l.msg, l.attrs)
-				}
 			}
 		})
 	}

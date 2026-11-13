@@ -260,6 +260,12 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if !open {
 				return
 			}
+			// A signal and the drain can be ready at once, and select picks
+			// either: a draining stream sends no batch more.
+			if h.isDraining() {
+				flusher.Flush()
+				return
+			}
 			if err := drain(); err != nil {
 				if !errors.Is(err, errClientGone) {
 					frame()

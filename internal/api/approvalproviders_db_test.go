@@ -10,7 +10,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
+// An add-on an approval leaves out (decision 0216) is set up by nothing the
+// approval names: a provider choice for it, sent or not, installs nothing.
 func TestApprovalIgnoresExcludedAddonProviderChoice(t *testing.T) {
+	t.Parallel()
 	const raw = `kind: substrate.reamde.dev/core/package
 metadata:
   id: example.org/training
@@ -46,7 +49,7 @@ data:
 `
 	for _, sent := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no choice", true: "irrelevant choice"}[sent], func(t *testing.T) {
-			e := newSetupEnv(t)
+			t.Parallel()
 			cat, err := catalog.Load(catalog.ProviderRoot(fstest.MapFS{"training/bundle.yaml": {Data: []byte(raw)}}))
 			if err != nil {
 				t.Fatal(err)
@@ -55,10 +58,12 @@ data:
 			if !ok || len(cat.Warnings()) != 0 {
 				t.Fatal(cat.Warnings())
 			}
-			packages := newPublishingCatalog(t, e.catalog)
-			packages.training = b.FromDocument(catalog.Origin{Authority: dpAuthority, DocumentURL: dpDocURL, AddonFor: healthPkg})
-			e.repo.statuses[healthPkg] = substrate.BundleStatus{ID: healthPkg, Installed: true, Enabled: true, Version: 1}
-			e.h = New(Config{Service: e.svc, ClientDocuments: e.docs, Catalog: e.catalog, Packages: packages})
+			e := newAppSetupEnv(t, withConfig(func(c *Config) {
+				packages := newPublishingCatalog(t, c.Catalog)
+				packages.training = b.FromDocument(catalog.Origin{Authority: dpAuthority, DocumentURL: dpDocURL, AddonFor: healthPkg})
+				c.Packages = packages
+			}))
+			e.install(healthPkg)
 			id := e.park(setupRequest("read:"+dpTraining+"/*", `[{"type":"package","package":"example.org/training","version":3}]`))
 			view := e.view(id)
 			if len(view.Setup) != 1 || view.Setup[0].Blocked == nil || view.Setup[0].Blocked.Reason != substrate.BlockNoModel {
@@ -75,8 +80,11 @@ data:
 			}
 			result := e.do(http.MethodPost, "/api/v1/authorizations/"+id, e.owner, body, "application/json")
 			wantStatus(t, result, http.StatusOK)
-			if len(e.repo.installs) != 0 {
-				t.Fatalf("excluded add-on installed: %v", e.repo.installs)
+			if got := e.installs(); len(got) != 0 {
+				t.Fatalf("excluded add-on installed: %v", got)
+			}
+			if st, err := e.db.ds.BundleStatus(t.Context(), dpTraining); err == nil && st.Installed {
+				t.Fatalf("excluded add-on installed: %+v", st)
 			}
 		})
 	}

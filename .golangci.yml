@@ -51,17 +51,18 @@ linters:
       # at the repository root: a bare `**/cmd/**` would also exempt a nested
       # cmd/ directory, or every file of a checkout that lives under one.
       rules:
-        # AGENTS.md: internal/api builds against internal/substrate and is
-        # tested against its hand-written fake alone, so its test files are
-        # held too.
+        # AGENTS.md: internal/api builds against internal/substrate, and so
+        # do its tests of the handler alone; its *_db_test.go files run the
+        # handler on the real engine (decision 0263).
         api-never-imports-engine:
           list-mode: lax
           files:
             - "${base-path}/internal/api/**"
+            - "!${base-path}/internal/api/*_db_test.go"
           deny:
             - pkg: github.com/geoah/substrate/internal/engine
-              desc: internal/api builds against internal/substrate and is
-                tested against fake_test.go, never the engine (AGENTS.md)
+              desc: internal/api builds against internal/substrate; only its
+                *_db_test.go files open the engine (AGENTS.md)
         # Only the binaries, internal/testenv (a whole substrate for one test)
         # and tests open the engine; every other package builds against the
         # contract.

@@ -10,31 +10,29 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 // panicService panics where the bearer check asks it for the token, inside a
-// route behind requireAuth.
-type panicService struct{ *fakeService }
+// route behind requireAuth: a fault no engine can be made to produce.
+type panicService struct{ *stubService }
 
 func (panicService) Authenticate(context.Context, string) (substrate.Dataset, substrate.TokenInfo, error) {
 	panic("token lookup exploded")
 }
 
-// panicChangesDataset panics on the first changelog read past the cursor a
-// stream opened at, so the panic lands after the stream's 200 and bookmark.
-type panicChangesDataset struct{ *fakeDataset }
+// panicChangesDataset panics on the first changelog read that finds a row
+// past the cursor a stream opened at, so the panic lands after the stream's
+// 200 and bookmark: a fault no engine can be made to produce.
+type panicChangesDataset struct{ substrate.Dataset }
 
 func (d panicChangesDataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
-	d.mu.Lock()
-	n := len(d.changes)
-	d.mu.Unlock()
-	if int64(n) > after {
+	changes, err := d.Dataset.Changes(ctx, after, f, limit)
+	if len(changes) > 0 {
 		panic("changelog read exploded")
 	}
-	return d.fakeDataset.Changes(ctx, after, f, limit)
+	return changes, err
 }
 
 // requestIDPattern is what requestID mints: 16 characters of crypto/rand's
@@ -45,12 +43,10 @@ var requestIDPattern = regexp.MustCompile(`^[A-Z2-7]{16}$`)
 // rather than an empty 500, and leaves one ERROR line through slog carrying
 // the request's id (the one its response names), its route and the stack.
 func TestAPanicAnswersTheEnvelopeAndLogsTheRequest(t *testing.T) {
-	svc := newFakeService()
-	tok := svc.token(fakeRepository)
-	h := New(Config{Service: panicService{svc}, Now: (&testClock{}).now})
+	h := newStubEnvOn(t, panicService{&stubService{}}).h
 	logs := captureLogs(t)
 
-	rec := serveWith(h, context.Background(), http.MethodGet, recordsPath, tok, "")
+	rec := serveWith(h, context.Background(), http.MethodGet, recordsPath, stubToken, "")
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 	id := rec.Header().Get(requestIDHeader)
 	if !requestIDPattern.MatchString(id) {
@@ -66,45 +62,6 @@ func TestAPanicAnswersTheEnvelopeAndLogsTheRequest(t *testing.T) {
 	}
 	if !strings.Contains(got["stack"], "panicService.Authenticate") {
 		t.Fatalf("panic line stack does not reach the panicking frame:\n%s", got["stack"])
-	}
-}
-
-// A panic after the status line is out cannot change the status, and an
-// envelope appended to a stream would end it looking complete, so the
-// response is aborted: the client reads an unexpected end of the body.
-func TestAPanicAfterTheStatusAbortsTheResponse(t *testing.T) {
-	svc := newFakeService()
-	svc.wrap = func(d *fakeDataset) substrate.Dataset { return panicChangesDataset{d} }
-	tok := svc.token(fakeRepository)
-	ds := svc.datasets[fakeRepository]
-	srv := httptest.NewServer(New(Config{Service: svc, Now: (&testClock{}).now}))
-	defer srv.Close()
-	logs := captureLogs(t)
-
-	br, stop := startWatch(t, srv, changesPath+"?watch=1", tok)
-	defer stop()
-	if bm := readLine(t, br); bm["bookmark"] == nil {
-		t.Fatalf("first line = %v, want the bookmark", bm)
-	}
-	ds.commit(substrate.Change{TS: time.Unix(5, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "c1", Kind: personKind})
-
-	done := make(chan error, 1)
-	var rest []byte
-	go func() {
-		var err error
-		rest, err = io.ReadAll(br)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if !errors.Is(err, io.ErrUnexpectedEOF) {
-			t.Fatalf("read = %v after %q, want the unexpected EOF of an aborted response", err, rest)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the stream was still open after its handler panicked")
-	}
-	if len(logs.at(slog.LevelError)) != 1 {
-		t.Fatalf("ERROR lines = %+v, want the one panic line", logs.at(slog.LevelError))
 	}
 }
 
@@ -145,7 +102,7 @@ func TestAPanicAfterAFlushAbortsTheResponse(t *testing.T) {
 // included, and an inbound X-Request-Id is never taken: a caller-chosen id
 // could repeat another request's and forge the join with the log.
 func TestEveryResponseCarriesAFreshRequestID(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnv(t, nil)
 	seen := map[string]bool{}
 	for _, path := range []string{"/healthz", "/api/v1/nope", recordsPath} {
 		rec := env.do(t, http.MethodGet, path, "", nil, requestIDHeader, "caller-chosen/000001")

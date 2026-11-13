@@ -16,9 +16,15 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
+// The agent streams' framing: what a chat or an attach writes for the
+// events, the refusals and the failures a dataset hands it. What a chat runs
+// is the engine's (agents_db_test.go).
+
+const helperChatPath = "/api/v1/substrate.reamde.dev/core/agent/helper/chat"
+
 // chatFake answers a chat by emitting its events, then returning err.
 type chatFake struct {
-	*fakeDataset
+	stubDataset
 	events []substrate.AgentEvent
 	err    error
 	// got is the turn the handler decoded.
@@ -38,17 +44,11 @@ func (c *chatFake) ChatAgent(_ context.Context, _ substrate.Actor, _ string, in 
 // not a 200 stream carrying an error event. A failure after the stream began
 // is still an error event on the 200 stream.
 func TestChatRefusedBeforeItsFirstEventAnswersItsStatus(t *testing.T) {
-	env := newTestEnv(t)
 	const capped = "spend cap reached: agent helper spent 512 of its 500 cents in the last 24 hours (budgets.spendCentsPerDay)"
-	chat := &chatFake{
-		fakeDataset: env.svc.datasets[fakeRepository],
-		err:         fmt.Errorf("%w: %s", substrate.ErrGuard, capped),
-	}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
-	tok := env.svc.token(fakeRepository)
-	const path = "/api/v1/substrate.reamde.dev/core/agent/helper/chat"
+	chat := &chatFake{err: fmt.Errorf("%w: %s", substrate.ErrGuard, capped)}
+	env := newStubEnv(t, chat)
 
-	rec := env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
 	wantErrorCode(t, rec, http.StatusForbidden, codeGuard)
 	if !strings.Contains(rec.Body.String(), capped) {
 		t.Fatalf("the refusal does not carry the cap's text: %s", rec.Body.String())
@@ -59,7 +59,7 @@ func TestChatRefusedBeforeItsFirstEventAnswersItsStatus(t *testing.T) {
 
 	chat.events = []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}}
 	chat.err = errors.New("llm: the transport failed")
-	rec = env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	rec = env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
 	wantStatus(t, rec, http.StatusOK)
 	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
 	var last substrate.AgentEvent
@@ -71,64 +71,10 @@ func TestChatRefusedBeforeItsFirstEventAnswersItsStatus(t *testing.T) {
 	}
 }
 
-// Both live streams ask whatever proxies them to pass each line through as it
-// is written: an nginx ingress buffers a response by default, and a compressing
-// intermediary holds lines back, and either turns a streamed chat reply into
-// one block at the end.
-func TestStreamsAskProxiesNotToBuffer(t *testing.T) {
-	env := newTestEnv(t)
-	// A chat that runs: the stream's headers go out with its first event.
-	callable := &callableFake{fakeDataset: env.svc.datasets[fakeRepository], keys: map[string]string{}}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return callable }
-	tok := env.svc.token(fakeRepository)
-
-	chat := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/agent/helper/chat", tok,
-		map[string]any{"message": "hi"})
-	wantStatus(t, chat, http.StatusOK)
-
-	srv := httptest.NewServer(env.h)
-	defer srv.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/v1/changes?watch=1&from=0", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("watch status = %d", resp.StatusCode)
-	}
-	watch := resp.Header
-	if _, err := callable.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: threadKind, ID: "th1", Properties: map[string]any{"status": "ok"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	events := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", tok, nil)
-	wantStatus(t, events, http.StatusOK)
-
-	for name, h := range map[string]http.Header{"chat": chat.Header(), "watch": watch, "events": events.Header()} {
-		if got := h.Get("X-Accel-Buffering"); got != "no" {
-			t.Errorf("%s: X-Accel-Buffering = %q, want no", name, got)
-		}
-		if got := h.Get("Cache-Control"); got != "no-store, no-transform" {
-			t.Errorf("%s: Cache-Control = %q, want no-store, no-transform", name, got)
-		}
-		if got := h.Get("Content-Type"); got != "application/x-ndjson" {
-			t.Errorf("%s: Content-Type = %q", name, got)
-		}
-	}
-}
-
 // heldChat opens a stream with its thread event and then holds it until the
 // client leaves, as a detached turn still running does.
 type heldChat struct {
-	*fakeDataset
+	stubDataset
 	attach func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error)
 	stop   func() (*substrate.AgentResult, error)
 }
@@ -139,63 +85,25 @@ func (c *heldChat) ChatAgent(ctx context.Context, _ substrate.Actor, _ string, _
 	return nil, ctx.Err()
 }
 
-func (c *heldChat) AttachAgentTurn(ctx context.Context, id string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
-	if c.attach == nil {
-		return c.fakeDataset.AttachAgentTurn(ctx, id, emit)
-	}
+func (c *heldChat) AttachAgentTurn(_ context.Context, _ string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	return c.attach(emit)
 }
 
-func (c *heldChat) StopAgentTurn(ctx context.Context, actor substrate.Actor, id string) (*substrate.AgentResult, error) {
-	if c.stop == nil {
-		return c.fakeDataset.StopAgentTurn(ctx, actor, id)
-	}
+func (c *heldChat) StopAgentTurn(context.Context, substrate.Actor, string) (*substrate.AgentResult, error) {
 	return c.stop()
-}
-
-const threadKind = "substrate.reamde.dev/llm/thread"
-
-func putThread(t *testing.T, ds *fakeDataset, id, status string) {
-	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
-		Kind: threadKind, ID: id, Properties: map[string]any{"status": status},
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// With nothing running on a thread, an attach answers one idle line naming
-// the thread's status and ends; an unknown thread is a 404.
-func TestThreadEventsAnswersIdleWhenNothingRuns(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	putThread(t, env.svc.datasets[fakeRepository], "th1", "running")
-
-	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if got := rec.Header().Get("Content-Type"); got != "application/x-ndjson" {
-		t.Fatalf("Content-Type = %q", got)
-	}
-	if got := strings.TrimSpace(rec.Body.String()); got != `{"kind":"idle","thread":"th1","status":"running"}` {
-		t.Fatalf("idle answer = %s", got)
-	}
-
-	rec = env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/nope/events", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
 
 // A running turn's attach streams its events, replay and live alike, to done.
 func TestThreadEventsStreamsARunningTurn(t *testing.T) {
-	env := newTestEnv(t)
 	res := &substrate.AgentResult{Thread: "th1", Status: "ok", Reply: "hi"}
-	chat := &heldChat{fakeDataset: env.svc.datasets[fakeRepository], attach: func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	chat := &heldChat{attach: func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 		emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
 		emit(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "hi", Turn: 3})
 		emit(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
 		return res, nil
 	}}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
-	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", env.svc.token(fakeRepository), nil)
+	env := newStubEnv(t, chat)
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
 	if len(lines) != 3 || lines[1] != `{"kind":"delta","text":"hi","turn":3}` || !strings.Contains(lines[2], `"kind":"done"`) {
@@ -203,27 +111,14 @@ func TestThreadEventsStreamsARunningTurn(t *testing.T) {
 	}
 }
 
-// A stop answers the settled result; with nothing running it is a 409, and an
-// unknown thread a 404.
+// A stop answers the settled result, whole. With nothing running the
+// engine's conflict is the answer (TestThreadStopWithNothingRunningIsAConflict).
 func TestThreadStopAnswersTheSettledResult(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	putThread(t, env.svc.datasets[fakeRepository], "th1", "ok")
-	const path = "/api/v1/substrate.reamde.dev/llm/thread/th1/stop"
-
-	rec := env.do(t, http.MethodPost, path, tok, nil)
-	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
-	if !strings.Contains(rec.Body.String(), "thread th1 has no running chat turn") {
-		t.Fatalf("the conflict does not say why: %s", rec.Body.String())
-	}
-	rec = env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/llm/thread/nope/stop", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-
-	chat := &heldChat{fakeDataset: env.svc.datasets[fakeRepository], stop: func() (*substrate.AgentResult, error) {
+	chat := &heldChat{stop: func() (*substrate.AgentResult, error) {
 		return &substrate.AgentResult{Thread: "th1", Status: "stopped", Reason: "stopped by console", Reply: "part"}, nil
 	}}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
-	rec = env.do(t, http.MethodPost, path, tok, nil)
+	env := newStubEnv(t, chat)
+	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/llm/thread/th1/stop", stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 	var got substrate.AgentResult
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -235,21 +130,23 @@ func TestThreadStopAnswersTheSettledResult(t *testing.T) {
 }
 
 // A chat stream held open past the heartbeat interval carries the idle `{}`
-// line, and a server drain ends it cleanly while the turn runs on.
+// line, and a server drain ends it cleanly while the turn runs on. It shortens
+// the package's heartbeatInterval, so it cannot run beside another test.
 func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
 	prev := heartbeatInterval
 	heartbeatInterval = 20 * time.Millisecond
 	t.Cleanup(func() { heartbeatInterval = prev })
 
-	svc, draining, srv := drainEnv(t)
-	chat := &heldChat{fakeDataset: svc.datasets[fakeRepository]}
-	svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
+	draining := make(chan struct{})
+	env := newStubEnv(t, &heldChat{}, func(c *Config) { c.Draining = draining })
+	srv := httptest.NewServer(env.h)
+	t.Cleanup(srv.Close)
 	body, _ := json.Marshal(map[string]any{"message": "hi"})
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/api/v1/substrate.reamde.dev/core/agent/helper/chat", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, srv.URL+helperChatPath, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer "+svc.token(fakeRepository))
+	req.Header.Set("Authorization", "Bearer "+stubToken)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -271,7 +168,7 @@ func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
 
 // panicChat panics inside the stream's producer, after emitting events.
 type panicChat struct {
-	*fakeDataset
+	stubDataset
 	events []substrate.AgentEvent
 }
 
@@ -286,17 +183,14 @@ func (c *panicChat) ChatAgent(_ context.Context, _ substrate.Actor, _ string, _ 
 // server keeps serving, and the request ends as an internal error, a 500
 // before the first event and an error event after it.
 func TestAPanickingChatStreamEndsAsAnInternalError(t *testing.T) {
-	env := newTestEnv(t)
-	chat := &panicChat{fakeDataset: env.svc.datasets[fakeRepository]}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
-	tok := env.svc.token(fakeRepository)
-	const path = "/api/v1/substrate.reamde.dev/core/agent/helper/chat"
+	chat := &panicChat{}
+	env := newStubEnv(t, chat)
 
-	rec := env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 
 	chat.events = []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}}
-	rec = env.do(t, http.MethodPost, path, tok, map[string]any{"message": "hi"})
+	rec = env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
 	wantStatus(t, rec, http.StatusOK)
 	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
 	if len(lines) != 2 || lines[1] != `{"kind":"error","error":"internal error"}` {
@@ -308,15 +202,10 @@ func TestAPanickingChatStreamEndsAsAnInternalError(t *testing.T) {
 // them: the zone and the record paths, beside the thread and the message
 // (decision 0196). The engine validates both.
 func TestChatCarriesTheTimezoneAndTheContextRecords(t *testing.T) {
-	env := newTestEnv(t)
-	chat := &chatFake{
-		fakeDataset: env.svc.datasets[fakeRepository],
-		events:      []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}},
-	}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return chat }
-	tok := env.svc.token(fakeRepository)
+	chat := &chatFake{events: []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}}}
+	env := newStubEnv(t, chat)
 	paths := []string{"ada.example.com/tasks/task/q4-budget", "ada.example.com/people/person/grace"}
-	rec := env.do(t, http.MethodPost, "/api/v1/substrate.reamde.dev/core/agent/helper/chat", tok, map[string]any{
+	rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{
 		"thread": "th1", "message": "what is due?", "timezone": "Europe/London", "context": paths,
 	})
 	wantStatus(t, rec, http.StatusOK)

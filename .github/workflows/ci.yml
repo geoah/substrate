@@ -71,10 +71,10 @@
 #
 # The engine package is 380 to 500 seconds on the runner on its own, so it
 # runs as a matrix of shards, each `mise run ci:engine` with SHARD and SHARDS
-# from the matrix; internal/catalog is cut the same way in `db`. .mise/dbshard.sh
-# cuts a package by test name (read from its test files, sorted, round robin),
-# so every test lands in exactly one shard and a new test lands in one without
-# anybody editing a list. The `shard:` list under `engine` is the ONE place
+# from the matrix; internal/api and internal/catalog are cut the same way in
+# `db`. .mise/dbshard.sh cuts a package by test name (read from its test
+# files, sorted, round robin), so every test lands in exactly one shard and a
+# new test lands in one without anybody editing a list. The `shard:` list under `engine` is the ONE place
 # that count is written: `strategy.job-total` feeds SHARDS and the job name.
 #
 # Coverage is not a second run. Every Go test job (`go test`, the `engine`
@@ -128,8 +128,8 @@
 # Keys are per-job on purpose: two jobs on one key race to write it, the loser's
 # working set is never saved, and the working sets differ (golangci-lint's
 # analysis cache, four foreign GOARCHes, -race and -cover objects). The engine
-# shards and the two catalog halves are the exception: each group builds one
-# test binary, so its first shard saves for the others. `lint` saves nothing
+# shards and the api and catalog shards are the exception: each group builds
+# one test binary, so its first shard saves for the others. `lint` saves nothing
 # and reads `go test`'s entry, see the note there. No job's key may start with
 # another's prefix: a restore key matches by prefix, so a `go-lint-go-` key
 # would be restored by a `go-lint-` restore key.
@@ -378,10 +378,10 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
   # The database packages outside the engine, cut so none waits on another:
-  # catalog in two shards, providertest in three, testenv on its own. `-p 1`
-  # inside each, because the packages of one run share the one database.
-  # `cache` names the Go cache entry: the shards of one package build one
-  # test binary, and each package keeps its own.
+  # api in three shards, catalog in two, providertest in three, testenv on
+  # its own. `-p 1` inside each, because the packages of one run share the
+  # one database. `cache` names the Go cache entry: the shards of one
+  # package build one test binary, and each package keeps its own.
   db:
     name: db ${{ matrix.part }}
     runs-on: ubuntu-latest
@@ -390,6 +390,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - part: api 1/3
+            task: "ci:db:api"
+            cache: api
+            shard: 1
+            shards: 3
+          - part: api 2/3
+            task: "ci:db:api"
+            cache: api
+            shard: 2
+            shards: 3
+          - part: api 3/3
+            task: "ci:db:api"
+            cache: api
+            shard: 3
+            shards: 3
           - part: catalog 1/2
             task: "ci:db:catalog"
             cache: catalog
@@ -504,7 +519,8 @@ jobs:
           path: coverage.part.out
           if-no-files-found: error
           retention-days: 1
-      # The first shard of each task saves; catalog 2/2 builds what 1/2 did.
+      # The first shard of each task saves; the other shards of a package
+      # build what its first did.
       - if: steps.changes.outputs.go == 'true' && github.event_name == 'push'
           && matrix.shard == 1 && steps.cache.outputs.cache-hit != 'true'
         run: .mise/gocache.sh prune ~/.cache/go-build

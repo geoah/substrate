@@ -48,12 +48,13 @@ any other body under `python3`. Where no such Python is installed they skip
 and name the floor (`uv python install '>=3.11'` adds one); under
 `SUBSTRATE_TEST_REQUIRE_SANDBOX`, which `ci:go` sets, they fail instead.
 
-**The short suite** is everything that needs no database: the API against its
-hand-written fake (`internal/api/fake_test.go`), the CLI's commands, the
-vocabulary, the sandbox, the runner's protocol. It is fast enough to run on
-every save.
+**The short suite** is everything that needs no database: the API's tests of
+the handler alone (on a stub, [below](#the-api-on-the-real-engine)), the
+CLI's commands, the vocabulary, the sandbox, the runner's protocol. It is
+fast enough to run on every save.
 
-**The database suites** are the engine, the catalog, the provider suites
+**The database suites** are the engine, the API's tests of engine behavior
+(`internal/api/*_db_test.go`), the catalog, the provider suites
 (`internal/providertest`, `internal/providere2e`) and the whole-server
 harness (`internal/testenv`). They are the ones that hold the real
 contracts, because the changelog, the fold and admission are only themselves
@@ -168,8 +169,42 @@ the task CI shards: with `SHARD` and `SHARDS` in the environment it runs one
 slice of the package (`SHARD=3 SHARDS=16 mise run test:db:engine`), which is
 how a red shard is reproduced by number. `test:db:rest` is every database
 package but the engine and the provider suite (`internal/providere2e`, which
-`test:db:providers` runs on a job of its own); `internal/providertest` is among
-them. The cut is described under [What CI runs](#what-ci-runs).
+`test:db:providers` runs on a job of its own); `internal/api` and
+`internal/providertest` are among them. The cut is described under
+[What CI runs](#what-ci-runs).
+
+### The API on the real engine
+
+`internal/api` has two halves
+([0263](decisions/0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md)),
+and a test belongs to one by what its assertion depends on.
+
+- **Engine behavior** goes in a `*_db_test.go` file, on `newDBEnv`
+  (`internal/api/engine_db_test.go`): what a write stores or refuses, a
+  guard, validation, paging, the changelog, watch, search, what a token
+  reaches. These files are the only ones in `internal/api` the depguard rule
+  lets import the engine.
+- **The handler alone** stays in an ordinary `_test.go` file, on
+  `newStubEnv` (`internal/api/stub_test.go`): routing, decoding, headers,
+  the envelope for a given sentinel, the feature table, the auth middleware.
+  The stub accepts one bearer and answers who its repository is; any other
+  method is a nil interface that panics, which the recovery middleware
+  answers 500. A test that needs a method writes it on a small type of its
+  own, so a 400 from the decoder also proves the dataset was not reached.
+
+`newDBEnv` opens the engine on a copy of a migrated template database (the
+same `testdb.Template` the engine fixture uses), creates one repository named
+after the test, mints a full-access token and serves the handler on it. The
+unit, record and provider seeds are off, and `withSamples` imports the sample
+packages a test names. A case costs about half a second, so the files run
+their tests with `t.Parallel()`. `env.wrap` decorates the dataset a request
+reaches: it is the seam for a fault the engine cannot be made to produce,
+and the type a test installs there says which fault it is.
+
+On macOS the database half runs with Docker, as the engine suite does,
+except a test that runs a function body: the sandbox cannot confine a body's
+connects there, and `TestMain` confines every body to loopback, so the body
+is refused and the test fails. Run those in Linux.
 
 ### The engine fixture, and where the time goes
 
@@ -730,6 +765,7 @@ runs.
 | console test | `ci:console:test` | the console's vitest suite | yes | 133 s |
 | go test | `ci:go` | the short suite, no database | through `go gate` | 54 s |
 | engine 1/16 to 16/16 | `ci:engine` | one shard of the engine package each (`test:db:engine` with `SHARD` and `SHARDS`) | through `go gate` | 76 s |
+| db api 1/3 to 3/3 | `ci:db:api` | one shard of `internal/api` each: its tests of engine behavior, and their slice of the handler's | through `go gate` | |
 | db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
 | db providertest 1/3 to 3/3 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
 | db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill | through `go gate` | |
@@ -762,8 +798,8 @@ weekly on `main` and on dispatch, never on a pull request, and
 ### The database suite, cut for the runner
 
 The engine package is too long for one 4 vCPU runner, so CI runs it as
-sixteen matrix jobs, `internal/catalog` as two and `internal/providertest`
-as three.
+sixteen matrix jobs, `internal/api` and `internal/providertest` as three
+each and `internal/catalog` as two.
 `.mise/dbshard.sh` reads a package's top-level test names from its
 `_test.go` files, sorts them and gives shard `k` every `n`th name starting
 from the `k`th, as one `-run` regex anchored at both ends. Every test lands in
