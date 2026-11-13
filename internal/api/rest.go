@@ -124,6 +124,10 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if bad := writeParamRefusal(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
 	var in substrate.PutInput
 	if !readRecordJSON(w, r, &in) {
 		return
@@ -142,6 +146,10 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
+		return
+	}
+	if bad := writeParamRefusal(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
 		return
 	}
 	// A bundle's runtime lifecycle IS record state the substrate owns
@@ -224,6 +232,10 @@ var (
 	// `withEdges`, a typo) is one it would ignore, and the refusal is the
 	// only way the caller learns that.
 	getParams []string
+	// writeParams is a record put's and patch's grammar: empty. Both read
+	// `ifVersion` from the body, so a `?ifVersion=` would be a guard the
+	// write never reads and the record written with none.
+	writeParams []string
 	// deleteParams is a record delete's grammar: the version precondition
 	// and the purge flag.
 	deleteParams = []string{"ifVersion", "purge"}
@@ -264,6 +276,16 @@ func unsupportedParam(r *http.Request, allowed ...string) string {
 		msg += " — did you mean " + strconv.Quote(alt) + "?"
 	}
 	return msg
+}
+
+// writeParamRefusal is unsupportedParam over writeParams, pointing a refused
+// `ifVersion` at the body, where a put and a patch read it.
+func writeParamRefusal(r *http.Request) string {
+	bad := unsupportedParam(r, writeParams...)
+	if bad != "" && r.URL.Query().Has("ifVersion") {
+		bad += "; put and patch take ifVersion in the body"
+	}
+	return bad
 }
 
 // malformedQuery names the parse error of a query string that does not parse,

@@ -705,8 +705,10 @@ is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
 ordering column is refused naming the camelCase replacement, and a malformed
 filter document is refused naming the field that would not decode. The
 single-record `GET` honors no parameter at all, so once its kind resolves any
-one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`, and
-`DELETE` refuses every parameter but `ifVersion` and `purge`. A query string
+one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`. A
+record's `PUT` and `PATCH` honor none either: their `ifVersion` is in the body,
+so a `?ifVersion=` is refused rather than writing with no guard. `DELETE`
+refuses every parameter but `ifVersion` and `purge`. A query string
 that does not parse (a `;` separator, a bad `%` escape) is a `bad_request` on
 each of these routes and `/changes`, naming the parse error, because the pair
 it drops would otherwise read as absent.

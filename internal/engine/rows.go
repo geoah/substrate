@@ -722,15 +722,25 @@ func (t *txn) enqueueEmbed(ref eref, property string) error {
 //
 // The record's sealed rows and their files go here too (#236): a tombstone
 // keeps them so a restore gets its secrets back, and the purge is where they
-// end. The erasure is here and not in applyPurge because a rebuild replays
-// every purge and keeps the sealed table (rebuild.go): a replayed purge of an
-// id that was later written again would erase the live record's material.
+// end. Its vectors and its queued embeds end here as well. Both erasures are
+// here and not in applyPurge because a rebuild replays every purge and keeps
+// the sealed, embeddings and embed_queue tables (rebuild.go): a replayed purge
+// of an id that was later written again would erase the live record's
+// material and its vectors, and nothing in the replay queues them again.
 func (t *txn) hardDelete(ref eref) error {
 	if err := t.recomputeSubjectsOf(ref); err != nil {
 		return err
 	}
 	if _, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID}); err != nil {
 		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2`,
+		`DELETE FROM embed_queue WHERE record_kind = $1 AND record_id = $2`,
+	} {
+		if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {
+			return fmt.Errorf("substrate/engine: hard delete %s %s: %w", ref.Kind, ref.ID, err)
+		}
 	}
 	return t.dropSealedOf(ref)
 }
@@ -755,8 +765,6 @@ func (t *txn) applyPurge(ref eref) error {
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM embed_queue WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM records WHERE kind = $1 AND id = $2`,
 	} {
 		if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {

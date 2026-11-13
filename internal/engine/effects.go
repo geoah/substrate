@@ -131,6 +131,11 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 		return ef, err
 	}
 	ef.Type = ty.Identity
+	// Ahead of the grant, which may name the policy kind or a glob over core:
+	// a policy installed code could write is a gate it could open (policy.go).
+	if ef.Type == vocabulary.KindRecordPatchPolicy {
+		return ef, fmt.Errorf("%s is the owner's hand alone — installed code never writes the door's own rules", ef.Type)
+	}
 	if !emitAllows(fn, ef.Type) {
 		return ef, fmt.Errorf("%s is not in %s's emit allowlist", ef.Type, fn.Identity())
 	}

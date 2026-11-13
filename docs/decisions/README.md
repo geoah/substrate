@@ -411,3 +411,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0254](0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md) | An agent's call of a function that declares approval waits for the owner in chat | accepted |
 | [0255](0255-a-providers-writes-ride-toggles-of-their-own-and-a-seeded-secretary-takes-the-providers-tools-by-pattern.md) | A provider's writes ride toggles of their own, and a seeded secretary takes the providers' tools by pattern | accepted |
 | [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
+| [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
