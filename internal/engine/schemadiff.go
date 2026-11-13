@@ -22,6 +22,9 @@ package engine
 //     stored declaration still admits would collapse two stored values into
 //     one and is refused as lossy, by declaration and without a count
 //     (classifyConversions);
+//   - a value set added where none was declared, on a datatype the write
+//     path holds to it, while rows hold a string outside it, on a property,
+//     an object field or a link property;
 //   - state removed while rows occupy it (a state property turned scalar
 //     counts as a kind change). A state property DROPPED is not in this
 //     list: like any other dropped property it is the lossy null step, which
@@ -550,6 +553,14 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 					query: q, args: args,
 				})
 			}
+			if valuesAdded(curP, candP) {
+				q, args := stringsOutsidePath(ident, containerPath(nil, curP, pname), candP.ValueStrings())
+				out = append(out, narrowing{
+					format: fmt.Sprintf("kind %s: property %q adds the allowed values %s while %%d live records hold a value outside them — rewrite them first",
+						ident, pname, quotedList(candP.ValueStrings())),
+					query: q, args: args,
+				})
+			}
 			// A reference that narrows its `kind:` pin (unconstrained → a kind,
 			// or one type → another) strands stored references pointing elsewhere
 			//.
@@ -629,6 +640,12 @@ const countLinkPropValuesQuery = `SELECT count(*) ` + linkFrom + `
 // value the candidate's set does NOT admit.
 const countLinkPropOutsideValuesQuery = `SELECT count(*) ` + linkFrom + `
 	AND r.props ? $3 AND NOT ($4::jsonb @> jsonb_build_array(r.props->$3))`
+
+// countLinkPropStringsOutsideValuesQuery is its count for a value set added
+// where none was declared: only a string is held to the set (stringsOutsidePath).
+const countLinkPropStringsOutsideValuesQuery = `SELECT count(*) ` + linkFrom + `
+	AND r.props ? $3 AND jsonb_typeof(r.props->$3) = 'string'
+	AND NOT ($4::jsonb @> jsonb_build_array(r.props->$3))`
 
 // countLinkPropNonIntQuery counts live references whose value for a link
 // property is not an integral number — the ones a retype to `int` strands.
@@ -767,6 +784,14 @@ func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property, r
 				format: fmt.Sprintf("kind %s: reference %q removes value(s) %s from link property %q while %%d live references hold one — rewrite them first",
 					ident, pname, quotedList(removed), lname),
 				query: countLinkPropValuesQuery, args: []any{ident, pname, lname, jsonArray(removed)},
+			})
+		}
+		if valuesAdded(curL, candL) {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: reference %q adds the allowed values %s to link property %q while %%d live references hold a value outside them — rewrite them first",
+					ident, pname, quotedList(candL.ValueStrings()), lname),
+				query: countLinkPropStringsOutsideValuesQuery,
+				args:  []any{ident, pname, lname, jsonArray(candL.ValueStrings())},
 			})
 		}
 		if !curL.Required && candL.Required {
@@ -1060,6 +1085,26 @@ func valuesOutsidePath(ident string, path []fieldStep, values []string) (string,
 	})
 }
 
+// stringsOutsidePath counts the live rows holding a string OUTSIDE the given
+// set at the path. A value set added where none was declared holds every
+// string written from then on (coerceScalar), but a datatype the write path
+// reads as a number, a bool or an object never meets it, so a stored
+// non-string is not stranded by the set and is not counted.
+func stringsOutsidePath(ident string, path []fieldStep, values []string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf("jsonb_typeof(%s) = 'string' AND NOT (%s::jsonb @> %s)", expr, a.add(jsonArray(values)), expr)
+	})
+}
+
+// valuesAdded reports a value set declared where the stored declaration had
+// none, on a datatype whose writes are held to it (heldToValues). Removing
+// values is counted by what the stored rows hold; adding the first set closes
+// an open one, which strands every value outside it. A set on a datatype the
+// write path never holds to it strands nothing, so it is not counted.
+func valuesAdded(cur, cand *vocabulary.Property) bool {
+	return len(cur.ValueStrings()) == 0 && len(cand.ValueStrings()) > 0 && heldToValues(cand.Datatype)
+}
+
 // stringToEnum reports the one datatype flip the guards count by VALUE rather
 // than by presence: a plain string becoming an enum in the same container.
 // Every other flip changes what a stored value IS; this one only closes the
@@ -1150,6 +1195,14 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			out = append(out, narrowing{
 				format: fmt.Sprintf("kind %s: object %q field %q removes value(s) %s while %%d live records hold one — rewrite them first",
 					ident, label, fname, quotedList(removed)),
+				query: q, args: args,
+			})
+		}
+		if valuesAdded(curF, candF) {
+			q, args := stringsOutsidePath(ident, containerPath(path, curF, fname), candF.ValueStrings())
+			out = append(out, narrowing{
+				format: fmt.Sprintf("kind %s: object %q field %q adds the allowed values %s while %%d live records hold a value outside them — rewrite them first",
+					ident, label, fname, quotedList(candF.ValueStrings())),
 				query: q, args: args,
 			})
 		}
