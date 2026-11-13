@@ -409,6 +409,9 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := lockTokens(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
 	for _, table := range repositoryScopedTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository = $1`, id); err != nil {
 			return fmt.Errorf("substrate/engine: erase repository %s (%s): %w", id, table, err)
@@ -417,11 +420,8 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	if _, err := tx.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s (repositories): %w", id, err)
 	}
-	err = tx.Commit()
-	// The repository's tokens went with it, and a cached one would open a
-	// repository that is gone.
-	s.tokens.empty()
-	if err != nil {
+	// The repository's tokens go with it.
+	if err := s.commitFencingTokens(tx, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
 	}
 	if residue, err := repositoryResidue(ctx, cp, id); err != nil {

@@ -164,8 +164,10 @@ type handler struct {
 	now      func() time.Time
 	authRate *rateLimiter
 	// personRate paces each person's requests once their token is read
-	// (personrate.go).
+	// (personrate.go), and ownTokenRate the requests a person sends with a
+	// token of their own to manage their tokens, which no app's reaches.
 	personRate   *personRate
+	ownTokenRate *personRate
 	inviteCode   string
 	totpDisabled bool
 	// operatorDefaults lists the operator defaults read in discovery.
@@ -227,6 +229,7 @@ func New(cfg Config) http.Handler {
 		now:          now,
 		authRate:     newRateLimiter(interval, now),
 		personRate:   newPersonRate(cfg.RequestsPerPerson, cfg.RequestBurstPerPerson, now),
+		ownTokenRate: newPersonRate(cfg.RequestsPerPerson, cfg.RequestBurstPerPerson, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,

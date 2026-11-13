@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,6 +57,13 @@ func (p *personRate) allow(person string) (bool, time.Duration) {
 	return true, 0
 }
 
+// ownTokenRequest reports whether r manages the person's tokens with a token
+// of the person's own, not an app's: the routes under /tokens.
+func ownTokenRequest(ctx context.Context, r *http.Request) bool {
+	return (r.URL.Path == "/tokens" || strings.HasPrefix(r.URL.Path, "/tokens/")) &&
+		!substrate.IsAppActor(ActorFrom(ctx))
+}
+
 type pacedCtx struct{}
 
 // withPaced marks ctx as a request already charged to its person: the MCP
@@ -67,12 +75,19 @@ func withPaced(ctx context.Context) context.Context {
 
 // paced answers the request a 429 when the person it acts for has sent their
 // rate's worth, and reports whether it did. ctx is the request's, after its
-// token was read.
-func (h *handler) paced(ctx context.Context, w http.ResponseWriter, repository string) bool {
+// token was read. A request of the person's own to manage their tokens
+// (ownTokens) is paced by a bucket of its own, the same size, which no
+// app's token reaches: an app that spent its person's requests cannot keep
+// its person from revoking it.
+func (h *handler) paced(ctx context.Context, w http.ResponseWriter, repository string, ownTokens bool) bool {
 	if charged, _ := ctx.Value(pacedCtx{}).(bool); charged {
 		return false
 	}
-	ok, wait := h.personRate.allow(substrate.PersonOf(ctx, repository))
+	rate := h.personRate
+	if ownTokens {
+		rate = h.ownTokenRate
+	}
+	ok, wait := rate.allow(substrate.PersonOf(ctx, repository))
 	if ok {
 		return false
 	}

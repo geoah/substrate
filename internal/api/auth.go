@@ -265,7 +265,7 @@ func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is the owner's alone")
 			return
 		}
-		if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID) {
+		if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID, ownTokenRequest(ctx, r)) {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))

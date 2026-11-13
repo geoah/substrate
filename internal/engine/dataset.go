@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -556,9 +557,12 @@ type txn struct {
 	// transaction that commits some other way.
 	wc *writeCtx
 	// tokensMoved is set when the transaction folded a token record, so the
-	// token cache empties as it ends (tokencache.go).
+	// token cache fences its repository across the COMMIT (tokencache.go).
 	tokensMoved bool
-	actor       substrate.Actor
+	// commitSent is set once the COMMIT is asked of Postgres, and committed
+	// once Postgres answered it: sent and not committed is a commit in doubt.
+	commitSent, committed bool
+	actor                 substrate.Actor
 	// tier is the transaction's manager tier — the WRITE CONTEXT's standing
 	// against mapping recompute. Resolved once at inTx from the
 	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
@@ -834,15 +838,29 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.settleChecksums(); err != nil {
 		return err
 	}
+	// A transaction that moved a token fences its repository's tokens in the
+	// cache before its COMMIT, and the fence stands until the outcome is
+	// proved (tokencache.go): a lookup in between reads the table.
+	repository := ds.scope.Repository
+	if t.tokensMoved {
+		ds.svc.tokens.fence(repository)
+	}
 	err = ds.commitAndMirror(tx, t)
 	if errors.Is(err, substrate.ErrWriteInDoubt) {
 		ds.commitDoubted()
 	}
 	if t.tokensMoved {
-		// Before the write answers, whether or not its commit landed: an
-		// emptied cache costs a read, a stale one a revoked token's use
-		// (tokencache.go).
-		ds.svc.tokens.empty()
+		switch {
+		case t.committed:
+			ds.svc.tokens.unfence(repository)
+		case !t.commitSent:
+			// No COMMIT was sent: the rollback is the outcome, and it runs
+			// before the fence lifts.
+			_ = tx.Rollback()
+			ds.svc.tokens.unfence(repository)
+		default:
+			ds.svc.settleTokens(repository)
+		}
 	}
 	if err != nil {
 		return err
@@ -942,7 +960,10 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		return err
 	}
 	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
-		return inDoubt(ds.commitAndPublish(tx, t))
+		t.commitSent = true
+		err := ds.commitAndPublish(tx, t)
+		t.committed = err == nil
+		return inDoubt(err)
 	}
 	ds.writerMu.Lock()
 	defer ds.writerMu.Unlock()
@@ -988,6 +1009,7 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		ds.discardStaged(staged)
 		return err
 	}
+	t.commitSent = true
 	err = ds.commitAndPublish(tx, t)
 	if err == nil {
 		// The seam for a commit whose answer was lost after Postgres
@@ -995,6 +1017,7 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 		// rolled back.
 		err = ds.svc.commitFault(commitInDoubt)
 	}
+	t.committed = err == nil
 	if err != nil {
 		ds.abortLines(prepared)
 		ds.discardStaged(staged)
@@ -1054,11 +1077,11 @@ func inDoubt(err error) error {
 // and it is held for the commit alone, never for the file mirror.
 func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 	if t.publishReg == nil {
-		return tx.Commit()
+		return ds.svc.commitTx(tx)
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	if err := tx.Commit(); err != nil {
+	if err := ds.svc.commitTx(tx); err != nil {
 		return err
 	}
 	// The seam for a commit whose answer was lost after Postgres committed,
@@ -1225,6 +1248,164 @@ func (b *broadcaster) signal(seq int64) {
 // commitDoubted follows a commit whose answer was lost: it may have landed,
 // and it signaled nothing. The streams' window opens again at the table's
 // head (changetail.go), and the streams wake to read it.
+// commitTx sends a transaction's COMMIT, through the test seam that may
+// answer in its place.
+func (s *service) commitTx(tx *sql.Tx) error {
+	if s.testCommitTx != nil {
+		return s.testCommitTx(tx.Commit)
+	}
+	return tx.Commit()
+}
+
+// lockTokens takes, in a control-plane transaction that ends or changes the
+// tokens of a repository (or who they act for), that repository's changelog
+// lock, which every transaction moving a token holds: a COMMIT whose answer
+// is lost is proved ended by its release (settleTokens). A transaction that
+// touches several takes them in the order of their ids.
+func lockTokens(ctx context.Context, tx *sql.Tx, repository string) error {
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`,
+		Scope{Repository: repository}.lockKey(changelogLockKey))
+	return err
+}
+
+// commitFencingTokens commits a control-plane transaction under the token
+// cache's rule (tokencache.go): each repository whose tokens it ends or
+// changes is fenced before the COMMIT and stays fenced until the outcome is
+// proved, at once when the COMMIT answers, by settleTokens when it does not.
+// The transaction holds each repository's lock (lockTokens).
+func (s *service) commitFencingTokens(tx *sql.Tx, repositories ...string) error {
+	for _, r := range repositories {
+		s.tokens.fence(r)
+	}
+	err := s.commitTx(tx)
+	for _, r := range repositories {
+		if err != nil {
+			s.settleTokens(r)
+		} else {
+			s.tokens.unfence(r)
+		}
+	}
+	return err
+}
+
+// tokenProofAttempt bounds one wait for a doubted commit's changelog lock; a
+// wait that runs out proves nothing, and the next attempt follows.
+const tokenProofAttempt = time.Minute
+
+// tokenProofRetryMax caps the pause between two failed attempts.
+const tokenProofRetryMax = 5 * time.Second
+
+// tokenProofWaits bounds the proofs that hold a connection of the
+// maintenance pool at once, across repositories: the pool authenticates
+// every request too. A proof waiting for a slot drops nothing; its fences
+// stand until it gets one.
+const tokenProofWaits = 2
+
+// tokenProofs coalesces the proofs the token cache waits on: one waiter per
+// repository, however many doubted commits fenced it.
+type tokenProofs struct {
+	mu sync.Mutex
+	// pending counts, per repository, the fences awaiting proof; running
+	// says whether its waiter runs.
+	pending map[string]int
+	running map[string]bool
+	// slots bounds the waits held at once (tokenProofWaits).
+	slots chan struct{}
+}
+
+// settleTokens lifts the repository's fence that a COMMIT whose answer was
+// lost put up, once the database proves that transaction ended: every
+// transaction that moves a token holds the repository's changelog lock until
+// it ends (inTx, and the erase's own), so the lock granted to the waiter is
+// that proof, as the tail's fenced head read relies on (changetail.go
+// tailHead). The repository has one waiter (proveTokens), which this hands
+// the fence to, or starts. A server shutting down leaves the fence standing.
+func (s *service) settleTokens(repository string) {
+	p := &s.proofs
+	p.mu.Lock()
+	if p.pending == nil {
+		p.pending, p.running = map[string]int{}, map[string]bool{}
+	}
+	p.pending[repository]++
+	if p.running[repository] {
+		p.mu.Unlock()
+		return
+	}
+	p.running[repository] = true
+	p.mu.Unlock()
+	s.spawn("prove a token commit ended", repository, func(ctx context.Context) {
+		s.proveTokens(ctx, repository)
+	})
+}
+
+// proveTokens is a repository's one waiter. An attempt proves the fences
+// registered before it began: each doubted transaction sent its COMMIT, the
+// changelog lock held, before its fence was handed here, so a lock asked for
+// after that is granted after the transaction ended. Fences handed over
+// while an attempt waits wait for the next one. A failed attempt (an error,
+// a wait that ran out) proves nothing: it tries again, for as long as it
+// takes, and the fences stand meanwhile; the wait is on the maintenance
+// pool, so it outlives the repository's own.
+func (s *service) proveTokens(ctx context.Context, repository string) {
+	p := &s.proofs
+	key := Scope{Repository: repository}.lockKey(changelogLockKey)
+	pause := 50 * time.Millisecond
+	for {
+		p.mu.Lock()
+		n := p.pending[repository]
+		if n == 0 {
+			delete(p.pending, repository)
+			delete(p.running, repository)
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
+		if err := s.awaitLockFree(ctx, key); err == nil {
+			p.mu.Lock()
+			p.pending[repository] -= n
+			p.mu.Unlock()
+			for range n {
+				s.tokens.unfence(repository)
+			}
+			pause = 50 * time.Millisecond
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pause):
+		}
+		pause = min(2*pause, tokenProofRetryMax)
+	}
+}
+
+// awaitLockFree is one attempt at a proof: the lock granted, and let go at
+// once, within one of the bounded slots.
+func (s *service) awaitLockFree(ctx context.Context, key string) error {
+	if s.testTokenProof != nil {
+		if err := s.testTokenProof(); err != nil {
+			return err
+		}
+	}
+	select {
+	case s.proofs.slots <- struct{}{}:
+		defer func() { <-s.proofs.slots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, cmp.Or(s.testTokenProofAttempt, tokenProofAttempt))
+	defer cancel()
+	tx, err := s.maint.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, key); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (ds *dataset) commitDoubted() {
 	ds.tail.reset()
 	ds.watch.nudge()

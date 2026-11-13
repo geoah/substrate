@@ -216,9 +216,14 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err != nil {
 		return report, err
 	}
+	// No token-cache fence (tokencache.go): a rebuild runs in the operator's
+	// process, which opens the engine as the repository's only writer with
+	// the server stopped and serves nothing from its cache. The repository's
+	// entries go after all, so the claim costs nothing if it is ever wrong.
 	if err := tx.Commit(); err != nil {
 		return report, err
 	}
+	s.tokens.forget(repo.ID)
 	rebuilt = true
 	if owed > 0 {
 		ds.kickIndexReprojection()

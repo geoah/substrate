@@ -162,7 +162,7 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The door is paced as the routes are, once per request: what its tools
 	// request in process carries the charge.
-	if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID) {
+	if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID, false) {
 		return
 	}
 	ctx = withPaced(ctx)

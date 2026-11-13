@@ -852,7 +852,16 @@ func (ds *dataset) refoldFromFiles(ctx context.Context, log *changelogfile.Log) 
 				return fmt.Errorf("clear the import-progress marker: %w", err)
 			}
 		}
-		return tx.Commit()
+		// No token-cache fence (tokencache.go): a replay commits only where
+		// nothing is served from the cache, at the boot before the server
+		// listens or at a creation holding the repository's open slot, which
+		// replays nothing. The repository's entries go after all, so the
+		// claim costs nothing if it is ever wrong.
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		ds.svc.tokens.forget(ds.info.ID)
+		return nil
 	}
 	if err := replay(false); err != nil {
 		return fmt.Errorf("substrate/engine: import: first fold: %w", err)

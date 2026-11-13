@@ -86,6 +86,26 @@ func WithTestInvokeHook(fn func(function string)) Option {
 	return func(o *options) { o.invokeHook = fn }
 }
 
+// WithTestCommitTx hands every COMMIT to fn, which answers in its place: it
+// may run commit, hold it, run it in its own time and answer first, or not
+// run it at all (the transaction is then rolled back).
+func WithTestCommitTx(fn func(commit func() error) error) Option {
+	return func(o *options) { o.commitTx = fn }
+}
+
+// WithTestTokenProof runs fn before each attempt to prove that a commit in
+// doubt which moved a token has ended; an error fails that attempt, and the
+// next one follows.
+func WithTestTokenProof(fn func() error) Option {
+	return func(o *options) { o.tokenProof = fn }
+}
+
+// WithTestTokenProofAttempt is how long one attempt at that proof waits for
+// the lock before it counts as failed.
+func WithTestTokenProofAttempt(d time.Duration) Option {
+	return func(o *options) { o.tokenProofAttempt = d }
+}
+
 // WithTestCommitInDoubt answers a write's commit with an error after Postgres
 // committed it, for each write fail reports true: the shape of a connection
 // lost at the commit's answer (dataset.go commitAndMirror), the

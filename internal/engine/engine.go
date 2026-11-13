@@ -167,6 +167,17 @@ type options struct {
 	// Postgres commit, so a test can fail a step or stop the process there.
 	// Tests only.
 	commitFault func(stage string) error
+	// commitTx is the COMMIT's own test seam (dataset.go commitTx): it is
+	// handed the COMMIT and answers in its place, so a test can hold a
+	// COMMIT, or answer one before Postgres has. Tests only.
+	commitTx func(commit func() error) error
+	// tokenProof is the token cache's test seam (dataset.go settleTokens):
+	// run before each attempt to prove a doubted commit ended, and an error
+	// fails the attempt. Tests only.
+	tokenProof func() error
+	// tokenProofAttempt replaces how long one attempt at that proof waits.
+	// Tests only.
+	tokenProofAttempt time.Duration
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
@@ -669,8 +680,10 @@ type service struct {
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs unitGraphCache
-	// tokens is the token lookups this process answered (tokencache.go).
+	// tokens is the token lookups this process answered (tokencache.go),
+	// and proofs the waits that lift a doubted commit's fence (dataset.go).
 	tokens tokenCache
+	proofs tokenProofs
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -714,6 +727,11 @@ type service struct {
 	// testCommitFault is the options' commit seam (dataset.go
 	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
 	testCommitFault func(stage string) error
+	// testCommitTx and testTokenProof are the options' COMMIT and token
+	// proof seams (dataset.go). Tests only.
+	testCommitTx          func(commit func() error) error
+	testTokenProof        func() error
+	testTokenProofAttempt time.Duration
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
@@ -973,22 +991,26 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		datasets:         map[string]*dataset{},
 		opening:          map[string]chan struct{}{},
 
-		testImportFault:    o.importFault,
-		testImportBatch:    o.importBatch,
-		conversion:         conversionSteps,
-		maxDialect:         maxChangelogDialect,
-		testCommitFault:    o.commitFault,
-		testMeasureHook:    o.measureHook,
-		testChangeReadHook: o.changeReadHook,
-		testTailHeadHook:   o.tailHeadHook,
-		testBulkFault:      o.bulkFault,
-		testSeedPath:       o.seedPath,
-		testSnapshotFault:  o.snapshotFault,
-		progressEvery:      o.progressEvery,
-		testInvokeHook:     o.invokeHook,
-		testDigestHook:     o.digestHook,
-		checked:            map[string]*changelogfile.Log{},
-		digestUnread:       !o.operator && !o.dirReadOnly,
+		testImportFault:       o.importFault,
+		testImportBatch:       o.importBatch,
+		conversion:            conversionSteps,
+		maxDialect:            maxChangelogDialect,
+		testCommitFault:       o.commitFault,
+		testCommitTx:          o.commitTx,
+		testTokenProof:        o.tokenProof,
+		testTokenProofAttempt: o.tokenProofAttempt,
+		proofs:                tokenProofs{slots: make(chan struct{}, tokenProofWaits)},
+		testMeasureHook:       o.measureHook,
+		testChangeReadHook:    o.changeReadHook,
+		testTailHeadHook:      o.tailHeadHook,
+		testBulkFault:         o.bulkFault,
+		testSeedPath:          o.seedPath,
+		testSnapshotFault:     o.snapshotFault,
+		progressEvery:         o.progressEvery,
+		testInvokeHook:        o.invokeHook,
+		testDigestHook:        o.digestHook,
+		checked:               map[string]*changelogfile.Log{},
+		digestUnread:          !o.operator && !o.dirReadOnly,
 
 		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
 		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
