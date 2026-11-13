@@ -14,7 +14,7 @@ import (
 // mounted ONLY when the config asks for it. Off, the path is unrouted and
 // answers the same 404 any unknown non-API path does.
 func TestMetricsEndpointServedOnlyWhenEnabled(t *testing.T) {
-	svc := newFakeService()
+	svc := &stubService{}
 
 	on := New(Config{Service: svc, Metrics: true})
 	// One served request first, so the request histogram has a series to
@@ -78,7 +78,7 @@ func requestSeries(t *testing.T) (int, map[string]bool) {
 // like any answer, so the method label is a fixed set: a hundred invented
 // methods add one series, `other`, not a hundred.
 func TestMetricsMethodLabelIsAFixedSet(t *testing.T) {
-	h := New(Config{Service: newFakeService()})
+	h := New(Config{Service: &stubService{}})
 	before, _ := requestSeries(t)
 	for i := range 100 {
 		rec := httptest.NewRecorder()

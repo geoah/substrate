@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,13 +28,36 @@ func aggregatePath(t *testing.T, a any, extra ...string) string {
 	return path
 }
 
+// aggregateRecorder is a repository that resolves the person kind and keeps
+// the aggregate read the route handed it, answering the result it holds;
+// with err set it refuses every read with it instead, a fault (a read over an
+// index being re-derived, every read slot taken, a failure of its own) the
+// engine cannot be made to return on demand.
+type aggregateRecorder struct {
+	stubKinds
+	last *substrate.AggregateQuery
+	err  error
+}
+
+func newAggregateRecorder() *aggregateRecorder {
+	return &aggregateRecorder{stubKinds: newStubKinds(personKind)}
+}
+
+func (d *aggregateRecorder) Aggregate(_ context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+	d.last = &q
+	return &substrate.AggregateResult{Rows: []substrate.AggregateRow{}}, nil
+}
+
 // The aggregate mode carries its body, the downsample and the filter to the
-// dataset as written, the reducers in both spellings included, and answers
-// the AggregateResult.
+// dataset as written, the reducers in both spellings included. What the
+// engine answers is TestRecordsAggregateAnswersTheEnginesRead.
 func TestRecordsAggregateCarriesTheGrammar(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 
 	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/heart_rate"},` +
 		`"range":{"gte":"2026-04-06T00:00:00+03:00","lt":"2026-10-05T00:00:00+03:00"},` +
@@ -46,7 +70,7 @@ func TestRecordsAggregateCarriesTheGrammar(t *testing.T) {
 	rec := env.do(t, http.MethodGet, path, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 
-	q := ds.lastAggregate
+	q := ds.last
 	if q == nil || q.Aggregate == nil {
 		t.Fatal("the dataset saw no aggregate read")
 	}
@@ -64,23 +88,19 @@ func TestRecordsAggregateCarriesTheGrammar(t *testing.T) {
 	if len(q.Filter.Kinds) != 1 || q.Filter.Kinds[0] != personKind || q.Downsample != nil {
 		t.Fatalf("filter %+v downsample %+v", q.Filter, q.Downsample)
 	}
-	res := decodeJSON[substrate.AggregateResult](t, rec)
-	if len(res.Rows) != 1 || res.Rows[0].Values[0].Reducer.Name != "avg" || *res.Rows[0].Values[0].Value != "62" {
-		t.Fatalf("result = %+v", res)
-	}
 
 	rec = env.do(t, http.MethodGet, aggregatePath(t, substrate.Aggregate{
 		Metric: &substrate.AggregateMetric{Ref: "ada.example.com/observations/metric/health/heart_rate"},
 		Range:  &substrate.AggregateRange{Gte: "2026-09-01T00:00:00Z", Lt: "2026-10-01T00:00:00Z"},
 	}, "downsample="+url.QueryEscape(`{"points":800}`)), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if d := ds.lastAggregate.Downsample; d == nil || d.Points != 800 {
+	if d := ds.last.Downsample; d == nil || d.Points != 800 {
 		t.Fatalf("downsample = %+v", d)
 	}
 
 	rec = env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(`{"latest":true,"groupBy":["metric"]}`), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if a := ds.lastAggregate.Aggregate; !a.Latest || len(a.GroupBy) != 1 {
+	if a := ds.last.Aggregate; !a.Latest || len(a.GroupBy) != 1 {
 		t.Fatalf("the latest read = %+v", a)
 	}
 }
@@ -90,20 +110,20 @@ func TestRecordsAggregateCarriesTheGrammar(t *testing.T) {
 // and the dataset never sees the read. A read over an index being
 // re-derived is a 503 the client retries.
 func TestAggregateRefusesARetiredKeyAndRetriesAnUnavailableRead(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	for _, x := range []struct{ query, want string }{
 		{"aggregate=" + url.QueryEscape(`{"metric":{"ref":"x/y/z/w"},"minCoverage":0.5}`), "minCoverage was removed"},
 		{"aggregate=" + url.QueryEscape(`{"bucket":{"calendar":"day","offset":"PT4H"}}`), "bucket.offset was removed"},
 		{"aggregate=" + url.QueryEscape(`{"bucket":{"records":{"filter":{},"maxRecords":5}}}`), "bucket.records.maxRecords was removed"},
 		{"aggregate=" + url.QueryEscape(`{"metric":{"ref":"x/y/z/w"}}`) + "&downsample=" + url.QueryEscape(`{"points":8,"method":"m4"}`), "method was removed"},
 	} {
-		ds.lastAggregate = nil
+		ds.last = nil
 		rec := env.do(t, http.MethodGet, recordsPath+"?"+x.query, tok, nil)
 		wantStatus(t, rec, http.StatusBadRequest)
 		wantMessage(t, rec, x.want)
-		if ds.lastAggregate != nil {
+		if ds.last != nil {
 			t.Errorf("%s: the dataset saw the refused read", x.query)
 		}
 	}
@@ -115,7 +135,7 @@ func TestAggregateRefusesARetiredKeyAndRetriesAnUnavailableRead(t *testing.T) {
 		{fmt.Errorf("%w; retry the read once it finishes", substrate.ErrObservedRederiving), substrate.ReasonObservedRederiving},
 		{fmt.Errorf("%w: every read slot is taken", substrate.ErrUnavailable), ""},
 	} {
-		ds.errs["Aggregate"] = x.err
+		ds.err = x.err
 		rec := env.do(t, http.MethodGet, aggregatePath(t, substrate.Aggregate{Latest: true}), tok, nil)
 		wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 		if rec.Header().Get("Retry-After") == "" {
@@ -133,12 +153,14 @@ func TestAggregateRefusesARetiredKeyAndRetriesAnUnavailableRead(t *testing.T) {
 
 // The aggregate mode is refused beside every parameter of the other modes,
 // naming the parameter; its own parameters decode strictly; a filter arm the
-// index cannot test is refused by name; a downsample alone names what it
-// needs; and the dataset's refusals are 422s.
+// index cannot test is refused by name, while a property read takes every
+// arm; a downsample alone names what it needs; and the dataset's refusals
+// are 422s. The engine's own refusal of two selectors is
+// TestRecordsAggregateAnswersTheEnginesRead.
 func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	a := substrate.Aggregate{Metric: &substrate.AggregateMetric{Ref: "ada.example.com/observations/metric/x"}}
 
 	for _, extra := range []string{"q=run", "watch=1", "count=1", "orderBy=at", "first=10", "after=c", "offset=5", "expand=source", "withAnnotations=1"} {
@@ -169,21 +191,19 @@ func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
 	wantStatus(t, rec, http.StatusBadRequest)
 	wantMessage(t, rec, "filter.properties.value")
 	// A property read reduces records, so it takes every filter arm.
+	ds.last = nil
 	rec = env.do(t, http.MethodGet, aggregatePath(t, substrate.Aggregate{Property: &substrate.AggregateProperty{Name: "price"}},
 		"filter="+url.QueryEscape(string(f))), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
+	if ds.last == nil || ds.last.Filter.Properties["value"].Gt == nil {
+		t.Fatalf("the property read reached the dataset as %+v, want its filter.properties", ds.last)
+	}
 
-	two := a
-	two.Property = &substrate.AggregateProperty{Name: "price"}
-	rec = env.do(t, http.MethodGet, aggregatePath(t, two), tok, nil)
-	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-	wantMessage(t, rec, "name one of metric, metrics and property")
-
-	ds.errs["Aggregate"] = &substrate.ValidationError{Problems: []string{"aggregate.budget.maxBuckets: 2880 buckets, over 1440"}}
+	ds.err = &substrate.ValidationError{Problems: []string{"aggregate.budget.maxBuckets: 2880 buckets, over 1440"}}
 	rec = env.do(t, http.MethodGet, aggregatePath(t, a), tok, nil)
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	wantMessage(t, rec, "maxBuckets")
-	ds.errs["Aggregate"] = errors.New("boom")
+	ds.err = errors.New("boom")
 	rec = env.do(t, http.MethodGet, aggregatePath(t, a), tok, nil)
 	wantStatus(t, rec, http.StatusInternalServerError)
 }
@@ -192,9 +212,9 @@ func TestAggregateIsRefusedBesideListParameters(t *testing.T) {
 // and exists or a null inside in on a stream key, and the route hands them
 // to the dataset as written.
 func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	a := substrate.Aggregate{
 		Metric:  &substrate.AggregateMetric{Ref: "ada.example.com/observations/metric/health/hrv_rmssd"},
 		From:    substrate.AggregateFromSummaries,
@@ -203,7 +223,7 @@ func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
 	filter := `{"properties":{"statistic":{"in":["avg","max"]},"channel":{"in":[null,"workout"]},"about":{"exists":false}}}`
 	rec := env.do(t, http.MethodGet, aggregatePath(t, a, "filter="+url.QueryEscape(filter)), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	q := ds.lastAggregate
+	q := ds.last
 	if c, ok := q.Filter.Properties["statistic"]; !ok || len(c.In) != 2 || q.Aggregate.GroupBy[0] != "statistic" {
 		t.Fatalf("the dataset saw filter %+v groupBy %v", q.Filter, q.Aggregate.GroupBy)
 	}
@@ -219,16 +239,16 @@ func TestRecordsAggregateTakesTheStatisticFilter(t *testing.T) {
 // written: the recorded-local calendar's fallback zone, the place of a value
 // with a span, and a rolling window that ends at the previous bucket.
 func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/body_mass"},` +
 		`"range":{"gte":"2026-10-01T00:00:00+03:00","lt":"2026-10-04T00:00:00+03:00"},` +
 		`"bucket":{"calendar":"day","fallbackTimezone":"Europe/Athens","place":"end"},"reducers":["count"],` +
 		`"rolling":{"buckets":30,"reducers":["avg","stddev"],"through":"previous"}}`
 	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	a := ds.lastAggregate.Aggregate
+	a := ds.last.Aggregate
 	if b := a.Bucket; b == nil || b.FallbackTimezone != "Europe/Athens" || b.Place != "end" {
 		t.Fatalf("bucket = %+v", b)
 	}
@@ -241,9 +261,9 @@ func TestRecordsAggregateCarriesTheTimeOptions(t *testing.T) {
 // written: the records mode's and the property read's source policies, the
 // records mode's offsets, and the property read's offset and groups.
 func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	sources := `{"policy":"priority","order":["whoop-4-0","garmin-forerunner-265"],"property":"source","match":["sport"]}`
 	body := `{"metric":{"ref":"ada.example.com/observations/metric/health/sleep_stage"},` +
 		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},` +
@@ -257,7 +277,7 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 		return got != nil && got.Policy == want.Policy && strings.Join(got.Order, ",") == strings.Join(want.Order, ",") &&
 			got.Property == want.Property && strings.Join(got.Match, ",") == strings.Join(want.Match, ",")
 	}
-	if b := ds.lastAggregate.Aggregate.Bucket; b == nil || b.Records == nil || !sameSources(b.Records.Sources) ||
+	if b := ds.last.Aggregate.Bucket; b == nil || b.Records == nil || !sameSources(b.Records.Sources) ||
 		b.Records.UTCOffsets == nil || b.Records.UTCOffsets.Start != "utcOffsetStart" || b.Records.UTCOffsets.End != "utcOffsetEnd" {
 		t.Fatalf("bucket = %+v", b)
 	}
@@ -266,7 +286,7 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 		`"range":{"gte":"2026-09-01T00:00:00+03:00","lt":"2026-10-01T00:00:00+03:00"},"bucket":{"calendar":"week"},"reducers":["sum","stddev"]}`
 	rec = env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if p := ds.lastAggregate.Aggregate.Property; p == nil || !sameSources(p.Sources) || p.UTCOffset != "utcOffsetEnd" ||
+	if p := ds.last.Aggregate.Property; p == nil || !sameSources(p.Sources) || p.UTCOffset != "utcOffsetEnd" ||
 		strings.Join(p.GroupBy, ",") != "sport,source" {
 		t.Fatalf("property = %+v", p)
 	}
@@ -276,15 +296,15 @@ func TestRecordsAggregateCarriesTheRecordOptions(t *testing.T) {
 // reducers in both spellings, from and statistic, and reach the dataset as
 // written; a key a metric does not take is a 400 naming it.
 func TestRecordsAggregateCarriesSeveralMetrics(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newAggregateRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	body := `{"metrics":[{"ref":"ada.example.com/observations/metric/health/heart_rate","unit":"/min","reducers":["avg",{"percentile":0.9}]},` +
 		`{"ref":"ada.example.com/observations/metric/health/resting_heart_rate","from":"summaries","statistic":"vendor"}],` +
 		`"range":{"gte":"2026-09-24T00:00:00+03:00","lt":"2026-09-25T00:00:00+03:00"},"bucket":{"calendar":"day"},"reducers":["last"]}`
 	rec := env.do(t, http.MethodGet, recordsPath+"?aggregate="+url.QueryEscape(body), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	m := ds.lastAggregate.Aggregate.Metrics
+	m := ds.last.Aggregate.Metrics
 	if len(m) != 2 || m[0].Ref != "ada.example.com/observations/metric/health/heart_rate" || m[0].Unit != "/min" ||
 		len(m[0].Reducers) != 2 || *m[0].Reducers[1].Percentile != 0.9 ||
 		m[1].From != "summaries" || m[1].Statistic != "vendor" || m[1].Reducers != nil {

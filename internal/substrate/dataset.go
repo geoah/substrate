@@ -12,9 +12,9 @@ import (
 //
 // It is ONE interface, not a core plus optional extensions a consumer
 // type-asserts: a verb declared here is a verb every implementation owes,
-// the engine's dataset, the API's scoped and assistant wrappers and its
-// hand-written fake (internal/api/fake_test.go). A consumer calls the method;
-// no endpoint has a "this deployment cannot" branch to take.
+// the engine's dataset and the API's scoped and assistant wrappers. A
+// consumer calls the method; no endpoint has a "this deployment cannot"
+// branch to take.
 //
 // The interface is this module's own seam and promises nothing outside it:
 // the package is internal, so a method moves whenever every implementation

@@ -39,15 +39,13 @@ func (r *resolutions) take() []string {
 // server fetch its publisher's document, or refresh and upgrade it: the row
 // it gets back is `unknown`, and the fetch is as far out of its reach.
 func TestACheckReadsNoPublisherOfAPackageTheTokenCannotSee(t *testing.T) {
-	e, refresher := publishingEnv(t)
-	resolved := &resolutions{Catalog: newPublishingCatalog(t, e.catalog)}
-	e.h = New(Config{
-		Service: e.svc, ClientDocuments: e.docs, AuthInterval: 0, Catalog: e.catalog,
-		Packages: resolved, PackageRefresher: refresher,
-	})
-	e.repo.mu.Lock()
-	e.repo.statuses[dpTraining] = substrate.BundleStatus{ID: dpTraining, Installed: true, Enabled: true, Version: 2, ShippedVersion: 2}
-	e.repo.mu.Unlock()
+	t.Parallel()
+	resolved := &resolutions{}
+	e, refresher := publishingEnv(t, withSamples("people"), withConfig(func(c *Config) {
+		resolved.Catalog = c.Packages
+		c.Packages = resolved
+	}))
+	e.holdTraining(2, 0)
 	body := checkRequest("read:"+personKind, `[{"type":"package","package":"`+dpTraining+`","version":3}]`)
 
 	narrow := e.grant("read:"+personKind, []string{"read:" + personKind})
@@ -67,7 +65,7 @@ func TestACheckReadsNoPublisherOfAPackageTheTokenCannotSee(t *testing.T) {
 	reader := e.grant("read:"+dpSession, []string{"read:" + dpSession})
 	resolved.take()
 	e.check(reader, body)
-	if asked := refresher.list(); len(asked) != 1 || asked[0] != fakeRepository+" "+dpTraining {
+	if asked := refresher.list(); len(asked) != 1 || asked[0] != e.db.repository+" "+dpTraining {
 		t.Fatalf("a token that reads %s refreshed %v, want the package once", dpSession, asked)
 	}
 	if asked := resolved.take(); !slices.Contains(asked, dpTraining) {

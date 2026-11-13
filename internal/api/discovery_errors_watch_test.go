@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +16,7 @@ const changesPath = "/api/v1/changes"
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
 func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
-	svc := newFakeService()
-	h := New(Config{Service: svc})
+	h := New(Config{Service: &stubService{}})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -58,7 +58,7 @@ func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 // is read off the wire as bytes too, because a client reads JSON and a
 // renamed key would still decode into the Go struct.
 func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnv(t, nil)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 	doc := decodeJSON[discoveryDoc](t, rec)
@@ -94,27 +94,12 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	}
 }
 
-// The `search` feature is a claim about a route, so hold the route to it:
-// `GET /records?q=` ranks, and the answer is the ranked page with a score per
-// hit. A search path of its own under /api/v1 names nothing.
-func TestSearchIsTheRecordsRouteRanking(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Title: "Ada Lovelace", Properties: map[string]any{}})
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Title: "Grace Hopper", Properties: map[string]any{}})
-
-	rec := env.do(t, http.MethodGet, recordsPath+"?q=ada", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.RankedPage](t, rec)
-	if len(page.Records) != 1 || page.Records[0].ID != "p1" {
-		t.Fatalf("ranked page = %+v", page)
-	}
-	if page.Scores[personKind+"/p1"].Lexical == 0 {
-		t.Fatalf("the hit carries no score: %+v", page.Scores)
-	}
-
-	rec = env.do(t, http.MethodGet, "/api/v1/search?q=hello", tok, nil)
+// A search path of its own under /api/v1 names nothing: the `search`
+// feature is the records route ranking (discovery_errors_watch_db_test.go),
+// and this path is the router's 404.
+func TestSearchHasNoPathOfItsOwn(t *testing.T) {
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/search?q=hello", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "no such API path") {
 		t.Fatalf("GET /api/v1/search = %s, want the router's 404", body)
@@ -122,15 +107,22 @@ func TestSearchIsTheRecordsRouteRanking(t *testing.T) {
 }
 
 func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnv(t, nil)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 }
 
+// discoveryEmptyList is a repository whose list answers an empty page at a
+// fixed head: the one read GET /records makes.
+type discoveryEmptyList struct{ changesStub }
+
+func (discoveryEmptyList) List(context.Context, substrate.Query) (*substrate.Page, error) {
+	return &substrate.Page{Records: []*substrate.Record{}}, nil
+}
+
 func TestPrimaryPrefixServesResources(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+	env := newStubEnv(t, discoveryEmptyList{})
+	rec := env.do(t, http.MethodGet, recordsPath, stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("primary /api/v1 carried a Warning header: %q", w)
@@ -140,19 +132,16 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 // An unknown version prefix is an ordinary unknown API path: a 404 problem
 // object, never a quietly aliased 200.
 func TestUnknownVersionPrefixIsNotServed(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1alpha1/records", tok, nil)
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1alpha1/records", stubToken, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
 // --- A6: the closed error set is real -----------------------------------
 
 func TestUnavailableIs503WithRetryAfter(t *testing.T) {
-	env := newTestEnv(t)
-	env.svc.authErr = errors.New("repository open failed")
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+	env := newStubEnvOn(t, requestLogUnavailable{stubService: &stubService{}, err: errors.New("repository open failed")})
+	rec := env.do(t, http.MethodGet, recordsPath, stubToken, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
 		t.Fatalf("503 unavailable must carry Retry-After")
@@ -160,57 +149,24 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 }
 
 func TestBadRequestIsEmittedAndCoded(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
 	// A non-numeric changelog cursor is a bad_request, named, not silence.
-	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 // --- A4: watch frames + horizon -----------------------------------------
 
-func TestWatchTerminalErrorFrameOnMidStreamFailure(t *testing.T) {
-	env := newTestEnv(t)
-	srv := httptest.NewServer(env.h)
-	defer srv.Close()
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	// from=0 skips headSeq so the 200 + bookmark go out first; then the drain's
-	// Changes read fails, and the stream must end with a terminal error frame
-	// carrying the problem object — not a silent EOF.
-	ds.errs["Changes"] = errBoom
-	br, stop := startWatch(t, srv, changesPath+"?watch=1&from=0", tok)
-	defer stop()
-
-	if first := readLine(t, br); first["bookmark"] == nil {
-		t.Fatalf("first line = %v, want a bookmark control frame", first)
-	}
-	frame := readLine(t, br)
-	if _, hasSeq := frame["seq"]; hasSeq {
-		t.Fatalf("terminal frame carried a seq: %v", frame)
-	}
-	errObj, ok := frame["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("terminal frame = %v, want an error control frame", frame)
-	}
-	if errObj["code"] != codeInternal {
-		t.Fatalf("terminal frame code = %v, want %q", errObj["code"], codeInternal)
-	}
-}
-
 func TestCompactedBelowHorizonNonWatch(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, changesStub{})
 	// horizon is 0; a from below it exercises the compacted signal path.
-	rec := env.do(t, http.MethodGet, changesPath+"?from=-1", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?from=-1", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
 }
 
 func TestCompactedBelowHorizonWatch(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, changesStub{})
 	// The watch path rejects a below-horizon resume before any 200/stream byte.
-	rec := env.do(t, http.MethodGet, changesPath+"?watch=1&from=-5", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?watch=1&from=-5", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
 }

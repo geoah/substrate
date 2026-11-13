@@ -2,13 +2,10 @@ package api
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -18,289 +15,34 @@ import (
 
 const rlBundleID = "samples.substrate.reamde.dev/readinglist"
 
-// statusErrDataset is a fake dataset that DOES run the bundle lifecycle but
-// whose status reads fail — the repository/database fault review #11 must surface
-// as an error rather than an empty installed set.
-type statusErrDataset struct {
-	*fakeDataset
-	err error
-}
-
-func (d statusErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
-	return nil, d.err
-}
-
-func (d statusErrDataset) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
-	return nil, d.err
-}
-
-func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
-	return substrate.BundleStatus{}, d.err
-}
-
-// BundlePackage resolves, so the lifecycle gate passes and the status read is
-// what fails.
-func (d statusErrDataset) BundlePackage(context.Context, string) (string, error) {
-	return "samples.substrate.reamde.dev/readinglist", nil
-}
-
-// statusErrService authenticates into a statusErrDataset, so the handler
-// resolves a dataset whose bundle-status reads fail.
-type statusErrService struct {
-	*fakeService
-	err error
-}
-
-func (s *statusErrService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	ds, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return statusErrDataset{fakeDataset: ds.(*fakeDataset), err: s.err}, info, nil
-}
-
-// newStatusErrEnv is a catalog env whose dataset runs the bundle lifecycle but
-// fails every status read.
-func newStatusErrEnv(t *testing.T) *testEnv {
-	t.Helper()
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	base := newFakeService()
-	svc := &statusErrService{fakeService: base, err: errBoom}
-	clock := &testClock{}
-	return &testEnv{
-		svc:   base,
-		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
-		clock: clock,
-	}
-}
-
-// newCatalogEnv is a testEnv whose handler ships the real example catalog.
-func newCatalogEnv(t *testing.T) *testEnv {
-	t.Helper()
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	svc := newFakeService()
-	clock := &testClock{}
-	return &testEnv{
-		svc:   svc,
-		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
-		clock: clock,
-	}
-}
-
-// upgradeErrDataset installs the web bundle and then fails every upgrade
-// PREVIEW: the listing must still serve, because the console's Registry (and
-// its sidebar badge, on every page) reads it.
-type upgradeErrDataset struct {
-	*fakeDataset
-	err error
-}
-
-// The installed bundle is a PROVIDER: only a provider is offered an upgrade
-// preview at all (decision record 0048), so a sample here would leave the
-// failing preview unreached and this test proving nothing.
-func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
-	return []substrate.BundleStatus{{
-		ID: googleBundleID, Name: "google", Authority: "providers.substrate.reamde.dev", Package: "google",
-		Installed: true, Enabled: true,
-	}}, nil
-}
-
-func (d upgradeErrDataset) BundleStatusesUncounted(ctx context.Context) ([]substrate.BundleStatus, error) {
-	return d.BundleStatuses(ctx)
-}
-
-func (d upgradeErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
-	return substrate.BundleStatus{ID: googleBundleID, Installed: true, Enabled: true}, nil
-}
-
-func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
-	return substrate.BundleUpgrade{}, d.err
-}
-
-func (d upgradeErrDataset) BundlePackage(context.Context, string) (string, error) {
-	return googleBundleID, nil
-}
-
-type upgradeErrService struct {
-	*fakeService
-	err error
-}
-
-func (s *upgradeErrService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	ds, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return upgradeErrDataset{fakeDataset: ds.(*fakeDataset), err: s.err}, info, nil
-}
-
-func newUpgradeErrEnv(t *testing.T) *testEnv {
-	t.Helper()
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	base := newFakeService()
-	svc := &upgradeErrService{fakeService: base, err: errBoom}
-	clock := &testClock{}
-	return &testEnv{
-		svc:   base,
-		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
-		clock: clock,
-	}
-}
-
-// A preview that fails costs that entry its upgrade offer and NOTHING else:
-// the listing still answers 200, because the console reads it on every page.
-// The failure is not swallowed with the offer, though. It rides the entry as
-// one fixed blocker line, so the owner sees an upgrade nobody can take
-// instead of an entry with nothing to say. The error text stays in the server
-// log: a driver error names the deployment, and a repository token's 200 body
-// is not where that goes.
-func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
-	env := newUpgradeErrEnv(t)
-	tok := env.svc.token(fakeRepository)
-
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("catalog list = %d, want 200 (a failed preview must not blank the listing): %s", rec.Code, rec.Body)
-	}
-	type entry struct {
-		ID        string                   `json:"id"`
-		Installed bool                     `json:"installed"`
-		Upgrade   *substrate.BundleUpgrade `json:"upgrade"`
-	}
-	body := decodeJSON[struct {
-		Items []entry `json:"items"`
-	}](t, rec)
-	if len(body.Items) == 0 {
-		t.Fatal("the listing is empty")
-	}
-	wantFailedPreview := func(item entry) {
-		t.Helper()
-		if item.Upgrade == nil {
-			t.Fatalf("bundle %s dropped its failed preview silently", item.ID)
-		}
-		if item.Upgrade.Available {
-			t.Errorf("bundle %s offers an upgrade its preview could not compute", item.ID)
-		}
-		if len(item.Upgrade.Blockers) != 1 || item.Upgrade.Blockers[0] != failedPreviewBlocker {
-			t.Errorf("bundle %s blockers = %q, want exactly %q", item.ID, item.Upgrade.Blockers, failedPreviewBlocker)
-		}
-		if strings.Contains(strings.Join(item.Upgrade.Blockers, ";"), errBoom.Error()) {
-			t.Errorf("bundle %s serves the preview's error text to a repository token: %q", item.ID, item.Upgrade.Blockers)
-		}
-	}
-	var found bool
-	for _, item := range body.Items {
-		if item.ID != googleBundleID {
-			// Only the installed provider is previewed; nothing else may
-			// inherit its failure.
-			if item.Upgrade != nil {
-				t.Errorf("bundle %s carries an upgrade it was never previewed for", item.ID)
-			}
-			continue
-		}
-		found = true
-		wantFailedPreview(item)
-	}
-	if !found {
-		t.Fatalf("%s is not in the listing", googleBundleID)
-	}
-
-	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(googleBundleID), tok, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("catalog detail = %d, want 200: %s", rec.Code, rec.Body)
-	}
-	wantFailedPreview(decodeJSON[entry](t, rec))
-}
-
-func TestCatalogListReturnsShippedBundles(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			Authority string `json:"authority"`
-			Package   string `json:"package"`
-			Version   int64  `json:"version"`
-			Installed bool   `json:"installed"`
-		} `json:"items"`
-	}](t, rec)
-	var found bool
-	for _, item := range body.Items {
-		if item.ID == rlBundleID {
-			found = true
-			if item.Name != "readinglist" || item.Authority != "samples.substrate.reamde.dev" || item.Package != "readinglist" || item.Version != 14 {
-				t.Errorf("reading-list entry fields = %+v", item)
-			}
-			if item.Installed {
-				t.Error("readinglist must not read installed on a fake dataset with no bundle lifecycle")
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("reading-list bundle not in catalog list: %+v", body.Items)
-	}
-}
-
 const googleBundleID = "providers.substrate.reamde.dev/google"
 
 const peopleBundleID = "samples.substrate.reamde.dev/people"
 
-// The catalog list carries each entry's TIER on the wire: the console's two
-// sections and the door each row offers are read from it, so google is a
-// provider and the web sample is a sample (decision record 0048).
-func TestCatalogListCarriesTheTier(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []struct {
-			ID   string `json:"id"`
-			Tier string `json:"tier"`
-		} `json:"items"`
-	}](t, rec)
-	want := map[string]string{
-		googleBundleID: substrate.TierPublished,
-		rlBundleID:     substrate.TierSample,
+// catalogShipped is the catalog the binary ships.
+func catalogShipped(t *testing.T) *catalog.Catalog {
+	t.Helper()
+	cat, err := catalog.Load(catalog.Shipped()...)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
 	}
-	seen := map[string]bool{}
-	for _, item := range body.Items {
-		if w, ok := want[item.ID]; ok {
-			seen[item.ID] = true
-			if item.Tier != w {
-				t.Errorf("%s tier = %q, want %q", item.ID, item.Tier, w)
-			}
-		}
-		if item.Tier == "" {
-			t.Errorf("bundle %q carries no tier, so the console cannot place it", item.ID)
-		}
-	}
-	for id := range want {
-		if !seen[id] {
-			t.Errorf("bundle %q missing from catalog list", id)
-		}
-	}
+	return cat
+}
+
+// newCatalogStubEnv is the handler shipping the real catalog over ds (nil is
+// a bare stubDataset), for a refusal the repository answers no part of.
+func newCatalogStubEnv(t *testing.T, ds substrate.Dataset) *testEnv {
+	t.Helper()
+	cat := catalogShipped(t)
+	return newStubEnv(t, ds, func(c *Config) { c.Catalog = cat })
 }
 
 // The two doors are not interchangeable: a PROVIDER installs under the
 // authority that publishes it, so importing one is refused and the refusal
 // names the verb that does work.
 func TestCatalogImportRefusesAProvider(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/import", tok, nil)
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/import", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	if body := rec.Body.String(); !strings.Contains(body, "install") {
 		t.Errorf("the refusal does not name the verb that works: %s", body)
@@ -310,9 +52,8 @@ func TestCatalogImportRefusesAProvider(t *testing.T) {
 // Import is an owner action, exactly as install is: a request attributed to a
 // machine is refused before the closure is touched.
 func TestCatalogImportRefusesNonOwner(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/import", tok, nil,
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/import", stubToken, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
@@ -321,47 +62,51 @@ func TestCatalogImportRefusesNonOwner(t *testing.T) {
 // names the bundle. A bare 404 would also come back from a path that routes
 // nowhere, which is why the body is what this asserts.
 func TestCatalogImportUnknownNamesTheBundle(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/import", tok, nil)
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/nope.example.com%2Fnothing/import", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "nope.example.com/nothing") {
 		t.Errorf("the refusal does not name the bundle asked for: %s", body)
 	}
 }
 
-func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	item := decodeJSON[substrate.CatalogItem](t, rec)
-	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 6 {
-		t.Errorf("closure = %+v", item.Closure)
-	}
+func TestCatalogDetailUnknownIs404(t *testing.T) {
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog/nope.bundles.substrate.reamde.dev", stubToken, nil)
+	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
 
-func TestCatalogDetailUnknownIs404(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/nope.bundles.substrate.reamde.dev", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+// catalogStatusFails is a repository whose bundle status reads fail: the
+// repository or database fault review #11 must surface as an error rather
+// than an empty installed set, which no request can make the engine produce.
+type catalogStatusFails struct{ stubDataset }
+
+var errCatalogStatusRead = errors.New("the bundle status read failed")
+
+func (catalogStatusFails) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, errCatalogStatusRead
+}
+
+func (catalogStatusFails) BundleStatusesUncounted(context.Context) ([]substrate.BundleStatus, error) {
+	return nil, errCatalogStatusRead
+}
+
+func (catalogStatusFails) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
+	return substrate.BundleStatus{}, errCatalogStatusRead
 }
 
 // A status-read fault is surfaced as an error, never a 200 that silently
 // reports an installed integration as available — on both the
 // list and the detail read.
 func TestCatalogListSurfacesStatusReadFailure(t *testing.T) {
-	env := newStatusErrEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
+	env := newCatalogStubEnv(t, catalogStatusFails{})
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
 func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
-	env := newStatusErrEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), tok, nil)
+	env := newCatalogStubEnv(t, catalogStatusFails{})
+	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), stubToken, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
@@ -370,290 +115,28 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 // header now — attribution, not authorization — so this is the same refusal
 // reached a shorter way.
 func TestCatalogInstallRefusesNonOwner(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/install", tok, nil,
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/install", stubToken, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
 
-// heldDataset reports one bundle installed, whichever id the test names, with
-// the origin stamp the test gives it ("" for a copy stamped before the origin
-// existed, or a provider). It exists to ask the catalog read the one question
-// the two tiers make ambiguous: which id counts as "this repository has it".
-type heldDataset struct {
-	*fakeDataset
-	id     string
-	origin string
-	// plan is what the upgrade preview answers for the held bundle; nil is a
-	// preview with nothing to say, which the entry drops.
-	plan *substrate.BundleUpgrade
-}
-
-func (d heldDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
-	st := substrate.BundleStatus{ID: d.id, Name: "readinglist", Installed: true, Enabled: true}
-	if d.origin != "" {
-		st.Origin, st.OriginVersion, st.Modified = d.origin, 8, true
-	}
-	return []substrate.BundleStatus{st}, nil
-}
-
-func (d heldDataset) BundleStatusesUncounted(ctx context.Context) ([]substrate.BundleStatus, error) {
-	return d.BundleStatuses(ctx)
-}
-
-func (d heldDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
-	if d.plan == nil {
-		return substrate.BundleUpgrade{}, nil
-	}
-	return *d.plan, nil
-}
-
-func (d heldDataset) BundleStatus(_ context.Context, id string) (substrate.BundleStatus, error) {
-	if id != d.id {
-		return substrate.BundleStatus{}, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
-	}
-	return substrate.BundleStatus{ID: d.id, Installed: true, Enabled: true}, nil
-}
-
-func (d heldDataset) BundlePackage(context.Context, string) (string, error) { return d.id, nil }
-
-type heldService struct {
-	*fakeService
-	id     string
-	origin string
-	plan   *substrate.BundleUpgrade
-}
-
-func (s *heldService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	ds, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return heldDataset{fakeDataset: ds.(*fakeDataset), id: s.id, origin: s.origin, plan: s.plan}, info, nil
-}
-
-// newHeldEnv is a catalog env whose repository holds exactly one bundle, under
-// the id given. A held web copy is stamped with the web sample as its origin;
-// anything else (a provider) carries none, as a provider never does.
-func newHeldEnv(t *testing.T, id string) *testEnv {
-	t.Helper()
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	origin := ""
-	if strings.HasSuffix(id, "/readinglist") {
-		origin = rlBundleID
-	}
-	return newHeldEnvFor(t, cat, id, origin)
-}
-
-// newHeldEnvFor is newHeldEnv over a given catalog and origin stamp.
-func newHeldEnvFor(t *testing.T, cat *catalog.Catalog, id, origin string) *testEnv {
-	t.Helper()
-	return newHeldEnvWithPlan(t, cat, id, origin, nil)
-}
-
-// newHeldEnvWithPlan is newHeldEnvFor with the upgrade preview the held
-// bundle's dataset answers.
-func newHeldEnvWithPlan(t *testing.T, cat *catalog.Catalog, id, origin string, plan *substrate.BundleUpgrade) *testEnv {
-	t.Helper()
-	base := newFakeService()
-	svc := &heldService{fakeService: base, id: id, origin: origin, plan: plan}
-	clock := &testClock{}
-	return &testEnv{
-		svc:   base,
-		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
-		clock: clock,
-	}
-}
-
-// The preview of a sample copy EDITED since it was imported stays on the entry
-// even when nothing shipped moved (decision record 0070): `available` false,
-// `discardsEdits` true, and the hash the re-import's confirmation names. A
-// preview with nothing to offer, block or discard is dropped as before.
-func TestCatalogKeepsThePreviewOfAnEditedCopy(t *testing.T) {
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	read := func(env *testEnv) *substrate.BundleUpgrade {
-		t.Helper()
-		tok := env.svc.token(fakeRepository)
-		rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-		body := decodeJSON[struct {
-			Items []struct {
-				ID      string                   `json:"id"`
-				Upgrade *substrate.BundleUpgrade `json:"upgrade"`
-			} `json:"items"`
-		}](t, rec)
-		for _, item := range body.Items {
-			if item.ID == rlBundleID {
-				return item.Upgrade
-			}
-		}
-		t.Fatalf("the listing does not carry %s", rlBundleID)
-		return nil
-	}
-	edited := &substrate.BundleUpgrade{
-		DiscardsEdits:  true,
-		ConversionPlan: substrate.ConversionPlan{PlanHash: "d15c", ChangelogSeq: 9},
-	}
-	up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/readinglist", rlBundleID, edited))
-	if up == nil || !up.DiscardsEdits || up.Available || up.PlanHash != "d15c" || up.ChangelogSeq != 9 {
-		t.Fatalf("an edited copy's entry carries %+v, want the discarding preview with its hash", up)
-	}
-	if up := read(newHeldEnvWithPlan(t, cat, "geoah.example.com/readinglist", rlBundleID, &substrate.BundleUpgrade{})); up != nil {
-		t.Errorf("a preview with nothing to say rides the entry: %+v", up)
-	}
-}
-
-// A closure's `requiresAtLeast` floors ride the catalog entry beside
-// `requires` (decision record 0070), so the console can read them against the
-// held bundles' versions before the button is pressed.
-func TestCatalogCarriesTheRequiresFloors(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/tasks"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	item := decodeJSON[struct {
-		Requires        []string         `json:"requires"`
-		RequiresAtLeast map[string]int64 `json:"requiresAtLeast"`
-	}](t, rec)
-	if item.RequiresAtLeast["samples.substrate.reamde.dev/people"] == 0 {
-		t.Errorf("the tasks entry carries no floor under people: requires %v, requiresAtLeast %v", item.Requires, item.RequiresAtLeast)
-	}
-	for pkg := range item.RequiresAtLeast {
-		if !slices.Contains(item.Requires, pkg) {
-			t.Errorf("floor %s is under a package requires does not list: %v", pkg, item.Requires)
-		}
-	}
-}
-
-// installerDataset is a heldDataset that can install: it records the options
-// the door hands the engine, so the body's confirmation can be seen arriving.
-type installerDataset struct {
-	heldDataset
-	last *substrate.BundleInstall
-}
-
-func (d installerDataset) InstallBundleClosure(_ context.Context, _ substrate.Actor, _ []map[string]any, _ []substrate.PutInput, opts substrate.BundleInstall) ([]*substrate.Record, error) {
-	*d.last = opts
-	return nil, nil
-}
-
-type installerService struct {
-	*fakeService
-	last *substrate.BundleInstall
-}
-
-func (s *installerService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	ds, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return installerDataset{heldDataset: heldDataset{fakeDataset: ds.(*fakeDataset), id: googleBundleID}, last: s.last}, info, nil
-}
-
-// The install body's confirmation reaches the engine as BundleInstall.Confirm
-// (decision 0067); a bare POST hands the door none, as it always did; and a
-// key the body does not declare is refused.
-func TestCatalogInstallCarriesTheConfirmation(t *testing.T) {
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	base := newFakeService()
-	var last substrate.BundleInstall
-	clock := &testClock{}
-	env := &testEnv{
-		svc:   base,
-		h:     New(Config{Service: &installerService{fakeService: base, last: &last}, Now: clock.now, Catalog: cat}),
-		clock: clock,
-	}
-	tok := env.svc.token(fakeRepository)
-	path := "/api/v1/catalog/" + url.PathEscape(googleBundleID) + "/install"
-	rec := env.do(t, http.MethodPost, path, tok, map[string]any{
-		"confirm": map[string]any{"planHash": "cafe", "changelogSeq": 41},
-	})
-	wantStatus(t, rec, http.StatusOK)
-	if last.Confirm == nil || *last.Confirm != (substrate.ConversionConfirm{PlanHash: "cafe", ChangelogSeq: 41}) {
-		t.Fatalf("the engine saw confirmation %+v", last.Confirm)
-	}
-	if !last.Published {
-		t.Fatal("a provider install lost its tier on the way to the engine")
-	}
-	last = substrate.BundleInstall{}
-	rec = env.do(t, http.MethodPost, path, tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if last.Confirm != nil {
-		t.Fatalf("a bare install handed the engine a confirmation: %+v", last.Confirm)
-	}
-	rec = env.do(t, http.MethodPost, path, tok, map[string]any{"force": true})
+// The install body declares its keys: one it does not is refused before the
+// catalog is asked.
+func TestCatalogInstallRefusesAnUndeclaredKey(t *testing.T) {
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", stubToken, map[string]any{"force": true})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
-// installedFor reads one catalog entry's `installed` flag off the listing.
-func installedFor(t *testing.T, env *testEnv, id string) bool {
-	t.Helper()
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []struct {
-			ID        string `json:"id"`
-			Installed bool   `json:"installed"`
-		} `json:"items"`
-	}](t, rec)
-	for _, item := range body.Items {
-		if item.ID == id {
-			return item.Installed
-		}
-	}
-	t.Fatalf("bundle %q missing from the catalog listing", id)
-	return false
-}
-
-// A sample this repository IMPORTED is held under the rehomed id, so that is
-// what the listing has to look for.
-func TestCatalogReportsAnImportedSampleInstalled(t *testing.T) {
-	// The fake repository's authority is <name>.example.com.
-	env := newHeldEnv(t, "geoah.example.com/readinglist")
-	if !installedFor(t, env, rlBundleID) {
-		t.Error("an imported sample reads as available, so the console offers it again")
-	}
-}
-
-// The held copy's provenance rides the listing entry: which shipped id it was
-// imported from, at which version, and whether it has been edited since. The
-// status computed it; the entry carries it so the Registry can say "imported
-// at 8, edited" without a second read.
-func TestCatalogCarriesTheHeldCopyProvenance(t *testing.T) {
-	env := newHeldEnv(t, "geoah.example.com/readinglist")
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []struct {
-			ID            string `json:"id"`
-			Origin        string `json:"origin"`
-			OriginVersion int64  `json:"originVersion"`
-			Modified      bool   `json:"modified"`
-		} `json:"items"`
-	}](t, rec)
-	for _, item := range body.Items {
-		switch item.ID {
-		case rlBundleID:
-			if item.Origin != rlBundleID || item.OriginVersion != 8 || !item.Modified {
-				t.Errorf("held reading-list entry provenance = %+v, want origin %s v8 modified", item, rlBundleID)
-			}
-		default:
-			if item.Origin != "" || item.OriginVersion != 0 || item.Modified {
-				t.Errorf("%s is not held and still carries provenance: %+v", item.ID, item)
-			}
-		}
+// A reviewed candidate that is not the one the catalog would install is the
+// conflict naming a fresh review, before any repository read.
+func TestCatalogInstallRejectsAStaleReview(t *testing.T) {
+	env := newCatalogStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", stubToken, map[string]any{"expect": map[string]any{"version": 1, "digest": "stale"}})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if !strings.Contains(rec.Body.String(), "the publisher listed another version since you reviewed this one; review it again") {
+		t.Fatal(rec.Body.String())
 	}
 }
 
@@ -708,308 +191,4 @@ data:
 		t.Fatalf("the second reading-list sample did not load: %v", cat.Warnings())
 	}
 	return cat
-}
-
-// provenanceFor reads one catalog entry's installed flag and provenance off
-// the listing AND its detail, which must agree.
-func provenanceFor(t *testing.T, env *testEnv, id string) (installed bool, origin string) {
-	t.Helper()
-	type item struct {
-		ID        string `json:"id"`
-		Installed bool   `json:"installed"`
-		Origin    string `json:"origin"`
-	}
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []item `json:"items"`
-	}](t, rec)
-	var listed *item
-	for i := range body.Items {
-		if body.Items[i].ID == id {
-			listed = &body.Items[i]
-		}
-	}
-	if listed == nil {
-		t.Fatalf("bundle %q missing from the catalog listing", id)
-	}
-	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(id), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	detail := decodeJSON[item](t, rec)
-	if detail.Installed != listed.Installed || detail.Origin != listed.Origin {
-		t.Errorf("%s: detail (installed=%v origin=%q) disagrees with the listing (installed=%v origin=%q)",
-			id, detail.Installed, detail.Origin, listed.Installed, listed.Origin)
-	}
-	return listed.Installed, listed.Origin
-}
-
-// Two samples of one package word from two authorities both land as
-// `<home>/readinglist`. The copy's ORIGIN says which one was imported, so only that
-// entry reads installed and carries the provenance; the other is still on
-// offer.
-func TestCatalogMatchesAnImportedSampleByItsOrigin(t *testing.T) {
-	cat := catalogWithOtherReadinglist(t)
-	for _, imported := range []string{rlBundleID, otherReadinglistBundleID} {
-		env := newHeldEnvFor(t, cat, "geoah.example.com/readinglist", imported)
-		for _, id := range []string{rlBundleID, otherReadinglistBundleID} {
-			installed, origin := provenanceFor(t, env, id)
-			if id == imported {
-				if !installed || origin != imported {
-					t.Errorf("imported %s: entry %s installed=%v origin=%q, want installed with its own origin", imported, id, installed, origin)
-				}
-				continue
-			}
-			if installed || origin != "" {
-				t.Errorf("imported %s: entry %s installed=%v origin=%q, want on offer with no provenance", imported, id, installed, origin)
-			}
-		}
-	}
-}
-
-// A copy imported before the origin stamp existed carries none, and the
-// landed id is all there is to match on: both entries read installed, as
-// they did before, and neither carries provenance.
-func TestCatalogFallsBackToTheLandedIDForAnUnstampedCopy(t *testing.T) {
-	env := newHeldEnvFor(t, catalogWithOtherReadinglist(t), "geoah.example.com/readinglist", "")
-	for _, id := range []string{rlBundleID, otherReadinglistBundleID} {
-		installed, origin := provenanceFor(t, env, id)
-		if !installed || origin != "" {
-			t.Errorf("entry %s installed=%v origin=%q, want installed with no provenance", id, installed, origin)
-		}
-	}
-}
-
-// A sample INSTALLED verbatim is held under the SHIPPED id, which is still a
-// door while the providers name sample packages under `requires:`. The listing
-// has to see that one too, or the console offers an install that already ran.
-func TestCatalogReportsAVerbatimInstalledSampleInstalled(t *testing.T) {
-	env := newHeldEnvFor(t, catalogWithOtherReadinglist(t), rlBundleID, "")
-	if !installedFor(t, env, rlBundleID) {
-		t.Error("a verbatim-installed sample reads as available, so the console offers it again")
-	}
-}
-
-// A repository holding neither reads as neither: the two-id lookup must not
-// make everything look installed.
-func TestCatalogReportsAnUntakenSampleAvailable(t *testing.T) {
-	env := newHeldEnv(t, googleBundleID)
-	if installedFor(t, env, rlBundleID) {
-		t.Error("a sample this repository does not have reads as installed")
-	}
-}
-
-// A SAMPLE's suggested mappings ride the listing with the state each has here
-// (decision record 0049): this repository holds no provider, so the five the
-// people sample ships are all `waiting`, each naming the package to install
-// and both ends of the projection. A provider carries none at all.
-func TestCatalogListsSuggestedMappingsAndTheirState(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[struct {
-		Items []struct {
-			ID                string                       `json:"id"`
-			SuggestedMappings []substrate.SuggestedMapping `json:"suggestedMappings"`
-		} `json:"items"`
-	}](t, rec)
-	var people, google int
-	for _, item := range body.Items {
-		switch item.ID {
-		case peopleBundleID:
-			people = len(item.SuggestedMappings)
-			for _, sm := range item.SuggestedMappings {
-				if sm.State != substrate.SuggestedMappingWaiting {
-					t.Errorf("%s: state = %q, want waiting on a repository with no provider", sm.ID, sm.State)
-				}
-				if sm.Package == "" || sm.From == "" || sm.To == "" {
-					t.Errorf("%s: the entry does not say what it waits for: %+v", sm.ID, sm)
-				}
-			}
-		case googleBundleID:
-			google = len(item.SuggestedMappings)
-		}
-	}
-	if people != 4 {
-		t.Errorf("the people sample reports %d suggested mappings, want 4", people)
-	}
-	if google != 0 {
-		t.Errorf("the google provider reports %d suggested mappings, want none: a provider declares no mapping", google)
-	}
-}
-
-// previewCountingDataset holds one reading-list copy stamped with the shipped
-// sample as its origin, under its own repository's authority, and counts the
-// upgrade previews the catalog asks of it. Its preview names the repository,
-// so an entry served another repository's plan says so.
-type previewCountingDataset struct {
-	heldDataset
-	previews *atomic.Int64
-}
-
-func (d previewCountingDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
-	d.previews.Add(1)
-	return substrate.BundleUpgrade{Blockers: []string{"counted in " + d.Repository().ID}}, nil
-}
-
-// A catalog read reuses the upgrade preview while the repository's changelog
-// head stands (issue #445): the listing read twice and the entry's own read
-// count one preview between them, a write counts a fresh one, and another
-// repository behind the same catalog counts and is served its own.
-func TestCatalogReadsReuseTheUpgradePreviewUntilTheHeadMoves(t *testing.T) {
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	const other = "ada.example.com"
-	base := newFakeService()
-	base.addRepository(other)
-	previews := map[string]*atomic.Int64{fakeRepository: new(atomic.Int64), other: new(atomic.Int64)}
-	base.wrap = func(d *fakeDataset) substrate.Dataset {
-		return previewCountingDataset{
-			heldDataset: heldDataset{fakeDataset: d, id: d.repository.ID + "/readinglist", origin: rlBundleID},
-			previews:    previews[d.repository.ID],
-		}
-	}
-	clock := &testClock{}
-	env := &testEnv{svc: base, h: New(Config{Service: base, Now: clock.now, Catalog: cat}), clock: clock}
-	type entry struct {
-		ID      string                   `json:"id"`
-		Upgrade *substrate.BundleUpgrade `json:"upgrade"`
-	}
-	listed := func(repository string) []string {
-		t.Helper()
-		rec := env.do(t, http.MethodGet, "/api/v1/catalog", env.svc.token(repository), nil)
-		wantStatus(t, rec, http.StatusOK)
-		for _, item := range decodeJSON[struct{ Items []entry }](t, rec).Items {
-			if item.ID == rlBundleID && item.Upgrade != nil {
-				return item.Upgrade.Blockers
-			}
-		}
-		t.Fatalf("the listing for %s carries no preview of %s", repository, rlBundleID)
-		return nil
-	}
-	detailed := func(repository string) []string {
-		t.Helper()
-		rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), env.svc.token(repository), nil)
-		wantStatus(t, rec, http.StatusOK)
-		item := decodeJSON[entry](t, rec)
-		if item.Upgrade == nil {
-			t.Fatalf("the entry for %s carries no preview", repository)
-		}
-		return item.Upgrade.Blockers
-	}
-	want := func(repository string, got []string, n int64, when string) {
-		t.Helper()
-		if len(got) != 1 || got[0] != "counted in "+repository {
-			t.Errorf("%s: %s is served the preview %q", when, repository, got)
-		}
-		if c := previews[repository].Load(); c != n {
-			t.Errorf("%s: %s counted %d previews, want %d", when, repository, c, n)
-		}
-	}
-
-	want(fakeRepository, listed(fakeRepository), 1, "the first listing")
-	want(fakeRepository, listed(fakeRepository), 1, "a second listing with no write between")
-	want(fakeRepository, detailed(fakeRepository), 1, "the entry's own read")
-	want(other, listed(other), 1, "another repository's first listing")
-	want(other, listed(other), 1, "another repository's second listing")
-
-	base.datasets[fakeRepository].commit(substrate.Change{
-		Actor: substrate.ActorAPI, Op: substrate.OpPut, Kind: fakeRepository + "/readinglist/page", RecordID: "moved",
-	})
-	want(fakeRepository, listed(fakeRepository), 2, "a listing after a write")
-	want(fakeRepository, listed(fakeRepository), 2, "a second listing after the write")
-	want(other, listed(other), 1, "another repository after the first one's write")
-
-	// A restore to a copy whose changelog reaches the same seq is another
-	// history: the generation moved, so the seq alone does not reuse a plan.
-	base.datasets[fakeRepository].restore(1)
-	want(fakeRepository, listed(fakeRepository), 3, "a listing after a restore to the same seq")
-
-	// Concurrent listings share the cached plan: each is served a copy, which
-	// the race detector holds to (mise run test:race).
-	tok := env.svc.token(other)
-	var wg sync.WaitGroup
-	for range 8 {
-		wg.Go(func() {
-			rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-			if rec.Code != http.StatusOK {
-				t.Errorf("a concurrent listing answered %d", rec.Code)
-			}
-		})
-	}
-	wg.Wait()
-	want(other, listed(other), 1, "listings read concurrently")
-}
-
-// countedStatusesDataset holds the google PROVIDER, whose upgrade preview
-// walks the requirements an install would bring, and counts the COUNTED
-// bundle status reads anything asks of it.
-type countedStatusesDataset struct {
-	heldDataset
-	counted *atomic.Int64
-}
-
-func (d countedStatusesDataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
-	d.counted.Add(1)
-	return d.heldDataset.BundleStatuses(ctx)
-}
-
-// A catalog read never asks for the live-row counts, in the listing, the
-// entry, or the provider preview's requirement walk (issue #1086). Each count
-// is an exact count of every live row of an installed kind, and the preview
-// asked for all of them once per provider entry, so the listing grew with the
-// data: about 30 s over a million live records.
-func TestCatalogReadsNeverCountLiveRecords(t *testing.T) {
-	cat, err := catalog.Load(catalog.Shipped()...)
-	if err != nil {
-		t.Fatalf("load catalog: %v", err)
-	}
-	counted := new(atomic.Int64)
-	base := newFakeService()
-	base.wrap = func(d *fakeDataset) substrate.Dataset {
-		return countedStatusesDataset{
-			heldDataset: heldDataset{fakeDataset: d, id: googleBundleID, plan: &substrate.BundleUpgrade{Available: true, From: 1, To: 2}},
-			counted:     counted,
-		}
-	}
-	clock := &testClock{}
-	env := &testEnv{svc: base, h: New(Config{Service: base, Now: clock.now, Catalog: cat}), clock: clock}
-	type entry struct {
-		ID        string                   `json:"id"`
-		Installed bool                     `json:"installed"`
-		Upgrade   *substrate.BundleUpgrade `json:"upgrade"`
-	}
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	offered := false
-	for _, item := range decodeJSON[struct{ Items []entry }](t, rec).Items {
-		if item.ID == googleBundleID {
-			offered = item.Installed && item.Upgrade != nil && item.Upgrade.Available
-		}
-	}
-	if !offered {
-		t.Fatalf("the listing does not offer the held %s its upgrade, so its preview never ran", googleBundleID)
-	}
-	rec = env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(googleBundleID), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if item := decodeJSON[entry](t, rec); item.Upgrade == nil || !item.Upgrade.Available {
-		t.Fatalf("the entry read does not offer the upgrade: %+v", item.Upgrade)
-	}
-	if n := counted.Load(); n != 0 {
-		t.Errorf("the catalog reads asked for the counted bundle statuses %d times, want none", n)
-	}
-}
-
-func TestCatalogInstallRejectsAStaleReview(t *testing.T) {
-	env := newCatalogEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/install", tok, map[string]any{"expect": map[string]any{"version": 1, "digest": "stale"}})
-	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
-	if !strings.Contains(rec.Body.String(), "the publisher listed another version since you reviewed this one; review it again") {
-		t.Fatal(rec.Body.String())
-	}
 }

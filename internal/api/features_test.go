@@ -29,7 +29,7 @@ const errorsFeature = "errors"
 // on: the metrics exposition, and a site whose logo is its tab icon.
 func everyOptionalRoute(t *testing.T) http.Handler {
 	t.Helper()
-	return New(Config{Service: newFakeService(), Metrics: true, Site: siteDir(t), WebDir: consoleDir(t)})
+	return New(Config{Service: &stubService{}, Metrics: true, Site: siteDir(t), WebDir: consoleDir(t)})
 }
 
 // walkRoutes lists a router's routes as `METHOD pattern`, the table's
@@ -299,7 +299,7 @@ func TestFeatureRevisionsAgainstTheBase(t *testing.T) {
 // defaults file is loaded.
 func TestDiscoveryServesTheFeatureTable(t *testing.T) {
 	for _, loaded := range []bool{false, true} {
-		h := New(Config{Service: newFakeService(), OperatorDefaults: loaded})
+		h := New(Config{Service: &stubService{}, OperatorDefaults: loaded})
 		rec := serve(h, http.MethodGet, "/.well-known/substrate/server.json", nil)
 		wantStatus(t, rec, http.StatusOK)
 		var doc struct {
@@ -339,7 +339,7 @@ func TestDiscoveryServesTheFeatureTable(t *testing.T) {
 // Go struct. `revision` is always present, and `notice` only where the entry
 // has one.
 func TestDiscoveryFeatureEntryKeys(t *testing.T) {
-	rec := serve(New(Config{Service: newFakeService()}), http.MethodGet, "/.well-known/substrate/server.json", nil)
+	rec := serve(New(Config{Service: &stubService{}}), http.MethodGet, "/.well-known/substrate/server.json", nil)
 	wantStatus(t, rec, http.StatusOK)
 	var doc struct {
 		Features []map[string]json.RawMessage `json:"features"`

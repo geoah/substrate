@@ -16,13 +16,21 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// exportingDataset is the fake with an export: the plain fake models none, so
-// this one answers the archive.
-type exportingDataset struct{ *fakeDataset }
+// exportingDataset is a repository whose export is cannedExport, or a
+// refusal: the faults an export meets before its first byte (exportErr) and
+// after it (exportFailMidway), which the engine cannot be made to produce on
+// demand. What the engine's own archive holds is export_db_test.go's.
+type exportingDataset struct {
+	stubDataset
+	// exportErr refuses Export before a point is pinned; exportFailMidway
+	// makes the stream fail after its first entry.
+	exportErr        error
+	exportFailMidway bool
+}
 
-// fakeExport is a two-entry archive: the manifest and snapshot.json, in the
+// cannedExport is a two-entry archive: the manifest and snapshot.json, in the
 // order the engine writes them. Midway failure stops after the first.
-type fakeExport struct {
+type cannedExport struct {
 	ds    *exportingDataset
 	point substrate.ExportPoint
 }
@@ -31,15 +39,15 @@ func (d *exportingDataset) Export(context.Context) (substrate.Export, error) {
 	if d.exportErr != nil {
 		return nil, d.exportErr
 	}
-	return &fakeExport{ds: d, point: substrate.ExportPoint{
-		Authority: d.repository.Authority, Head: 42, HeadHash: strings.Repeat("ab", 32),
+	return &cannedExport{ds: d, point: substrate.ExportPoint{
+		Authority: d.Repository().Authority, Head: 42, HeadHash: strings.Repeat("ab", 32),
 		TakenAt: time.Unix(1_700_000_000, 0).UTC(), Segments: 1, SealedFiles: 2,
 	}}, nil
 }
 
-func (e *fakeExport) Point() substrate.ExportPoint { return e.point }
+func (e *cannedExport) Point() substrate.ExportPoint { return e.point }
 
-func (e *fakeExport) WriteTo(w io.Writer) (int64, error) {
+func (e *cannedExport) WriteTo(w io.Writer) (int64, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	root := "repositories/" + e.point.Authority + "/"
@@ -59,60 +67,16 @@ func (e *fakeExport) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
-// exportingService hands every authenticated request the exporting dataset.
-type exportingService struct {
-	*fakeService
-	ds *exportingDataset
-}
-
-func (s *exportingService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	_, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return s.ds, info, nil
-}
-
-// exportEnv is a test env whose one repository exports.
+// exportEnv is a stub env whose one repository exports.
 func exportEnv(t *testing.T) (*testEnv, *exportingDataset, string) {
 	t.Helper()
-	base := newFakeService()
-	ds := &exportingDataset{fakeDataset: base.datasets[fakeRepository]}
-	svc := &exportingService{fakeService: base, ds: ds}
-	env := &testEnv{svc: base, h: New(Config{Service: svc, InviteCode: testInviteCode})}
-	return env, ds, base.token(fakeRepository)
+	ds := &exportingDataset{}
+	return newStubEnv(t, ds), ds, stubToken
 }
 
-// The archive comes back as a tar under the authority's file name, with the
-// point in the name, and the bearer token is the whole credential.
-func TestExportStreamsTheArchiveUnderTheBearerToken(t *testing.T) {
-	env, _, tok := exportEnv(t)
-	rec := env.do(t, http.MethodGet, "/api/v1/export", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if ct := rec.Header().Get("Content-Type"); ct != "application/x-tar" {
-		t.Fatalf("Content-Type = %q, want application/x-tar", ct)
-	}
-	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename=geoah.example.com-42.tar` {
-		t.Fatalf("Content-Disposition = %q", cd)
-	}
-	tr := tar.NewReader(rec.Body)
-	var names []string
-	for {
-		h, err := tr.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("read the archive: %v", err)
-		}
-		names = append(names, h.Name)
-	}
-	want := []string{"repositories/geoah.example.com/repository.json", "repositories/geoah.example.com/snapshot.json"}
-	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Fatalf("entries = %v, want %v", names, want)
-	}
-
-	// No token, no archive: the route sits behind the ordinary bearer check.
+// No token, no archive: the route sits behind the ordinary bearer check.
+func TestExportSitsBehindTheBearerCheck(t *testing.T) {
+	env, _, _ := exportEnv(t)
 	wantErrorCode(t, env.do(t, http.MethodGet, "/api/v1/export", "", nil), http.StatusUnauthorized, codeAuth)
 }
 

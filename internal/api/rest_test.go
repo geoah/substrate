@@ -1,13 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -17,152 +18,37 @@ import (
 // nothing (there is no collection route; the list is /records).
 const peoplePath = "/api/v1/samples.substrate.reamde.dev/people/person"
 
-func TestRESTUnknownKindIs404(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets/p1", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "unknown kind samples.substrate.reamde.dev/people/widgets") {
-		t.Fatalf("message = %q, want the kind named", msg)
-	}
+// restRefusing is a repository that resolves the person kind and refuses
+// every write with err: the sentinels the handler maps include an
+// authentication failure on a write, a function fault and a repository
+// latched behind its tables, which no request can make the engine return.
+type restRefusing struct {
+	stubKinds
+	err error
 }
 
-func TestRESTCRUD(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	created := createRecord(t, env, tok, personKind, map[string]any{"title": "Ada", "name": "Ada"})
-	if created.Kind != personKind {
-		t.Fatalf("POST must stamp the body's kind, got %q", created.Kind)
-	}
-	if ds.lastPut.Kind != personKind {
-		t.Fatalf("put input kind = %q", ds.lastPut.Kind)
-	}
-
-	rec := env.do(t, http.MethodGet, peoplePath+"/"+created.ID, tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-
-	// PUT to a fresh id CREATES it, so the status is 201: the code
-	// reports what the write did, not which method carried it.
-	rec = env.do(t, http.MethodPut, peoplePath+"/fixed1", tok, map[string]any{"properties": map[string]any{"title": "Grace"}})
-	wantStatus(t, rec, http.StatusCreated)
-	if ds.lastPut.ID != "fixed1" {
-		t.Fatalf("PUT must address the path id, got %q", ds.lastPut.ID)
-	}
-	// A second PUT to the same id is an UPDATE, so it is 200.
-	rec = env.do(t, http.MethodPut, peoplePath+"/fixed1", tok, map[string]any{"properties": map[string]any{"title": "Grace H"}})
-	wantStatus(t, rec, http.StatusOK)
-
-	rec = env.do(t, http.MethodPatch, peoplePath+"/"+created.ID, tok,
-		map[string]any{"properties": map[string]any{"company": "Analytical"}})
-	wantStatus(t, rec, http.StatusOK)
-	patched := decodeJSON[substrate.Record](t, rec)
-	if patched.Properties["company"] != "Analytical" {
-		t.Fatalf("patched props = %v", patched.Properties)
-	}
-
-	rec = env.do(t, http.MethodDelete, peoplePath+"/"+created.ID, tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	deleted := decodeJSON[substrate.Record](t, rec)
-	if deleted.DeletedAt == nil {
-		t.Fatal("delete must be a soft delete (deletedAt set)")
-	}
-
-	rec = env.do(t, http.MethodGet, peoplePath+"/nope", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+func newRestRefusing(err error) *restRefusing {
+	return &restRefusing{stubKinds: newStubKinds(personKind), err: err}
 }
 
-// GET one carries the property provenance; lists never do.
-func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	at := time.Unix(1_700_000_000, 0).UTC()
-	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person",
-		Properties: map[string]any{"name": "Sam"},
-	}
-	ds.meta["p1"] = map[string]substrate.PropertyMeta{
-		"name": {Manager: "owner", UpdatedAt: at, Alternatives: []substrate.PropertyAlternative{
-			{Actor: "google.connectors.substrate.reamde.dev/google/people", Value: "Samuel Jones", UpdatedAt: at},
-		}},
-	}
-
-	rec := env.do(t, http.MethodGet, peoplePath+"/p1", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	var got map[string]json.RawMessage
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	raw, ok := got["propertyMeta"]
-	if !ok {
-		t.Fatalf("GET one lost propertyMeta: %s", rec.Body.String())
-	}
-	var meta map[string]substrate.PropertyMeta
-	if err := json.Unmarshal(raw, &meta); err != nil {
-		t.Fatal(err)
-	}
-	if meta["name"].Manager != "owner" || len(meta["name"].Alternatives) != 1 ||
-		meta["name"].Alternatives[0].Value != "Samuel Jones" {
-		t.Fatalf("propertyMeta = %+v", meta)
-	}
-
-	// The list projection stays lean: no provenance on a list read.
-	rec = env.do(t, http.MethodGet, recordsOf(t, personKind), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if strings.Contains(rec.Body.String(), "propertyMeta") {
-		t.Fatalf("list carries propertyMeta: %s", rec.Body.String())
-	}
+func (d *restRefusing) Put(context.Context, substrate.Actor, substrate.PutInput) (*substrate.Record, error) {
+	return nil, d.err
 }
 
-// A record carries what it points at; what points BACK is a list under
-// `filter.referencing`, and the target is matched by its canonical id and
-// every former one, so a pointer written before a merge still counts.
-func TestRESTReferencingFollowsAMergedTarget(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	ds.put(&substrate.Record{ID: "winner", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
-	ds.put(&substrate.Record{ID: "loser", Kind: personKind, Properties: map[string]any{}})
-	ds.formers["loser"] = "winner"
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Properties: map[string]any{
-		"name": "Ada", "manager": map[string]any{"ref": personKind + "/loser"},
-	}})
-
-	// The record body never carries its pointers-back.
-	rec := env.do(t, http.MethodGet, peoplePath+"/winner", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if body := rec.Body.String(); strings.Contains(body, "referencing") || strings.Contains(body, "matches") {
-		t.Fatalf("the record body carries a reverse read: %s", body)
-	}
-
-	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{
-		Referencing: &substrate.Referencing{Ref: personKind + "/winner"},
-	}), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.Page](t, rec)
-	if len(page.Records) != 1 || page.Records[0].ID != "p2" {
-		t.Fatalf("referencing page = %+v", page.Records)
-	}
-	if got := page.Matches[personKind+"/p2"]; len(got) != 1 || got[0].Property != "manager" {
-		t.Fatalf("matches = %+v", page.Matches)
-	}
+func (d *restRefusing) Patch(context.Context, substrate.Actor, string, string, substrate.PatchInput) (*substrate.Record, error) {
+	return nil, d.err
 }
 
 func TestRESTBadFilterIsBadRequest(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, recordsPath+"?filter=%7Bnot-json", tok, nil)
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, recordsPath+"?filter=%7Bnot-json", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 func TestRESTErrorEnvelopeMapping(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newRestRefusing(nil)
+	env := newStubEnv(t, ds)
+	tok := stubToken
 
 	cases := []struct {
 		name   string
@@ -178,7 +64,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		{"not_found", fmt.Errorf("id: %w", substrate.ErrNotFound), http.StatusNotFound, codeNotFound},
 		{"function_failed", fmt.Errorf("body: %w", substrate.ErrFunctionFault), http.StatusInternalServerError, codeFunctionFailed},
 		{"parked", fmt.Errorf("%w: trigger t: parked delivery 7 ran again and failed", substrate.ErrParked), http.StatusConflict, codeParked},
-		{"internal", errBoom, http.StatusInternalServerError, codeInternal},
+		{"internal", errors.New("boom"), http.StatusInternalServerError, codeInternal},
 		{"unavailable", fmt.Errorf("vectors: %w", substrate.ErrUnavailable), http.StatusServiceUnavailable, codeUnavailable},
 		// The engine's two directory refusals (engine.ErrDirectoryWrite,
 		// engine.ErrChangelogFileBehind), as they reach this package: a write
@@ -190,8 +76,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ds.errs["Put"] = tc.err
-			defer delete(ds.errs, "Put")
+			ds.err = tc.err
 			rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 			wantErrorCode(t, rec, tc.status, tc.code)
 			// Every unavailable carries Retry-After.
@@ -201,8 +86,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		})
 	}
 
-	ds.errs["Put"] = &substrate.ValidationError{Problems: []string{"name: required", "asin: malformed"}}
-	defer delete(ds.errs, "Put")
+	ds.err = &substrate.ValidationError{Problems: []string{"name: required", "asin: malformed"}}
 	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	env2 := decodeJSON[substrate.ErrorEnvelope](t, rec)
@@ -224,26 +108,27 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 // it always was, and narrowed by the reason `stale_revision`, so a client's
 // outbox drops it without matching the message, which stays the same words
 // for a client that still does. A removed revision is no stale write and
-// carries no reason.
+// carries no reason. This is the envelope for the engine's refusal on every
+// write door; the engine's own refusal is
+// TestRESTStaleRevisionIsRefusedWithItsReason.
 func TestRESTStaleRevisionIsValidationWithItsReason(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newRestRefusing(nil)
+	env := newStubEnv(t, ds)
+	tok := stubToken
 
 	const problem = "props.revision: 2 is below the stored revision 3; a rewrite never lowers it, so this is a stale delivery"
 	stale := &substrate.ValidationError{Problems: []string{problem}, Reason: substrate.ReasonStaleRevision}
 	writes := []struct {
-		op, method, path string
-		body             map[string]any
+		method, path string
+		body         map[string]any
 	}{
-		{"Put", http.MethodPost, recordsPath, map[string]any{"kind": personKind, "properties": map[string]any{"revision": 2}}},
-		{"Put", http.MethodPut, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
-		{"Patch", http.MethodPatch, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
+		{http.MethodPost, recordsPath, map[string]any{"kind": personKind, "properties": map[string]any{"revision": 2}}},
+		{http.MethodPut, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
+		{http.MethodPatch, peoplePath + "/w", map[string]any{"properties": map[string]any{"revision": 2}}},
 	}
+	ds.err = stale
 	for _, w := range writes {
 		t.Run(w.method, func(t *testing.T) {
-			ds.errs[w.op] = stale
-			defer delete(ds.errs, w.op)
 			rec := env.do(t, w.method, w.path, tok, w.body)
 			wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 			// The reason sits at error.reason, beside the code.
@@ -267,8 +152,7 @@ func TestRESTStaleRevisionIsValidationWithItsReason(t *testing.T) {
 		})
 	}
 
-	ds.errs["Put"] = &substrate.ValidationError{Problems: []string{"props.revision: the stored revision 3 is never removed; a rewrite carries one at least as high"}}
-	defer delete(ds.errs, "Put")
+	ds.err = &substrate.ValidationError{Problems: []string{"props.revision: the stored revision 3 is never removed; a rewrite carries one at least as high"}}
 	rec := env.do(t, http.MethodPut, peoplePath+"/w", tok, map[string]any{"properties": map[string]any{}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	if strings.Contains(rec.Body.String(), `"reason"`) {
@@ -281,13 +165,10 @@ func TestRESTStaleRevisionIsValidationWithItsReason(t *testing.T) {
 // was, with a Retry-After longer than a transient refusal's and the engine's
 // message, so the reply itself tells an operator to restart.
 func TestRESTRestartRequiredIsUnavailableNamingTheRestart(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
 	const msg = "the repository directory is behind the tables after a failed write; restart the server so the boot check catches it up"
-	ds.errs["Put"] = fmt.Errorf("%w: %s: repository %s: prepare seq 206..206", substrate.ErrRestartRequired, msg, fakeRepository)
-	defer delete(ds.errs, "Put")
+	ds := newRestRefusing(fmt.Errorf("%w: %s: repository %s: prepare seq 206..206", substrate.ErrRestartRequired, msg, stubRepository))
+	env := newStubEnv(t, ds)
+	tok := stubToken
 	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if got := rec.Header().Get("Retry-After"); got != "30" {
@@ -299,7 +180,7 @@ func TestRESTRestartRequiredIsUnavailableNamingTheRestart(t *testing.T) {
 	}
 
 	// A transient refusal keeps its one-second Retry-After.
-	ds.errs["Put"] = fmt.Errorf("vectors: %w", substrate.ErrUnavailable)
+	ds.err = fmt.Errorf("vectors: %w", substrate.ErrUnavailable)
 	rec = env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "properties": map[string]any{"title": "x"}})
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if got := rec.Header().Get("Retry-After"); got != "1" {
@@ -311,15 +192,14 @@ func TestRESTRestartRequiredIsUnavailableNamingTheRestart(t *testing.T) {
 // engine's AcceptConflictError carries the reason with no inner sentinel, so
 // the wire says 409 conflict with the reason whatever the cause — never the
 // 422 a no-op diff's validation failure used to surface as, and never the
-// words "version conflict", which belong to the caller's own ifVersion.
+// words "version conflict", which belong to the caller's own ifVersion. This
+// is the envelope for each error; the engine's own failed accept is
+// TestRESTFailedAcceptOfANoOpDiffIsConflict.
 func TestRESTFailedAcceptIsConflictWithItsReason(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
 	const reason = "the diff applied no change — the target already matches the proposed values"
-	ds.errs["Patch"] = &substrate.AcceptConflictError{Reason: reason}
-	defer delete(ds.errs, "Patch")
+	ds := newRestRefusing(&substrate.AcceptConflictError{Reason: reason})
+	env := newStubEnv(t, ds)
+	tok := stubToken
 
 	rec := env.do(t, http.MethodPatch, peoplePath+"/anyone", tok,
 		map[string]any{"properties": map[string]any{"decision": "accepted"}, "ifVersion": 1})
@@ -337,7 +217,7 @@ func TestRESTFailedAcceptIsConflictWithItsReason(t *testing.T) {
 
 	// The same PATCH under a stale ifVersion is still the version conflict it
 	// always was: the two stay tellable apart by message under one code.
-	ds.errs["Patch"] = fmt.Errorf("%w: ifVersion 1, stored 4", substrate.ErrConflict)
+	ds.err = fmt.Errorf("%w: ifVersion 1, stored 4", substrate.ErrConflict)
 	rec = env.do(t, http.MethodPatch, peoplePath+"/anyone", tok,
 		map[string]any{"properties": map[string]any{"name": "Ada"}, "ifVersion": 1})
 	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
