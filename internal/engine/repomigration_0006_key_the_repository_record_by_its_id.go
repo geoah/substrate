@@ -40,7 +40,7 @@ func migrateKeyTheRepositoryRecordByItsID(t *txn) (string, error) {
 	}
 	if moved == nil {
 		row := &erow{
-			ID: id, Kind: kindRepository, Title: old.Title, Body: old.Body,
+			ID: id, Kind: kindRepository, Title: old.Title,
 			States: maps.Clone(old.States), Props: maps.Clone(old.Props), Labels: maps.Clone(old.Labels),
 			KindVersion: old.KindVersion,
 		}

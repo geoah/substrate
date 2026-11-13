@@ -223,6 +223,10 @@ func (s *service) keyDirectory(ctx context.Context, name string) error {
 // published under it.
 const keyingAfterRename = "after a directory took its id"
 
+// importBeforeRow is the import's step with the name held and no row
+// published yet (repodir.go importRepositoryDir).
+const importBeforeRow = "before an imported directory's row"
+
 func (s *service) keyingFault(stage string) error {
 	if s.testImportFault == nil {
 		return nil

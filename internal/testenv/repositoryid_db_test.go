@@ -15,6 +15,7 @@ package testenv_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -41,6 +42,17 @@ func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
 	// hold rows the registration did not.
 	e.MustJSON(http.MethodPut, "/api/v1/substrate.reamde.dev/core/contact/"+vocabulary.DerivedMintedID("keyed", "ada"),
 		map[string]any{"properties": map[string]any{"name": "Ada"}}, nil)
+	// A blob, whose bytes are the one file the data root keeps per record.
+	status, raw, _ := e.DoRaw(http.MethodPut, "/api/v1/blobs?name=keyed.txt", []byte("keyed bytes"), map[string]string{"Content-Type": "text/plain"})
+	if status != http.StatusCreated {
+		t.Fatalf("put blob: %d %s", status, raw)
+	}
+	var blob struct {
+		Digest string `json:"digest"`
+	}
+	if err := json.Unmarshal(raw, &blob); err != nil || blob.Digest == "" {
+		t.Fatalf("blob upload answered %s: %v", raw, err)
+	}
 
 	db, err := sql.Open("pgx", e.DSN)
 	if err != nil {
@@ -98,11 +110,58 @@ func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
 			scopedByID += n
 		}
 	}
+	// Every table with a repository column, in a unique index or not: the
+	// name in none of them, and the id in each table the writes above fill,
+	// so no other table's rows stand in for one a writer skipped.
+	scoped, err := db.QueryContext(ctx, `
+		SELECT c.table_name FROM information_schema.columns c
+		JOIN information_schema.tables tb ON tb.table_schema = c.table_schema AND tb.table_name = c.table_name
+		WHERE c.table_schema = current_schema() AND c.column_name = 'repository' AND tb.table_type = 'BASE TABLE'
+		ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	for scoped.Next() {
+		var table string
+		if err := scoped.Scan(&table); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, table)
+	}
+	if err := scoped.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = scoped.Close()
+	byID := map[string]int{}
+	for _, table := range tables {
+		var byName int
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %q WHERE repository = $1`, table), name).Scan(&byName); err != nil {
+			t.Fatalf("read %s: %v", table, err)
+		}
+		if byName > 0 {
+			held = append(held, fmt.Sprintf("%s.repository (%d rows)", table, byName))
+		}
+		var n int
+		if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %q WHERE repository = $1`, table), id).Scan(&n); err != nil {
+			t.Fatalf("read %s: %v", table, err)
+		}
+		byID[table] = n
+	}
 	if len(held) > 0 {
 		t.Errorf("key columns holding the name %s:\n  %s", name, strings.Join(held, "\n  "))
 	}
-	if scopedByID == 0 || len(keys) < 30 {
-		t.Fatalf("read %d key columns and found %d rows keyed by the id: the scan read nothing", len(keys), scopedByID)
+	if scopedByID == 0 || len(keys) < 30 || len(tables) < 20 {
+		t.Fatalf("read %d key columns and %d scoped tables and found %d rows keyed by the id: the scan read nothing", len(keys), len(tables), scopedByID)
+	}
+	for _, table := range []string{
+		"records", "changelog", "refs", "property_managers", "sealed", "search_index",
+		"repository_migrations", "changelog_dialect", "vocabulary_dialect",
+		"unit_graph", "unit_uses_index", "observed_index",
+	} {
+		if byID[table] == 0 {
+			t.Errorf("%s holds no row keyed by the id %s: the writes this test makes fill it, so its writer was not exercised", table, id)
+		}
 	}
 
 	var paths []string
@@ -130,5 +189,8 @@ func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
 	}
 	if !sawID {
 		t.Errorf("no path under the data root names the repository's id %s", id)
+	}
+	if _, err := os.Stat(filepath.Join(root, "repositories", id, "blobs", blob.Digest)); err != nil {
+		t.Errorf("the blob's bytes are not under the id's directory: %v", err)
 	}
 }

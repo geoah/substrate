@@ -926,6 +926,17 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if m.Format != changelogfile.ManifestFormat {
 		return out, fmt.Errorf("the manifest of %s is format %d, which the boot converts before it imports; restart the server", dir, m.Format)
 	}
+	// The name's lease first, held until the boot has published the
+	// repository, as the keying holds it (holdName): a directory given its id
+	// by a boot that died before importing it is resumed here, and a second
+	// server with a copy still keyed by the name must meet the lease rather
+	// than find no row and mint a second id.
+	if err := s.holdName(ctx, m.Authority); err != nil {
+		return out, err
+	}
+	if err := s.keyingFault(importBeforeRow); err != nil {
+		return out, err
+	}
 	// One name, one repository: a directory whose name another repository
 	// in this database holds is a copy of another repository, not this one.
 	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {

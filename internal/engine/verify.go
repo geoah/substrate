@@ -146,6 +146,11 @@ func (s *service) verifyRepository(ctx context.Context, repository string, opts 
 	if err != nil {
 		return VerifyReport{}, nil, err
 	}
+	// The open's refusal (engine.go open): a repository still keyed by its
+	// name is read under its id only once a server that writes converted it.
+	if !vocabulary.ValidRepositoryID(repo.ID) {
+		return VerifyReport{}, nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
+	}
 	report := VerifyReport{Repository: repo.ID, Recanonicalized: opts.Recanonicalize}
 	found := func(f string) {
 		if len(report.Findings) >= verifyFindingCap {

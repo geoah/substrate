@@ -54,8 +54,9 @@ func (a *app) repositorySnapshotCommand() *cobra.Command {
 		Long: `Copy one repository's directory into a destination root, verified before and
 after, with snapshot.json recording the committed point the copy holds.
 
-The copy lands at <destination root>/repositories/<authority>/, the layout a
-data root has, so a restore copies it straight under SUBSTRATE_DATA_ROOT. It
+The copy lands at <destination root>/repositories/<id>/, the layout a data
+root has, so a restore copies it straight under SUBSTRATE_DATA_ROOT; the id
+is the repository's key, which 'repository list' prints beside its name. It
 holds the manifest, every changelog segment and sidecar, every committed
 sealed file and the bytes of every stored blob, each hashed against its
 digest on the way. snapshot.json is written last and names the head seq, its

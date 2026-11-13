@@ -101,7 +101,15 @@ func writeKeyedByName(t *testing.T) keyedByName {
 	}
 
 	db := rawDBOf(t, k.dsn)
-	for _, table := range repositoryScopedTables {
+	// A row in every table the writes above leave empty, so the keying is
+	// held to every table the schema keys by repository, the ones no
+	// ordinary write here fills included (the allowance ledger, the embed
+	// queue, a trigger's cursor).
+	fillEveryRepositoryTable(t, db, info.ID)
+	// Every table the schema keys by repository, discovered rather than
+	// taken from the list the keying walks, so a table that list lacks is
+	// keyed by the name here and found keyed by it after the boot.
+	for _, table := range repositoryColumnTables(t, db) {
 		if _, err := db.ExecContext(ctx, `UPDATE `+table+` SET repository = $1 WHERE repository = $2`, k.name, info.ID); err != nil {
 			t.Fatalf("key %s by the name: %v", table, err)
 		}
@@ -163,7 +171,10 @@ func holdKeyed(t *testing.T, k keyedByName) {
 		t.Fatalf("the repository is keyed %q after the boot", repo.ID)
 	}
 	db := rawDBOf(t, k.dsn)
-	for _, table := range repositoryScopedTables {
+	// Every table the schema gives a repository column, discovered rather
+	// than taken from the list the keying walks, so a table that list lacks
+	// is a failure here and not a table both pass over.
+	for _, table := range repositoryColumnTables(t, db) {
 		var n int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE repository = $1`, k.name).Scan(&n); err != nil {
 			t.Fatal(err)
@@ -277,6 +288,39 @@ func TestAReadOnlyOpenRefusesARepositoryKeyedByItsName(t *testing.T) {
 	if _, err := svcI.Dataset(ctx, k.name); !errors.Is(err, ErrRepositoryNotKeyed) {
 		t.Fatalf("a read-only open of a repository keyed by its name: %v, want ErrRepositoryNotKeyed", err)
 	}
+	if _, err := svcI.(*service).VerifyRepository(ctx, k.name); !errors.Is(err, ErrRepositoryNotKeyed) {
+		t.Fatalf("a read-only verify of a repository keyed by its name: %v, want ErrRepositoryNotKeyed", err)
+	}
+}
+
+// repositoryColumnTables is every table of the schema with a repository
+// column, but the control plane's own.
+func repositoryColumnTables(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	rows, err := db.Query(`
+		SELECT c.table_name FROM information_schema.columns c
+		JOIN information_schema.tables tb ON tb.table_schema = c.table_schema AND tb.table_name = c.table_name
+		WHERE c.table_schema = current_schema() AND c.column_name = 'repository' AND tb.table_type = 'BASE TABLE'
+		ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var table string
+		if err := rows.Scan(&table); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, table)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(out) < len(repositoryScopedTables) {
+		t.Fatalf("the schema lists %d tables with a repository column, fewer than the %d the keying walks", len(out), len(repositoryScopedTables))
+	}
+	return out
 }
 
 // rawDBOf is a pool of the DSN's own role, which reads every repository's
@@ -487,6 +531,78 @@ func TestAKeyingHoldsTheNameUntilTheRepositoryIsPublished(t *testing.T) {
 	}
 }
 
+// A boot that gave a directory its id and died before publishing the
+// repository leaves the directory under its id. The boot that resumes it
+// holds the name again, from before it reads whether the name is free until
+// the repository is published, so a second server over the same database
+// with a copy still keyed by the name is refused before it reads or writes
+// its copy, rather than finding no row and minting a second id.
+func TestAResumedImportHoldsTheNameUntilTheRepositoryIsPublished(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	src := writeKeyedByName(t)
+	dsn, rootA, rootB := MigratedDSN(t), t.TempDir(), t.TempDir()
+	for _, root := range []string{rootA, rootB} {
+		if err := copyTree(filepath.Join(src.root, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	died := errors.New("the process died after the rename")
+	if _, err := OpenForTest(t, ctx, dsn, WithDataRoot(rootA), WithTestImportFault(0, func(stage string) error {
+		if stage == keyingAfterRename {
+			return died
+		}
+		return nil
+	})); !errors.Is(err, died) {
+		t.Fatalf("the first boot did not die after its rename: %v", err)
+	}
+	reached, resume := make(chan struct{}), make(chan struct{})
+	type opened struct {
+		svc substrate.Service
+		err error
+	}
+	done := make(chan opened, 1)
+	go func() {
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(rootA), WithTestImportFault(0, func(stage string) error {
+			if stage == importBeforeRow {
+				close(reached)
+				<-resume
+			}
+			return nil
+		}))
+		done <- opened{svc, err}
+	}()
+	select {
+	case <-reached:
+	case o := <-done:
+		t.Fatalf("the restarted boot ended before it imported: %v", o.err)
+	case <-time.After(time.Minute):
+		t.Fatal("the restarted boot never reached its import")
+	}
+	manifest := filepath.Join(rootB, changelogfile.RepositoriesDir, src.name, changelogfile.ManifestName)
+	before, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = OpenForTest(t, ctx, dsn, WithDataRoot(rootB))
+	after, rerr := os.ReadFile(manifest)
+	close(resume)
+	if !errors.Is(err, ErrRepositoryHasAnotherWriter) {
+		t.Errorf("a second boot while the restarted one had not published the repository: %v, want ErrRepositoryHasAnotherWriter", err)
+	}
+	if rerr != nil || !bytes.Equal(before, after) {
+		t.Errorf("the second boot changed its copy of the directory: %v", rerr)
+	}
+	o := <-done
+	if o.err != nil {
+		t.Fatalf("the restarted boot: %v", o.err)
+	}
+	t.Cleanup(func() { _ = o.svc.Close() })
+	if _, err := o.svc.Dataset(ctx, src.name); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A directory a crash left with its manifest rewritten and its spool not yet
 // sealed again, beside another directory already under its id, is refused
 // before either is touched: its manifest and its spooled request stay as they
@@ -547,5 +663,76 @@ func TestAResumedKeyingBesideItsDuplicateIsRefusedUntouched(t *testing.T) {
 	manifestAfter, spoolAfter := read()
 	if !bytes.Equal(manifest, manifestAfter) || !bytes.Equal(spool, spoolAfter) {
 		t.Fatal("the refused directory's manifest or spooled request changed")
+	}
+}
+
+// keyingFixtureValues are the values a table's checks hold a column to,
+// where a value by type alone would not pass them.
+var keyingFixtureValues = map[string]string{
+	"observed_rollups.tier":       "3600",
+	"observed_segments.available": "0",
+}
+
+// fillEveryRepositoryTable writes one row for repository into every table
+// the schema gives a repository column that holds none of its rows: a value
+// for every column that needs one, by its type. A table it cannot fill so
+// fails the test, naming it, so a table added to the schema is a failure
+// here until the fixture covers it, never a table the keying test passes
+// over.
+func fillEveryRepositoryTable(t *testing.T, db *sql.DB, repository string) {
+	t.Helper()
+	ctx := context.Background()
+	for _, table := range repositoryColumnTables(t, db) {
+		var n int
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE repository = $1`, repository).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			continue
+		}
+		rows, err := db.QueryContext(ctx, `
+			SELECT column_name, data_type, udt_name
+			FROM information_schema.columns
+			WHERE table_schema = current_schema() AND table_name = $1
+			  AND is_nullable = 'NO' AND column_default IS NULL AND is_identity = 'NO' AND is_generated = 'NEVER'
+			ORDER BY ordinal_position`, table)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cols, vals := []string{"repository"}, []string{"$1"}
+		for rows.Next() {
+			var name, dataType, udt string
+			if err := rows.Scan(&name, &dataType, &udt); err != nil {
+				t.Fatal(err)
+			}
+			if name == "repository" {
+				continue
+			}
+			v, ok := keyingFixtureValues[table+"."+name]
+			if ok {
+				cols, vals = append(cols, name), append(vals, v)
+				continue
+			}
+			v, ok = map[string]string{
+				"text": "'keyed-" + name + "'", "character varying": "'keyed-" + name + "'",
+				"integer": "1", "bigint": "1", "smallint": "1", "numeric": "1", "double precision": "1", "real": "1",
+				"boolean": "false", "timestamp with time zone": "now()", "timestamp without time zone": "now()", "date": "current_date",
+				"jsonb": "'{}'", "json": "'{}'", "bytea": "'\\x00'", "uuid": "gen_random_uuid()", "ARRAY": "'{}'",
+			}[dataType]
+			if !ok && udt == "vector" {
+				v, ok = "'[0]'", true
+			}
+			if !ok {
+				t.Fatalf("the keying fixture leaves %s empty and cannot fill its column %s (%s %s): add a row for %s to fillEveryRepositoryTable", table, name, dataType, udt, table)
+			}
+			cols, vals = append(cols, name), append(vals, v)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		_ = rows.Close()
+		if _, err := db.ExecContext(ctx, `INSERT INTO `+table+` (`+strings.Join(cols, ", ")+`) VALUES (`+strings.Join(vals, ", ")+`)`, repository); err != nil {
+			t.Fatalf("the keying fixture leaves %s empty and cannot write a row of it (%v): add one to fillEveryRepositoryTable", table, err)
+		}
 	}
 }
