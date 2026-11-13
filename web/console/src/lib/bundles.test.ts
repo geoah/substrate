@@ -46,8 +46,11 @@ import {
   needsConsent,
   confirmationOf,
   changeLines,
+  retentionShortLines,
   expectationOf,
   reviewNeeded,
+  publisherReviewNeeded,
+  sameShortenings,
   holderFreeBlockers,
   holderWords,
   publisherUnreadable,
@@ -1107,6 +1110,58 @@ describe("needsConfirmation: what a click has to consent to", () => {
     ).toBeUndefined()
   })
 
+  it("asks for a review of history kept for less time at every tier, and binds it by reading the preview again", () => {
+    // A provider the binary ships: no publisher's digest, no plan.
+    const shipped: BundleUpgrade = {
+      available: true,
+      work: 0,
+      lossy: false,
+      from: 3,
+      to: 4,
+      retentionShortens: [
+        { kind: "providers.example/mail/message", from: "all", to: "P30D" },
+      ],
+    }
+    expect(publisherReviewNeeded(shipped)).toBe(false)
+    expect(reviewNeeded(shipped)).toBe(true)
+    expect(needsConsent(shipped)).toBe(true)
+    // The door takes no consent to a shortening: the click sends the bare
+    // body, and nothing marks the review unbound.
+    expect(confirmationOf(shipped)).toEqual({})
+    // With a plan, its confirmation; with a publisher, the version reviewed.
+    expect(
+      confirmationOf({
+        ...shipped,
+        lossy: true,
+        planHash: "d15c",
+        changelogSeq: 9,
+      })
+    ).toEqual({ confirm: { planHash: "d15c", changelogSeq: 9 } })
+    expect(
+      confirmationOf({
+        ...shipped,
+        reviewRequired: true,
+        candidateVersion: 4,
+        candidateDigest: "sha256:abc",
+      })
+    ).toEqual({ expect: { version: 4, digest: "sha256:abc" } })
+    // What binds it: the same kinds shortened the same way, at the same
+    // version.
+    expect(sameShortenings(shipped, { ...shipped })).toBe(true)
+    expect(sameShortenings(shipped, { ...shipped, to: 5 })).toBe(false)
+    expect(
+      sameShortenings(shipped, {
+        ...shipped,
+        retentionShortens: [
+          { kind: "providers.example/mail/message", from: "all", to: "P7D" },
+        ],
+      })
+    ).toBe(false)
+    expect(
+      sameShortenings(shipped, { ...shipped, retentionShortens: undefined })
+    ).toBe(false)
+  })
+
   it("lists the declarations an upgrade moves, with their versions", () => {
     expect(
       changeLines({
@@ -1868,5 +1923,22 @@ describe("takeRunsOutsideCode", () => {
   it("labels a package that brings such code first, and not one whose requirement is held", () => {
     expect(takeRunsOutsideCode(words, [node(outside, false)])).toBe(true)
     expect(takeRunsOutsideCode(words, [node(outside, true)])).toBe(false)
+  })
+})
+
+describe("retentionShortLines", () => {
+  it("says each kind an upgrade keeps for less time, in words", () => {
+    const upgrade: BundleUpgrade = {
+      available: true,
+      work: 0,
+      lossy: false,
+      retentionShortens: [
+        { kind: "publisher.example/journal/entry", from: "all", to: "P30D" },
+      ],
+    }
+    expect(retentionShortLines(upgrade)).toEqual([
+      "publisher.example/journal/entry: all of it → 30 days",
+    ])
+    expect(retentionShortLines(undefined)).toEqual([])
   })
 })

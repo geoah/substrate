@@ -96,7 +96,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 10, because substrate's catalogue ships this package at 9 and a package
   # that reaches a repository has to outrank what is installed there. What it
   # is NOT is a compatible successor: version 9 declares `recovery.cycleId` as
@@ -185,7 +186,10 @@ data:
   # The adapter's stamp follows the package to `whoop@27`; what it writes
   # is unchanged.
   # 28: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 28
+  # 29: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 30: `config` and `account` keep all of their history, as kinds the owner
+  #    writes, not the package's 30 days (decision record 0282).
+  version: 30
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -805,6 +809,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
+  # The owner's connection settings: every entry is kept, as for any kind a
+  # person writes, not the package's 30 days (decision record 0282).
+  retention: all
   description: >-
     The WHOOP app settings your account connects through. The WHOOP OAuth
     app this bundle authenticates through — its client id, a sealed client
@@ -860,6 +867,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: >-
     Your WHOOP account, connected here. One connected WHOOP account: these
     records ARE the bundle's connections. The OAuth facility writes the credential
@@ -3894,7 +3905,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `whoop-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "whoop@28"
+    ADAPTER = "whoop@30"
 
     OBSERVATION = "substrate.reamde.dev/observations/observation"
     SOURCE = "substrate.reamde.dev/observations/source"

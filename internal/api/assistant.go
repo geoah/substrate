@@ -140,6 +140,10 @@ func (a *assistantDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, err
 	return a.inner.Kinds(ctx)
 }
 
+func (a *assistantDataset) KindRetentions(ctx context.Context) ([]substrate.KindRetention, error) {
+	return a.inner.KindRetentions(ctx)
+}
+
 func (a *assistantDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
 	return a.inner.KindByRef(ctx, ref)
 }

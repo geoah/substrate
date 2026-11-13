@@ -11,6 +11,7 @@
  * browse page already holds. */
 
 import { useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { DataTableColumn } from "@/components/data-table/data-table"
 import { Link } from "@tanstack/react-router"
 import { FileQuestionIcon } from "lucide-react"
@@ -31,7 +32,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { retentionQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
+import { retentionLine } from "@/lib/retention"
 import { kindLinkTargets, kindManifestYAML } from "@/lib/manifest"
 import {
   declaredProperties,
@@ -348,13 +351,16 @@ function ReferenceTable({
 }
 
 /** The kind's own facts, above its declaration: the reference the API and the
- * CLI both address it by, its version, and where it came from. */
+ * CLI both address it by, its version, where it came from, and how long its
+ * history is kept here. */
 function Facts({ kind }: { kind: KindInfo }) {
+  const retention = useQuery(retentionQueryOptions).data?.get(kind.identity)
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 pt-4 text-xs text-muted-foreground">
       <span className="data text-foreground/80">{kind.identity}</span>
       {kind.version ? <span>version {kind.version}</span> : null}
       <span>{kind.source}</span>
+      {retention ? <span>{retentionLine(retention)}</span> : null}
     </div>
   )
 }

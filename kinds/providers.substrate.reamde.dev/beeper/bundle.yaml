@@ -126,7 +126,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 13 — T-084, the core `sync` trait: the account kind binds
   # `[accountconfig, sync]` and declares the trait's twelve properties with
   # their writers, and the sync body writes them beside the legacy
@@ -180,7 +181,11 @@ data:
   # on the following line; per-chat statuses and the ok run's failure
   # note read as words. `sendmessage` says the same.
   # 25: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 25
+  # 26: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 27: `config` and `account` keep all of their history, as kinds the owner
+  #    writes, and `chatsync` seven days, as bookkeeping, not the package's 30
+  #    days (decision record 0282).
+  version: 27
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -224,6 +229,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
+  # The owner's connection settings: every entry is kept, as for any kind a
+  # person writes, not the package's 30 days (decision record 0282).
+  retention: all
   description: >-
     The connection settings for your Beeper Desktop app. The Beeper Desktop
     origin this bundle talks to and the access token it spends. The bundle's
@@ -272,6 +280,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: >-
     Your Beeper Desktop app, connected here. One connected Beeper Desktop:
     the owner's sync toggles, the Beeper identity the token turned out to
@@ -1672,6 +1684,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
+  # Bookkeeping, how far one walk got: seven days of history, not the
+  # package's 30 (decision record 0282).
+  retention: P7D
   description: >-
     How far copying one Beeper chat has got. Where this connector's walk of
     one chat got to: the page cursors, how far back the backfill reached,

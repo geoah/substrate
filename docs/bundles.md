@@ -213,8 +213,10 @@ it converts produces: preview again. A write anywhere else moves the
 changelog head and leaves the confirmation standing ([decision
 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
 a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
-**Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
-guard lines where something blocks; `substratectl add <package>
+**Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, asks first
+too, whoever keeps the package, where the preview keeps some kind's history for less time
+(`retentionShortens`, listed for review), and states the guard lines where
+something blocks; `substratectl add <package>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
@@ -1172,7 +1174,9 @@ document, or says that it came from a file on this server.
 Published packages keep their release version and closure digest.
 Reinstalling a held version with different bytes or installing an older
 release is refused. Additive kinds-only releases may refresh automatically;
-other changes remain an upgrade offer. An offer names connected app builds
+other changes remain an upgrade offer, and so does a release that keeps any
+kind's history for less time than the one held: the offer names each such
+kind ([retention](vocabulary.md#the-reserved-keys)). An offer names connected app builds
 holding a narrowing release back.
 
 **Take over…** makes a document-published package yours to edit and stops

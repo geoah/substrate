@@ -283,6 +283,10 @@ var packageDataKeys = map[string]bool{
 	// `dialect` is the vocabulary dialect the package needs (decision 0268):
 	// parsed by parsePackageDialect, refused above Dialect.
 	"dialect": true,
+	// `retention` is how long the history of the package's kinds is kept
+	// where a kind states none (decision 0282): parsed by parseRetentionKey,
+	// stored as written, and acted on by nothing yet.
+	"retention": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -388,6 +392,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	l.parsePackageStability(where, gd.header.Data, g)
 	l.parsePackageInterface(where, gd.header.Data, g)
 	l.parsePackageDialect(where, gd.header.Data, g)
+	l.parseRetentionKey(where, gd.header.Data, &g.Retention)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
@@ -803,6 +808,10 @@ var typeDataKeys = map[string]bool{
 	// `label` is the kind's display label, both forms (decision 0117): display
 	// text only, read by no route, filter or grant.
 	"label": true,
+	// `retention` is how long the history of the kind's records is kept
+	// (decision 0282): parsed by parseRetentionKey, stored as written, read by
+	// clients and the engine's lookup, and acted on by nothing yet.
+	"retention": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -916,6 +925,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	sort.Strings(t.PropOrder)
 	l.parseMovedFrom(where, d, t)
 	l.parseKindPurpose(where, d, t)
+	l.parseRetentionKey(where, d, &t.Retention)
 	l.parseKindIDs(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)

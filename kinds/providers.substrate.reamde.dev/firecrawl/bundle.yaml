@@ -26,6 +26,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: firecrawl
+  retention: P30D
   # 1: moved from the samples tier, `scrapepage` renamed `webscrape`, both
   #    functions offered to agents, and `webdocument` titled by its
   #    `pageTitle`.
@@ -35,7 +36,8 @@ data:
   # 3: a refused or unreachable call says what went wrong and what to do
   #    (a rejected key, no credits, a rate limit, the sandbox), Firecrawl's
   #    own words on the line after it.
-  version: 3
+  # 4: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  version: 4
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the

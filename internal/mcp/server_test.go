@@ -310,8 +310,6 @@ func TestEachToolBuildsItsRequest(t *testing.T) {
 		{"apply", `{"documents":[{"kind":"x"}],"plan":true}`, "POST", "/vocabulary/plan", "", `{"documents":[{"kind":"x"}]}`, ""},
 		{"apply", `{"documents":[{"kind":"x"}],"plan":true,"holdWaitingMappings":true}`, "POST", "/vocabulary/plan", "", `{"documents":[{"kind":"x"}],"holdWaitingMappings":true}`, ""},
 		{"query", `{"kind":"` + task + `","count":true,"first":1}`, "GET", "/records", `count=1&filter=%7B%22kinds%22%3A%5B%22ada.example.com%2Ftasks%2Ftask%22%5D%7D&first=1`, "", ""},
-		{"packages", `{"action":"add","id":"providers.substrate.reamde.dev/google"}`, "POST", "/catalog/providers.substrate.reamde.dev%2Fgoogle/add", "", "", ""},
-		{"packages", `{"action":"add","id":"samples.substrate.reamde.dev/tasks"}`, "POST", "/catalog/samples.substrate.reamde.dev%2Ftasks/add", "", "", ""},
 		{"packages", `{"action":"disable","id":"ada.example.com/notes"}`, "PATCH", "/substrate.reamde.dev/core/bundle/ada.example.com%2Fnotes", "", `{"properties":{"disabled":true}}`, ""},
 		{"call", `{"function":"ada.example.com/notes/stats","input":{"text":"hi"},"idempotencyKey":"c"}`, "POST", "/substrate.reamde.dev/core/function/ada.example.com%2Fnotes%2Fstats/call", "", `{"input":{"text":"hi"}}`, "c"},
 		{"triggers", `{"action":"wake","id":"ada-sync"}`, "POST", "/substrate.reamde.dev/core/trigger/ada-sync/wake", "", "", ""},
@@ -340,6 +338,38 @@ func TestEachToolBuildsItsRequest(t *testing.T) {
 		if got.IdempotencyKey != c.idempotencyOK {
 			t.Errorf("%s %s idempotency key = %q, want %q", c.tool, c.args, got.IdempotencyKey, c.idempotencyOK)
 		}
+	}
+}
+
+// packages' add reads the entry's preview, then takes it; an update that
+// keeps some kind's history for less time is refused before the add, naming
+// each kind and the console page that lists it for the person (decision 0282).
+func TestPackagesAddPreviewsAndRefusesAShorterHistory(t *testing.T) {
+	for _, id := range []string{"providers.substrate.reamde.dev/google", "samples.substrate.reamde.dev/tasks"} {
+		api := &fakeAPI{}
+		if text, isErr := call(t, api, "packages", `{"action":"add","id":"`+id+`"}`); isErr || len(api.got) != 2 {
+			t.Fatalf("add %s = %q after %d requests, want the preview and the add", id, text, len(api.got))
+		}
+		escaped := "/catalog/" + Escape(id)
+		if read, add := api.got[0], api.got[1]; read.Method != http.MethodGet || read.Path != escaped || add.Method != http.MethodPost || add.Path != escaped+"/add" {
+			t.Fatalf("add %s requested %s %s then %s %s", id, read.Method, read.Path, add.Method, add.Path)
+		}
+	}
+	api := &fakeAPI{answers: []Response{{Status: http.StatusOK, Body: []byte(`{"id":"providers.substrate.reamde.dev/google","upgrade":{"available":true,"retentionShortens":[{"kind":"providers.substrate.reamde.dev/google/contact","from":"all","to":"P30D"}]}}`)}}}
+	text, isErr := call(t, api, "packages", `{"action":"add","id":"providers.substrate.reamde.dev/google"}`)
+	if !isErr || len(api.got) != 1 {
+		t.Fatalf("an add that keeps less history = %q after %d requests, want refused after the preview alone", text, len(api.got))
+	}
+	for _, want := range []string{"providers.substrate.reamde.dev/google/contact: all -> P30D", "package's page in the console"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the refusal does not say %q: %s", want, text)
+		}
+	}
+	// A preview that does not read as the shape it expects is no clean one.
+	api = &fakeAPI{answers: []Response{{Status: http.StatusOK, Body: []byte(`{"id":"providers.substrate.reamde.dev/google","upgrade":{"available":true,"retentionShortens":"providers.substrate.reamde.dev/google/contact"}}`)}}}
+	text, isErr = call(t, api, "packages", `{"action":"add","id":"providers.substrate.reamde.dev/google"}`)
+	if !isErr || len(api.got) != 1 || !strings.Contains(text, "could not be read, so nothing is added") {
+		t.Fatalf("an add whose preview does not decode = %q after %d requests, want refused after the preview alone", text, len(api.got))
 	}
 }
 

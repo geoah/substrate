@@ -377,13 +377,15 @@ against the old shape. The contract has three parts.
 format a server reads: the closed key sets of every declaration document
 ([decision 0268](decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md),
 which amends [0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
-It is 5 today. A server refuses a document carrying a key it does not know,
+It is 6 today. A server refuses a document carrying a key it does not know,
 so every key added to a declaration, removed from one or moved between two
-raises the number, in the release that admits it. Dialect 5 made a
-property's `writer:` name types of actor
+raises the number, in the release that admits it. Dialect 6 added
+`retention` on a kind and a package header
+([0282](decisions/0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md));
+dialect 5 made a property's `writer:` name types of actor
 ([0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)), so
-every `writer:` a package carries needs it; dialect 4 took the actor
-document out, so a package declares no actor
+every `writer:` a package carries needs it;
+dialect 4 took the actor document out, so a package declares no actor
 ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md));
 dialect 3 added the package
 header's `stability`, `interface` and `dialect`; dialect 2 marked the seeded
@@ -927,7 +929,10 @@ on a property and on a value entry alike. A kind's `purpose:` sits between the
 two: it changes no write either, but it is not waiting on anything, because
 the reader it exists for is a client. A package's `stability:` is the same.
 A kind's `ids:` is acted on from the
-start: it decides whether a create may name its record.
+start: it decides whether a create may name its record. `retention:`, on a
+kind and on a package header, is reserved as `unique:` is: admitted,
+validated and stored, and acted on by nothing until the compaction that drops
+history past it lands.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"
@@ -1058,6 +1063,100 @@ statement, read by a client off the package record, and
 version, like any other change to the header, and dropping the key clears
 it from the record. The key is a package
 header's alone: an authority document and a bundle document refuse it.
+
+**`retention:` says how long a kind's history is kept**
+([record 0282](decisions/0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md)).
+Every record's latest state is always kept; this is how long the changelog
+keeps the entries about it past that: `all` (every entry), `none` (nothing
+past the latest state) or an ISO 8601 duration, in the one
+[duration grammar](data-model.md#property-types) (`P30D`, `P1W`, `PT12H`; no years or
+months, and no zero, which is `none`):
+
+```yaml
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ada.example.com/journal/entry
+data:
+  retention: all
+```
+
+A package header may state it for the kinds that state none, and a kind's
+own key wins; absent on both reads as `all`, and nothing is written into
+the declaration. Any other value is refused with a reason, at the apply
+door, the catalog and the boot upgrade alike, because all three load
+through the same loader. The shipped defaults follow three classes:
+
+- **A kind a person writes keeps everything.** It states nothing, or, under
+  a provider's header, states `all`: a provider's `config` (the connection
+  settings), its `account` (the connection and the choices the owner made
+  on it) and Apple's `share` (what the owner sent, with their note).
+- **A mirror of an outside service keeps 30 days**, from its package
+  header's `P30D`: every other provider kind.
+- **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
+  writes about its own runs, core's `triggerrun` and `alert`
+  ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md)),
+  a sync's progress through one item (`beeper/chatsync`,
+  `google/calendarsync`, `notion/pagesync`, `slack/conversationsync`) and
+  Apple Health's delivery receipt (`applehealth/export`).
+
+`kinds/retention.golden.json` holds every shipped kind's value, and a test
+refuses a new kind until its author says which class it is in.
+
+**An upgrade a person takes never shortens a kind's history unasked.** A
+kind's retention is compared by what it keeps (its effective retention: the
+owner's override, else its own key, else its header's, else `all`, and a
+duration by its length, so `P30D` and `PT720H` are one value). An upgrade
+that keeps a kind's history for less time, a header gaining a default or a
+kind gaining a shorter key among them, is never a safe addition: a
+published package's refresh leaves it for the owner, and every upgrade
+preview names each such kind under `retentionShortens`. Each door a person
+takes an upgrade through asks: the console's Update opens a review that
+lists them, whoever keeps the package; `substratectl add` refuses it until
+`--allow-shorter-history` takes it; an app's approval sends the person to
+the package's page in the console; and MCP's `packages` `add` refuses it,
+telling the agent to send the person there. Two doors take the caller's word
+by design and ask nothing: the API's add route and the vocabulary apply, so
+a client of either reads `retentionShortens` first. One that keeps the same
+or longer is safe.
+
+The seeded packages (`core`, `llm`, `console`, `observations`) upgrade with
+the binary at its boot, which asks nobody, so they take the shipped values
+as they stand, and a release that shortens one says so in its notes. A
+restart alone brings those; an installed provider keeps the retention it had
+until it is upgraded, and from then a kind of it that states none inherits
+its header's `P30D`. The release that brought `retention` removes, rewrites
+or compacts no history: an override that a kind move carries, or one it
+makes redundant, is an ordinary write. The
+release that brought `retention` moved `core/triggerrun` and `core/alert`
+from all of their history to seven days. An override keeps a kind's history
+whatever its declaration says, written before an upgrade or after it:
+
+```yaml
+kind: substrate.reamde.dev/core/retention
+metadata:
+  id: triggerruns
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/triggerrun
+    retention: all
+```
+
+`substratectl apply -f` takes it, and `substratectl retention
+substrate.reamde.dev/core/triggerrun` then shows `all` under EFFECTIVE.
+
+A repository overrides one kind's with a record of
+`substrate.reamde.dev/core/retention`: `appliesTo` names the kind's
+declaration, `retention` takes the same values, and one live record per
+kind is admitted. Deleting it restores the declared one. An override of a
+kind the repository does not declare applies to nothing until the kind is
+declared, and a kind removed keeps all of its history whatever its override
+said. A kind move on the shipped upgrade carries the override with the rows
+to the kind they moved to; where that kind holds an override of its own,
+the one that keeps longer stands on it and the other is deleted.
+`GET /api/v1/retention` and `substratectl retention` answer what applies
+([retention](api.md#retention)). **Nothing drops an entry by it yet**: the
+compaction that does is a later release.
 
 **`ids:` says who names a new record of the kind**
 ([record 0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).

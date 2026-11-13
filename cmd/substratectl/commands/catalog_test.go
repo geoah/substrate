@@ -387,6 +387,62 @@ func TestAddWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	}
 }
 
+// An upgrade that keeps some kind's history for less time is refused before
+// the door, naming each kind and what it keeps now and after, and taken with
+// --allow-shorter-history (decision 0282). The route takes no consent to a
+// shortening, so the add that takes it is the bare POST. The refusal names
+// `add`, whichever alias ran.
+func TestAddAsksBeforeKeepingLessHistory(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	shorter := lossyGoogle()
+	shorter.Upgrade = &substrate.BundleUpgrade{
+		Available: true, From: 3, To: 4,
+		RetentionShortens: []substrate.RetentionChange{{Kind: googleProvider + "/contact", From: "all", To: "P30D"}},
+	}
+	sample := editedTasks()
+	sample.Upgrade = &substrate.BundleUpgrade{
+		Available: true, From: 7, To: 8,
+		RetentionShortens: []substrate.RetentionChange{{Kind: "geoah.example.com/tasks/task", From: "all", To: "P7D"}},
+	}
+	h.fake.catalog = []substrate.CatalogItem{shorter, sample}
+	for _, tc := range []struct{ verb, id, says string }{
+		{"install", googleProvider, googleProvider + ": the upgrade keeps the history of 1 kind for less time (" + googleProvider + "/contact: all -> P30D)"},
+		{"import", tasksSample, tasksSample + ": the upgrade keeps the history of 1 kind for less time (geoah.example.com/tasks/task: all -> P7D)"},
+	} {
+		_, _, err := h.run(tc.verb, tc.id)
+		if err == nil {
+			t.Fatalf("%s of an upgrade that keeps less history was not refused", tc.verb)
+		}
+		for _, want := range []string{tc.says, "`substratectl add " + tc.id + " --allow-shorter-history`"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the %s refusal does not say %q: %v", tc.verb, want, err)
+			}
+		}
+	}
+	for _, r := range h.fake.doorRequests() {
+		if strings.HasPrefix(r, "POST ") {
+			t.Fatalf("a refused upgrade reached the door: %v", h.fake.doorRequests())
+		}
+	}
+	stdout, _ := h.mustRun("add", googleProvider, "--allow-shorter-history")
+	for _, want := range []string{
+		googleProvider + ": keeping less history, as --allow-shorter-history says:",
+		"  " + googleProvider + "/contact: all -> P30D",
+		googleProvider + " added",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("add did not print %q:\n%s", want, stdout)
+		}
+	}
+	if !contains(h.fake.doorRequests(), "POST /api/v1/catalog/"+googleProvider+"/add") {
+		t.Fatalf("the flagged add did not reach the route: %v", h.fake.doorRequests())
+	}
+	if _, ok := lastConfirm(t, h); ok {
+		t.Fatal("the flagged add sent a confirmation")
+	}
+}
+
 // `substratectl catalog` prints the steps an upgrade would run, with the loss
 // named and the command that confirms it.
 func TestCatalogPrintsTheConversionSteps(t *testing.T) {

@@ -280,6 +280,7 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
 	mux.HandleFunc("GET /api/v1/catalog/{id}", f.handleCatalogEntry)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
+	mux.HandleFunc("GET /api/v1/retention", f.handleRetention)
 	// The recovery export: a tar the test seeds (export_test.go).
 	mux.HandleFunc("GET /api/v1/export", f.handleExport)
 	// Domain verification (domain_test.go).
@@ -1624,4 +1625,13 @@ func sortRecords(es []*substrate.Record) {
 			es[j], es[j-1] = es[j-1], es[j]
 		}
 	}
+}
+
+// handleRetention answers two kinds' retention: one as its package declares
+// it, one a repository record overrides.
+func (f *fakeSubstrate) handleRetention(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, substrate.Listed([]substrate.KindRetention{
+		{Kind: "providers.substrate.reamde.dev/google/message", Declared: "P30D", Effective: "P30D"},
+		{Kind: "samples.substrate.reamde.dev/tasks/task", Override: "P90D", OverrideID: "keep-tasks", Effective: "P90D"},
+	}))
 }

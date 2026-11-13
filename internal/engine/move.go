@@ -490,6 +490,24 @@ func countMoves(p movesPlanned, grants int64) ([]substrate.ConversionStep, int64
 	return steps, work
 }
 
+// countCarriedOverrides counts the writes carrying the retention overrides of
+// the kinds whose rows a move carries (carryRetentionOverride): two for each
+// override, the most it writes, and part of the work the ceiling bounds.
+func countCarriedOverrides(q sqlReader, moves []kindMove) (int64, error) {
+	var total int64
+	for _, m := range carrying(moves) {
+		var n int64
+		if err := q.row(`SELECT count(*) FROM records
+			WHERE kind = $1 AND deleted_at IS NULL AND props->$2->>$3 = $4`,
+			kindRetention, propRetentionAppliesTo, vocabulary.ReferenceValueKey,
+			vocabulary.RecordPath(kindKind, m.from)).Scan(&n); err != nil {
+			return 0, err
+		}
+		total += 2 * min(n, 1)
+	}
+	return total, nil
+}
+
 // countGrants counts the agent and function declarations whose kind grants the
 // move rewrites: a patch each, and part of the work the ceiling bounds.
 func countGrants(q sqlReader, targets map[string]string) (int64, error) {
@@ -562,6 +580,12 @@ func (t *txn) moveRecords(candidate *vocabulary.Registry, p movesPlanned) (int64
 	for _, m := range p.moves {
 		if err := t.repointGrants(m.from, m.to.Identity); err != nil {
 			return total, fmt.Errorf("substrate/engine: repoint the grants naming %s: %w", m.from, err)
+		}
+		if len(m.ids) == 0 {
+			continue
+		}
+		if err := t.carryRetentionOverride(m.from, m.to.Identity); err != nil {
+			return total, fmt.Errorf("substrate/engine: carry the retention override of %s: %w", m.from, err)
 		}
 	}
 	return total, nil

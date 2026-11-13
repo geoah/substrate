@@ -39,3 +39,30 @@ type KindLabel struct {
 	Singular string `json:"singular"`
 	Plural   string `json:"plural"`
 }
+
+// KindRetention is how long one kind's history is kept in a repository past
+// each record's latest state (decision 0282): what its declaration states,
+// the repository's override, and the one that applies. Each value is `all`,
+// `none` or an ISO 8601 duration.
+type KindRetention struct {
+	Kind string `json:"kind"`
+	// Declared is what the declaration states, the kind's own key else its
+	// package header's, and absent where neither states one.
+	Declared string `json:"declared,omitempty"`
+	// Override is the repository's `core/retention` record's value, and
+	// OverrideID that record's id, both absent where none stands.
+	Override   string `json:"override,omitempty"`
+	OverrideID string `json:"overrideId,omitempty"`
+	// Effective is the one that applies: the override, else the declared,
+	// else all.
+	Effective string `json:"effective"`
+}
+
+// RetentionChange is one kind whose history an upgrade would keep for less
+// time: its effective retention before and after, each `all`, `none` or an
+// ISO 8601 duration (decision 0282).
+type RetentionChange struct {
+	Kind string `json:"kind"`
+	From string `json:"from"`
+	To   string `json:"to"`
+}

@@ -951,6 +951,29 @@ export interface KindLabel {
   plural: string
 }
 
+/** How long one kind's history is kept past each record's latest state
+ * (decision 0282), from `GET /api/v1/retention`: each value is `all`, `none`
+ * or an ISO 8601 duration. `declared` is the kind's own key else its
+ * package's, absent where neither states one; `override` and `overrideId`
+ * are the repository's `core/retention` record, absent where none stands;
+ * `effective` is the one that applies. */
+export interface KindRetention {
+  kind: string
+  declared?: string
+  override?: string
+  overrideId?: string
+  effective: string
+}
+
+/** One kind whose history an upgrade would keep for less time
+ * (substrate.RetentionChange): its effective retention before and after,
+ * each `all`, `none` or an ISO 8601 duration. */
+export interface RetentionChange {
+  kind: string
+  from: string
+  to: string
+}
+
 /** KindInfo — the projection of one declared kind (iface.go). Replaces v0
  * `TypeInfo`: `authority` is what published the kind (empty for a
  * repository-local one), `package` is the package's own word beside it, and
@@ -1823,6 +1846,10 @@ export interface BundleUpgrade extends ConversionPlan {
    * grows, or a held version the document no longer lists. */
   reviewRequired?: boolean
   codeChanges?: BundleCodeChange[]
+  /** Every kind whose history the upgrade would keep for less time, by its
+   * effective retention (decision 0282): never a safe addition, so a
+   * published package's refresh leaves it to the owner. */
+  retentionShortens?: RetentionChange[]
   /** The version the preview is of and the digest its publisher listed
    * for it, on a document-published package: what an install sends back
    * as `expect`, so what lands is what was reviewed. */

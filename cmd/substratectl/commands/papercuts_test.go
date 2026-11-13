@@ -154,3 +154,28 @@ func TestASetAsideRepositorySaysWhoBringsItBack(t *testing.T) {
 		t.Errorf("the rendering promises the start wrote nothing:\n%s", buf.String())
 	}
 }
+
+// `retention` lists what each kind declares, the repository's override and
+// the one that applies, a dash where a column has nothing, and narrows to one
+// kind by its reference.
+func TestRetentionShowsDeclaredOverrideAndEffective(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	out, _ := h.mustRun("retention")
+	for _, want := range []string{
+		"KIND", "DECLARED", "OVERRIDE", "EFFECTIVE",
+		"providers.substrate.reamde.dev/google/message", "P30D",
+		"samples.substrate.reamde.dev/tasks/task", "P90D",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the table does not show %q:\n%s", want, out)
+		}
+	}
+	one, _ := h.mustRun("retention", "samples.substrate.reamde.dev/tasks/task")
+	if strings.Contains(one, "google") || !strings.Contains(one, "P90D") {
+		t.Errorf("the narrowed table:\n%s", one)
+	}
+	if _, _, err := h.run("retention", "nope.example.com/p/k"); err == nil || !strings.Contains(err.Error(), "substratectl kinds") {
+		t.Errorf("an unknown kind: %v", err)
+	}
+}

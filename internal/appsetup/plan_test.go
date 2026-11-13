@@ -69,9 +69,10 @@ func TestTheChainCarriesEachPackagesOwnFacts(t *testing.T) {
 	}
 }
 
-// What the provider page asks the owner to confirm, or refuses, or could not
-// preview, blocks an upgrade from the approval page, on the package asked
-// for and on one it needs first.
+// What the provider page asks the owner to confirm (a lossy plan, discarded
+// edits, history kept for less time), or refuses, or could not preview,
+// blocks an upgrade from the approval page, on the package asked for and on
+// one it needs first.
 func TestAnUpgradeTheProviderPageMustReviewIsBlocked(t *testing.T) {
 	cat := testCatalog(t)
 	for name, c := range map[string]struct {
@@ -82,7 +83,10 @@ func TestAnUpgradeTheProviderPageMustReviewIsBlocked(t *testing.T) {
 		"lossy":          {preview: substrate.BundleUpgrade{Lossy: true}, says: "confirm"},
 		"discards edits": {preview: substrate.BundleUpgrade{DiscardsEdits: true}, says: "confirm"},
 		"refused":        {preview: substrate.BundleUpgrade{Blockers: []string{"a kind is retired"}}, says: "refused"},
-		"failed":         {err: errors.New("the preview broke"), says: "could not be previewed"},
+		"keeps less history": {preview: substrate.BundleUpgrade{RetentionShortens: []substrate.RetentionChange{
+			{Kind: "example.com/base/item", From: "all", To: "P30D"},
+		}}, says: "less time"},
+		"failed": {err: errors.New("the preview broke"), says: "could not be previewed"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ds := newFakeDataset()

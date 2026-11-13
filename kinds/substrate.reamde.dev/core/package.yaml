@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 28
+  version: 29
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -64,6 +64,13 @@ data:
       description: the vocabulary dialect the package's declarations need,
         the number a server publishes in discovery; absent needs nothing beyond
         what the server reads
+    # How long the history of the package's kinds is kept where a kind states
+    # none (decision record 0282). Authored and inert, as a kind's own.
+    retention:
+      type: string
+      description: how long the history of this package's kinds is kept past
+        each record's latest state where a kind states none — all, none or
+        an ISO 8601 duration such as P30D; absent reads as all
     # The kind names this package has spent (decision record 0055). Authored,
     # not managed: the author writes a name here to retire it, the engine
     # carries the list into every later header of the package, and a kind

@@ -682,9 +682,10 @@ func (p *planner) stepBlock(ctx context.Context, dep *catalog.Bundle, floor int6
 }
 
 // upgradeBlock is why upgrading an installed package cannot run from the
-// approval page: what its preview would refuse on, or a conversion that loses
-// data or discards edits, which only its provider page confirms. A preview
-// that fails blocks it too, as it costs a catalog entry its offer.
+// approval page: what its preview would refuse on, a conversion that loses
+// data or discards edits, or history some kind keeps for less time, which
+// only its provider page confirms. A preview that fails blocks it too, as it
+// costs a catalog entry its offer.
 func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem, error) {
 	up, err := p.cat.Upgrade(ctx, id, p.ds, p.statuses[id])
 	if err != nil {
@@ -701,6 +702,8 @@ func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem,
 		return upgradeRefused(id), nil
 	case up.Lossy || up.DiscardsEdits:
 		return upgradeConfirm(id), nil
+	case len(up.RetentionShortens) > 0:
+		return upgradeShortensHistory(id), nil
 	}
 	return nil, nil
 }

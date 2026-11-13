@@ -77,7 +77,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 25, #644: the `submitreview` function, the bundle's first write to GitHub.
   # 26, #710: the `pullsReviewed` search, `type:pr reviewed-by:<login>`.
   #
@@ -111,7 +112,10 @@ data:
   # failed and what to do, with GitHub's own words on a second line; a
   # rate limit reads `throttled` from the exception, not the wording.
   # 36: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 36
+  # 37: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 38: `config` and `account` keep all of their history, as kinds the owner
+  #    writes, not the package's 30 days (decision record 0282).
+  version: 38
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -198,6 +202,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
+  # The owner's connection settings: every entry is kept, as for any kind a
+  # person writes, not the package's 30 days (decision record 0282).
+  retention: all
   description: >-
     The GitHub app settings your account connects through. The GitHub OAuth
     app this bundle authenticates through — its client id, a sealed client
@@ -248,6 +255,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: >-
     Your GitHub account, connected here. One connected GitHub account: these
     records ARE the bundle's connections. The OAuth facility writes the credential

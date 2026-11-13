@@ -582,6 +582,7 @@
     "holders": false,
     "lossy": true,
     "planHash": false,
+    "retentionShortens": false,
     "reviewRequired": false,
     "steps": false,
     "to": false,
@@ -800,6 +801,13 @@
     "plural": true,
     "singular": true
   },
+  "KindRetention": {
+    "declared": false,
+    "effective": true,
+    "kind": true,
+    "override": false,
+    "overrideId": false
+  },
   "LinkedRecord": {
     "kind": true,
     "mapping": true,
@@ -973,6 +981,11 @@
     "scale": false,
     "symbol": true,
     "turn": false
+  },
+  "RetentionChange": {
+    "from": true,
+    "kind": true,
+    "to": true
   },
   "Scores": {
     "lexical": false,

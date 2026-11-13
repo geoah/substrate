@@ -990,7 +990,7 @@ stability, its revision and the `surfaces` that serve it:
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
- "vocabulary": {"dialect": 5},
+ "vocabulary": {"dialect": 6},
  "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
               {"name": "auth", "stability": "beta", "revision": 2, "surfaces": ["rest"],
                "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
@@ -1064,6 +1064,7 @@ them:
 | `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
 | `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
+| `retention` | `experimental` | `GET /api/v1/retention`: how long each kind's history is kept, as declared, overridden and in effect ([retention](#retention)). |
 | `merge` | `beta` | `POST /api/v1/merge` and `POST /api/v1/split`. |
 | `connect` | `beta` | Connecting an account to its provider: `POST /api/v1/oauth/start` and the callback the provider redirects to. |
 | `sync` | `beta` | `GET /api/v1/sync/status`. |
@@ -2253,6 +2254,37 @@ never exact; a difference never crosses one. A missing parameter or an
 unknown one is `400 bad_request`; a value, a spelling no unit answers, or
 two units no route joins (`kg` to `J`) is `422 validation` naming why. Both
 routes read the repository's graph at one revision.
+
+## Retention
+
+`GET /api/v1/retention` answers how long each kind's history is kept past
+each record's latest state ([retention](vocabulary.md#the-reserved-keys)),
+one item per kind the repository declares, in reference order:
+
+```json
+{"items": [
+  {"kind": "providers.substrate.reamde.dev/google/message", "declared": "P30D", "effective": "P30D"},
+  {"kind": "substrate.reamde.dev/core/contact", "effective": "all"},
+  {"kind": "substrate.reamde.dev/core/triggerrun", "declared": "P7D", "override": "P30D",
+   "overrideId": "keep-runs", "effective": "P30D"}
+]}
+```
+
+Each value is `all`, `none` or an ISO 8601 duration. `declared` is what the
+kind's declaration states, its own `retention` else its package header's,
+and is absent where neither states one, which reads as `all`. `override`
+and `overrideId` are the repository's `substrate.reamde.dev/core/retention`
+record for the kind, absent where none stands, and `effective` is the one
+that applies. An override is written and deleted through the record routes
+like any other record: `appliesTo` names the kind's declaration
+(`{"ref": "substrate.reamde.dev/core/kind/<kind>"}`), `retention` holds the
+value, a malformed value answers `422 validation` with the reason, and a
+second record for a kind that has one answers `409 conflict` naming it. A
+scoped app's token is refused with `403 forbidden`; an app the owner
+approved for `full` access holds a token without scopes, like a sign-in's
+([0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)),
+and reads the list. The `retention` feature in
+discovery is `experimental`: nothing drops an entry by it yet.
 
 ## Operator defaults
 

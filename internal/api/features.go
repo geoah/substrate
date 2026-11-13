@@ -162,7 +162,9 @@ var featureTable = []feature{
 	// together: a client reads one entry and gets every route behind it. The
 	// lifecycle transitions are a PATCH of the bundle record, on the record
 	// path.
-	{name: "bundles", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 3: the upgrade preview names each kind whose history it would
+	// keep for less time (retentionShortens, decision 0282).
+	{name: "bundles", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/substrate.reamde.dev/core/bundle/status",
 		"GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
 		"POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind",
@@ -220,6 +222,12 @@ var featureTable = []feature{
 		"POST /api/v1/vocabulary/plan",
 		"GET /api/v1/vocabulary/upgrade",
 		"GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors",
+	}},
+	// How long each kind's history is kept: what its declaration states, the
+	// repository's override and the one that applies (decision 0282). Acted
+	// on by nothing yet, so experimental.
+	{name: "retention", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"GET /api/v1/retention",
 	}},
 	{name: "merge", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/merge",

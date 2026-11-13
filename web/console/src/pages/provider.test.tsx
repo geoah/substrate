@@ -1597,6 +1597,88 @@ describe("ProviderPage", () => {
         within(dialog).getByText(/did not say which version this preview is of/)
       ).toBeTruthy()
     })
+
+    // A provider the binary ships, whose update only keeps history for less
+    // time: no publisher's digest, no plan. The click opens the review
+    // anyway (decision 0282), reads the preview again, and sends the bare
+    // install once the fresh preview shortens the same kinds at the same
+    // version; one that moved is not sent.
+    const shortening = {
+      available: true,
+      from: 3,
+      to: 4,
+      work: 0,
+      lossy: false,
+      retentionShortens: [{ kind: CONTACT, from: "all", to: "P30D" }],
+    }
+    function serveFresh(fresh: typeof shortening) {
+      serve({ catalog: [{ ...CATALOG, upgrade: shortening }] })
+      const base = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation(async (url, init) => {
+        const path = String(url)
+        if (
+          (init?.method ?? "GET") === "GET" &&
+          path === `${CATALOG_PATH}/${encodeURIComponent(GOOGLE)}`
+        ) {
+          return jsonResponse(200, { ...CATALOG, upgrade: fresh })
+        }
+        return base(url, init)
+      })
+    }
+
+    it("opens a review for an update of a shipped provider that keeps history for less time, and sends it once the fresh preview agrees", async () => {
+      serveFresh(shortening)
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText("Update Google and keep less history?")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText("History kept for less time")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText(`${CONTACT}: all of it → 30 days`)
+      ).toBeTruthy()
+      expect(calls("POST").some((c) => c.url.endsWith("/add"))).toBe(false)
+      const confirm = within(dialog).getByRole<HTMLButtonElement>("button", {
+        name: "Keep less history and update",
+      })
+      expect(confirm.disabled).toBe(false)
+      fireEvent.click(confirm)
+      // The bare add: the route takes no consent to a shortening.
+      await waitFor(() =>
+        expect(calls("POST").filter((c) => c.url.endsWith("/add"))).toEqual([
+          {
+            url: `${CATALOG_PATH}/${encodeURIComponent(GOOGLE)}/add`,
+            body: undefined,
+          },
+        ])
+      )
+    })
+
+    it("sends nothing when the fresh preview keeps other history for less time, and says so", async () => {
+      serveFresh({
+        ...shortening,
+        retentionShortens: [{ kind: CONTACT, from: "all", to: "P7D" }],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Keep less history and update",
+        })
+      )
+      expect(
+        await within(dialog).findByText(
+          /What this update keeps for less time changed since you read it/
+        )
+      ).toBeTruthy()
+      expect(calls("POST").some((c) => c.url.endsWith("/add"))).toBe(false)
+    })
   })
 
   describe("settings", () => {

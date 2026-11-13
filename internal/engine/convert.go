@@ -162,8 +162,9 @@ type conversionPlan struct {
 	// moves is the resolved kind move (move.go, record 0078): the rows to
 	// carry in the order they are written, and the sources whose references
 	// follow them. It runs FIRST and is not per-property. grantPatches is the
-	// number of declarations whose kind grants the move rewrites, counted into
-	// the work like every other entry.
+	// number of declarations whose kind grants the move rewrites, and the
+	// writes that carry a moved kind's retention override, counted into the
+	// work like every other entry.
 	moves        movesPlanned
 	grantPatches int64
 	renames      []propertyRename

@@ -115,7 +115,10 @@ data:
   # version 59: an actor is a record the engine writes for every hand, with a
   # type and a link, and the four actor documents core declared are gone
   # (decision record 0270).
-  version: 59
+  # version 60: `retention` on a kind and a package header, the `retention`
+  # kind a repository overrides one with, and seven days for `alert`
+  # (decision records 0282 and 0283).
+  version: 60
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

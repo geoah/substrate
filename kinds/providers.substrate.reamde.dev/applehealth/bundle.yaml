@@ -18,7 +18,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 2: a metric batch row keeps its own `units` where a unit preference
   # changed under it, a batch records `coverage`, the receipt counts
   # `stale`, and composed ids escape a part one to one. 3: every delivery
@@ -30,7 +31,11 @@ data:
   # 5: the adapter maps mindful minutes, water, eleven nutrients and basal
   # body temperature, into the metrics health version 2 adds.
   # 6: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 6
+  # 7: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 8: `account` keeps all of its history, as kinds the owner writes, and
+  #    `export` seven days, as bookkeeping, not the package's 30 days (decision
+  #    record 0282).
+  version: 8
 ---
 # No inputs and no OAuth: the app authenticates with the key the owner sets
 # on the webhook trigger, and the accounts are records the owner writes.
@@ -74,6 +79,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: "A phone that sends you its Apple Health data through the Health
     Auto Export app. You create one by hand and name its id in the app's X-Substrate-Account
     header; each delivery's outcome is stamped here."
@@ -264,6 +273,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
+  # Bookkeeping, one delivery's receipt: seven days of history, not the
+  # package's 30 (decision record 0282).
+  retention: P7D
   description: "One delivery from the Health Auto Export app. It records when
     it arrived, which automation sent it, how big it was and what it held.
     A receipt; the data itself lands as metric batches, workouts and the other
@@ -2931,7 +2943,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `applehealth-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "applehealth@6"
+    ADAPTER = "applehealth@8"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"

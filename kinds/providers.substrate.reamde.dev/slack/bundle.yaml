@@ -96,7 +96,8 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: slack
-  dialect: 5
+  dialect: 6
+  retention: P30D
   # 3 — T-021, hydration and coverage: `files.info` and `bots.info` are read
   # for every file and bot the walk names, the file kind declares the whole
   # measured inventory (media, canvas, external, access, shares) instead of
@@ -181,7 +182,11 @@ data:
   # sentence saying what to do, with Slack's method and error word on a
   # second line; token_revoked and token_expired are permanent.
   # 24: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
-  version: 24
+  # 25: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 26: `config` and `account` keep all of their history, as kinds the owner
+  #    writes, and `conversationsync` seven days, as bookkeeping, not the
+  #    package's 30 days (decision record 0282).
+  version: 26
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -226,6 +231,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: slack
+  # The owner's connection settings: every entry is kept, as for any kind a
+  # person writes, not the package's 30 days (decision record 0282).
+  retention: all
   description: >-
     The token and address your Slack workspace connects through. The Slack
     user token this bundle spends and the API origin it may be sent to. The
@@ -271,6 +279,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: slack
+  # The connection and the settings the owner chose on it: every entry is
+  # kept, as for any kind a person writes, not the package's 30 days. The
+  # sync's own stamps on it stay too (decision record 0282).
+  retention: all
   description: >-
     Your Slack workspace, connected here. One connected Slack workspace: the
     owner's sync toggles, the workspace and the user the token turned out
@@ -2807,6 +2819,9 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: slack
+  # Bookkeeping, how far one walk got: seven days of history, not the
+  # package's 30 (decision record 0282).
+  retention: P7D
   description: >-
     How far copying one Slack channel or direct message has got. Where this
     connector's walk of one conversation got to: the history cursor, the replies

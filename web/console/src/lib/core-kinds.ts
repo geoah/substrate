@@ -68,6 +68,13 @@ export function isMachinery(authority: string, pkg: string): boolean {
  * record 0231). */
 export const CONTACT_KIND = `${CORE_PACKAGE}/contact`
 
+/** A repository's override of one kind's retention (decision 0282). */
+export const RETENTION_KIND = `${CORE_PACKAGE}/retention`
+
+/** The package declaration, which states the retention its kinds fall back
+ * to. */
+export const PACKAGE_KIND = `${CORE_PACKAGE}/package`
+
 /** The facts an owner keeps for their agents (decision record 0197). */
 export const MEMORY_KIND = `${LLM_PACKAGE}/memory`
 

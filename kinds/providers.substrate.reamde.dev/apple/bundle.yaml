@@ -92,6 +92,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  retention: P30D
   # 1: `addressbook` and `contact`, the Contacts framework pushed by a device.
   # 2: `eventstore`, `calendar` and `event`, EventKit pushed by a device.
   # 3: `reminderlist` and `reminder` (EventKit's reminders), `visitstore` and
@@ -99,7 +100,10 @@ data:
   #    another app; the event store counts reminders too.
   # 4: every kind declares its ids named: the app keeps naming its mirror
   #    rows by the hash of Apple's identifier (decision record 0228).
-  version: 4
+  # 5: the package's kinds keep 30 days of history, a mirror's of an outside service (decision record 0282).
+  # 6: `share` keeps all of its history, as a kind the owner writes, not the
+  #    package's 30 days (decision record 0282).
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No input and no
@@ -1536,6 +1540,10 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: apple
+  # What the owner sent and the note they typed: every entry is kept, as
+  # for any kind a person writes, not the package's 30 days (decision record
+  # 0282).
+  retention: all
   # A mirror row's id is the app's hash of Apple's identifier
   # (`apple-<32 hex>`), never a title, so the app names it (decision
   # record 0228).

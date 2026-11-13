@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -26,13 +27,18 @@ func catalogAddPath(id string) string {
 // under this repository's own authority rather than the id typed. With
 // allowDataLoss the route is asked for its preview first, and a lossy plan is
 // confirmed by the hash and changelog head that preview carried
-// (confirmedUpgrade): the consent covers what was shown and nothing else.
-func (a *app) addBundle(cmd *cobra.Command, id string, allowDataLoss bool) error {
+// (confirmedUpgrade): the consent covers what was shown and nothing else. An
+// upgrade that keeps any kind's history for less time is refused unless
+// allowShorterHistory says to take it (shorterHistory).
+func (a *app) addBundle(cmd *cobra.Command, id string, allowDataLoss, allowShorterHistory bool) error {
 	cl, err := a.client()
 	if err != nil {
 		return err
 	}
 	if err := a.noteOutsideCode(cmd.Context(), cl, id); err != nil {
+		return err
+	}
+	if err := a.shorterHistory(cmd.Context(), cl, id, "add", allowShorterHistory); err != nil {
 		return err
 	}
 	var body any
@@ -52,6 +58,44 @@ func (a *app) addBundle(cmd *cobra.Command, id string, allowDataLoss bool) error
 	fmt.Fprintf(a.out, "%s added\n", taken.ID)
 	printBundleStatus(a, taken.BundleStatus)
 	printSuggestedMappings(a, id, taken.SuggestedMappings)
+	return nil
+}
+
+// shorterHistory reads the package's upgrade preview and refuses an upgrade
+// that keeps any kind's history for less time unless the person said to take
+// it (decision 0282). The doors take no consent to a shortening, so the one
+// who takes the upgrade is asked here, as the console's Update asks. A
+// package with no preview, or a server whose preview names no shortening,
+// has nothing to ask.
+func (a *app) shorterHistory(ctx context.Context, cl *client, id, verb string, allow bool) error {
+	var item substrate.CatalogItem
+	if err := cl.do(ctx, http.MethodGet, apiPrefix+"/catalog/"+url.PathEscape(id), nil, nil, &item); err != nil {
+		var ae *apiError
+		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
+			return nil
+		}
+		return err
+	}
+	if item.Upgrade == nil || len(item.Upgrade.RetentionShortens) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, len(item.Upgrade.RetentionShortens))
+	for _, c := range item.Upgrade.RetentionShortens {
+		lines = append(lines, fmt.Sprintf("%s: %s -> %s", c.Kind, c.From, c.To))
+	}
+	if !allow {
+		kinds := "kinds"
+		if len(lines) == 1 {
+			kinds = "kind"
+		}
+		return fmt.Errorf("%s: the upgrade keeps the history of %d %s for less time (%s); nothing is removed until a release that compacts history. "+
+			"To keep a kind's history, write its override first (`substratectl retention` shows them), or take it with `substratectl %s %s --allow-shorter-history`",
+			id, len(lines), kinds, strings.Join(lines, "; "), verb, id)
+	}
+	fmt.Fprintf(a.out, "%s: keeping less history, as --allow-shorter-history says:\n", id)
+	for _, line := range lines {
+		fmt.Fprintf(a.out, "  %s\n", line)
+	}
 	return nil
 }
 
@@ -173,7 +217,7 @@ func suggestedMappingLine(m substrate.SuggestedMapping, sample string) string {
 // under this repository's own authority. `install` and `import`, the two verbs
 // this replaced, stay as aliases, so a script that names either still runs.
 func (a *app) addCommand() *cobra.Command {
-	var allowDataLoss bool
+	var allowDataLoss, allowShorterHistory bool
 	cmd := &cobra.Command{
 		Use:     "add <package>",
 		Aliases: []string{"install", "import"},
@@ -214,13 +258,19 @@ between to a record the plan rewrites or a declaration it converts, or a plan
 that reads differently, is refused again. The removed values stay in the
 changelog.
 
+An upgrade that keeps some kind's history for less time is refused, naming
+each kind and what it keeps now and after, until --allow-shorter-history
+takes it. An override of a kind's retention keeps its history whatever the
+upgrade says (` + "`substratectl retention`" + `).
+
 ` + "`install`" + ` and ` + "`import`" + ` are aliases of this command.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.addBundle(cmd, args[0], allowDataLoss)
+			return a.addBundle(cmd, args[0], allowDataLoss, allowShorterHistory)
 		},
 	}
 	cmd.Flags().BoolVar(&allowDataLoss, "allow-data-loss", false, "confirm the previewed upgrade even where it removes values from records or replaces your edits")
+	cmd.Flags().BoolVar(&allowShorterHistory, "allow-shorter-history", false, "take the upgrade even where it keeps some kind's history for less time")
 	return cmd
 }
 
