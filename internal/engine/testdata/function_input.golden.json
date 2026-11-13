@@ -1,0 +1,86 @@
+{
+  "input": {
+    "args": "any, optional",
+    "budgets": "object, optional",
+    "callDepth": "number, optional",
+    "causalDepth": "number",
+    "config": "object, optional",
+    "envelope": "object, optional",
+    "idempotencyKey": "string",
+    "mode": "string",
+    "resume": "any, optional"
+  },
+  "input.budgets": {
+    "calls": "number",
+    "rows": "number"
+  },
+  "input.envelope(record)": {
+    "change": "object",
+    "record": "null | object",
+    "repository": "object"
+  },
+  "input.envelope(record).change": {
+    "actor": "string",
+    "changed": "array of string, optional",
+    "id": "string",
+    "kind": "string",
+    "op": "string",
+    "seq": "number"
+  },
+  "input.envelope(record).record": {
+    "id": "string",
+    "kind": "string",
+    "properties": "object",
+    "version": "number"
+  },
+  "input.envelope(record).repository": {
+    "authority": "string"
+  },
+  "input.envelope(schedule)": {
+    "fire": "object",
+    "repository": "object"
+  },
+  "input.envelope(schedule).fire": {
+    "at": "string",
+    "id": "string"
+  },
+  "input.envelope(schedule).repository": {
+    "authority": "string"
+  },
+  "input.envelope(webhook)": {
+    "fire": "object",
+    "repository": "object",
+    "request": "object"
+  },
+  "input.envelope(webhook).fire": {
+    "at": "string",
+    "id": "string"
+  },
+  "input.envelope(webhook).repository": {
+    "authority": "string"
+  },
+  "input.envelope(webhook).request": {
+    "body": "object, optional",
+    "contentType": "string",
+    "headers": "object",
+    "method": "string",
+    "parts": "array of object, optional",
+    "query": "object",
+    "signatureVerified": "boolean, optional"
+  },
+  "input.envelope(webhook).request.body": {
+    "base64": "string, optional",
+    "text": "string, optional"
+  },
+  "input.envelope(webhook).request.headers": {
+    "*": "string"
+  },
+  "input.envelope(webhook).request.parts[]": {
+    "blob": "string, optional",
+    "filename": "string, optional",
+    "mediaType": "string, optional",
+    "name": "string",
+    "size": "number, optional",
+    "value": "string, optional"
+  }
+}

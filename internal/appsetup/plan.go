@@ -541,8 +541,13 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 	for _, u := range unmet {
 		step := substrate.AuthorizationPackageStep{ID: u.ID, Action: p.stepAction(u.ID), Held: p.held(u.ID)}
 		problem := notShipped()
-		if u.Bundle != nil {
+		switch {
+		case u.Bundle != nil:
 			step.Description, step.Shipped, problem = u.Bundle.Description, u.Bundle.Version, sample()
+		case u.Err != nil:
+			// Its document gave no closure, and says why: an interface this
+			// server does not run, a version under the floor.
+			problem = notPublished(u.Err)
 		}
 		blocks(&step, problem)
 		out = append(out, step)

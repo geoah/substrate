@@ -271,6 +271,10 @@ var packageDataKeys = map[string]bool{
 	// `stability` is the label the package states for its kinds (decision
 	// 0256): parsed by parsePackageStability, stored as written.
 	"stability": true,
+	// `interface` is the function interface the package's code is written
+	// against (decision 0265): parsed by parsePackageInterface, refused when
+	// this server does not run it.
+	"interface": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -375,6 +379,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	}
 	g.Description = l.parseDescription(where+": data", gd.header.Data)
 	l.parsePackageStability(where, gd.header.Data, g)
+	l.parsePackageInterface(where, gd.header.Data, g)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion

@@ -265,7 +265,10 @@ package is the `package` row's `declaredBy`, stamped by the engine
 a package created before the stamp names no one. With Technical details on,
 the head also says the package's **Stability**, beside its id: the label its
 `package` row states for its kinds, and `experimental` where the row states
-none ([stability](stability.md#on-a-package-for-its-kinds)). A standard collection's package (below) adds **Updates**: who keeps it
+none ([stability](stability.md#on-a-package-for-its-kinds)), and, for a
+package that ships tools, its **Function interface**: the version its code
+is written against, 1 where the row names none
+([functions](functions.md#the-interface)). A standard collection's package (below) adds **Updates**: who keeps it
 up to date, **Update** when
 the catalog offers one (or why it is blocked), **Pause** and **Remove**,
 which a provider has on its own page

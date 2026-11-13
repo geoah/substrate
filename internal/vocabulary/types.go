@@ -951,6 +951,10 @@ type Package struct {
 	// and a reader treats an empty one as experimental. Always empty on an
 	// authority row.
 	Stability string
+	// Interface is the function interface the header names its code as
+	// written against, one of FunctionInterfaces, and 0 where the header
+	// names none, which reads as 1. Always 0 on an authority row.
+	Interface int64
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.

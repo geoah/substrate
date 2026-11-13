@@ -504,6 +504,19 @@ type Unmet struct {
 	ID     string
 	Floor  int64
 	Bundle *Bundle
+	// Err is why its authority's document gave no closure to install at the
+	// floor: the document did not read, it lists no version at or above the
+	// floor, or the loader refused the closure, as it refuses one written
+	// against a function interface this server does not run. Nil where the
+	// catalog has nowhere to read it from, or it is a sample.
+	Err error
+}
+
+// unmetReason is the refusal of a requirement whose document gave no
+// closure, the reason as words: wrapping it would read the requiring bundle
+// as the one not published.
+func unmetReason(b *Bundle, u Unmet) error {
+	return fmt.Errorf("%w: %s requires %s, which this server cannot install: %s", substrate.ErrValidation, b.ID, u.ID, u.Err.Error())
 }
 
 // Requirements is what installing the shipped bundle id would install first,
@@ -610,6 +623,14 @@ func (c *Catalog) installResolved(ctx context.Context, b *Bundle, ds substrate.D
 	requirements, unmet, err := c.walkRequirements(ctx, b, ds)
 	if err != nil {
 		return nil, nil, err
+	}
+	// A requirement whose document gave no closure is refused here, with the
+	// document's reason, before any requirement lands: the engine's admission
+	// would say only that the repository lacks it.
+	for _, u := range unmet {
+		if u.Err != nil {
+			return nil, nil, unmetReason(b, u)
+		}
 	}
 	// An unmet requirement is refused here only where the whole install set
 	// must be the approved one; every other door leaves it to the engine,
@@ -830,9 +851,9 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 // requirements, so installing a provider brings the catalogue its adapter
 // writes. A required SAMPLE is left out, for the admission to refuse as
 // before: a copy is the owner's to take. A requirement on the path being
-// walked is a cycle, which the closure at its head installs. Install runs the
-// list and the upgrade preview stages it, so the two cannot disagree on what
-// a click brings.
+// walked is a cycle, which the closure at its head installs. Install and the
+// upgrade preview both walk it (walkRequirements), so the two cannot disagree
+// on what a click brings.
 func (c *Catalog) requirementsToInstall(ctx context.Context, b *Bundle, ds substrate.Dataset) ([]*Bundle, error) {
 	order, _, err := c.walkRequirements(ctx, b, ds)
 	return order, err
@@ -873,7 +894,11 @@ func (c *Catalog) walkRequirements(ctx context.Context, b *Bundle, ds substrate.
 				// Placed too, so a second bundle requiring it reports it
 				// no second time.
 				placed[req] = true
-				unmet = append(unmet, Unmet{ID: req, Floor: b.RequiresAtLeast[req], Bundle: dep})
+				u := Unmet{ID: req, Floor: b.RequiresAtLeast[req], Bundle: dep}
+				if err != nil && c.reader != nil && !c.ships(req) {
+					u.Err = err
+				}
+				unmet = append(unmet, u)
 				continue
 			}
 			visiting[req] = true
@@ -1017,7 +1042,7 @@ func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Datas
 	// closure, so a catalogue the click installs is not reported as a missing
 	// requirement, and what bringing it would break is. The closure's own
 	// bundle document comes last, which is the one the plan previews.
-	requirements, err := c.requirementsToInstall(ctx, b, ds)
+	requirements, unmet, err := c.walkRequirements(ctx, b, ds)
 	if err != nil {
 		return nil, err
 	}
@@ -1037,6 +1062,13 @@ func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Datas
 		return nil, err
 	}
 	plan.CodeChanges = append(plan.CodeChanges, triggers...)
+	// The install refuses a requirement whose document gave no closure
+	// (installResolved), so the preview names the same reason.
+	for _, u := range unmet {
+		if u.Err != nil {
+			plan.Blockers = append(plan.Blockers, strings.TrimPrefix(unmetReason(b, u).Error(), substrate.ErrValidation.Error()+": "))
+		}
+	}
 	return &plan, nil
 }
 

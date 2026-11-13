@@ -58,6 +58,7 @@ import { displayPlural } from "@/lib/kind-names"
 import { kindDescription } from "@/lib/kind-copy"
 import {
   packageAgent,
+  packageInterface,
   packageStability,
   packagesQueryOptions,
 } from "@/lib/packages"
@@ -403,6 +404,14 @@ export function PackagePage() {
                 Stability{" "}
                 <span className="text-muted-foreground">
                   {packageStability(row)}
+                </span>
+              </span>
+            )}
+            {technical && row && tools.length > 0 && (
+              <span>
+                Function interface{" "}
+                <span className="text-muted-foreground">
+                  {packageInterface(row)}
                 </span>
               </span>
             )}

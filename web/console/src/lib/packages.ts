@@ -1,7 +1,8 @@
 /** The repository's packages as the console reads them: the core `package`
  * rows, one per `<authority>/<package>`, and the facts on them the console
- * shows: who declared the package (decision 0109) and the stability it
- * states for its kinds. A package an agent declared is an app that agent
+ * shows: who declared the package (decision 0109), the stability it
+ * states for its kinds, and the function interface its code is written
+ * against (decision 0265). A package an agent declared is an app that agent
  * made: its collections read "Made by <agent>" and its package page gathers
  * what it ships. */
 
@@ -27,6 +28,9 @@ export interface PackageRow {
   /** The label the package states for its kinds (`stable`, `beta`,
    * `experimental`); absent where it states none. */
   stability?: string
+  /** The function interface the package's code is written against; absent
+   * where it names none. */
+  functionInterface?: number
 }
 
 /** The stability to show for a package: the label it states, and
@@ -34,6 +38,13 @@ export interface PackageRow {
  * is read as promising the least. */
 export function packageStability(row: PackageRow): string {
   return row.stability ?? "experimental"
+}
+
+/** The function interface to show for a package: the one it names, and 1
+ * where it names none, the interface every package was written against
+ * before the key existed. */
+export function packageInterface(row: PackageRow): number {
+  return row.functionInterface ?? 1
 }
 
 /** A page of `package` records → the rows, by id. */
@@ -44,6 +55,7 @@ export function packageRows(
   for (const record of page.records ?? []) {
     const declaredBy = record.properties?.declaredBy
     const stability = record.properties?.stability
+    const functionInterface = record.properties?.interface
     out.set(record.id, {
       id: record.id,
       ...(typeof record.properties?.publishedFrom === "string"
@@ -51,6 +63,7 @@ export function packageRows(
         : {}),
       ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
       ...(typeof stability === "string" && stability ? { stability } : {}),
+      ...(typeof functionInterface === "number" ? { functionInterface } : {}),
     })
   }
   return out

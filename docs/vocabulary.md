@@ -51,11 +51,13 @@ data:
 ```
 
 A header's keys are a closed set. `authority` and `package` repeat the id and
-must agree with it, and `version` is the closure's version. Three more are
+must agree with it, and `version` is the closure's version. Four more are
 optional: `description`; `retired`, the kind names the package has spent
-([retiring a name](#retiring-a-name)); and `stability`, the label the package
+([retiring a name](#retiring-a-name)); `stability`, the label the package
 states for its kinds, one of `stable`, `beta` and `experimental`
-([the reserved keys](#the-reserved-keys)).
+([the reserved keys](#the-reserved-keys)); and `interface`, the function
+interface its code is written against
+([functions](functions.md#the-interface)).
 
 Each declarable kind has a collection under `substrate.reamde.dev/core`, named
 for the kind. A declaration is read there like any other record, and listed
