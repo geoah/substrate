@@ -443,12 +443,17 @@ data:
   an import, a publisher's refresh, an app's approval), naming the version
   and the ones the server runs. Nothing of the package lands, so its code never fails
   at its first delivery instead. The likely cause is a package written for a
-  newer server.
+  newer server. A package that requires such a package is refused for that
+  reason too: its install names the requirement and the version before
+  anything lands, its upgrade preview lists the same line among what blocks
+  it, and an app's set-up shows it on the requirement's step.
 - **Within one version the input only gains keys**, so a body ignores a key
   it does not know. The keys a body reads, their JSON types and whether each
   is always there are pinned in
-  `internal/engine/testdata/function_input.golden.json`, and a test fails
-  when they move. A key renamed or removed, or a host call that
+  `internal/engine/testdata/function_input.golden.json`, and the `config`
+  the engine resolves for a package's function (its inputs, settings and
+  accounts) in `internal/engine/testdata/function_config.golden.json`. A
+  test fails when either moves. A key renamed or removed, or a host call that
   changes, is a new version.
 
 **The Python release is part of the interface.** A release of the server

@@ -29,7 +29,9 @@ import (
 // an array is recorded under `[]`. A renamed, dropped or retyped key fails
 // here; a key added is a diff to review against the interface's beta label
 // (docs/functions.md#the-interface). The envelopes are built by the code the
-// dispatcher builds them with.
+// dispatcher builds them with. The `config` the engine resolves from the
+// repository is pinned beside it, in function_config.golden.json, by a test
+// that builds it the way an invocation does (TestFunctionConfigMatchesTheGolden).
 //
 // Regenerate with `go test ./internal/engine/ -run TestFunctionInputMatchesTheGolden -update-function-input`.
 
@@ -204,8 +206,11 @@ func optional(always bool) string {
 // types beside it, and optional where a variant leaves it out. An object
 // under a key, or in an array under one, is recorded the same way over the
 // variants that carry it. A free-form object (the record's properties, a
-// request's headers and query) carries the writer's keys, not the
-// interface's, so it is recorded as `*` and the types of its values.
+// request's headers and query, a config's settings and a view's secret
+// errors) carries the writer's keys, not the interface's, so it is recorded
+// as `*` and the types of its values. A config's inputs are keyed by the
+// package's input names and each value is a record's view, so the view is
+// recorded under `*`.
 func mapShape(shapes map[string]map[string]string, name string, variants []map[string]any) {
 	types := map[string]map[string]bool{}
 	present := map[string]int{}
@@ -235,7 +240,20 @@ func mapShape(shapes map[string]map[string]string, name string, variants []map[s
 	}
 	shapes[name] = fields
 	for k, ms := range nested {
-		if k == "properties" || k == "headers" || k == "query" {
+		if k == "inputs" {
+			var views []map[string]any
+			for _, m := range ms {
+				for _, v := range m {
+					if view, ok := v.(map[string]any); ok {
+						views = append(views, view)
+					}
+				}
+			}
+			shapes[name+"."+k] = map[string]string{"*": "object"}
+			mapShape(shapes, name+"."+k+".*", views)
+			continue
+		}
+		if k == "properties" || k == "headers" || k == "query" || k == "settings" || k == "secretErrors" {
 			values := map[string]bool{}
 			for _, m := range ms {
 				for _, v := range m {
