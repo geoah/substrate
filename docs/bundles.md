@@ -7,16 +7,18 @@ installing a provider like Google adds account access and sync; installing a
 vocabulary bundle adds kinds and rules. All three are bundles — there is no
 second word for them, on the wire or anywhere else.
 
-The catalog it comes from has **two doors**, one per tier
-([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)):
+The catalog it comes from holds two sorts of package, and one route adds
+either: who keeps the package decides where it lands
+([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md),
+[0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)):
 
 | Word            | Means                                                                  |
 | --------------- | ---------------------------------------------------------------------- |
-| **published**   | a package a publisher owns (a provider such as `providers.substrate.reamde.dev/google`, a catalogue such as `substrate.reamde.dev/labs`). It INSTALLS under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
-| **sample**      | a package the user copies (`samples/`). It IMPORTS under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`) and is the repository's afterwards: writable, and offered an upgrade through the origin stamp its import left |
+| **published**   | a package its publisher keeps (a provider such as `providers.substrate.reamde.dev/google`, a catalogue such as `substrate.reamde.dev/labs`). Adding it lands it under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
+| **sample**      | a package the repository keeps (`samples/`). Adding it COPIES it under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`), and the copy is the repository's afterwards: writable, and offered an upgrade through the origin stamp adding it left |
 | **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Accounts** on each provider's page |
 
-The tier says who keeps a package, never what it is for. Each catalog entry
+`keptBy` says who keeps a package, never what it is for. Each catalog entry
 says that apart, read from its declarations
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
 `provider` (it connects the substrate to an outside service), `brings`
@@ -127,7 +129,7 @@ and cursors persist by reference across upgrades.
 
 A **provider** is a bundle whose package a publisher owns: `google`, `github`,
 `linear`, `notion`, `whoop`, `beeper`, `slack`, `slacklive` and `applehealth`,
-all published under `providers.substrate.reamde.dev`. Installing one from the
+all published under `providers.substrate.reamde.dev`. Adding one from the
 catalog writes `source: published` on its package, and from then on only an
 install or an upgrade writes its declarations: a `POST …/vocabulary/apply`
 naming that package is `403` for every token, because a mirror kind edited
@@ -139,9 +141,9 @@ the same preview and the same button
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 A token cannot apply the same closure by hand from the shipped files: it
 creates a package only under its own repository's authority
-([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)), so `substratectl install` is the one door. A
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)), so `substratectl add` is the one door. A
 copy a repository already holds as `installed`, applied by hand before that
-rule, stays editable until its next install promotes it. The four well-known
+rule, stays editable until adding it again promotes it. The four well-known
 catalogues under `substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
 the same door and land published the same way ([the catalog](#the-catalog)).
 
@@ -173,14 +175,14 @@ it lands those records and moves the stamp. A package installed before the
 stamp existed is measured from its stored version until its next install,
 and so is one applied by hand after an uninstall, which clears the stamp;
 a sample installed verbatim is never stamped, because it stays editable
-and nothing would record its edits. A SAMPLE is previewed as the import door would land it, rehomed onto
-the repository's own authority, and only through the origin stamp its import
+and nothing would record its edits. A SAMPLE is previewed as adding it would land it, rehomed onto
+the repository's own authority, and only through the origin stamp adding it
 left on the copy
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
 the shipped sample moved when its version is past the copy's `originVersion`,
 and the copy was edited when its stored declarations no longer hash to
-`originDigest`, in which case the preview says `discardsEdits: true` and the
-re-import takes the same confirmation a lossy plan does (below). A package
+`originDigest`, in which case the preview says `discardsEdits: true` and
+adding it again takes the same confirmation a lossy plan does (below). A package
 with no stamp is one the user declared or a copy taken before the stamp
 existed, and the shipped sample claims no upgrade over it.
 
@@ -203,9 +205,9 @@ A `move` step is a whole kind's rows travelling to the kind that named it with
 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)): same id, same
 properties, every reference at the old kind repointed, the old kind left
 declared and empty. It runs first, loses nothing, and is never lossy.
-A lossless plan installs on the bare `POST …/install`. A lossy one runs only
+A lossless plan lands on the bare `POST …/add`. A lossy one runs only
 with a body confirming what was previewed, `{"confirm": {"planHash",
-"changelogSeq"}}`: without it the install is refused with the `lossy` code,
+"changelogSeq"}}`: without it the add is refused with the `lossy` code,
 and with a hash that is not the recounted plan's with `conflict`, which is
 what a write since the preview to a record the plan rewrites or a declaration
 it converts produces: preview again. A write anywhere else moves the
@@ -213,7 +215,7 @@ changelog head and leaves the confirmation standing ([decision
 0105](decisions/0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md));
 a `changelogSeq` past the head is refused with `conflict` too. The console's Providers page offers
 **Update** where nothing blocks, asks first (listing the lossy steps) where the preview is lossy, and states the
-guard lines where something blocks; `substratectl install <package>
+guard lines where something blocks; `substratectl add <package>
 --allow-data-loss` reads the preview, prints the steps and confirms exactly
 that hash. The old values stay in the changelog either way; a lossy step
 removes them from the fold and nothing erases them. A plan whose `work` is
@@ -294,8 +296,8 @@ every installed bundle under an `{items}` envelope and
 `…/substrate.reamde.dev/core/bundle/{id}/status` answers
 one: `{id, name, authority, package, installed, enabled, inputs, setup,
 accounts, functions, kinds, liveRecords, version}`, plus the quarantine pair
-when it applies and, on an imported sample, the `origin`, `originVersion` and
-`modified` its [stamp](#the-two-doors) carries. On a published package the
+when it applies and, on a copied sample, the `origin`, `originVersion` and
+`modified` its [stamp](#adding-a-package) carries. On a published package the
 catalog installed, `shippedVersion` is the shipped package version that install took,
 which can sit below `version`: the API lands every change at stored+1, so an
 install over hand applies lands above the shipped number. `id` is the package the bundle
@@ -578,7 +580,7 @@ declares a setting by writing an empty one.
 **The id is the ownership.** A setting's id is `<bundle id>/<name>`, and the
 bundle id is `<authority>/<package>`, so the Firecrawl provider ships
 `providers.substrate.reamde.dev/firecrawl/apiKey`, and a sample's settings are
-rehomed with the rest of its closure on import. Two bundles may each own an `apiKey`, and the prefix
+rehomed with the rest of its closure when it is added. Two bundles may each own an `apiKey`, and the prefix
 is the only thing that says whose a record is — a hand-written record under
 another bundle's prefix is that bundle's setting.
 
@@ -831,35 +833,35 @@ count into `syncStreams.<stream>.cursor` for the page to read.
 
 ## The catalog
 
-The **catalog** lists everything shipped in the binary, in the two tiers
+The **catalog** lists everything shipped in the binary, in the two sorts
 [0048](decisions/0048-providers-are-published-samples-are-copied.md) draws:
 the eleven **providers** under `kinds/providers.substrate.reamde.dev`, the
 four well-known **catalogues** under `kinds/substrate.reamde.dev`
-(`health`, `labs`, `environment` and `clinical`), which take the same install
-door and are no providers, and the
+(`health`, `labs`, `environment` and `clinical`), which are added the same
+way and are no providers, and the
 ten **samples** under `samples/` (`people`, `tasks`, `messaging`,
 `calendar`, `scheduling`, `ink`, and the worked examples `llm`, `notes`,
 `readinglist` and `pebble`). A catalogue is a first-party package:
-it installs under `substrate.reamde.dev`, published, and upgrades from the
+it lands under `substrate.reamde.dev`, published, and upgrades from the
 catalog as a provider does, but no seed writes it
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 A repository takes a sample
 itself: registration seeds
-`substrate.reamde.dev/core`, `llm`, `console` and `observations`, imports
+`substrate.reamde.dev/core`, `llm`, `console` and `observations`, copies
 the `llm` sample onto the repository's
 own authority with its three keyless `provider` rows (`openai`, `anthropic`,
 `gemini`), and nothing else.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id` (the package it ships), `name`, `authority`,
-`package`, `description`, `version`, `tier`, `inputs`, `requires`,
+`package`, `description`, `version`, `keptBy` (`publisher` or `repository`), `inputs`, `requires`,
 `requiresAtLeast`, `suggestedMappings` (each with the state it has here, and
 the ids it lands under, below), the held copy's `origin`, `originVersion` and
 `modified` where this repository holds one, and `closure`, which previews the
 `kinds`, `traits`, `functions` and `agents` it declares (each with its
 description), its `mappings`, its `triggers` with the callable each invokes,
-and the `records` the install writes beside them (a bundle's triggers, the
-llm example's provider rows), so the console can show what an install will
+and the `records` the add writes beside them (a bundle's triggers, the
+llm example's provider rows), so the console can show what the package will
 add before it runs. Every one of those is a record: the declarations are
 records of the core meta-kinds, and `records` are ordinary rows the moment
 they land. A shipped directory carrying no bundle document is not an entry, and a
@@ -867,21 +869,21 @@ malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
 `requires` is the entry's declared vocabulary dependency: the packages its
-mappings, references and trigger subscriptions point at. The install door
+mappings, references and trigger subscriptions point at. Adding a package
 resolves a requirement the catalog PUBLISHES (a provider or a catalogue):
 one the repository lacks, or holds under its `requiresAtLeast` floor, is
-installed first, through the same door and its own requirements first, so installing
-`whoop` installs `health` and installing `slacklive` installs `slack`
+added first, the same way and its own requirements first, so adding
+`whoop` adds `health` and adding `slacklive` adds `slack`
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 Each requirement commits on its own, before the bundle that needs it, so a
 bundle refused after its requirements landed leaves them installed, as
-installing them one by one would have. The upgrade preview stages the same
+adding them one by one would have. The upgrade preview stages the same
 requirements ahead of the closure, so an upgrade that brings one is offered
 unblocked and lists what the requirement adds.
 A required SAMPLE is never taken for you, because a copy is the owner's to
-take: importing `tasks` into a repository that has not imported `people` is
+take: adding `tasks` to a repository that has not added `people` is
 **refused** by the ordinary admission, before anything is touched, with a
-problem naming what to import first, and that order is yours.
+problem naming what to add first, and that order is yours.
 
 `requiresAtLeast` is the floor under a requirement
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
@@ -893,13 +895,13 @@ Admission compares the floor against the stored package version and refuses
 while the repository holds the package below it, naming both versions; the
 loader refuses a key `requires` does not list, a value that is not an integer
 of at least 1, and any other constraint key. The shipped samples pin the
-versions they were verified against, so importing `tasks` over a `people`
-copy imported before version 4 says to import `people` again first, and the
+versions they were verified against, so adding `tasks` over a `people`
+copy taken before version 4 says to add `people` again first, and the
 console reads the floor against each held bundle's `version` before the button
 is pressed. The floor binds a COPY
 ([0100](decisions/0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md)):
 against a `people` the repository declared by hand under its own authority,
-whose version line has nothing to do with the sample's, the import drops the
+whose version line has nothing to do with the sample's, adding it drops the
 floor from the landing bundle and the requirement is met by name, with the
 closure's pins holding the package to the kinds it declares.
 `requiresAtLeast` is a dialect key
@@ -918,32 +920,36 @@ kind's declared [`purpose`](decisions/0133-a-kind-declares-its-purpose.md)
 (absent where the kind declares none, which reads as `primary`), so a client
 can tell a sample's collections from its machinery before taking it.
 
-### The two doors
+<!-- The anchor keeps decision record 0166 resolving: it links
+#the-two-doors, and an accepted record's body may not change. -->
+<a id="the-two-doors"></a>
 
-Both doors are thin wrappers over the ordinary apply, never a parallel path:
-each applies the entry's closure exactly the way `substratectl apply -f
+### Adding a package
+
+The add route is a thin wrapper over the ordinary apply, never a parallel path:
+it applies the entry's closure exactly the way `substratectl apply -f
 bundle.yaml -f triggers.yaml` does: the declarations through the batch
 [admission](vocabulary.md#admission), the delivery wiring as ordinary records,
-both committing as one repository transaction. Each is idempotent, so a
+both committing as one repository transaction. It is idempotent, so a
 second call changes nothing: a declaration counts as changed only when its
 coerced form differs from its stored row (a reference compared as the `{ref:
 …}` object the row holds, a duration in its normalized spelling), so taking an
 unchanged closure again writes no changelog entry and keeps every version.
-Both are refused for any actor outside the three
+It is refused for any actor outside the three
 interactive clients (`api`, `console`, `substratectl`) with a 403, before the
 closure is touched: taking bundle code is a person's action.
 
-A door writes a shipped data record (a record view, a metric record, any
+Adding a package writes a shipped data record (a record view, a metric record, any
 record a closure ships beside its declarations) only where no other hand ever
 wrote or deleted the one at its id: every entry in the record's changelog is
 the closure's own (`bundle:<authority>:<package>`), the core seed's
 (`bundle:core`) or the engine's (`substrate`). An edit, a removed property
-and a deletion stay as they were left through every re-import and upgrade,
+and a deletion stay as they were left through every add and upgrade,
 whoever made them: the owner at any door they name, an agent, a function or
 another bundle. A record only the closure and the engine wrote takes the
 newer shipped one. Triggers are the exception: they name the callables the
-same closure ships, so the door writes them, unless a live trigger with the
-same id delivers to another package's callable, which the door refuses with a
+same closure ships, so the route writes them, unless a live trigger with the
+same id delivers to another package's callable, which the route refuses with a
 409 naming both rather than repoint someone else's delivery
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)). To take a newer shipped
 record over an edited one, apply the shipped document by hand
@@ -963,23 +969,26 @@ bin/substratectl apply -f kinds/substrate.reamde.dev/health/views.yaml
 The file holds one other view, the workout's, and the apply writes it back
 to the shipped view's properties, undoing any edit you made there. To take
 one view alone, copy the file, delete every other document from it, and
-apply the copy. A sample's record is different: the import gave it the
+apply the copy. A sample's record is different: adding the sample gave it the
 repository's authority, while the shipped file still names
 `samples.substrate.reamde.dev` in its ids and references. Applied unchanged,
 that file writes records of a copy the repository may not hold and leaves
-the imported record alone, and `--as-mine` does not help, because it
+the copied record alone, and `--as-mine` does not help, because it
 rehomes from the authority a declaration names and a data file holds none.
 Rewrite the authority with `sed` first (`sed
 's/samples\.substrate\.reamde\.dev/alice.example.com/g'` for a repository
 named `alice.example.com`).
 
-`POST …/catalog/{id}/install` is the **published** door, for a provider and a
-catalogue alike. The closure lands verbatim, under the authority that
+`POST …/catalog/{id}/add` takes either sort, and who keeps the package
+decides where it lands ([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)). Its body is optional:
+`confirm`, above, and for a published package `expect`, the `version` and
+`digest` the reader reviewed. A **published** package, a provider and a
+catalogue alike, lands verbatim, under the authority that
 publishes it, with the shipped version it
 took stamped as `shippedVersion` on the package row, and the version bump the
 publisher ships next is what the upgrade preview above offers.
 
-`POST …/catalog/{id}/import` is the **sample** door. The closure is REHOMED
+A **sample**'s closure is REHOMED
 first: every mention of `samples.substrate.reamde.dev` in the decoded documents
 (the ids, the declared `authority`, the reference pins, `installs` and
 `requires`, a function's `writes`, a trigger's selectors, a mapping's
@@ -990,68 +999,64 @@ refused. So `samples.substrate.reamde.dev/tasks/task` lands as
 `ada.example.com/tasks/task`, `source: installed` and writable through the API,
 and the bundle record it lands as is `ada.example.com/tasks`, not the id the
 request named. What it landed belongs to the repository; the upgrade a later
-binary offers it is a re-import, previewed through the stamp below. `requires:`
-and `requiresAtLeast:` are rehomed with everything else, so importing `tasks`
+binary offers it is adding it again, previewed through the stamp below. `requires:`
+and `requiresAtLeast:` are rehomed with everything else, so adding `tasks`
 before `people` is refused by the ordinary admission naming
-`<your authority>/people`, the sample to import first.
+`<your authority>/people`, the sample to add first.
 
-The copy records where it came from. The import stamps three managed
+The copy records where it came from. Adding a sample stamps three managed
 properties on the landed package row: `origin`, the shipped bundle id
 (`samples.substrate.reamde.dev/tasks`), `originVersion`, the shipped package
 version it was copied at, and `originDigest`, a digest of the declarations it
 landed. The bundle status and the catalog entry carry `origin` and
 `originVersion` back, plus `modified`, which the server derives by recomputing
 the digest from the stored declarations: a kind, trait, property type, mapping,
-function, agent or bundle document edited, added or removed since the import
-reads `modified: true`. Versions alone could not say so, because a kind edit
+function, agent or bundle document edited, added or removed since the copy
+was taken reads `modified: true`. Versions alone could not say so, because a kind edit
 moves the kind's version and not the package's, and an addition moves nothing.
 `modified` covers declaration data only: labels, annotations and the data
 records a sample ships beside its closure do not flip it.
-The install door stamps no origin (only its `shippedVersion`), and neither
+Adding a published package stamps no origin (only its `shippedVersion`), and neither
 does a hand `apply -f` unless the request names an `origin`: `substratectl apply --as <authority>` sends
 the package the input was authored as when the input carries its package
 document (one package per run; an input carrying several is refused, since
-one request names one origin), and the server records the claim as the import door records its
+one request names one origin), and the server records the claim as adding a sample records its
 own, with a digest of what landed
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)).
 So a package with no `origin` is a published package, the repository's own
-from the start, or a copy imported before the stamp existed, which nothing
+from the start, or a copy taken before the stamp existed, which nothing
 reconstructs.
 
 **The stamp is the sample's upgrade path.** The catalog previews a stamped
 copy against the shipped sample, rehomed, exactly as the provider preview
 above: `upgrade.available` when the shipped version is past `originVersion`
 (or a declaration moved), the same `changes`, `blockers` and conversion plan,
-and `discardsEdits: true` when the copy was edited since its stamp, because a
-re-import replaces the package whole (record 0048) and every edit goes with
-it. That preview stays on the entry even when nothing shipped moved, so the
-re-import can be confirmed. The import door refuses a re-import over an
+and `discardsEdits: true` when the copy was edited since its stamp, because
+adding it again replaces the package whole (record 0048) and every edit goes with
+it. That preview stays on the entry even when nothing shipped moved, so
+adding it again can be confirmed. The add route refuses it over an
 edited copy the way it refuses a lossy plan, `403 lossy`, until the body
 carries `confirm: {planHash, changelogSeq}` from that preview; the hash binds
 the edited state, so one more edit refuses it as one more write to a record
 the plan rewrites does. A
-confirmed re-import re-stamps the copy, and it reads pristine again. The
-console offers Upgrade on a moved sample through the import door,
-asks first where the copy was edited, and sends the confirmation on Import
-again too; `substratectl import <sample> --allow-data-loss` reads the preview,
+confirmed add re-stamps the copy, and it reads pristine again. The
+console offers Upgrade on a moved sample through the add route,
+asks first where the copy was edited, and sends the confirmation on Add
+again too; `substratectl add <sample> --allow-data-loss` reads the preview,
 says what goes and confirms exactly that plan. A hand `apply --as` over an
 edited copy is refused the same way, and `apply --as --allow-data-loss`
 previews with the origin (`POST /api/v1/vocabulary/plan` takes `origin` too)
 and confirms.
 
-`import` on a published id is refused naming `install`. `install` on a sample id
-admits the closure verbatim, under the placeholder authority, for a repository
-that wants the shipped vocabulary under the shipped authority; no provider
-names a sample package, so nothing else needs it. Its `requires:` keep the
-shipped spelling too, so a repository that holds what the sample requires only
-as an imported copy (`ada.example.com/scheduling`) is refused, and the refusal
-names the copy: a package under another authority is another package, and
-importing the bundle instead rehomes its requirements with it.
+`expect` on a sample is refused with 400 `bad_request`: no publisher keeps a
+sample, so there is no published version to expect. Adding a sample always
+copies it, and no route admits one verbatim under the placeholder authority
+([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)).
 
 **No provider requires a sample package, so every provider installs on a
 bare repository.** A provider ships mirror kinds in its own shape and writes
 nothing else: no reference pinned at a sample kind, no core row. So the
-console can install any of them from a repository that has imported nothing,
+console can add any of them to a repository that holds no sample,
 and the console's Add button is never disabled for a missing requirement. The
 three that require anything require a published package, which their Add
 takes first: `slacklive` requires the Slack provider and writes its rows
@@ -1080,14 +1085,14 @@ A sample ships the mappings the repository would otherwise have to write. The
 from Google's `contact` and `emailaddress`, and from Linear's `user`. The
 `tasks` sample declares one, from Linear's `issue`
 onto its own `task`. They are the sample's declarations, under its package, so
-an import lands them as yours: edit them, delete them, version them like
+adding it lands them as yours: edit them, delete them, version them like
 everything else you own.
 
 A suggested mapping names a kind in a package you may not have, and admission
-refuses a mapping whose source kind is absent or shaped wrong. So **the import
+refuses a mapping whose source kind is absent or shaped wrong. So **adding a sample
 is conditional**: a suggested mapping (and its `installs:` entry) is admitted
-only where this repository can resolve it, and dropped otherwise. Importing
-`people` onto a repository with no provider lands three kinds and no mapping,
+only where this repository can resolve it, and dropped otherwise. Adding
+`people` to a repository with no provider lands three kinds and no mapping,
 rather than being refused for vocabulary you never asked for. A hand apply of
 the same files, rehomed with `substratectl apply --as-mine`, takes only the `waiting` half of this rule, with `substratectl
 apply --hold-waiting-mappings` (`holdWaitingMappings` on `POST
@@ -1103,27 +1108,27 @@ reach my people" are two different answers.
 | State     | What it means                                       | What lands it            |
 | --------- | --------------------------------------------------- | ------------------------ |
 | `landed`  | the declaration is here; the projection runs        | nothing left to do       |
-| `ready`   | the provider is here and the mapping fits it        | import the sample again  |
-| `waiting` | the provider package is absent                      | install it, then import again |
-| `blocked` | the provider is older than the mapping needs        | upgrade it, then import again |
+| `ready`   | the provider is here and the mapping fits it        | add the sample again     |
+| `waiting` | the provider package is absent                      | add it, then add the sample again |
+| `blocked` | the provider is older than the mapping needs        | upgrade it, then add the sample again |
 
 `blocked` carries the resolution problems with it (a mapped property, a match
 probe or a `from` kind the installed version does not declare), so a mapping
-the shipped sample outgrew names what to fix instead of failing the import. A
+the shipped sample outgrew names what to fix instead of failing the add. A
 SUBJECT SLOT is never one of them any more: the mapping synthesises its own
 (record 0096), and the one thing that can go wrong there is a collision with a
 property the mirror declares for itself.
 
-**Installing a provider does not land a mapping.** Import the sample AGAIN,
-which is what applies the closure with the mapping in it. That second import
-REPLACES the package rather than merging into it, the cost every re-import
+**Adding a provider does not land a mapping.** Add the sample AGAIN,
+which is what applies the closure with the mapping in it. That second add
+REPLACES the package rather than merging into it, the cost every second add
 carries
 ([0048](decisions/0048-providers-are-published-samples-are-copied.md)): a kind
 or a property you added since is dropped by it, or the narrowing guard refuses
 it while live records hold the old shape. Every surface that offers the
-re-import says so: the console puts an **Import again** action on the page
+second add says so: the console puts an **Add again** action on the page
 of a held sample whose mapping is `ready` and states the replacement in the
-confirmation, and `substratectl import` prints the same warning beside each
+confirmation, and `substratectl add` prints the same warning beside each
 line.
 
 **A landed mapping changes how you may write its target.** Nothing external
@@ -1147,7 +1152,7 @@ serving path reads the catalog again. The response is the landed bundle's
 computed status. Uninstall, disable, enable, and purge are the lifecycle verbs
 above; the catalog does not duplicate them.
 
-The CLI faces are `substratectl import <sample>` for the sample door, and
+The CLI faces are `substratectl add <package>` for the add route, and
 `substratectl apply -f <files> --as <authority>`, which runs the same rehoming
 client-side over files on disk.
 
@@ -1157,7 +1162,7 @@ triggers), are the [Bundles catalog](bundles-catalog.md).
 ## Packages published through authority documents
 
 The catalog also resolves a package id through its publisher's authority
-document. Use the same install command or catalog install endpoint as for a
+document. Use the same add command or catalog add route as for a
 shipped provider. Requirements can come from either source; shipped ids
 always use the binary. The package page identifies the publisher and its
 document, or says that it came from a file on this server.

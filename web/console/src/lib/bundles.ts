@@ -1,15 +1,15 @@
 /** The Registry page's pure fold: it merges the two reads the page makes —
  * the imported bundles' runtime status and the shipped catalog closures — into
  * one row set, plus the small domain helpers the registry list and the
- * bundle detail share (the two tier sections and the provider-copy gate).
+ * bundle detail share (the two keepers' sections and the provider-copy gate).
  * Kept out of the page component modules so the pages stay component-only
  * (react-refresh) and this stays unit-testable.
  *
  * Vocabulary: the surface listing them is the REGISTRY and `bundle` stays the
- * schema/API term. The catalog has two TIERS (decision record 0048): a
- * PUBLISHED package is INSTALLED under the authority that publishes it, a
- * SAMPLE is IMPORTED under this repository's own authority and is the
- * repository's to edit afterwards. What a package is FOR is the catalog's
+ * schema/API term. A catalog package has one of two KEEPERS (decision record
+ * 0258): a PUBLISHED package is kept by its publisher and lands under the
+ * authority that publishes it, a SAMPLE is kept by the repository, copied
+ * under its own authority and the repository's to edit afterwards. What a package is FOR is the catalog's
  * second answer (decision record 0238): a provider, an add-on for one, or a
  * standard collection that adds collections. Both are backend fields, never
  * derived from an authority's shape here. A bundle owns exactly one PACKAGE
@@ -28,7 +28,7 @@ import type {
   BundleInstallRequest,
   BundleUpgrade,
   BundleUpgradeHolder,
-  CatalogTier,
+  CatalogKeeper,
   ConversionConfirm,
   ConversionPlan,
   KindInfo,
@@ -41,8 +41,8 @@ import { displayPlural } from "@/lib/kind-names"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
- * catalog entry (when it is a shipped closure) it is a copy of. `tier` comes
- * from the catalog (backend field). */
+ * catalog entry (when it is a shipped closure) it is a copy of. `keptBy`
+ * comes from the catalog (backend field). */
 export interface BundleRow {
   /** What tells this row from every other, for list keys and lookups: the
    * catalog entry's shipped id, which the catalog never repeats, or the id
@@ -50,9 +50,9 @@ export interface BundleRow {
    * samples of one package word both land at `<home>/<package>`. */
   key: string
   /** The bundle's id IN THIS REPOSITORY: the package identity it owns once
-   * it lands. A provider keeps its published id; an imported sample carries
+   * it lands. A provider keeps its published id; an added sample carries
    * this repository's authority, so this is not always the catalog's id. The
-   * two doors are addressed by `catalog.id`. */
+   * add route is addressed by `catalog.id`. */
   id: string
   name: string
   authority: string
@@ -61,10 +61,10 @@ export interface BundleRow {
   status?: BundleStatus
   catalog?: CatalogItem
   installed: boolean
-  /** Which door this row takes. Absent on a bundle applied outside the
-   * shipped catalog: the tier is the catalog's to state, and guessing one
+  /** Who keeps this row's package. Absent on a bundle applied outside the
+   * shipped catalog: the keeper is the catalog's to state, and guessing one
    * from an authority's shape is the derivation the backend refuses to make. */
-  tier?: CatalogTier
+  keptBy?: CatalogKeeper
   /** The packages this closure declares against, named as they will be HERE:
    * a sample's are rehomed onto this repository's authority, because that is
    * what the server will look for. Admission refuses while one is missing
@@ -126,7 +126,7 @@ export function mergeBundles(
       ...(status && { status }),
       catalog: item,
       installed: copy ? copy.installed : item.installed,
-      tier: item.tier,
+      keptBy: item.keptBy,
       requires: item.requires ?? [],
       requiresAtLeast: item.requiresAtLeast ?? {},
       upgrade: item.upgrade,
@@ -184,11 +184,11 @@ export function addonOf(
  * adds collections or metrics (`health`, `labs`, `clinical`, an app's own
  * package). Add a collection lists it beside the samples. */
 export function isStandard(
-  row: Pick<BundleRow, "tier" | "catalog" | "status">
+  row: Pick<BundleRow, "keptBy" | "catalog" | "status">
 ): boolean {
   const brings = row.catalog?.brings ?? []
   return (
-    row.tier === "published" &&
+    row.keptBy === "publisher" &&
     !isProvider(row) &&
     !addonOf(row) &&
     (brings.includes("collections") || brings.includes("metrics"))
@@ -207,12 +207,12 @@ export function listedProvider(
  * `long` for a page's line. One answer for every page, so a package reads
  * the same wherever it is listed. */
 export function packageRole(
-  row: Pick<BundleRow, "tier" | "catalog" | "status">
+  row: Pick<BundleRow, "keptBy" | "catalog" | "status">
 ): {
   short: string
   long: string
 } {
-  if (row.tier === "sample")
+  if (row.keptBy === "repository")
     return { short: "Sample", long: "A sample you added" }
   if (addonOf(row)) return { short: "Add-on", long: "An add-on for a provider" }
   if (isProvider(row)) return { short: "Provider", long: "A provider" }
@@ -221,7 +221,7 @@ export function packageRole(
       short: "Standard collection",
       long: "A standard collection, kept up to date for you",
     }
-  if (row.tier === "published")
+  if (row.keptBy === "publisher")
     return { short: "Published", long: "Kept up to date by its publisher" }
   return { short: "Added by hand", long: "Added by hand" }
 }
@@ -736,10 +736,10 @@ export function mappingLinksSentence(row: BundleRow): string {
   )
 }
 
-/** The mappings a RE-IMPORT would land: their provider is here and they fit
- * it, and only the import is missing. This is what earns a held sample an
- * "Import again" on its own page (decision record 0049); a moved closure is
- * offered the upgrade instead, which is the same door. */
+/** The mappings adding a sample AGAIN would land: their provider is here and
+ * they fit it, and only the add is missing. This is what earns a held sample
+ * an "Add again" on its own page (decision record 0049); a moved closure is
+ * offered the upgrade instead, which is the same route. */
 export function readyMappings(row: {
   catalog?: Pick<CatalogItem, "suggestedMappings">
 }): SuggestedMapping[] {

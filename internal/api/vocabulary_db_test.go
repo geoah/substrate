@@ -397,8 +397,8 @@ func TestAnAppsTokenNeverAppliesVocabulary(t *testing.T) {
 	if row := env.get(t, corePackage+"/package", pkg); row != nil {
 		t.Fatalf("an app's apply declared its package: %+v", row)
 	}
-	for _, verb := range []string{"install", "import"} {
-		rec = env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/people")+"/"+verb, app, nil)
+	for _, id := range []string{"samples.substrate.reamde.dev/people", "providers.substrate.reamde.dev/google"} {
+		rec = env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", app, nil)
 		wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 	}
 	// The bundle record's lifecycle PATCH is on the record path, where a kind

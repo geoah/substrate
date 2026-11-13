@@ -27,7 +27,7 @@ function sample(
     package: pkg,
     description: "",
     version: 1,
-    tier: "sample",
+    keptBy: "repository",
     installed,
     closure: {
       kinds: null,
@@ -48,7 +48,7 @@ function sample(
     package: pkg,
     catalog,
     installed,
-    tier: "sample",
+    keptBy: "repository",
     requires: [],
   }
 }
@@ -144,7 +144,7 @@ describe("collectionSamples", () => {
   it("lists them by name, providers left out", () => {
     const provider: BundleRow = {
       ...sample("google", { kinds: ["providers.example/google/contact"] }),
-      tier: "published",
+      keptBy: "publisher",
     }
     const out = collectionSamples(
       [
@@ -188,7 +188,7 @@ describe("callableSamples", () => {
   it("leaves providers out", () => {
     const provider: BundleRow = {
       ...sample("google", { functions: ["providers.example/google/sync"] }),
-      tier: "published",
+      keptBy: "publisher",
     }
     expect(callableSamples([provider], "functions")).toEqual([])
   })
@@ -214,7 +214,7 @@ function published(
     package: pkg,
     description: `${pkg}: what it keeps. More prose.`,
     version: 1,
-    tier: "published",
+    keptBy: "publisher",
     provider: over.provider,
     brings: over.brings,
     addonFor: over.addonFor,
@@ -237,7 +237,7 @@ function published(
     package: pkg,
     catalog,
     installed: false,
-    tier: "published",
+    keptBy: "publisher",
     requires: [],
   }
 }

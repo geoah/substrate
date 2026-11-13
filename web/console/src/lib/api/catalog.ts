@@ -1,8 +1,9 @@
-/** The bundle CATALOG: the importable bundle closures shipped in the binary —
- * what the Registry page lists and imports. The catalog read flags each entry
- * with whether THIS repository already has it, so the page can fold imported +
- * not-imported into one list; the import runs the same admission path an
- * explicit apply uses and answers with the freshly imported bundle's status. */
+/** The bundle CATALOG: the bundle closures shipped in the binary and the
+ * packages authority documents publish — what the console lists and adds. The
+ * catalog read flags each entry with whether THIS repository already has it,
+ * so a page can fold added + not-added into one list; adding runs the same
+ * admission path an explicit apply uses and answers with the status of the
+ * bundle as it landed. */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -60,10 +61,10 @@ export const shippedUpgradesQueryOptions = queryOptions({
  * it, so it finds a stored bundle's shipped closure only for a copy with no
  * origin stamp (heldCopyOf). */
 export function landedId(
-  item: Pick<CatalogItem, "id" | "tier" | "package">,
+  item: Pick<CatalogItem, "id" | "keptBy" | "package">,
   home: string
 ): string {
-  if (item.tier !== "sample" || !home) return item.id
+  if (item.keptBy !== "repository" || !home) return item.id
   return `${home}/${item.package}`
 }
 
@@ -73,10 +74,10 @@ export function landedId(
  * entry it names and to no other, because two publishers' samples of one
  * package word both land at `<home>/<package>` and the id alone would hand
  * one copy to both. Only an unstamped copy (a provider, a sample installed
- * verbatim, or one imported before the stamp existed) is matched by id: the
+ * verbatim, or one copied before the stamp existed) is matched by id: the
  * landed id first, then the shipped one. */
 export function heldCopyOf(
-  item: Pick<CatalogItem, "id" | "tier" | "package">,
+  item: Pick<CatalogItem, "id" | "keptBy" | "package">,
   statuses: readonly BundleStatus[],
   home: string
 ): BundleStatus | undefined {
@@ -121,12 +122,12 @@ export function rehomeAuthority(s: string, from: string, to: string): string {
 
 /** One catalog entry as it lands HERE: a sample's authority, closure
  * identities, declared input kinds and `requires:` all carry this repository's
- * authority, because that is what the import writes and what the registry will
+ * authority, because that is what adding it writes and what the registry will
  * hold. A preview naming the placeholder would link nowhere and gate on a
  * package the server never looks for. `id` is NOT rewritten: it addresses the
- * shipped closure, which is what the import door is called with. */
+ * shipped closure, which is what the add route is called with. */
 export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
-  if (item.tier !== "sample" || !home) return item
+  if (item.keptBy !== "repository" || !home) return item
   const rehome = (s: string) => rehomeAuthority(s, item.authority, home)
   const closure = item.closure
   return {
@@ -180,7 +181,7 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
 }
 
 /** One of the closure's keyed maps, rehomed: the keys are identities the
- * import rewrites, and a value is prose unless it is an identity too. Absent
+ * copy rewrites, and a value is prose unless it is an identity too. Absent
  * stays absent, so an older server's omission is not turned into an empty
  * map. */
 function rekey(
@@ -196,7 +197,7 @@ function rekey(
 
 /** ONE catalog entry, read fresh from the server rather than from the list's
  * cache. A confirmation names one plan, hashed over the records it rewrites
- * and the declarations it converts, so a chain import re-reads the preview of
+ * and the declarations it converts, so a chain of adds re-reads the preview of
  * each bundle right before it takes it: the step before it may have written
  * either, and the token the list was read with is then refused (engine
  * convert.go). The id is a package reference, so its slash is
@@ -205,49 +206,39 @@ export function fetchCatalogItem(id: string): Promise<CatalogItem> {
   return request<CatalogItem>("GET", `${CATALOG}/${seg(id)}`)
 }
 
-/** Install a PROVIDER's closure into this repository, under the authority that
- * publishes it. Owner-gated and idempotent (re-installing is the bundle's own
- * upgrade semantics); the response is the installed bundle's computed status.
- * The catalog id is a package reference and carries a `/`, so it is
- * `%2F`-encoded as one path segment. */
+/** What adding a package answers: the status of the bundle as it landed,
+ * with the add-ons it took along. */
 export type BundleInstallResult = BundleStatus & {
   addons?: AddonInstallResult[]
 }
 
-export function installBundle(
+/** Add one catalog package to this repository: `POST /catalog/{id}/add`.
+ * Who keeps it decides where it lands (decision record 0258): a package its
+ * publisher keeps lands under the authority that publishes it, and a SAMPLE
+ * is copied under this repository's own authority first, so the status
+ * carries the LANDED id (`<your authority>/<package>`), not the one this call
+ * names. Owner-gated and idempotent: adding again is the package's own
+ * upgrade, and one over a copy this repository edited, or whose plan is
+ * lossy, needs the confirmation its preview handed out (decision records
+ * 0067 and 0070). The id is a package reference and carries a `/`, so it is
+ * `%2F`-encoded as one path segment. */
+export function addBundle(
   id: string,
   body?: BundleInstallRequest
 ): Promise<BundleInstallResult> {
   return request<BundleInstallResult>(
     "POST",
-    `${CATALOG}/${seg(id)}/install`,
+    `${CATALOG}/${seg(id)}/add`,
     takeBody(body)
   )
 }
 
-/** No body is the bare POST the doors always took; a body with nothing in
+/** No body is the bare POST the route always took; a body with nothing in
  * it would be an empty object the strict decoder still has to read. */
 function takeBody(
   body: BundleInstallRequest | undefined
 ): BundleInstallRequest | undefined {
   return body && (body.confirm || body.expect) ? body : undefined
-}
-
-/** Import a SAMPLE under this repository's own authority (decision record
- * 0048). The server rehomes the closure before admitting it, so the status it
- * answers with carries the LANDED id (`<your authority>/<package>`), not the
- * shipped one this call names. A re-import over a copy this repository edited,
- * or one whose plan is lossy, needs the confirmation its preview handed out
- * (decision records 0067 and 0070). */
-export function importBundle(
-  id: string,
-  body?: BundleInstallRequest
-): Promise<BundleStatus> {
-  return request<BundleStatus>(
-    "POST",
-    `${CATALOG}/${seg(id)}/import`,
-    takeBody(body)
-  )
 }
 
 /** The substrate origin that actually receives the provider OAuth redirect —

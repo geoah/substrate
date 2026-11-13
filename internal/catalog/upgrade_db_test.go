@@ -56,7 +56,7 @@ func movedTasksCatalog(t *testing.T, rewrite map[string]func(string) string) *ca
 	return c
 }
 
-// movedTasksSampleCatalog is movedTasksCatalog under the SAMPLE tier: binary
+// movedTasksSampleCatalog is movedTasksCatalog kept as a SAMPLE: binary
 // N+1's samples tree, which is what a copy imported from binary N is
 // previewed against (decision record 0070).
 func movedTasksSampleCatalog(t *testing.T, rewrite map[string]func(string) string) *catalog.Catalog {

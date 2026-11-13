@@ -145,8 +145,8 @@ included: there is no bare-name shorthand, and `kind: project` is refused
 naming every full spelling the repository declares under that word
 ([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)). The
 shipped samples spell their pins at `people` as
-`kind: samples.substrate.reamde.dev/people/person`, which the import rehomes
-with the rest, so an imported sample points at the copy imported beside it
+`kind: samples.substrate.reamde.dev/people/person`, which adding the sample rehomes
+with the rest, so an added sample points at the copy added beside it
 even when the repository also holds the shipped copy verbatim.
 [References](#property-types) below has the rest.
 
@@ -218,19 +218,19 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
 `calendar` and `tasks` require; `recurring` is core's now), and the function
 and agent examples `notes`, `llm`, `readinglist` and `pebble`
-under the same authority (each a bundle you **import**); the substrate's
+under the same authority (each a bundle you **add** as a copy); the substrate's
 own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
 `substrate.reamde.dev/llm`, the console's record views and collection views
 in `substrate.reamde.dev/console` and measured values in
 `substrate.reamde.dev/observations`, which are the four packages a new
 repository is seeded with; and the well-known catalogues
 `substrate.reamde.dev/health`, `labs` and `environment`, which a repository
-**installs** when it wants them
+**adds** when it wants them
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-An import lands the closure under your repository's own
+Adding a sample lands the closure under your repository's own
 authority, so `samples.substrate.reamde.dev/tasks/task` becomes
 `ada.example.com/tasks/task` in a repository whose authority is
-`ada.example.com`. Registration also imports the `llm` sample and writes three
+`ada.example.com`. Registration also copies the `llm` sample and writes three
 keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the `llm/model`
 records of the models they offer, the
 [shipped units](units.md#the-shipped-units) and the console package's shipped
@@ -240,12 +240,12 @@ reference crosses packages as easily as it stays inside one.
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
 seeded with those four packages and the `llm` sample when it was created, and
-everything else (the vocabulary above included) arrived as an import or an
-install you asked for; either way the declarations are rows in your repository, not a file
+everything else (the vocabulary above included) arrived as a catalog add or an
+apply you asked for; either way the declarations are rows in your repository, not a file
 the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`samples.substrate.reamde.dev/people/person`
-ships in the binary as the `people` sample and imports on request**, one
+ships in the binary as the `people` sample and is added on request**, one
 record per human, the target of every pointer that means "a person":
 
 ```yaml

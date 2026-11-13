@@ -17,8 +17,12 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-const (
-	tasksBundleID   = "samples.substrate.reamde.dev/tasks"
+// tasksBundleID is the tasks sample as the catalog names it; tasksHeld and
+// tasksCollection name its copy, which bindSamples rebinds.
+const tasksBundleID = "samples.substrate.reamde.dev/tasks"
+
+var (
+	tasksHeld       = "samples.substrate.reamde.dev/tasks"
 	tasksCollection = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 )
 
@@ -185,6 +189,7 @@ func caseAuth(c *C) {
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
 	c.requiref(regOut.Repository != "", "register echoed no repository authority")
 	r.authority = regOut.Repository
+	bindSamples(r.authority)
 	r.rep.Repository, r.rep.Password = r.repository, r.password
 	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.repository, regOut.Token.ID)
 
@@ -283,12 +288,12 @@ func caseRecords(c *C) {
 
 	// Dependency order is enforced: tasks requires people and scheduling, and
 	// installing it first is refused naming exactly what is missing.
-	status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(tasksBundleID)+"/install", nil, nil)
+	status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(tasksBundleID)+"/add", nil, nil)
 	c.requiref(status == http.StatusUnprocessableEntity &&
-		strings.Contains(string(raw), "samples.substrate.reamde.dev/people") &&
-		strings.Contains(string(raw), "samples.substrate.reamde.dev/scheduling"),
-		"an out-of-order install answered %d, want a 422 naming the missing requirements: %s", status, raw)
-	c.stepf("installing `%s` before its requirements was refused naming `people` and `scheduling`", tasksBundleID)
+		strings.Contains(string(raw), "/people") &&
+		strings.Contains(string(raw), "/scheduling"),
+		"an out-of-order add answered %d, want a 422 naming the missing requirements: %s", status, raw)
+	c.stepf("adding `%s` before its requirements was refused naming `people` and `scheduling`", tasksBundleID)
 
 	type bundleStatus struct {
 		Installed bool `json:"installed"`
@@ -301,11 +306,11 @@ func caseRecords(c *C) {
 		tasksBundleID,
 	} {
 		bundle = bundleStatus{}
-		status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/install", nil, &bundle)
-		c.requiref(status == http.StatusOK, "installing %s answered %d: %s", id, status, raw)
-		c.requiref(bundle.Installed, "the install of %s did not end installed: %s", id, raw)
+		status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, &bundle)
+		c.requiref(status == http.StatusOK, "adding %s answered %d: %s", id, status, raw)
+		c.requiref(bundle.Installed, "adding %s did not end installed: %s", id, raw)
 	}
-	c.stepf("installed `people`, `scheduling` and `%s` in requirement order; the last admitted %d kinds", tasksBundleID, bundle.Kinds)
+	c.stepf("added `people`, `scheduling` and `%s` in requirement order, as copies under %s; the last admitted %d kinds", tasksBundleID, c.r.authority, bundle.Kinds)
 
 	// Create: 201, version 1, the declared default and the initial state land.
 	var created record
@@ -400,7 +405,7 @@ func caseChangelog(c *C) {
 	}
 	taskWrites := 0
 	for _, row := range rows {
-		if row.Kind == "samples.substrate.reamde.dev/tasks/task" {
+		if row.Kind == taskKind {
 			taskWrites++
 		}
 	}
@@ -654,7 +659,7 @@ func (r *run) appendix() {
 	if err := r.fetch(listOf(tasksCollection), &tasks); err != nil {
 		fmt.Fprintf(&b, "Reading the tasks failed: %v\n\n", err)
 	} else {
-		b.WriteString("### Tasks (`samples.substrate.reamde.dev/tasks/task`)\n\n")
+		b.WriteString("### Tasks (`" + taskKind + "`)\n\n")
 		b.WriteString("| id | name | status | version |\n| --- | --- | --- | --- |\n")
 		for _, rec := range tasks.Records {
 			fmt.Fprintf(&b, "| `%s` | %s | %s | %d |\n", rec.ID, rec.prop("name"), rec.prop("status"), rec.Version)

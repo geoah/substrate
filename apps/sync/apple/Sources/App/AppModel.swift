@@ -464,7 +464,7 @@ final class AppModel: ObservableObject {
                 current = step
                 setupStepRunning = step.id
                 switch step.kind {
-                case let .install(id): try await client.catalog("install", id)
+                case let .install(id): try await client.add(id)
                 case .account:
                     try await client.put(
                         SyncEngine.healthAccountKind, state.healthAccount,

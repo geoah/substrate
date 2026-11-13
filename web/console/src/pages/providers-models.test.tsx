@@ -137,7 +137,7 @@ function provider(
       authority: PROV,
       package: pkg,
       installed,
-      tier: "published",
+      keptBy: "publisher",
       status: installed
         ? {
             id,
@@ -160,7 +160,7 @@ function provider(
         package: pkg,
         description: over.description ?? "",
         version: 1,
-        tier: "published",
+        keptBy: "publisher",
         provider: true,
         brings,
         installed,

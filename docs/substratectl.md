@@ -3,7 +3,7 @@
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
 kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
-kinds, get, apply, import, patch, delete, watch. It lives in the
+kinds, get, apply, add, patch, delete, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
@@ -25,7 +25,7 @@ substratectl export                       # the recovery export, a tar of the re
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
-`takeover`, `catalog`, `import`, `install` and `export`. It needs a server and a token,
+`takeover`, `catalog`, `add` (with its aliases `install` and `import`) and `export`. It needs a server and a token,
 and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
@@ -105,8 +105,8 @@ defaults to `substratectl`.
 ## Reading
 
 `substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind is
-its full reference (`ada.example.com/tasks/task` for the tasks sample imported
-into the repository registered above). A bare `task`
+its full reference (`ada.example.com/tasks/task` for the tasks sample added
+to the repository registered above). A bare `task`
 is refused, naming every kind the repository declares under that word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 `substratectl kinds` lists them all. Lists take `--filter` (the
@@ -266,12 +266,12 @@ answer whole.
   A document naming either key is sent as written, so a key dropped from the
   file is dropped from the declaration. `--as <authority>` rehomes the
   input first: every mention of the one authority its declarations are
-  written under becomes the one named, which is `import` (below) run
+  written under becomes the one named, which is `add` of a sample (below) run
   client-side over files on disk. An input declaring under two authorities is
   refused naming both. A document that would create a package under any
   authority but the repository's own is `403`
   ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)): rehome a sample with `--as-mine`, and take
-  a provider or a catalogue with `install`. `--hold-waiting-mappings` holds back each suggested
+  a provider or a catalogue with `add`. `--hold-waiting-mappings` holds back each suggested
   mapping whose source kind this repository does not have, applies the rest,
   and prints one line per mapping held; apply the same files again once the
   provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
@@ -387,24 +387,26 @@ a parked delivery of that streak stands ([how it opens and clears](functions.md#
 actor, and prints the output. There is no build step: a function is inline
 source on its manifest, so it installs with the ordinary `apply`.
 
-`substratectl import <sample>` takes one of the shipped
-[samples](bundles.md#the-catalog): the server rewrites the closure's
+`substratectl add <package>` takes one of the catalog's packages, and who
+keeps it decides where it lands ([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md));
+`install` and `import` are its aliases. One of the shipped
+[samples](bundles.md#the-catalog) is copied: the server rewrites the closure's
 placeholder authority to the one this repository owns and admits it there, so
-`import samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
-which is your kind, writable. It prints the id the sample landed under, which
+`add samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
+which is your kind, writable. It prints `<landed id> added`, and a sample's id
 is not the one typed. The copy records where it came from, so `substratectl
 catalog` offers the upgrade when a later binary ships the sample at a newer
-version, and importing again is how it lands; over a copy you edited since,
-or where the new closure removes values from records, the re-import is
-refused until `import <sample> --allow-data-loss` reads the preview, prints
+version, and adding it again is how it lands; over a copy you edited since,
+or where the new closure removes values from records, adding it again is
+refused until `add <sample> --allow-data-loss` reads the preview, prints
 what goes and confirms exactly that plan
-([bundles](bundles.md#the-two-doors)). A provider takes the other door and
-installs under the authority that publishes it.
+([bundles](bundles.md#adding-a-package)). A published package, a provider or
+a catalogue, lands under the authority that publishes it.
 
 `substratectl apply --as <authority>` (or `--as-mine`) rehomes a shipped
 sample's files by hand. When the input carries its package document the
 request names the package it was authored as, and the server stamps the
-landed copy with it exactly as an import would; a later `--as` apply over a
+landed copy with it exactly as `add` would; a later `--as` apply over a
 copy you edited since is refused the same way, and `--allow-data-loss`
 confirms it. One package per run: an input carrying several package documents
 is refused, because one request names one origin.
@@ -431,7 +433,9 @@ from, cannot be handed back, and without `--confirm` repeating the package
 it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
-first, then the catalog's published packages and samples: whether this repository
+first, then the catalog's published packages and samples: who keeps it (KEPT
+BY: `binary` for core, written at registration and upgraded at boot,
+`publisher` for a published package, `repository` for a sample), whether this repository
 holds it, the version the binary ships and, where the server previewed an
 [upgrade](bundles.md#install-and-lifecycle), its motion (`16 -> 17`),
 `blocked` when a guard refuses it and, for core, `lands at restart` when it
@@ -440,17 +444,17 @@ under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. So do the conversion steps an upgrade would run, each with the live
 records it rewrites; a step marked lossy removes values from the fold, and an
-upgrade with one runs only with `--allow-data-loss` on `install <package>` or
-`import <sample>`, which reads the preview again, prints the steps and
+upgrade with one runs only with `--allow-data-loss` on `add <package>`,
+which reads the preview again, prints the steps and
 confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
-sample copy edited since it was imported reads `edited copy` in the column
-and says under the table that importing it again replaces those edits, under
+sample copy edited since it was added reads `edited copy` in the column
+and says under the table that adding it again replaces those edits, under
 the same flag. The CODE column reads `experimental` for a package whose code
 a publisher outside this server published, its own or that of a package
-taking it brings first ([stability](stability.md)), and `install` prints the
-same before it installs.
+taking it brings first ([stability](stability.md)), and `add` prints the
+same before it adds.
 `substratectl apply --allow-data-loss` does the same for a vocabulary change
-of your own. `-o json` prints the same rows.
+of your own. `-o json` prints the same rows, `keptBy` on each.
 
 ## Exporting
 

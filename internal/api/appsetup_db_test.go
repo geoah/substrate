@@ -347,7 +347,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("view = state %q hash %q, %d details, %d rows", v.State, v.PlanHash, len(v.Details), len(v.Setup))
 	}
 	apple := v.Setup[0]
-	if apple.Action != substrate.SetupInstall || apple.Package.Tier != substrate.TierPublished || apple.Package.Shipped != 4 ||
+	if apple.Action != substrate.SetupInstall || apple.Package.KeptBy != substrate.KeptByPublisher || apple.Package.Shipped != 4 ||
 		apple.Package.Held != 0 || apple.Package.Required != 3 || len(apple.Package.Kinds) == 0 || len(apple.Package.Functions) != 0 {
 		t.Fatalf("apple row = %+v %+v", apple, apple.Package)
 	}
@@ -1084,7 +1084,7 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 			t.Fatalf("row %d = %+v", i, row)
 		}
 	}
-	if p := got.Setup[0].Package; p.Held != 4 || p.Shipped != 4 || p.Kinds != nil || p.Requires != nil || p.Tier != "" {
+	if p := got.Setup[0].Package; p.Held != 4 || p.Shipped != 4 || p.Kinds != nil || p.Requires != nil || p.KeptBy != "" {
 		t.Fatalf("a package row carries %+v, want versions alone", p)
 	}
 	if w := got.Setup[3].Webhook; w.Enabled || w.Keyed || w.Package != appleHealthPkg {

@@ -127,7 +127,7 @@ func (f *fakeSubstrate) serve(w http.ResponseWriter, r *http.Request) {
 		switch verb {
 		case "":
 			reply(http.StatusOK, map[string]any{"id": id, "installed": f.installed[id]})
-		case "import", "install":
+		case "add":
 			f.installed[id] = true
 			reply(http.StatusOK, map[string]any{"id": id, "installed": true})
 		}
@@ -260,7 +260,7 @@ func TestLoadInstallsLabsBeforeTheManualRecords(t *testing.T) {
 			break
 		}
 	}
-	i := indexOf(seen, "POST /api/v1/catalog/substrate.reamde.dev/labs/install")
+	i := indexOf(seen, "POST /api/v1/catalog/substrate.reamde.dev/labs/add")
 	if i < 0 || firstPut < 0 || i > firstPut {
 		t.Errorf("substrate.reamde.dev/labs installed at request %d, the first record written at %d", i, firstPut)
 	}
@@ -273,8 +273,8 @@ func TestLoadInstallsLabsBeforeTheManualRecords(t *testing.T) {
 		}
 	}
 	for _, r := range seen {
-		if strings.HasSuffix(r, "/import") {
-			t.Errorf("the load imported a sample: %s", r)
+		if strings.HasPrefix(r, "POST /api/v1/catalog/samples.substrate.reamde.dev/") && strings.HasSuffix(r, "/add") {
+			t.Errorf("the load added a sample: %s", r)
 		}
 	}
 }
@@ -296,8 +296,8 @@ func TestImportSamplesAnswersOnlyWhatItImported(t *testing.T) {
 		t.Errorf("a repository holding every sample imported %v", imported)
 	}
 	for _, r := range f.seen() {
-		if strings.HasSuffix(r, "/import") {
-			t.Errorf("a held sample was imported again: %s", r)
+		if strings.HasSuffix(r, "/add") {
+			t.Errorf("a held sample was added again: %s", r)
 		}
 	}
 

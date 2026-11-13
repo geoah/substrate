@@ -16,7 +16,7 @@
 // What the history holds, by op and by effect: put, patch, delete, merge,
 // split, gc and delivery; record, tombstone, purge, annotation, manager,
 // former, resync, cursor, schedule, park, unpark, page, unpage and forget.
-// Beside them: a sample imported and a catalogue installed, a kind edited, a
+// Beside them: a sample and a catalogue added, a kind edited, a
 // property renamed and an enum value respelled over live records, a label
 // cleared, a tombstone restored, sealed values and a blob.
 package main
@@ -272,11 +272,11 @@ func (d *driver) register() error {
 
 func (d *driver) declare() error {
 	for _, id := range samples {
-		if err := d.must(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil); err != nil {
+		if err := d.must(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, nil); err != nil {
 			return err
 		}
 	}
-	if err := d.must(http.MethodPost, "/api/v1/catalog/"+url.PathEscape("substrate.reamde.dev/environment")+"/install", nil, nil); err != nil {
+	if err := d.must(http.MethodPost, "/api/v1/catalog/"+url.PathEscape("substrate.reamde.dev/environment")+"/add", nil, nil); err != nil {
 		return err
 	}
 	for _, doc := range []string{autoVocabulary, attachVocabulary(false), credsVocabulary} {

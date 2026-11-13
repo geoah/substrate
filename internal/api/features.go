@@ -152,14 +152,17 @@ var featureTable = []feature{
 	// together: a client reads one entry and gets every route behind it. The
 	// lifecycle transitions are a PATCH of the bundle record, on the record
 	// path.
-	{name: "bundles", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	{name: "bundles", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/substrate.reamde.dev/core/bundle/status",
 		"GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
 		"POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind",
 		"GET /api/v1/catalog",
 		"GET /api/v1/catalog/{id}",
-		"POST /api/v1/catalog/{id}/install",
+		"POST /api/v1/catalog/{id}/add",
+	}, removed: []string{
+		// One add route took the place of the two doors (decision record 0258).
 		"POST /api/v1/catalog/{id}/import",
+		"POST /api/v1/catalog/{id}/install",
 	}},
 	// The sign-in door: registering, signing in, the credential changes and
 	// the tokens.
@@ -185,7 +188,7 @@ var featureTable = []feature{
 	// approves it through /authorizations, and the app asks whether it is
 	// still set up. The takeover is the owner's way out of a package an app
 	// keeps (decision 0205).
-	{name: "apps", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	{name: "apps", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /oauth/authorize",
 		"POST /oauth/token",
 		"POST /oauth/revoke",
@@ -268,7 +271,7 @@ var featureTable = []feature{
 	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
 	// experimental while the protocol's stateless revision and the tool set
 	// settle.
-	{name: "mcp", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceMCP}, routes: []string{
+	{name: "mcp", stability: substrate.StabilityExperimental, revision: 2, surfaces: []string{surfaceMCP}, routes: []string{
 		"* /mcp",
 		"GET /.well-known/oauth-protected-resource/mcp",
 	}},

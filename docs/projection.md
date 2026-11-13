@@ -25,8 +25,8 @@ kind is refused, whichever end the declaring package owns.
 Three rules follow. **`from` may name a kind in any package**, and it resolves
 when the mapping is installed, so a mapping naming a provider that is absent
 fails on that document. That is why a sample's shipped mappings are
-conditional: the catalog's install and import verbs drop the ones whose
-provider this repository does not hold rather than refuse the whole import
+conditional: the catalog's add route drops the ones whose
+provider this repository does not hold rather than refuse the whole add
 ([suggested mappings](bundles.md#suggested-mappings)). The apply door does the
 same when the request asks it to, with `holdWaitingMappings`
 ([how the vocabulary reaches a repository](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
@@ -51,7 +51,7 @@ same way, on the mapping that stopped fitting.
 
 This is the mapping that says GitHub's `user` mirror describes a `person`. You
 do not have to write it: the people sample SHIPS it, and three more like it, as
-[suggested mappings](bundles.md#suggested-mappings) the import admits once the
+[suggested mappings](bundles.md#suggested-mappings) adding the sample admits once the
 provider they read is installed.
 
 ```yaml
@@ -109,7 +109,7 @@ a pin at the source is satisfied by the value as written, so it never takes the
 hop and the one-hop rule is untouched. That is what lets a provider model its
 API's own relations as references (`issue.assignees` at `github/user[]`,
 `calendarevent.attendees[].address` at `google/emailaddress`, `message.user`
-at `slack/user`), which it could not do while importing a sample's mappings
+at `slack/user`), which it could not do while adding a sample's mappings
 retroactively narrowed what the provider was allowed to declare.
 
 **Outside the provider, point at the subject.** A task's `assignee` belongs at

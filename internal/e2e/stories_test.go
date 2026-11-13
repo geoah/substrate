@@ -10,8 +10,9 @@ import (
 // The story cases (STORIES.md) share one fictional ecosystem: acme, its
 // people, projects and calendar. Every id is eid of a readable name, not
 // server-assigned, so every later story (and every scripted agent turn) can
-// name records exactly.
-const (
+// name records exactly. Each names a sample's copy, so bindSamples rebinds
+// it to the run's authority.
+var (
 	orgCollection     = "/api/v1/samples.substrate.reamde.dev/people/organization"
 	personCollection  = "/api/v1/samples.substrate.reamde.dev/people/person"
 	teamCollection    = "/api/v1/samples.substrate.reamde.dev/people/team"
@@ -146,8 +147,8 @@ func caseStory01(c *C) {
 		Installed bool `json:"installed"`
 	}
 	status, raw := c.do(http.MethodPost,
-		"/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/calendar")+"/install", nil, &bundle)
-	c.requiref(status == http.StatusOK && bundle.Installed, "installing calendar answered %d: %s", status, raw)
+		"/api/v1/catalog/"+url.PathEscape("samples.substrate.reamde.dev/calendar")+"/add", nil, &bundle)
+	c.requiref(status == http.StatusOK && bundle.Installed, "adding calendar answered %d: %s", status, raw)
 
 	// The organizations, and the people with their emails, pronouns and org
 	// membership. `memberOf` is a repeated reference whose declaration carries

@@ -262,7 +262,7 @@ and a model
 names `anthropic` and refuses at dispatch until that row's `apiKey` is
 written; the owner shapes it with `llm/instruction` records rather than
 editing it. The LLM sample (the decision-loop lessons) is in the catalog and
-nothing imports it.
+nothing adds it.
 Creation also writes the shipped unit and conversion records
 (`substrate.reamde.dev/core/unit` and `…/core/conversion`, 216 units and 149
 conversions from `internal/engine/unitseed`, edited by hand), and every open
@@ -278,19 +278,21 @@ collection shows as tabs
 No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
 a tool-using agent names the value itself. `tasks` is a SAMPLE
-package the repository still imports, so a walkthrough
+package a repository adds for itself, so a walkthrough
 that reaches for any collection outside the seed takes one first. `tasks`
-`requires:` `people` and `scheduling`, and an import whose requirement is
+`requires:` `people` and `scheduling`, and adding one whose requirement is
 missing is refused, so the order is `samples.substrate.reamde.dev/people`, then
-`…/scheduling`, then `…/tasks`, each through `bin/substratectl import <sample>`
-or `POST /api/v1/catalog/{id}/import` (the id is the package, so its slash is
+`…/scheduling`, then `…/tasks`, each through `bin/substratectl add <sample>`
+or `POST /api/v1/catalog/{id}/add` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`). The console's All
 data → Add a collection → Start from a sample is the third door to the same
-admission, and it imports the requirements first. The import REHOMES the closure onto the repository's own
+admission, and it adds the requirements first. Adding a sample REHOMES the closure onto the repository's own
 authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
 (record 0048). A PUBLISHED package (a provider such as
-`providers.substrate.reamde.dev/google`, or a catalogue) takes the other door,
-`…/install`, and lands under the authority that publishes it. A
+`providers.substrate.reamde.dev/google`, or a catalogue) takes the same route
+and lands under the authority that publishes it: who keeps a package decides
+where it lands
+([0258](docs/decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)). A
 snippet that opens with `get <authority>/people/person` on a fresh substrate
 is wrong, and one that names a kind by a bare word is refused everywhere
 ([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
@@ -302,12 +304,12 @@ authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
 `health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
 `convertlab`; requires `health`), `…/environment` (`environment/*`
 metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
-`labs`, decision 0193). The catalog serves them in the published tier, through
-the install door (`bin/substratectl install substrate.reamde.dev/labs`), they
-land published and never rehomed, and an install first installs every
-published package it requires, so installing
+`labs`, decision 0193). The catalog serves them as published packages, through
+the add route (`bin/substratectl add substrate.reamde.dev/labs`), they
+land published and never rehomed, and adding one first adds every
+published package it requires, so adding
 `providers.substrate.reamde.dev/applehealth` or `…/whoop` (each shipping its
-own adapter) brings `health`. The tier says only who keeps a package: each
+own adapter) brings `health`. `keptBy` says only who keeps a package: each
 catalog entry also says whether it is a PROVIDER (connects to an outside
 service: every package under `providers.substrate.reamde.dev`, and any other
 published one with an account kind), what it BRINGS, and which provider an
@@ -361,9 +363,9 @@ words, and what each one replaced:
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
-| **published** | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it; it says who keeps a package, never what it is for | provider (as a tier) |
+| **published** | a package its publisher keeps (`keptBy: publisher`), ADDED under the authority that publishes it; it says who keeps a package, never what it is for | provider, tier (as who keeps a package) |
 | **provider**  | a package that connects the substrate to an outside service, as the catalog says on its entry: every package under `providers.substrate.reamde.dev`, and any other published one with an account kind ([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)) | integration |
-| **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
+| **sample**    | a package the repository keeps (`keptBy: repository`): a copy the user ADDS under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
 | **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents; its id (`rnd-…`) keys its storage | username |
@@ -397,7 +399,7 @@ provider or catalogue), and creates a new package only under the
 repository's own authority
 ([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
 its own packages and the
-samples it imported are `installed` and writable, whoever declared them: a
+samples it added are `installed` and writable, whoever declared them: a
 package an app once declared under the retired `declare:` scope is the
 owner's like any other, and `declaredByClient` is a stamp no path writes
 ([0214](docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)).

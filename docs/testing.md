@@ -917,4 +917,4 @@ the shards, the `db` jobs, the drill and the `coverage` job's merge, because
 it is the same tests once with the profile, and `ci:providers` beside it.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
-can import.
+can add.

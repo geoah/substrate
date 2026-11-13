@@ -596,9 +596,9 @@ func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 		t.Errorf("%d mappings onto contacts are live on the seed alone", len(got))
 	}
 	done := map[string]bool{}
-	for _, tier := range []string{substrate.TierPublished, substrate.TierSample} {
+	for _, keeper := range []string{substrate.KeptByPublisher, substrate.KeptByRepository} {
 		for _, b := range cat.Bundles() {
-			if b.Tier != tier {
+			if b.KeptBy != keeper {
 				continue
 			}
 			if err := installClosure(reg, byPackage, b, done); err != nil {
@@ -734,7 +734,7 @@ func TestEverySampleRehomesOntoARepositoryAuthority(t *testing.T) {
 	}
 	samplesSeen := 0
 	for _, b := range cat.Bundles() {
-		if b.Tier != substrate.TierSample {
+		if b.KeptBy != substrate.KeptByRepository {
 			continue
 		}
 		samplesSeen++
@@ -909,7 +909,7 @@ func TestShippedKindsDeclareTheirDisplayLabels(t *testing.T) {
 	}
 	done := map[string]bool{}
 	for _, b := range cat.Bundles() {
-		if b.Tier != substrate.TierPublished {
+		if b.KeptBy != substrate.KeptByPublisher {
 			continue
 		}
 		if err := installClosure(reg, byPackage, b, done); err != nil {

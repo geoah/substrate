@@ -175,8 +175,8 @@ data:
   `<authority>/*` or `<authority>/<package>/*`
   ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
   A glob covers kinds the repository does not have yet, so an agent granted
-  `ada.example.com/*` keeps working as bundles are imported — which is the
-  point, and also the cost: importing one widens an existing grant, and a
+  `ada.example.com/*` keeps working as samples are added — which is the
+  point, and also the cost: adding one widens an existing grant, and a
   misspelled glob matches nothing where a misspelled kind would have been
   refused at load. **A glob never reaches
   `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
@@ -1370,7 +1370,7 @@ Moss runs once that row is keyed; every shipped sample agent names
 accepts, for the sample's lessons. The rows themselves set no reasoning
 default, because the accepted set belongs to the model and one row serves
 several. The LLM sample (**All data → Add a collection → Start from a
-sample**) ships the same three rows, so an import onto a repository that
+sample**) ships the same three rows, so adding it to a repository that
 deleted one brings it back. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
 behind a name, and the model is the agent's own word now.

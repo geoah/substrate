@@ -32,7 +32,7 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	base := newDataset(t)
 	ctx := context.Background()
 	// labs requires health, so its preview walks a requirement; the people
-	// sample is a stamped copy, the other tier's preview.
+	// sample is a stamped copy, the other keeper's preview.
 	importVocabulary(t, loadCatalog(t), base, labsID)
 	importSamples(t, loadCatalog(t), base, peopleSampleID)
 	const live = 40
