@@ -1,6 +1,7 @@
 /** The retry policy every console query follows: a busy server's 503 is
  * asked again twice after the Retry-After it names, a re-derivation never,
- * a refused key never, and a definitive refusal never. */
+ * a refused key never, a set-aside repository never, and a definitive
+ * refusal never. */
 
 import { describe, expect, it } from "vitest"
 
@@ -26,6 +27,15 @@ const refusedKey = new ApiError(
   1,
   "key_refused"
 )
+const setAside = new ApiError(
+  "unavailable",
+  "the server found ada.example.com damaged when it started",
+  503,
+  [],
+  [],
+  300,
+  "set_aside"
+)
 const invalid = new ApiError("validation", "no", 422, ["aggregate.range: no"])
 const offline = new ApiError("network", "offline", 0)
 
@@ -39,6 +49,10 @@ describe("retryRead", () => {
   it("never asks again while the server re-derives, or after a definitive refusal", () => {
     expect(retryRead(0, rederiving)).toBe(false)
     expect(retryRead(0, invalid)).toBe(false)
+  })
+
+  it("never asks again for a repository the server set aside", () => {
+    expect(retryRead(0, setAside)).toBe(false)
   })
 
   it("never asks again after the vendor refused the key, however short the Retry-After", () => {

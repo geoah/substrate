@@ -773,7 +773,7 @@ runs.
 | db api 1/3 to 3/3 | `ci:db:api` | one shard of `internal/api` each: its tests of engine behavior, and their slice of the handler's | through `go gate` | |
 | db catalog 1/2, 2/2 | `ci:db:catalog` | one shard of `internal/catalog` each | through `go gate` | 72 s, 75 s |
 | db providertest 1/3 to 3/3 | `ci:db:providertest` | one shard of `internal/providertest` each | through `go gate` | |
-| db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill | through `go gate` | |
+| db rest | `ci:db:rest` | `internal/testenv` without the acceptance drill, and `cmd/substrated`, whose loops one test runs over a real engine | through `go gate` | |
 | go gate | (in the workflow) | red unless `go test`, every shard and every `db` job succeeded | yes | 3 s |
 | acceptance drill | `ci:drill` | `TestReleaseAcceptanceDrill`: seven stages that read each other's outputs, so it cannot be cut | no | 50 s |
 | providers e2e | `ci:providers` | the provider suite (`test:db:providers`): `internal/providere2e` syncs seven provider closures against a `substrated` it starts, over recorded upstreams; a failed run keeps `.dev/providere2e/`, the server's log included, as the `providere2e-logs` artifact | no | 260 s |

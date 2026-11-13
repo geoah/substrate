@@ -120,8 +120,9 @@ var featureTable = []feature{
 	}},
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route
-	// because it is every route's refusal.
-	{name: "errors", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}},
+	// because it is every route's refusal. Revision 3: the reason
+	// `set_aside`, a repository the server's start set aside.
+	{name: "errors", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route).
 	{name: "changefeed", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{

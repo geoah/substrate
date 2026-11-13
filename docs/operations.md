@@ -188,12 +188,12 @@ boot.
 | `SUBSTRATE_CHAT_TURNS_PER_PERSON` | `4`                                | How many chat turns with an agent one person runs at once. Each holds a model call and keeps running after its client leaves; one more is refused `409 conflict` until one finishes or is stopped. `0` is the default; a negative value refuses the boot, naming the variable. |
 | `SUBSTRATE_HEALTH_FAILING_AFTER` | `1h`                              | How long every delivery of a trigger must have parked, since its newest `ok` run, before the dispatcher opens its `trigger.failing/<trigger id>` alert and `trigger status` and `sync status` read `failing`; a parked delivery of the trigger must still stand. The next `ok` delivery, dispatched or retried by hand, resolves the alert whatever the window, and so do the end of its last standing park and the next pass after it is disabled or deleted. Zero or negative refuses the boot, naming the variable. See [driving triggers](functions.md#driving-triggers). |
 | `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a repository's DEK under another host key: the key is the one thing that keeps a repository's secrets across hosts, and an archive or an export brought to a host without it restores only without them ([restore without the credential key](#restore-without-the-credential-key)). |
-| `SUBSTRATE_IMPORT_WITHOUT_SECRETS` | — (empty: a copy this host's key does not open refuses the boot) | The repositories, each by its name or its id and separated by commas, that the boot restores without their secrets when this host's `SUBSTRATE_CREDENTIAL_KEY` does not open their copy's DEK: the operator's acceptance of the loss, after the boot refused the copy naming the key it was written under. It reaches an archive the database has no row of, an archive the operator takes (`archive resolve --take-archive`) and a 0.x directory. A listed repository restores under a new DEK wrapped under this host's key, and every record and every line of history arrives, its sealed values that do not open kept until its next open takes each one out (a directory from before repository ids takes its id at the same boot, and the listing reaches that step too); its next open deletes the webhook requests it had spooled, clears every secret its records named, whatever state their package is in, and raises an alert for each, so its owner reconnects each account and enters each API key again, and signs in only after `substratectl user reset`, run with the server stopped. A listed repository this host's key does open restores with its secrets, as if it were not listed. It reaches only a copy being restored: a repository the database holds whose DEK this host's key does not open still refuses the boot. The operator's commands that open as the writer (`archive resolve`, `archive import`, `repository rebuild` and the others) read it too, split the same way, since their start restores and takes as the server's does. Boots with a warning naming the list. See [restore without the credential key](#restore-without-the-credential-key). |
+| `SUBSTRATE_IMPORT_WITHOUT_SECRETS` | — (empty: a copy this host's key does not open is set aside) | The repositories, each by its name or its id and separated by commas, that the boot restores without their secrets when this host's `SUBSTRATE_CREDENTIAL_KEY` does not open their copy's DEK: the operator's acceptance of the loss, after the boot set the copy aside naming the key it was written under ([a repository set aside at start-up](#a-repository-set-aside-at-start-up)). It reaches an archive the database has no row of, an archive the operator takes (`archive resolve --take-archive`) and a 0.x directory. A listed repository restores under a new DEK wrapped under this host's key, and every record and every line of history arrives, its sealed values that do not open kept until its next open takes each one out (a directory from before repository ids takes its id at the same boot, and the listing reaches that step too); its next open deletes the webhook requests it had spooled, clears every secret its records named, whatever state their package is in, and raises an alert for each, so its owner reconnects each account and enters each API key again, and signs in only after `substratectl user reset`, run with the server stopped. A listed repository this host's key does open restores with its secrets, as if it were not listed. It reaches only a copy being restored: a repository the database holds whose DEK this host's key does not open still refuses the boot. The operator's commands that open as the writer (`archive resolve`, `archive import`, `repository rebuild` and the others) read it too, split the same way, since their start restores and takes as the server's does. Boots with a warning naming the list. See [restore without the credential key](#restore-without-the-credential-key). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_DNS_RESOLVER` | the system's resolver | The DNS server (`host:port`) every `_substrate` TXT lookup asks: Verify domain ([decision 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)), an app's publisher (0209) and a published package's document (0212). A TXT answer is only as trustworthy as the resolver that fetched it and few zones are signed, so point this at a validating resolver for DNSSEC. Each lookup is bounded at 5 seconds. A value that is not `host:port` refuses the boot. |
 | `SUBSTRATE_INSECURE_AUTHORITY_DOCS` | unset | **For testing an unpublished authority document.** A comma-separated list of `authority=path`: each named authority's document is read from the file in place of its `_substrate` TXT record when the server decides whether an app is verified (see [name your publisher](apps.md#name-your-publisher)). Nothing limits it to development: whoever writes the file decides which apps read as that authority's. The approval page says a file on this server verified the publisher, not DNS, and the token records `appAuthorityFromFile`. Boots with a warning naming each authority, and refuses to boot when a file cannot be read. |
 | `SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES` | `false`                | **Local development only.** Lets a token create a package under any authority, not only its repository's own ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). The provider end-to-end suite and `mise run test:e2e` set it, because they apply kinds under fixed authorities and shipped provider files rewired at a local mock. Boots with a warning. Never set it where the substrate is reachable: any token may then declare packages under names its repository does not own. |
-| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), the archive's `substrate_archive_pending_entries`, `substrate_archive_delay_seconds`, `substrate_archive_last_pass_timestamp_seconds`, `substrate_archive_failed_passes`, `substrate_archive_missing_blobs`, `substrate_archive_pending_blobs` and `substrate_archive_stopped` gauges (by `repository`; see [the archive](#the-archive)), and the Go runtime. The usage series say what each repository does: `substrate_changes_total{repository,kind,op,actor}` (every committed changelog entry; `actor` is the hand, `console`, `cli`, `api`, `app`, `function`, `agent`, `bundle`, `system`, `oauth`, `webhook` or `other`), `substrate_function_invocations_total{repository,function,mode,outcome}` and `substrate_function_invocation_seconds{function}`, `substrate_agent_runs_total{repository,agent,mode,status}`, `substrate_llm_tokens_total{repository,agent,provider,model,type}`, `substrate_llm_cost_usd_total{repository,agent,provider,model,payer}` (`payer` is `operator` or `owner`), `substrate_auth_events_total{repository,event}` (`registered`, `login`, `login_failed`, `repository_deleted`), `substrate_mcp_tool_calls_total{repository,tool,outcome}`, and three gauges read from each open repository at most every five minutes, in the background and only while something scrapes: `substrate_repository_records{repository,kind}` (live records), `substrate_repository_package_kinds{repository,package,origin}` (kinds per declared package; `origin` is `builtin`, `published`, `sample`, named by the shipped sample it came from, or `own`) and `substrate_repository_first_change_timestamp_seconds{repository}`. `SUBSTRATE_METRICS_ANONYMIZE` decides how they name things. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
+| `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), the archive's `substrate_archive_pending_entries`, `substrate_archive_delay_seconds`, `substrate_archive_last_pass_timestamp_seconds`, `substrate_archive_failed_passes`, `substrate_archive_missing_blobs`, `substrate_archive_pending_blobs` and `substrate_archive_stopped` gauges (by `repository`; see [the archive](#the-archive)), `substrate_repositories_set_aside` (the repositories the start [set aside](#a-repository-set-aside-at-start-up); above zero is one waiting on its operator), and the Go runtime. The usage series say what each repository does: `substrate_changes_total{repository,kind,op,actor}` (every committed changelog entry; `actor` is the hand, `console`, `cli`, `api`, `app`, `function`, `agent`, `bundle`, `system`, `oauth`, `webhook` or `other`), `substrate_function_invocations_total{repository,function,mode,outcome}` and `substrate_function_invocation_seconds{function}`, `substrate_agent_runs_total{repository,agent,mode,status}`, `substrate_llm_tokens_total{repository,agent,provider,model,type}`, `substrate_llm_cost_usd_total{repository,agent,provider,model,payer}` (`payer` is `operator` or `owner`), `substrate_auth_events_total{repository,event}` (`registered`, `login`, `login_failed`, `repository_deleted`), `substrate_mcp_tool_calls_total{repository,tool,outcome}`, and three gauges read from each open repository at most every five minutes, in the background and only while something scrapes: `substrate_repository_records{repository,kind}` (live records), `substrate_repository_package_kinds{repository,package,origin}` (kinds per declared package; `origin` is `builtin`, `published`, `sample`, named by the shipped sample it came from, or `own`) and `substrate_repository_first_change_timestamp_seconds{repository}`. `SUBSTRATE_METRICS_ANONYMIZE` decides how they name things. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
 | `SUBSTRATE_METRICS_ANONYMIZE`  | `true`                                 | Hashes the names the usage series carry: the repository becomes `repo:<hash>`, a kind, package, function or agent under the repository's own authority `own:<hash>` of what follows the authority (so one sample imported by two people reads as one name), any other authority's `ext:<hash>`, and a provider row or a model the owner named `own:<hash>`. What the substrate ships (`substrate.reamde.dev` and its subdomains, the seeded provider rows and the models their shipped `llm/model` records name) stays in clear, those names being the features, and so does a model an operator entry serves. The hash is keyed by `SUBSTRATE_CREDENTIAL_KEY`, so it is stable across restarts and unreadable to a dashboard viewer without the key. `false` labels everything with its name, for a box whose operator should read what each person does. Either way a repository puts at most 1000 distinct names of its own on the usage series, and every name past that reads `overflow`; deleting a repository drops its usage series but its account events. The operational series above keep the repository's name either way, since acting on them needs it. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
@@ -1019,9 +1019,10 @@ but three things assume that trust:
 - **Names.** Registration takes a repository's name on the registrant's
   word, so anyone admitted can register a domain they do not hold until
   [Verify domain](auth.md#verify-domain) says otherwise.
-- **Start-up.** One repository's damaged changelog file refuses the boot, so
-  one person's repository can keep the server down for everyone
-  ([what happens at boot](#what-happens-at-boot)).
+- **Start-up.** One repository's damaged changelog file is set aside at the
+  start and the others serve, but bringing it back is a restart, which
+  everyone's repositories wait through
+  ([a repository set aside at start-up](#a-repository-set-aside-at-start-up)).
 
 You also hold the database, the data root and the credential key, so you can
 read every repository on the server. Give the invite code only to people
@@ -1216,8 +1217,9 @@ it trusts:
   A 0.x directory from before ids with no row, being restored, takes a new
   id the same way before its import. One whose name a repository in the database
   holds is that repository's only when both hold the same data key; one whose
-  name another repository took since the copy was made refuses the boot and
-  is left exactly as it was. The conversion holds the writer lease under the
+  name another repository took since the copy was made is
+  [set aside](#a-repository-set-aside-at-start-up) and left exactly as it
+  was. The conversion holds the writer lease under the
   name until the boot check has published the repository under its id, so a
   second server over the same database, with the same directory or a copy of
   it, is refused rather than giving it a second id. The boot logs `substrate: giving a repository
@@ -1230,13 +1232,18 @@ it trusts:
 - **The boot check takes in every history the database lacks**, before
   anything else writes, in three passes
   ([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)).
+  A repository a pass cannot bring to serve is **set aside** and the check
+  goes on to the next ([a repository set aside at start-up](#a-repository-set-aside-at-start-up)).
   It logs `substrate: boot check started` with the number of repositories
   and of 0.x directories, and `substrate: repository checked` with the
   `action` for each repository it changed.
   0. **A deletion that began is finished**, and a repository its operator
      chose to replace by its archive (`archive resolve --take-archive`) loses
      its rows and its files once the copy staged for the recorded choice is
-     whole, so step 2 restores it from that copy.
+     whole, so step 2 restores it from that copy. A deletion that cannot
+     finish (an archive store that does not answer) is the next start's to
+     try again, the repository served by no one meanwhile; it sets nothing
+     aside.
   1. **A 0.x directory**, the manifest, segment files and sealed files a
      release before the archive wrote under the data root, gives the table
      what the table lacks and then gives its history up
@@ -1246,8 +1253,8 @@ it trusts:
      manifest recorded, its sealed files loaded into the table and its lines
      inserted with their checksums. One with a row is held to the table
      **line for line**, every seq both hold, in the one dialect both are in:
-     a line that differs, or a seq either side skips, refuses the boot and
-     names it. Past the shorter one's head the longer one's lines stand: the
+     a line that differs, or a seq either side skips, sets the repository
+     aside and names it. Past the shorter one's head the longer one's lines stand: the
      table's, which a release before the archive left ahead when it died
      between its commit and the append to the file, and the directory's,
      which a database restored from a backup older than the data root leaves
@@ -1259,9 +1266,11 @@ it trusts:
      named by an id, or by an authority (`ada.example.com`) as a release
      before ids named it, with no row and no `repository.json` is logged and
      skipped: nothing says whose it is, so it is neither imported nor
-     deleted. Any other entry under `repositories/` (a `tmp`, a
-     `Backup-2026`, anything whose name is neither) refuses the boot and
-     names the entry; move it out of the data root.
+     deleted. A dot-prefixed entry is passed over: `.keying/` holds the
+     keying's records of directories still named by their authority. Any
+     other entry under `repositories/` (a `tmp`, a `Backup-2026`, anything
+     whose name is neither) refuses the boot and names the entry; move it
+     out of the data root.
   2. **The archive**, where the server writes one: a repository it holds and
      the database does not is **restored** from the newest archive's newest
      manifest, the row created from it as above, into a new archive
@@ -1291,7 +1300,7 @@ it trusts:
   import from the table's head: no line is inserted twice and nothing is
   appended. Until then an open of the repository refuses. A manifest whose
   `changelogDialect` or `vocabularyDialect` is above the binary's maximum
-  **refuses the boot** with the same named error the open gives ("the
+  **sets the repository aside** with the same named error the open gives ("the
   changelog speaks a newer dialect than this binary can replay", "the store
   speaks a newer schema dialect than this binary"); so does a manifest
   carrying no wrapped DEK, one whose DEK this host's
@@ -1301,15 +1310,16 @@ it trusts:
   one whose DEK does not open every sealed value unless the same variable
   lists it, and one naming a repository whose name another repository in
   the database holds. Each refusal comes before the row is
-  created, so a refused restore reserves its name for nothing. In a restore
-  and in an import that has begun, a line whose `sum` does not verify, a
-  piece that is not the run its name says, and an archive whose pieces do
-  not reach its head **refuse the boot** too, and so does a 0.x directory
-  that disagrees with its table at a seq. Each names the repository and the
-  seq or the object, and repairs nothing (one refusal an operator reads,
-  rather than a repository half-open beside the others). To boot without
-  it, move `repositories/<id>/` out of the archive, or the directory out of
-  the data root.
+  created, and while the copy is set aside no registration takes its name.
+  In a restore and in an import that has begun, a line whose `sum` does not
+  verify, a piece that is not the run its name says, and an archive whose
+  pieces do not reach its head **set the repository aside** too, and so does
+  a 0.x directory that disagrees with its table at a seq. Each names the
+  repository and the seq or the object, and repairs nothing: the repository
+  is not opened at all, rather than half-open beside the others. To bring it
+  back, repair what its warning names and restart; to start without it, move
+  `repositories/<id>/` out of the archive, or the directory out of the data
+  root.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -1512,6 +1522,137 @@ Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
 scale. The archive passes lean on the same shape: one writer process per
 repository.
+
+## A repository set aside at start-up
+
+A repository the start cannot bring to serve is **set aside**, and the
+server starts and serves the others
+([0281](decisions/0281-a-repository-the-start-finds-damaged-is-set-aside-in-memory-and-the-rest-serve.md)).
+Nothing about it is stored, and from the moment it is set aside the server
+writes nothing to it: it never opens it, holds no writer lease on it and
+runs no loop over it, and the next start decides again. What the start
+does to one repository goes through one gate: the opening of its data key
+wrap, its writer lease, its keying, its recorded deletion or take, the read
+of its directory, its 0.x import or cleanup, its restore and the check of
+its rows. The gate passes over a repository already set aside, so no later
+pass reads its directory or changes anything of it (its adopted 0.x history
+is not cleaned up, and a deletion or a take recorded for it waits, its mark
+kept, for a start that finds it whole), and a failure that is the
+repository's own sets it aside with the pass as its stage. What is not one
+repository's is done outside it, and its failure stops the start: whether
+the wraps that name another key open, the one read of which repositories
+hold a recorded deletion or take, and the listing of the data root and the
+archive. The archive's store not answering is no repository's damage: a
+copy the start had not begun to write (an archive with no row, the copy a
+take removed the rows for, staged again) is left for a later start, as an
+archive the store does not answer for always was, and one it had begun is
+set aside at `archive store` (below). What the start
+committed for it before the failure stays, and is resumable (below). What sets one aside, by the `stage` its log line
+names:
+
+| Stage | What failed for it | The way back |
+| --- | --- | --- |
+| `credential key` | its row's data key wrap names this host's key and does not open | restore its row in `repositories` from a database dump taken before the damage: the row is what the start reads, so an archive restored beside it changes nothing |
+| `writer lease` | its writer lease could not be taken, for a reason that is neither another process holding it nor a database that stopped answering | a restart; the error names what failed |
+| `id` | a repository or a 0.x directory from before ids could not take its id: a data key that does not open, a name another repository took since the copy was made | as the error says: restore it, list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, or move the directory out of the data root. A directory is tied to a row by one of two things only: its data key opening to the row's (a manifest's id is held to the row of that id the same way), or the keying's own record, `repositories/.keying/<name>` under the data root, which the keying writes before it gives the row of that name its id and every start reads before any directory; tied, the row is set aside with it (its blobs and spool are in it), whatever the directory holds. Where neither ties it, the directory claims its name alone, and the repository that holds the name serves, whatever the manifest says in the clear |
+| `take` | a take its operator recorded (`archive resolve --take-archive`) failed once it began to remove the repository's rows and files | repair what the error names, then restart: the choice is still recorded, and the next start carries the take on from the copy staged for it. A take whose staged copy the restore would refuse sets nothing aside: the repository stays whole and served, the choice recorded, and the log names what the copy failed |
+| `boot check` | its directory, which the start could not read, or its rows: a 0.x directory that disagrees with them at a seq, an import a start began whose archive cannot be read now or holds a line whose `sum` does not verify, a history conversion step that refuses a line | put the archive (or the 0.x directory) back, or restore it from a copy taken before the damage |
+| `import` | a 0.x directory with no row: a data key this host's key does not open and the operator did not list, a manifest that does not read, a newer dialect, a sealed file the key does not open, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` ([restore without the credential key](#restore-without-the-credential-key)), restore it, or move it out of the data root. Like the keying's, it only claims its name |
+| `restore` | an archive with no row, or the copy staged for a take whose rows the take removed: a data key this host's key does not open and the operator did not list, a sealed value the key does not open, a newer dialect, a piece or a line that does not verify, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, restore `repositories/<id>/` in the archive from a copy, or move it out of the archive. It only claims its name, under the name its newest manifest gives |
+| `archive store` | nothing of the repository: the archive's store did not answer (refused the connection, timed out, answered a service error) while the start read the repository's copy, after it had written part of it (a restore, or an import a start began) | nothing to repair in the repository: once the store answers, a restart finishes it from the same copy |
+
+These still stop the server, because no repository's absence cures them:
+the database not answering (a failure after which the database does not
+answer a ping is the database's), the start interrupted, another process
+holding a repository's writer lease ([below](#one-writer-per-repository-and-a-second-is-refused))
+or the server losing its own, a credential key that opens no wrap or one
+that names another key (the wrong key, not a damaged row), an entry under
+`repositories/` named by neither an id nor an authority, a SQL migration,
+and **a start that set aside every repository it found**: a server with
+nothing to serve stops with each one's error, as it always has, so a
+deployment of one repository sees no change. A repository migration and
+the shipped vocabulary upgrade run at a repository's first open, after the
+start: one that fails answers that request with the error and runs again at
+the next open, and the other repositories are not touched by it.
+
+**How it shows.** Each one logs at warn, once, at the start:
+
+```text
+level=WARN msg="substrate: repository set aside at start-up; the server serves the others and never opens it until a restart finds it whole" repository=ada.example.com key=rnd-… stage="boot check" error="…"
+```
+
+and the start ends with `substrate: started with repositories set aside`,
+with `setAside`, `serving` and the ids. The metric
+`substrate_repositories_set_aside` holds the count, and `substratectl
+repository list` shows each one's `STATE` as `set aside`: a running server
+holds the writer lease of every repository it serves and none of one it set
+aside, which the list reads from `pg_locks`. While the start is still
+checking, a repository it has not reached yet reads `set aside` too. A 0.x
+directory or an archive the start set aside before it had a row has none;
+with `SUBSTRATE_DATA_ROOT` set, the list reads the data root and the archive
+(with the server's `SUBSTRATE_ARCHIVE` settings) and shows it too, by its id
+and with no creation time. `substratectl repository verify <name>` holds a
+set-aside repository's table and archive to each other beside the running
+server and names what does not verify.
+
+**What it answers.** Every request for it answers `503 unavailable` with
+the reason `set_aside` and a five-minute `Retry-After`: a token of its own
+(an app's check of its set up included), a webhook addressed to it by its
+id, and a sign-in, a deletion or a second factor's enrollment once the
+password and code are right. A sign-in into a
+repository whose data key wrap is damaged cannot read the password, and
+fails as a wrong one does; a webhook addressed by the name answers the
+door's one refusal, as an unknown name does. The console's sign-in page and
+`substratectl` say the repository is set aside and that its operator brings
+it back. Nothing is lost that was not lost already: an app's queued writes
+stay queued, and a webhook's provider retries.
+
+**What the start may already have written.** A start does its work on a
+repository in steps that each commit, and it sets the repository aside at
+the step that fails, not before the first. So a set-aside repository may
+hold what the steps before the failure committed:
+
+- **The keying** (stage `id`): the row may already carry its new id, with
+  every table's rows moved to it, and the directory's manifest may already
+  name the id while the directory is still under the name. The next start
+  carries the keying on from where it stopped under the same id.
+- **A history conversion** (stage `boot check`): the table's lines may
+  already be converted to this binary's changelog dialect, and its stamp
+  says so. An older server refuses that repository, as it would after a
+  whole start.
+- **An import or a restore** (stages `import` and `restore`): a 0.x
+  directory or an archive with no row may have a row and part of its fold,
+  with an `import_progress` row marking the import unfinished. The next
+  start resumes it, reading the same copy, and sets it aside at the boot
+  check if that copy is gone.
+
+None of these is the damage: each is what any start does, and the next one
+finishes it. They matter when you restore from a copy instead of repairing
+in place: restore the copy and the database from the same point before the
+start, both of them, since a directory from before the keying beside a row
+that took its id is the mismatch the keying is careful about.
+
+**The way back** is the repair the error names, then a restart. The server
+holds no file of a set-aside repository open and no lease on it, so its
+archive or its 0.x directory can be put back while the others serve; the
+restart is what checks it again. A repaired repository serves at that
+start; one still damaged is set aside again with the same error.
+`substratectl repository rebuild` is not a repair for any of these: it
+opens the repository, and the start refuses to.
+
+**Operator commands beside it.** The server's list of what it set aside is
+its own memory, and an operator command runs in a process of its own, so
+what tells the command is the writer leases: a running server holds the
+lease of every repository it serves and none of one it set aside. A running
+server holds at least one: a start that serves no repository stops.
+
+| Command | What tells it | What it does |
+| --- | --- | --- |
+| `repository rebuild`, `repository reindex`, `repository rotate-generation`, `user reset` and the `archive` commands | it opens as the writer, and before its start keys, checks or imports any repository it takes the lease of every repository with a row: the first one the server holds refuses it | beside a running server it refuses having written to no repository, whatever repository it names and whichever comes first, a set-aside one included, and the refusal names the lease's holder; with the server stopped, its own start decides again and refuses a repository it finds damaged, as the server does |
+| an import or a restore | it happens at a start, the server's or a writer command's | the same as above |
+| `repository reembed` | it opens read-only beside the server and runs no start, so it reads the leases before it writes its queue rows | refuses a repository the running server holds no lease of while it holds others' (`set aside`), and writes no queue row for it |
+| `repository verify`, `repository list` | they read and write nothing | they run, and name what does not verify or read `set aside` |
+
 
 ## One writer per repository, and a second is refused
 
@@ -1976,10 +2117,12 @@ until its listener is up. A SIGTERM or SIGINT during the boot ends it with
 `action=interrupted`, the repository it stopped on and the signal, so the
 next boot's resumed import has its cause in the log above it.
 
-A boot that refuses a restore names what it refused: a bad `sum`, a piece
-that is not the run its name says, or a DEK this host's
-`SUBSTRATE_CREDENTIAL_KEY` does not open (below). Move `repositories/<id>/`
-out of the archive, or restore it from an older copy, and boot again.
+A boot that sets a repository aside names why: a bad `sum`, a piece that
+is not the run its name says, an archive that cannot be read, or a DEK this
+host's `SUBSTRATE_CREDENTIAL_KEY` does not open (below). Move
+`repositories/<id>/` out of the archive, or restore it from an older copy,
+and restart
+([a repository set aside at start-up](#a-repository-set-aside-at-start-up)).
 
 ### Restore without the credential key
 
@@ -1992,14 +2135,14 @@ as an LLM provider's API key. With the same key set, the copied archive (an
 export extracted into the archive is one) restores with all of them, as
 above.
 
-An archive brought to a host whose key is another one is refused at boot,
-and so is a 0.x directory and a take of the archive
-(`archive resolve --take-archive`). The refusal names the repository's name
-and id, the id of the key the copy was written under and the id of the key
-this host holds. Set the key it names and restart, which keeps the secrets.
-Where that key is lost, accept the loss instead: list the repository, by its
-name or its id, in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` (comma-separated for
-several) and restart.
+An archive brought to a host whose key is another one is set aside at
+boot, and so is a 0.x directory; a take of the archive
+(`archive resolve --take-archive`) is refused. The log line or the refusal
+names the repository's name and id, the id of the key the copy was written
+under and the id of the key this host holds. Set the key it names and
+restart, which keeps the secrets. Where that key is lost, accept the loss
+instead: list the repository, by its name or its id, in
+`SUBSTRATE_IMPORT_WITHOUT_SECRETS` (comma-separated for several) and restart.
 
 ```
 SUBSTRATE_IMPORT_WITHOUT_SECRETS=ada.example.com SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # restores at boot, without the secrets

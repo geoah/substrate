@@ -52,7 +52,10 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * `first_attempt_running` and `first_attempt_landed` ride a `conflict` (409)
  * on a request repeated under an Idempotency-Key: this request did not run,
  * and the first attempt either has not answered yet or landed with an
- * outcome too large to keep, whose record the message names. */
+ * outcome too large to keep, whose record the message names. `set_aside`
+ * rides an `unavailable` (503): the server found the repository damaged when
+ * it started and serves it again only after its operator repairs it and
+ * restarts the server. */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -61,6 +64,7 @@ export type ErrorReason =
   | "in_doubt"
   | "first_attempt_running"
   | "first_attempt_landed"
+  | "set_aside"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

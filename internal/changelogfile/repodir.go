@@ -106,6 +106,115 @@ func HasHistory(repoDir string) bool {
 	return false
 }
 
+// HistoryState is HistoryAdopted and HasHistory for the boot's discovery,
+// with the failure to read the directory: a directory the boot cannot read is
+// no answer, never one with no history whose row is then taken as current.
+func HistoryState(repoDir string) (adopted, history bool, err error) {
+	if adopted, err = present(filepath.Join(repoDir, AdoptedManifestName)); err != nil || adopted {
+		return adopted, false, err
+	}
+	for _, p := range []string{filepath.Join(repoDir, ManifestName), ChangelogDir(repoDir), SealedDir(repoDir)} {
+		ok, err := present(p)
+		if err != nil || ok {
+			return false, ok, err
+		}
+	}
+	return false, false, nil
+}
+
+func present(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// KeyingRecordsDir is where the boot's keying records which row a directory
+// still named by its repository's authority is: `<root>/repositories/.keying/
+// <authority>`, holding the id it gives that row and a newline. It is written
+// before the row's transaction, beside the directories and not in one, so
+// damage to the directory never reaches it, and it is removed once the
+// directory is under its id (decision 0281). The dot keeps discovery
+// (listDirs) passing over it.
+const KeyingRecordsDir = ".keying"
+
+func keyingRecordsDir(root string) string {
+	return filepath.Join(filepath.Clean(root), RepositoriesDir, KeyingRecordsDir)
+}
+
+// WriteKeyingRecord records, durably, that the directory named name is the
+// repository the keying gives id.
+func WriteKeyingRecord(root, name, id string) error {
+	if err := checkRoot(root); err != nil {
+		return err
+	}
+	if !vocabulary.ValidRepositoryAuthority(name) {
+		return fmt.Errorf("%w: %q", ErrRepositoryAuthority, name)
+	}
+	if !vocabulary.ValidRepositoryID(id) {
+		return fmt.Errorf("%w: %q", ErrRepositoryKey, id)
+	}
+	dir := keyingRecordsDir(root)
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return err
+	}
+	if err := syncDir(filepath.Dir(dir)); err != nil {
+		return err
+	}
+	return writeFileAtomic(dir, name, []byte(id+"\n"))
+}
+
+// ReadKeyingRecords reads every keying record, by the name of the directory
+// each ties to an id. One that does not read is the data root's failure, not
+// one repository's.
+func ReadKeyingRecords(root string) (map[string]string, error) {
+	if err := checkRoot(root); err != nil {
+		return nil, err
+	}
+	dir := keyingRecordsDir(root)
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(entries))
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), tmpPrefix) {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		id := strings.TrimSpace(string(raw))
+		if !vocabulary.ValidRepositoryAuthority(e.Name()) || !vocabulary.ValidRepositoryID(id) {
+			return nil, fmt.Errorf("%w: the keying record %s names %q; move it out of the data root",
+				ErrRepositoryKey, filepath.Join(dir, e.Name()), id)
+		}
+		out[e.Name()] = id
+	}
+	return out, nil
+}
+
+// RemoveKeyingRecord removes the keying record of name, durably; a name with
+// none is left as it is.
+func RemoveKeyingRecord(root, name string) error {
+	if err := checkRoot(root); err != nil {
+		return err
+	}
+	dir := keyingRecordsDir(root)
+	if err := os.Remove(filepath.Join(dir, name)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return syncDir(dir)
+}
+
 // AdoptedManifestName is a 0.x directory's manifest once the table holds
 // every line of its history: RemoveHistory sets the manifest aside under this
 // name before it removes anything, so a removal cut short leaves a directory

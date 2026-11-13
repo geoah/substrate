@@ -2,6 +2,8 @@ package commands
 
 import (
 	"bytes"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -122,5 +124,33 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A repository the server set aside at its start answers 503 with the reason
+// `set_aside`: the rendering says so and who brings it back, not a bare
+// status a person would retry. It promises nothing about the start: a keying
+// or a conversion may have committed before the failure, and what holds is
+// that the server writes nothing to it from then on.
+func TestASetAsideRepositorySaysWhoBringsItBack(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Header:     http.Header{"Retry-After": []string{"300"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"code":"unavailable","reason":"set_aside","message":"substrate: the repository is set aside"}}`)),
+	}
+	ae := parseAPIError(resp, http.MethodGet, apiPrefix+"/records")
+	if ae.Reason != substrate.ReasonSetAside {
+		t.Fatalf("the reason did not arrive: %+v", ae)
+	}
+	var buf bytes.Buffer
+	renderError(&buf, ae)
+	for _, want := range []string{"the repository is set aside", "writes nothing to this one", "its operator repairs it and restarts the server"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("the rendering does not say %q:\n%s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), "has written nothing") {
+		t.Errorf("the rendering promises the start wrote nothing:\n%s", buf.String())
 	}
 }

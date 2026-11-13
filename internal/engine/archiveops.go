@@ -474,50 +474,111 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID strin
 // operator's take is recorded loses its rows and its directory once the copy
 // staged for that choice is whole, so the restore of the take replaces it
 // (rule 4). It returns the repositories that stay.
+//
+// Which rows have one is read in one query over the control plane, whose
+// failure is the database's; each repository's deletion and take then goes
+// through the start's one gate.
 func (s *service) finishDeletionsAndTakes(ctx context.Context, repos []Repository) ([]Repository, error) {
+	began, takes, err := s.recordedDeletionsAndTakes(ctx)
+	if err != nil {
+		return nil, err
+	}
 	kept := repos[:0:0]
 	for _, repo := range repos {
-		var began sql.NullTime
-		var stage, archiveID, manifest sql.NullString
-		if err := s.maint.QueryRowContext(ctx, `
-			SELECT r.deletion_began_at, t.stage, t.archive, t.manifest FROM repositories r
-			LEFT JOIN archive_takes t ON t.repository_id = r.id WHERE r.id = $1`, repo.ID).Scan(&began, &stage, &archiveID, &manifest); err != nil {
-			return nil, err
-		}
 		switch {
-		case began.Valid:
-			// The deletion is the owner's, recorded: it is finished, and a
-			// store that does not answer leaves it for the next start, the
-			// repository served by no one meanwhile.
-			s.log.Warn("substrate: finishing a repository's deletion a previous run began", "repository", repo.ID)
-			if err := s.eraseRepository(ctx, repo.ID); err != nil {
-				s.log.Error("substrate: a repository's deletion could not be finished; it is not served, and the next start tries again",
-					"repository", repo.ID, "error", err)
-			}
-		case stage.Valid:
-			// Nothing of the repository goes until the copy staged for the
-			// recorded choice is whole: a take that cannot stage leaves it
-			// served as it was, the choice still recorded, and the next boot
-			// tries again.
-			choice := takeChoice{stage: stage.String, archive: archiveID.String, manifest: manifest.String}
-			if err := s.stageForTake(ctx, repo, choice); err != nil {
-				s.log.Error("substrate: the archive its operator chose to take cannot replace the repository now; nothing of it was changed, and the next start tries again",
-					"repository", repo.ID, "chose", choice.String(), "error", err)
-				kept = append(kept, repo)
-				continue
-			}
-			if err := s.importStage(takeAfterStaged); err != nil {
+		case began[repo.ID]:
+			// The deletion is the owner's: nothing after this pass serves or
+			// touches the repository, and it sets nothing aside, so the pass
+			// names no stage. One that cannot finish, or whose repository is
+			// aside, keeps deletion_began_at and is a later start's to try
+			// again.
+			if err := s.through(ctx, rowPass(repo, ""), func() error {
+				s.finishDeletion(ctx, repo)
+				return nil
+			}); err != nil {
 				return nil, err
 			}
-			s.log.Warn("substrate: replacing a repository by its archive, as its operator chose", "repository", repo.ID, "chose", choice.String())
-			if err := s.eraseLocal(ctx, s.maint, repo.ID); err != nil {
-				return nil, fmt.Errorf("substrate/engine: boot check: replace repository %s by its archive: %w", repo.ID, err)
+		case takes[repo.ID]:
+			// A repository that is aside is left as it is, its take recorded
+			// and waiting: the gate skips it, and the passes after skip it too.
+			erased := false
+			if err := s.through(ctx, rowPass(repo, setAsideAtTake), func() error {
+				var err error
+				erased, err = s.finishTake(ctx, repo)
+				return err
+			}); err != nil {
+				return nil, err
+			}
+			if !erased {
+				kept = append(kept, repo)
 			}
 		default:
 			kept = append(kept, repo)
 		}
 	}
 	return kept, nil
+}
+
+// recordedDeletionsAndTakes reads which rows hold a deletion that began and
+// which a recorded take.
+func (s *service) recordedDeletionsAndTakes(ctx context.Context) (began, takes map[string]bool, err error) {
+	rows, err := s.maint.QueryContext(ctx, `
+		SELECT r.id, r.deletion_began_at IS NOT NULL, t.repository_id IS NOT NULL FROM repositories r
+		LEFT JOIN archive_takes t ON t.repository_id = r.id
+		WHERE r.deletion_began_at IS NOT NULL OR t.repository_id IS NOT NULL`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("substrate/engine: boot check: read the recorded deletions and takes: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	began, takes = map[string]bool{}, map[string]bool{}
+	for rows.Next() {
+		var id string
+		var deleting, taking bool
+		if err := rows.Scan(&id, &deleting, &taking); err != nil {
+			return nil, nil, err
+		}
+		began[id], takes[id] = deleting, taking
+	}
+	return began, takes, rows.Err()
+}
+
+// finishDeletion finishes the deletion of a repository a previous run began.
+// A store that does not answer leaves it for the next start, the repository
+// served by no one meanwhile.
+func (s *service) finishDeletion(ctx context.Context, repo Repository) {
+	s.log.Warn("substrate: finishing a repository's deletion a previous run began", "repository", repo.ID)
+	if err := s.eraseRepository(ctx, repo.ID); err != nil {
+		s.log.Error("substrate: a repository's deletion could not be finished; it is not served, and the next start tries again",
+			"repository", repo.ID, "error", err)
+	}
+}
+
+// finishTake carries out a repository's recorded take, and reports whether
+// its rows and files are gone. A take whose copy the restore would refuse now
+// is not a failure of the repository: it is left whole and served, its choice
+// recorded, and the next start tries again. A failure once anything of it is
+// being removed is its own, and sets it aside.
+func (s *service) finishTake(ctx context.Context, repo Repository) (bool, error) {
+	choice, ok, err := readTakeChoice(ctx, s.maint, repo.ID)
+	if err != nil || !ok {
+		return false, err
+	}
+	// Nothing of the repository goes until the copy staged for the
+	// recorded choice is whole and admitted: a take that cannot stage, or
+	// whose copy the restore would refuse, leaves it served as it was.
+	if err := s.stageForTake(ctx, repo, choice); err != nil {
+		s.log.Error("substrate: the archive its operator chose to take cannot replace the repository now; nothing of it was changed, and the next start tries again",
+			"repository", repo.ID, "chose", choice.String(), "error", err)
+		return false, nil
+	}
+	if err := s.importStage(takeAfterStaged); err != nil {
+		return false, err
+	}
+	s.log.Warn("substrate: replacing a repository by its archive, as its operator chose", "repository", repo.ID, "chose", choice.String())
+	if err := s.eraseLocal(ctx, s.maint, repo.ID); err != nil {
+		return false, fmt.Errorf("substrate/engine: boot check: replace repository %s by its archive: %w", repo.ID, err)
+	}
+	return true, nil
 }
 
 // stageForTake makes sure the copy staged for a recorded take is whole and
@@ -628,20 +689,42 @@ func (s *service) restoreTakes(ctx context.Context, byID map[string]Repository) 
 			continue
 		}
 		choice := choices[id]
-		if !s.stagedFor(id, choice) {
-			if _, err := s.stageTake(ctx, id, &choice); err != nil {
-				return fmt.Errorf("substrate/engine: boot check: the take of repository %s removed its rows, and the copy staged for it is gone and cannot be staged again: %w", id, err)
+		pass := copyPass(id, setAsideAtRestore, func() string {
+			if store, err := s.stagedStore(id, choice); err == nil {
+				if name := archivedName(ctx, store, id); name != "" {
+					return name
+				}
 			}
-		}
-		store, err := s.stagedStore(id, choice)
-		if err != nil {
+			return archivedName(ctx, s.archive, id)
+		})
+		if err := s.through(ctx, pass, func() error {
+			if !s.stagedFor(id, choice) {
+				_, err := s.stageTake(ctx, id, &choice)
+				if storeDidNotAnswer(err) {
+					// Nothing of it was written (stageTake removes what it
+					// staged), so it is left for a later start, as an archive
+					// the store does not answer for is (reconcileArchive).
+					s.log.Error("substrate: the archive's store did not answer, so the repository a take removed is not restored now; the next start stages it again",
+						"repository", id, "chose", choice.String(), "store", s.archive.String(), "error", err)
+					return nil
+				}
+				if err != nil {
+					return fmt.Errorf("substrate/engine: boot check: the take of repository %s removed its rows, and the copy staged for it is gone and cannot be staged again: %w", id, err)
+				}
+			}
+			store, err := s.stagedStore(id, choice)
+			if err != nil {
+				return err
+			}
+			out, err := s.restoreFrom(ctx, store, id, choice.archive, choice.manifest, choice.stage, byID)
+			if err != nil {
+				return fmt.Errorf("substrate/engine: boot check: restore repository %s from the copy staged for its take: %w", id, err)
+			}
+			s.logReconcile(out)
+			return nil
+		}); err != nil {
 			return err
 		}
-		out, err := s.restoreFrom(ctx, store, id, choice.archive, choice.manifest, choice.stage, byID)
-		if err != nil {
-			return fmt.Errorf("substrate/engine: boot check: restore repository %s from the copy staged for its take: %w", id, err)
-		}
-		s.logReconcile(out)
 	}
 	return nil
 }
@@ -650,7 +733,7 @@ func (s *service) restoreTakes(ctx context.Context, byID map[string]Repository) 
 // whose take finished, was replaced by a later choice or ended by a
 // deletion, and one staged for a choice never recorded. It is the boot's
 // last step, so a copy a resumed restore read goes once the restore is done.
-func (s *service) removeUnnamedStages(ctx context.Context) error {
+func (s *service) removeUnnamedStages(ctx context.Context, byID map[string]Repository) error {
 	root := filepath.Join(s.dataRoot, takeRootDir)
 	repos, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -664,28 +747,40 @@ func (s *service) removeUnnamedStages(ctx context.Context) error {
 		return err
 	}
 	for _, r := range repos {
-		dir := filepath.Join(root, r.Name())
-		stages, err := os.ReadDir(dir)
-		if err != nil {
-			if err := os.RemoveAll(dir); err != nil {
-				return err
-			}
+		id := r.Name()
+		pass := copyPass(id, setAsideAtTake, func() string { return "" })
+		if repo, ok := byID[id]; ok {
+			pass = rowPass(repo, setAsideAtTake)
+		}
+		if err := s.through(ctx, pass, func() error {
+			return removeUnnamedStagesOf(filepath.Join(root, id), choices[id], choices[id].stage != "")
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeUnnamedStagesOf removes what dir holds but the stage its recorded
+// take names, if it has one, and dir itself when nothing is left.
+func removeUnnamedStagesOf(dir string, choice takeChoice, recorded bool) error {
+	stages, err := os.ReadDir(dir)
+	if err != nil {
+		return os.RemoveAll(dir)
+	}
+	kept := 0
+	for _, st := range stages {
+		if recorded && st.IsDir() && st.Name() == choice.stage {
+			kept++
 			continue
 		}
-		kept := 0
-		for _, st := range stages {
-			if c, ok := choices[r.Name()]; ok && st.IsDir() && st.Name() == c.stage {
-				kept++
-				continue
-			}
-			if err := os.RemoveAll(filepath.Join(dir, st.Name())); err != nil {
-				return err
-			}
+		if err := os.RemoveAll(filepath.Join(dir, st.Name())); err != nil {
+			return err
 		}
-		if kept == 0 {
-			if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return err
-			}
+	}
+	if kept == 0 {
+		if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
 	}
 	return nil

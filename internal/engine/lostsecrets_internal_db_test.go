@@ -531,7 +531,7 @@ func wantLeftBehind(t *testing.T, ds *dataset) {
 func TestAKeyingStoppedAfterLeavingTheSecretsBehindIsFinishedByTheRetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	k := writeKeyedByName(t, func(ds *dataset) { putProviderSecret(t, ds, "openai", "sk-format-one") })
+	k := writeKeyedByNameSeeded(t, func(ds *dataset) { putProviderSecret(t, ds, "openai", "sk-format-one") })
 	root := copyRepository(t, k.root, k.name)
 	dsn, other := MigratedDSN(t), otherHostKey(t)
 	if _, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithCredentialKey(other),

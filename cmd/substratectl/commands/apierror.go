@@ -11,10 +11,12 @@ import (
 )
 
 // apiError is the rendered form of the substrate error envelope
-// {"error":{"code","message","problems","problemDetails"}}.
+// {"error":{"code","reason","message","problems","problemDetails"}}.
 type apiError struct {
-	Status   int
-	Code     string
+	Status int
+	Code   string
+	// Reason narrows Code where the server gives one (substrate.ErrorPayload).
+	Reason   string
 	Message  string
 	Problems []string
 	// ProblemDetails is the same validation refusal field-addressed, which a
@@ -89,6 +91,10 @@ func (e *apiError) headline() string {
 		return "rate limited"
 	case "compacted":
 		return "the cursor no longer addresses this changelog"
+	case "unavailable":
+		if e.Reason == substrate.ReasonSetAside {
+			return "the repository is set aside"
+		}
 	}
 	return fmt.Sprintf("request failed with status %d", e.Status)
 }
@@ -99,6 +105,8 @@ func (e *apiError) hint() string {
 		return e.Hint
 	}
 	switch {
+	case e.Reason == substrate.ReasonSetAside:
+		return "the server found this repository damaged when it started: it serves the others, writes nothing to this one, and serves it again once its operator repairs it and restarts the server"
 	case e.Status == 401 || e.Code == "auth":
 		return "run `substratectl login` to mint a new token"
 	case e.Status == 409 || e.Code == "conflict":

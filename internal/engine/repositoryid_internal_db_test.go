@@ -37,7 +37,16 @@ type keyedByName struct {
 	spool           string
 }
 
-func writeKeyedByName(t *testing.T, seed ...func(ds *dataset)) keyedByName {
+// writeKeyedByName writes it, beside the repositories named in others, which
+// stay keyed by their ids.
+func writeKeyedByName(t *testing.T, others ...string) keyedByName {
+	t.Helper()
+	return writeKeyedByNameSeeded(t, nil, others...)
+}
+
+// writeKeyedByNameSeeded is writeKeyedByName with seed run over the
+// repository before it is put back, when seed is not nil.
+func writeKeyedByNameSeeded(t *testing.T, seed func(ds *dataset), others ...string) keyedByName {
 	t.Helper()
 	ctx := context.Background()
 	k := keyedByName{dsn: MigratedDSN(t), root: t.TempDir(), name: testdb.Repository(t)}
@@ -50,6 +59,11 @@ func writeKeyedByName(t *testing.T, seed ...func(ds *dataset)) keyedByName {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, other := range others {
+		if _, err := s.CreateRepository(ctx, other); err != nil {
+			t.Fatal(err)
+		}
+	}
 	d, err := s.Dataset(ctx, k.name)
 	if err != nil {
 		t.Fatal(err)
@@ -60,8 +74,8 @@ func writeKeyedByName(t *testing.T, seed ...func(ds *dataset)) keyedByName {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range seed {
-		fn(ds)
+	if seed != nil {
+		seed(ds)
 	}
 	// The repository's own record under the name, where a release before
 	// ids wrote it.
@@ -392,8 +406,10 @@ func TestKeyingTime(t *testing.T) {
 }
 
 // A directory a release before ids wrote, restored where another repository
-// has since taken its name, is not that repository's: the boot refuses it
-// and leaves it exactly as it was, its manifest and its data key included.
+// has since taken its name, is not that repository's: the boot sets it aside
+// as a claim on the name and leaves it exactly as it was, its manifest and
+// its data key included, and the repository that holds the name serves
+// (setaside.go).
 func TestADirectoryWhoseNameAnotherRepositoryTookIsRefusedUntouched(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -417,8 +433,17 @@ func TestADirectoryWhoseNameAnotherRepositoryTookIsRefusedUntouched(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := OpenForTest(t, ctx, dsn, WithDataRoot(root)); err == nil || !strings.Contains(err.Error(), "another repository took the name") {
+	svcI, err = OpenForTest(t, ctx, dsn, WithDataRoot(root))
+	if err != nil {
 		t.Fatalf("the boot over another repository's directory of the same name: %v", err)
+	}
+	s := svcI.(*service)
+	r := s.setAsideOf(old.name, "")
+	if r == nil || !r.claim || !strings.Contains(r.cause.Error(), "another repository took the name") {
+		t.Fatalf("the directory is set aside as %+v, want a claim naming the other repository", r)
+	}
+	if _, err := s.Dataset(ctx, old.name); err != nil {
+		t.Fatalf("the repository that holds the name: %v", err)
 	}
 	after, err := os.ReadFile(manifest)
 	if err != nil {
@@ -824,4 +849,553 @@ func legacyDirFromArchive(t *testing.T, archiveRoot, root, id, key string) strin
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// A keying that fails after the directory was proven the repository's, and
+// after the lease under its id was taken, sets the repository aside under
+// that id as well as its name, and gives both leases back: the row is
+// refused, the operator's list reads it set aside, and the repository beside
+// it serves.
+func TestAKeyingThatFailsAfterTheIDSetsTheRowAsideAndHoldsNoLease(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	k := writeKeyedByName(t, "bob.example.com")
+	dir := filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+	if err := changelogfile.WriteSpoolFile(dir, k.spool, []byte("not a sealed request")); err != nil {
+		t.Fatal(err)
+	}
+	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root))
+	if err != nil {
+		t.Fatalf("the start with one repository whose keying fails: %v", err)
+	}
+	s := svcI.(*service)
+	repo, err := s.repositoryByAuthority(ctx, k.name)
+	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
+		t.Fatalf("the row took no id: %+v, %v", repo, err)
+	}
+	_, err = s.Dataset(ctx, k.name)
+	if !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("the repository whose keying failed opens: %v", err)
+	}
+	// The row took its id before the failure, so the refusal promises only
+	// what holds from the set-aside on: nothing more is written to it.
+	if msg := err.Error(); strings.Contains(msg, "nothing in it was written") || !strings.Contains(msg, "writes nothing to this one until a restart") {
+		t.Errorf("the refusal says %q; the start wrote the row its id, so it may promise only that nothing more is written", msg)
+	}
+	if _, err := s.Dataset(ctx, "bob.example.com"); err != nil {
+		t.Fatalf("the repository beside it: %v", err)
+	}
+	states, err := RepositoryStates(ctx, rawDBOf(t, k.dsn), k.root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range states {
+		want := StateServing
+		if st.Authority == k.name {
+			want = StateSetAside
+		}
+		if st.State != want {
+			t.Errorf("the list reads %+v, want %q", st, want)
+		}
+	}
+}
+
+// A directory from before ids whose own data key wrap does not open, beside
+// the row that took its id at the same boot, cannot be proven that row's by
+// its key, and the keying's record ties it to that row. The row is set aside
+// with it, and the boot check writes it no new directory from the table,
+// which would serve it while its directory, blobs and spool sat under the
+// name.
+func TestARowWhosePreIDDirectoryCannotBeProvenIsSetAsideWithIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	k := writeKeyedByName(t, "bob.example.com")
+	dir := filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+	m, err := changelogfile.ReadManifestToKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.DEK[len(m.DEK)-1] ^= 1
+	if err := changelogfile.WriteManifest(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root))
+	if err != nil {
+		t.Fatalf("the start: %v", err)
+	}
+	s := svcI.(*service)
+	repo, err := s.repositoryByAuthority(ctx, k.name)
+	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
+		t.Fatalf("the row took no id: %+v, %v", repo, err)
+	}
+	if _, err := s.Dataset(ctx, k.name); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("the row beside its unproven directory opens: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(k.root, changelogfile.RepositoriesDir, repo.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the boot check wrote the row a directory under its id: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("the directory under the name changed: %v", err)
+	}
+	if _, err := s.Dataset(ctx, "bob.example.com"); err != nil {
+		t.Fatalf("the repository beside it: %v", err)
+	}
+	states, err := RepositoryStates(ctx, rawDBOf(t, k.dsn), k.root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range states {
+		if st.Authority == k.name && st.State != StateSetAside {
+			t.Errorf("the list reads %+v, want %q", st, StateSetAside)
+		}
+	}
+}
+
+// A directory from before ids whose own data key wrap does not open, beside
+// a repository of its name created at another time than the directory's
+// manifest says its own was, is that other repository's name only: the
+// directory claims the name and is set aside, and the repository holding the
+// name serves, though it keeps no directory under its id.
+func TestAnUnprovenDirectoryBesideARepositoryCreatedLaterOnlyClaimsTheName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	old := writeKeyedByName(t)
+	dsn, root := MigratedDSN(t), t.TempDir()
+	svcI, err := OpenForTest(t, ctx, dsn, WithDataRoot(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svcI.CreateRepository(ctx, old.name); err != nil {
+		t.Fatal(err)
+	}
+	if err := svcI.Close(); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, changelogfile.RepositoriesDir, old.name)
+	if err := copyTree(filepath.Join(old.root, changelogfile.RepositoriesDir, old.name), dir); err != nil {
+		t.Fatal(err)
+	}
+	m, err := changelogfile.ReadManifestToKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.DEK[len(m.DEK)-1] ^= 1
+	if err := changelogfile.WriteManifest(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	svcI, err = OpenForTest(t, ctx, dsn, WithDataRoot(root))
+	if err != nil {
+		t.Fatalf("the start: %v", err)
+	}
+	t.Cleanup(func() { _ = svcI.Close() })
+	s := svcI.(*service)
+	if r := s.setAsideOf(old.name, ""); r == nil || !r.claim || len(r.keys) != 1 {
+		t.Fatalf("the directory is set aside as %+v, want a claim on the name alone", r)
+	}
+	if _, err := s.Dataset(ctx, old.name); err != nil {
+		t.Fatalf("the repository that holds the name: %v", err)
+	}
+}
+
+// wantKeyedRowAsideWithItsDirectory holds a start over a directory from
+// before ids that could not take its id, beside the row this very start
+// keyed from its name: the row is set aside with it, by its new id, and the
+// repository beside it serves.
+func wantKeyedRowAsideWithItsDirectory(t *testing.T, k keyedByName) {
+	t.Helper()
+	ctx := context.Background()
+	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root))
+	if err != nil {
+		t.Fatalf("the start: %v", err)
+	}
+	defer func() { _ = svcI.Close() }()
+	s := svcI.(*service)
+	repo, err := s.repositoryByAuthority(ctx, k.name)
+	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
+		t.Fatalf("the row took no id: %+v, %v", repo, err)
+	}
+	if r := s.setAsideOf(repo.ID, ""); r == nil || r.claim {
+		t.Fatalf("the row this start keyed is set aside as %+v, want with its directory", r)
+	}
+	if _, err := s.Dataset(ctx, k.name); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("the row beside its unreadable directory opens: %v", err)
+	}
+	if _, err := s.Dataset(ctx, "bob.example.com"); err != nil {
+		t.Fatalf("the repository beside it: %v", err)
+	}
+}
+
+// The keying's record ties the directory to the row it gave an id from the
+// directory's name, so the directory is that row's when it cannot be read,
+// its manifest decoding or not. A manifest that does not decode.
+func TestAKeyedRowIsSetAsideWithAnUndecodableDirectory(t *testing.T) {
+	t.Parallel()
+	k := writeKeyedByName(t, "bob.example.com")
+	dir := filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+	if err := os.WriteFile(filepath.Join(dir, changelogfile.ManifestName), []byte("{not a manifest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantKeyedRowAsideWithItsDirectory(t, k)
+}
+
+// The same for an older manifest that carries no creation time and whose
+// data key does not open: nothing in the clear is read off it, and the
+// keying's record ties it to the row.
+func TestAKeyedRowIsSetAsideWithADirectoryWithNoCreationTime(t *testing.T) {
+	t.Parallel()
+	k := writeKeyedByName(t, "bob.example.com")
+	dir := filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+	m, err := changelogfile.ReadManifestToKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.CreatedAt = time.Time{}
+	m.DEK[len(m.DEK)-1] ^= 1
+	if err := changelogfile.WriteManifest(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	wantKeyedRowAsideWithItsDirectory(t, k)
+}
+
+// A proof beats a guess: a directory from before ids whose data key opens
+// and is not the key of the row that holds its name is another
+// repository's, whatever the two creation times say. Equal ones (copies
+// from two hosts that kept their timestamps) leave the directory a claim on
+// the name, and the row serves.
+func TestEqualCreationTimesDoNotOverrideTwoDifferentKeys(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	old := writeKeyedByName(t)
+	dir := filepath.Join(old.root, changelogfile.RepositoriesDir, old.name)
+	m, err := changelogfile.ReadManifestToKey(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsn, root := MigratedDSN(t), t.TempDir()
+	svcI, err := OpenForTest(t, ctx, dsn, WithDataRoot(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svcI.CreateRepository(ctx, old.name); err != nil {
+		t.Fatal(err)
+	}
+	if err := svcI.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDBOf(t, dsn).Exec(`UPDATE repositories SET created_at = $1 WHERE authority = $2`, m.CreatedAt, old.name); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyTree(dir, filepath.Join(root, changelogfile.RepositoriesDir, old.name)); err != nil {
+		t.Fatal(err)
+	}
+	svcI, err = OpenForTest(t, ctx, dsn, WithDataRoot(root))
+	if err != nil {
+		t.Fatalf("the start beside another repository's directory of equal creation time: %v", err)
+	}
+	t.Cleanup(func() { _ = svcI.Close() })
+	s := svcI.(*service)
+	if r := s.setAsideOf(old.name, ""); r == nil || !r.claim || len(r.keys) != 1 {
+		t.Fatalf("the directory is set aside as %+v, want a claim on the name alone", r)
+	}
+	if _, err := s.Dataset(ctx, old.name); err != nil {
+		t.Fatalf("the repository that holds the name: %v", err)
+	}
+}
+
+// crashAfterTheRow runs a start that stops right after the row took its id,
+// before the directory's half, and returns that id.
+func (k keyedByName) crashAfterTheRow(t *testing.T) string {
+	t.Helper()
+	svc, err := OpenForTest(t, context.Background(), k.dsn, WithDataRoot(k.root), WithTestImportFault(0, func(stage string) error {
+		if stage == keyingAfterRow {
+			return context.Canceled
+		}
+		return nil
+	}))
+	if err == nil {
+		_ = svc.Close()
+		t.Fatal("the start did not stop after the row took its id")
+	}
+	var id string
+	if err := rawDBOf(t, k.dsn).QueryRow(`SELECT id FROM repositories WHERE authority = $1`, k.name).Scan(&id); err != nil || !vocabulary.ValidRepositoryID(id) {
+		t.Fatalf("the row's half did not commit: %q, %v", id, err)
+	}
+	return id
+}
+
+// dir is the directory still named by the repository's name.
+func (k keyedByName) dir() string {
+	return filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+}
+
+// withBeforeDirectories runs f between the keying's rows and its
+// directories.
+func withBeforeDirectories(f func(s *service)) Option {
+	return func(o *options) { o.beforeDirectories = f }
+}
+
+// undecodable leaves the directory's manifest unreadable.
+func (k keyedByName) undecodable(t *testing.T) {
+	t.Helper()
+	dir := filepath.Join(k.root, changelogfile.RepositoriesDir, k.name)
+	if err := os.WriteFile(filepath.Join(dir, changelogfile.ManifestName), []byte("{not a manifest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Evidence survives a restart: the keying's record, written beside the
+// directory before the row's id committed, ties the two at every start after,
+// whether the first start finished and set both aside with nothing repaired
+// since, or died between the row's half and the directory's.
+func TestAKeyedRowStaysAsideWithItsDirectoryAtTheNextStart(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		first func(t *testing.T, k keyedByName)
+	}{
+		{"a plain second start", wantKeyedRowAsideWithItsDirectory},
+		{"a crash between the halves", func(t *testing.T, k keyedByName) { k.crashAfterTheRow(t) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			k := writeKeyedByName(t, "bob.example.com")
+			k.undecodable(t)
+			tc.first(t, k)
+			wantKeyedRowAsideWithItsDirectory(t, k)
+		})
+	}
+}
+
+// A manifest's id is a claim. A format-2 manifest in a directory named
+// foreign.example.com, naming that authority and repository B's id, where no
+// row holds that name, proves nothing of B: nothing of B is leased, resealed,
+// renamed into or set aside on its word, and the directory claims its name
+// and nothing more. Beside B's own directory, B serves; with B already aside
+// and no directory of B's, the foreign directory, its wrap even bound to B's
+// id, is not renamed into B's place.
+func TestAManifestClaimingAnotherRepositorysIDTouchesNothingOfIt(t *testing.T) {
+	t.Parallel()
+	for _, c := range []string{"beside B's directory", "B aside, with no directory"} {
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			const foreign = "foreign.example.com"
+			w := newGateWorld(t)
+			op := w.start(t)
+			b, err := op.repositoryByID(ctx, w.b.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dek, err := op.unwrapDEK(b.DEK, b.ID, b.DEKKeyID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapped, err := op.wrapDEK(dek, b.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = op.Close()
+			dir := filepath.Join(w.root, changelogfile.RepositoriesDir, foreign)
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			m := changelogfile.Manifest{Format: changelogfile.ManifestFormat, ID: b.ID, Authority: foreign, DEK: wrapped, DEKKeyID: b.DEKKeyID, CreatedAt: b.CreatedAt}
+			if err := changelogfile.WriteManifestToKey(dir, m); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bDir := filepath.Join(w.root, changelogfile.RepositoriesDir, b.ID)
+			switch c {
+			case "beside B's directory":
+				if err := os.MkdirAll(changelogfile.BlobsDir(bDir), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			case "B aside, with no directory":
+				if err := os.RemoveAll(bDir); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := rawDBOf(t, w.dsn).Exec(`UPDATE repositories SET dek = set_byte(dek, length(dek) - 1, (get_byte(dek, length(dek) - 1) + 1) % 256) WHERE id = $1`, b.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			s := w.start(t)
+			if r := s.setAsideOf(foreign, ""); r == nil || !r.claim || len(r.keys) != 1 {
+				t.Fatalf("the foreign directory is set aside as %+v, want a claim on its name alone", r)
+			}
+			if after, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName)); err != nil || string(after) != string(before) {
+				t.Fatalf("the foreign directory changed: %v", err)
+			}
+			switch c {
+			case "beside B's directory":
+				if r := s.setAsideOf(b.ID, ""); r != nil {
+					t.Fatalf("B was set aside on the foreign manifest's word: %+v", r)
+				}
+				if _, err := s.Dataset(ctx, b.Authority); err != nil {
+					t.Fatalf("B: %v", err)
+				}
+				if _, err := os.Stat(changelogfile.BlobsDir(bDir)); err != nil {
+					t.Fatalf("B's directory: %v", err)
+				}
+			case "B aside, with no directory":
+				if r := s.setAsideOf(b.ID, ""); r == nil || r.stage != setAsideAtKey {
+					t.Fatalf("B is set aside as %+v, want at the credential check as before", r)
+				}
+				if _, err := os.Stat(bDir); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("a directory is in B's place: %v", err)
+				}
+				if _, err := s.Dataset(ctx, w.a.Authority); err != nil {
+					t.Fatalf("the repository beside them: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// The keying's record lives beside the directory, so damage to the directory
+// does not reach it. A directory whose manifest went (its blobs and spool
+// still in it), and a start cut short after the row took its id: the next
+// start sets the row aside with the directory, which stays under the name.
+func TestARowWhoseDirectoryLostItsManifestStaysAsideWithIt(t *testing.T) {
+	t.Parallel()
+	k := writeKeyedByName(t, "bob.example.com")
+	if err := os.Remove(filepath.Join(k.dir(), changelogfile.ManifestName)); err != nil {
+		t.Fatal(err)
+	}
+	k.crashAfterTheRow(t)
+	wantKeyedRowAsideWithItsDirectory(t, k)
+	if _, err := os.Stat(filepath.Join(k.dir(), changelogfile.SpoolSubdir)); err != nil {
+		t.Fatalf("the directory under the name: %v", err)
+	}
+}
+
+// The same for a directory the server can no longer read after the row took
+// its id: neither its manifest nor anything in it says whose it is, and the
+// record says it for it. Its mode is 0, and its manifest is unreadable as
+// well, since no mode stops root.
+func TestARowWhoseDirectoryCannotBeReadStaysAsideWithIt(t *testing.T) {
+	t.Parallel()
+	k := writeKeyedByName(t, "bob.example.com")
+	k.crashAfterTheRow(t)
+	manifest := filepath.Join(k.dir(), changelogfile.ManifestName)
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(manifest, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(k.dir(), 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(k.dir(), 0o700) })
+	wantKeyedRowAsideWithItsDirectory(t, k)
+}
+
+// Where neither the keying's record nor a proof by the data key ties a
+// directory to a row, the directory claims its name and nothing else,
+// whatever its manifest says in the clear. A directory from before ids under
+// a healthy repository's name, its manifest carrying that repository's
+// creation time and a wrap this host cannot open, or one bound to another
+// repository: the repository serves, its lease held, and the directory
+// claims the name alone, untouched.
+func TestAForgedDirectoryUnderAHealthyRowsNameClaimsTheNameAlone(t *testing.T) {
+	t.Parallel()
+	for _, c := range []string{"a wrap this host cannot open", "a wrap bound to another repository"} {
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			w := newGateWorld(t)
+			op := w.start(t)
+			b, err := op.repositoryByID(ctx, w.b.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapped := []byte("not a wrap at all")
+			if c == "a wrap bound to another repository" {
+				dek, err := op.unwrapDEK(b.DEK, b.ID, b.DEKKeyID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if wrapped, err = op.wrapDEK(dek, "other.example.com"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = op.Close()
+			dir := filepath.Join(w.root, changelogfile.RepositoriesDir, b.Authority)
+			if err := os.MkdirAll(changelogfile.SpoolDir(dir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			m := changelogfile.Manifest{Format: changelogfile.ManifestFormatBeforeIDs, Authority: b.Authority, DEK: wrapped, DEKKeyID: b.DEKKeyID, CreatedAt: b.CreatedAt}
+			if err := changelogfile.WriteManifest(dir, m); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			s := w.start(t)
+			if r := s.setAsideOf(b.ID, ""); r != nil {
+				t.Fatalf("the healthy repository was set aside on the directory's word: %+v", r)
+			}
+			if r := s.setAsideOf(b.Authority, ""); r == nil || !r.claim || len(r.keys) != 1 {
+				t.Fatalf("the directory is set aside as %+v, want a claim on the name alone", r)
+			}
+			if _, err := s.Dataset(ctx, b.Authority); err != nil {
+				t.Fatalf("the healthy repository: %v", err)
+			}
+			if after, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName)); err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("the directory changed: %v", err)
+			}
+		})
+	}
+}
+
+// A directory that proves out as a repository already set aside is that
+// repository's, and is changed by nothing either: it stays under its name,
+// untouched, set aside with the row, and nothing is put in the row's place.
+func TestAProvenDirectoryOfARepositorySetAsideIsLeftAsItIs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	k := writeKeyedByName(t, "bob.example.com")
+	id := k.crashAfterTheRow(t)
+	before, err := os.ReadFile(filepath.Join(k.dir(), changelogfile.ManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root), withBeforeDirectories(func(s *service) {
+		repo, err := s.repositoryByID(ctx, id)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if err := s.setAside(ctx, &setAsideRepository{keys: []string{repo.ID}, authority: repo.Authority, stage: setAsideAtLease, cause: errors.New("set aside by the test")}); err != nil {
+			t.Error(err)
+		}
+	}))
+	if err != nil {
+		t.Fatalf("the start: %v", err)
+	}
+	t.Cleanup(func() { _ = svcI.Close() })
+	s := svcI.(*service)
+	if r := s.setAsideOf(id, ""); r == nil {
+		t.Fatal("the row is not set aside")
+	}
+	if after, err := os.ReadFile(filepath.Join(k.dir(), changelogfile.ManifestName)); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("the directory of the set-aside repository changed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(k.root, changelogfile.RepositoriesDir, id)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a directory is in the set-aside repository's place: %v", err)
+	}
+	if _, err := s.Dataset(ctx, "bob.example.com"); err != nil {
+		t.Fatalf("the repository beside it: %v", err)
+	}
 }

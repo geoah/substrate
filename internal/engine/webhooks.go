@@ -14,6 +14,7 @@ import (
 
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // actorWebhook is the public webhook door's writer identity: the blobs a
@@ -198,11 +199,29 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 	repo, err := s.repositoryByKey(ctx, authority)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
+			// A directory the start set aside before its import has no row,
+			// and its id is the address its old server gave out.
+			if vocabulary.ValidRepositoryID(authority) {
+				if err := s.refuseSetAside(authority, ""); err != nil {
+					return nil, nil, err
+				}
+			}
 			return nil, nil, errWebhookRefused
 		}
 		return nil, nil, err
 	}
 	ds, err := s.open(ctx, repo)
+	if errors.Is(err, substrate.ErrSetAside) {
+		// Set aside at the start (setaside.go): addressed by its id, the
+		// address the server gave out and only a sender it was given to
+		// holds, the door says so, and the provider retries rather than
+		// dropping the delivery. By its name it says nothing a prober could
+		// learn from, and the start's log already names it.
+		if authority == repo.ID {
+			return nil, nil, err
+		}
+		return nil, nil, errWebhookRefused
+	}
 	if err != nil {
 		// The authority resolved but the repository will not open (a failed
 		// upgrade, a quarantined vocabulary, a storage fault). The caller is

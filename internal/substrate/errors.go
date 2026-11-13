@@ -145,6 +145,14 @@ var (
 	// out everywhere again, with the new password or, while in doubt, the
 	// one that signs in), whatever the cause was.
 	ErrSignOutIncomplete = errors.New("substrate: the password change asked to sign out everywhere, and the sign-out did not finish")
+	// ErrSetAside refuses every request for a repository the server set
+	// aside at its start: its start-up check found it damaged, so the
+	// server serves the others and never opens this one, and writes nothing
+	// to it from then on. It lifts when the operator repairs it and restarts the
+	// server, so it is not ErrUnavailable, which an engine caller may retry.
+	// The API answers it 503 `unavailable` with Retry-After, and the
+	// payload's reason is ReasonSetAside.
+	ErrSetAside = errors.New("substrate: the repository is set aside")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -155,6 +163,9 @@ const ReasonQuota = "quota"
 
 // ReasonKeyRefused is the ErrorPayload reason of ErrKeyRefused.
 const ReasonKeyRefused = "key_refused"
+
+// ReasonSetAside is the ErrorPayload reason of ErrSetAside.
+const ReasonSetAside = "set_aside"
 
 // ReasonStaleRevision is the ErrorPayload reason of a ValidationError whose
 // problems include a written `revision` below the stored one (decision 0162):
@@ -190,6 +201,7 @@ var ErrorReasons = []string{
 	ReasonKeyRefused,
 	ReasonObservedRederiving,
 	ReasonQuota,
+	ReasonSetAside,
 	ReasonStaleRevision,
 }
 
@@ -205,8 +217,8 @@ type ErrorEnvelope struct {
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
-// set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`,
-// ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
+// set: ReasonObservedRederiving, ReasonKeyRefused and ReasonSetAside on
+// `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
 // ReasonInDoubt on `internal` and `unavailable`, and
 // ReasonFirstAttemptRunning and ReasonFirstAttemptLanded on `conflict`.
 // A client that does not know a reason acts on the code.

@@ -41,14 +41,26 @@ open the engine (`verify`, `rebuild`, `reembed`, `reindex`,
 `rotate-generation`, `user reset` and the `archive` ones) also need
 `SUBSTRATE_DATA_ROOT`, and read the `SUBSTRATE_ARCHIVE`
 settings the server runs with, so `verify` holds the same archive to the
-table; `repository list` and `repository inspect` read the database alone.
-Each takes the repository by its name or by its id, and `repository list`
+table; `repository inspect` reads the database alone, and `repository list`
+reads it, and the data root and the archive when `SUBSTRATE_DATA_ROOT` is
+set. Each takes the repository by its name or by its id, and `repository list`
 prints both: the directory under the data root and the archive's prefix are
 named by the id. `repository list` also shows each repository's archive mark
 (`ARCHIVED`: the seq the archive holds every line up to and its age, `never`
 before the first pass), and `repository inspect` how far that is behind the
-head.
+head. Its `STATE` is `serving`, `set aside` (the running server's start found
+it damaged; see
+[a repository set aside at start-up](operations.md#a-repository-set-aside-at-start-up))
+or `stopped` (no server is running), read from the writer leases, and a 0.x
+directory under the data root or an archive with no row is listed as `set
+aside` or `not imported`. An archive that does not answer leaves the
+database's rows and the data root's directories listed, and the command
+says on stderr that the archive was not read.
 [Running a substrate](operations.md) is where that hat lives.
+
+A request for a repository the server set aside answers the reason
+`set_aside`, and every command prints `the repository is set aside` with
+who brings it back.
 
 `substratectl version` belongs to neither hat: it prints the client version
 and the API version it speaks (`substratectl <version> (api v1)`), and needs

@@ -43,6 +43,10 @@ import (
 // operator on the box needs no second configuration.
 const dsnEnv = "DATABASE_URL"
 
+// dataRootEnv names the data root the server keeps every repository's
+// directory under (internal/config: SUBSTRATE_DATA_ROOT).
+const dataRootEnv = "SUBSTRATE_DATA_ROOT"
+
 // credentialKeyEnv seals the sealed store. `user reset` WRITES sealed material,
 // so substratectl must hold the same key the server runs with or the new rows land
 // unsealed — readable, but not protected.

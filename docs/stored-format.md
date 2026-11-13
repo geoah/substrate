@@ -210,7 +210,15 @@ directory named by the authority and the data key bound to it. A server
 converts such a directory at its boot, before anything reads it: it takes
 the id the repository's row holds, or a new one for a directory being
 restored, seals the spooled requests again under it, rewrites the manifest
-in format 2 and renames the directory. Nothing else reads format 1.
+in format 2 and renames the directory. Before it gives a row its id it
+records, beside the directories, that the directory under the name is that
+row's: `repositories/.keying/<name>`, holding the id and a newline, which
+discovery passes over as it does every dot-prefixed entry. It removes the
+record once the directory is under its id, and a start reads every record
+before it reads any directory, so a directory that can no longer say whose
+it is stays tied to its row
+([a repository set aside at start-up](operations.md#a-repository-set-aside-at-start-up)).
+Nothing else reads format 1.
 
 ## The line
 
