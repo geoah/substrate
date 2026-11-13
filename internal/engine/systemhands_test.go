@@ -108,6 +108,7 @@ var systemHands = map[string]string{
 	"repomigration_0008_purge_the_recovery_key.go:migratePurgeTheRecoveryKey":                        "decides: a migration's purge of the recovery record",
 	"repomigration_0009_link_actors.go:writeHistoryActors":                                           "names: the system's actor is live in every repository",
 	"repomigration_0009_link_actors.go:repositoryHands":                                              "names: the system is one of every repository's hands",
+	"repomigration_0011_drop_a_body_its_kind_does_not_declare.go:dropBodies":                         "decides: a migration's removal of a body no declaration serves",
 	"rows.go:actorTierIn":                     "names: the system's tier, for the manager mark",
 	"seed.go:isSubstratePath":                 "names: the system's writes are the substrate's own path",
 	"seed.go:upgradeShippedVocabulary":        "decides: the shipped upgrade",

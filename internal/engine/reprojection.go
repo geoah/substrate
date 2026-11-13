@@ -51,7 +51,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -267,11 +266,6 @@ func movedProperties(before, after kindLookup, ident string,
 	for _, n := range sortedKeys(names) {
 		if propertyShapeOf(a, n, propShape) == propertyShapeOf(b, n, propShape) {
 			continue
-		}
-		// `body` lives in its own column, never in `props`, so no property
-		// filter can name the rows that carry it.
-		if n == substrate.PropBody {
-			return nil, true, true
 		}
 		changed[n] = true
 		props = append(props, n)

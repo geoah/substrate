@@ -301,30 +301,30 @@ func (t *txn) flushBulkRecords(b *bulkWrite) error {
 	if len(b.records) == 0 {
 		return nil
 	}
-	var ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC []string
+	var ids, kinds, titles, states, props, labels, finalizers, ftsA, ftsB, ftsC []string
 	var kindVersions []int64
 	for _, r := range b.records {
 		row := r.row
-		ids, kinds, titles, bodies = append(ids, row.ID), append(kinds, row.Kind), append(titles, row.Title), append(bodies, row.Body)
+		ids, kinds, titles = append(ids, row.ID), append(kinds, row.Kind), append(titles, row.Title)
 		states, props, labels, finalizers = append(states, string(r.states)), append(props, string(r.props)), append(labels, string(r.labels)), append(finalizers, string(r.finalizer))
 		ftsA, ftsB, ftsC = append(ftsA, r.fts[0]), append(ftsB, r.fts[1]), append(ftsC, r.fts[2])
 		kindVersions = append(kindVersions, row.KindVersion)
 	}
 	if _, err := t.exec(`
 		INSERT INTO records (
-			id, kind, title, body, states, at, ends_at, due_at, props, labels,
+			id, kind, title, states, at, ends_at, due_at, props, labels,
 			finalizers, fts, version, kind_version, created_at, updated_at
 		)
-		SELECT u.id, u.kind, u.title, u.body, u.states::jsonb, NULL, NULL, NULL, u.props::jsonb, u.labels::jsonb,
+		SELECT u.id, u.kind, u.title, u.states::jsonb, NULL, NULL, NULL, u.props::jsonb, u.labels::jsonb,
 			ARRAY(SELECT jsonb_array_elements_text(u.finalizers::jsonb)),
 			setweight(to_tsvector('english', u.a), 'A') ||
 			setweight(to_tsvector('english', u.b), 'B') ||
 			setweight(to_tsvector('english', u.c), 'C'),
 			1, u.kind_version, $1, $1
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-			$10::text[], $11::text[], $12::text[], $13::bigint[])
-			AS u(id, kind, title, body, states, props, labels, finalizers, a, b, c, kind_version)`,
-		t.now, ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC, kindVersions); err != nil {
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
+			$9::text[], $10::text[], $11::text[], $12::bigint[])
+			AS u(id, kind, title, states, props, labels, finalizers, a, b, c, kind_version)`,
+		t.now, ids, kinds, titles, states, props, labels, finalizers, ftsA, ftsB, ftsC, kindVersions); err != nil {
 		return fmt.Errorf("substrate/engine: bulk put of %d records: %w", len(b.records), err)
 	}
 	return nil

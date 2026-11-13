@@ -998,7 +998,7 @@ func quantityOperand(c substrate.Cond) bool {
 var recordColumns = map[string]string{
 	substrate.PropAt: "at", substrate.PropEndsAt: "ends_at", substrate.PropDueAt: "due_at",
 	"createdAt": "created_at", "updatedAt": "updated_at", "deletedAt": "deleted_at",
-	"title": "title", "body": "body", "id": "id", "version": "version",
+	"title": "title", "id": "id", "version": "version",
 }
 
 // snakeColumns names the deleted spelling of every camelCase column, so a
@@ -1916,9 +1916,9 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 		b.add(expr + `::text LIKE ` + b.arg(likePrefix(c.Prefix)))
 	}
 	if c.Match != "" {
-		// The two text columns have words; an instant, a version or an id
-		// does not, and prefix is the string operator an id takes.
-		if col != "title" && col != "body" {
+		// The title column has words; an instant, a version or an id does
+		// not, and prefix is the string operator an id takes.
+		if col != "title" {
 			return fmt.Errorf("%w: %s is not a text property — match needs one, use eq, prefix or the comparison operators",
 				substrate.ErrValidation, col)
 		}
@@ -2154,7 +2154,7 @@ type orderTerm struct {
 // 389k rows, against 0.3 ms with the index).
 var nonNullColumns = map[string]bool{
 	"kind": true, "id": true, "created_at": true, "updated_at": true,
-	"title": true, "body": true, "version": true,
+	"title": true, "version": true,
 }
 
 // nonNull reports whether this term is a NOT NULL column, so its seek needs

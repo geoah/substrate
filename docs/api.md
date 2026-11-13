@@ -258,7 +258,7 @@ the writer's
 Requests and responses carry the **flat record**: one JSON object with
 `properties` and the server-set fields at the top level. The
 four-key [envelope](data-model.md#the-envelope) is the YAML document form;
-REST never wraps. `title`, `body`, and the temporal properties appear inside
+REST never wraps. `title` and the temporal properties appear inside
 `properties` and nowhere else, so `PutInput` and `PatchInput` accept them only
 there. `PutInput` carries an optional top-level `kind`, `id` and `ifVersion`;
 the CLI is what maps `metadata.id` and `metadata.ifVersion` onto them. On a
@@ -671,7 +671,7 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,
   in any form and any case. It applies to string-family and prose properties
-  (scalar or repeated, whose items are matched together), `title`, `body` and
+  (scalar or repeated, whose items are matched together), `title` and
   labels, and is refused by name on a number, an instant, a boolean, a state
   or a reference, which have no words. It vectorizes the value at read time,
   so it is exact to the property and not index-backed; the index-backed

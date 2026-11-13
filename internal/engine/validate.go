@@ -958,7 +958,7 @@ func (r *titleResolver) Prop(name string) string {
 	if _, ok := r.ty.StateProp(name); ok {
 		return r.row.States[name]
 	}
-	if isHotTime(name) || (name == substrate.PropBody && declaresBody(r.ty)) {
+	if isHotTime(name) {
 		s, _ := hotValue(r.row, name).(string)
 		return s
 	}
@@ -1254,9 +1254,7 @@ func scalarString(v any) string {
 const snippetRunes = 80
 
 // snippetOf is the first snippetRunes characters of the longest text-family
-// property. A declared `body` is one, and the row keeps it in its own column
-// rather than in Props, so it is read where it is stored, as titleResolver.Prop
-// reads it.
+// property.
 func snippetOf(ty *vocabulary.Kind, row *erow) string {
 	best := ""
 	for _, name := range ty.PropOrder {
@@ -1264,11 +1262,7 @@ func snippetOf(ty *vocabulary.Kind, row *erow) string {
 		if !vocabulary.IsLongText(p.Datatype) || p.Sensitive() {
 			continue
 		}
-		v := row.Props[name]
-		if name == substrate.PropBody {
-			v = hotValue(row, name)
-		}
-		s := scalarString(v)
+		s := scalarString(row.Props[name])
 		if len(s) > len(best) {
 			best = s
 		}
@@ -1299,8 +1293,8 @@ func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
 }
 
 // ftsBands splits a row into the three weighted search bands: title (A),
-// declared short string properties (B), body and prose (C). Properties opt
-// out with fts:false; secrets never index.
+// declared short string properties (B), long text (C). Properties opt out
+// with fts:false; secrets never index.
 //
 // A quantity indexes its digits and its stored unit id, never a symbol
 // (vocabulary.QuantitySearchText).
@@ -1326,14 +1320,6 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 			b = append(b, s)
 		}
 	}
-	// `body` lives in its own column, never in row.Props, so the loop above
-	// cannot reach it. Index it as prose (band C) only when the kind declares
-	// `body` AND the declaration keeps it searchable (#68): a declared
-	// `body: {fts: false}` is stored and served but never indexed, and a text
-	// body indexes exactly as the built-in column did before the unweld.
-	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() && row.Body != "" {
-		c = append(c, row.Body)
-	}
 	return [3]string{searchText(row.Title), searchText(strings.Join(b, " ")), searchText(strings.Join(c, " "))}
 }
 
@@ -1341,12 +1327,11 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 
 // recordOf projects a stored row onto the wire type, redacting every
 // sensitive property. EVERYTHING AUTHORED IS A PROPERTY:
-// storage keeps title, body, the temporal instants and the machine states in
-// their own columns, and the wire shows ONE properties map holding all of
-// them.
+// storage keeps title, the temporal instants and the machine states in their
+// own columns, and the wire shows ONE properties map holding all of them.
 func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	e := &substrate.Record{
-		ID: row.ID, Kind: row.Kind, Title: row.Title, Body: row.Body,
+		ID: row.ID, Kind: row.Kind, Title: row.Title,
 		At: row.At, EndsAt: row.EndsAt, DueAt: row.DueAt,
 		Properties: redactProps(ty, row.Props), Labels: row.Labels,
 		Version: row.Version, KindVersion: row.KindVersion,
@@ -1361,14 +1346,6 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	}
 	if row.Title != "" {
 		e.Properties[substrate.PropTitle] = row.Title
-	}
-	// Body is served only where the kind still declares it, symmetric with the
-	// write door and ftsBands: an undeclared body left in the column by a
-	// pre-#68 write is not projected, so `get -o yaml | apply -f` round-trips
-	// (an echoed undeclared body would be refused at coerceProps). An unknown
-	// kind has no declaration to consult, so its stored body is served.
-	if row.Body != "" && (ty == nil || declaresBody(ty)) {
-		e.Properties[substrate.PropBody] = row.Body
 	}
 	for _, hc := range []struct {
 		name string

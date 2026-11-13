@@ -64,6 +64,9 @@ var keptConversions = map[int]keptConversion{
 			"and a package's actors list goes",
 		record: keptLinkActors,
 	},
+	4: {why: "move_body_into_properties (decision 0273) moves a record delta's body into set, and a cleared one into del; " +
+		"a release served a record's body among its properties already, so no record it served changes here, and a body " +
+		"no declaration served is dropped by repository migration 11 after the head, which the appended entries explain"},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.

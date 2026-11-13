@@ -246,8 +246,8 @@ func hitIDs(hits []substrate.Hit) []string {
 	return out
 }
 
-// Body is a declared, column-backed text property (#68), and FTS follows the
-// property's own `fts` flag: a declared body indexes as prose unless the
+// Body is a declared text property like any other (decision 0273), and FTS
+// follows the property's own `fts` flag: a declared body indexes as prose unless the
 // declaration opts out, and a kind that declares no body carries none. Three
 // kinds pin the three outcomes: an `article` with a default-fts body, a `memo`
 // with `fts: false`, and a `tag` that declares no body at all.
@@ -308,8 +308,8 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 		Properties: map[string]any{"body": "the peregrine falcon dives"},
 	})
 	full := mustGet(t, ds, memo.Kind, memo.ID)
-	if full.Body != "the peregrine falcon dives" || full.Properties["body"] != "the peregrine falcon dives" {
-		t.Fatalf("fts:false body not served: body=%q props=%v", full.Body, full.Properties["body"])
+	if full.Properties["body"] != "the peregrine falcon dives" {
+		t.Fatalf("fts:false body not served: %v", full.Properties["body"])
 	}
 	hits, err = searchHits(ds.Search(ctx, substrate.SearchInput{
 		Q: "peregrine", Mode: substrate.SearchLexical, Kinds: []string{pkg + "/memo"},

@@ -129,7 +129,6 @@ type rowDelta struct {
 	Del []string       `json:"del,omitempty"`
 
 	Title *string `json:"title,omitempty"`
-	Body  *string `json:"body,omitempty"`
 	// The three capability-backed time columns. A pointer to the empty string
 	// is the cleared form — JSON has one null and it already means "absent".
 	At     *string `json:"at,omitempty"`
@@ -634,7 +633,7 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 // foldFTS computes the row's weighted search bands. `fts` is an INDEX over the
 // folded row, not fold data: it is the one place the fold consults the
 // registry, and a record whose kind the binary no longer declares still
-// indexes its title and body rather than failing the replay.
+// indexes its title rather than failing the replay.
 func (t *txn) foldFTS(row *erow) [3]string {
 	if t.writeReg != nil {
 		if ty, ok := t.writeReg.ByIdentity(row.Kind); ok {
@@ -660,10 +659,9 @@ func ftsBandsUnder(reg kindLookup, row *erow) [3]string {
 		return ftsBands(ty, row)
 	}
 	// No declaration to consult (a kind this binary no longer declares), so no
-	// `body` property `fts` flag to read. Index the stored body: it is the safe
-	// default for an unknown row, and it keeps a legacy body searchable rather
-	// than dropping it out of the index on a binary that forgot its kind (#68).
-	return [3]string{searchText(row.Title), "", searchText(row.Body)}
+	// property's `fts` flag to read: the row indexes its title alone, which
+	// every record carries whatever its kind declared.
+	return [3]string{searchText(row.Title), "", ""}
 }
 
 // kindLookup is what the index derivations read a declaration through: a
@@ -1209,9 +1207,6 @@ func diffRow(before, after *erow) *rowDelta {
 	if before.Title != after.Title {
 		d.Title = ptrTo(after.Title)
 	}
-	if before.Body != after.Body {
-		d.Body = ptrTo(after.Body)
-	}
 	for _, hot := range []struct {
 		was, is *time.Time
 		dst     **string
@@ -1269,9 +1264,6 @@ func (d *rowDelta) applyTo(row *erow) {
 	}
 	if d.Title != nil {
 		row.Title = *d.Title
-	}
-	if d.Body != nil {
-		row.Body = *d.Body
 	}
 	for _, hot := range []struct {
 		val *string

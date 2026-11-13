@@ -512,7 +512,7 @@ func (t *txn) checkSubjectWrite(sp *applySpec, property string, dst eref) error 
 
 // hotValue reads a column-backed property off a stored row in the form the
 // write path takes it back: RFC 3339 for the instants, the string itself for
-// title and body. nil means the row carries none.
+// the title. nil means the row carries none.
 func hotValue(row *erow, name string) any {
 	switch name {
 	case substrate.PropTitle:
@@ -520,11 +520,6 @@ func hotValue(row *erow, name string) any {
 			return nil
 		}
 		return row.Title
-	case substrate.PropBody:
-		if row.Body == "" {
-			return nil
-		}
-		return row.Body
 	}
 	var ts *time.Time
 	switch name {
@@ -543,7 +538,7 @@ func hotValue(row *erow, name string) any {
 
 // isHotProp reports whether name is one of the column-backed properties.
 func isHotProp(name string) bool {
-	return name == substrate.PropTitle || name == substrate.PropBody || isHotTime(name)
+	return name == substrate.PropTitle || isHotTime(name)
 }
 
 // evalPath evaluates a declared path against a stored row: `a` reads a

@@ -295,7 +295,7 @@ the entry, naming the field.
 
 | Effect | What replaying it does | Its other keys |
 | --- | --- | --- |
-| `record` | Applies a record's change, as values | `version`, the version the record reached; `delta`: `created`, `restored`, `force`, `set` (properties and their values), `del` (properties removed), `title`, `body`, `at`, `endsAt`, `dueAt` (`""` clears one), `states`, `labels`, `finalizers` (each whole, `{}` or `[]` clears), `kindVersion` |
+| `record` | Applies a record's change, as values | `version`, the version the record reached; `delta`: `created`, `restored`, `force`, `set` (properties and their values), `del` (properties removed), `title`, `at`, `endsAt`, `dueAt` (`""` clears one), `states`, `labels`, `finalizers` (each whole, `{}` or `[]` clears), `kindVersion` |
 | `tombstone` | Deletes the record, keeping it as a tombstone | `version`, `finalizer` (the hold a merge adds) |
 | `purge` | Removes the record and everything on it | |
 | `annotation` | Sets one annotation, or clears it when `value` is absent | `key`, `value` |
@@ -317,10 +317,11 @@ it, because a piece holds the canonical one and Postgres prints its own.
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 3 today: dialect 3 is the line above, whose actor,
-`onBehalfOf` and `token` link records, and dialects 1 and 2 are the line
-before it, which named its actor by a spelling and its token as `principal`.
-A change to what a line may hold raises it, and
+manifest, and it is 4 today: dialect 4 is the line above, which carries a
+record's `body` among its properties; dialect 3 is the line before it, whose
+actor, `onBehalfOf` and `token` link records; and dialects 1 and 2 are the
+line before that, which named its actor by a spelling and its token as
+`principal`. A change to what a line may hold raises it, and
 a change to a shape history already holds also ships a
 [conversion step](#conversions) to the new number, so a server reads one
 dialect, its own. The line format (`LineFormat`) is 1 and the manifest's
@@ -338,6 +339,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | ---- | ---- | --------------- |
 | 2 | `drop_recovery_wrap` | Each line of kind `substrate.reamde.dev/core/recoverykey`: `sealedKey` is dropped from what its `record` effects' `delta` sets, and the rest of the line stays, the property's name in the payload's `properties` and its `manager` effect included. The value was the repository's DEK wrapped to the owner's recovery identity, which opened every secret of every copy of the directory ([decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md)). |
 | 3 | `link_actors` | Every line: its actor's spelling becomes the id of that hand's actor record, `principal` becomes `token`, an app's line gains `onBehalfOf`, and each spelling the engine stored in a value is linked or reworded, as the paragraph below says ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). |
+| 4 | `move_body_into_properties` | Each `record` effect whose `delta` carries `body`: a value moves into `set` and a `""` into `del`, and the rest of the line stays, the payload's `properties` included, which named `body` already. A `delta.body` that is not a string (`null` included, which no release wrote), a `set` that is not an object, a `del` that is not a list, and a delta that also carries `body` in `set` or `del` stop the conversion, naming the line's seq ([0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)). |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A

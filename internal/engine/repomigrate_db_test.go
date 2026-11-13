@@ -42,6 +42,7 @@ var rmEvery = map[int]string{
 	8:  "purge_the_recovery_key",
 	9:  "link_actors",
 	10: "name_writers_by_actor_type",
+	11: "drop_a_body_its_kind_does_not_declare",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen

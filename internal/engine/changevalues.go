@@ -174,9 +174,6 @@ func movedBy(ty *vocabulary.Kind, d *rowDelta, into map[string]valueAt) {
 	if ty.DisplayTemplate == "" {
 		column(substrate.PropTitle, d.Title)
 	}
-	if declaresBody(ty) {
-		column(substrate.PropBody, d.Body)
-	}
 	column(substrate.PropAt, d.At)
 	column(substrate.PropEndsAt, d.EndsAt)
 	column(substrate.PropDueAt, d.DueAt)

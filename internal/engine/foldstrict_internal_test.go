@@ -38,7 +38,7 @@ func TestEveryEffectFieldReadsBack(t *testing.T) {
 	ops, err := foldOfJSON(t, `[
 		{"kind":"record","ref":"a.example.com/tasks/task","id":"t1","version":2E0,
 		 "delta":{"created":true,"restored":true,"force":true,"set":{"name":"x"},"del":["url"],
-		          "title":"x","body":"","at":"","endsAt":"","dueAt":"2026-08-13T09:00:00Z",
+		          "title":"x","at":"","endsAt":"","dueAt":"2026-08-13T09:00:00Z",
 		          "states":{"status":"open"},"labels":{},"finalizers":[],"kindVersion":3E0}},
 		{"kind":"tombstone","ref":"a.example.com/tasks/task","id":"t1","finalizer":"substrate.merge"},
 		{"kind":"purge","ref":"a.example.com/tasks/task","id":"t1"},

@@ -500,7 +500,7 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 	out := map[string]any{}
 	queries := map[string]string{
 		"records": `SELECT to_jsonb(r) - 'repository' FROM (
-				SELECT kind, id, title, body, states, at, ends_at, due_at, props, labels,
+				SELECT kind, id, title, states, at, ends_at, due_at, props, labels,
 					version, kind_version, created_at, updated_at, deleted_at, finalizers
 				FROM records ORDER BY kind, id) r`,
 		"fts": `SELECT to_jsonb(f) FROM (

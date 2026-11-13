@@ -1095,9 +1095,8 @@ func (ds *dataset) planEmbedding(ctx context.Context, provider *embedProvider, i
 }
 
 // embedValue is the value an embeddable property holds on a stored row. A
-// column-backed property is read from its column: a declared `body` lives in
-// records.body (decision 0041), never in props, so reading props alone left
-// every declared body unembedded. Every other property is a props key.
+// column-backed property is read from its column, and every other property
+// is a props key.
 func embedValue(row *erow, prop string) any {
 	if isHotProp(prop) {
 		return hotValue(row, prop)

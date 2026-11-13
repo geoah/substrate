@@ -202,7 +202,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// The apply door refuses what its candidate cannot compile; this door had
 	// no candidate, so a shipped change a stored package could not re-resolve
 	// against (a mapping path naming a property the tree dropped or renamed)
-	// landed, and admissibleSubset quarantined the user's package at the next
+	// landed, and admissibleInto quarantined the user's package at the next
 	// load for a change the tree made. The candidate is built on EVERY upgrade
 	// (shippedCandidate: the stored registry with the upgraded packages
 	// replaced by the shipped ones) and its problems refuse the boot. The cost

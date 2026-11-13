@@ -26,7 +26,6 @@ type applySpec struct {
 	op       substrate.Op
 
 	title *string
-	body  *string
 
 	props       map[string]any
 	labels      map[string]any
@@ -285,7 +284,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 
 	return &applySpec{
 		ty: ty, id: id, existing: existing, op: substrate.OpPut,
-		title: hot.title, body: hot.body,
+		title: hot.title,
 		props: props, labels: labels, annotations: in.Annotations,
 		at: hot.at, endsAt: hot.endsAt, dueAt: hot.dueAt,
 		clearHot: hot.clear,
@@ -406,7 +405,6 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 // other property.
 type hotProps struct {
 	title  *string
-	body   *string
 	at     *time.Time
 	endsAt *time.Time
 	dueAt  *time.Time
@@ -422,7 +420,7 @@ func (h *hotProps) clearing(name string) {
 
 // mentions reports whether the write named any hot property at all.
 func (h *hotProps) mentions() bool {
-	return h.title != nil || h.body != nil || h.at != nil || h.endsAt != nil ||
+	return h.title != nil || h.at != nil || h.endsAt != nil ||
 		h.dueAt != nil || len(h.clear) > 0
 }
 
@@ -481,11 +479,8 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 	for _, name := range sortedKeys(in) {
 		v := in[name]
 		switch {
-		// `title` is always column-backed and never declared (ADR 0016). `body`
-		// is column-backed only when the kind DECLARES it (#68); undeclared, it
-		// falls through to the ordinary-property path, where coerceProps refuses
-		// a value as undeclared exactly like any other name.
-		case name == substrate.PropTitle, name == substrate.PropBody && declaresBody(ty):
+		// `title` is always column-backed and never declared (ADR 0016).
+		case name == substrate.PropTitle:
 			if v == nil {
 				// Null clears it; the column is NOT NULL, so empty IS cleared.
 				hot.clearing(name)
@@ -498,11 +493,7 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 			if err := storableText(s); err != nil {
 				return nil, hot, nil, fmt.Errorf("%w: properties.%s: %w", substrate.ErrValidation, name, err)
 			}
-			if name == substrate.PropTitle {
-				hot.title = &s
-			} else {
-				hot.body = &s
-			}
+			hot.title = &s
 			continue
 		case isHotTime(name) && ty.UsesHot(name):
 			if v == nil {
@@ -548,14 +539,6 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 		states[name] = s
 	}
 	return props, hot, states, nil
-}
-
-// declaresBody reports whether ty declares the column-backed `body` property.
-// Only then does a write route `body` into the hot column; undeclared, `body`
-// is refused like any other name the kind does not carry (#68).
-func declaresBody(ty *vocabulary.Kind) bool {
-	_, ok := ty.Prop(substrate.PropBody)
-	return ok
 }
 
 func isHotTime(name string) bool {
@@ -774,7 +757,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	}
 	return t.apply(&applySpec{
 		ty: ty, id: id, existing: existing, op: substrate.OpPatch,
-		title: hot.title, body: hot.body,
+		title: hot.title,
 		props: props, labels: labels, annotations: in.Annotations,
 		at: hot.at, endsAt: hot.endsAt, dueAt: hot.dueAt,
 		clearHot:      hot.clear,
@@ -1107,8 +1090,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// Title and body are properties with their own column; a displayTemplate
-	// overrides the writer's title entirely. The column is NOT NULL, so a
+	// Title is a property with its own column; a displayTemplate overrides
+	// the writer's title entirely. The column is NOT NULL, so a
 	// null clears to empty.
 	if sp.ty.Template == nil {
 		switch {
@@ -1123,18 +1106,6 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 		}
 	}
-	switch {
-	case sp.clearHot[substrate.PropBody]:
-		if take(substrate.PropBody, row.Body, true, "") {
-			row.Body = ""
-			deleted[substrate.PropBody] = true
-		}
-	case sp.body != nil:
-		if take(substrate.PropBody, row.Body, true, *sp.body) {
-			row.Body = *sp.body
-		}
-	}
-
 	// Trait-backed hot columns.
 	for _, hc := range []struct {
 		name string
@@ -2288,8 +2259,8 @@ func appliedDiff(edit *erow) any {
 
 // propertyWritable reports whether a name may appear in a proposed diff for
 // ty: a declared property (state properties included — a transition is a
-// legitimate patch), the reserved title column, a declared body column, or a
-// temporal column the type binds. The identity keys `type`/`id` are never
+// legitimate patch), the reserved title column, or a temporal column the
+// type binds. The identity keys `type`/`id` are never
 // writable. A SECRET-typed property is writable in principle, but a proposal
 // never carries it (a raw secret must not sit in the request's non-secret json
 // diff) — normalizeDiff rejects it separately.
@@ -2297,8 +2268,6 @@ func propertyWritable(ty *vocabulary.Kind, name string) bool {
 	switch name {
 	case substrate.PropTitle:
 		return true
-	case substrate.PropBody:
-		return declaresBody(ty)
 	case substrate.PropAt, substrate.PropEndsAt, substrate.PropDueAt:
 		return ty.UsesHot(name)
 	}
@@ -2942,9 +2911,6 @@ func (t *txn) existingSatisfiesCreate(row *erow, ty *vocabulary.Kind, in substra
 		}
 	}
 	if hot.title != nil && row.Title != *hot.title {
-		return false, nil
-	}
-	if hot.body != nil && row.Body != *hot.body {
 		return false, nil
 	}
 	for _, hc := range []struct {

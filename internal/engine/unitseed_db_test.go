@@ -413,7 +413,7 @@ func seedState(t *testing.T, svc substrate.Service, repo string) string {
 			t.Fatalf("%s: the seed wrote none", what)
 		}
 	}
-	dump("record", `SELECT kind, id, title, body, states::text, props::text, labels::text, finalizers::text, fts::text,
+	dump("record", `SELECT kind, id, title, states::text, props::text, labels::text, finalizers::text, fts::text,
 		version, kind_version, deleted_at IS NULL, created_at = updated_at,
 		created_at = (SELECT ts FROM changelog c WHERE c.kind = r.kind AND c.record_id = r.id)
 		FROM records r WHERE kind = ANY($1::text[]) ORDER BY kind, id`)

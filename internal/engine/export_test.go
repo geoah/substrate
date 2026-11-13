@@ -75,6 +75,26 @@ func SetRepositoryConnsPerHandle(svc substrate.Service, n int) { svc.(*service).
 // repositories opened from here on.
 func SetTestMigrationHook(svc substrate.Service, fn func()) { svc.(*service).testMigrationHook = fn }
 
+// MakeMigrationPending makes repository migration version pending again for
+// repository (its name or its id), with every migration after it: the open
+// refuses a ledger that records a version above a pending one, so a test that
+// runs one migration again forgets each row from it upward, never its own
+// alone, and keeps working when the next migration lands. It writes through
+// the maint pool: the app role may only read and append the ledger.
+func MakeMigrationPending(t *testing.T, dsn, repository string, version int) {
+	t.Helper()
+	maint, err := OpenScopedDB(dsn, repository, RoleMaint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = maint.Close() }()
+	if _, err := maint.ExecContext(context.Background(),
+		`DELETE FROM repository_migrations WHERE repository = (SELECT id FROM repositories WHERE authority = $1 OR id = $1) AND version >= $2`,
+		repository, version); err != nil {
+		t.Fatalf("make repository migration %d pending: %v", version, err)
+	}
+}
+
 // SharedScopedDB is a raw handle on the service's shared repository pool,
 // pinned to one repository by the same connector every dataset rides. It
 // takes the repository's id or its name, as OpenScopedDB does: the scope is
