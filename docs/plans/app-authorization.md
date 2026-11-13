@@ -252,8 +252,8 @@ stores `read:ada.example.com/tasks/*`. A token never carries `~`.
 
 The rules every scope keeps, whatever it says:
 
-- **The auth kinds are never reached**: `core/token`, `core/credential`,
-  `core/secret` and `core/recoverykey`, read or write. A scope naming one is
+- **The auth kinds are never reached**: `core/token`, `core/credential` and
+  `core/secret`, read or write. A scope naming one is
   refused.
 - **A glob never matches an `internal` kind**
   ([0133](../decisions/0133-a-kind-declares-its-purpose.md)), the `core`,

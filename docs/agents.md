@@ -179,12 +179,12 @@ data:
   point, and also the cost: adding one widens an existing grant, and a
   misspelled glob matches nothing where a misspelled kind would have been
   refused at load. **A glob never reaches
-  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
-  `/recoverykey`.** Those four are granted only by an entry that spells one
-  out, so `*` means everything the owner has rather than everything including
-  the keys to the substrate. In `writes`, only `/secret` may be spelled out:
-  the loader refuses `/token`, `/credential` and `/recoverykey` there, because
-  they are the owner's alone ([auth](auth.md#tokens)). `permissions.call`
+  `substrate.reamde.dev/core/token`, `/credential` or `/secret`.** Those
+  three are granted only by an entry that spells one out, so `*` means
+  everything the owner has rather than everything including the keys to the
+  substrate. In `writes`, only `/secret` may be spelled out: the loader
+  refuses `/token` and `/credential` there, because they are the owner's
+  alone ([auth](auth.md#tokens)). `permissions.call`
   takes no glob: it names functions, not kinds.
 - optional **`context:`**, what the engine reads into the system prompt when
   a thread opens, without a tool call: `pinned`, a list of reads, and

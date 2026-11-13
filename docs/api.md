@@ -989,7 +989,7 @@ stability, its revision and the `surfaces` that serve it:
  "changelog": {"horizon": 0},
  "vocabulary": {"dialect": 3},
  "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
-              {"name": "auth", "stability": "beta", "revision": 1, "surfaces": ["rest"],
+              {"name": "auth", "stability": "beta", "revision": 2, "surfaces": ["rest"],
                "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
               {"name": "search", "stability": "beta", "revision": 1, "surfaces": ["rest"]},
               {"name": "agents", "stability": "experimental", "revision": 1, "surfaces": ["rest"]}],

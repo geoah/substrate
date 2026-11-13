@@ -85,7 +85,7 @@ func TestManifestRoundTrip(t *testing.T) {
 
 // A directory a release before ids wrote is named by the name, and its
 // format-1 manifest carries no id: it reads, keyed by the authority, so the
-// boot can convert it, and an offline rewrap writes it back as it was.
+// boot can convert it, and it writes back as it was.
 func TestAFormatOneManifestIsKeyedByTheName(t *testing.T) {
 	dir, err := EnsureRepoDir(t.TempDir(), "ada.example.com")
 	if err != nil {

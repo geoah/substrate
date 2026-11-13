@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CheckIcon,
@@ -31,6 +31,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   CODE_DIGITS,
   normalizeCode,
+  olderServersRecoveryKey,
   register,
   registerEnroll,
 } from "@/lib/api/auth"
@@ -131,12 +132,6 @@ function KeepKeyField({
   )
 }
 
-/** The recovery pair as an age X25519 identity and its recipient. */
-interface RecoveryPair {
-  identity: string
-  recipient: string
-}
-
 /** A name as the reader typed it, the way the server reads it: trimmed,
  * lowercase, without a trailing dot. */
 function cleanName(name: string): string {
@@ -215,19 +210,14 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, skipping the factor nothing would check.
  *
- * The recovery pair is made HERE, as the page opens, the way substratectl
- * makes it: only the recipient rides the wire, and the identity is a field of
- * step one's form. A password manager that saves the new login when that form
- * submits saves the fields beside the password with it, so the key lands on
- * the same item as the password and, at step two, the one-time code. Where
- * the pair is not ready (the module failed to load), the registration names
- * no recipient and the substrate mints the pair, returning the identity once.
- * Either way the key is shown again once the repository exists, beside a
- * hidden username, so a manager can still add it to the login it holds.
+ * A server below `auth` revision 2 still mints a recovery key for a
+ * registration that names no recipient and returns it once (decision 0264):
+ * there, and only there, the page shows it before anything else, beside a
+ * hidden username so a password manager adds it to the login it holds.
  *
- * Once the repository exists, and after the recovery key, the page asks the
- * owner's name and saves it as their own contact, with no
- * way past it but saving. `land()` then decides where the owner goes. */
+ * Once the repository exists, the page asks the owner's name and saves it as
+ * their own contact, with no way past it but saving. `land()` then decides
+ * where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
   const { inviteRequired, totpRequired } = useAuthPolicy()
@@ -269,22 +259,6 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
-  const [pair, setPair] = useState<RecoveryPair | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    import("age-encryption")
-      .then(async (age) => {
-        const identity = await age.generateX25519Identity()
-        const recipient = await age.identityToRecipient(identity)
-        if (!cancelled) setPair({ identity, recipient })
-      })
-      .catch(() => {
-        /* no pair: the substrate mints one and returns the identity */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   // The repository's name once it exists and the session holds it: the name
   // step is due.
@@ -382,15 +356,12 @@ export function RegisterPage() {
         totpSecret: skip ? "" : (enrollment?.totpSecret ?? ""),
         totpCode: normalized,
         ...(skip && { skipTotp: true }),
-        ...(pair && { recoveryPublicKey: pair.recipient }),
         label: "console",
       })
-      // The recovery identity arrives ONCE, on this response, and no later
-      // call can produce it: it lands in state BEFORE the fallible session
-      // write, so a blocked localStorage cannot take the only showing with it,
-      // and the page holds the reader until they carry it off instead of
-      // navigating past it.
-      const kept = minted.recoveryKey ?? pair?.identity
+      // An older server's key arrives ONCE, on this response: it lands in
+      // state BEFORE the fallible session write, so a blocked localStorage
+      // cannot take the only showing with it.
+      const kept = olderServersRecoveryKey(minted)
       if (kept) setRecoveryKey(kept)
       saveSession(
         minted.secret,
@@ -426,7 +397,6 @@ export function RegisterPage() {
   const operator = site
     ? `the people who run ${site.name}`
     : "whoever runs this server"
-  const twoSteps = totpRequired && recoveryKey === null
   const errorNote = error && (
     <p
       role="alert"
@@ -441,11 +411,7 @@ export function RegisterPage() {
       <DoorLayout
         eyebrow="Substrate created"
         title="Save your recovery key"
-        description={
-          pair
-            ? "If your password manager saved it with your login, it’s kept. If not, put it there now: after this page it isn’t shown again."
-            : "It is shown once and never again. Put it in your password manager now."
-        }
+        description="This server made it for you. It is shown once and never again. Put it in your password manager now."
       >
         <form
           onSubmit={(e) => {
@@ -457,8 +423,7 @@ export function RegisterPage() {
         >
           <FieldGroup>
             {/* Which login the key belongs to: a manager asked to update an
-                existing item matches it by the username, as 1Password's
-                guide for websites asks of a form without one shown. */}
+                existing item matches it by the username. */}
             <input
               type="text"
               name="username"
@@ -506,7 +471,7 @@ export function RegisterPage() {
   return (
     <DoorLayout
       eyebrow={
-        twoSteps ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
+        totpRequired ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
       }
       title={enrollment ? "Connect an authenticator" : "Create your Substrate"}
       description={
@@ -678,21 +643,6 @@ export function RegisterPage() {
               <FieldError errors={[{ message: "The two passwords differ." }]} />
             )}
           </Field>
-          {pair && (
-            <Field>
-              <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
-              <KeepKeyField
-                id="recovery-key"
-                label="recovery key"
-                value={pair.identity}
-              />
-              <FieldDescription>
-                Made in this browser and never sent to the server. Your password
-                manager saves it with your login. With it, a download of
-                everything you keep here opens on another server.
-              </FieldDescription>
-            </Field>
-          )}
           {!enrollment && (
             <Field>
               <Button

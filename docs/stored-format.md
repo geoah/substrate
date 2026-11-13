@@ -285,7 +285,7 @@ it, because a piece holds the canonical one and Postgres prints its own.
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 1 today. A change to what a line may hold raises it, and
+manifest, and it is 2 today. A change to what a line may hold raises it, and
 a change to a shape history already holds also ships a
 [conversion step](#conversions) to the new number, so a server reads one
 dialect, its own. The line format (`LineFormat`) is 1 and the manifest's
@@ -297,8 +297,13 @@ says how the stamp is written and what refusing a newer one looks like.
 
 A change to a stored shape lands as one **conversion step**, numbered like a
 migration: step 2 converts a history in dialect 1 to dialect 2, and each
-next step the one after. The chain is in `internal/engine/conversion.go`, and
-it has no step yet. A step declares how it rewrites one line in place: it may
+next step the one after. The chain is in `internal/engine/conversion.go`:
+
+| Step | Name | What it changes |
+| ---- | ---- | --------------- |
+| 2 | `drop_recovery_wrap` | Each line of kind `substrate.reamde.dev/core/recoverykey`: `sealedKey` is dropped from what its `record` effects' `delta` sets, and the rest of the line stays, the property's name in the payload's `properties` and its `manager` effect included. The value was the repository's DEK wrapped to the owner's recovery identity, which opened every secret of every copy of the directory ([decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md)). |
+
+A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A
 step whose rewrite depends on the repository (a kind is the repository's own
 only under its own authority) is handed the repository's id and name and
@@ -339,8 +344,13 @@ A migration changes what records hold, within the current shapes, by
 appending ordinary writes, and runs again over every import. A conversion
 changes the shape history is written in, rewrites lines in place and appends
 nothing, and the repository's own stamp records it. A change that needs both
-lands both, and the conversion runs first. Converting closes the way back to
-an older server, as any raised stamp does
+lands both, and the conversion runs first. Dropping the recovery wrap is
+one: after step 2, repository migration 8, `purge_the_recovery_key`, purges
+the record those lines fold into, `substrate.reamde.dev/core/recoverykey/self`,
+at the repository's first open. The kind stays declared and empty in a
+repository registered before it, because the boot upgrade never prunes a
+declaration; a repository registered since never declares it. Converting
+closes the way back to an older server, as any raised stamp does
 ([going back](stability.md#going-back)).
 
 The move to repository ids is neither: no line changed, because a line names

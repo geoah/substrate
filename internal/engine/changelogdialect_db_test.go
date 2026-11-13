@@ -109,15 +109,17 @@ func TestChangelogDialectGate(t *testing.T) {
 }
 
 // TestChangelogDialectAdoptsAnUnstampedStore covers a changelog nothing has
-// claimed: the open reads it, writes no claim of its own, and the first
-// append is what stamps it.
+// claimed, under a binary that carries no conversion step: the open reads it,
+// writes no claim of its own, and the first append is what stamps it.
 func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := engine.MigratedDSN(t)
-	open := func() substrate.Service {
-		svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
-			engine.WithKindsFS(engine.SeedKinds))
+	open := func(opts ...engine.Option) substrate.Service {
+		svc, err := engine.OpenForTest(t, ctx, dsn, append([]engine.Option{
+			engine.WithDataRoot(t.TempDir()), engine.WithCredentialKey(engine.TestCredentialKey),
+			engine.WithKindsFS(engine.SeedKinds),
+		}, opts...)...)
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -149,7 +151,11 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 		t.Fatalf("wind back the changelog dialect: %v", err)
 	}
 
-	svc2 := open()
+	// A binary that carries no conversion step has nothing to convert, so
+	// the claim is left to its first append (engine.WithoutConversionSteps;
+	// TestAnUnclaimedHistoryIsClaimedByTheBootsConversion holds one that
+	// carries a step).
+	svc2 := open(engine.WithoutConversionSteps())
 	defer func() { _ = svc2.Close() }()
 	ds, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
@@ -164,8 +170,8 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	if _, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "test"}); err != nil {
 		t.Fatalf("mint a token: %v", err)
 	}
-	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
-		t.Fatalf("stamped changelog dialect = %d, want %d", got, engine.MaxChangelogDialect())
+	if got, want := storedChangelogDialect(t, db), engine.ChangelogDialectOf(svc2); got != want {
+		t.Fatalf("stamped changelog dialect = %d, want %d", got, want)
 	}
 }
 

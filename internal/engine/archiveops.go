@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/geoah/substrate/internal/archive"
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -527,12 +528,82 @@ func (s *service) stageForTake(ctx context.Context, repo Repository, choice take
 	if err := s.lease.acquire(ctx, repo.ID); err != nil {
 		return err
 	}
-	if s.stagedFor(repo.ID, choice) {
-		return nil
+	if !s.stagedFor(repo.ID, choice) {
+		// Staging admits what it staged (stageTake).
+		_, err := s.stageTake(ctx, repo.ID, &choice)
+		return err
 	}
-	_, err := s.stageTake(ctx, repo.ID, &choice)
+	return s.admitStaged(ctx, repo.ID, choice)
+}
+
+// admitStaged is the take's admission of the copy staged for choice
+// (admitSource), with the key and the listing as they are now: the choice
+// was admitted when it was recorded, and a copy, a host key or a listing
+// changed since must refuse the take before anything of the repository
+// goes, not the restore after.
+func (s *service) admitStaged(ctx context.Context, id string, choice takeChoice) error {
+	store, err := s.stagedStore(id, choice)
+	if err != nil {
+		return err
+	}
+	src, err := openArchiveManifest(ctx, store, id, choice.archive, choice.manifest, false, nil)
+	if err != nil {
+		return err
+	}
+	return s.admitSource(ctx, src)
+}
+
+// admitSource is A RESTORE OF src READ TO ITS END AND WRITTEN NOWHERE: the
+// restore's own readings (src.Sealed, src.CopyFiles and readHistory, the
+// ones takeHistory runs) over every object the restore will read, with
+// sinks that keep nothing, and the restore's one admission (admitRestore)
+// over what they read. So every refusal the restore's reading can make is
+// made here, by the same code, before a take removes anything of the
+// repository: a piece that is not the bytes its manifest names, a line that
+// does not verify, a sealed value, a spooled request or a blob that cannot
+// be read. A take reads its copy twice, here and at the restore, and
+// nothing records that this reading passed: the restore reads again.
+func (s *service) admitSource(ctx context.Context, src *archiveSource) error {
+	sealed, err := src.Sealed(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := s.admitRestore(ctx, src.manifest, sealed, src.String()); err != nil {
+		return err
+	}
+	if err := src.CopyFiles(ctx, discardBlobs{}, func(string, []byte) error { return nil }); err != nil {
+		return err
+	}
+	_, err = readHistory(ctx, src, 0, rebuildBatch, func([]changelogfile.Entry) error { return nil })
 	return err
 }
+
+// discardBlobs is the blob store a take's admission copies into: it holds
+// nothing, so every blob the archive holds is read, and it takes a blob as
+// the server's store takes one, all of its bytes and as many as the archive
+// lists.
+type discardBlobs struct{}
+
+func (discardBlobs) Put(_ context.Context, digest string, size int64, r io.Reader) error {
+	n, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return err
+	}
+	if n != size {
+		return fmt.Errorf("blobbytes: got %d bytes of %s, the caller promised %d", n, digest, size)
+	}
+	return nil
+}
+
+func (discardBlobs) Exists(context.Context, string) (bool, error) { return false, nil }
+
+func (discardBlobs) Open(context.Context, string) (io.ReadCloser, error) {
+	return nil, blobbytes.ErrNotStored
+}
+
+func (discardBlobs) Delete(context.Context, string) error { return nil }
+
+func (discardBlobs) List(context.Context, string, int) ([]blobbytes.Object, error) { return nil, nil }
 
 // takeAfterStaged is the take's step with its snapshot staged and nothing of
 // the repository removed yet; takeAfterStaging the command's, with a choice
@@ -713,9 +784,10 @@ func (s *service) stagedStore(id string, choice takeChoice) (archive.Store, erro
 // manifest, or with want nil the newest archive's newest manifest under a
 // stage of its own. It holds every object to what the manifest says of it
 // as it goes: each piece to its checksum and every line to its own, each
-// sealed value to its version and to the data key, which must open it, each
-// spooled request read whole, and every blob of the archive to its digest. A
-// failure removes what it staged and nothing else.
+// sealed value to its version, each spooled request read whole, and every
+// blob of the archive to its digest. Then it admits what it staged
+// (admitStaged), the restore's own reading of the copy. A failure removes
+// what it staged and nothing else.
 func (s *service) stageTake(ctx context.Context, id string, want *takeChoice) (takeChoice, error) {
 	store, err := s.archiveStore()
 	if err != nil {
@@ -744,6 +816,12 @@ func (s *service) stageTake(ctx context.Context, id string, want *takeChoice) (t
 		return takeChoice{}, err
 	}
 	if err := s.stageTakeInto(ctx, store, id, dir, choice); err != nil {
+		_ = os.RemoveAll(dir)
+		return takeChoice{}, fmt.Errorf("substrate/engine: the archive cannot replace repository %s, and nothing was changed: %w", id, err)
+	}
+	// What the restore would refuse is refused before the choice is
+	// recorded, by the restore's own reading of what was staged.
+	if err := s.admitStaged(ctx, id, choice); err != nil {
 		_ = os.RemoveAll(dir)
 		return takeChoice{}, fmt.Errorf("substrate/engine: the archive cannot replace repository %s, and nothing was changed: %w", id, err)
 	}
@@ -777,7 +855,6 @@ func (s *service) stageTakeInto(ctx context.Context, store archive.Store, id, di
 			return err
 		}
 	}
-	var recs []changelogfile.SealedRecord
 	for _, ref := range sortedKeys(src.manifest.Sealed) {
 		object := src.manifest.Sealed[ref]
 		sum, _, _ := changelogfile.ParseSealedObjectName(ref, object)
@@ -785,23 +862,14 @@ func (s *service) stageTakeInto(ctx context.Context, store archive.Store, id, di
 		if err != nil {
 			return fmt.Errorf("the sealed value %s: %w", ref, err)
 		}
-		rec, err := changelogfile.DecodeSealedVersion(ref, sum, data)
-		if err != nil {
+		if _, err := changelogfile.DecodeSealedVersion(ref, sum, data); err != nil {
 			return err
 		}
-		recs = append(recs, rec)
 		if err := put(src.objectKey(object), data); err != nil {
 			return err
 		}
 	}
 	m := src.manifest
-	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
-	if err != nil {
-		return fmt.Errorf("the archive's data key does not open under this host's credential key: %w", err)
-	}
-	if err := sealedFilesOpenUnder(recs, dek); err != nil {
-		return err
-	}
 	for _, object := range m.Spool {
 		data, err := archive.ReadAll(ctx, store, src.objectKey(object))
 		if err != nil {

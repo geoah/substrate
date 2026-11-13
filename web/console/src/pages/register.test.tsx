@@ -85,23 +85,6 @@ vi.mock("@/lib/api/discovery", async (importOriginal) => {
 const door = vi.hoisted(() => ({
   site: null as null | { name: string; tagline?: string; logo?: string },
 }))
-/** The recovery pair the page makes in the browser, fixed so a case can name
- * it; `age.fail` stands for a browser where making it fails. */
-const age = vi.hoisted(() => ({
-  fail: false,
-  key: "AGE-SECRET-KEY-1BROWSER",
-  recipient: "age1browser",
-}))
-vi.mock("age-encryption", () => ({
-  generateX25519Identity: async () => {
-    if (age.fail) throw new Error("no randomness")
-    return age.key
-  },
-  identityToRecipient: async () => age.recipient,
-}))
-const BROWSER_KEY = age.key
-const BROWSER_RECIPIENT = age.recipient
-
 vi.mock("@/lib/site", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/site")>()
   return { ...real, useSite: () => door.site }
@@ -110,13 +93,6 @@ vi.mock("@/lib/site", async (importOriginal) => {
 import { resetAuthPolicy } from "@/lib/api/discovery"
 
 import { RegisterPage } from "./register"
-
-/** The page, once the recovery pair it makes as it opens is ready: step one
- * shows it as a field. Where making it fails there is nothing to wait for. */
-async function renderPage() {
-  render(<RegisterPage />)
-  if (!age.fail) await screen.findByDisplayValue(BROWSER_KEY)
-}
 
 function jsonResponse(
   status: number,
@@ -160,14 +136,6 @@ async function enroll() {
   await screen.findByText("SEED")
 }
 
-/** The recovery key's screen, which every registration that made a key
- * passes through before the name step. */
-async function carryOffKey() {
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Saved, continue" })
-  )
-}
-
 /** The name step comes before landing and has no skip, so a test about where
  * registration lands types a name and continues. The contact and setting
  * writes go to a fake owner server; every other request keeps the answer the
@@ -186,16 +154,6 @@ async function giveName(fetchMock: Mock<typeof fetch>) {
     if (own) return own(input, init)
     return Promise.reject(new Error(`unexpected request ${url}`))
   })
-  // The recovery key comes first wherever one was made, and the reader
-  // carries it off before naming themselves.
-  await waitFor(() =>
-    expect(
-      screen.queryByRole("button", { name: "Saved, continue" }) ??
-        screen.queryByLabelText("Your name")
-    ).not.toBeNull()
-  )
-  const saved = screen.queryByRole("button", { name: "Saved, continue" })
-  if (saved) fireEvent.click(saved)
   fireEvent.change(await screen.findByLabelText("Your name"), {
     target: { value: "Ada" },
   })
@@ -206,7 +164,6 @@ describe("RegisterPage", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
-    age.fail = false
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
@@ -225,7 +182,7 @@ describe("RegisterPage", () => {
   })
 
   it("collects the credentials first, and shows no one-time code until enrolled", async () => {
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
     expect(screen.getByLabelText("Choose your address")).toBeTruthy()
     // Password is on the FIRST step now, so a manager saves the login before
@@ -238,7 +195,7 @@ describe("RegisterPage", () => {
   })
 
   it("shows the full address the name becomes, as it is typed", async () => {
-    await renderPage()
+    render(<RegisterPage />)
     const name = screen.getByLabelText("Choose your address")
     expect(
       screen.getByText(/Your Substrate’s address and sign-in name/)
@@ -268,7 +225,7 @@ describe("RegisterPage", () => {
   })
 
   it("takes the reader's own domain only through the advanced option, and says what owning it means", async () => {
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.queryByText(/Only use a domain you own/)).toBeNull()
     fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "Ada.Example.org" },
@@ -317,7 +274,7 @@ describe("RegisterPage", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(201, { ...MINT, repository: "ada.example.org" })
     )
-    await renderPage()
+    render(<RegisterPage />)
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
@@ -358,7 +315,7 @@ describe("RegisterPage", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(201, { ...MINT, repository: "ada.example.org" })
     )
-    await renderPage()
+    render(<RegisterPage />)
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
@@ -389,7 +346,7 @@ describe("RegisterPage", () => {
 
   it("shows the deployment's brand, or the substrate's without a site", async () => {
     door.site = { name: "Crane", logo: "/site/logo.svg" }
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.getByText("Crane")).toBeTruthy()
     expect(screen.getByText("A Substrate provider")).toBeTruthy()
     expect(
@@ -401,14 +358,14 @@ describe("RegisterPage", () => {
     expect(document.querySelector('img[src="/site/logo.svg"]')).not.toBeNull()
     cleanup()
     door.site = null
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.getByText("substrate")).toBeTruthy()
     expect(screen.queryByText(/provider/i)).toBeNull()
     expect(document.querySelector('img[src="/substrate.svg"]')).not.toBeNull()
   })
 
   it("enrolls only after the password is set, then reveals the secret and the code step", async () => {
-    await renderPage()
+    render(<RegisterPage />)
     // With no password, Continue cannot enroll.
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
@@ -435,7 +392,7 @@ describe("RegisterPage", () => {
 
   it("commits the second step and lands logged in", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
+    render(<RegisterPage />)
     await enroll()
 
     fetchMock.mockResolvedValueOnce(jsonResponse(201, MINT))
@@ -461,14 +418,13 @@ describe("RegisterPage", () => {
       password: PASSWORD,
       totpSecret: "SEED",
       totpCode: "123456",
-      recoveryPublicKey: BROWSER_RECIPIENT,
       label: "console",
     })
   })
 
   it("skips the second factor from the authenticator step, sending no seed", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
+    render(<RegisterPage />)
     await enroll()
     // A half-typed code does not ride the skip.
     fireEvent.change(screen.getByLabelText("One-time code"), {
@@ -489,7 +445,6 @@ describe("RegisterPage", () => {
       totpSecret: "",
       totpCode: "",
       skipTotp: true,
-      recoveryPublicKey: BROWSER_RECIPIENT,
       label: "console",
     })
     await giveName(fetchMock)
@@ -501,7 +456,7 @@ describe("RegisterPage", () => {
   it("returns to an app's approval page once registered, and the sign-in link carries it", async () => {
     registerSearch.redirect = "/authorize/AbC123"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
+    render(<RegisterPage />)
     expect(
       screen.getByRole("link", { name: "Sign in" }).getAttribute("href")
     ).toBe("/login?redirect=%2Fauthorize%2FAbC123")
@@ -526,7 +481,7 @@ describe("RegisterPage", () => {
   it("lands on Home when the return path leaves the console", async () => {
     registerSearch.redirect = "//evil.example"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
+    render(<RegisterPage />)
     expect(
       screen.getByRole("link", { name: "Sign in" }).getAttribute("href")
     ).toBe("/login")
@@ -544,16 +499,9 @@ describe("RegisterPage", () => {
     )
   })
 
-  it("makes the recovery key in the browser, as a field of step one, and sends only its recipient", async () => {
+  it("has no key step: the commit sends no recovery recipient and goes straight on to the name", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
-    // The key is a field of the form a password manager saves the new login
-    // from, beside the name and the password.
-    const field = screen.getByLabelText<HTMLInputElement>("Recovery key")
-    expect(field.value).toBe(BROWSER_KEY)
-    expect(field.form).toBe(screen.getByLabelText("Password").closest("form"))
-    expect(field.name).toBe("recovery-key")
-    expect(field.readOnly).toBe(true)
+    render(<RegisterPage />)
     await enroll()
 
     fetchMock.mockResolvedValueOnce(jsonResponse(201, MINT))
@@ -563,27 +511,16 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
-    const sent = (fetchMock.mock.calls[1][1] as RequestInit).body as string
-    expect(JSON.parse(sent).recoveryPublicKey).toBe(BROWSER_RECIPIENT)
-    expect(sent).not.toContain(BROWSER_KEY)
 
-    // Logged in, but NOT navigated: the key is shown again, beside the
-    // username a manager matches the login it already holds by.
-    const recovery =
-      await screen.findByLabelText<HTMLInputElement>("Recovery key")
-    expect(recovery.value).toBe(BROWSER_KEY)
-    const username = document.querySelector<HTMLInputElement>(
-      'input[autocomplete="username"]'
-    )!
-    expect(username.value).toBe("geoah.localhost")
-    expect(username.form).toBe(recovery.form)
-    expect(navigate).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole("button", { name: "Saved, continue" }))
-    // The name step comes after the key, and the key is gone from the page.
+    // The screen after the commit is the name step: there is no key to keep
+    // first, and nothing on any step says there is one.
     await screen.findByRole("heading", { name: "What should we call you?" })
-    expect(screen.queryByLabelText("Recovery key")).toBeNull()
+    const sent = JSON.parse(
+      (fetchMock.mock.calls[1][1] as RequestInit).body as string
+    )
+    expect(sent).not.toHaveProperty("recoveryPublicKey")
+    expect(screen.queryByRole("button", { name: "Saved, continue" })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/recovery|AGE-SECRET-KEY/i)
     expect(navigate).not.toHaveBeenCalled()
     await giveName(fetchMock)
     await waitFor(() =>
@@ -591,18 +528,19 @@ describe("RegisterPage", () => {
     )
   })
 
-  it("holds the reader on the substrate's recovery key where the browser made none", async () => {
-    age.fail = true
+  it("shows the key an older server minted, once, before the name", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
-    await renderPage()
-    expect(screen.queryByLabelText("Recovery key")).toBeNull()
+    render(<RegisterPage />)
     await enroll()
 
+    // A server below auth revision 2 mints a key for a registration that
+    // names no recipient, wraps the repository's key to it, and answers with
+    // it on this one response: the only copy there will ever be.
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
         ...MINT,
-        recoveryKey: "AGE-SECRET-KEY-1TEST",
-        recoveryPublicKey: "age1test",
+        recoveryKey: "AGE-SECRET-KEY-1OLDER",
+        recoveryPublicKey: "age1older",
       })
     )
     fireEvent.change(screen.getByLabelText("One-time code"), {
@@ -611,17 +549,19 @@ describe("RegisterPage", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Create your Substrate" })
     )
-    // No recipient was sent, so the substrate minted the pair and the
-    // identity arrives only on this response.
-    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+
+    await screen.findByRole("heading", { name: "Save your recovery key" })
+    expect(screen.getByLabelText<HTMLInputElement>("Recovery key").value).toBe(
+      "AGE-SECRET-KEY-1OLDER"
+    )
     const sent = JSON.parse(
       (fetchMock.mock.calls[1][1] as RequestInit).body as string
     )
-    expect(sent.recoveryPublicKey).toBeUndefined()
-    const recovery =
-      await screen.findByLabelText<HTMLInputElement>("Recovery key")
-    expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
-    expect(screen.getByText(/shown once and never again/)).toBeTruthy()
+    expect(sent).not.toHaveProperty("recoveryPublicKey")
+    expect(navigate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Saved, continue" }))
+    await screen.findByRole("heading", { name: "What should we call you?" })
+    expect(document.body.textContent).not.toMatch(/AGE-SECRET-KEY/)
     await giveName(fetchMock)
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
@@ -631,9 +571,8 @@ describe("RegisterPage", () => {
   it("asks the owner's name once registered, and lands only after it", async () => {
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
-    await carryOffKey()
 
     await screen.findByRole("heading", { name: "What should we call you?" })
     expect(screen.getByLabelText("Your name")).toBeTruthy()
@@ -658,7 +597,7 @@ describe("RegisterPage", () => {
   it("registers in ONE step where no second factor is verified", async () => {
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     // No enrollment step at all: no QR, no seed, no code field, ever.
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
@@ -690,7 +629,6 @@ describe("RegisterPage", () => {
       totpSecret: "",
       totpCode: "",
       skipTotp: true,
-      recoveryPublicKey: BROWSER_RECIPIENT,
       label: "console",
     })
   })
@@ -702,7 +640,7 @@ describe("RegisterPage", () => {
     policy.inviteRequired = false
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.queryByLabelText("Invite code")).toBeNull()
     fireEvent.change(screen.getByLabelText("Choose your address"), {
       target: { value: "geoah" },
@@ -727,13 +665,12 @@ describe("RegisterPage", () => {
       totpSecret: "",
       totpCode: "",
       skipTotp: true,
-      recoveryPublicKey: BROWSER_RECIPIENT,
       label: "console",
     })
   })
 
   it("names the factors this door has in the password hint", async () => {
-    await renderPage()
+    render(<RegisterPage />)
     expect(
       screen.getByText(
         /If you lose it and your authenticator, only whoever runs this server can reset them/
@@ -744,7 +681,7 @@ describe("RegisterPage", () => {
     // With no second factor there is only the password to lose, so the hint
     // that counts two of them is wrong.
     policy.totpRequired = false
-    await renderPage()
+    render(<RegisterPage />)
     expect(
       screen.getByText(
         /If you lose it, only whoever runs this server can reset it/
@@ -757,7 +694,7 @@ describe("RegisterPage", () => {
     // The two answers are independent: a gated door with no second factor
     // keeps the invite field and drops the code step.
     policy.totpRequired = false
-    await renderPage()
+    render(<RegisterPage />)
     expect(screen.getByLabelText("Invite code")).toBeTruthy()
     expect(
       screen
@@ -801,7 +738,6 @@ describe("RegisterPage where the operator supplies keys", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
-    age.fail = false
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
@@ -821,7 +757,7 @@ describe("RegisterPage where the operator supplies keys", () => {
 
   it("lands on Providers", async () => {
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
     await giveName(fetchMock)
     await waitFor(() =>
@@ -833,7 +769,7 @@ describe("RegisterPage where the operator supplies keys", () => {
   it("lands on Home where server.json lists no operatorDefaults", async () => {
     policy.features = []
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
     await giveName(fetchMock)
     await waitFor(() =>
@@ -844,7 +780,7 @@ describe("RegisterPage where the operator supplies keys", () => {
   it("returns to an app's approval page instead", async () => {
     registerSearch.redirect = "/authorize/AbC123"
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
     await giveName(fetchMock)
     await waitFor(() =>
@@ -860,7 +796,7 @@ describe("RegisterPage where the operator supplies keys", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(201, { ...MINT, repository: "ada.example.org" })
     )
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep("ada.example.org")
     await giveName(fetchMock)
     await waitFor(() =>
@@ -879,9 +815,8 @@ describe("RegisterPage where the operator supplies keys", () => {
         path === "/register" ? jsonResponse(201, MINT) : undefined,
     })
     fetchMock.mockImplementation(server.impl)
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
-    await carryOffKey()
     fireEvent.change(await screen.findByLabelText("Your name"), {
       target: { value: "Ada Lovelace" },
     })
@@ -920,9 +855,8 @@ describe("RegisterPage where the operator supplies keys", () => {
         path === "/register" ? jsonResponse(201, MINT) : undefined,
     })
     fetchMock.mockImplementation(server.impl)
-    await renderPage()
+    render(<RegisterPage />)
     registerInOneStep()
-    await carryOffKey()
     fireEvent.change(await screen.findByLabelText("Your name"), {
       target: { value: "Ada" },
     })
@@ -945,21 +879,6 @@ describe("RegisterPage where the operator supplies keys", () => {
       `PUT ${OWNER_SETTING_PATH}`,
     ])
   })
-
-  it("lands on Providers after the recovery key is saved", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse(201, { ...MINT, recoveryKey: "AGE-SECRET-KEY-1TEST" })
-    )
-    await renderPage()
-    registerInOneStep()
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Saved, continue" })
-    )
-    await giveName(fetchMock)
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/providers", replace: true })
-    )
-  })
 })
 
 /** The same page against the REAL discovery hook: the reader (or a password
@@ -970,7 +889,6 @@ describe("RegisterPage and the door's own answer", () => {
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {
-    age.fail = false
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
@@ -999,7 +917,7 @@ describe("RegisterPage and the door's own answer", () => {
       return jsonResponse(201, MINT)
     })
 
-    await renderPage()
+    render(<RegisterPage />)
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })
@@ -1040,7 +958,6 @@ describe("RegisterPage and the door's own answer", () => {
       totpSecret: "",
       totpCode: "",
       skipTotp: true,
-      recoveryPublicKey: BROWSER_RECIPIENT,
       label: "console",
     })
   })
@@ -1061,7 +978,7 @@ describe("RegisterPage and the door's own answer", () => {
         })
       return jsonResponse(201, MINT)
     })
-    await renderPage()
+    render(<RegisterPage />)
     // The one-step form is up once discovery said there is no second factor.
     await screen.findByRole("button", { name: "Create your Substrate" })
     registerInOneStep()
@@ -1079,7 +996,7 @@ describe("RegisterPage and the door's own answer", () => {
       if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
       return jsonResponse(201, MINT)
     })
-    await renderPage()
+    render(<RegisterPage />)
     fireEvent.change(screen.getByLabelText("Invite code"), {
       target: { value: "INV-1" },
     })

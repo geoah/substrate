@@ -36,6 +36,15 @@ package engine
 // What it costs: the rows half rewrites every row of the repository, one
 // UPDATE per table, while the boot waits; the directory half renames one
 // directory and rewrites a handful of files.
+//
+// THE MIGRATIONS AFTER IT. A release before ids ran repository migrations 1
+// to 5 and none after: migration 6 moves the repository's record to its id,
+// and every later one comes after it. They run at the repository's first
+// open after the keying, in order (repomigrate.go), which refuses a ledger
+// that holds a later version and not an earlier one. So a test that makes a
+// repository from before ids out of one this binary created removes every
+// ledger row from 6 up, not 6 alone: the binary that created it ran them all
+// (repositoryid_internal_db_test.go writeKeyedByName).
 
 import (
 	"bytes"
@@ -212,7 +221,7 @@ func (s *service) keyDirectory(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := resealSpool(dir, dek, name, m.ID); err != nil {
+	if err := resealSpool(dir, dek, name, m.ID, s.acceptsLostSecrets(m.ID, name)); err != nil {
 		return err
 	}
 	return s.renameRepositoryDir(dir, m.ID)
@@ -260,7 +269,30 @@ func (s *service) directoryKey(ctx context.Context, dir string, m changelogfile.
 	}
 	own, err := s.unwrapDEK(m.DEK, m.Authority, m.DEKKeyID)
 	if err != nil {
-		return "", nil, fmt.Errorf("the DEK in the manifest of repository %s does not open: %w", m.Authority, err)
+		// A directory being restored (no row holds the name) may leave its
+		// secrets behind if the operator listed it (lostsecrets.go); one a
+		// row holds cannot be proven that row's without its data key.
+		if _, rerr := s.repositoryByAuthority(ctx, m.Authority); !errors.Is(rerr, substrate.ErrNotFound) {
+			if rerr != nil {
+				return "", nil, rerr
+			}
+			return "", nil, fmt.Errorf("the DEK in the manifest of repository %s does not open: %w", m.Authority, err)
+		}
+		if !s.acceptsLostSecrets("", m.Authority) {
+			return "", nil, refuseUnopened(m.Authority, "", err)
+		}
+		id, ierr := vocabulary.NewRepositoryID()
+		if ierr != nil {
+			return "", nil, ierr
+		}
+		dek, lerr := s.leaveSecretsBehind(m.Authority, id, err)
+		if lerr != nil {
+			return "", nil, lerr
+		}
+		if ferr := s.keyingFault(leftBehindStage); ferr != nil {
+			return "", nil, ferr
+		}
+		return id, dek, nil
 	}
 	repo, err := s.repositoryByAuthority(ctx, m.Authority)
 	switch {
@@ -324,7 +356,7 @@ func (s *service) renameRepositoryDir(dir, id string) error {
 // under the id: a spooled file is bound to its repository's key and fire
 // (spoolAAD). A file already sealed under the id is left as it is, which is
 // what a crash part way leaves.
-func resealSpool(dir string, dek []byte, oldKey, id string) error {
+func resealSpool(dir string, dek []byte, oldKey, id string, keepUnopened bool) error {
 	files, err := changelogfile.SpoolFiles(dir)
 	if err != nil || len(files) == 0 {
 		return err
@@ -343,6 +375,12 @@ func resealSpool(dir string, dek []byte, oldKey, id string) error {
 			continue
 		}
 		raw, err := ds.openPayload(sealed, spoolAAD(oldKey, fire))
+		if err != nil && keepUnopened {
+			// Sealed under a data key the operator accepted losing: the open
+			// of the repository restored without its secrets deletes it
+			// (lostsecrets.go).
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("spooled webhook request %s: %w", f.Name, err)
 		}

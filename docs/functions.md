@@ -149,11 +149,11 @@ what `writes` and `reads.kinds` reach to the scopes the owner approves
 The two KIND lists also take a glob — `*`, `<authority>/*` or
 `<authority>/<package>/*`, the spellings a trigger selector uses — which
 covers kinds the repository gains later, and never reaches
-`substrate.reamde.dev/core/token`, `/credential`, `/secret` or `/recoverykey`
+`substrate.reamde.dev/core/token`, `/credential` or `/secret`
 ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
-A `writes` entry that names `/token`, `/credential` or `/recoverykey`
-outright is refused at load: they are the owner's alone, and the engine
-refuses a token delete from a function whatever its grant says
+A `writes` entry that names `/token` or `/credential` outright is refused at
+load: they are the owner's alone, and the engine refuses a token delete from
+a function whatever its grant says
 ([auth](auth.md#tokens)).
 `call` and `agents` admit no glob: they name callables, not kinds.
 

@@ -39,7 +39,6 @@ func TestTheGrammarAdmitsThePatternsAndRefusesTheRest(t *testing.T) {
 		"read:substrate.reamde.dev/core/token",
 		"write:substrate.reamde.dev/core/credential",
 		"read:substrate.reamde.dev/core/secret",
-		"read:substrate.reamde.dev/core/recoverykey",
 		"write:substrate.reamde.dev/core/trigger",
 		"write:substrate.reamde.dev/core/*",
 		"write:substrate.reamde.dev/llm/provider",
@@ -179,7 +178,7 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 	}
 	// The auth kinds are never reached, even read as if they were not
 	// internal: the guard is the kind, not the purpose.
-	for _, k := range []string{"token", "credential", "secret", "recoverykey"} {
+	for _, k := range []string{"token", "credential", "secret"} {
 		kind := "substrate.reamde.dev/core/" + k
 		if everything.Reads(Kind{Ref: kind, Internal: false}) || everything.Writes(Kind{Ref: kind, Internal: false}) {
 			t.Errorf("write:* reached the auth kind %s", kind)

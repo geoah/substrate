@@ -248,6 +248,9 @@ type options struct {
 	invokeHook func(function string)
 	// foreignPackages lifts decision 0210 (WithInsecureForeignPackages).
 	foreignPackages bool
+	// withoutSecrets names the repositories imported without their secrets
+	// (lostsecrets.go WithImportWithoutSecrets).
+	withoutSecrets []string
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
@@ -609,6 +612,8 @@ type service struct {
 	healthFailingAfter time.Duration
 	// foreignPackages is options.foreignPackages.
 	foreignPackages bool
+	// withoutSecrets is options.withoutSecrets, by id and by name.
+	withoutSecrets map[string]bool
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
 	// scheduleNow is the clock a schedule's due occurrences are read on
@@ -1026,6 +1031,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		retryNow:           o.retryNow,
 		scheduleNow:        o.scheduleNow,
 		foreignPackages:    o.foreignPackages,
+		withoutSecrets:     lostSecretsList(o.withoutSecrets),
 		laneWorkers:        o.laneWorkers,
 		chatTurnsPerPerson: o.chatTurnsPerPerson,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
@@ -1360,7 +1366,7 @@ func (s *service) requireCredentialKeyOpens(ctx context.Context) error {
 	}
 	advice := "Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable"
 	if damaged {
-		advice = "A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row from a database dump or its directory from a copy (a copy re-wraps through its recovery key: `substratectl repository rewrap`)"
+		advice = "A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row from a database dump or its directory from a copy"
 	}
 	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. %s",
 		s.credKeyID, len(failures), checked, strings.Join(failures, "; "), advice)
@@ -1616,6 +1622,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// after the upgrade that declares them.
 		ds.ensureShippedUnits,
 		ds.upgradeShippedVocabulary,
+		// After the upgrade, which declares the alert kind its clearing
+		// raises; a no-op unless an import left secrets behind.
+		ds.clearSecretsLeftBehind,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
 		ds.loadObservedKinds,

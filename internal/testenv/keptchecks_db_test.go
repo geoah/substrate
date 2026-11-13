@@ -54,7 +54,9 @@ type keptConversion struct {
 // why, even one that changes nothing a release served:
 // TestEveryConversionStepSaysWhatItDoesToAKeptDirectory refuses a chain
 // with a step this table does not name.
-var keptConversions = map[int]keptConversion{}
+var keptConversions = map[int]keptConversion{
+	2: {why: "drops sealedKey from what each line of core/recoverykey sets; the one record those lines fold to is purged by repository migration 8 after the head, which the appended entries explain, so no record a release served changes here"},
+}
 
 // keptDialect is the changelog dialect the kept directory's history is in.
 func keptDialect(t *testing.T, dir, repository string) int {

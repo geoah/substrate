@@ -15,9 +15,8 @@ toolchain: `mise install` once.
 mise run build:cli
 
 # Asks for a repository name and a password (and, on a substrate that reads
-# them, the invite code and a TOTP code from the enrollment it prints), hands
-# you a recovery key, then stores the minted token as a context in
-# ~/.config/substratectl.
+# them, the invite code and a TOTP code from the enrollment it prints), then
+# stores the minted token as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
 ```
 

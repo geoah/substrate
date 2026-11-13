@@ -108,7 +108,11 @@ data:
   # its code is written against (decision record 0265).
   # version 57: a package header takes `dialect`, the vocabulary dialect it
   # needs (decision record 0268).
-  version: 57
+  # version 58: `recoverykey` left the tree, and the age wrap with it
+  # (decision record 0264). Like `run` below, it is not retired: a repository
+  # registered before keeps the kind declared, emptied by its migration, and
+  # a fresh one never has it.
+  version: 58
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

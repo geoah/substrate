@@ -185,7 +185,6 @@ the whole of what a fresh repository speaks:
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `repository`         | The repository describing itself from the inside: the `authority` it owns, which is its id (`name` is deprecated and holds the same value), and a `lifecycle` state (`active`, `suspended`, `deleting`). |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
-| `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
 | `token`              | One bearer credential: label, optional expiry, and the hash of its secret.                                                                          |
 | `actor`              | One declared actor, the name writes are attributed to, and the tier it writes at.                                                                   |
 | `agent`              | One declared agent: an LLM-loop callable ([agents](agents.md)).                                                                                    |

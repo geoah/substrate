@@ -264,9 +264,8 @@ data:
               repeated: true
               # An entry may be a kind or one of the trigger selector's globs
               # (`*`, `<authority>/*`, `<authority>/<package>/*`). A GLOB
-              # never reaches `token`, `credential`, `secret` or
-              # `recoverykey`: those are granted only by an entry that spells
-              # one out (record 0080).
+              # never reaches `token`, `credential` or `secret`: those are
+              # granted only by an entry that spells one out (record 0080).
               description: the record kinds every read is held to, each a
                 kind or a glob over them
             budgets:

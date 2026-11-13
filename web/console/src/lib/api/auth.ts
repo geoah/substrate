@@ -61,23 +61,27 @@ export interface RegisterInput {
    * Settings; `totpSecret` and `totpCode` are then empty. */
   skipTotp?: boolean
   label?: string
-  /** A client-generated age recipient; absent asks the substrate to mint the
-   * pair and return the identity once. */
-  recoveryPublicKey?: string
 }
 
-/** What registration hands back beyond the token: the recovery identity
- * (present only when the server minted the pair; shown once, never stored)
- * and the enrolled recipient. */
-export interface RegisterResult extends MintedToken {
-  recoveryKey?: string
-  recoveryPublicKey?: string
+/** What registration hands back: the mint of the first token, with the
+ * repository it created. */
+export type RegisterResult = MintedToken
+
+/** The recovery key a server below `auth` revision 2 minted for a
+ * registration that named no recipient, which is every registration this
+ * console sends. Such a server still wraps the repository's key to it and
+ * returns it on this one answer, so the answer is the only copy (decision
+ * 0264). A current server's answer carries none: no wire type names it. */
+export function olderServersRecoveryKey(
+  result: RegisterResult
+): string | undefined {
+  const key: unknown = (result as { recoveryKey?: unknown }).recoveryKey
+  return typeof key === "string" && key !== "" ? key : undefined
 }
 
 /** Step two: the same code proves the seed, and one transaction creates the
- * repository, the sealed material, the credential, the recovery key and the
- * first token. Registration ends LOGGED IN — the response carries the token
- * secret, and the recovery identity rides beside it, once. */
+ * repository, the sealed material, the credential and the first token.
+ * Registration ends LOGGED IN — the response carries the token secret. */
 export function register(input: RegisterInput): Promise<RegisterResult> {
   return request<RegisterResult>("POST", "/register", input, {
     anonymous: true,

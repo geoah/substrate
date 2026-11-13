@@ -13,20 +13,16 @@ which is why signing out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field where the substrate reads one.
 
-The recovery key is made in the browser, as the registration page opens,
-and only its public half is sent; the server never sees the key itself. It is
-a field of the first step's form, beside the name and the password, so a
-password manager that offers to save the new login when that form is
-submitted saves the key on the same item, which the authenticator code then
-joins at the second step. Where the browser cannot make the key, the server
-makes the pair and returns the key once. Either way the key is shown again
-after the repository is created, beside a hidden username field, so a
-manager can still add it to a login it already holds (in 1Password, **Save**
-→ **Login** → **Update** from the toolbar icon's menu).
+Registration has no key step. A server older than the console (below `auth`
+revision 2, [decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md))
+still makes a recovery key for the new repository and answers with it once;
+against such a server the page shows it first, under **Save your recovery
+key**, with a copy button and **Saved, continue**, because that answer is the
+only copy. `substratectl register` prints it the same way.
 
-Once the repository exists, and after the recovery key where one is shown,
-registration asks "What should we call you?". **Continue** creates your own
-contact (a `substrate.reamde.dev/core/contact` record under a minted id, a
+Once the repository exists, registration asks "What should we call you?".
+**Continue** creates your own contact (a
+`substrate.reamde.dev/core/contact` record under a minted id, a
 known person whose `substrate` is your repository's name) and writes the core
 setting `substrate.reamde.dev/core/ownerContact` with that contact's id
 ([decision 0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)).

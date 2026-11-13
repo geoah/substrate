@@ -1133,7 +1133,7 @@ supported"**.
   Apache-2.0, 0.19.1 (2026-09-18). Use it in the Swift and Kotlin apps
   through its FFI bindings.
 - **History:** `/messages` pagination. Decrypting old E2EE history needs
-  server-side key backup unlocked with the user's recovery key.
+  server-side key backup unlocked with the user's secret storage key.
 - **Real-time:** `/sync` with a `since` token, so catch-up is built in.
 - **Actions:** send, reply, react, edit, redact, read receipts, typing: all
   native.

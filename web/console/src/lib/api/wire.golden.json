@@ -938,15 +938,12 @@
     "inviteCode": true,
     "label": false,
     "password": true,
-    "recoveryPublicKey": false,
     "repository": true,
     "skipTotp": false,
     "totpCode": true,
     "totpSecret": true
   },
   "RegisterResult": {
-    "recoveryKey": false,
-    "recoveryPublicKey": false,
     "repository": false,
     "secret": true,
     "token": true

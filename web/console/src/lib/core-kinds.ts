@@ -168,11 +168,10 @@ export const OBSERVED_TRAIT = `${CORE_PACKAGE}/observed`
  * the metric records by it, never by a sample's kind name. */
 export const METRIC_TRAIT = `${CORE_PACKAGE}/metric`
 
-/** The four core kinds a grant glob never reaches (`vocabulary.AuthKinds`,
+/** The three core kinds a grant glob never reaches (`vocabulary.AuthKinds`,
  * record 0080): an entry has to spell one out to grant it. */
 export const AUTH_KINDS: readonly string[] = [
   `${CORE_PACKAGE}/token`,
   `${CORE_PACKAGE}/credential`,
   `${CORE_PACKAGE}/secret`,
-  `${CORE_PACKAGE}/recoverykey`,
 ]

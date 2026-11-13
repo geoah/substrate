@@ -69,6 +69,19 @@ package engine
 // a repository stands at the chain's dialect from its first boot under the
 // binary or from its creation, and the archive's next manifest says so.
 //
+// WHO CLAIMS THE DIALECT. The stamp says which dialect a history's lines are
+// in, and an unclaimed one (no row) holds dialect 1, the history from before
+// the stamp. A history below the chain's dialect is claimed by its
+// conversion, at the boot check, whether or not a step changed a line: the
+// runner's transaction raises the stamp, so a history converts once and an
+// open finds nothing pending. An empty history, which the runner skips, is
+// claimed by its first append (changelogdialect.go stampChangelogDialect), as
+// a new repository's is. An open claims nothing. So with any number of steps
+// a repository stands at the chain's dialect from its first boot under the
+// binary or from its creation, and the manifest says so before a restart. A
+// test of the append's claim over an unclaimed history holds a binary that
+// carries no step (export_test.go WithoutConversionSteps).
+//
 // A CONVERSION IS NOT A REPOSITORY MIGRATION (repomigrate.go, decision 0099).
 // A migration changes what records HOLD, within the current shapes, by
 // appending ordinary writes, and its ledger is the database's, so it runs
@@ -183,7 +196,9 @@ type conversionPass struct {
 // takes the next dialect, raises maxChangelogDialect to it, and lands with a
 // test that converts every kept directory (TestKeptDirectories does for the
 // import; the step's own test says what the lines become).
-var conversionSteps = []conversionStep{}
+var conversionSteps = []conversionStep{
+	{Dialect: 2, Name: "drop_recovery_wrap", Line: convertDropRecoveryWrap},
+}
 
 // The conversion's steps, as the import's test seam names them
 // (testImportFault): every line and carried row rewritten and nothing

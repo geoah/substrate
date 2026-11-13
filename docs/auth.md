@@ -55,8 +55,7 @@ POST /register
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "repository": "ada.example.com",
-       "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
+       "repository": "ada.example.com"}
 ```
 
 A registration may skip the second factor instead: `"skipTotp": true` in
@@ -86,13 +85,6 @@ it. The repository's storage is keyed by an id minted at registration
 instead (`rnd-…`): the directory under the data root, every table, and the
 webhook address the server gives out
 ([decision record 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
-
-A request that names no `recoveryPublicKey` asks the server to mint the
-recovery pair, and the response carries the age identity exactly once,
-beside the token secret: that `recoveryKey` is what opens the repository's
-`recoverykey` record in a backup, and the substrate never stores it. A
-client that generated its own pair sends `recoveryPublicKey` instead and no
-key comes back.
 
 That second call is **one creation act**: the seed (the `core`, `llm` and
 `console` packages and the provider rows), the sealed material, the credential record and
@@ -250,9 +242,8 @@ Five things follow from a token being a record:
   judge's accept of a proposed delete all run at the bundle tier. A judged
   proposal escalates to the owner's review instead, and the owner's own
   accept revokes. The loader refuses a function or agent whose
-  `permissions.writes` names `substrate.reamde.dev/core/token`, `/credential`
-  or `/recoverykey`, and a stored one quarantines its package at the next
-  open.
+  `permissions.writes` names `substrate.reamde.dev/core/token` or
+  `/credential`, and a stored one quarantines its package at the next open.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted. Login and registration mint theirs

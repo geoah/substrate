@@ -59,6 +59,9 @@ type fakeSubstrate struct {
 	// the way the door's rate limiter does when the enrollment before it was a
 	// second ago.
 	paceRegisterOnce bool
+	// olderServerKey, when set, is the recovery key a server below `auth`
+	// revision 2 answers a registration with.
+	olderServerKey string
 	// revokeStatus, when non-zero, makes DELETE /tokens/{id} fail with it.
 	revokeStatus int
 	// totpDisabled makes GET /.well-known/substrate/server.json answer
@@ -696,22 +699,21 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var label string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
-	// Echo the recovery half the way the server does: the client-generated
-	// recipient comes straight back, and nothing mints server-side when one
-	// was supplied.
-	var recipient string
-	_ = json.Unmarshal(f.lastBody["recoveryPublicKey"], &recipient)
 	// The repository the way the server answers it: the name as sent when it
 	// carries a dot, else that label under the host the request reached.
 	var repository string
 	_ = json.Unmarshal(f.lastBody["repository"], &repository)
 	repository = vocabulary.RepositoryAuthority(repository, r.Host)
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":             substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
-		"secret":            fakeSecret,
-		"repository":        repository,
-		"recoveryPublicKey": recipient,
-	})
+	answer := map[string]any{
+		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
+		"secret":     fakeSecret,
+		"repository": repository,
+	}
+	if f.olderServerKey != "" {
+		answer["recoveryKey"] = f.olderServerKey
+		answer["recoveryPublicKey"] = "age1older"
+	}
+	writeJSON(w, http.StatusCreated, answer)
 }
 
 // handleLogin mints a token record and hands back its secret once. There is no

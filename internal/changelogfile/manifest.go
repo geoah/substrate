@@ -479,8 +479,8 @@ func WriteManifestToKey(repoDir string, m Manifest) error {
 
 // WriteManifest checks the manifest and writes it atomically into the
 // repository directory, replacing any manifest there. ManifestFormat is
-// written; a format-1 manifest is written back only as it was read, by the
-// offline rewrap of a directory from before ids, which the boot converts.
+// written; a format-1 manifest is written only as it was read, for a
+// directory from before ids, which the boot converts.
 func WriteManifest(repoDir string, m Manifest) error {
 	if m.Format != ManifestFormat && m.Format != ManifestFormatBeforeIDs && m.Format != ManifestFormatArchive {
 		return fmt.Errorf("%w: writing format %d, this package writes %d", ErrManifestFormat, m.Format, ManifestFormat)

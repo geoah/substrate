@@ -413,6 +413,79 @@ func (s *service) importDirectory(ctx context.Context, id string) (Repository, r
 	return repo, out, s.giveUpDirectory(ctx, ds, dir)
 }
 
+// restoreAdmission is what a restore's admission decided (admitRestore).
+type restoreAdmission struct {
+	// mint says the manifest's data key does not open under this host's key
+	// and the operator listed the repository: the restore mints a new one,
+	// and cause is why the old one did not open.
+	mint  bool
+	cause error
+	// leftBehind says the restore keeps sealed values its key does not
+	// open, as the record of their loss, and marks the row for the open to
+	// clear them (lostsecrets.go).
+	leftBehind bool
+}
+
+// admitRestore is EVERY REFUSAL A RESTORE CAN MAKE, made here and nowhere
+// else, so a check added later is made on every door: the restore itself
+// (restoreRow), a take's staging before its choice is recorded
+// (stageTakeInto), and a recorded take again before the boot removes
+// anything (stageForTake). It writes nothing, and reads the credential key
+// and SUBSTRATE_IMPORT_WITHOUT_SECRETS as they are when it runs, so a
+// listing removed after a take was recorded refuses that take with the
+// repository whole and the choice standing (the archive's contract, rule 1:
+// a refusal changes nothing). where names the copy for a refusal.
+func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, sealed []changelogfile.SealedRecord, where string) (restoreAdmission, error) {
+	var adm restoreAdmission
+	if err := validRepositoryName(m.Authority); err != nil {
+		return adm, fmt.Errorf("the manifest names an authority that cannot be a repository's name: %w", err)
+	}
+	// One name, one repository: a history whose name another repository in
+	// this database holds is a copy of another repository, not this one. A
+	// take's own repository holds its name under the same id.
+	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil && other.ID != m.ID {
+		return adm, fmt.Errorf("%s is repository %s, and this database holds another repository of that name (id %s); move it out of the way or delete that repository",
+			where, m.Authority, other.ID)
+	} else if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+		return adm, err
+	}
+	if err := s.admitManifest(m); err != nil {
+		return adm, err
+	}
+	if len(m.DEK) == 0 {
+		return adm, fmt.Errorf("the manifest of repository %s carries no wrapped DEK, so nothing could open its sealed store; restore it from a copy whose manifest holds one",
+			m.Authority)
+	}
+	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
+	if err != nil {
+		if !s.acceptsLostSecrets(m.ID, m.Authority) {
+			return adm, refuseUnopened(m.Authority, m.ID, err)
+		}
+		// A host with no credential key would store the new DEK unsealed.
+		if len(s.credKey) == 0 {
+			return adm, fmt.Errorf("repository %s is listed in %s, but this host has no credential key: restoring it without its secrets would store its new DEK unsealed, so nothing was restored. Set SUBSTRATE_CREDENTIAL_KEY and restart (the DEK in its manifest does not open: %w)",
+				m.Authority, ImportWithoutSecretsVar, err)
+		}
+		// Nothing opens under the DEK the restore mints: every sealed value
+		// and every spooled request is left behind.
+		adm.mint, adm.cause, adm.leftBehind = true, err, true
+		return adm, nil
+	}
+	// Every sealed value must open under that DEK: a repository's payloads
+	// are bound-framed under it and nothing else (0059), so one that does not
+	// open is a copy to restore from elsewhere rather than a repository to
+	// serve. A repository the operator listed is the exception: its values
+	// that do not open are the secrets it left behind.
+	if err := sealedFilesOpenUnder(sealed, dek); err != nil {
+		if !s.acceptsLostSecrets(m.ID, m.Authority) {
+			return adm, fmt.Errorf("the sealed store of repository %s does not open under the DEK its manifest carries: %w. Restore it from a copy whose values open, or list it in %s to restore it without the secrets that do not",
+				m.Authority, err, ImportWithoutSecretsVar)
+		}
+		adm.leftBehind = true
+	}
+	return adm, nil
+}
+
 // restoreRow checks a manifest a restore reads (a 0.x directory's, or an
 // archive's) and makes it the repository's row, under the writer lease. The
 // row, its dialect stamps and the import marker naming head commit in one
@@ -438,14 +511,6 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 	if err := s.importStage(importBeforeRow); err != nil {
 		return Repository{}, noop, err
 	}
-	// One name, one repository: a history whose name another repository in
-	// this database holds is a copy of another repository, not this one.
-	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {
-		return Repository{}, noop, fmt.Errorf("%s is repository %s, and this database holds another repository of that name (id %s); move it out of the way or delete that repository",
-			where, m.Authority, other.ID)
-	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return Repository{}, noop, err
-	}
 	// THE WRITER LEASE BEFORE THE ROW, for the reason a creation takes it
 	// before its seed (engine.go createSeededRepository): the insert below
 	// publishes the repository while its changelog table is still empty, and
@@ -465,27 +530,27 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 		release()
 		return Repository{}, noop, err
 	}
-	// Both reader requirements before the row: a refusal from the fold, with
-	// the rows already committed, is the outage the manifest exists to
-	// prevent.
-	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
-		return fail(err)
-	}
-	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {
-		return fail(err)
-	}
-	if len(m.DEK) == 0 {
-		return fail(fmt.Errorf("the manifest of repository %s carries no wrapped DEK, so nothing could open its sealed store; restore it from a copy whose manifest holds one",
-			m.Authority))
-	}
-	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
+	// Every refusal before the row: a refusal from the fold, with the rows
+	// already committed, is the outage the manifest exists to prevent.
+	adm, err := s.admitRestore(ctx, m, sealed, where)
 	if err != nil {
-		return fail(fmt.Errorf("the DEK in the manifest of repository %s does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key it was written under, or move it out of the way",
-			m.Authority, err))
+		return fail(err)
 	}
-	if err := sealedFilesOpenUnder(sealed, dek); err != nil {
-		return fail(fmt.Errorf("the sealed store of repository %s does not open under the DEK its manifest carries: %w. Restore it from a copy whose files open",
-			m.Authority, err))
+	if adm.mint {
+		// Without the key, the secrets stay behind because the operator
+		// listed the repository (lostsecrets.go); the rest of the copy
+		// restores as written.
+		dek, err := s.leaveSecretsBehind(m.Authority, m.ID, adm.cause)
+		if err != nil {
+			return fail(err)
+		}
+		if m.DEK, err = s.wrapDEK(dek, m.ID); err != nil {
+			return fail(err)
+		}
+		m.DEKKeyID = s.credKeyID
+		if err := s.importStage(leftBehindStage); err != nil {
+			return fail(err)
+		}
 	}
 	repo := Repository{ID: m.ID, Authority: m.Authority, CreatedAt: m.CreatedAt, DEK: m.DEK, DEKKeyID: m.DEKKeyID}
 	if repo.CreatedAt.IsZero() {
@@ -497,7 +562,7 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 	if repo.HistoryGeneration, err = newHistoryGeneration(); err != nil {
 		return fail(err)
 	}
-	if err := s.insertRestoredRow(ctx, repo, m, head, rec); err != nil {
+	if err := s.insertRestoredRow(ctx, repo, m, head, rec, adm.leftBehind); err != nil {
 		return fail(err)
 	}
 	// The row is in, marked, and the import that follows is idempotent: a
@@ -511,24 +576,25 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 }
 
 // insertRestoredRow is restoreRow's one transaction: the control-plane row,
-// the dialects the manifest recorded, so the store carries the WRITER's
+// marked when the restore left secrets behind for the open to clear, the
+// dialects the manifest recorded, so the store carries the WRITER's
 // requirements rather than this binary's maximum (a dialect left at 0, a
 // changelog nobody had claimed, stamps nothing, as the writer had not), and
 // the import marker at head, and the record (rule 8): the new archive the
 // repository's passes write, and the manifest a restore reads from, so an
 // import a boot finishes reads that one snapshot. The scoped rows take their
 // repository from the transaction's own setting, as a scoped connection's do.
-func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord) error {
+func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord, leftBehind bool) error {
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
+		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id, secrets_left_behind)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		repo.ID, repo.Authority, repo.CreatedAt, repo.DEK, repo.HistoryGeneration,
-		nullString(repo.DEKKeyID)); err != nil {
+		nullString(repo.DEKKeyID), leftBehind); err != nil {
 		return fmt.Errorf("create the row from the manifest: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `SELECT set_config('substrate.repository', $1, true)`, repo.ID); err != nil {

@@ -933,7 +933,7 @@ const totpEnrollment: Shape<TOTPEnrollment> = {
 }
 
 /** Registration (auth.ts): the request the door decodes and its answer, which
- * is the mint plus the repository and the recovery material. */
+ * is the mint with the repository it created. */
 const registerInput: Shape<RegisterInput> = {
   inviteCode: true,
   repository: true,
@@ -942,7 +942,6 @@ const registerInput: Shape<RegisterInput> = {
   totpCode: true,
   skipTotp: false,
   label: false,
-  recoveryPublicKey: false,
 }
 
 /** Login (auth.ts): the repository, the two factors and the token label. */
@@ -958,11 +957,7 @@ const sessionCredential: Shape<SessionCredential> = {
   signedOut: false,
 }
 
-const registerResult: Shape<RegisterResult> = {
-  ...mintedToken,
-  recoveryKey: false,
-  recoveryPublicKey: false,
-}
+const registerResult: Shape<RegisterResult> = mintedToken
 
 /** The agent chat stream (agents.ts). */
 const agentResult: Shape<AgentResult> = {

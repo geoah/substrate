@@ -669,7 +669,6 @@ func TestGrantGlobNeverMatchesAuthKinds(t *testing.T) {
 		"substrate.reamde.dev/core/token",
 		"substrate.reamde.dev/core/credential",
 		"substrate.reamde.dev/core/secret",
-		"substrate.reamde.dev/core/recoverykey",
 	}
 	for _, k := range auth {
 		for _, pat := range []string{"*", "substrate.reamde.dev/*", "substrate.reamde.dev/core/*"} {
@@ -689,8 +688,8 @@ func TestGrantGlobNeverMatchesAuthKinds(t *testing.T) {
 			t.Fatalf("%s must still be grantable by name", k)
 		}
 	}
-	// An ordinary core kind is reached by a glob: the carve-out is four kinds,
-	// not the package.
+	// An ordinary core kind is reached by a glob: the carve-out is three
+	// kinds, not the package.
 	if !vocabulary.GrantMatches("*", "substrate.reamde.dev/core/agent") ||
 		!vocabulary.GrantMatches("substrate.reamde.dev/core/*", "substrate.reamde.dev/core/agent") {
 		t.Fatal("a glob must reach the core kinds that are not auth material")
@@ -702,14 +701,12 @@ func TestGrantGlobNeverMatchesAuthKinds(t *testing.T) {
 }
 
 // TestWritesRefuseTheOwnersAuthKinds: a function's or an agent's
-// `permissions.writes` may not name the token, the login credential or the
-// recovery key even spelled out, and the refusal names the kind and says whose
-// it is. A glob over core still loads, since a glob never reaches them.
+// `permissions.writes` may not name the token or the login credential even
+// spelled out, and the refusal names the kind and says whose it is. A glob over core still loads, since a glob never reaches them.
 func TestWritesRefuseTheOwnersAuthKinds(t *testing.T) {
 	owned := map[string]string{
-		"substrate.reamde.dev/core/token":       "tokens are the owner's alone",
-		"substrate.reamde.dev/core/credential":  "the login credential is the owner's alone",
-		"substrate.reamde.dev/core/recoverykey": "the recovery key is the owner's alone",
+		"substrate.reamde.dev/core/token":      "tokens are the owner's alone",
+		"substrate.reamde.dev/core/credential": "the login credential is the owner's alone",
 	}
 	for kind, why := range owned {
 		want := `data.permissions.writes[1]: "` + kind + `" is refused: ` + why

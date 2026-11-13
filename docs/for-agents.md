@@ -251,9 +251,8 @@ was fixed. The same section is the body of the release on the
 ## Never
 
 - Never read, list, export or repeat the contents of
-  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
-  `/recoverykey`. They are the owner's auth material; nothing an agent does
-  needs them.
+  `substrate.reamde.dev/core/token`, `/credential` or `/secret`. They are the
+  owner's auth material; nothing an agent does needs them.
 - Never write a key or a password anywhere but a secret-typed property, and
   never pass one as a command line argument.
 - Never invent an id, address a record without its kind, or address a

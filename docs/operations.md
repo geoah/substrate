@@ -187,7 +187,8 @@ boot.
 | `SUBSTRATE_REQUEST_BURST_PER_PERSON` | `500`                           | How many requests one person may send at once before `SUBSTRATE_REQUESTS_PER_PERSON` paces them: five seconds of the default rate, so a page that loads many things at once is not paced. At least `1` beside a positive rate; a lower value refuses the boot, naming the variable. |
 | `SUBSTRATE_CHAT_TURNS_PER_PERSON` | `4`                                | How many chat turns with an agent one person runs at once. Each holds a model call and keeps running after its client leaves; one more is refused `409 conflict` until one finishes or is stopped. `0` is the default; a negative value refuses the boot, naming the variable. |
 | `SUBSTRATE_HEALTH_FAILING_AFTER` | `1h`                              | How long every delivery of a trigger must have parked, since its newest `ok` run, before the dispatcher opens its `trigger.failing/<trigger id>` alert and `trigger status` and `sync status` read `failing`; a parked delivery of the trigger must still stand. The next `ok` delivery, dispatched or retried by hand, resolves the alert whatever the window, and so do the end of its last standing park and the next pass after it is disabled or deleted. Zero or negative refuses the boot, naming the variable. See [driving triggers](functions.md#driving-triggers). |
-| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a live repository's DEK under another host key; an export or a copy of an archive moves between keys through `repository rewrap` ([restore without the credential key](#restore-without-the-credential-key)). |
+| `SUBSTRATE_CREDENTIAL_KEY`     | required                               | Wraps each repository's data-encryption key (DEK), which encrypts the sealed store: every secret-typed property's material, the password hash, the TOTP seed and stored provider tokens (AES-256-GCM). It is key material, not a passphrase: base64 of exactly 32 bytes, the AES-256 key itself. Generate one with `openssl rand -base64 32`; a host whose key is empty or any other shape refuses to boot, naming the variable (ADR [0024](decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)). A host whose key does not open the wrapped DEKs the store already holds refuses to boot too, naming each repository, the id of the key its wrap was written under and the id of the key this host holds (`repositories.dek_key_id`: 16 hex digits of a one-way hash over the key, never the key): that is a wrong key or a store from somewhere else. No command re-wraps a repository's DEK under another host key: the key is the one thing that keeps a repository's secrets across hosts, and an archive or an export brought to a host without it restores only without them ([restore without the credential key](#restore-without-the-credential-key)). |
+| `SUBSTRATE_IMPORT_WITHOUT_SECRETS` | — (empty: a copy this host's key does not open refuses the boot) | The repositories, each by its name or its id and separated by commas, that the boot restores without their secrets when this host's `SUBSTRATE_CREDENTIAL_KEY` does not open their copy's DEK: the operator's acceptance of the loss, after the boot refused the copy naming the key it was written under. It reaches an archive the database has no row of, an archive the operator takes (`archive resolve --take-archive`) and a 0.x directory. A listed repository restores under a new DEK wrapped under this host's key, and every record and every line of history arrives, its sealed values that do not open kept until its next open takes each one out (a directory from before repository ids takes its id at the same boot, and the listing reaches that step too); its next open deletes the webhook requests it had spooled, clears every secret its records named, whatever state their package is in, and raises an alert for each, so its owner reconnects each account and enters each API key again, and signs in only after `substratectl user reset`, run with the server stopped. A listed repository this host's key does open restores with its secrets, as if it were not listed. It reaches only a copy being restored: a repository the database holds whose DEK this host's key does not open still refuses the boot. The operator's commands that open as the writer (`archive resolve`, `archive import`, `repository rebuild` and the others) read it too, split the same way, since their start restores and takes as the server's does. Boots with a warning naming the list. See [restore without the credential key](#restore-without-the-credential-key). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_DNS_RESOLVER` | the system's resolver | The DNS server (`host:port`) every `_substrate` TXT lookup asks: Verify domain ([decision 0208](decisions/0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md)), an app's publisher (0209) and a published package's document (0212). A TXT answer is only as trustworthy as the resolver that fetched it and few zones are signed, so point this at a validating resolver for DNSSEC. Each lookup is bounded at 5 seconds. A value that is not `host:port` refuses the boot. |
 | `SUBSTRATE_INSECURE_AUTHORITY_DOCS` | unset | **For testing an unpublished authority document.** A comma-separated list of `authority=path`: each named authority's document is read from the file in place of its `_substrate` TXT record when the server decides whether an app is verified (see [name your publisher](apps.md#name-your-publisher)). Nothing limits it to development: whoever writes the file decides which apps read as that authority's. The approval page says a file on this server verified the publisher, not DNS, and the token records `appAuthorityFromFile`. Boots with a warning naming each authority, and refuses to boot when a file cannot be read. |
@@ -258,8 +259,7 @@ opens without anything else. The credential key itself is in neither;
 `dekKeyId` names it (16 hex digits of a one-way hash over the key), so a host holding
 another key is told which key a repository wants. Every sealed value is
 ciphertext under that DEK and nothing else: the server refuses a plain
-payload and never tries the host key on one, so a recovery through the
-recovery key is complete
+payload and never tries the host key on one
 ([decision 0059](decisions/0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md)).
 
 A release before the archive kept each repository's history here too: a
@@ -474,17 +474,36 @@ before the request is sent.
    **Taking the archive never removes anything of the database until the
    whole snapshot it will install has been read, checked and is on local
    disk**: every piece against its checksum and every line against its own,
-   every sealed value against its version and opened under the data key,
-   every spooled request, and every blob of the archive against its digest,
+   every sealed value against its version, every spooled request, and every
+   blob of the archive against its digest,
    copied to `<data root>/archive-take/<id>/<stage>/` with `staged.json`
    written last. **A staged copy has no authority of its own.** Only a take
    recorded in the database starts or continues a replacement, and it
    installs only the copy staged for exactly that choice: the repository,
    the archive and the manifest, by name and by the hash the manifest's
-   name carries. `archive resolve --take-archive` stages, in a directory of
-   its own, before it records the choice; a read or a check that fails
-   records nothing and changes nothing, an earlier choice's copy included,
-   says why, and the choice is still the operator's. A second choice is
+   name carries. **The staged copy is read as its restore will read it,
+   twice**, to its end and writing nothing: every history piece against
+   its hash and every line against its own, the sealed values, the spooled
+   requests and the blobs, by the code the restore reads them with, and with
+   them the restore's own checks of the manifest (its name, its dialects,
+   its data key under this host's `SUBSTRATE_CREDENTIAL_KEY` or the
+   operator's listing in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` on a host that
+   has a key, its sealed values under that key:
+   [restore without the credential key](#restore-without-the-credential-key)).
+   Once before the choice is recorded, and again at the boot before
+   anything of the repository goes, with the key and the listing as they
+   are then. A refusal at the boot leaves the repository whole and served
+   and its choice recorded, and logs why; the next boot tries again. A take
+   reads its copy twice for this, so it costs one more reading of the
+   history than a restore. After the removal, what can still fail is the
+   database, the staged copy changed between the two readings, and the
+   conversion and fold of what was read; the choice stays recorded and the
+   store keeps the archive it names, so after the repair (for a changed
+   copy, removing `archive-take/<id>/<stage>/`, which the next boot stages
+   again from the store) a boot restores the repository. `archive resolve --take-archive` stages,
+   in a directory of its own, before it records the choice; a read or a
+   check that fails records nothing and changes nothing, an earlier choice's
+   copy included, says why, and the choice is still the operator's. A second choice is
    staged beside the first and replaces it only once it is recorded. The
    record is the control plane's (`archive_takes`), so it outlives the
    repository's rows: the boot that carries the choice out stages the
@@ -1085,8 +1104,8 @@ docker run -v /srv/site:/srv/site:ro -e SUBSTRATE_SITE_DIR=/srv/site ...
 
 The server speaks plain HTTP and never terminates TLS. Login and registration
 send the password and the TOTP code in the request body and answer with a
-bearer secret, the TOTP enrollment seed and the recovery key; every other API
-request carries the bearer token. Serving the port to anyone beyond loopback
+bearer secret and the TOTP enrollment seed; every other API request carries
+the bearer token. Serving the port to anyone beyond loopback
 without TLS in front of it is unsupported.
 
 The binary listens on `127.0.0.1` (`SUBSTRATE_BIND_ADDRESS`) and refuses to
@@ -1276,9 +1295,12 @@ it trusts:
   changelog speaks a newer dialect than this binary can replay", "the store
   speaks a newer schema dialect than this binary"); so does a manifest
   carrying no wrapped DEK, one whose DEK this host's
-  `SUBSTRATE_CREDENTIAL_KEY` does not open, one whose DEK does not open
-  every sealed value, and one naming a repository whose name another
-  repository in the database holds. Each refusal comes before the row is
+  `SUBSTRATE_CREDENTIAL_KEY` does not open unless
+  `SUBSTRATE_IMPORT_WITHOUT_SECRETS` lists it
+  ([restore without the credential key](#restore-without-the-credential-key)),
+  one whose DEK does not open every sealed value unless the same variable
+  lists it, and one naming a repository whose name another repository in
+  the database holds. Each refusal comes before the row is
   created, so a refused restore reserves its name for nothing. In a restore
   and in an import that has begun, a line whose `sum` does not verify, a
   piece that is not the run its name says, and an archive whose pieces do
@@ -1862,11 +1884,12 @@ point holds is there to stream, and the orphan sweep deletes what it held
 back on a later pass. The tar carries no host key:
 the manifest keeps the DEK wrapped under this server's
 `SUBSTRATE_CREDENTIAL_KEY`, so a same-key restore boots with nothing else,
-and the `recoverykey` record in the history holds the same DEK wrapped to
-the owner's recovery key, which is what opens it anywhere else. One export
-streams per repository at a time and a second request answers `409
-conflict`; a response the server could not finish is aborted rather than
-closed as a tar that looks complete.
+and a restore under any other key brings every record back without the
+secrets
+([restore without the credential key](#restore-without-the-credential-key)).
+One export streams per repository at a time and a second request answers
+`409 conflict`; a response the server could not finish is aborted rather
+than closed as a tar that looks complete.
 
 ```
 tar -x -C "$SUBSTRATE_DATA_ROOT"/archive -f ada.example.com-1234.tar   # on a stopped server with the same key, then boot
@@ -1887,11 +1910,10 @@ every sealed value is ciphertext under that DEK. The archive without the key
 is every record and every attachment in the clear and no secret; the key
 beside the archive is every secret too. On compose the key is the
 `substrate-keys` volume (`/keys/credential.key`) unless the environment sets
-one. The user's own recovery key wraps the same DEK in the repository's
-`recoverykey` record, and `substratectl repository rewrap` opens a copy with
-it ([restore without the credential key](#restore-without-the-credential-key)),
-so losing the host key leaves the sealed values inert only for a user who
-also lost the recovery key.
+one. The key is the operator's to keep, and it is the one thing that keeps
+the secrets: nothing else wraps the DEK, so a copy restored without it comes
+back without them
+([restore without the credential key](#restore-without-the-credential-key)).
 
 **A database dump is optional beside the archive.** The tables hold nothing
 the archive lacks but the runtime state named below and the writes since the
@@ -1956,54 +1978,102 @@ next boot's resumed import has its cause in the log above it.
 
 A boot that refuses a restore names what it refused: a bad `sum`, a piece
 that is not the run its name says, or a DEK this host's
-`SUBSTRATE_CREDENTIAL_KEY` does not open. Move `repositories/<id>/` out of
-the archive, or restore it from an older copy, and boot again.
+`SUBSTRATE_CREDENTIAL_KEY` does not open (below). Move `repositories/<id>/`
+out of the archive, or restore it from an older copy, and boot again.
 
 ### Restore without the credential key
 
-An archive copied to a host whose `SUBSTRATE_CREDENTIAL_KEY` is not the one
-it was written under is opened with the user's recovery key instead: the
-`AGE-SECRET-KEY-1…` line kept at registration. An export is such a copy once
-extracted anywhere (`tar -x -C /srv/restore -f ada.example.com-1234.tar`).
-Run `repository rewrap` on the repository's `repositories/<id>` directory of
-the copy, in its restore location, with the new host's key in the
-environment. It reads the last `recoverykey` record out of the pieces, opens
-its `sealedKey` with the recovery key, checks that the data-encryption key it
-recovered opens every sealed value under `sealed/`, wraps that key under
-`SUBSTRATE_CREDENTIAL_KEY` and writes it into the next manifest (a 0.x
-directory's `repository.json` in place). Then move the
-directory into the archive the server reads and boot, which restores it as
-above. It reads a 0.x directory the same way, which the boot then imports
-from the data root.
+Moving a repository to another host means bringing `SUBSTRATE_CREDENTIAL_KEY`
+with it. The key wraps the repository's DEK and nothing else does
+([decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md)),
+so it is what keeps the secrets, the sealed store: the login's password hash
+and TOTP seed, every account's OAuth token, every secret-typed property such
+as an LLM provider's API key. With the same key set, the copied archive (an
+export extracted into the archive is one) restores with all of them, as
+above.
+
+An archive brought to a host whose key is another one is refused at boot,
+and so is a 0.x directory and a take of the archive
+(`archive resolve --take-archive`). The refusal names the repository's name
+and id, the id of the key the copy was written under and the id of the key
+this host holds. Set the key it names and restart, which keeps the secrets.
+Where that key is lost, accept the loss instead: list the repository, by its
+name or its id, in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` (comma-separated for
+several) and restart.
 
 ```
-SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck --identity-file ./recovery.key
-mv /srv/restore/repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck "$SUBSTRATE_DATA_ROOT"/archive/repositories/
-SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # restores at boot
+SUBSTRATE_IMPORT_WITHOUT_SECRETS=ada.example.com SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # restores at boot, without the secrets
 ```
 
-**The destination database must hold no row for the repository.** The boot
-restores an archive whose repository the database does not hold and creates
-the row from the manifest; for a repository the database holds, the row is
-the truth, and the next archive pass writes the row's wrap into its next
-manifest. So the rewrap is for a fresh database, or one this
-repository was never restored into; rewrapping in place in a live archive
-changes nothing the next pass keeps.
+The restore mints the repository a new DEK under this host's key and brings
+every record and every line of history, the sealed values that do not open
+under the new key included; the open that follows deletes the spooled
+webhook requests nothing here opens. A directory from before repository ids
+takes its id at the same boot, under the same listing.
 
-The command takes no database and no server, and prints neither the recovery
-key nor the data-encryption key. Without `--identity-file` it reads the
-recovery key from stdin: `--identity-stdin` for a script, a prompt that does
-not echo otherwise; the key is never an argument. The file may be the one
-`age-keygen -o` writes, comment lines included. It refuses a directory with
-no manifest, one whose history holds no `recoverykey` record (the
-repository never enrolled one, so only the key it was written under opens it),
-one with nothing under `sealed/` (a registered repository seals at least its
-login credential, so the copy is incomplete), and one whose sealed values
-the recovered key does not open. Every refusal comes before anything is
-written, so a refused rewrap leaves the directory as it was. Nothing locks
-the copy, so rewrap it outside any archive a running server writes. The
-rewrap revokes nothing: a copy taken before it still opens under the old host
-key.
+**The rule.** After the restore, no read, listing or use of a secret-typed
+property returns or acts on a reference whose sealed value the store does
+not hold, wherever in the record the reference sits: it reads as unset, whatever state its package is in then or later
+(admitted, parked, uninstalled with its records left, installed again) and
+however its type is spelled (`secret`, a property type based on it, the
+OAuth facility's `tokenRef`), and the owner is shown what to put back. It
+holds by order, without asking any declaration: a sealed value that does not
+open names its ref and the record holding it in the clear, so it is itself
+the record of its loss, and nothing removes it but the write that clears its
+ref. The restore keeps each one and marks the repository's row as it creates
+it; the repository's next open takes each one's ref out of the record that
+holds it, in whatever property holds it and at any depth (in an object or a
+list, leaving the rest of what they hold), raises an alert naming the record
+and the property (the console's list of what to put back), removes the
+value in the same transaction, and lifts the mark once every one is cleared.
+A value whose ref its record does not hold anywhere stays, and so does the
+mark, until the GC's sweep takes the value no record holds. The archive's next pass
+then leaves the value out of its manifest, because the table no longer
+holds it. Putting a value back resolves its alert. A boot or an open cut
+short anywhere is finished by the next one, since what is left is found
+again. A value that opens under the key is never touched, so a retry under
+the key the copy was written under keeps every secret, and the same archive
+restored again into another database, under the same listing, goes on where
+the first left off. Once the mark is lifted, a sealed value that does not
+open is damage, not a loss to accept. The owner puts each one back:
+
+- **The sign-in.** The login credential loses its password, so nobody signs
+  in until the operator stops the server and runs `substratectl user reset
+  <repository>` ([operator recovery](#operator-recovery)), which needs this
+  host's key and the database and sets a new password and TOTP enrollment to
+  hand to the owner. A token minted before the move, a console session or an
+  app's, is a record and travels, so it still opens the repository.
+- **Each connected account.** An account whose OAuth token stayed behind
+  reads `tokenStatus: erroring`, its `tokenError` saying the sign-in did not
+  move with the repository, and the console shows it with its reconnect
+  button. The owner reconnects each one.
+- **Each API key.** An LLM provider's `apiKey`, and every other secret-typed
+  property, reads unset. The owner enters each one again.
+
+In order, as the operator types it:
+
+```
+SUBSTRATE_IMPORT_WITHOUT_SECRETS=ada.example.com SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # 1. start: it restores
+# 2. stop the server: the reset opens the repository as its writer, which a running server is
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… substratectl --dsn "$DATABASE_URL" user reset ada.example.com   # 3. a new password and second factor for the owner
+SUBSTRATE_DATA_ROOT=… SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substrate   # 4. start again; the listing may go
+```
+
+The owner then signs in with what step 3 printed, and puts back what the
+console's alerts name: each account reconnected, each key entered again.
+
+The host must hold a credential key of its own. A host with none refuses a
+listed repository before it restores anything, naming
+`SUBSTRATE_CREDENTIAL_KEY`: the new DEK would be stored unsealed.
+`substrated` does not boot without a key, so this is the engine's own guard
+for whatever else opens it.
+
+A listed repository this host's key does open restores with its secrets, as
+if it were not listed. The variable reaches only a copy being restored: a
+repository the database already holds, whose DEK this host's key does not
+open, still refuses the boot ([configuration](#configuration)). So moving
+without the key means bringing the archive without the database: restore it
+into an empty database, never a dump of the old one.
 
 **What comes back, and what does not.** Trigger state is in the history:
 every cursor advance, schedule fire, parked failure and paged-drain page is a
@@ -2116,8 +2186,7 @@ commands that open the engine also read `SUBSTRATE_DATA_ROOT`, and the
 `SUBSTRATE_ARCHIVE` settings the server runs with, so they read the archive
 the server writes; none of them runs an archive pass.
 
-**Four of them run beside a live server; four need it stopped; one takes no
-database.** `repository list` and `repository inspect` read the tables
+**Four of them run beside a live server; four need it stopped.** `repository list` and `repository inspect` read the tables
 directly; `repository verify` and `repository reembed` open the engine
 read-only, so they apply no migration, run no boot check and append nothing:
 `verify` reports what it finds instead of repairing it, and `reembed` writes
@@ -2128,8 +2197,6 @@ the repository as its writer, and a running server holds its
 command refuses, naming the lease, until the server is stopped. Opening as
 the writer runs the boot check, so they also finish an interrupted import
 and restore what the archive holds and the database does not.
-`repository rewrap` acts on a copy before any boot has restored it, so it
-needs `SUBSTRATE_CREDENTIAL_KEY` and the directory, and no DSN.
 
 ```
 DATABASE_URL=… substratectl repository list
@@ -2139,12 +2206,10 @@ DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.exa
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
-SUBSTRATE_CREDENTIAL_KEY=… substratectl repository rewrap ./repositories/rnd-0vrkvsgbs6bnz2sjy4196kccck --identity-file ./recovery.key
 ```
 
 Every command that takes a repository takes its name, as above, or its id;
-`repository list` prints both. `rewrap` takes a directory, which is named by
-the id.
+`repository list` prints both.
 
 **On the compose deployment, run them inside the container.** The image
 carries `substratectl` beside the server, because `compose.yaml`
@@ -2275,8 +2340,7 @@ with, so the command goes on refusing and nothing says why.
 
 **A lost second factor is an operator's job, and only an operator's.** Every
 credential-change endpoint requires the current TOTP code, and no route resets
-a credential from the recovery key: the recovery key opens the sealed store's
-data-encryption key, not the login. So `user reset`, run on the box or through
+a lost credential. So `user reset`, run on the box or through
 `docker compose exec`, is the whole of the escape from a lockout in v1. A
 deployment nobody can exec into is a deployment where a lost authenticator is
 permanent.

@@ -199,24 +199,18 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.svc.Register(r.Context(), substrate.RegisterInput{
-		Repository:        repository,
-		Password:          req.Password,
-		TOTPSecret:        req.TOTPSecret,
-		TOTPCode:          req.TOTPCode,
-		SkipTOTP:          req.SkipTOTP,
-		Label:             req.Label,
-		RecoveryPublicKey: req.RecoveryPublicKey,
+		Repository: repository,
+		Password:   req.Password,
+		TOTPSecret: req.TOTPSecret,
+		TOTPCode:   req.TOTPCode,
+		SkipTOTP:   req.SkipTOTP,
+		Label:      req.Label,
 	})
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, substrate.Registered{
-		MintedToken: substrate.MintedToken{
-			Token: res.Token, Secret: res.Secret, Repository: res.Repository,
-		},
-		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
-	})
+	writeJSON(w, http.StatusCreated, substrate.Registered{MintedToken: substrate.MintedToken(res)})
 }
 
 // --- login ---

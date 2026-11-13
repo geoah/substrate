@@ -47,11 +47,7 @@ prints both: the directory under the data root and the archive's prefix are
 named by the id. `repository list` also shows each repository's archive mark
 (`ARCHIVED`: the seq the archive holds every line up to and its age, `never`
 before the first pass), and `repository inspect` how far that is behind the
-head. The one exception is `repository rewrap`, which opens a copy of a
-repository (an extracted export's `repositories/<id>`, whose newest
-archive it rewraps in a manifest of the next epoch, or a directory a
-release before the archive wrote) with the user's recovery key for a new
-`SUBSTRATE_CREDENTIAL_KEY` and needs no database at all.
+head.
 [Running a substrate](operations.md) is where that hat lives.
 
 `substratectl version` belongs to neither hat: it prints the client version
@@ -377,8 +373,10 @@ first consent.
 
 `substratectl alerts` lists the open [alerts](functions.md#driving-triggers),
 newest first: one line per ongoing problem with its key (such as
-`trigger.parked/<trigger id>`), level, state, count, when it was first and
-last seen, and its summary. `--all` adds the resolved ones, and `-o json` or
+`trigger.parked/<trigger id>`, or `secret.left-behind/<record path>/<property>`
+for a value an import without secrets left behind, which putting a value
+back resolves), level, state, count, when it was first and last seen, and
+its summary. `--all` adds the resolved ones, and `-o json` or
 `-o yaml` prints them as one array of `apply`-able documents. An alert is an
 ordinary record, so resolving one by hand is `get`, setting `state` to
 `resolved`, and `apply`.
@@ -483,8 +481,8 @@ counts, and how to restore it. `-o` names the file, `-o -` streams the tar
 to stdout with the report on stderr, and an existing file is never
 overwritten. Restoring is extracting it into the archive a stopped server
 reads (`SUBSTRATE_ARCHIVE`, by default `<SUBSTRATE_DATA_ROOT>/archive`) and
-booting, or, on a host with another credential key, `repository rewrap` with
-the recovery key first
+booting with the same `SUBSTRATE_CREDENTIAL_KEY`. A host with another key
+refuses it, unless its operator accepts restoring it without its secrets
 ([restore without the credential key](operations.md#restore-without-the-credential-key)).
 
 ## Verifying the repository's name

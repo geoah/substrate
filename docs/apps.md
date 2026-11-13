@@ -936,7 +936,7 @@ added sample lives under: `read:~/tasks/*` becomes
 scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
-  `…/secret`, `…/recoverykey`), read or write;
+  `…/secret`), read or write;
 - an `internal` kind through a pattern ending in `*` or a trait pattern; an
   exact scope such as `read:substrate.reamde.dev/core/kind` may read one;
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which

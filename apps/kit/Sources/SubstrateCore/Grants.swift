@@ -18,8 +18,8 @@ public struct Grants: Codable, Hashable, Sendable {
     /// Whether the owner approved full access.
     public var full: Bool { scopes.contains(ScopeWords.full) }
 
-    /// The four core kinds that hold the repository's own auth material.
-    static let authKinds = Set(["token", "credential", "secret", "recoverykey"].map { "substrate.reamde.dev/core/\($0)" })
+    /// The three core kinds that hold the repository's own auth material.
+    static let authKinds = Set(["token", "credential", "secret"].map { "substrate.reamde.dev/core/\($0)" })
     /// The packages no scope writes.
     static let unwritable = ["substrate.reamde.dev/core/", "substrate.reamde.dev/llm/"]
     /// The seeded packages whose every kind is internal, for a caller that

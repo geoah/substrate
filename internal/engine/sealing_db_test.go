@@ -1,7 +1,7 @@
 package engine_test
 
-// The sealed store, from the outside: the secret gate, the recovery import,
-// the rewrap onto a new credential key, and the history-generation rotate.
+// The sealed store, from the outside: the secret gate, the restore under
+// another host's key, and the history-generation rotate.
 //
 // The secret gate: a secret-typed property's stored value is a
 // ref into the sealed store, every kind alike, and the material never
@@ -16,13 +16,17 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
-
-	"filippo.io/age"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
@@ -435,16 +439,10 @@ func TestOpenRefusesARowWithNoWrappedDEK(t *testing.T) {
 	}
 }
 
-// registerWithIdentity walks the registration flow with a client-minted age
-// identity, the way substratectl register does, and returns the user and the
-// identity string the substrate never sees.
-func registerWithIdentity(t *testing.T, svc substrate.Service, repository string) (*authUser, string) {
+// registerOwner walks the registration flow and returns the user.
+func registerOwner(t *testing.T, svc substrate.Service, repository string) *authUser {
 	t.Helper()
 	ctx := context.Background()
-	id, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatalf("generate identity: %v", err)
-	}
 	enrollment, err := svc.BeginRegistration(ctx, repository)
 	if err != nil {
 		t.Fatalf("begin registration: %v", err)
@@ -453,11 +451,10 @@ func registerWithIdentity(t *testing.T, svc substrate.Service, repository string
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
 		Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
-		RecoveryPublicKey: id.Recipient().String(),
 	}); err != nil {
 		t.Fatalf("register %q: %v", repository, err)
 	}
-	return u, id.String()
+	return u
 }
 
 // otherCredentialKey mints a second conforming credential key, decoded and
@@ -473,181 +470,354 @@ func otherCredentialKey(t *testing.T) ([]byte, string) {
 
 // openWithKey opens a service over dsn and root under an explicit credential
 // key, the shape of the restoring host's boot.
-func openWithKey(t *testing.T, dsn, root, key string) (substrate.Service, error) {
+func openWithKey(t *testing.T, dsn, root, key string, opts ...engine.Option) (substrate.Service, error) {
 	t.Helper()
-	svc, err := engine.OpenForTest(t, context.Background(), dsn,
+	svc, err := engine.OpenForTest(t, context.Background(), dsn, append([]engine.Option{
 		engine.WithKindsFS(engine.SeedKinds),
 		engine.WithDataRoot(root),
-		engine.WithCredentialKey(key))
+		engine.WithCredentialKey(key),
+	}, opts...)...)
 	if err == nil {
 		t.Cleanup(func() { _ = svc.Close() })
 	}
 	return svc, err
 }
 
-// The restore through the recovery key: a repository directory copied to a
-// host with a different SUBSTRATE_CREDENTIAL_KEY is refused by the boot import
-// until RewrapRepositoryDir has opened its DEK with the user's age identity
-// and rewritten the manifest under the new key. Afterwards the import runs,
-// the user logs in, and the sealed store and the blobs read back.
-func TestRewrapRestoresARepositoryUnderANewCredentialKey(t *testing.T) {
-	t.Parallel()
+// foldRecords is the fold's records section, keyed `<kind>/<id>`.
+func foldRecords(t *testing.T, ds substrate.Dataset) map[string]map[string]any {
+	t.Helper()
+	var snap struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := json.Unmarshal(foldOf(t, ds), &snap); err != nil {
+		t.Fatalf("decode the fold: %v", err)
+	}
+	out := make(map[string]map[string]any, len(snap.Records))
+	for _, r := range snap.Records {
+		out[fmt.Sprint(r["kind"])+"/"+fmt.Sprint(r["id"])] = r
+	}
+	return out
+}
+
+// lostSecretsFixture is a repository written under the test's host key and
+// its archive: one registered owner, history, a provider row whose API key is
+// a secret, and a blob.
+type lostSecretsFixture struct {
+	user    *authUser
+	id      string
+	root    string
+	ref     string
+	digest  string
+	records map[string]map[string]any
+}
+
+func newLostSecretsFixture(t *testing.T) lostSecretsFixture {
+	t.Helper()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	u, identity := registerWithIdentity(t, svc, "ada.example.com")
+	u := registerOwner(t, svc, "ada.example.com")
 	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "tasks")
 	writeSomeHistory(t, ds)
-	ref := putProvider(t, ds, dsn, "openai", "sk-rewrapped")
-	digest := putBlob(t, ds, []byte("bytes behind the rewrap"))
-	before := foldOf(t, ds)
-	head := maxSeq(t, ds)
-	id := repositoryIDOf(t, ds)
+	f := lostSecretsFixture{
+		user:   u,
+		ref:    putProvider(t, ds, dsn, "openai", "sk-left-behind"),
+		digest: putBlob(t, ds, []byte("bytes that travel")),
+		id:     repositoryIDOf(t, ds),
+	}
+	f.records = foldRecords(t, ds)
 	root := engine.DataRootOf(svc)
 	_ = svc.Close()
+	f.root = root
+	return f
+}
 
-	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := archivedRepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
+// An archive brought to a host whose key is not the one it was written under
+// is refused, and the refusal says which key it wants, how to keep its
+// secrets and how to accept losing them: a wrong key must not read as a
+// repository to take without its secrets.
+func TestARestoreUnderAnotherHostKeyIsRefusedNamingTheKey(t *testing.T) {
+	t.Parallel()
+	f := newLostSecretsFixture(t)
+	root := copyRepositoryDir(t, f.root, f.id)
+	_, other := otherCredentialKey(t)
+	_, err := openWithKey(t, engine.MigratedDSN(t), root, other)
+	if err == nil {
+		t.Fatal("the archive restored under a key it was not written under")
 	}
-	otherRaw, other := otherCredentialKey(t)
-	dsn2 := engine.MigratedDSN(t)
-
-	// Without the rewrap the copy is inert on this host: the import refuses.
-	if _, err := openWithKey(t, dsn2, root2, other); err == nil {
-		t.Fatal("the directory imported under a key it was not written under")
+	for _, want := range []string{"ada.example.com", f.id, engine.ImportWithoutSecretsVar, "is not the key the DEK wrap", "user reset"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
 	}
-
-	// A wrong identity is refused before the manifest changes.
-	manifestFile := archivedManifestFile(t, dir2)
-	manifestBefore, err := os.ReadFile(manifestFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrong, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := engine.RewrapRepositoryDir(dir2, wrong.String(), other); err == nil {
-		t.Fatal("a wrong identity rewrapped the directory")
-	} else if !strings.Contains(err.Error(), "ada.example.com") {
-		t.Fatalf("the refusal must name the repository: %v", err)
-	}
-	if after, _ := os.ReadFile(archivedManifestFile(t, dir2)); archivedManifestFile(t, dir2) != manifestFile || string(after) != string(manifestBefore) {
-		t.Fatal("a refused rewrap changed the manifest")
-	}
-
-	// A copy that lost sealed/ is refused by name: the recovered DEK has
-	// nothing to prove itself against, and the login credential is gone.
-	root3 := copyRepositoryDir(t, root, id)
-	dir3, err := archivedRepoDir(root3, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.RemoveAll(filepath.Join(archiveObjectsDir(t, dir3), changelogfile.SealedSubdir)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := engine.RewrapRepositoryDir(dir3, identity, other); err == nil || !strings.Contains(err.Error(), "sealed/") {
-		t.Fatalf("a copy with no sealed files was not refused by name: %v", err)
-	}
-
-	report, err := engine.RewrapRepositoryDir(dir2, identity, other)
-	if err != nil {
-		t.Fatalf("rewrap: %v", err)
-	}
-	if report.Repository != "ada.example.com" || report.SealedFiles == 0 || report.RecoveryKeySeq == 0 {
-		t.Fatalf("report = %+v", report)
-	}
-	// The manifest now opens under the new key and no longer under the old.
-	m, _, err := changelogfile.ReadArchiveManifestDir(dir2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := engine.OpenPayloadWithKey(otherRaw, m.DEK, engine.DEKAAD(id)); err != nil {
-		t.Fatalf("the rewritten manifest does not open under the new key: %v", err)
-	}
-	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, m.DEK, engine.DEKAAD(id)); err == nil {
-		t.Fatal("the rewritten manifest still opens under the old key")
-	}
-
-	// The boot on the new host imports the directory, and the user is back:
-	// the fold, the secret, the blob, the files verify, and then a login
-	// (the password hash and the TOTP seed are sealed rows). The login goes
-	// last because it mints a token record, which moves the fold and the head.
-	svc2, err := openWithKey(t, dsn2, root2, other)
-	if err != nil {
-		t.Fatalf("boot on the rewrapped directory: %v", err)
-	}
-	ds2, err := svc2.Dataset(ctx, "ada.example.com")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after := foldOf(t, ds2); string(after) != string(before) {
-		t.Fatalf("the restored fold is not the original\n%s", firstDifference(before, after))
-	}
-	if got := openSecretUnder(t, dsn2, ref, otherRaw); got != "sk-rewrapped" {
-		t.Fatalf("secret = %q", got)
-	}
-	if got := getBlob(t, ds2, digest); string(got) != "bytes behind the rewrap" {
-		t.Fatalf("blob bytes = %q", got)
-	}
-	report2 := mustVerify(t, svc2, "ada.example.com")
-	if !report2.OK || report2.Head != head {
-		t.Fatalf("the restored repository does not verify: %+v", report2)
-	}
-	if _, _, err := svc2.Login(ctx, substrate.LoginInput{
-		Repository: "ada.example.com", Password: u.password, TOTPCode: u.code(t), Label: "after",
-	}); err != nil {
-		t.Fatalf("login after the rewrap: %v", err)
+	// Listing another repository changes nothing.
+	if _, err := openWithKey(t, engine.MigratedDSN(t), root, other, engine.WithImportWithoutSecrets("bob.example.com")); err == nil {
+		t.Fatal("a list naming another repository restored this one")
 	}
 }
 
-// A repository that never enrolled a recovery key has no recoverykey record,
-// so no identity opens it: the rewrap refuses and says so. A directory with
-// no manifest is refused too, because nothing says whose it is. Neither is
-// synthesized.
-func TestRewrapRefusesWithoutARecoveryKeyOrAManifest(t *testing.T) {
+// A listed repository restores under another host's key without its
+// secrets: every record arrives as written but the ones that named a secret,
+// which read without it; the sealed store is empty and so is the spool; the
+// blob and the history come through; the owner signs in again only after a
+// reset.
+func TestAListedRepositoryRestoresWithoutItsSecrets(t *testing.T) {
 	t.Parallel()
-	svc, ds, _ := newDatasetWithDSN(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskKind, Properties: map[string]any{"name": "no recovery"}})
-	id := repositoryIDOf(t, ds)
-	root := engine.DataRootOf(svc)
-	_ = svc.Close()
-
-	_, other := otherCredentialKey(t)
-	someone, err := age.GenerateX25519Identity()
+	f := newLostSecretsFixture(t)
+	ctx := context.Background()
+	root := copyRepositoryDir(t, f.root, f.id)
+	otherRaw, other := otherCredentialKey(t)
+	dsn := engine.MigratedDSN(t)
+	// A webhook request the archive holds spooled: sealed under the DEK this
+	// host does not open, so it goes with the secrets.
+	archived, err := archivedRepoDir(root, f.id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	root2 := copyRepositoryDir(t, root, id)
-	dir2, err := archivedRepoDir(root2, id)
+	spoolInto(t, archived, changelogfile.SpoolFileName(1, "fire1"), []byte("sealed under the old key"))
+	svc, err := openWithKey(t, dsn, root, other, engine.WithImportWithoutSecrets(f.id))
+	if err != nil {
+		t.Fatalf("a listed repository did not restore: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = engine.RewrapRepositoryDir(dir2, someone.String(), other)
-	if !errors.Is(err, engine.ErrNoRecoveryKey) {
-		t.Fatalf("a repository with no recoverykey record rewrapped: %v", err)
-	}
-
-	if err := os.RemoveAll(filepath.Join(dir2, changelogfile.ManifestsSubdir)); err != nil {
+	// The open deleted the request, before any drain could reach it.
+	dir, err := changelogfile.RepoDir(root, f.id)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = engine.RewrapRepositoryDir(dir2, someone.String(), other)
-	if err == nil || !strings.Contains(err.Error(), "no manifest") {
-		t.Fatalf("a directory with no manifest was not refused by name: %v", err)
-	}
-	if _, _, err := changelogfile.ReadArchiveManifestDir(dir2); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("the rewrap synthesized a manifest")
+	if spooled, err := changelogfile.SpoolFiles(dir); err != nil || len(spooled) != 0 {
+		t.Fatalf("the spool holds %d requests (%v) after the open, want none", len(spooled), err)
 	}
 
-	// A key that is not key material is refused before anything is read.
-	if _, err := engine.RewrapRepositoryDir(dir2, someone.String(), "passphrase"); err == nil {
-		t.Fatal("a passphrase was accepted as the new credential key")
+	// The records the secrets were on lost exactly them; nothing else moved
+	// but their version and their time.
+	cleared := map[string]string{
+		typeProvider + "/openai":                    "apiKey",
+		"substrate.reamde.dev/core/credential/self": "passwordRef",
 	}
+	got := foldRecords(t, ds)
+	for key, before := range f.records {
+		after, ok := got[key]
+		if !ok {
+			t.Errorf("%s did not arrive", key)
+			continue
+		}
+		prop, lost := cleared[key]
+		if !lost {
+			if !reflect.DeepEqual(before, after) {
+				t.Errorf("%s changed:\n before %v\n after  %v", key, before, after)
+			}
+			continue
+		}
+		wantProps := maps.Clone(before["props"].(map[string]any))
+		delete(wantProps, prop)
+		delete(wantProps, "totpRef")
+		if !reflect.DeepEqual(wantProps, after["props"]) {
+			t.Errorf("%s: props %v, want %v", key, after["props"], wantProps)
+		}
+	}
+	// What appeared is the console's list of what to put back: an alert for
+	// each value the restore left behind, and nothing else.
+	alerts := map[string]bool{}
+	for key, rec := range got {
+		if _, ok := f.records[key]; ok {
+			continue
+		}
+		if !strings.HasPrefix(key, "substrate.reamde.dev/core/alert/") {
+			t.Errorf("%s appeared", key)
+			continue
+		}
+		props, _ := rec["props"].(map[string]any)
+		summary, _ := props["summary"].(string)
+		alerts[summary] = props["state"] == "open"
+	}
+	for _, want := range []string{
+		typeProvider + "/openai: apiKey",
+		"substrate.reamde.dev/core/credential/self: passwordRef",
+		"substrate.reamde.dev/core/credential/self: totpRef",
+	} {
+		found := false
+		for summary, open := range alerts {
+			if strings.HasPrefix(summary, want) && open {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no open alert names %s: %v", want, alerts)
+		}
+	}
+	if len(alerts) != 3 {
+		t.Errorf("%d alerts appeared, want the three values left behind: %v", len(alerts), alerts)
+	}
+	var sealed int
+	var wrapped []byte
+	var marked bool
+	if err := rawDB(t, dsn).QueryRow(`SELECT (SELECT count(*) FROM sealed), dek, secrets_left_behind FROM repositories WHERE id = $1`, f.id).
+		Scan(&sealed, &wrapped, &marked); err != nil {
+		t.Fatal(err)
+	}
+	if sealed != 0 || marked {
+		t.Fatalf("%d sealed rows arrived and the mark is %v after the open, want none and lifted", sealed, marked)
+	}
+	// The new DEK is this host's.
+	if _, err := engine.OpenPayloadWithKey(otherRaw, wrapped, engine.DEKAAD(f.id)); err != nil {
+		t.Fatalf("the row's DEK does not open under this host's key: %v", err)
+	}
+	if got := getBlob(t, ds, f.digest); string(got) != "bytes that travel" {
+		t.Fatalf("blob bytes = %q", got)
+	}
+	if report := mustVerify(t, svc, "ada.example.com"); !report.OK {
+		t.Fatalf("the restored repository does not verify: %+v", report)
+	}
+
+	// The owner cannot sign in with what they knew: the password hash was a
+	// secret. The operator's reset gives them a way back in, and the
+	// repository then writes secrets under its new key.
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Repository: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
+	}); !errors.Is(err, substrate.ErrAuth) {
+		t.Fatalf("a login with the lost credential = %v, want refused", err)
+	}
+	resetter, ok := svc.(interface {
+		ResetUser(context.Context, string, string) (substrate.TOTPEnrollment, error)
+	})
+	if !ok {
+		t.Fatal("the engine service must expose ResetUser for substratectl")
+	}
+	enrollment, err := resetter.ResetUser(ctx, "ada.example.com", "a-new-password-for-ada")
+	if err != nil {
+		t.Fatalf("user reset: %v", err)
+	}
+	reset := &authUser{repository: "ada.example.com", password: "a-new-password-for-ada", seed: enrollment.Secret}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Repository: "ada.example.com", Password: reset.password, TOTPCode: reset.code(t), Label: "after reset",
+	}); err != nil {
+		t.Fatalf("login after the reset: %v", err)
+	}
+	ref := putProvider(t, ds, dsn, "openai", "sk-entered-again")
+	if got := openSecretUnder(t, dsn, ref, otherRaw); got != "sk-entered-again" {
+		t.Fatalf("the key entered again reads %q", got)
+	}
+}
+
+// Listing a repository loses nothing this host can open: under the key it was
+// written under it restores with its secrets.
+func TestAListedRepositoryUnderItsOwnKeyKeepsItsSecrets(t *testing.T) {
+	t.Parallel()
+	f := newLostSecretsFixture(t)
+	ctx := context.Background()
+	root := copyRepositoryDir(t, f.root, f.id)
+	dsn := engine.MigratedDSN(t)
+	svc, err := openWithKey(t, dsn, root, engine.TestCredentialKey, engine.WithImportWithoutSecrets("ada.example.com"))
+	if err != nil {
+		t.Fatalf("boot: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := foldRecords(t, ds); !reflect.DeepEqual(got, f.records) {
+		t.Fatal("the records moved under the key they were written under")
+	}
+	if got := openSecretUnder(t, dsn, f.ref, engine.TestCredentialKeyBytes); got != "sk-left-behind" {
+		t.Fatalf("secret = %q", got)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Repository: "ada.example.com", Password: f.user.password, TOTPCode: f.user.code(t), Label: "after",
+	}); err != nil {
+		t.Fatalf("login with the credential that traveled: %v", err)
+	}
+}
+
+// A host with no credential key refuses a listed repository before it
+// restores anything: the DEK it would mint would be stored unsealed. The
+// archive stays as it was, and no row is created.
+func TestAListedRestoreOnAHostWithNoKeyRestoresNothing(t *testing.T) {
+	t.Parallel()
+	f := newLostSecretsFixture(t)
+	root := copyRepositoryDir(t, f.root, f.id)
+	archived, err := archivedRepoDir(root, f.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spoolInto(t, archived, changelogfile.SpoolFileName(1, "fire1"), []byte("sealed under the old key"))
+	before := filesUnder(t, archived)
+	dsn := engine.MigratedDSN(t)
+	_, err = openWithKey(t, dsn, root, "", engine.WithImportWithoutSecrets(f.id))
+	if err == nil {
+		t.Fatal("a host with no credential key restored a repository without its secrets")
+	}
+	for _, want := range []string{"ada.example.com", "SUBSTRATE_CREDENTIAL_KEY", "nothing was restored"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+	if after := filesUnder(t, archived); !reflect.DeepEqual(before, after) {
+		t.Fatalf("the refused restore changed the archive:\n before %v\n after  %v", keysOf(before), keysOf(after))
+	}
+	var rows int
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM repositories`).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("the refused restore left %d row(s)", rows)
+	}
+}
+
+// spoolInto adds a spooled request to the newest manifest of the archive
+// under repoDir, in a manifest of the next epoch, as a pass that found it
+// would.
+func spoolInto(t *testing.T, repoDir, file string, data []byte) {
+	t.Helper()
+	m, _, err := changelogfile.ReadArchiveManifestDir(repoDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := changelogfile.SpoolObjectName(file, m.Pass)
+	path := filepath.Join(repoDir, m.Archive, filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.Spool = append(m.Spool, name)
+	m.Epoch++
+	if _, err := changelogfile.WriteArchiveManifestDir(repoDir, m); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// filesUnder is every file under dir, by its path there, with its bytes.
+func filesUnder(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		out[rel] = string(raw)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func keysOf(m map[string]string) []string {
+	return slices.Sorted(maps.Keys(m))
 }
 
 // A database restored from a dump keeps the row and its generation, so the

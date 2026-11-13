@@ -461,17 +461,6 @@ type registerRequest struct {
 	// the field.
 	SkipTOTP bool   `json:"skipTotp,omitempty"`
 	Label    string `json:"label,omitempty"`
-	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
-	// matching identity never rides the wire.
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
-// registerResult is a tokenResult plus the recovery half: the enrolled
-// recipient, and the identity ONLY when the server minted the pair.
-type registerResult struct {
-	tokenResult
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
 // factors is both current factors presented directly, which is what a login
@@ -534,6 +523,16 @@ func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*
 		return nil, err
 	}
 	return &out, nil
+}
+
+// registerResult is a tokenResult plus the recovery key a server below
+// `auth` revision 2 mints for a registration that names no recipient, which
+// is every registration this command sends: that server still wraps the
+// repository's key to it, and this answer is the only copy (decision 0264).
+// A current server sends none.
+type registerResult struct {
+	tokenResult
+	RecoveryKey string `json:"recoveryKey,omitempty"`
 }
 
 func (c *client) register(ctx context.Context, in registerRequest) (*registerResult, error) {

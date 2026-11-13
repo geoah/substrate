@@ -71,7 +71,7 @@ A refusal reads `the substrate answered <status>: {"error": {"code", "message", 
 ## Secrets
 
 - A `secret`-typed property (an `llm/provider` row's `apiKey`, say) is the only place a key goes. It reads back `<redacted>`; writing `<redacted>` back leaves the value alone. Never copy a secret into a note, description or label, and never repeat one.
-- `substrate.reamde.dev/core/token`, `…/credential`, `…/secret` and `…/recoverykey` are the owner's auth material: this door refuses writing them. A bundle's `core/secret` and a provider account's connection are the owner's to fill on the console.
+- `substrate.reamde.dev/core/token`, `…/credential` and `…/secret` are the owner's auth material: this door refuses writing them. A bundle's `core/secret` and a provider account's connection are the owner's to fill on the console.
 
 ## Change requests
 

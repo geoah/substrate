@@ -153,6 +153,17 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		engine.WithLogger(log),
 	}
 	opts = append(opts, engine.WithArchive(archiveStore))
+	// The repositories the operator accepted restoring without their secrets,
+	// read as the server reads them: a command that opens as the writer
+	// restores and takes archives as the server's start does, and a listing
+	// the server honors must not be refused here.
+	listed, err := config.LoadImportWithoutSecrets()
+	if err != nil {
+		return nil, err
+	}
+	if len(listed) > 0 {
+		opts = append(opts, engine.WithImportWithoutSecrets(listed...))
+	}
 	if readOnly {
 		opts = append(opts, engine.WithDirectoryReadOnly())
 	}
@@ -191,7 +202,7 @@ func lockHint(err error) error {
 	if err == nil || !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository rewrap` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation` and `user reset` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table

@@ -124,12 +124,14 @@ It also holds the release acceptance drill, `TestReleaseAcceptanceDrill`
 to bring back (changed kinds, a cleared label, an attachment, sealed values,
 conflicting mapping offers, a merge and a split, a purge, settled, pending and
 parked deliveries, a parked webhook, a paged drain parked mid-cursor), stopped
-so its last pass leaves the archive at its head, the archive copied,
-rewrapped under another credential key with the recovery key and restored
-into an empty schema, then compared record by record and resumed. Its later
-stages kill the import at batch boundaries, restore a second repository
-under both keys, refuse a manifest above the binary's changelog dialect, and
-resume a saved change cursor against the replaced history. It runs with the rest of `test:db` and takes about ten seconds.
+so its last pass leaves the archive at its head, the archive copied and
+restored into an empty schema under the credential key it was written under,
+then compared record by record and resumed. Its later stages kill the import
+at batch boundaries, restore a second repository under its own key and,
+listed in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, under another key without its
+secrets, refuse a manifest above the binary's changelog dialect, and resume a
+saved change cursor against the replaced history. It runs with the rest of
+`test:db` and takes about ten seconds.
 
 ```bash
 go test -count=1 -run TestReleaseAcceptanceDrill -v ./internal/testenv/
@@ -455,15 +457,14 @@ another zone sets it for its own file with `vi.stubEnv("TZ", …)`
 console a running substrate serves in headless Chrome. jsdom cannot stand in
 for it: #846 bumped `nuqs`, every page rendered blank, and every check passed
 until #864. It visits `/` (expecting the redirect to `/login`), `/login`,
-`/register` (it registers a new repository through the form and acknowledges
-the recovery key), then `/data` and `/history`, where it waits for the
-collections table or the change rows, or their empty states, and the
-observations pages and the timeline, empty. Last, it installs the health
-catalogue, writes six hours of heart rate, heart rate
-variability and steps, and opens the timeline on those three metrics, which
-must draw two charts: heart rate with HRV on two axes, then steps. It prints
-one line per route. A route fails on an uncaught page error, a console error, a
-same-origin response of 400 or more, a request lost to
+`/register` (it registers a new repository through the form), then `/data`
+and `/history`, where it waits for the collections table or the change rows,
+or their empty states, and the observations pages and the timeline, empty.
+Last, it installs the health catalogue, writes six hours of heart rate,
+heart rate variability and steps, and opens the timeline on those three
+metrics, which must draw two charts: heart rate with HRV on two axes, then
+steps. It prints one line per route. A route fails on an uncaught page
+error, a console error, a same-origin response of 400 or more, a request lost to
 `net::ERR_NETWORK_CHANGED` that no retry answered, or its heading or content
 not appearing within 20 seconds. The one 4xx it accepts is the 404 a fresh
 repository gives for

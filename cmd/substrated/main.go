@@ -294,6 +294,10 @@ func run() error {
 			return cat.SeedInstall(ctx, ds, pkg)
 		}))
 	}
+	if listed := config.SplitRepositoryList(cfg.ImportWithoutSecrets); len(listed) > 0 {
+		slog.Warn("SUBSTRATE_IMPORT_WITHOUT_SECRETS is set: a listed repository this host's key does not open is restored without its secrets", "repositories", strings.Join(listed, ","))
+		opts = append(opts, engine.WithImportWithoutSecrets(listed...))
+	}
 	if cfg.InsecureAllowForeignPackages {
 		slog.Warn("SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES is set: a token may declare packages under any authority; local development only")
 		opts = append(opts, engine.WithInsecureForeignPackages(true))
