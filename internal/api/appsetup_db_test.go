@@ -1136,12 +1136,12 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 		}
 	}
 
-	// A token without scopes, the app's own full access, sees everything.
-	got = e.check(e.appToken(), checkRequest(syncScopes, syncDetails))
+	// The owner's token sees everything.
+	got = e.check(e.owner, checkRequest(syncScopes, syncDetails))
 	if len(got.Scopes.Missing) != 0 || got.ExpiresAt != nil || slices.ContainsFunc(got.Setup, func(r substrate.AuthorizationSetup) bool {
 		return r.Action != substrate.SetupNone
 	}) {
-		t.Fatalf("a full-access token's check = %+v", got)
+		t.Fatalf("the owner's check = %+v", got)
 	}
 
 	// The check is the app's door, and the approval is not: chi routes
@@ -1158,9 +1158,6 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 // "Check that it is still set up"): every row in place, nothing missing,
 // no end, and a check that names no details answers no rows.
 func TestAnOwnersCheckSeesEveryRow(t *testing.T) {
-	// #1338: the engine's RecordAppBuild refuses a token with no client id,
-	// so the owner's check answers 403. Remove the skip with its fix.
-	t.Skip("engine defect #1338: RecordAppBuild refuses the owner's token, so the owner's check answers 403")
 	t.Parallel()
 	e := newAppSetupEnv(t)
 	id := e.park(setupRequest(syncScopes, syncDetails))
@@ -1179,6 +1176,45 @@ func TestAnOwnersCheckSeesEveryRow(t *testing.T) {
 	}
 }
 
+// A full-access app's token revoked after its check signed in is refused, as
+// recording its build refuses it, and never answered as an owner's: the
+// revocation lands between the sign-in and the check's own read of the
+// tokens.
+func TestACheckByAnAppRevokedOnTheWayIsRefused(t *testing.T) {
+	t.Parallel()
+	e := newAppSetupEnv(t)
+	ctx := context.Background()
+	info, secret, err := e.db.ds.MintToken(ctx, substrate.MintTokenInput{Label: "notes.example.org", ClientID: appClientID, ClientName: "Sync"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	seam := e.db.wrap
+	e.db.wrap = func(ds substrate.Dataset) substrate.Dataset {
+		return revokeBeforeTokens{Dataset: seam(ds), revoke: func() {
+			once.Do(func() {
+				if _, err := e.db.ds.Delete(ctx, substrate.ActorAPI, tokenType, info.ID, substrate.DeleteInput{}); err != nil {
+					t.Errorf("revoke: %v", err)
+				}
+			})
+		}}
+	}
+	rec := e.do(http.MethodPost, "/api/v1/authorizations/check", secret, checkRequest(syncScopes, syncDetails), "application/json")
+	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
+}
+
+// revokeBeforeTokens revokes the request's token before its read of the
+// tokens.
+type revokeBeforeTokens struct {
+	substrate.Dataset
+	revoke func()
+}
+
+func (r revokeBeforeTokens) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
+	r.revoke()
+	return r.Dataset.Tokens(ctx)
+}
+
 // A check plans a package row the token cannot see no further than its
 // action: no upgrade preview is counted against the owner's data for a row
 // it answers as unknown.
@@ -1191,8 +1227,8 @@ func TestACheckPlansNoFurtherThanTheTokenSees(t *testing.T) {
 	if got := e.check(narrow, body); got.Setup[0].Action != substrate.SetupUnknown || e.previews() != 0 {
 		t.Fatalf("a token that cannot see apple = %+v after %d previews", got.Setup[0], e.previews())
 	}
-	if got := e.check(e.appToken(), body); got.Setup[0].Action != substrate.SetupUpgrade || e.previews() != 1 {
-		t.Fatalf("a full-access token's check = %+v after %d previews", got.Setup[0], e.previews())
+	if got := e.check(e.owner, body); got.Setup[0].Action != substrate.SetupUpgrade || e.previews() != 1 {
+		t.Fatalf("the owner's check = %+v after %d previews", got.Setup[0], e.previews())
 	}
 }
 
@@ -1202,10 +1238,9 @@ func TestACheckIsAnsweredAgainNeverRefused(t *testing.T) {
 	t.Parallel()
 	e := newAppSetupEnv(t, withConfig(func(c *Config) { c.AuthInterval = time.Hour }))
 	e.heldAt(applePkg, 2)
-	app := e.appToken()
 	body := checkRequest("read:*", `[{"type":"package","package":"`+applePkg+`","version":3}]`)
 	for range 5 {
-		if got := e.check(app, body); got.Setup[0].Action != substrate.SetupUpgrade {
+		if got := e.check(e.owner, body); got.Setup[0].Action != substrate.SetupUpgrade {
 			t.Fatalf("a check asked again = %+v", got.Setup[0])
 		}
 	}
@@ -1213,10 +1248,10 @@ func TestACheckIsAnsweredAgainNeverRefused(t *testing.T) {
 		t.Fatalf("five checks planned %d previews, want one", e.previews())
 	}
 	// Another body, another token, or the window gone: planned afresh.
-	e.check(app, checkRequest("read:*", `[{"type":"package","package":"`+applePkg+`","version":2}]`))
-	e.check(e.appToken(), body)
+	e.check(e.owner, checkRequest("read:*", `[{"type":"package","package":"`+applePkg+`","version":2}]`))
+	e.check(e.db.mint(t, substrate.MintTokenInput{Label: "another"}), body)
 	e.clock.advance(checkMemoTTL)
-	e.check(app, body)
+	e.check(e.owner, body)
 	if e.previews() != 3 {
 		t.Fatalf("previews = %d, want a fresh plan for the other token and after the window", e.previews())
 	}

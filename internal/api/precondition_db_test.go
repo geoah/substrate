@@ -102,6 +102,18 @@ func TestRESTMergeSplitPreconditions(t *testing.T) {
 	if got := env.get(t, personKind, "b2"); got == nil || got.DeletedAt != nil {
 		t.Fatalf("a 409 merge took the loser: %+v", got)
 	}
+	// The winner's precondition reaches the merge too: a stale winnerVersion
+	// beside a current loserVersion is refused, and neither record moves.
+	rec = env.do(t, http.MethodPost, "/api/v1/merge", env.token, map[string]any{
+		"kind": personKind, "winner": "a1", "loser": "b2", "winnerVersion": winner + 1, "loserVersion": loser,
+	})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if got := env.get(t, personKind, "a1"); got == nil || got.Version != winner || got.DeletedAt != nil {
+		t.Fatalf("a merge refused for a stale winner moved the winner: %+v", got)
+	}
+	if got := env.get(t, personKind, "b2"); got == nil || got.Version != loser || got.DeletedAt != nil {
+		t.Fatalf("a merge refused for a stale winner moved the loser: %+v", got)
+	}
 
 	rec = env.do(t, http.MethodPost, "/api/v1/merge", env.token, map[string]any{
 		"kind": personKind, "winner": "a1", "loser": "b2", "loserVersion": loser,

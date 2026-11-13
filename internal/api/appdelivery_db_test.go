@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -674,16 +675,60 @@ func TestAnAppsBlobUploadsHoldSlotsOfTheirOwn(t *testing.T) {
 		}
 	}()
 	wantStatus(t, appScopedDo(t, e.dbEnv, http.MethodPut, "/api/v1/blobs", e.token, []byte("the owner's"), "image/png"), http.StatusCreated)
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	// The app's request gives up while it waits for a slot, and only then:
+	// its context is canceled once a goroutine is seen parked in putBlob's
+	// select with every slot of the app pool held. Had the upload taken the
+	// owner's pool, which has slots free, it would never park there: it
+	// stores the bytes and ends, and the wait below fails instead of a
+	// cancellation racing a free slot.
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	req := httptest.NewRequestWithContext(ctx, http.MethodPut, "/api/v1/blobs", strings.NewReader("the app's"))
 	req.Header.Set("Authorization", "Bearer "+app)
 	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-	wantStatus(t, rec, http.StatusServiceUnavailable)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.h.ServeHTTP(rec, req)
+	}()
+	if !waitParkedIn(t, done, "(*handler).putBlob(") {
+		<-done
+		t.Fatalf("the app's upload never waited for a slot of its own pool: %d %s", rec.Code, rec.Body)
+	}
+	cancel()
+	<-done
+	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
+	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "blob store is busy, retry") {
+		t.Fatalf("the refusal = %q, want the slot wait's", msg)
+	}
 	if info, err := e.ds.StatBlob(context.Background(), appDeliveryDigest([]byte("the app's"))); err == nil {
 		t.Fatalf("an upload that found no slot stored %+v", info)
 	}
+}
+
+// waitParkedIn waits until a goroutine is parked in a select inside the
+// function frame names, and reports whether one was before the request
+// ended or ten seconds passed.
+func waitParkedIn(t *testing.T, done <-chan struct{}, frame string) bool {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	buf := make([]byte, 1<<20)
+	for time.Now().Before(deadline) {
+		select {
+		case <-done:
+			return false
+		default:
+		}
+		n := runtime.Stack(buf, true)
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			header, _, _ := strings.Cut(g, "\n")
+			if strings.Contains(header, "[select") && strings.Contains(g, frame) {
+				return true
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
 }
 
 func TestABlobReferenceAnAppsTokenReadsCarriesNoManifestItCannotRead(t *testing.T) {
