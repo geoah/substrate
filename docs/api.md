@@ -717,7 +717,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   ([above](#who-points-at-a-record-referencing)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
-a JSON list of `{property, desc}`). A number sorts as a number and an instant
+a JSON list of `{property, desc}`). A kind and an id sort in plain byte order,
+whatever the database's locale: upper case before lower case, and punctuation
+by its byte. A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to the root of its linear component

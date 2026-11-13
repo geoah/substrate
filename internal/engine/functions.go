@@ -3341,9 +3341,8 @@ func triggerRead(kinds []string, after, head int64) (string, []any) {
 // whole changelog. A package or authority glob matches against the kinds the
 // changelog holds, read at the moment of the batch, so a kind whose first
 // entry landed mid-drain is still read; the globs are matched in Go
-// (vocabulary.MatchTypeGlob, the matcher matchChanges uses) rather than as a
-// range in SQL, because a prefix is a contiguous range only under the C
-// collation and the column carries the database's.
+// (vocabulary.MatchTypeGlob, the matcher matchChanges uses), so the dispatcher
+// and the change feed agree on what a glob covers.
 func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []string, every bool, err error) {
 	// Each kind is named once: triggerRead reads one branch per kind, so a
 	// kind named twice (listed twice, or exact and under a glob) would
