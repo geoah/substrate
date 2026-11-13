@@ -351,7 +351,7 @@ are written and filtered the same way.
 | `email`            | refined `string`, RFC 5322 mailbox                          |
 | `url`              | refined `string`, absolute URL                              |
 | `phone`            | refined `string`, E.164 normalized                          |
-| `timezone`         | IANA zone name                                              |
+| `timezone`         | IANA zone name; `Local` and the empty string are refused, because neither names the same zone on every host |
 | `recurrence`       | RFC 5545 RRULE string                                       |
 | `enum`             | one of declared `values`                                    |
 | `state`            | a state machine: `states`, `initial`, `transitions`, stamps |

@@ -410,6 +410,12 @@ once. The narrowing diffs that refuse:
   `keyed:` flip both count, because a map is not a list and neither is a scalar,
   and no stored value converts between them
 - removing an enum value a record still holds
+- adding a `values:` list to a property that had none, while a record holds
+  a value outside it, on a type a write is held to the list: a string, a
+  text, a date, a duration, an email, a URL, a phone number, a time zone, a
+  recurrence. Such a record could not be saved again. A list on a type no
+  write is held to (a number, a date and time, a decimal, json) strands
+  nothing and admits
 - removing a state a record still occupies
 - narrowing a `reference` property's `kind:` or `trait:` pin while records
   point outside the new one (unconstrained to a pin, or one pin to another;

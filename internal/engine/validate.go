@@ -557,8 +557,8 @@ func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected an E.164 phone number")
 		}
 	case vocabulary.DatatypeTimezone:
-		if _, err := time.LoadLocation(s); err != nil {
-			return nil, fmt.Errorf("expected an IANA time zone name")
+		if err := checkZoneName(s); err != nil {
+			return nil, err
 		}
 	case vocabulary.DatatypeRecurrence:
 		// The whole rule must parse, not merely look ruleish: a stored
@@ -596,6 +596,40 @@ func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 		return nil, fmt.Errorf("does not match %s", p.Pattern.String())
 	}
 	return s, nil
+}
+
+// heldToValues reports whether scalar holds a written value of the datatype
+// to the property's `values:` list: every datatype it reads as a string, but
+// the two it answers before the list (a date and time, a blob reference).
+// The others it answers before reading a string at all. The list here and
+// the returns in scalar change together.
+func heldToValues(dt vocabulary.Datatype) bool {
+	switch dt {
+	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
+		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeDecimal,
+		vocabulary.DatatypeMoney, vocabulary.DatatypeQuantity, vocabulary.DatatypeFloat,
+		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef:
+		return false
+	}
+	return true
+}
+
+// checkZoneName holds a time zone value to a name that means the same zone on
+// every host. time.LoadLocation reads "Local" as the server's own zone and the
+// empty string as UTC, so a record holding either would change meaning when
+// the repository moves. A record that already holds one is still served, and a
+// write that leaves the property alone still lands.
+func checkZoneName(s string) error {
+	switch s {
+	case "":
+		return fmt.Errorf("expected an IANA time zone name, and the empty string names no zone: leave the property out, or write UTC")
+	case "Local":
+		return fmt.Errorf(`expected an IANA time zone name, and "Local" is the server's own zone, which differs from host to host: write the zone's IANA name`)
+	}
+	if _, err := time.LoadLocation(s); err != nil {
+		return fmt.Errorf("expected an IANA time zone name")
+	}
+	return nil
 }
 
 func checkRange(p *vocabulary.Property, f float64) error {
