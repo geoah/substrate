@@ -2524,7 +2524,7 @@ before it stores anything ([functions](functions.md#webhook-signatures)).
 | `400` | a multipart body the server cannot parse, a part whose name or filename decodes to a NUL (`name*=utf-8''a%00b`), which no row stores, or a body not received in time from the headers: 30 seconds per started MiB of the trigger's `maxBody` for a non-multipart body (30 seconds at the 1 MiB default, 4 minutes at 8 MiB), 2 minutes for multipart |
 | `413` | a non-multipart body past the trigger's `maxBody` (1 MiB when it declares none, at most 8 MiB), a multipart request over 32 MiB, or more than 1 MiB of body or inline part values for a trigger whose callable is an agent |
 | `431` | headers over 16 KiB |
-| `503` + `Retry-After` | more than eight deliveries in flight (while they are, a request the door would answer `404` before reading its body gets this `503` instead), a repeat of a signed request the door is still recording, the store failing while the door reads a signing secret, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded |
+| `503` + `Retry-After` | more than eight deliveries in flight (while they are, a request the door would answer `404` before reading its body gets this `503` instead), a repeat of a signed request the door is still recording, the store failing while the door reads a signing secret, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded; the reason `set_aside` and a five-minute wait for a repository addressed by its id that the server [set aside](operations.md#a-repository-set-aside-at-start-up) at its start (by its name, the `404`) |
 
 A multipart/form-data request's file parts are stored in the repository's
 blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their
@@ -2585,11 +2585,17 @@ also answers `unavailable`, with a 30-second `Retry-After` and a message that
 names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has seven members: `observed_rederiving` on `unavailable`,
+set is closed and has eight members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
-working key ([operator defaults](#operator-defaults)); `quota` on
+working key ([operator defaults](#operator-defaults)); `set_aside` on
+`unavailable`, since revision 3 of the `errors` feature, with a
+five-minute `Retry-After`, a repository the server found damaged when it
+started, which it serves again only once its
+operator repairs it and restarts the server
+([a repository set aside](operations.md#a-repository-set-aside-at-start-up));
+`quota` on
 `guard`, an operator-paid call past the repository's allowance for the day;
 and `stale_revision` on `validation`, a write whose `revision` is below the
 stored one, so a newer write of the record landed first and this one never
@@ -2616,7 +2622,8 @@ removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
 The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `observed_rederiving`, `quota`, `stale_revision`.
+`in_doubt`, `key_refused`, `observed_rederiving`, `quota`, `set_aside`,
+`stale_revision`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

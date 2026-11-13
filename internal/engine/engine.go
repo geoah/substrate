@@ -167,8 +167,11 @@ type options struct {
 	// rebuildBatch, so a small history spans more than one batch. The seams
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
-	importBatch int
-	eraseFault  func(stage string) error
+	// beforeDirectories runs between the keying's rows and its directories.
+	// Tests only.
+	beforeDirectories func(s *service)
+	importBatch       int
+	eraseFault        func(stage string) error
 	// conversion replaces the conversion chain (conversion.go), so a test
 	// converts through a step no release carries. Tests only.
 	conversion []conversionStep
@@ -757,7 +760,9 @@ type service struct {
 	// testImportFault and testImportBatch are the options' import seams
 	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
-	testImportBatch int
+	// testBeforeDirectories is options.beforeDirectories.
+	testBeforeDirectories func(s *service)
+	testImportBatch       int
 	// testEraseFault is the options' deletion seam (repositories.go
 	// eraseRepositoryOn). Tests only.
 	testEraseFault func(stage string) error
@@ -765,6 +770,9 @@ type service struct {
 	// repositories' names, held until the boot check has published each of
 	// those repositories under its id (repositoryid.go).
 	keyingLeases []string
+	// aside is every repository this process's start set aside, with why
+	// (setaside.go): open refuses each, and Repositories leaves them out.
+	aside setAsideSet
 	// conversion is the conversion chain this service runs, and maxDialect
 	// the changelog dialect it converts to and stamps (conversion.go): the
 	// binary's own, or a test's.
@@ -908,7 +916,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// connection and never answers fails a call, and the boot, a pass or a
 	// deletion goes on from there.
 	if o.archive != nil {
-		o.archive = archive.Bounded(o.archive, cmp.Or(o.archiveCall, archive.DefaultCallTimeout), cmp.Or(o.archiveIdle, archive.DefaultIdleTimeout))
+		o.archive = markStoreFailures(archive.Bounded(o.archive, cmp.Or(o.archiveCall, archive.DefaultCallTimeout), cmp.Or(o.archiveIdle, archive.DefaultIdleTimeout)))
 	}
 	if o.archivePieceBytes <= 0 {
 		o.archivePieceBytes = DefaultArchivePieceBytes
@@ -1056,6 +1064,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		opening:          map[string]chan struct{}{},
 
 		testImportFault:       o.importFault,
+		testBeforeDirectories: o.beforeDirectories,
 		testImportBatch:       o.importBatch,
 		testEraseFault:        o.eraseFault,
 		archive:               o.archive,
@@ -1202,6 +1211,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	s.unregisterMetrics = []func(){
 		metrics.RegisterDBStats("admin", admin),
 		metrics.RegisterDBStats("maint", maint),
+		metrics.RegisterSetAside(s.aside.count),
 		metrics.RegisterPoolStats("repositories", func() metrics.PoolStats {
 			st := repoPool.Stat()
 			return metrics.PoolStats{
@@ -1285,13 +1295,20 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// exists precisely to run beside the writer.
 	if !s.readOnly && !o.skipWriterLease {
 		s.lease = newWriterLease(maint, s.log)
+		if err := s.leaseEveryRepository(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	// Every repository's directory against its rows, before anything is
 	// served (repodir.go): a crash left the file a transaction behind, a
 	// restore left a directory with no row, or a wiped data root left a row
-	// with no directory. A repository the two sides disagree on refuses the
-	// boot. A read-only process skips it: the check writes, and the server
-	// that owns the directories runs it at its own boot.
+	// with no directory. A repository the two sides disagree on is set
+	// aside (setaside.go). A read-only process skips it: the check writes,
+	// and the server that owns the directories runs it at its own boot.
 	if !s.readOnly {
 		// Every repository a release before ids left keyed by its name takes
 		// its id first, rows and directory (repositoryid.go), so the check
@@ -1314,6 +1331,15 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		// published under its id now, so the names it held go.
 		s.releaseKeyingLeases()
 	}
+	// A start that set aside every repository it found has nothing to serve
+	// and stops as the check did before (setaside.go).
+	if err := s.finishSetAside(ctx); err != nil {
+		s.lease.close()
+		repoPool.Close()
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -1321,7 +1347,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 // DEK wraps the store already carries. A host that starts with the WRONG key
 // otherwise listens, answers /healthz, and fails every repository open after
 // the fact, the shape a lost keys volume produces, where a fresh key is
-// minted over a database full of repositories nothing can now unwrap.
+// minted over a database full of repositories nothing can now unwrap. A wrap
+// that names this very key and does not open is one repository's damage, and
+// that repository is set aside (setaside.go).
 //
 // A KEYLESS service skips the check: a plain-marked wrap opens without a key,
 // and a sealed one refuses at the repository open, which is what leaves the
@@ -1331,45 +1359,66 @@ func (s *service) requireCredentialKeyOpens(ctx context.Context) error {
 	if len(s.credKey) == 0 {
 		return nil
 	}
+	type wrap struct {
+		repo    Repository
+		wrapped []byte
+		keyID   string
+	}
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, dek, dek_key_id FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
+		`SELECT id, authority, dek, dek_key_id FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = rows.Close() }()
-	var checked int
-	var failures []string
-	// A wrap that names THIS key and still does not open is damage, not a
-	// foreign database, and the advice for the two is opposite: the first
-	// must keep its key, the second must find another.
-	damaged := false
+	var wraps []wrap
 	for rows.Next() {
-		var id string
-		var wrapped []byte
+		var w wrap
 		var keyID sql.NullString
-		if err := rows.Scan(&id, &wrapped, &keyID); err != nil {
+		if err := rows.Scan(&w.repo.ID, &w.repo.Authority, &w.wrapped, &keyID); err != nil {
 			return err
 		}
-		checked++
-		if _, err := s.unwrapDEK(wrapped, id, keyID.String); err != nil {
-			failures = append(failures, err.Error())
-			if keyID.String == s.credKeyID {
-				damaged = true
-			}
-		}
+		w.keyID = keyID.String
+		wraps = append(wraps, w)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(failures) == 0 {
-		return nil
+	// Whether the host holds the right key is the server's question, and it
+	// is asked of every wrap that names another key (or none) before any
+	// repository is looked at alone: one that does not open says this
+	// database was written under another key, and the start stops.
+	var failures []string
+	for _, w := range wraps {
+		if w.keyID == s.credKeyID {
+			continue
+		}
+		if _, err := s.unwrapDEK(w.wrapped, w.repo.ID, w.keyID); err != nil {
+			failures = append(failures, err.Error())
+		}
 	}
-	advice := "Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable"
-	if damaged {
-		advice = "A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row from a database dump or its directory from a copy"
+	if len(failures) > 0 {
+		return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable",
+			s.credKeyID, len(failures), len(wraps), strings.Join(failures, "; "))
 	}
-	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. %s",
-		s.credKeyID, len(failures), checked, strings.Join(failures, "; "), advice)
+	// A wrap that names THIS key and still does not open is damage, not a
+	// foreign database, and the advice for the two is opposite: the first
+	// must keep its key, the second must find another. Damage is one
+	// repository's, so each such wrap is opened through the start's one gate.
+	for _, w := range wraps {
+		if w.keyID != s.credKeyID {
+			continue
+		}
+		if err := s.through(ctx, rowPass(w.repo, setAsideAtKey), func() error {
+			if _, err := s.unwrapDEK(w.wrapped, w.repo.ID, w.keyID); err != nil {
+				return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of repository %s: %w. A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row in repositories from a database dump",
+					s.credKeyID, w.repo.label(), err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) Close() error {
@@ -1410,8 +1459,9 @@ func (s *service) Close() error {
 	return err
 }
 
-// Repositories lists every repository: the ledger is one table, and the
-// background loops enumerate through it.
+// Repositories lists every repository but the ones the start set aside: the
+// ledger is one table, and the background loops enumerate through it, so a
+// set-aside repository is one no loop reaches (setaside.go).
 func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo, error) {
 	repos, err := s.listRepositories(ctx)
 	if err != nil {
@@ -1419,6 +1469,9 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 	}
 	out := make([]substrate.RepositoryInfo, 0, len(repos))
 	for _, r := range repos {
+		if s.setAsideOf(r.ID, r.Authority) != nil {
+			continue
+		}
 		out = append(out, r.info())
 	}
 	return out, nil
@@ -1431,6 +1484,9 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 // plus a request are enough to make that happen — so the SECOND caller waits
 // for the first's answer instead of racing it.
 func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		return nil, err
+	}
 	if !vocabulary.ValidRepositoryID(repo.ID) {
 		return nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
 	}
@@ -1757,6 +1813,11 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
+	}
+	// A directory the start set aside before it had a row still holds its
+	// name: the repair imports it under that name at the next start.
+	if s.aside.holdsName(authority) {
+		return zero, errAuthorityTaken(authority)
 	}
 	id, err := vocabulary.NewRepositoryID()
 	if err != nil {

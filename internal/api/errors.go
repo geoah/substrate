@@ -114,12 +114,30 @@ const restartRetryAfter = 30 * time.Second
 // refused key, and longer than the console waits out on its own.
 const keyRefusedRetryAfter = time.Minute
 
+// setAsideRetryAfter is the Retry-After on a repository the server set aside
+// at its start (substrate.ErrSetAside): it serves again only after its
+// operator repairs it and restarts the server, so a sender that retries on
+// its own (a webhook's provider) waits minutes, not seconds.
+const setAsideRetryAfter = 5 * time.Minute
+
 // writeUnavailable is the 503 emit: a transient condition the caller should
 // retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
 // least one second.
 func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg string) {
 	writeUnavailablePayload(w, retryAfter, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+}
+
+// unavailablePayload is the 503 a bearer whose repository will not open
+// answers: the service's own refusal where a client acts on it (a repository
+// set aside at the server's start), else msg alone, the cause being one the
+// client is not shown.
+func unavailablePayload(cause error, msg string) substrate.ErrorPayload {
+	if errors.Is(cause, substrate.ErrSetAside) {
+		_, p := problemFor(cause)
+		return p
+	}
+	return substrate.ErrorPayload{Code: codeUnavailable, Message: msg}
 }
 
 // writeUnavailablePayload is writeUnavailable for a payload that carries
@@ -202,6 +220,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusRequestEntityTooLarge, substrate.ErrorPayload{Code: codeBadRequest, Message: err.Error()}
 	case errors.Is(err, substrate.ErrKeyRefused):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonKeyRefused, Message: err.Error()}
+	case errors.Is(err, substrate.ErrSetAside):
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonSetAside, Message: err.Error()}
 	case errors.Is(err, substrate.ErrObservedRederiving):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonObservedRederiving, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
@@ -284,6 +304,10 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p 
 	case errors.Is(err, substrate.ErrKeyRefused):
 		slog.Warn("request answered unavailable: the vendor refused the key", attrs...)
 		retryAfter = keyRefusedRetryAfter
+	case errors.Is(err, substrate.ErrSetAside):
+		// The start logged why, once; a line per refused request would bury it.
+		slog.Debug("request refused: the repository is set aside", attrs...)
+		retryAfter = setAsideRetryAfter
 	case clientCanceled(r.Context(), err):
 		slog.Debug("request canceled by the client", attrs...)
 	default:

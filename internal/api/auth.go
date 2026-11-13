@@ -239,7 +239,7 @@ func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 			// The cause of a 503 is a database or an open failing, which the
 			// client is not shown, so the log is the only place it surfaces.
 			if status == http.StatusServiceUnavailable {
-				writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+				writeUnavailableCause(w, r, cause, unavailablePayload(cause, msg))
 				return
 			}
 			if status == http.StatusUnauthorized {

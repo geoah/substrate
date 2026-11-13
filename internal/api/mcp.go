@@ -134,7 +134,7 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 	if ctx == nil {
 		switch status {
 		case http.StatusServiceUnavailable:
-			writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+			writeUnavailableCause(w, r, cause, unavailablePayload(cause, msg))
 		case http.StatusUnauthorized:
 			errCode := ""
 			if bearerSecret(r) != "" {

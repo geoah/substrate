@@ -28,7 +28,8 @@ import { loginRoute } from "@/router"
 /** The door refuses to say WHICH factor was wrong — repository, password and
  * code fail as one, and a lockout reads the same — so the console must not
  * invent specifics the server withheld. Only the rate limit earns sugar (the
- * wait). */
+ * wait), and a repository set aside, which the door says only once the
+ * factors are right, earns who acts on it. */
 function describeError(err: unknown, codeAsked: boolean): string {
   if (err instanceof ApiError) {
     if (err.code === "rate_limited") {
@@ -39,6 +40,9 @@ function describeError(err: unknown, codeAsked: boolean): string {
       return codeAsked
         ? "The address, password or code is wrong. Wait for a fresh code and try again."
         : "The address or password is wrong. Check both and try again."
+    }
+    if (err.code === "unavailable" && err.reason === "set_aside") {
+      return "This repository is set aside: the server found it damaged when it started, so it serves the others and writes nothing to this one. It serves it again once its operator repairs it and restarts the server."
     }
     return err.message
   }

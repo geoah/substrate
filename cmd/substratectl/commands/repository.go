@@ -14,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/geoah/substrate/internal/archive"
+	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -65,7 +67,9 @@ nothing stored can tell apart.
 
 It runs beside a live server: the engine opens read-only against the data
 root and applies no migration, and the queue rows it writes are not changelog
-entries.`,
+entries. A repository the running server set aside at its start is refused,
+read from the writer leases as 'repository list' reads them, and gets no
+queue row.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := a.openEngineReadOnly(cmd.Context())
@@ -112,7 +116,18 @@ only door and there is nothing else to record. ARCHIVED is the mark the
 server's last archive pass left: the seq its archive holds every line up to,
 and how long ago it was written ("never" before the first pass, or with the
 archive off). How far that is behind the server's own head is the
-substrate_archive_* metrics.`,
+substrate_archive_* metrics.
+
+The state is read from the writer leases in pg_locks, beside a running
+server: serving when a server holds the repository's lease; set aside when
+a server holds others and not this one, because its start found it damaged
+(the server's log says why, and a restart after the repair serves it again),
+or because its start-up check has not reached it yet; stopped when no server
+holds any. With SUBSTRATE_DATA_ROOT set, a 0.x directory there with no row,
+and a repository the archive (SUBSTRATE_ARCHIVE, as the server runs with
+it) holds and the database has no row of, are listed too, with no creation
+time: set aside while a server runs, since its start imports or restores
+every other one, and not imported while none does.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			db, err := a.controlPlane()
@@ -124,8 +139,42 @@ substrate_archive_* metrics.`,
 			if err != nil {
 				return err
 			}
+			root := ""
+			var store archive.Store
+			if os.Getenv(dataRootEnv) != "" {
+				data, err := config.LoadData()
+				if err != nil {
+					return err
+				}
+				root = data.Root
+				archived, err := config.LoadArchive()
+				if err != nil {
+					return err
+				}
+				if store, err = archived.Store(data.Root); err != nil {
+					return err
+				}
+			}
+			states, err := engine.RepositoryStates(cmd.Context(), db, root, store)
+			if errors.Is(err, engine.ErrArchiveUnlisted) {
+				// The database's rows are listed all the same.
+				fmt.Fprintf(a.errOut, "the archive did not answer, so a repository it alone holds is not listed: %v\n", err)
+				err = nil
+			}
+			if err != nil {
+				return err
+			}
+			state := make(map[string]string, len(states))
+			var dirs []engine.RepositoryState
+			for _, st := range states {
+				if st.Directory {
+					dirs = append(dirs, st)
+					continue
+				}
+				state[st.ID] = st.State
+			}
 			if output == "json" {
-				out := make([]map[string]any, 0, len(rows))
+				out := make([]map[string]any, 0, len(rows)+len(dirs))
 				for _, r := range rows {
 					entry := map[string]any{
 						"authority":      r.Authority,
@@ -135,23 +184,27 @@ substrate_archive_* metrics.`,
 						"archivedSeq":    r.ArchivedSeq,
 						"archiveMissing": r.ArchiveMissing,
 						"archiveStore":   r.ArchiveStore,
+						"state":          state[r.ID],
 					}
 					if !r.ArchivedAt.IsZero() {
 						entry["archivedAt"] = r.ArchivedAt.Format(time.RFC3339)
 					}
 					out = append(out, entry)
 				}
+				for _, d := range dirs {
+					out = append(out, map[string]any{"authority": d.Authority, "id": d.ID, "state": d.State})
+				}
 				return printJSON(a.out, out)
 			}
 			if output != "" && output != "table" {
 				return fmt.Errorf("unknown output format %q: use table or json", output)
 			}
-			if len(rows) == 0 {
+			if len(rows) == 0 && len(dirs) == 0 {
 				fmt.Fprintln(a.out, "no repositories: nobody has registered yet")
 				return nil
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE\tARCHIVED")
+			fmt.Fprintln(tw, "AUTHORITY\tID\tCREATED\tAGE\tARCHIVED\tSTATE")
 			for _, r := range rows {
 				archived := "never"
 				if !r.ArchivedAt.IsZero() {
@@ -160,8 +213,15 @@ substrate_archive_* metrics.`,
 						archived += fmt.Sprintf(", %d blob(s) missing", r.ArchiveMissing)
 					}
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt), archived)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					r.Authority, r.ID, r.CreatedAt.Format(time.RFC3339), humanAge(a.now(), r.CreatedAt), archived, state[r.ID])
+			}
+			for _, d := range dirs {
+				name := d.Authority
+				if name == "" {
+					name = "-"
+				}
+				fmt.Fprintf(tw, "%s\t%s\t-\t-\t-\t%s\n", name, d.ID, d.State)
 			}
 			return tw.Flush()
 		},

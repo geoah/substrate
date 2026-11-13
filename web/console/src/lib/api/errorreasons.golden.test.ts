@@ -24,6 +24,7 @@ const errorReasons: Record<ErrorReason, true> = {
   key_refused: true,
   observed_rederiving: true,
   quota: true,
+  set_aside: true,
   stale_revision: true,
 }
 

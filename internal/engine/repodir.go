@@ -104,7 +104,9 @@ func (s *service) repositoryDir(id string) (string, error) {
 	return changelogfile.EnsureRepoDir(s.dataRoot, id)
 }
 
-// reconcileRepositories is the boot check (the header).
+// reconcileRepositories is the boot check (the header). A repository a pass
+// cannot bring to serve is set aside (setaside.go), and the check goes on to
+// the next; a failure of the server's own refuses the boot.
 func (s *service) reconcileRepositories(ctx context.Context) error {
 	repos, err := s.listRepositories(ctx)
 	if err != nil {
@@ -122,17 +124,36 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 	for _, repo := range repos {
 		byID[repo.ID] = repo
 	}
+	// What each directory holds is read through the gate too: a directory
+	// that cannot be read is its repository's failure, never a directory
+	// with no history whose row then passes as current.
 	var history, adopted []string
 	for _, id := range dirs {
-		dir, err := changelogfile.RepoDir(s.dataRoot, id)
-		if err != nil {
-			return err
+		pass := copyPass(id, setAsideAtImport, func() string { return directoryName(s.dataRoot, id) })
+		if repo, ok := byID[id]; ok {
+			pass = rowPass(repo, setAsideAtCheck)
 		}
-		switch {
-		case changelogfile.HistoryAdopted(dir):
-			adopted = append(adopted, id)
-		case changelogfile.HasHistory(dir):
-			history = append(history, id)
+		if err := s.through(ctx, pass, func() error {
+			dir, err := changelogfile.RepoDir(s.dataRoot, id)
+			if err != nil {
+				return err
+			}
+			was, has, err := changelogfile.HistoryState(dir)
+			if err == nil {
+				err = s.importStage(discoverStage)
+			}
+			if err != nil {
+				return fmt.Errorf("substrate/engine: boot check: read the directory %s: %w", dir, err)
+			}
+			switch {
+			case was:
+				adopted = append(adopted, id)
+			case has:
+				history = append(history, id)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 	// A directory whose history a boot adopted and whose removal it did not
@@ -144,50 +165,72 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, ok := byID[id]; !ok {
+		repo, ok := byID[id]
+		if !ok {
 			s.log.Error("substrate: a directory's history was adopted by a database that no longer holds the repository; it is left where it is",
 				"repository", id, "directory", dir)
 			continue
 		}
-		if err := changelogfile.RemoveHistory(dir, s.importStage); err != nil {
-			return fmt.Errorf("substrate/engine: boot check: finish removing the adopted history of %s: %w", id, err)
+		if err := s.through(ctx, rowPass(repo, setAsideAtCheck), func() error {
+			if err := changelogfile.RemoveHistory(dir, s.importStage); err != nil {
+				return fmt.Errorf("substrate/engine: boot check: finish removing the adopted history of %s: %w", id, err)
+			}
+			s.log.Info("substrate: finished removing a directory's adopted history", "repository", id)
+			return nil
+		}); err != nil {
+			return err
 		}
-		s.log.Info("substrate: finished removing a directory's adopted history", "repository", id)
 	}
 	// Said before the work, because an import of a long history takes
 	// minutes: whoever is waiting on the listener learns why it is late.
 	s.log.Info("substrate: boot check started", "repositories", len(repos), "directoriesWithHistory", len(history))
 	for _, id := range history {
-		var out reconcileOutcome
 		if repo, ok := byID[id]; ok {
-			out, err = s.adoptDirectory(ctx, repo)
-		} else {
-			var repo Repository
-			repo, out, err = s.importDirectory(ctx, id)
-			if err == nil && out.Action != reconcileSkipped {
+			if err := s.through(ctx, rowPass(repo, setAsideAtCheck), func() error {
+				out, err := s.adoptDirectory(ctx, repo)
+				if err != nil {
+					return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
+				}
+				s.logReconcile(out)
+				return nil
+			}); err != nil {
+				return err
+			}
+			continue
+		}
+		pass := copyPass(id, setAsideAtImport, func() string { return directoryName(s.dataRoot, id) })
+		if err := s.through(ctx, pass, func() error {
+			repo, out, err := s.importDirectory(ctx, id)
+			if err != nil {
+				return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
+			}
+			if out.Action != reconcileSkipped {
 				byID[id], repos = repo, append(repos, repo)
 			}
+			s.logReconcile(out)
+			return nil
+		}); err != nil {
+			return err
 		}
-		if err != nil {
-			s.logInterrupted(ctx, id)
-			return fmt.Errorf("substrate/engine: boot check: repository directory %s: %w", id, err)
-		}
-		s.logReconcile(out)
 	}
 	if err := s.reconcileArchive(ctx, byID); err != nil {
 		return err
 	}
 	for _, repo := range repos {
-		out, err := s.reconcileRow(ctx, repo)
-		if err != nil {
-			s.logInterrupted(ctx, repo.ID)
-			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
-		}
-		if out.Action != reconcileOK {
-			s.logReconcile(out)
+		if err := s.through(ctx, rowPass(repo, setAsideAtCheck), func() error {
+			out, err := s.reconcileRow(ctx, repo)
+			if err != nil {
+				return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
+			}
+			if out.Action != reconcileOK {
+				s.logReconcile(out)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
-	if err := s.removeUnnamedStages(ctx); err != nil {
+	if err := s.removeUnnamedStages(ctx, byID); err != nil {
 		return fmt.Errorf("substrate/engine: boot check: remove the staged copies no take names: %w", err)
 	}
 	return nil
@@ -622,7 +665,9 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 // reconcileArchive is pass 2 (the header): every repository the archive
 // holds and the database does not is restored from it (rule 8). A
 // repository the database holds is never taken from the archive here: the
-// operator decides that (`substratectl archive resolve`).
+// operator decides that (`substratectl archive resolve`). A restore that
+// fails sets its repository aside (setaside.go), under the name its newest
+// manifest gives, where one reads.
 func (s *service) reconcileArchive(ctx context.Context, byID map[string]Repository) error {
 	if err := s.restoreTakes(ctx, byID); err != nil {
 		return err
@@ -640,11 +685,23 @@ func (s *service) reconcileArchive(ctx context.Context, byID map[string]Reposito
 		if _, rowed := byID[id]; rowed {
 			continue
 		}
-		out, skipped, err := s.restoreArchived(ctx, id, all[id], byID)
-		if err != nil {
-			s.logInterrupted(ctx, id)
-			return fmt.Errorf("substrate/engine: boot check: the archive of repository %s in %s: %w. To boot without it, move %s out of the archive",
-				id, s.archive.String(), err, changelogfile.RepositoryPrefix(id))
+		var out reconcileOutcome
+		var skipped error
+		pass := copyPass(id, setAsideAtRestore, func() string { return archivedName(ctx, s.archive, id) })
+		restored := false
+		if err := s.through(ctx, pass, func() error {
+			var err error
+			if out, skipped, err = s.restoreArchived(ctx, id, all[id], byID); err != nil {
+				return fmt.Errorf("substrate/engine: boot check: the archive of repository %s in %s: %w. To start without it, move %s out of the archive",
+					id, s.archive.String(), err, changelogfile.RepositoryPrefix(id))
+			}
+			restored = true
+			return nil
+		}); err != nil {
+			return err
+		}
+		if !restored {
+			continue
 		}
 		switch {
 		case errors.Is(skipped, errArchiveCovered):
@@ -765,6 +822,20 @@ func (s *service) archiveSourceOf(ctx context.Context, db dbx, id string) (*arch
 		return nil, errNoArchive
 	}
 	return openArchiveSource(ctx, s.archive, id, archiveID, name, s.admitManifest)
+}
+
+// archivedName is the name the newest manifest of repository id's archive in
+// store gives, or "" when none reads: what keeps a set-aside restore's name
+// from a registration.
+func archivedName(ctx context.Context, store archive.Store, id string) string {
+	if store == nil {
+		return ""
+	}
+	src, err := openNewestArchive(ctx, store, id, nil)
+	if err != nil {
+		return ""
+	}
+	return src.manifest.Authority
 }
 
 // admitManifest refuses a manifest naming a dialect above this binary's.
@@ -899,6 +970,10 @@ const (
 )
 
 // importStage runs the import's test seam at a step no dataset is open for.
+// discoverStage is the boot check's read of one directory, for a test that
+// stands its failure in for a directory the server may not read.
+const discoverStage = "while the boot check reads a repository's directory"
+
 func (s *service) importStage(stage string) error {
 	if s.testImportFault == nil {
 		return nil

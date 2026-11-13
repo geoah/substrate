@@ -260,6 +260,9 @@ func (ds *dataset) openEmbedProvider(ctx context.Context, id string) (*embedProv
 // so a re-embed cannot commit vectors on behalf of a job that was already in
 // flight against older text.
 func (ds *dataset) Reembed(ctx context.Context, all bool) (substrate.ReembedReport, error) {
+	if err := ds.svc.refuseBesideTheServersSetAside(ctx, ds.info.ID, ds.info.Authority); err != nil {
+		return substrate.ReembedReport{}, err
+	}
 	provider, err := ds.resolveEmbedProvider(ctx)
 	if err != nil {
 		return substrate.ReembedReport{}, err

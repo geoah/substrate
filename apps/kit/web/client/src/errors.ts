@@ -24,7 +24,8 @@ export class SubstrateError extends Error {
    * request repeated under an `Idempotency-Key` did not run, and the first
    * attempt's write stands), `first_attempt_running` (it did not run, and
    * the first attempt may still land), `quota`, `key_refused`,
-   * `observed_rederiving`. */
+   * `observed_rederiving`, `set_aside` (the server found the repository
+   * damaged when it started). */
   readonly reason?: string
 
   constructor(

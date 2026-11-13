@@ -428,3 +428,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |
+| [0281](0281-a-repository-the-start-finds-damaged-is-set-aside-in-memory-and-the-rest-serve.md) | A repository the start finds damaged is set aside in memory, and the rest serve | accepted |

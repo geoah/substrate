@@ -516,6 +516,11 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 		if rerr != nil || !passwordOK {
 			return Repository{}, authMaterial{}, authErr
 		}
+		// Past the factors, and before anything behind this door writes: a
+		// deletion or an enrollment opens nothing that would refuse it.
+		if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+			return Repository{}, authMaterial{}, err
+		}
 		return repo, material, nil
 	}
 	if rerr != nil || !passwordOK {
@@ -526,6 +531,9 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 	}
 	if !codeOK {
 		return Repository{}, authMaterial{}, authErr
+	}
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		return Repository{}, authMaterial{}, err
 	}
 	// The code is spent BEFORE anything is handed out, under the sealed row's
 	// own lock, so two requests racing on one code cannot both win.

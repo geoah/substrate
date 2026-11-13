@@ -187,6 +187,7 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 	var env struct {
 		Error struct {
 			Code     string   `json:"code"`
+			Reason   string   `json:"reason"`
 			Message  string   `json:"message"`
 			Problems []string `json:"problems"`
 			// Both halves of a validation refusal are read: the engine's
@@ -199,7 +200,7 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err == nil && (env.Error.Code != "" || env.Error.Message != "") {
-		ae.Code, ae.Message, ae.Problems = env.Error.Code, env.Error.Message, env.Error.Problems
+		ae.Code, ae.Reason, ae.Message, ae.Problems = env.Error.Code, env.Error.Reason, env.Error.Message, env.Error.Problems
 		ae.ProblemDetails = env.Error.ProblemDetails
 		ae.Head, ae.Generation = env.Error.Head, env.Error.Generation
 		return ae

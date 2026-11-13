@@ -334,6 +334,31 @@ describe("LoginPage", () => {
     expect(getToken()).toBeNull()
   })
 
+  it("says the repository is set aside, and who brings it back", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        503,
+        {
+          error: {
+            code: "unavailable",
+            reason: "set_aside",
+            message: "substrate: the repository is set aside",
+          },
+        },
+        { "Retry-After": "300" }
+      )
+    )
+    render(<LoginPage />)
+    signIn()
+    await screen.findByText(/this repository is set aside/i)
+    expect(screen.getByText(/once its operator repairs it/i)).toBeTruthy()
+    // What holds is that the server writes nothing to it from now on: its
+    // start may have committed a keying or a conversion before the failure.
+    expect(screen.getByText(/writes nothing to this one/i)).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/changed nothing/i)
+    expect(getToken()).toBeNull()
+  })
+
   it("rejects a non-six-digit code before the second request", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(401, CODE_ASKED))
     render(<LoginPage />)

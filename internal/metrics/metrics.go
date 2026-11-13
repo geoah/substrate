@@ -155,6 +155,18 @@ func RegisterDBStats(name string, db *sql.DB) (unregister func()) {
 	return register(name, collectors.NewDBStatsCollector(db, name))
 }
 
+// RegisterSetAside publishes how many repositories the server's start set
+// aside: each was found damaged, is never opened, and answers every request
+// with the reason `set_aside` until a restart finds it whole. Above zero is
+// what an operator who relied on a damaged repository stopping the server
+// watches instead.
+func RegisterSetAside(count func() int) (unregister func()) {
+	return register("set_aside", prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "substrate_repositories_set_aside",
+		Help: "Repositories the server set aside at its start: found damaged, never opened, refused with the reason set_aside until a restart finds them whole.",
+	}, func() float64 { return float64(count()) }))
+}
+
 // register publishes c under key, taking over a collector already published
 // under it, and returns the unregister that drops c and only c.
 func register(name string, c prometheus.Collector) (unregister func()) {
