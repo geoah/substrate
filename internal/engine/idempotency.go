@@ -163,18 +163,22 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 	}
 	if !r.settled {
 		if r.thread != "" {
-			return fmt.Errorf("%w: Idempotency-Key %q: the first request opened agent thread %s and has not settled; read the thread, and run again under a new key",
-				substrate.ErrConflict, key, r.thread)
+			return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request opened agent thread %s and has not settled; read the thread, and run again under a new key",
+				substrate.ErrConflict, substrate.ErrFirstAttemptRunning, key, r.thread)
 		}
-		return fmt.Errorf("%w: Idempotency-Key %q: the first request is still running; retry after it answers", substrate.ErrConflict, key)
+		return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request is still running; retry after it answers",
+			substrate.ErrConflict, substrate.ErrFirstAttemptRunning, key)
 	}
+	// The first request landed; this one did not run. A client told only
+	// `conflict` would take its write for rolled back, so the reason says
+	// which attempt the refusal is about.
 	if r.outcome == nil {
 		if r.locator != "" {
-			return fmt.Errorf("%w: Idempotency-Key %q: the first request succeeded and wrote %s, but its outcome exceeded the %d byte retention cap and was not stored; read the record",
-				substrate.ErrConflict, key, r.locator, idempotencyOutcomeCap)
+			return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request succeeded and wrote %s, but its outcome exceeded the %d byte retention cap and was not stored; read the record",
+				substrate.ErrConflict, substrate.ErrFirstAttemptLanded, key, r.locator, idempotencyOutcomeCap)
 		}
-		return fmt.Errorf("%w: Idempotency-Key %q: the first request succeeded but its outcome exceeded the %d byte retention cap and was not stored",
-			substrate.ErrConflict, key, idempotencyOutcomeCap)
+		return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request succeeded but its outcome exceeded the %d byte retention cap and was not stored",
+			substrate.ErrConflict, substrate.ErrFirstAttemptLanded, key, idempotencyOutcomeCap)
 	}
 	if err := json.Unmarshal(r.outcome, out); err != nil {
 		return fmt.Errorf("decode the stored outcome of Idempotency-Key %q: %w", key, err)

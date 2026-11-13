@@ -48,13 +48,19 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * write's `revision` is below the stored one, so a newer write landed first
  * and this one never will. `in_doubt` rides an `internal` (500) or an
  * `unavailable` (503): the write may have landed, because the server lost the
- * database's answer to its commit or a step after it failed. */
+ * database's answer to its commit or a step after it failed.
+ * `first_attempt_running` and `first_attempt_landed` ride a `conflict` (409)
+ * on a request repeated under an Idempotency-Key: this request did not run,
+ * and the first attempt either has not answered yet or landed with an
+ * outcome too large to keep, whose record the message names. */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
   | "quota"
   | "stale_revision"
   | "in_doubt"
+  | "first_attempt_running"
+  | "first_attempt_landed"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

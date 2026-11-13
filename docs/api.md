@@ -593,6 +593,8 @@ conclude when it does not get the answer it expected:
 | A timeout on a guarded write, sent without a key | Nothing. A retry's `conflict` may be its own first attempt: read the record and compare. |
 | A timeout on a create, a function or agent call, a merge or a split, sent with a key | Retry under the same key within 24 hours. |
 | `500 internal` or `503 unavailable` with the reason `in_doubt` | The write may have landed: the server lost the database's answer to its commit, or a step after the commit failed. Read the record, or retry under the same key. |
+| `409 conflict` with the reason `first_attempt_landed`, on a request repeated under a key | This request did not run, and the first attempt landed: its outcome was too large to keep, so read what it wrote, which the message names. |
+| `409 conflict` with the reason `first_attempt_running`, on a request repeated under a key | This request did not run, and the first attempt has not answered: it may still land. Retry under the same key once it has. |
 | Any other error on a write of one record | It did not land. A function or agent call is not one record: its body may have committed effects before the error, as [above](#idempotency-and-retries) says. |
 | A dropped watch | Resume from the saved position: in order, nothing skipped, possibly a repeat. A `410 compacted` means list again ([the changelog](changelog.md#watching)). |
 | A `410 compacted` on a list page | List again from the first page ([pagination](#pagination)). |
@@ -846,15 +848,25 @@ page that looked complete. An exhausted list carries no `cursor` at all: there
 is no next page.
 
 A token the server can no longer resume, through nothing the client did, is
-refused with one answer, `410 compacted`, carrying the `head` and
-`generation` to start over from: list again from the first page. Three causes
-lead there. The history was replaced since the walk began (a restore). The
-same `filter` and `orderBy` now order the rows differently, because a
-declaration or a [unit](units.md) they read changed: installing a package
-that declares a property the order reads, for one. Or an earlier release
-minted the token: the token carries the version of its own format, and a
-server refuses a version it did not mint rather than reading it as its own.
-A server upgrade can therefore end every walk in progress once, with a `410`.
+refused with one answer, `410 compacted`, carrying the `head` and `generation`
+to start over from: list again from the first page. It is the answer for a
+request that is still valid and whose continuation is not. Four causes lead
+there. The history was replaced since the walk began (a restore). The same
+`filter` and `orderBy` now order the rows differently, because a declaration
+or a [unit](units.md) they read changed: installing a package that declares a
+property the order reads, for one, or, for an app's token, a kind its grant
+reads declared since, which the same request now reaches (a cursor is bound to
+the request the client sent, never to what its grant narrowed it to). For an
+app's token, the request now reaches nothing it can read, as when the one kind
+it read no longer has the purpose or binds the trait it asks for; the same
+request without a cursor answers an empty page. Or an earlier release minted
+the token: the token carries the version of its own format, and a server
+refuses a version it did not mint rather than reading it as its own. A server
+upgrade can therefore end every walk in progress once, with a `410`. A request
+the server would refuse as a fresh one gets that refusal with a cursor too:
+one that names a kind since removed, or a trait whose last implementer went,
+or, for an app's token, a kind it may no longer read, answers what the same
+request without a cursor answers (`404`, `422`).
 The [window read](#the-window-read)'s token follows the same rules.
 
 ### Addressing a page by its number
@@ -2564,7 +2576,7 @@ server could not repair it while running) also answers `unavailable`, with a
 30-second `Retry-After` and a message that names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has five members: `observed_rederiving` on `unavailable`,
+set is closed and has seven members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
@@ -2576,9 +2588,16 @@ lands ([observations](observations.md#the-rules-the-substrate-refuses)).
 `in_doubt` on `internal` and on `unavailable`, since revision 2 of the
 `errors` feature, says a write may have landed: the server lost the
 database's answer to its commit, or a step after the commit failed, and an
-error without it on a write of one record means the write rolled back
+error without it on a write of one record means this request's write did
+not land, though a first attempt under the same `Idempotency-Key` may have,
+which the next two reasons say
 ([what a client may conclude](#what-a-client-may-conclude-after-a-failure),
 [decision 0271](decisions/0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md)).
+`first_attempt_running` and `first_attempt_landed` on `conflict` say that the
+refusal of a request repeated under an `Idempotency-Key` is about the first
+attempt under that key, not this one, which did not run: the first has not
+answered yet and may still land, or it landed and its outcome was too large
+to keep, so its write stands and the message names what it wrote.
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,

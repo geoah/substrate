@@ -129,6 +129,14 @@ var (
 	// same Idempotency-Key, which answers the first attempt's outcome if it
 	// landed.
 	ErrWriteInDoubt = errors.New("substrate: the write may have landed")
+	// ErrFirstAttemptRunning and ErrFirstAttemptLanded mark a conflict that
+	// is about the first attempt under an Idempotency-Key, not this request,
+	// which did not run: the first has not answered yet and may still land
+	// (ReasonFirstAttemptRunning), or it landed and its outcome was too large
+	// to keep (ReasonFirstAttemptLanded), so its write stands and is read
+	// where the message says. Each follows ErrConflict, whose words lead.
+	ErrFirstAttemptRunning = errors.New("the first attempt under this key has not answered")
+	ErrFirstAttemptLanded  = errors.New("the first attempt under this key landed")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -154,6 +162,14 @@ const ReasonStaleRevision = "stale_revision"
 // and on `unavailable`.
 const ReasonInDoubt = "in_doubt"
 
+// ReasonFirstAttemptRunning and ReasonFirstAttemptLanded are the
+// ErrorPayload reasons of ErrFirstAttemptRunning and ErrFirstAttemptLanded,
+// on `conflict`.
+const (
+	ReasonFirstAttemptRunning = "first_attempt_running"
+	ReasonFirstAttemptLanded  = "first_attempt_landed"
+)
+
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
 	Error ErrorPayload `json:"error"`
@@ -167,8 +183,9 @@ type ErrorEnvelope struct {
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
 // set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`,
-// ReasonQuota on `guard`, ReasonStaleRevision on `validation`, and
-// ReasonInDoubt on `internal` and `unavailable`.
+// ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
+// ReasonInDoubt on `internal` and `unavailable`, and
+// ReasonFirstAttemptRunning and ReasonFirstAttemptLanded on `conflict`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

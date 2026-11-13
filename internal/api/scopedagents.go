@@ -290,7 +290,6 @@ func (s *scopedDataset) anyRowGated(ctx context.Context, kinds []string) (bool, 
 // answered 404, as the record itself would be.
 func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	kind := q.Filter.Kinds[0]
-	empty := &substrate.Page{Records: []*substrate.Record{}}
 	if q.Filter.Referencing != nil {
 		return nil, fmt.Errorf("%w: an app's token reads %s without a referencing filter", substrate.ErrForbidden, kind)
 	}
@@ -300,7 +299,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			return nil, err
 		}
 		if !any {
-			return empty, nil
+			return noneReached(q)
 		}
 	}
 	props := make(map[string]substrate.Cond, len(q.Filter.Properties)+1)
@@ -323,7 +322,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			ids = slices.DeleteFunc(slices.Clone(q.Filter.IDs), func(id string) bool { return !slices.Contains(talked, id) })
 		}
 		if len(ids) == 0 {
-			return empty, nil
+			return noneReached(q)
 		}
 		q.Filter.IDs = ids
 	case kindThread:
@@ -347,7 +346,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			return nil, err
 		}
 		if len(talked) == 0 {
-			return empty, nil
+			return noneReached(q)
 		}
 		in := make([]any, len(talked))
 		for i, a := range talked {

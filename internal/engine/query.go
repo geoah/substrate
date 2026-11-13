@@ -573,8 +573,14 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	}
 	// The request's own filter and orderBy, apart from what they resolve to:
 	// a cursor replayed under another request is the client's mistake, and
-	// one whose request now resolves to another order is not.
-	request := requestSignature(q.OrderBy, q.Filter)
+	// one whose request now resolves to another order is not. A scoped view
+	// narrowed the filter to its grant before it reached here, which the
+	// signature above holds; the request is the filter the client sent.
+	asked := q.Filter
+	if f, ok := substrate.AskedFilterFrom(ctx); ok {
+		asked = f
+	}
+	request := requestSignature(q.OrderBy, asked)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize

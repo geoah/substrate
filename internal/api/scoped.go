@@ -489,6 +489,12 @@ func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Rec
 }
 
 func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	// A cursor is bound to the filter the client sent; what the grant
+	// narrows it to below can change between pages with no change of the
+	// client's (substrate.WithAskedFilter).
+	if _, ok := substrate.AskedFilterFrom(ctx); !ok {
+		ctx = substrate.WithAskedFilter(ctx, q.Filter)
+	}
 	if gated, err := s.anyRowGated(ctx, q.Filter.Kinds); err != nil {
 		return nil, err
 	} else if gated {
@@ -499,13 +505,24 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		return nil, err
 	}
 	if !any {
-		return &substrate.Page{Records: []*substrate.Record{}}, nil
+		return noneReached(q)
 	}
 	page, err := s.inner.List(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	return s.cutPage(ctx, page)
+}
+
+// noneReached answers a request the grant now resolves to no kind or no row
+// at all. Fresh, it is an empty page. A continuation is still a valid request
+// whose walk cannot go on, because what its cursor stood among is gone: it
+// lists again, as every other such continuation does (410).
+func noneReached(q substrate.Query) (*substrate.Page, error) {
+	if q.After != "" {
+		return nil, fmt.Errorf("%w: the request reaches nothing it can read now, which it did when its cursor was minted; list again", substrate.ErrStaleHistory)
+	}
+	return &substrate.Page{Records: []*substrate.Record{}}, nil
 }
 
 // narrowByRegistry applies `implements` and `purposes` to an already

@@ -159,7 +159,14 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	case errors.Is(err, substrate.ErrNotFound):
 		return http.StatusNotFound, substrate.ErrorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):
-		return http.StatusConflict, substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
+		p := substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
+		switch {
+		case errors.Is(err, substrate.ErrFirstAttemptRunning):
+			p.Reason = substrate.ReasonFirstAttemptRunning
+		case errors.Is(err, substrate.ErrFirstAttemptLanded):
+			p.Reason = substrate.ReasonFirstAttemptLanded
+		}
+		return http.StatusConflict, p
 	case errors.Is(err, substrate.ErrLossyConversion):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeLossy, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAllowance):
