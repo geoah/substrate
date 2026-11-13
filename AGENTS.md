@@ -444,8 +444,12 @@ first label.
   `example.com` or a localhost default is the answer.
 - **`internal/api` never imports `internal/engine`.** The Go contract every
   consumer builds against is `internal/substrate`; the engine is one
-  implementation of it, and the API is tested entirely against a hand-written
-  fake (`internal/api/fake_test.go`).
+  implementation of it. The exception is the API's tests of engine behavior:
+  they run the handler on the real engine, in `internal/api`'s
+  `*_db_test.go` files, the only files there that may import it, and its
+  tests of the handler alone run on a stub that implements almost nothing
+  (`internal/api/stub_test.go`,
+  [0263](docs/decisions/0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md)).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and four directories are the exceptions. Two are the vocabulary as
   files: `kinds/` (the seeded `core`, `llm`, `console` and `observations`

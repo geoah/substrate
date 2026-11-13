@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +20,10 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
+// The authorization flow's own state, the document fetch and the token
+// endpoint's form, on the stub. What an approval writes, the token it mints
+// and what that token reaches, is the engine's, in authorize_db_test.go.
+
 // The app in these tests serves its document from memory: the real fetcher
 // never dials a loopback address, which is every address a test has.
 const (
@@ -28,6 +31,7 @@ const (
 	appRedirect = "https://notes.example.org/callback"
 	appVerifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk-the-verifier"
 	taskKind    = "samples.substrate.reamde.dev/tasks/task"
+	messageKind = "samples.substrate.reamde.dev/messaging/conversationmessage"
 )
 
 func challengeOf(verifier string) string {
@@ -56,76 +60,40 @@ func (m *memDocs) Fetch(_ context.Context, c authorize.Client) (authorize.Docume
 	return d, nil
 }
 
-// mintingDataset makes the fake's mint real enough for a flow: a minted token
-// authenticates, and revoking it stops it authenticating.
-type mintingDataset struct {
-	*fakeDataset
-	svc *fakeService
+// notesDocs serves the notes app's document.
+func notesDocs() *memDocs {
+	return &memDocs{docs: map[string]authorize.Document{
+		appClientID: {ClientID: appClientID, RedirectURIs: []string{appRedirect}, Name: "Notes", URI: "https://notes.example.org"},
+	}}
 }
 
-// failRevokes is how many token deletes fail before one lands, for the
-// replay revocation's retry.
-var failRevokes struct {
-	sync.Mutex
-	n int
-}
-
-func (d *mintingDataset) MintToken(_ context.Context, in substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
-	d.svc.mu.Lock()
-	defer d.svc.mu.Unlock()
-	n := len(d.svc.tokens) + 1
-	secret := fmt.Sprintf("substrate_tok_app%d", n)
-	info := substrate.TokenInfo{
-		ID: fmt.Sprintf("app%d", n), Label: in.Label, Created: time.Unix(0, 0).UTC(),
-		ExpiresAt: in.ExpiresAt, Scopes: in.Scopes, ClientID: in.ClientID, ClientName: in.ClientName,
-		AppAuthority: in.AppAuthority, AppAuthorityFromFile: in.AppAuthorityFromFile, AppLocal: in.AppLocal,
-		AppPackages: in.AppPackages, AppSoftwareVersion: in.AppSoftwareVersion,
-	}
-	d.svc.tokens[secret] = fakeToken{repository: d.repository.Authority, info: info}
-	return info, secret, nil
-}
-
-func (d *mintingDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
-	if typ == tokenType {
-		failRevokes.Lock()
-		if failRevokes.n > 0 {
-			failRevokes.n--
-			failRevokes.Unlock()
-			return nil, fmt.Errorf("%w: the database refused the write", substrate.ErrUnavailable)
-		}
-		failRevokes.Unlock()
-		d.svc.mu.Lock()
-		defer d.svc.mu.Unlock()
-		for secret, t := range d.svc.tokens {
-			if t.info.ID == id {
-				delete(d.svc.tokens, secret)
-				return &substrate.Record{ID: id, Kind: tokenType}, nil
-			}
-		}
-		return nil, substrate.ErrNotFound
-	}
-	return d.fakeDataset.Delete(ctx, actor, typ, id, in)
-}
-
+// appEnv drives the flow as an app and its owner do: newAuthorizeStub on
+// the stub, newAuthorizeEnv on the engine.
 type appEnv struct {
 	t     *testing.T
-	svc   *fakeService
 	h     http.Handler
 	docs  *memDocs
 	owner string
 }
 
-func newAppEnv(t *testing.T) *appEnv {
+// authorizePageReads is a repository with an empty registry and no token: all
+// the approval page reads of one for a request that sets nothing up. What
+// a page lists of a real registry and a real token is the engine's.
+type authorizePageReads struct{ stubDataset }
+
+func (authorizePageReads) Kinds(context.Context) ([]substrate.KindInfo, error) { return nil, nil }
+
+func (authorizePageReads) Tokens(context.Context) ([]substrate.TokenInfo, error) { return nil, nil }
+
+// newAuthorizeStub serves the flow on the stub, the notes app's document
+// served from memory and the park pace refilled by the wall clock. Its
+// owner can park, read, approve and deny; nothing on it mints a token.
+func newAuthorizeStub(t *testing.T, cfg ...func(*Config)) *appEnv {
 	t.Helper()
-	svc := newFakeService()
-	svc.wrap = func(d *fakeDataset) substrate.Dataset { return &mintingDataset{fakeDataset: d, svc: svc} }
-	docs := &memDocs{docs: map[string]authorize.Document{
-		appClientID: {ClientID: appClientID, RedirectURIs: []string{appRedirect}, Name: "Notes", URI: "https://notes.example.org"},
-	}}
-	return &appEnv{
-		t: t, svc: svc, docs: docs, owner: svc.token(fakeRepository),
-		h: New(Config{Service: svc, ClientDocuments: docs, AuthInterval: time.Nanosecond}),
-	}
+	docs := notesDocs()
+	base := func(c *Config) { c.ClientDocuments, c.AuthInterval, c.Now = docs, time.Nanosecond, time.Now }
+	env := newStubEnv(t, authorizePageReads{}, append([]func(*Config){base}, cfg...)...)
+	return &appEnv{t: t, h: env.h, docs: docs, owner: stubToken}
 }
 
 func (e *appEnv) do(method, target, bearer string, body []byte, contentType string) *httptest.ResponseRecorder {
@@ -229,123 +197,12 @@ func (e *appEnv) grant(scopes string, approved []string) string {
 	return decodeJSON[tokenResponse](e.t, tok).AccessToken
 }
 
-func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind + " write:" + taskKind + " read:~/notes/*"))
-
-	view := e.do(http.MethodGet, "/api/v1/authorizations/"+id, e.owner, nil, "")
-	wantStatus(t, view, http.StatusOK)
-	got := decodeJSON[substrate.AuthorizationRequest](t, view)
-	if got.App.Host != "notes.example.org" || got.App.Name != "Notes" || got.App.Local ||
-		got.App.Actor != "app:notes.example.org" {
-		t.Fatalf("app = %+v", got.App)
-	}
-	if got.Repository != fakeRepository || got.DefaultLifetimeDays != 30 {
-		t.Fatalf("repository %q default %d", got.Repository, got.DefaultLifetimeDays)
-	}
-	if len(got.Scopes) != 3 || got.Scopes[2].Scope != "read:"+fakeRepository+"/notes/*" ||
-		got.Scopes[2].Requested != "read:~/notes/*" || !got.Scopes[2].Glob {
-		t.Fatalf("scopes = %+v", got.Scopes)
-	}
-	if len(got.Scopes[0].Kinds) != 1 || got.Scopes[0].Kinds[0].Identity != personKind {
-		t.Fatalf("read scope reaches %+v, want the person kind", got.Scopes[0].Kinds)
-	}
-
-	// The owner approves two of the three.
-	rec := e.approveShown(id, []string{"read:" + personKind, "write:" + taskKind}, 30)
-	wantStatus(t, rec, http.StatusOK)
-	redirect := decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect
-	u, _ := url.Parse(redirect)
-	if !strings.HasPrefix(redirect, appRedirect+"?") || u.Query().Get("state") != "1.0" ||
-		u.Query().Get("iss") != "https://substrate.example.com" {
-		t.Fatalf("redirect = %q: want the app's redirect_uri with code, state verbatim and iss", redirect)
-	}
-
-	tok := e.exchange(tokenForm(codeFrom(t, redirect)))
-	wantStatus(t, tok, http.StatusOK)
-	if cc := tok.Header().Get("Cache-Control"); cc != "no-store" {
-		t.Fatalf("token answer Cache-Control = %q, want no-store", cc)
-	}
-	res := decodeJSON[tokenResponse](t, tok)
-	if res.TokenType != "Bearer" || res.Repository != fakeRepository ||
-		res.Scope != "read:"+personKind+" write:"+taskKind || res.ExpiresIn == nil || *res.ExpiresIn != 30*24*3600 {
-		t.Fatalf("token response = %+v", res)
-	}
-	minted := e.svc.tokens[res.AccessToken].info
-	if minted.ClientID != appClientID || minted.ClientName != "Notes" || minted.Label != "notes.example.org" ||
-		len(minted.Scopes) != 2 || minted.ExpiresAt == nil {
-		t.Fatalf("minted token = %+v", minted)
-	}
-
-	// The scoped surface: what the scopes reach and nothing else.
-	app := res.AccessToken
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(`{"kinds":["`+personKind+`"]}`), app, nil, ""), http.StatusOK)
-	wantStatus(t, e.do(http.MethodPut, "/api/v1/"+taskKind+"/t1", app, []byte(`{"properties":{"note":"x"}}`), "application/json"), http.StatusCreated)
-	put := e.do(http.MethodPut, "/api/v1/"+personKind+"/p1", app, []byte(`{"properties":{"name":"x"}}`), "application/json")
-	wantStatus(t, put, http.StatusForbidden)
-	if wa := put.Header().Get("WWW-Authenticate"); !strings.Contains(wa, `error="insufficient_scope"`) {
-		t.Fatalf("scope refusal WWW-Authenticate = %q", wa)
-	}
-	// A kind the grant cannot read is answered as if it did not exist.
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(`{"kinds":["samples.substrate.reamde.dev/messaging/conversationmessage"]}`), app, nil, ""), http.StatusNotFound)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/substrate.reamde.dev/core/token/tok1", app, nil, ""), http.StatusNotFound)
-	for _, c := range []struct{ method, path string }{
-		{http.MethodGet, "/tokens"},
-		{http.MethodPost, "/tokens"},
-		{http.MethodGet, "/api/v1/export"},
-		{http.MethodPost, "/api/v1/vocabulary/apply"},
-		{http.MethodGet, "/api/v1/catalog"},
-		{http.MethodPut, "/api/v1/blobs"},
-		{http.MethodPost, "/api/v1/merge"},
-		{http.MethodGet, "/api/v1/authorizations/" + id},
-		{http.MethodPost, "/api/v1/substrate.reamde.dev/core/function/x/call"},
-		{http.MethodGet, "/api/v1/sync/status"},
-	} {
-		rec := e.do(c.method, c.path, app, []byte(`{}`), "application/json")
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("%s %s with an app's token = %d %s, want 403", c.method, c.path, rec.Code, rec.Body.String())
-		}
-	}
-	// The records route's tail is the owner's: an app follows changes on
-	// the change feed, which cuts each row to what it reads.
-	watch := e.do(http.MethodGet, "/api/v1/records?watch=1", app, nil, "")
-	wantStatus(t, watch, http.StatusForbidden)
-}
-
-func TestAListWithNoKindsNamesEveryReadableKindAndNoOther(t *testing.T) {
-	e := newAppEnv(t)
-	app := e.grant("read:samples.substrate.reamde.dev/*", []string{"read:samples.substrate.reamde.dev/*"})
-	rec := e.do(http.MethodGet, "/api/v1/records", app, nil, "")
-	wantStatus(t, rec, http.StatusOK)
-	got := e.svc.datasets[fakeRepository].lastQuery.Filter.Kinds
-	want := []string{"samples.substrate.reamde.dev/messaging/conversationmessage", personKind, taskKind}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Fatalf("list narrowed to %v, want %v", got, want)
-	}
-	if page := decodeJSON[substrate.Page](t, rec); page.Head != 0 || page.Generation != "" {
-		t.Fatalf("an app's page carries head %d generation %q, want neither", page.Head, page.Generation)
-	}
-}
-
-func TestAnAppsTokenWritesAsItsOwnActorWhateverActorItNames(t *testing.T) {
-	e := newAppEnv(t)
-	app := e.grant("write:"+taskKind, []string{"write:" + taskKind})
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/t1", strings.NewReader(`{"properties":{}}`))
-	req.Header.Set("Authorization", "Bearer "+app)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(actorHeader, "console")
-	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-	wantStatus(t, rec, http.StatusCreated)
-	if got := e.svc.datasets[fakeRepository].lastActor; got != "app:notes.example.org" {
-		t.Fatalf("an app's write was attributed to %q, want app:notes.example.org", got)
-	}
-}
-
+// A token whose stored grant does not parse is refused at the door, never
+// read as no grant at all, which would be full access.
 func TestAnAppsTokenWithADamagedGrantDoesNotAuthenticate(t *testing.T) {
-	e := newAppEnv(t)
-	bad := e.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.Scopes = []string{"everything"} })
-	rec := e.do(http.MethodGet, "/api/v1/records", bad, nil, "")
+	svc := &stubService{ds: stubDataset{}, info: substrate.TokenInfo{ID: "tok1", Label: "test", Scopes: []string{"everything"}}}
+	e := &appEnv{t: t, h: newStubEnvOn(t, svc).h}
+	rec := e.do(http.MethodGet, "/api/v1/records", stubToken, nil, "")
 	wantStatus(t, rec, http.StatusUnauthorized)
 	if wa := rec.Header().Get("WWW-Authenticate"); !strings.Contains(wa, `error="invalid_token"`) ||
 		!strings.Contains(wa, `resource_metadata="https://substrate.example.com/.well-known/oauth-protected-resource"`) {
@@ -354,7 +211,7 @@ func TestAnAppsTokenWithADamagedGrantDoesNotAuthenticate(t *testing.T) {
 }
 
 func TestARequestWithoutATokenLearnsWhereTheMetadataIs(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	rec := e.do(http.MethodGet, "/api/v1/records", "", nil, "")
 	wantStatus(t, rec, http.StatusUnauthorized)
 	if wa := rec.Header().Get("WWW-Authenticate"); wa != `Bearer resource_metadata="https://substrate.example.com/.well-known/oauth-protected-resource"` {
@@ -363,8 +220,7 @@ func TestARequestWithoutATokenLearnsWhereTheMetadataIs(t *testing.T) {
 }
 
 func TestAConfiguredPublicURLIsTheIssuerWhateverTheHost(t *testing.T) {
-	svc := newFakeService()
-	h := New(Config{Service: svc, ClientDocuments: &memDocs{}, PublicURL: "https://substrate.example.net/"})
+	h := New(Config{Service: &stubService{}, ClientDocuments: &memDocs{}, PublicURL: "https://substrate.example.net/"})
 	req := httptest.NewRequest(http.MethodGet, asMetadataPath, nil)
 	req.Host = "10.0.0.7:8080"
 	rec := httptest.NewRecorder()
@@ -393,7 +249,7 @@ func TestTheIssuerIsHTTPOnlyOnALoopbackHost(t *testing.T) {
 }
 
 func TestTheMetadataDocumentsDescribeTheProfile(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	as := e.do(http.MethodGet, asMetadataPath, "", nil, "")
 	wantStatus(t, as, http.StatusOK)
 	md := decodeJSON[authorizationServerMetadata](t, as)
@@ -409,7 +265,7 @@ func TestTheMetadataDocumentsDescribeTheProfile(t *testing.T) {
 }
 
 func TestTheAuthorizationEndpointRefusesWithAPageNeverARedirect(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	cases := map[string]func(map[string]string){
 		"no PKCE":           func(p map[string]string) { delete(p, "code_challenge") },
 		"plain PKCE":        func(p map[string]string) { p["code_challenge_method"] = "plain" },
@@ -469,7 +325,7 @@ func TestTheAuthorizationEndpointRefusesWithAPageNeverARedirect(t *testing.T) {
 }
 
 func TestAnApprovalIsHeldToTheRequest(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	// A request the page never showed cannot be answered.
 	wantStatus(t, e.approveShown(id, []string{"read:" + personKind}, 30), http.StatusUnprocessableEntity)
@@ -487,23 +343,47 @@ func TestAnApprovalIsHeldToTheRequest(t *testing.T) {
 	wantStatus(t, e.approveShown(id, []string{"read:" + personKind}, 7), http.StatusNotFound)
 }
 
+// authorizeStranger is the bearer authorizeTwoRepositories opens another
+// repository with.
+const authorizeStranger = "substrate_tok_stranger"
+
+// authorizeTwoRepositories is the stub's service with a second repository,
+// whose token is authorizeStranger.
+type authorizeTwoRepositories struct{ *stubService }
+
+func (s authorizeTwoRepositories) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	if secret == authorizeStranger {
+		return authorizeOtherRepository{}, substrate.TokenInfo{ID: "tok2", Label: "test", Created: time.Unix(0, 0).UTC()}, nil
+	}
+	return s.stubService.Authenticate(ctx, secret)
+}
+
+// authorizeOtherRepository is the second repository authorizeTwoRepositories
+// opens.
+type authorizeOtherRepository struct{ authorizePageReads }
+
+func (authorizeOtherRepository) Repository() substrate.RepositoryInfo {
+	return substrate.RepositoryInfo{ID: "other.example.com", Authority: "other.example.com", State: "active"}
+}
+
 func TestARequestIsAnsweredOnlyByTheRepositoryThatClaimedIt(t *testing.T) {
-	e := newAppEnv(t)
-	other := "other.example.com"
-	e.svc.addRepository(other)
-	stranger := e.svc.token(other)
+	docs := notesDocs()
+	svc := authorizeTwoRepositories{&stubService{ds: authorizePageReads{}, info: substrate.TokenInfo{ID: "tok1", Label: "test", Created: time.Unix(0, 0).UTC()}}}
+	e := &appEnv{t: t, docs: docs, owner: stubToken, h: newStubEnvOn(t, svc, func(c *Config) {
+		c.ClientDocuments, c.AuthInterval, c.Now = docs, time.Nanosecond, time.Now
+	}).h}
 	id := e.park(appRequest("read:" + personKind))
 	wantStatus(t, e.show(id), http.StatusOK)
 	days := 30
 	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"read:" + personKind}, LifetimeDays: &days})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/"+id, stranger, nil, ""), http.StatusNotFound)
-	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+id, stranger, body, "application/json"), http.StatusNotFound)
-	wantStatus(t, e.do(http.MethodDelete, "/api/v1/authorizations/"+id, stranger, nil, ""), http.StatusNotFound)
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/"+id, authorizeStranger, nil, ""), http.StatusNotFound)
+	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+id, authorizeStranger, body, "application/json"), http.StatusNotFound)
+	wantStatus(t, e.do(http.MethodDelete, "/api/v1/authorizations/"+id, authorizeStranger, nil, ""), http.StatusNotFound)
 	wantStatus(t, e.approveShown(id, []string{"read:" + personKind}, 30), http.StatusOK)
 }
 
 func TestAnApprovalIsHeldToTheDocumentThePageShowed(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	wantStatus(t, e.show(id), http.StatusOK)
 	// The app drops the redirect from its document after the page loaded:
@@ -520,18 +400,8 @@ func TestAnApprovalIsHeldToTheDocumentThePageShowed(t *testing.T) {
 	}
 }
 
-func TestAnAppsTokenNeverApprovesAnAuthorization(t *testing.T) {
-	e := newAppEnv(t)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	id := e.park(appRequest("write:" + taskKind))
-	wantStatus(t, e.show(id), http.StatusOK)
-	days := 30
-	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"write:" + taskKind}, LifetimeDays: &days})
-	wantStatus(t, e.do(http.MethodPost, "/api/v1/authorizations/"+id, app, body, "application/json"), http.StatusForbidden)
-}
-
 func TestAnUnlistedRedirectOrAnUnfetchableDocumentIsRefusedToTheOwner(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	p := appRequest("read:" + personKind)
 	p["redirect_uri"] = "https://notes.example.org/other"
 	id := e.park(p)
@@ -555,7 +425,7 @@ func TestAnUnlistedRedirectOrAnUnfetchableDocumentIsRefusedToTheOwner(t *testing
 }
 
 func TestADenialRedirectsWithAccessDeniedOnce(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	wantStatus(t, e.show(id), http.StatusOK)
 	rec := e.do(http.MethodDelete, "/api/v1/authorizations/"+id, e.owner, nil, "")
@@ -567,33 +437,8 @@ func TestADenialRedirectsWithAccessDeniedOnce(t *testing.T) {
 	wantStatus(t, e.do(http.MethodGet, "/api/v1/authorizations/"+id, e.owner, nil, ""), http.StatusNotFound)
 }
 
-func TestTheExchangeChecksEveryBinding(t *testing.T) {
-	cases := map[string]func(url.Values){
-		"verifier":     func(f url.Values) { f.Set("code_verifier", strings.Repeat("a", 43)) },
-		"client_id":    func(f url.Values) { f.Set("client_id", "https://evil.example.org/client.json") },
-		"redirect_uri": func(f url.Values) { f.Set("redirect_uri", "https://notes.example.org/other") },
-	}
-	for name, edit := range cases {
-		t.Run(name, func(t *testing.T) {
-			e := newAppEnv(t)
-			id := e.park(appRequest("read:" + personKind))
-			code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, e.approve(id, []string{"read:" + personKind}, 30)).Redirect)
-			f := tokenForm(code)
-			edit(f)
-			rec := e.exchange(f)
-			wantStatus(t, rec, http.StatusBadRequest)
-			if got := decodeJSON[oauthError](t, rec).Error; got != "invalid_grant" {
-				t.Fatalf("error = %q, want invalid_grant", got)
-			}
-			// A presentation that proves nothing spends nothing: the app
-			// holding the verifier still gets its token.
-			wantStatus(t, e.exchange(tokenForm(code)), http.StatusOK)
-		})
-	}
-}
-
 func TestACodeExchangedOnAnotherIssuerIsRefused(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, e.approve(id, []string{"read:" + personKind}, 30)).Redirect)
 	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(tokenForm(code).Encode()))
@@ -604,27 +449,8 @@ func TestACodeExchangedOnAnotherIssuerIsRefused(t *testing.T) {
 	wantStatus(t, rec, http.StatusBadRequest)
 }
 
-func TestAReplayedCodeRevokesTheTokenOnlyWithTheVerifier(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind))
-	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, e.approve(id, []string{"read:" + personKind}, 30)).Redirect)
-	first := e.exchange(tokenForm(code))
-	wantStatus(t, first, http.StatusOK)
-	app := decodeJSON[tokenResponse](t, first).AccessToken
-
-	// Without the verifier, a replay is refused and revokes nothing.
-	f := tokenForm(code)
-	f.Set("code_verifier", strings.Repeat("b", 43))
-	wantStatus(t, e.exchange(f), http.StatusBadRequest)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusOK)
-
-	// With every binding, it is the code working twice: the token goes.
-	wantStatus(t, e.exchange(tokenForm(code)), http.StatusBadRequest)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusUnauthorized)
-}
-
 func TestTheTokenEndpointReadsAFormAndNothingElse(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	rec := e.do(http.MethodPost, "/oauth/token", "", []byte(`{"grant_type":"authorization_code"}`), "application/json")
 	wantStatus(t, rec, http.StatusBadRequest)
 	if got := decodeJSON[oauthError](t, rec).Error; got != "invalid_request" {
@@ -640,23 +466,8 @@ func TestTheTokenEndpointReadsAFormAndNothingElse(t *testing.T) {
 	}
 }
 
-func TestAnAppRevokesItsOwnToken(t *testing.T) {
-	e := newAppEnv(t)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	form := url.Values{"token": {app}, "client_id": {"https://evil.example.org/client.json"}}
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-	// Another app's client_id revokes nothing.
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusOK)
-
-	form = url.Values{"token": {app}}
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusUnauthorized)
-	// An unknown token is the same 200.
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-}
-
 func TestALocalAppIsNeverFetched(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	p := appRequest("read:" + personKind)
 	p["client_id"] = "http://127.0.0.1:43123/cli"
 	p["redirect_uri"] = "http://127.0.0.1:43123/callback"
@@ -669,39 +480,8 @@ func TestALocalAppIsNeverFetched(t *testing.T) {
 	}
 }
 
-// A local app's client id is a loopback address anybody on the owner's
-// computer may name, so a token the owner approved for it never makes a
-// later request read as asked before: every one of its pages is a first
-// approval.
-func TestALocalAppsPageIsAlwaysAFirstApproval(t *testing.T) {
-	e := newSetupEnv(t)
-	local := func() map[string]string {
-		p := appRequest("read:" + personKind)
-		p["client_id"] = "http://127.0.0.1/cli"
-		p["redirect_uri"] = "http://127.0.0.1:43123/callback"
-		return p
-	}
-	id := e.park(local())
-	rec := e.approve(id, []string{"read:" + personKind}, 30)
-	wantStatus(t, rec, http.StatusOK)
-	form := tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect))
-	form.Set("client_id", "http://127.0.0.1/cli")
-	form.Set("redirect_uri", "http://127.0.0.1:43123/callback")
-	wantStatus(t, e.exchange(form), http.StatusOK)
-	again := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(local())))
-	if again.Previous != nil || again.Scopes[0].Allowed {
-		t.Fatalf("a local app's second request = previous %+v, allowed %v", again.Previous, again.Scopes[0].Allowed)
-	}
-	// A web app's does: the client id is its proven origin.
-	e.grant("read:"+personKind, []string{"read:" + personKind})
-	web := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind+" write:"+taskKind))))
-	if web.Previous == nil || !web.Scopes[0].Allowed || web.Scopes[1].Allowed {
-		t.Fatalf("a web app's second request = previous %+v, scopes %+v", web.Previous, web.Scopes)
-	}
-}
-
 func TestTheAuthorizationEndpointAnswersNoCORS(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	req := httptest.NewRequest(http.MethodGet, authorizeURL(appRequest("read:"+personKind)), nil)
 	req.Header.Set("Origin", "https://evil.example.org")
 	rec := httptest.NewRecorder()
@@ -711,33 +491,8 @@ func TestTheAuthorizationEndpointAnswersNoCORS(t *testing.T) {
 	}
 }
 
-func TestAReplayRevocationThatFailsIsRetriedUntilItLands(t *testing.T) {
-	old := revokeBackoff
-	revokeBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
-	t.Cleanup(func() { revokeBackoff = old })
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind))
-	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, e.approve(id, []string{"read:" + personKind}, 30)).Redirect)
-	app := decodeJSON[tokenResponse](t, e.exchange(tokenForm(code))).AccessToken
-	failRevokes.Lock()
-	failRevokes.n = 2
-	failRevokes.Unlock()
-	wantStatus(t, e.exchange(tokenForm(code)), http.StatusBadRequest)
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		rec := e.do(http.MethodGet, "/api/v1/records", app, nil, "")
-		if rec.Code == http.StatusUnauthorized {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the replayed code's token still authenticates after the revoke failed twice: %d", rec.Code)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
 func TestTheApprovalCallsAreNeverStored(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	for _, rec := range []*httptest.ResponseRecorder{
 		e.show(id),
@@ -750,251 +505,9 @@ func TestTheApprovalCallsAreNeverStored(t *testing.T) {
 	}
 }
 
-func TestASecondReadShowsTheFirstSnapshot(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind))
-	wantStatus(t, e.show(id), http.StatusOK)
-	e.docs.mu.Lock()
-	e.docs.docs[appClientID] = authorize.Document{ClientID: appClientID, RedirectURIs: []string{appRedirect}, Name: "Totally Notes"}
-	e.docs.mu.Unlock()
-	got := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
-	if got.App.Name != "Notes" {
-		t.Fatalf("a second read showed %q, want the first snapshot's Notes", got.App.Name)
-	}
-	rec := e.approveShown(id, []string{"read:" + personKind}, 30)
-	wantStatus(t, rec, http.StatusOK)
-	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)
-	tok := decodeJSON[tokenResponse](t, e.exchange(tokenForm(code)))
-	if name := e.svc.tokens[tok.AccessToken].info.ClientName; name != "Notes" {
-		t.Fatalf("the token names the app %q, want the name the page showed", name)
-	}
-}
-
-func TestAReferenceFilterNamesOnlyAKindTheGrantReads(t *testing.T) {
-	e := newAppEnv(t)
-	const message = "samples.substrate.reamde.dev/messaging/conversationmessage"
-	app := e.grant("read:"+message, []string{"read:" + message})
-	list := func(filter string) *httptest.ResponseRecorder {
-		return e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(filter), app, nil, "")
-	}
-	// author is a reference to a person, a kind this grant does not read: a
-	// match would say which people were merged.
-	wantStatus(t, list(`{"kinds":["`+message+`"],"properties":{"author":{"eq":"`+personKind+`/bob"}}}`), http.StatusForbidden)
-	wantStatus(t, list(`{"kinds":["`+message+`"],"properties":{"author":{"eq":"bob"}}}`), http.StatusForbidden)
-	wantStatus(t, list(`{"kinds":["`+message+`"],"properties":{"author":{"in":["`+personKind+`/bob"]}}}`), http.StatusForbidden)
-	// A condition that resolves nothing, and a non-reference property, pass.
-	wantStatus(t, list(`{"kinds":["`+message+`"],"properties":{"author":{"exists":true}}}`), http.StatusOK)
-	wantStatus(t, list(`{"kinds":["`+message+`"],"properties":{"text":{"eq":"hi"}}}`), http.StatusOK)
-
-	both := e.grant("read:"+message+" read:"+personKind, []string{"read:" + message, "read:" + personKind})
-	rec := e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(`{"kinds":["`+message+`"],"properties":{"author":{"eq":"`+personKind+`/bob"}}}`), both, nil, "")
-	wantStatus(t, rec, http.StatusOK)
-}
-
-func TestAnImplementsFilterAnswersAlikeForEveryTraitTheGrantCannotSee(t *testing.T) {
-	e := newAppEnv(t)
-	ds := e.svc.datasets[fakeRepository]
-	ds.mu.Lock()
-	ds.traits["private.example.com/clinical/patient"] = []string{taskKind}
-	ds.mu.Unlock()
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	for _, trait := range []string{"private.example.com/clinical/patient", "nobody.example.com/x/never"} {
-		rec := e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(`{"implements":"`+trait+`"}`), app, nil, "")
-		wantStatus(t, rec, http.StatusOK)
-		if page := decodeJSON[substrate.Page](t, rec); len(page.Records) != 0 {
-			t.Fatalf("implements %s listed %d records", trait, len(page.Records))
-		}
-	}
-}
-
-const messageKind = "samples.substrate.reamde.dev/messaging/conversationmessage"
-
-// seed puts a record straight into the fake, with what the engine would
-// attach to it.
-func (e *appEnv) seed(rec substrate.Record, meta map[string]substrate.PropertyMeta) {
-	ds := e.svc.datasets[fakeRepository]
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	if rec.Properties == nil {
-		rec.Properties = map[string]any{}
-	}
-	ds.records[rec.ID] = &rec
-	if meta != nil {
-		ds.meta[rec.ID] = meta
-	}
-}
-
-func TestAnAppsPatchAndDeleteOutsideItsWriteScopesAreRefused(t *testing.T) {
-	e := newAppEnv(t)
-	e.seed(substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{"name": "Ada"}}, nil)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	for _, rec := range []*httptest.ResponseRecorder{
-		e.do(http.MethodPatch, "/api/v1/"+personKind+"/p1", app, []byte(`{"properties":{"name":"x"}}`), "application/json"),
-		e.do(http.MethodDelete, "/api/v1/"+personKind+"/p1", app, nil, ""),
-		e.do(http.MethodPost, "/api/v1/records", app, []byte(`{"kind":"`+personKind+`","properties":{"name":"y"}}`), "application/json"),
-	} {
-		wantStatus(t, rec, http.StatusForbidden)
-		if wa := rec.Header().Get("WWW-Authenticate"); !strings.Contains(wa, "insufficient_scope") {
-			t.Fatalf("refusal WWW-Authenticate = %q", wa)
-		}
-	}
-	got := decodeJSON[substrate.Record](t, e.do(http.MethodGet, "/api/v1/"+personKind+"/p1", e.owner, nil, ""))
-	if got.Properties["name"] != "Ada" {
-		t.Fatalf("the refused writes changed the record: %v", got.Properties)
-	}
-}
-
-func TestARecordPathReadOfAKindTheGrantCannotReadIsUnknown(t *testing.T) {
-	e := newAppEnv(t)
-	e.seed(substrate.Record{ID: "p1", Kind: personKind}, nil)
-	e.seed(substrate.Record{ID: "m1", Kind: messageKind}, nil)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/"+personKind+"/p1", app, nil, ""), http.StatusOK)
-	rec := e.do(http.MethodGet, "/api/v1/"+messageKind+"/m1", app, nil, "")
-	wantStatus(t, rec, http.StatusNotFound)
-	if !strings.Contains(rec.Body.String(), "unknown kind") {
-		t.Fatalf("an unreadable kind answered %s, want it unknown", rec.Body.String())
-	}
-}
-
-// Every record an app's token receives is cut to its grant: inbound links,
-// property provenance and expanded referents of kinds it cannot read are
-// left out, on a read, a list and a write's answer alike.
-func TestAnAppsRecordsAreCutToItsGrant(t *testing.T) {
-	e := newAppEnv(t)
-	personPath := personKind + "/p1"
-	e.seed(substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{"name": "Ada"}}, nil)
-	e.seed(substrate.Record{
-		ID: "m1", Kind: messageKind,
-		Properties: map[string]any{"text": "hi", "author": map[string]any{"ref": personPath}},
-		LinkedFrom: []substrate.LinkedRecord{{Ref: personPath, Kind: personKind, Property: "author"}},
-	}, map[string]substrate.PropertyMeta{"text": {Source: personPath}})
-	app := e.grant("write:"+messageKind, []string{"write:" + messageKind})
-
-	got := decodeJSON[substrate.Record](t, e.do(http.MethodGet, "/api/v1/"+messageKind+"/m1", app, nil, ""))
-	if len(got.LinkedFrom) != 0 || got.PropertyMeta["text"].Source != "" {
-		t.Fatalf("a read carried linkedFrom %v and provenance %v of an unreadable kind", got.LinkedFrom, got.PropertyMeta)
-	}
-	page := decodeJSON[substrate.Page](t, e.do(http.MethodGet, "/api/v1/records?expand=author&filter="+url.QueryEscape(`{"kinds":["`+messageKind+`"]}`), app, nil, ""))
-	if len(page.Records) != 1 || len(page.Included) != 0 {
-		t.Fatalf("a list with expand answered %d records and included %v", len(page.Records), page.Included)
-	}
-	owner := decodeJSON[substrate.Page](t, e.do(http.MethodGet, "/api/v1/records?expand=author&filter="+url.QueryEscape(`{"kinds":["`+messageKind+`"]}`), e.owner, nil, ""))
-	if len(owner.Included) == 0 {
-		t.Fatal("the owner's list includes no referent: the test proves nothing")
-	}
-}
-
-// An app searches in every mode, the semantic one included (decision 0219),
-// over the kinds it reads alone, and sees no scores.
-func TestAnAppSearchesInEveryModeOverWhatItReadsAndSeesNoScores(t *testing.T) {
-	e := newAppEnv(t)
-	e.seed(substrate.Record{ID: "p1", Kind: personKind, Title: "Ada notes"}, nil)
-	e.seed(substrate.Record{ID: "m1", Kind: messageKind, Title: "notes from Bob"}, nil)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	ds := e.svc.datasets[fakeRepository]
-	for _, mode := range []substrate.SearchMode{"", substrate.SearchHybrid, substrate.SearchLexical, substrate.SearchSemantic} {
-		path := "/api/v1/records?q=notes"
-		if mode != "" {
-			path += "&mode=" + string(mode)
-		}
-		rec := e.do(http.MethodGet, path, app, nil, "")
-		wantStatus(t, rec, http.StatusOK)
-		if ds.lastSearch.Mode != mode {
-			t.Fatalf("an app's search in mode %q ran %q, want the mode it asked for", mode, ds.lastSearch.Mode)
-		}
-		// A search naming no kind is cut to the kinds the token reads, never
-		// widened.
-		if len(ds.lastSearch.Kinds) != 1 || ds.lastSearch.Kinds[0] != personKind {
-			t.Fatalf("an app's search ran over %v, want the readable kind alone", ds.lastSearch.Kinds)
-		}
-		ranked := decodeJSON[substrate.RankedPage](t, rec)
-		if len(ranked.Records) != 1 || ranked.Records[0].ID != "p1" {
-			t.Fatalf("an app's search answered %d hits, want only the readable one", len(ranked.Records))
-		}
-		if s := ranked.Scores[personKind+"/p1"]; s.Lexical != 0 || s.Semantic != 0 {
-			t.Fatalf("an app's search carried scores %+v", s)
-		}
-	}
-	// A kind it cannot read is unknown, in the semantic mode as in every other.
-	filter := url.QueryEscape(`{"kinds":["` + messageKind + `"]}`)
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?q=notes&mode=semantic&filter="+filter, app, nil, ""), http.StatusNotFound)
-}
-
-func TestAGlobNeverReachesAnInternalKindAndAnExactScopeDoes(t *testing.T) {
-	e := newAppEnv(t)
-	const connector = "substrate.reamde.dev/core/connector"
-	ds := e.svc.datasets[fakeRepository]
-	ds.mu.Lock()
-	for i, k := range ds.types {
-		if k.Package == "core" {
-			def := map[string]any{}
-			for key, v := range k.Definition {
-				def[key] = v
-			}
-			def["purpose"] = "internal"
-			ds.types[i].Definition = def
-		}
-	}
-	ds.mu.Unlock()
-	e.seed(substrate.Record{ID: "c1", Kind: connector}, nil)
-
-	all := e.grant("read:*", []string{"read:*"})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", all, nil, ""), http.StatusOK)
-	for _, k := range ds.lastQuery.Filter.Kinds {
-		if strings.HasPrefix(k, "substrate.reamde.dev/core/") {
-			t.Fatalf("read:* listed the internal kind %s", k)
-		}
-	}
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/"+connector+"/c1", all, nil, ""), http.StatusNotFound)
-
-	exact := e.grant("read:"+connector, []string{"read:" + connector})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/"+connector+"/c1", exact, nil, ""), http.StatusOK)
-}
-
-func TestAnAppWritesReferencesOnlyToKindsItReads(t *testing.T) {
-	e := newAppEnv(t)
-	put := func(app, kind, body string) *httptest.ResponseRecorder {
-		return e.do(http.MethodPut, "/api/v1/"+kind+"/x1", app, []byte(body), "application/json")
-	}
-	writer := e.grant("write:"+messageKind, []string{"write:" + messageKind})
-	// author is pinned to the person kind, which this grant does not read: a
-	// write naming one would answer whether that person exists.
-	for _, body := range []string{
-		`{"properties":{"author":"` + personKind + `/p1"}}`,
-		`{"properties":{"author":"p1"}}`,
-		`{"properties":{"author":{"ref":"` + personKind + `/p1","since":1}}}`,
-	} {
-		wantStatus(t, put(writer, messageKind, body), http.StatusForbidden)
-	}
-	wantStatus(t, put(writer, messageKind, `{"properties":{"text":"no reference"}}`), http.StatusCreated)
-
-	both := e.grant("write:"+messageKind+" read:"+personKind, []string{"write:" + messageKind, "read:" + personKind})
-	e.seed(substrate.Record{ID: "p1", Kind: personKind}, nil)
-	rec := put(both, messageKind, `{"properties":{"author":"`+personKind+`/p1"}}`)
-	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
-		t.Fatalf("a reference to a readable kind = %d %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestTheTokenEndpointHoldsTheResourceToThisServer(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind))
-	code := codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, e.approve(id, []string{"read:" + personKind}, 30)).Redirect)
-	f := tokenForm(code)
-	f.Set("resource", "https://elsewhere.example.com")
-	rec := e.exchange(f)
-	wantStatus(t, rec, http.StatusBadRequest)
-	if got := decodeJSON[oauthError](t, rec).Error; got != "invalid_target" {
-		t.Fatalf("error = %q, want invalid_target", got)
-	}
-	f.Set("resource", "https://substrate.example.com")
-	wantStatus(t, e.exchange(f), http.StatusOK)
-}
-
 func TestTheSameScopeAskedTwiceIsListedOnce(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:~/tasks/* read:" + fakeRepository + "/tasks/*"))
+	e := newAuthorizeStub(t)
+	id := e.park(appRequest("read:~/tasks/* read:" + stubRepository + "/tasks/*"))
 	got := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
 	if len(got.Scopes) != 1 {
 		t.Fatalf("the page lists %d scopes, want the one they resolve to", len(got.Scopes))
@@ -1002,8 +515,7 @@ func TestTheSameScopeAskedTwiceIsListedOnce(t *testing.T) {
 }
 
 func TestOneSourceCannotParkEveryRequest(t *testing.T) {
-	svc := newFakeService()
-	h := New(Config{Service: svc, ClientDocuments: &memDocs{}, AuthInterval: time.Nanosecond})
+	h := New(Config{Service: &stubService{}, ClientDocuments: &memDocs{}, AuthInterval: time.Nanosecond})
 	park := func(addr string) int {
 		req := httptest.NewRequest(http.MethodGet, authorizeURL(appRequest("read:"+personKind)), nil)
 		req.RemoteAddr = addr
@@ -1026,27 +538,8 @@ func TestOneSourceCannotParkEveryRequest(t *testing.T) {
 	}
 }
 
-func TestAnOwnerMayApproveAnAppUntilTheyRevokeIt(t *testing.T) {
-	e := newAppEnv(t)
-	id := e.park(appRequest("read:" + personKind))
-	view := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
-	if !slices.Contains(view.LifetimeDays, 0) {
-		t.Fatalf("lifetimes offered %v, want until revoked (0) among them", view.LifetimeDays)
-	}
-	rec := e.approveShown(id, []string{"read:" + personKind}, 0)
-	wantStatus(t, rec, http.StatusOK)
-	tok := e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
-	wantStatus(t, tok, http.StatusOK)
-	if strings.Contains(tok.Body.String(), "expires_in") {
-		t.Fatalf("a token approved until revoked answered %s, want no expires_in", tok.Body.String())
-	}
-	if exp := e.svc.tokens[decodeJSON[tokenResponse](t, tok).AccessToken].info.ExpiresAt; exp != nil {
-		t.Fatalf("a token approved until revoked expires at %v", exp)
-	}
-}
-
 func TestNoRequestClaimsAnAppsActor(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/t1", strings.NewReader(`{"properties":{}}`))
 	req.Header.Set("Authorization", "Bearer "+e.owner)
 	req.Header.Set("Content-Type", "application/json")
@@ -1059,7 +552,7 @@ func TestNoRequestClaimsAnAppsActor(t *testing.T) {
 // Until revoked is 0, so an approval that names no lifetime is refused, never
 // read as 0: forgetting the field must not grant the longest access.
 func TestAnApprovalNamesItsLifetime(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	id := e.park(appRequest("read:" + personKind))
 	wantStatus(t, e.show(id), http.StatusOK)
 	post := func(body string) *httptest.ResponseRecorder {
@@ -1089,7 +582,7 @@ func TestAnIPv6AppsActorIsAValidLabelNamespace(t *testing.T) {
 // A web app may send the access to a program on the owner's own computer,
 // which the page marks as unverified; anything else stays on its origin.
 func TestAWebAppsLoopbackRedirectIsMarked(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	e.docs.mu.Lock()
 	e.docs.docs[appClientID] = authorize.Document{
 		ClientID: appClientID, RedirectURIs: []string{appRedirect, "http://127.0.0.1/callback"}, Name: "Notes",
@@ -1107,152 +600,8 @@ func TestAWebAppsLoopbackRedirectIsMarked(t *testing.T) {
 	}
 }
 
-const (
-	holderKind = "test.example.com/nest/holder"
-	metricKind = "substrate.reamde.dev/observations/metric"
-)
-
-// withHolder adds a kind whose references sit in an object's field, in a
-// keyed map, and under a pin whose ids carry a slash, and the metric kind it
-// pins.
-func (e *appEnv) withHolder() {
-	ds := e.svc.datasets[fakeRepository]
-	ds.mu.Lock()
-	defer ds.mu.Unlock()
-	ds.types = append(ds.types,
-		substrate.KindInfo{
-			Identity: holderKind, Name: "holder", Authority: "test.example.com", Package: "nest", Version: 1, Source: "installed",
-			Definition: map[string]any{"properties": map[string]any{
-				"box": map[string]any{"type": "object", "fields": map[string]any{
-					"who": map[string]any{"type": "reference", "kind": personKind},
-					"inner": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
-						"who": map[string]any{"type": "reference", "kind": personKind},
-					}},
-				}},
-				"byRole": map[string]any{"type": "reference", "kind": personKind, "keyed": true},
-				"metric": map[string]any{"type": "reference", "kind": metricKind},
-				"about":  map[string]any{"type": "reference", "kind": "any"},
-			}},
-		},
-		substrate.KindInfo{
-			Identity: metricKind, Name: "metric", Authority: "substrate.reamde.dev", Package: "observations", Version: 1, Source: "builtin",
-			Definition: map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}},
-		},
-	)
-}
-
-func TestAnAppsNestedReferencesAreHeldToItsGrant(t *testing.T) {
-	e := newAppEnv(t)
-	e.withHolder()
-	put := func(app, body string) int {
-		return e.do(http.MethodPut, "/api/v1/"+holderKind+"/h1", app, []byte(body), "application/json").Code
-	}
-	writer := e.grant("write:"+holderKind, []string{"write:" + holderKind})
-	reader := e.grant("write:"+holderKind+" read:"+personKind, []string{"write:" + holderKind, "read:" + personKind})
-	for name, body := range map[string]string{
-		"object field": `{"properties":{"box":{"who":"p1"}}}`,
-		"nested list":  `{"properties":{"box":{"inner":[{"who":"` + personKind + `/p1"}]}}}`,
-		"keyed map":    `{"properties":{"byRole":{"lead":"p1"}}}`,
-		"keyed ref":    `{"properties":{"byRole":{"lead":{"ref":"` + personKind + `/p1"}}}}`,
-		"unpinned":     `{"properties":{"about":"` + personKind + `/p1"}}`,
-	} {
-		if got := put(writer, body); got != http.StatusForbidden {
-			t.Errorf("%s: a reference to a kind the grant does not read answered %d, want 403", name, got)
-		}
-		if got := put(reader, body); got != http.StatusOK && got != http.StatusCreated {
-			t.Errorf("%s: the same write by a grant that reads the kind answered %d", name, got)
-		}
-	}
-	// An unpinned reference names its kind in full, or it names none the
-	// check could hold.
-	if got := put(reader, `{"properties":{"about":"p1"}}`); got != http.StatusForbidden {
-		t.Errorf("a bare id under an unpinned reference answered %d, want 403", got)
-	}
-}
-
-// An id may carry a slash (`health/heart_rate`): a bare one completes under
-// the pin, as the engine completes it, in a write and in a filter alike.
-func TestASlashBearingIDCompletesUnderItsPin(t *testing.T) {
-	e := newAppEnv(t)
-	e.withHolder()
-	app := e.grant("write:"+holderKind+" read:"+metricKind, []string{"write:" + holderKind, "read:" + metricKind})
-	rec := e.do(http.MethodPut, "/api/v1/"+holderKind+"/h1", app, []byte(`{"properties":{"metric":"health/heart_rate"}}`), "application/json")
-	if rec.Code != http.StatusOK && rec.Code != http.StatusCreated {
-		t.Fatalf("a bare slash-bearing id under a readable pin answered %d %s", rec.Code, rec.Body.String())
-	}
-	filter := `{"kinds":["` + holderKind + `"],"properties":{"metric":{"eq":"health/heart_rate"}}}`
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(filter), app, nil, ""), http.StatusOK)
-
-	blind := e.grant("write:"+holderKind, []string{"write:" + holderKind})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(filter), blind, nil, ""), http.StatusForbidden)
-}
-
-// A reverse read names its target: one of a kind the grant cannot read is
-// answered as the unknown kind it is to this token.
-func TestAReverseReadNamesOnlyAReadableTarget(t *testing.T) {
-	e := newAppEnv(t)
-	app := e.grant("read:"+messageKind, []string{"read:" + messageKind})
-	hidden := `{"kinds":["` + messageKind + `"],"referencing":{"ref":"` + personKind + `/p1"}}`
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(hidden), app, nil, ""), http.StatusNotFound)
-	both := e.grant("read:"+messageKind+" read:"+personKind, []string{"read:" + messageKind, "read:" + personKind})
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?filter="+url.QueryEscape(hidden), both, nil, ""), http.StatusOK)
-}
-
-// Full access (decision 0204) is asked for alone, approved whole through a
-// human door, and mints a token without scopes that still names its app.
-func TestAnAppAskingForFullAccessGetsAFullAccessTokenNamingIt(t *testing.T) {
-	e := newAppEnv(t)
-	meta := e.do(http.MethodGet, "/.well-known/oauth-authorization-server", "", nil, "")
-	wantStatus(t, meta, http.StatusOK)
-	if !strings.Contains(meta.Body.String(), `"full"`) {
-		t.Fatalf("the metadata does not list full: %s", meta.Body.String())
-	}
-
-	id := e.park(appRequest("full"))
-	view := decodeJSON[substrate.AuthorizationRequest](t, e.show(id))
-	if len(view.Scopes) != 1 || view.Scopes[0].Scope != "full" || view.Scopes[0].Verb != "full" ||
-		view.Scopes[0].Pattern != "" || view.Scopes[0].Allowed || view.Scopes[0].Kinds == nil {
-		t.Fatalf("scopes = %+v, want the one full row", view.Scopes)
-	}
-
-	days := 30
-	body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: []string{"full"}, LifetimeDays: &days})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/authorizations/"+id, bytes.NewReader(body))
-	req.Host = "substrate.example.com"
-	req.Header.Set("Authorization", "Bearer "+e.owner)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(actorHeader, "bob")
-	bob := httptest.NewRecorder()
-	e.h.ServeHTTP(bob, req)
-	wantErrorCode(t, bob, http.StatusForbidden, codeForbidden)
-	if !strings.Contains(bob.Body.String(), "granting full access is the owner's act") {
-		t.Fatalf("the refusal says %s", bob.Body.String())
-	}
-
-	rec := e.approveShown(id, []string{"full"}, 30)
-	wantStatus(t, rec, http.StatusOK)
-	tok := e.exchange(tokenForm(codeFrom(t, decodeJSON[substrate.AuthorizationAnswer](t, rec).Redirect)))
-	wantStatus(t, tok, http.StatusOK)
-	res := decodeJSON[tokenResponse](t, tok)
-	if res.Scope != "full" || res.Repository != fakeRepository || res.ExpiresIn == nil || res.TokenID == "" {
-		t.Fatalf("token response = %+v", res)
-	}
-	minted := e.svc.tokens[res.AccessToken].info
-	if minted.Scopes != nil || minted.Scoped() || minted.ClientID != appClientID || minted.ClientName != "Notes" || minted.ExpiresAt == nil {
-		t.Fatalf("minted token = %+v, want no scopes and the app's client id", minted)
-	}
-	// The owner's routes answer it as they answer a sign-in.
-	for _, path := range []string{"/tokens", "/api/v1/catalog", "/api/v1/sync/status"} {
-		wantStatus(t, e.do(http.MethodGet, path, res.AccessToken, nil, ""), http.StatusOK)
-	}
-	// And the app can still revoke what it was given.
-	revoke := url.Values{"token": {res.AccessToken}, "client_id": {appClientID}}
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(revoke.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-	wantStatus(t, e.do(http.MethodGet, "/tokens", res.AccessToken, nil, ""), http.StatusUnauthorized)
-}
-
 func TestFullAccessIsAskedForAloneAndSetsNothingUp(t *testing.T) {
-	e := newAppEnv(t)
+	e := newAuthorizeStub(t)
 	for _, params := range []map[string]string{
 		appRequest("full read:" + personKind),
 		func() map[string]string {
@@ -1271,59 +620,108 @@ func TestFullAccessIsAskedForAloneAndSetsNothingUp(t *testing.T) {
 	wantErrorCode(t, e.approve(id, []string{"full"}, 30), http.StatusUnprocessableEntity, codeValidation)
 }
 
-func TestASecondFullRequestReadsAsAllowedBefore(t *testing.T) {
-	e := newSetupEnv(t)
-	e.grant("read:"+personKind, []string{"read:" + personKind})
-	narrower := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("full"))))
-	if narrower.Previous == nil || narrower.Scopes[0].Allowed {
-		t.Fatalf("full after a scoped approval = previous %+v allowed %v, want not allowed", narrower.Previous, narrower.Scopes[0].Allowed)
+// authorizeAppGrant is a repository whose one token is the notes app's
+// read of people, approved under a grant a later decision retired (decision
+// 0214's `declare:`) when retired is set, as the engine lists one.
+type authorizeAppGrant struct {
+	authorizePageReads
+	retired bool
+}
+
+func (d authorizeAppGrant) Tokens(context.Context) ([]substrate.TokenInfo, error) {
+	scopes := []string{"read:" + personKind}
+	if d.retired {
+		scopes = append(scopes, "declare:notes.example.org/notes")
 	}
-	// The fake mints every token at one instant, so newest is decided only in
-	// a repository holding one.
-	e = newSetupEnv(t)
-	e.grant("full", []string{"full"})
-	again := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("full"))))
-	if again.Previous == nil || len(again.Previous.Scopes) != 0 || !again.Scopes[0].Allowed {
-		t.Fatalf("a second full request = previous %+v allowed %v", again.Previous, again.Scopes[0].Allowed)
+	return []substrate.TokenInfo{{
+		ID: "app1", Label: "notes.example.org", Created: time.Unix(0, 0).UTC(), ClientID: appClientID, ClientName: "Notes",
+		Scopes: scopes, Retired: d.retired,
+	}}, nil
+}
+
+// A token whose grant a later decision retired is no previous approval: the
+// page reads the request as the app's first, where the same grant live
+// reads as asked before.
+func TestARetiredAppTokenIsNotPreviousApproval(t *testing.T) {
+	for _, retired := range []bool{false, true} {
+		docs := notesDocs()
+		e := &appEnv{t: t, docs: docs, owner: stubToken, h: newStubEnv(t, authorizeAppGrant{retired: retired}, func(c *Config) {
+			c.ClientDocuments, c.AuthInterval, c.Now = docs, time.Nanosecond, time.Now
+		}).h}
+		page := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind))))
+		if retired && (page.Previous != nil || page.Scopes[0].Allowed) {
+			t.Fatalf("retired grant shown as previous approval: %+v", page)
+		}
+		if !retired && (page.Previous == nil || !page.Scopes[0].Allowed) {
+			t.Fatalf("a live grant is not shown as previous approval: %+v", page)
+		}
 	}
 }
 
-// A DECLARE SCOPE OVER A PACKAGE THE APP COULD NOT KEEP IS REFUSED AT THE
-// PAGE (decision 0205): one the owner keeps, or one another app declared,
-// even from the same host. The page says why on the scope, and an approval
-// naming it is refused before a code exists; the rest of the request can
-// still be approved. A package the app itself declared is a renewal, and
-// one an app on its host declared before the client id was stamped is its
-// to claim.
+// authorizeSearches records the searches an app's token hands the
+// repository, and answers one hit of a kind the token reads and one of a
+// kind it does not, each with its scores.
+type authorizeSearches struct {
+	stubKinds
+	got *[]substrate.SearchInput
+}
 
-func TestARetiredAppTokenIsNotPreviousApprovalAndCanRevokeItself(t *testing.T) {
-	e := newSetupEnv(t)
-	app := e.grant("read:"+personKind, []string{"read:" + personKind})
-	e.svc.mu.Lock()
-	token := e.svc.tokens[app]
-	token.info.Retired = true
-	token.info.Scopes = append(token.info.Scopes, "declare:notes.example.org/notes")
-	e.svc.tokens[app] = token
-	e.svc.mu.Unlock()
-	page := decodeJSON[substrate.AuthorizationRequest](t, e.show(e.park(appRequest("read:"+personKind))))
-	if page.Previous != nil || page.Scopes[0].Allowed {
-		t.Fatalf("retired grant shown as previous approval: %+v", page)
+func (d authorizeSearches) Kinds(context.Context) ([]substrate.KindInfo, error) {
+	var out []substrate.KindInfo
+	for _, r := range d.refs {
+		k, _ := d.KindByRef(context.Background(), r)
+		out = append(out, k)
 	}
-	wantStatus(t, e.do(http.MethodGet, "/api/v1/records", app, nil, ""), http.StatusUnauthorized)
-	form := url.Values{"token": {app}, "client_id": {"https://other.example/client.json"}}
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-	e.svc.mu.Lock()
-	_, held := e.svc.tokens[app]
-	e.svc.mu.Unlock()
-	if !held {
-		t.Fatal("a mismatched client revoked the retired token")
+	return out, nil
+}
+
+func (d authorizeSearches) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
+	*d.got = append(*d.got, in)
+	return substrate.SearchResult{Hits: []substrate.Hit{
+		{Record: &substrate.Record{Kind: personKind, ID: "p1", Properties: map[string]any{}}, Lexical: 0.7, Semantic: 0.4},
+		{Record: &substrate.Record{Kind: taskKind, ID: "t1", Properties: map[string]any{}}, Lexical: 0.9, Semantic: 0.8},
+	}}, nil
+}
+
+// An app's search reaches the repository in the mode it asked for, the
+// semantic one included (decision 0219), over the kinds it reads alone, and
+// what comes back is cut to those kinds, without scores. What the engine
+// finds in each mode is authorize_db_test.go's.
+func TestAnAppsSearchKeepsItsModeAndItsKinds(t *testing.T) {
+	var got []substrate.SearchInput
+	ds := authorizeSearches{stubKinds: newStubKinds(personKind, taskKind), got: &got}
+	svc := &stubService{ds: ds, info: substrate.TokenInfo{ID: "app1", Label: "notes.example.org", ClientID: appClientID, Scopes: []string{"read:" + personKind}}}
+	e := &appEnv{t: t, h: newStubEnvOn(t, svc).h}
+	for _, mode := range []substrate.SearchMode{"", substrate.SearchHybrid, substrate.SearchLexical, substrate.SearchSemantic} {
+		path := "/api/v1/records?q=notes"
+		if mode != "" {
+			path += "&mode=" + string(mode)
+		}
+		rec := e.do(http.MethodGet, path, stubToken, nil, "")
+		wantStatus(t, rec, http.StatusOK)
+		last := got[len(got)-1]
+		if last.Mode != mode {
+			t.Fatalf("an app's search in mode %q ran %q, want the mode it asked for", mode, last.Mode)
+		}
+		// A search naming no kind is cut to the kinds the token reads, never
+		// widened.
+		if len(last.Kinds) != 1 || last.Kinds[0] != personKind {
+			t.Fatalf("an app's search ran over %v, want the readable kind alone", last.Kinds)
+		}
+		ranked := decodeJSON[substrate.RankedPage](t, rec)
+		if len(ranked.Records) != 1 || ranked.Records[0].ID != "p1" {
+			t.Fatalf("an app's search answered %d hits, want only the readable one", len(ranked.Records))
+		}
+		if s := ranked.Scores[personKind+"/p1"]; s.Lexical != 0 || s.Semantic != 0 {
+			t.Fatalf("an app's search carried scores %+v", s)
+		}
 	}
-	form.Set("client_id", appClientID)
-	wantStatus(t, e.do(http.MethodPost, "/oauth/revoke", "", []byte(form.Encode()), "application/x-www-form-urlencoded"), http.StatusOK)
-	e.svc.mu.Lock()
-	_, held = e.svc.tokens[app]
-	e.svc.mu.Unlock()
-	if held {
-		t.Fatal("self-revocation left the retired token in storage")
+	// A kind it cannot read is unknown, in the semantic mode as in every
+	// other, and never reaches the repository.
+	before := len(got)
+	filter := url.QueryEscape(`{"kinds":["` + taskKind + `"]}`)
+	wantStatus(t, e.do(http.MethodGet, "/api/v1/records?q=notes&mode=semantic&filter="+filter, stubToken, nil, ""), http.StatusNotFound)
+	if len(got) != before {
+		t.Fatal("a search of a kind the token cannot read reached the repository")
 	}
 }

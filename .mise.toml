@@ -179,7 +179,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # -timeout 45m: Go's default of 10m has killed the engine suite on a slow CI
 # runner with no test failing. It was 30m before internal/providere2e joined.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/api/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -200,10 +200,10 @@ description = "The engine suite alone, or one shard of it: SHARD and SHARDS from
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."test:db:rest"]
-description = "Every database package but the engine and the provider suite: catalog, providertest, testenv"
+description = "Every database package but the engine and the provider suite: api, catalog, providertest, testenv"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/api/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
 
 [tasks."test:db:providers"]
 description = "The provider suite: seven of the eight closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
@@ -248,7 +248,7 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # The database half takes the machine-wide slot, as `test:db` does.
 run = [
   "go test -count=1 -short -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.short.out ./...",
-  ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/...",
+  ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/api/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/...",
   """
     .mise/covermerge.sh coverage.out coverage.short.out coverage.db.out
     rm -f coverage.short.out coverage.db.out
@@ -1305,6 +1305,15 @@ description = "CI job `go test`: the short suite, no database"
 # part of the `coverage` job's merge, see `test:short`.
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
 run = "mise run test:short"
+
+[tasks."ci:db:api"]
+description = "CI job `db api k/n`: one shard of internal/api against the database, SHARD and SHARDS from the environment"
+# The API's tests of engine behavior run the handler on the real engine
+# (decision 0263), one database per test, so the package is cut the way
+# catalog is. A shard also runs its slice of the package's tests of the
+# handler alone, which `go test` runs too: they take milliseconds.
+env = { PKG = "internal/api", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."ci:db:catalog"]
 description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"

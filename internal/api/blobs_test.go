@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,41 +17,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// A blob whose stored bytes no longer hash to its digest is refused before
-// the status line: `500 internal` with a message naming the digest (never the
-// masked "internal error", which would hide which blob is damaged), none of
-// the blob's own headers, and one ERROR line naming the digest.
-func TestBlobReadOfCorruptBytesAnswers500NamingTheDigest(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	logs := captureLogs(t)
-
-	digest := substrate.BlobDigestPrefix + strings.Repeat("c", 64)
-	ds.errs["GetBlob"] = fmt.Errorf("%w: blobbytes: the stored bytes do not match their digest: %s hashes to %s",
-		substrate.ErrCorrupt, digest, substrate.BlobDigestPrefix+strings.Repeat("d", 64))
-	route := "/api/" + APIVersion + "/blobs/{digest}"
-
-	rec := env.do(t, http.MethodGet, "/api/"+APIVersion+"/blobs/"+digest, tok, nil)
-	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
-	problem := decodeJSON[substrate.ErrorEnvelope](t, rec)
-	if !strings.Contains(problem.Error.Message, digest) {
-		t.Fatalf("the problem message %q does not name %s", problem.Error.Message, digest)
-	}
-	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("Content-Type = %q, want the problem body's application/json", got)
-	}
-	if rec.Header().Get("ETag") != "" || rec.Header().Get("Content-Disposition") != "" {
-		t.Fatalf("the refusal carries the blob's headers: %v", rec.Header())
-	}
-	wantOneErrorLog(t, logs, "request failed", map[string]string{
-		"method": http.MethodGet, "route": route, "repository": fakeRepository,
-	})
-	if line := logs.at(slog.LevelError)[0]; !strings.Contains(line.attrs["error"], digest) {
-		t.Fatalf("the ERROR line does not name %s: %v", digest, line.attrs)
-	}
-}
-
 // The store bounds a read of a manifest with no size by the upload cap, so the
 // two must stay one number: a larger cap here would store blobs that read
 // back refused.
@@ -63,9 +27,10 @@ func TestBlobUploadCapIsTheStoreReadBound(t *testing.T) {
 }
 
 // conditionalBlobDS stores one blob and counts the manifest reads and the
-// byte reads it answers.
+// byte reads it answers: which of the two the door makes is the handler's
+// choice, and only the reads handed to the store can show it.
 type conditionalBlobDS struct {
-	*fakeDataset
+	stubDataset
 	digest      string
 	stats, gets atomic.Int32
 }
@@ -94,18 +59,17 @@ func (b *conditionalBlobDS) GetBlob(_ context.Context, digest string) (*substrat
 // A read whose If-None-Match names the blob's ETag is a 304 answered from the
 // manifest, with no bytes read; any other read is the 200 with the bytes.
 // Both carry the ETag and a private, immutable Cache-Control, and a plain read
-// costs no manifest read beside the one GetBlob makes.
+// costs no manifest read beside the one GetBlob makes. The same reads of a
+// blob the engine stored are TestBlobConditionalReadOfAStoredBlob.
 func TestBlobConditionalReadAnswers304WithoutTheBytes(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
 	digest := substrate.BlobDigestPrefix + strings.Repeat("e", 64)
-	ds := &conditionalBlobDS{fakeDataset: env.svc.datasets[fakeRepository], digest: digest}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return ds }
+	ds := &conditionalBlobDS{digest: digest}
+	env := newStubEnv(t, ds)
 	path := "/api/" + APIVersion + "/blobs/" + digest
 	etag := `"` + digest + `"`
 
 	for _, match := range []string{etag, "W/" + etag, `"blob-sha256-other", ` + etag, "*"} {
-		rec := env.do(t, http.MethodGet, path, tok, nil, "If-None-Match", match)
+		rec := env.do(t, http.MethodGet, path, stubToken, nil, "If-None-Match", match)
 		wantStatus(t, rec, http.StatusNotModified)
 		if rec.Body.Len() != 0 || rec.Header().Get("ETag") != etag || rec.Header().Get("Cache-Control") != blobCacheControl ||
 			rec.Header().Get("Vary") != "Authorization" {
@@ -116,7 +80,7 @@ func TestBlobConditionalReadAnswers304WithoutTheBytes(t *testing.T) {
 		t.Fatalf("a 304 read the bytes %d times", n)
 	}
 
-	rec := env.do(t, http.MethodGet, path, tok, nil, "If-None-Match", `"blob-sha256-other"`)
+	rec := env.do(t, http.MethodGet, path, stubToken, nil, "If-None-Match", `"blob-sha256-other"`)
 	wantStatus(t, rec, http.StatusOK)
 	if rec.Body.String() != "payload" || rec.Header().Get("Cache-Control") != blobCacheControl ||
 		rec.Header().Get("Vary") != "Authorization" {
@@ -124,11 +88,11 @@ func TestBlobConditionalReadAnswers304WithoutTheBytes(t *testing.T) {
 	}
 
 	other := substrate.BlobDigestPrefix + strings.Repeat("f", 64)
-	rec = env.do(t, http.MethodGet, "/api/"+APIVersion+"/blobs/"+other, tok, nil, "If-None-Match", `"`+other+`"`)
+	rec = env.do(t, http.MethodGet, "/api/"+APIVersion+"/blobs/"+other, stubToken, nil, "If-None-Match", `"`+other+`"`)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 
 	stats := ds.stats.Load()
-	wantStatus(t, env.do(t, http.MethodGet, path, tok, nil), http.StatusOK)
+	wantStatus(t, env.do(t, http.MethodGet, path, stubToken, nil), http.StatusOK)
 	if ds.stats.Load() != stats {
 		t.Fatal("an unconditional read made a second manifest read")
 	}
@@ -137,7 +101,7 @@ func TestBlobConditionalReadAnswers304WithoutTheBytes(t *testing.T) {
 // blockingGetDS is a blob store whose GetBlob blocks until released,
 // recording the peak number of reads in flight.
 type blockingGetDS struct {
-	*fakeDataset
+	stubDataset
 	inflight, peak atomic.Int32
 	started        chan struct{}
 	release        chan struct{}
@@ -161,9 +125,8 @@ func (b *blockingGetDS) GetBlob(_ context.Context, digest string) (*substrate.Bl
 // the digest, so no more than maxConcurrentBlobGets run at once.
 func TestBlobGetIsConcurrencyBounded(t *testing.T) {
 	ds := &blockingGetDS{
-		fakeDataset: newFakeDataset(fakeRepository),
-		started:     make(chan struct{}, 64),
-		release:     make(chan struct{}),
+		started: make(chan struct{}, 64),
+		release: make(chan struct{}),
 	}
 	h := &handler{}
 	var wg sync.WaitGroup
@@ -195,7 +158,7 @@ func TestBlobGetIsConcurrencyBounded(t *testing.T) {
 
 // bigBlobDS answers every read with the same large blob.
 type bigBlobDS struct {
-	*fakeDataset
+	stubDataset
 	data []byte
 }
 
@@ -208,10 +171,7 @@ func (b *bigBlobDS) GetBlob(_ context.Context, digest string) (*substrate.BlobIn
 // on the server.
 func TestBlobSlowReaderGivesItsSlotBack(t *testing.T) {
 	shortBodyDeadlines(t)
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := &bigBlobDS{fakeDataset: env.svc.datasets[fakeRepository], data: make([]byte, 48<<20)}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return ds }
+	env := newStubEnv(t, &bigBlobDS{data: make([]byte, 48<<20)})
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
 
@@ -221,7 +181,7 @@ func TestBlobSlowReaderGivesItsSlotBack(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 	digest := substrate.BlobDigestPrefix + strings.Repeat("a", 64)
-	if _, err := fmt.Fprintf(conn, "GET /api/%s/blobs/%s HTTP/1.1\r\nHost: substrate.test\r\nAuthorization: Bearer %s\r\n\r\n", APIVersion, digest, tok); err != nil {
+	if _, err := fmt.Fprintf(conn, "GET /api/%s/blobs/%s HTTP/1.1\r\nHost: substrate.test\r\nAuthorization: Bearer %s\r\n\r\n", APIVersion, digest, stubToken); err != nil {
 		t.Fatal(err)
 	}
 	waitFor := func(what string, done func() bool) {
@@ -243,16 +203,14 @@ func TestBlobSlowReaderGivesItsSlotBack(t *testing.T) {
 // slot, or the connection, for as long as the client waits.
 func TestBlobGetWithAStalledBodyHoldsNoSlot(t *testing.T) {
 	d := shortBodyDeadlines(t)
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
 	digest := substrate.BlobDigestPrefix + strings.Repeat("a", 64)
-	big := &bigBlobDS{fakeDataset: env.svc.datasets[fakeRepository], data: make([]byte, 64<<10)}
-	conditional := &conditionalBlobDS{fakeDataset: env.svc.datasets[fakeRepository], digest: digest}
-	srv := httptest.NewServer(env.h)
-	defer srv.Close()
+	conditional := httptest.NewServer(newStubEnv(t, &conditionalBlobDS{digest: digest}).h)
+	defer conditional.Close()
+	big := httptest.NewServer(newStubEnv(t, &bigBlobDS{data: make([]byte, 64<<10)}).h)
+	defer big.Close()
 
 	path := "/api/" + APIVersion + "/blobs/" + digest
-	stalledGet := func(what string, headers map[string]string, want int) {
+	stalledGet := func(srv *httptest.Server, what string, headers map[string]string, want int) {
 		t.Helper()
 		got, conn, br := stallConn(t, srv, http.MethodGet, path, headers, "{", 3*time.Second)
 		defer func() { _ = conn.Close() }()
@@ -266,10 +224,8 @@ func TestBlobGetWithAStalledBodyHoldsNoSlot(t *testing.T) {
 			t.Fatalf("%s with a stalled body: the server kept the connection %s past its answer (read: %v), want it closed", what, 20*d, err)
 		}
 	}
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return conditional }
-	stalledGet("a conditional GET", map[string]string{"Authorization": "Bearer " + tok, "If-None-Match": `"` + digest + `"`}, http.StatusNotModified)
-	env.svc.wrap = func(*fakeDataset) substrate.Dataset { return big }
-	stalledGet("a GET", map[string]string{"Authorization": "Bearer " + tok}, http.StatusOK)
+	stalledGet(conditional, "a conditional GET", map[string]string{"Authorization": "Bearer " + stubToken, "If-None-Match": `"` + digest + `"`}, http.StatusNotModified)
+	stalledGet(big, "a GET", map[string]string{"Authorization": "Bearer " + stubToken}, http.StatusOK)
 	for deadline := time.Now().Add(3 * time.Second); len(blobGetSem) != 0; time.Sleep(10 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatal("a GET with a stalled body still holds its slot")
