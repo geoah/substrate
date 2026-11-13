@@ -220,10 +220,13 @@ type MintedToken struct {
 }
 
 // SessionCredential is what a credential change answers (a password change, a
-// TOTP re-enrollment): the repository the factors proved, and nothing else.
-// No token is minted, so the caller signs in again with the new material.
+// TOTP re-enrollment, a sign out everywhere): the repository the factors
+// proved, and, where the request signed the person out everywhere, how many
+// tokens that ended. No token is minted, so the caller signs in again with
+// the new material.
 type SessionCredential struct {
 	Repository string `json:"repository"`
+	SignedOut  *int   `json:"signedOut,omitempty"`
 }
 
 // LoginRequest is a login as the HTTP door decodes it: the repository, the two

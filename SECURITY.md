@@ -33,9 +33,11 @@ unless you ask it not to.
   `substrate_app` role.
 - **Authentication bypass.** Registering without the invite code, logging in
   without the password, or without the TOTP code of an account that has a
-  second factor, using or forging a token that was not issued to you, or
-  changing a credential without the current password and, where the account
-  has a second factor, its TOTP code in the request body.
+  second factor, using or forging a token that was not issued to you,
+  changing a credential or signing out everywhere without the current
+  password and, where the account has a second factor, its TOTP code in the
+  request body, or a token that still works, or a stream that still runs,
+  after it was revoked or its person signed out everywhere.
 - **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value or a
   provider OAuth token reaching a response, a log line, another repository, or a
   record a token can read. A secret-typed property reads back `<redacted>`
@@ -74,7 +76,10 @@ unless you ask it not to.
   approved, [apps](docs/apps.md)): there are no roles, every authenticated request
   presents the token and neither factor, `POST /tokens` mints another token from
   an existing one with no password and no code (the authenticated twin of
-  login), and function bodies a user installs run with the user's data in reach.
+  login), a sign-in token does not expire, and function bodies a user installs
+  run with the user's data in reach. Revoking a leaked token does not end what
+  it minted or approved meanwhile; signing out everywhere ends every token the
+  person holds ([users and tokens](docs/auth.md#signing-out-everywhere)).
 - **Documented absences.** What the server does not do is listed in
   [running a substrate](docs/operations.md#what-it-does-not-do): no evidence
   against the host operator that history was not altered, one server process

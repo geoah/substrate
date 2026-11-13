@@ -77,6 +77,10 @@ func (d *idempotencyRecorder) ChatAgent(ctx context.Context, _ substrate.Actor, 
 	return res, nil
 }
 
+// WatchSignal is a changelog that never moves: the chat stream subscribes
+// to it, to read its token again when it moves (decision 0272).
+func (d *idempotencyRecorder) WatchSignal(context.Context) <-chan int64 { return nil }
+
 func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 	ds := newIdempotencyRecorder()
 	env := newStubEnv(t, ds)

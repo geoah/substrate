@@ -615,7 +615,7 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 // write from somewhere else.
 func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate.TokenInfo, string, error) {
 	var zero substrate.TokenInfo
-	repo, _, err := s.verifyFactors(ctx, in)
+	repo, material, err := s.verifyFactors(ctx, in)
 	if err != nil {
 		// Only under a name that exists, so a guessed one adds no series.
 		if errors.Is(err, substrate.ErrAuth) && s.repositoryExists(ctx, in.Repository) {
@@ -623,6 +623,7 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 		}
 		return zero, "", err
 	}
+	s.afterProof("login")
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return zero, "", err
@@ -631,12 +632,82 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	if label == "" {
 		label = "login"
 	}
-	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
-	if err == nil {
-		countAuth(repo.Authority, "login")
+	var info substrate.TokenInfo
+	var secret string
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.factorsStand(material); err != nil {
+			return err
+		}
+		var err error
+		info, secret, err = t.mintToken(substrate.MintTokenInput{Label: label})
+		return err
+	})
+	if err != nil {
+		return zero, "", err
 	}
-	return info, secret, err
+	countAuth(repo.Authority, "login")
+	return info, secret, nil
 }
+
+// afterProof runs the factor doors' test seam between a request's proof and
+// its act (WithTestAfterProof).
+func (s *service) afterProof(door string) {
+	if s.testAfterProof != nil {
+		s.testAfterProof(door)
+	}
+}
+
+// factorsStand is the fence of every door that proved the factors before it
+// acts: inside the act's transaction, under the changelog lock every change
+// of the factors takes (writeCredential), the credential is still the one the
+// request proved. A password change (alone or with a sign out everywhere), a
+// new second factor or an operator's reset that landed between the proof and
+// the act refuses the act, so nothing the old factors began survives them. A
+// sign out everywhere that changes no factor leaves the factors standing: a
+// request proving them is a new sign-in, as one a moment later would be.
+func (t *txn) factorsStand(proved authMaterial) error {
+	row, err := t.loadRow(eref{Kind: kindCredential, ID: credentialID}, false)
+	if err != nil {
+		return err
+	}
+	ref := func(name string) string {
+		if row == nil || row.DeletedAt != nil {
+			return ""
+		}
+		s, _ := row.Props[name].(string)
+		return s
+	}
+	if row == nil || row.DeletedAt != nil ||
+		ref("passwordRef") != proved.passwordRef || ref("totpRef") != proved.totpRef {
+		return errFactorsChanged
+	}
+	return nil
+}
+
+// credentialStandsOn is factorsStand for an act outside the repository's
+// changelog, a repository's erase: the credential row is read FOR UPDATE in
+// the erase's own transaction, which waits for a factor change writing that
+// row and keeps the next one waiting until the erase commits.
+func credentialStandsOn(ctx context.Context, tx *sql.Tx, repository string, proved authMaterial) error {
+	var passwordRef, totpRef sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT props->>'passwordRef', props->>'totpRef' FROM records
+		WHERE repository = $1 AND kind = $2 AND id = $3 AND deleted_at IS NULL FOR UPDATE`,
+		repository, kindCredential, credentialID).Scan(&passwordRef, &totpRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errFactorsChanged
+	}
+	if err != nil {
+		return err
+	}
+	if passwordRef.String != proved.passwordRef || totpRef.String != proved.totpRef {
+		return errFactorsChanged
+	}
+	return nil
+}
+
+// errFactorsChanged refuses an act whose proof the factors outlived.
+var errFactorsChanged = fmt.Errorf("%w: the password or the second factor changed after this request proved them", substrate.ErrAuth)
 
 // ChangePassword rewrites the password hash. It takes the CURRENT password
 // and code in its input and nothing else: a bearer token is not evidence
@@ -650,25 +721,35 @@ func (s *service) ChangePassword(ctx context.Context, in substrate.LoginInput, n
 	if err != nil {
 		return err
 	}
+	s.afterProof("password")
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return err
+	}
+	_, err = ds.rewritePassword(ctx, in.Repository, material, newPassword)
+	return err
+}
+
+// rewritePassword writes a new password hash for factors already verified.
+func (ds *dataset) rewritePassword(ctx context.Context, repository string, material authMaterial, newPassword string) (authMaterial, error) {
 	// argon2 stays OUTSIDE the write's lock; the verified refs ride in as the
 	// compare-and-swap baseline so a concurrent rotation is a conflict, not a
 	// silent overwrite.
 	hash, err := hashPassword(ctx, newPassword)
 	if err != nil {
-		return err
-	}
-	ds, err := s.open(ctx, repo)
-	if err != nil {
-		return err
+		return authMaterial{}, err
 	}
 	// The second factor is unchanged, so the seed carries over — with its
 	// consumed step, or the code just spent could be replayed at the new
 	// credential. The write reconciles that step against anything a concurrent
 	// login advanced.
-	return ds.rewriteCredential(ctx, credentialWrite{
-		repository: in.Repository, passwordHash: hash, totp: material.totp,
+	wrote := material
+	err = ds.rewriteCredential(ctx, credentialWrite{
+		repository: repository, passwordHash: hash, totp: material.totp,
 		expectPasswordRef: material.passwordRef, expectTotpRef: material.totpRef, casEnabled: true,
+		wrote: &wrote,
 	})
+	return wrote, err
 }
 
 // DeleteRepository verifies both current factors and erases the repository
@@ -684,10 +765,11 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	if s.readOnly {
 		return ErrDirectoryReadOnly
 	}
-	repo, _, err := s.verifyFactors(ctx, in)
+	repo, material, err := s.verifyFactors(ctx, in)
 	if err != nil {
 		return err
 	}
+	s.afterProof("delete")
 	cp, unlock, err := s.lockRegistration(ctx, repo.Authority)
 	if err != nil {
 		return err
@@ -698,7 +780,9 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 		return err
 	}
 	defer releaseOpen()
-	if err := s.eraseRepositoryOn(ctx, cp, repo.ID); err != nil {
+	if err := s.eraseRepositoryOn(ctx, cp, repo.ID, func(tx *sql.Tx) error {
+		return credentialStandsOn(ctx, tx, repo.ID, material)
+	}); err != nil {
 		return err
 	}
 	s.lease.release(repo.ID)
@@ -739,6 +823,7 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 	if err != nil {
 		return err
 	}
+	s.afterProof("totp")
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return err
@@ -807,6 +892,9 @@ type credentialWrite struct {
 	expectPasswordRef string
 	expectTotpRef     string
 	casEnabled        bool
+	// wrote, when set, receives the refs the write minted: the factors a
+	// request that changed them goes on to act under (SignOutEverywhere).
+	wrote *authMaterial
 }
 
 // errCredentialConflict marks a credential rewrite that lost a race with a
@@ -885,6 +973,10 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 		material[totpRef] = sealedTOTP
 		props["totpRef"] = totpRef
 	}
+	if cw.wrote != nil {
+		cw.wrote.passwordRef = hashRef
+		cw.wrote.totpRef, _ = props["totpRef"].(string)
+	}
 	for ref, payload := range material {
 		var updated time.Time
 		if err := t.row(`
@@ -953,6 +1045,9 @@ func (ds *dataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (
 	var info substrate.TokenInfo
 	var secret string
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.principalStands(); err != nil {
+			return err
+		}
 		var err error
 		info, secret, err = t.mintToken(in)
 		return err
@@ -961,6 +1056,37 @@ func (ds *dataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (
 		return substrate.TokenInfo{}, "", err
 	}
 	return info, secret, nil
+}
+
+// principalStands refuses a mint whose token no longer stands: the token
+// that asked for it (`POST /tokens`) or approved it (an app's code exchange,
+// which mints standing on the approving token) was revoked, or its person
+// signed out everywhere, after the request was authenticated. It is read
+// inside the mint's transaction, which holds the changelog lock a sign-out
+// holds, so no token is minted on one the sign-out ended (decision 0272). A
+// mint with no principal stands on its factors (a login, fenced by
+// factorsStand) or on nothing that can end (the seed).
+func (t *txn) principalStands() error {
+	if t.principal == "" {
+		return nil
+	}
+	row, err := t.loadRow(eref{Kind: kindToken, ID: t.principal}, false)
+	if err != nil {
+		return err
+	}
+	if row == nil || row.DeletedAt != nil {
+		return fmt.Errorf("%w: the token this request stands on was revoked, or its person signed out everywhere", substrate.ErrAuth)
+	}
+	// Expired is as gone, by the rule authentication reads it by
+	// (resolveToken): a request authenticated just before the token's time
+	// ran out does not mint after it.
+	if stamp, _ := row.Props["expiresAt"].(string); stamp != "" {
+		exp, err := time.Parse(time.RFC3339, stamp)
+		if err != nil || nowUTC().After(exp) {
+			return fmt.Errorf("%w: the token this request stands on expired", substrate.ErrAuth)
+		}
+	}
+	return nil
 }
 
 // mintToken is the transaction half, so a registration can mint its first

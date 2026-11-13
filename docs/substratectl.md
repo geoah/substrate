@@ -72,6 +72,10 @@ as the current context. Where the account has a second factor the substrate
 answers `totp_required`, and `login` then asks for the code and sends it;
 `--totp-code` sends one up front. `substratectl logout` revokes that token record and then
 forgets it, because a session is its [token record](auth.md#tokens).
+`substratectl logout --everywhere` asks for the password, and the code where
+the account has one, and ends every token the person holds, this one, every
+other sign-in, every minted token and every app's and assistant's included
+([signing out everywhere](auth.md#signing-out-everywhere)).
 
 `substratectl token create --label backup` mints a token for a script or a device and
 prints the secret exactly once; `--expires` takes a duration (`720h`) or an

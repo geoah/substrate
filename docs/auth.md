@@ -178,8 +178,10 @@ POST /login
 **There is no session concept beside the token.** A session _is_ a token
 record: the console holds one exactly like a script does, logging out revokes
 it, and there is no sessions table to reap. One consequence worth stating: a
-password change does not sign anything out. Live tokens survive it, because a
-token is data access and the credential is the account.
+password change signs nothing out unless it asks to. Live tokens survive it,
+because a token is data access and the credential is the account; a change
+that sends `"signOutEverywhere": true` also
+[signs out everywhere](#signing-out-everywhere).
 
 Every failure (an unknown repository, a wrong password, a wrong code) answers
 one identical `401 auth`, and the engine does the same password-hashing and
@@ -232,7 +234,16 @@ Five things follow from a token being a record:
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
-  `substratectl token revoke`.
+  `substratectl token revoke`. Every stream the token opened ends too: a
+  watch on the records route or the change feed, a chat's stream and a
+  thread's events read their token again whenever the repository's changelog
+  moves, which a revoke does, and end with an `auth` error (a terminal frame
+  on a watch, an `error` event with `"code": "auth"` on an agent stream, and
+  a plain `401` for an agent stream whose first event had not gone out). A
+  long transfer reads its token between its writes, at most once a second:
+  an export or a blob's bytes still going out are cut, which a client reads
+  as a body that ended early. [What ends with a token](#what-ends-with-a-token)
+  says which responses do which.
 - **Only the owner revokes a token.** The engine refuses a token delete from
   installed code with `403 forbidden`, whatever its grant names: a
   function's `delete` effect, an agent's `write` built-in, and a policy
@@ -257,6 +268,102 @@ Present one on every request under `/api`:
 ```http
 Authorization: Bearer substrate_tok_…
 ```
+
+## Signing out everywhere
+
+A full-access token can mint another with no password (`POST /tokens`),
+mint an assistant's token, and approve an app, so revoking a token that
+leaked does not end the leak: whatever it made meanwhile still works.
+Signing out everywhere does. It ends every token the person holds, in one
+write:
+
+| Token | Ended | Why |
+| --- | --- | --- |
+| From `/login` or `/register` | yes | It is a sign-in. |
+| Minted from another through `POST /tokens` | yes | A leaked token can mint one, so a sign-out that left it would leave the leak a way back. |
+| An assistant's, for the MCP door (`scopes: ["mcp"]`) | yes | It reaches everything but the auth material, and a full token can mint one. |
+| An app's, from the authorization flow | yes | A full token can approve an app, `full` access included, so the same reason holds. The app asks to be approved again. |
+
+This browser or script is one of them: after a sign out everywhere every
+client signs in again. Sign-in tokens still have no expiry; this is how they
+end at once.
+
+```http
+POST /signout/everywhere
+{"repository": "ada.example.com", "password": "…", "totpCode": "123456"}
+→ 200 {"repository": "ada.example.com", "signedOut": 4}
+```
+
+It takes both current factors in the body and refuses a bearer token, like
+the credential changes below: it is how a person takes the account back from
+a leaked token, so a token is no evidence for it. A password change does the
+same in the same request with `"signOutEverywhere": true`, because the code
+it carries is spent once; its answer carries `signedOut` too. Every open
+stream of every ended token ends with an `auth` error as soon as the sign-out
+commits, and an export or a blob's bytes going out stop between two writes.
+Nothing a token set going before it mints afterwards: a token is minted
+standing on the token that asked for it (`POST /tokens`) or approved it (an
+app's code, exchanged after the approval), checked in the mint's own
+transaction to still authenticate (not revoked, not expired), so a mint
+whose request was authenticated before the sign-out, or a code approved
+before it, is refused.
+
+A sign out everywhere ends every token that exists when it commits. With a
+password change it also ends every sign-in still in flight that proved the
+old password: a sign-in, a password change, a new second factor, a sign out
+everywhere and a repository's delete act only while the credential is still
+the one they proved, read under the lock every change of it takes. A
+sign-in that proves the factors as they stand is a new sign-in, whenever it
+completes: a sign out everywhere that changes no factor does not stop it,
+because whoever can prove the factors can sign in again a moment later. The console offers it under Settings, Signed in, and as an option of
+the password change, and `substratectl logout --everywhere` runs it
+([0272](decisions/0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md)).
+
+## What ends with a token
+
+A token is read when a request starts. What happens when it ends while the
+response is still going out depends on whether the server goes on reading
+for that token once the answer has begun:
+
+- **A stream** is a response the server keeps open to send what happens
+  later: the watch, and an agent's event streams. It reads its token before
+  its first byte, then at every batch and every heartbeat, and whenever the
+  repository's changelog moves, and ends when the token is dead: an ordinary
+  `401` before its first byte, a terminal `auth` frame or event after it.
+- **A long transfer** is a response with no bound on its size: the export
+  and a blob's bytes. It reads its token before its headers and then between
+  writes, at most once a second, and a dead token cuts it, so that no client
+  can take it for complete: the connection closes mid-body, which a client
+  reads as an unexpected end, and an export's archive lacks its last entry,
+  `snapshot.json`.
+- **Every other response is answered from what was read when it started.**
+  It is authorized then, and it completes: ending a token does not reach
+  back into a request already being answered. A stream and a long transfer
+  go on reading after their first byte (what happens later; a file, piece
+  by piece), which is why they read their token again; nothing here does.
+
+| Route | Class | What it answers from |
+| --- | --- | --- |
+| `GET /api/v1/records?watch=1`, `GET /api/v1/changes?watch=1` | stream | the changelog as it moves, until its client leaves, the server drains, or its token ends |
+| `POST …/core/agent/{name}/chat`, `GET …/llm/thread/{id}/events` | stream | the turn's events as they come, as above; the thread's events with no turn running are one line |
+| `GET /api/v1/export` | long transfer | the repository's directory, read file by file as it goes out |
+| `GET /api/v1/blobs/{digest}` | long transfer | the blob's bytes, written piece by piece |
+| `GET /api/v1/records` | answered from its start | one page, at most 500 records |
+| `GET /api/v1/changes` (`from`, `before`, `first`, `runs`) | answered from its start | one page, at most 500 changes |
+| `GET`, `PUT`, `PATCH`, `DELETE` on a record, `POST /api/v1/records` | answered from its start | one record |
+| `PUT /api/v1/blobs`, `PUT /api/v1/blobs/{digest}` | answered from its start | the stored blob's description |
+| `GET /api/v1/images` | answered from its start | one image, at most 8 MiB |
+| `POST …/core/function/{name}/call` | answered from its start | the function's reply, one frame of at most 8 MiB |
+| `POST …/core/agent/{name}/call` | answered from its start | one turn's result |
+| `* /mcp` | answered from its start | one buffered answer; a tool's result at most 32 KiB |
+| `POST …/applets/applet/{id}/render`, `/preview`, `/act` | answered from its start | one render or one act |
+| `GET /tokens`, `GET …/core/trigger/status`, `GET …/core/trigger/{id}/parked`, `GET /api/v1/sync/status`, `GET …/core/bundle/status`, `GET …/core/trait/{id}/implementors`, `GET /api/v1/units` | answered from its start | one list, unpaged, read whole when the request starts |
+| `GET /api/v1/catalog`, `GET /api/v1/catalog/{id}`, `GET /api/v1/vocabulary/upgrade` | answered from its start | the catalog this server ships |
+| Every other route that takes a token | answered from its start | one answer to one request: a write, a mint, an approval, an apply |
+
+The routes that take no token (discovery, `/healthz`, `/metrics`, the
+console's files, the webhooks, the sign-in and registration doors, the
+authorization server's metadata and token exchange) are no token's to end.
 
 ## The credential, and the password-factor rule
 
@@ -306,10 +413,13 @@ console's Settings offers it as **Turn on**. There is no call that turns a
 factor off again; the operator's [reset](#losing-both-factors) issues a new
 one.
 
-This is the one rule that bounds what a leaked token can do. Without it, any
-leaked token could rotate the password and outlive its own revocation; with it,
-a token's blast radius is the data, never the account. It is also why the
-console's Settings page sends no bearer token at all on either change.
+This rule keeps a leaked token from taking the account: without it, a leaked
+token could rotate the password and lock its owner out. It does not stop the
+token from minting more tokens, an assistant's included, or approving an app,
+so revoking the leaked token alone does not end the leak;
+[signing out everywhere](#signing-out-everywhere) does, and it takes the
+factors for the same reason. It is also why the console's Settings page sends
+no bearer token at all on any of these changes.
 
 The generic record API cannot touch either auth kind: the credential cannot be
 put, patched, or deleted through REST or the CLI's record surface,

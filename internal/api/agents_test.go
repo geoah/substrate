@@ -22,9 +22,15 @@ import (
 
 const helperChatPath = "/api/v1/substrate.reamde.dev/core/agent/helper/chat"
 
+// stubSignals is a stub whose changelog never moves: an agent stream
+// subscribes to it, to read its token again when it moves (decision 0272).
+type stubSignals struct{ stubDataset }
+
+func (stubSignals) WatchSignal(context.Context) <-chan int64 { return nil }
+
 // chatFake answers a chat by emitting its events, then returning err.
 type chatFake struct {
-	stubDataset
+	stubSignals
 	events []substrate.AgentEvent
 	err    error
 	// got is the turn the handler decoded.
@@ -74,7 +80,7 @@ func TestChatRefusedBeforeItsFirstEventAnswersItsStatus(t *testing.T) {
 // heldChat opens a stream with its thread event and then holds it until the
 // client leaves, as a detached turn still running does.
 type heldChat struct {
-	stubDataset
+	stubSignals
 	attach func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error)
 	stop   func() (*substrate.AgentResult, error)
 }
@@ -168,7 +174,7 @@ func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
 
 // panicChat panics inside the stream's producer, after emitting events.
 type panicChat struct {
-	stubDataset
+	stubSignals
 	events []substrate.AgentEvent
 }
 
@@ -193,7 +199,7 @@ func TestAPanickingChatStreamEndsAsAnInternalError(t *testing.T) {
 	rec = env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
 	wantStatus(t, rec, http.StatusOK)
 	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
-	if len(lines) != 2 || lines[1] != `{"kind":"error","error":"internal error"}` {
+	if len(lines) != 2 || lines[1] != `{"kind":"error","error":"internal error","code":"internal"}` {
 		t.Fatalf("stream after a panic = %s", rec.Body.String())
 	}
 }

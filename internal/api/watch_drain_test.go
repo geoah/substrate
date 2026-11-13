@@ -84,6 +84,8 @@ type bigExport struct{ point substrate.ExportPoint }
 
 func (e bigExport) Point() substrate.ExportPoint { return e.point }
 
+func (e bigExport) Close() {}
+
 func (e bigExport) WriteTo(w io.Writer) (int64, error) {
 	chunk := make([]byte, 64<<10)
 	var n int64
@@ -155,6 +157,8 @@ func TestExportIsCutWhenItsClientStopsReading(t *testing.T) {
 type slowExport struct{ point substrate.ExportPoint }
 
 func (e slowExport) Point() substrate.ExportPoint { return e.point }
+
+func (e slowExport) Close() {}
 
 func (e slowExport) WriteTo(w io.Writer) (int64, error) {
 	var n int64

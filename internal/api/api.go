@@ -349,6 +349,9 @@ func New(cfg Config) http.Handler {
 		r.Post("/totp/enroll", h.postTOTPBegin)
 		r.Post("/totp", h.postTOTP)
 		r.Post("/repository/delete", h.postDeleteRepository)
+		// Signing out everywhere ends every token, so a token is no evidence
+		// for it either.
+		r.Post("/signout/everywhere", h.postSignOutEverywhere)
 		// Tokens: minting and revoking need a token already, so these sit
 		// behind the ordinary bearer check. Revoking is a record delete either
 		// way — the same write the generic surface performs.

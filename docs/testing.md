@@ -189,8 +189,12 @@ and a test belongs to one by what its assertion depends on.
   the envelope for a given sentinel, the feature table, the auth middleware.
   The stub accepts one bearer and answers who its repository is; any other
   method is a nil interface that panics, which the recovery middleware
-  answers 500. A test that needs a method writes it on a small type of its
-  own, so a 400 from the decoder also proves the dataset was not reached.
+  answers 500; in an agent stream's handler (a chat, a thread's events) the
+  panic ends the test binary instead (`fatal error: unknown caller pc`). A
+  test that needs a method writes it on a small type of its own, a test whose
+  handler opens a stream writes every method the stream calls (`WatchSignal`
+  among them), and a 400 from the decoder also proves the dataset was not
+  reached.
 
 `newDBEnv` opens the engine on a copy of a migrated template database (the
 same `testdb.Template` the engine fixture uses), creates one repository named

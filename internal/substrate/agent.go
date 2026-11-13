@@ -124,6 +124,10 @@ type AgentEvent struct {
 	// Error rides the error event: a post-200 loop failure the client routes to
 	// its error path instead of settling a blank assistant turn.
 	Error string `json:"error,omitempty"`
+	// Code rides an error event the stream itself ends with: the error's code
+	// from the closed set, `auth` where the stream's token no longer stands,
+	// so a client signs in again rather than retrying.
+	Code string `json:"code,omitempty"`
 	// TokensBefore and Covered ride the compacted event: the context size in
 	// tokens that triggered the compaction, and the number of message rows
 	// the new summary row covers.

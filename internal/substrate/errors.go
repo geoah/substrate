@@ -137,6 +137,14 @@ var (
 	// where the message says. Each follows ErrConflict, whose words lead.
 	ErrFirstAttemptRunning = errors.New("the first attempt under this key has not answered")
 	ErrFirstAttemptLanded  = errors.New("the first attempt under this key landed")
+	// ErrSignOutIncomplete marks a password change that asked to sign out
+	// everywhere and did not finish: the password changed and the tokens
+	// were not ended, or either write is in doubt (wrapped with
+	// ErrWriteInDoubt, which then means the password may have changed). The
+	// API answers it with a message that says which, and what to do (sign
+	// out everywhere again, with the new password or, while in doubt, the
+	// one that signs in), whatever the cause was.
+	ErrSignOutIncomplete = errors.New("substrate: the password change asked to sign out everywhere, and the sign-out did not finish")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.

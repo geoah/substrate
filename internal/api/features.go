@@ -162,7 +162,7 @@ var featureTable = []feature{
 	// The sign-in door: registering, signing in, the credential changes and
 	// the tokens.
 	{
-		name: "auth", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST},
+		name: "auth", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST},
 		notice: "Before 1.0, sign-in names a person, who then picks a repository.",
 		routes: []string{
 			"POST /register/enroll",
@@ -172,6 +172,7 @@ var featureTable = []feature{
 			"POST /totp/enroll",
 			"POST /totp",
 			"POST /repository/delete",
+			"POST /signout/everywhere",
 			"POST /tokens",
 			"GET /tokens",
 			"DELETE /tokens/{id}",
@@ -256,7 +257,7 @@ var featureTable = []feature{
 	// The agent call and chat routes and the two that reach a running turn.
 	// Experimental with the agent kind and the llm package they run on
 	// (substrate/agent.go).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
