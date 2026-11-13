@@ -429,12 +429,8 @@ func parseChangeFilter(r *http.Request) (substrate.ChangeFilter, error) {
 	}
 	f.Kinds = append(f.Kinds, splitList(v["kinds"])...)
 	f.ExcludeKinds = append(f.ExcludeKinds, splitList(v["excludeKinds"])...)
-	for _, a := range splitList(v["actors"]) {
-		f.Actors = append(f.Actors, substrate.Actor(a))
-	}
-	for _, a := range splitList(v["excludeActors"]) {
-		f.ExcludeActors = append(f.ExcludeActors, substrate.Actor(a))
-	}
+	f.Actors = append(f.Actors, splitList(v["actors"])...)
+	f.ExcludeActors = append(f.ExcludeActors, splitList(v["excludeActors"])...)
 	for _, o := range splitList(v["ops"]) {
 		f.Ops = append(f.Ops, substrate.Op(o))
 	}

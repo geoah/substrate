@@ -197,12 +197,24 @@ A server reads a 0.x directory once, at its first boot, and takes its
 history into the database
 ([what happens at boot](operations.md#what-happens-at-boot)), in this order:
 every line both it and the table hold is compared, in the one dialect both
-are in; the lines the table lacks and the sealed files go in; the directory
-is set aside (`repository.json` renamed to `repository.json.adopted`, from
-when no boot reads it again); the table is converted and folded; the
-manifest, segments and sealed files are removed, the set-aside manifest last;
-and a new archive is published by the first pass. The blobs and the spool
-stay where they are. The [kept directories](#kept-directories) are in this
+are in, and each of the table's rows is held to its own `sum`, in the frame
+its line was written in; the lines the table lacks and the sealed files go
+in; the directory is set aside (`repository.json` renamed to
+`repository.json.adopted`, from when no boot reads it again); the table is
+converted and folded; the manifest, segments and sealed files are removed,
+the set-aside manifest last; and a new archive is published by the first
+pass. The blobs and the spool stay where they are. The server opens the
+directory's history read-only and changes nothing of it but the set-aside
+and the removal: an unfinished transaction at the end of the highest segment
+is read past, never cut, because a release that committed it to the database
+and died appending it may have left a whole line of it there, the one other
+copy of a row the table holds. The old copy outlives the
+doubt: the files are removed only once the table stands at the binary's
+changelog dialect, every row held to its `sum` by the conversion, with no
+import marked incomplete. A comparison or a conversion that refuses a row
+leaves the directory as it is, at that start and at every start after, and
+its line for that seq is the one other copy of the row
+([a repository set aside at start-up](operations.md#a-repository-set-aside-at-start-up)). The [kept directories](#kept-directories) are in this
 format.
 
 A release before ids wrote format 1: the same keys without `id`, the
@@ -228,8 +240,9 @@ A line is one JSON object:
 | --- | --- |
 | `seq` | The entry's position, from 1. |
 | `ts` | When the writing transaction ran: UTC, microseconds, `2006-01-02T15:04:05.000000Z`. |
-| `actor` | Who wrote it ([the actor domain](api.md#actors)). |
-| `principal` | The id of the token the write stood behind, or `""`. |
+| `actor` | The id of the [actor record](api.md#actors) that wrote it. |
+| `onBehalfOf` | The id of the actor record it acted for. Present only where it acted for one: an app's write, and installed code a person's request started. |
+| `token` | The id of the token record the write stood behind. Present only where one stood: a person's sign-in or an app's token. |
 | `op` | `put`, `patch`, `delete`, `merge`, `split`, `gc` or `delivery`. |
 | `kind`, `recordId` | The record the entry addresses. |
 | `causedBy` | The seq of the entry that caused this one. Present only on an entry a delivery caused. |
@@ -245,11 +258,17 @@ U+2029 as ` ` and ` `; everything else as UTF-8);
 `seq`, `causedBy` and `txn` as plain decimals; and every number inside
 `payload` in one value-exact spelling, so `1.5`, `1.50` and `15e-1` are all
 `1.5E0` and every zero is `0`. The spelling is computed on the digits and
-never through a float. One vector, the first in the file:
+never through a float. One vector from the file, a person's put through a
+sign-in, its token beside it (`token` sorts between `sum` and `ts`):
 
 ```
-{"actor":"api","kind":"ada.example.com/tasks/task","op":"put","payload":{"created":true,"fold":[{"delta":{"created":true,"kindVersion":3E0,"set":{"dueAt":"2026-08-06T09:00:00Z","estimate":1.5E0,"name":"Ship the fold"},"title":"Ship the fold"},"id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"record","ref":"ada.example.com/tasks/task","version":1E0},{"actor":"api","id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"manager","principal":"01jbx9k0token000000000000a","property":"name","ref":"ada.example.com/tasks/task","tier":"owner"}],"properties":["name","dueAt"]},"principal":"01jbx9k0token000000000000a","recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:308ac73610024745a83e81276ac52f61d3b8f406156a231984a79199f8731e31","ts":"2026-08-04T10:00:00.183742Z","txn":4190}
+{"actor":"6nk6ekkczdgh399nt2pqpccjz0","kind":"substrate.reamde.dev/core/contact","op":"put","payload":{"created":true,"fold":[{"delta":{"created":true,"kindVersion":2E0,"set":{"name":"Grace"},"title":"Grace"},"id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"record","ref":"substrate.reamde.dev/core/contact","version":1E0},{"actor":"6nk6ekkczdgh399nt2pqpccjz0","id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"manager","property":"name","ref":"substrate.reamde.dev/core/contact","tier":"owner","token":"01jbx9k0token000000000000a"}],"properties":["name"]},"recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4812,"sum":"sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a","token":"01jbx9k0token000000000000a","ts":"2026-11-13T10:00:00.000000Z","txn":4812}
 ```
+
+The file's first four vectors are dialect-1 lines, written before actors were
+records: their `actor` is a spelling (`api`, `substrate.webhook`,
+`function:…`) and the token sits under `principal`. A reader still parses
+one, and the conversion to dialect 3 rewrites it ([below](#conversions)).
 
 [The changelog](changelog.md#the-checksum-and-the-archive) says what the
 checksum proves and what it does not.
@@ -258,9 +277,14 @@ checksum proves and what it does not.
 
 The keys beside `fold` are what [the change feed](changelog.md) serves:
 `created`, `restored`, `properties`, `states`, `finalizers`, `winner`,
-`loser`, `moved`, `renamed`, `remapped` and a `gc` entry's `reason`. `fold`
-is the list of **effects** the write applied, in order: replaying them is what
-rebuilds the records from the history. No response carries `fold`.
+`loser`, `moved`, `renamed`, `remapped` and a `gc` entry's `reason`. Where
+the payload names a hand, it names the id of the hand's actor record: a
+recompute's entry carries `managers`, each property it wrote with the id of
+the actor that now manages it, and `triggeredBy`, the id of the actor whose
+write set the recompute off; a merge's `moved.managers` lists each manager
+row it carried, with its `actor` id and its `token`. `fold` is the list of
+**effects** the write applied, in order: replaying them is what rebuilds the
+records from the history. No response carries `fold`.
 
 ### The effects
 
@@ -275,9 +299,9 @@ the entry, naming the field.
 | `tombstone` | Deletes the record, keeping it as a tombstone | `version`, `finalizer` (the hold a merge adds) |
 | `purge` | Removes the record and everything on it | |
 | `annotation` | Sets one annotation, or clears it when `value` is absent | `key`, `value` |
-| `manager` | Sets who manages a property, or releases it when `actor` is empty | `property`, `actor`, `tier`, `principal`, `updatedAt` |
+| `manager` | Sets who manages a property, or releases it when `actor` is empty | `property`, `actor` (an actor record's id), `tier`, `token` (present only where a token stood behind the write), `updatedAt` |
 | `former` | Records an id the record was merged from | `formerId` |
-| `resync` | States again, whole, every side row of the records a merge or split moved | `scope` (`kind`, `id` each); `rows`: `annotations` (`kind`, `id`, `key`, `value`, `updatedAt`), `managers` (`kind`, `id`, `property`, `actor`, `tier`, `principal`, `updatedAt`), `formerIds` (`kind`, `formerId`, `recordId`, `createdAt`) |
+| `resync` | States again, whole, every side row of the records a merge or split moved | `scope` (`kind`, `id` each); `rows`: `annotations` (`kind`, `id`, `key`, `value`, `updatedAt`), `managers` (`kind`, `id`, `property`, `actor`, `tier`, `token`, `updatedAt`), `formerIds` (`kind`, `formerId`, `recordId`, `createdAt`) |
 | `cursor` | Sets a record trigger's acknowledged position | `seq` |
 | `schedule` | Sets a schedule trigger's last fired occurrence | `at` |
 | `park` | Writes a failed delivery, whole | `failure`: `id`, `seq`, `fireId`, `recordId`, `attempts`, `lastError`, `parkedAt`, `payload` |
@@ -293,7 +317,10 @@ it, because a piece holds the canonical one and Postgres prints its own.
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 2 today. A change to what a line may hold raises it, and
+manifest, and it is 3 today: dialect 3 is the line above, whose actor,
+`onBehalfOf` and `token` link records, and dialects 1 and 2 are the line
+before it, which named its actor by a spelling and its token as `principal`.
+A change to what a line may hold raises it, and
 a change to a shape history already holds also ships a
 [conversion step](#conversions) to the new number, so a server reads one
 dialect, its own. The line format (`LineFormat`) is 1 and the manifest's
@@ -310,6 +337,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | Step | Name | What it changes |
 | ---- | ---- | --------------- |
 | 2 | `drop_recovery_wrap` | Each line of kind `substrate.reamde.dev/core/recoverykey`: `sealedKey` is dropped from what its `record` effects' `delta` sets, and the rest of the line stays, the property's name in the payload's `properties` and its `manager` effect included. The value was the repository's DEK wrapped to the owner's recovery identity, which opened every secret of every copy of the directory ([decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md)). |
+| 3 | `link_actors` | Every line: its actor's spelling becomes the id of that hand's actor record, `principal` becomes `token`, an app's line gains `onBehalfOf`, and each spelling the engine stored in a value is linked or reworded, as the paragraph below says ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A
@@ -318,13 +346,56 @@ only under its own authority) is handed the repository's id and name and
 returns that repository's rewrite, and may carry rows outside history with
 it, such as a sealed row bound to the kind its lines now name.
 
+Step 3, `link_actors`, links a dialect-1 history's
+actors
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)): a
+line's `actor` spelling becomes the id of that hand's actor record,
+`principal` becomes `token`, and an app's line gains `onBehalfOf`, the
+person's id. Every spelling a line holds, its own `actor` and each one the
+engine stored in a value, is read by one rule with one piece of evidence: the
+forms the engine wrote are its own hands, any other text is a label a
+person's request claimed through the retired actor header, so the person,
+and behind a token (the line's `principal`, or a manager row's own) a
+`policy:` or a `mapping:` spelling is such a label too, since the header
+refused only the reserved forms. Inside the payload, `managers` and `triggeredBy` take ids, and a
+`manager` effect, a resync's manager rows and a merge's moved managers take
+the actor's id and `token`. The values a record effect wrote move too: a
+split's kept `result` as a payload does; a package's `declaredBy`, a blob's
+`createdBy` and a call run's `caller` link the actor record; a call run's
+`principal` becomes its `token`; a package's `actors` list goes;
+`takenOverFrom` names an app by its publisher; a message's `callable`, in
+a tool call and in the engine's system row of a job's end, becomes the
+record path of the function or agent it named; a stop the engine wrote (a
+thread's `reason`, a stopped job's output: "stopped by " and any spelling)
+says which type of actor stopped the turn; a refusal the engine stored names
+its hand in words ("the owner", "the function …"), wrapped as it was stored
+(a conflict's `reason`, a policy verdict's `note`, a park's `lastError`, an
+approval's `error`, a run's and a thread's `reason`, a failed tool call's
+`error` and a failed job's `output`); a succeeded read tool's records and a
+trigger's envelope link each hand they copied (a record's manager, an
+alternative's actor, a blob's `createdBy`, the change's `actor`); every other
+value, a person's own words, a judge's input and a callable's result
+included, is left byte for byte (the full list of positions heads
+`internal/engine/conversion_0003_link_actors.go`); and a trigger's
+`when:` reads
+`actorType` and `actorPackage` where it compared a spelling. An actor
+record's id is derived from the hand alone, so the step
+needs nothing but the line; repository migration 9 writes the records those
+ids name at the first open after
+([upgrading the binary](operations.md#upgrading-the-binary)).
+
 The history converted is the changelog table. At the boot check, before a
 repository is folded or served, the server runs the steps it lacks, in
 order, in **one transaction** under the changelog lock: each step walks the
 whole table in seq order, so its `Line` sees every line once, as the steps
 below it left it, and every row whose line it changed is rewritten; a step
 that reads the repository's declarations reads them from the table those
-walks wrote. Then each step's carry runs, the stamp is raised to the last
+walks wrote. A row is held to its stored `sum` before a step reads it, in
+the frame its line was written in (a line from before dialect 3 carries
+`principal`): one that no frame reproduces stops the conversion, naming its
+seq, nothing of the repository is converted, and the boot check sets the
+repository aside. So a conversion never stamps a line it could not verify,
+and a line a step leaves as it found it keeps its `sum`. Then each step's carry runs, the stamp is raised to the last
 step's dialect and the repository is marked for rebuilding. The records are
 then rebuilt from the table, which clears the mark. A server stopped before
 that transaction commits leaves the history and every carried row as they

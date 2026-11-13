@@ -14,14 +14,10 @@ struct ResolvedTool: Hashable, Sendable {
 func resolveTool(agent: Agent?, name: String, callable: String?) -> ResolvedTool {
     let tools = agent?.tools ?? []
     if let callable {
-        let parts = callable.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
-        if parts.count == 4 {
-            let id = parts[1 ... 3].joined(separator: "/")
-            if parts[0] == "agent" { return ResolvedTool(subagent: id) }
-            if parts[0] == "function" {
-                let tool = tools.first { $0.name == name && $0.function == id }
-                return ResolvedTool(function: id, description: tool?.description)
-            }
+        if let id = callableID(callable, kind: Kinds.agent) { return ResolvedTool(subagent: id) }
+        if let id = callableID(callable, kind: Kinds.function) {
+            let tool = tools.first { $0.name == name && $0.function == id }
+            return ResolvedTool(function: id, description: tool?.description)
         }
     }
     if let tool = tools.first(where: { $0.name == name }) {
@@ -36,6 +32,18 @@ func resolveTool(agent: Agent?, name: String, callable: String?) -> ResolvedTool
         return ResolvedTool(function: host)
     }
     return ResolvedTool()
+}
+
+/// The function or agent a stamped callable names: the record path the
+/// engine stamps a tool call and its row with
+/// (`substrate.reamde.dev/core/function/<authority>/<package>/<name>`), read
+/// as the declaration's own id. The console's rule (`callableRecord` in
+/// web/console/src/lib/agent-chat.ts).
+func callableID(_ callable: String, kind: String) -> String? {
+    let prefix = "\(kind)/"
+    guard callable.hasPrefix(prefix) else { return nil }
+    let id = String(callable.dropFirst(prefix.count))
+    return id.split(separator: "/", omittingEmptySubsequences: false).count == 3 ? id : nil
 }
 
 private func kinds(in args: [String: JSONValue]) -> [String] {

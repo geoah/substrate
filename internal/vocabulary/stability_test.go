@@ -130,7 +130,7 @@ data:
 
 	t.Run("the package header is the one document that admits it", func(t *testing.T) {
 		for _, short := range []string{
-			vocabulary.DocAuthority, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
+			vocabulary.DocAuthority, vocabulary.DocKind, vocabulary.DocTrait,
 			vocabulary.DocPropertyType, vocabulary.DocRecordMapping, vocabulary.DocFunction,
 			vocabulary.DocAgent, vocabulary.DocBundle,
 		} {

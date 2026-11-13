@@ -90,7 +90,7 @@ func TestAnUnlistedAppIsMarkedUnverifiedAndMayStillAskForFull(t *testing.T) {
 	view := e.show(id)
 	wantStatus(t, view, http.StatusOK)
 	app := decodeJSON[substrate.AuthorizationRequest](t, view).App
-	if app.Verified || app.Actor != "app:notes.example.org" || app.Publisher.Authority != pubAuthority ||
+	if app.Verified || app.AppearsAs != "notes.example.org" || app.Publisher.Authority != pubAuthority ||
 		!strings.Contains(app.Publisher.Unconfirmed, "does not list this app's client id") || app.Publisher.Listed {
 		t.Fatalf("an unlisted app reads %+v", app)
 	}
@@ -107,7 +107,7 @@ func TestTheActorFollowsWhatTheApprovalProved(t *testing.T) {
 		{pubClientID, "", false, "app:cdn.example.net"},
 		{pubClientID, "", true, substrate.AppActorLocal},
 		{"http://127.0.0.1:43123/cli", "", false, substrate.AppActorLocal},
-		{"", "", false, substrate.ActorAPI},
+		{"", "", false, substrate.ActorPerson},
 	} {
 		if got := appActorFor(c.clientID, c.authority, c.local); got != c.want {
 			t.Errorf("appActorFor(%q, %q, %v) = %q, want %q", c.clientID, c.authority, c.local, got, c.want)

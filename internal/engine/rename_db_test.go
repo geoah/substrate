@@ -205,10 +205,10 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 		}
 		return actor, tier
 	}
-	if actor, tier := managerOf(full.ID, "dimensions"); actor != string(owner) || tier != string(substrate.TierOwner) {
+	if actor, tier := managerOf(full.ID, "dimensions"); actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
 		t.Fatalf("the owner's manager row did not move: %q at %q", actor, tier)
 	}
-	if actor, tier := managerOf(mappedID, "dimensions"); actor != string(lib) || tier != string(substrate.TierMachine) {
+	if actor, tier := managerOf(mappedID, "dimensions"); actor != vocabulary.ActorID(lib) || tier != string(substrate.TierMachine) {
 		t.Fatalf("the connector's manager row did not move: %q at %q", actor, tier)
 	}
 	// The row keeps the time its actor last had a change accepted: the rename

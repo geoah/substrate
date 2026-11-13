@@ -60,7 +60,7 @@ func TestTheRegistryPublishesBeforeTheHeadSignal(t *testing.T) {
 	}
 	ds.mu.Unlock()
 
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
 			map[string]any{"singular": "beacon"},
@@ -96,7 +96,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 				map[string]any{"properties": props}),
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, gizmo(map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, gizmo(map[string]any{
 		"name":   map[string]any{"type": "string"},
 		"legacy": map[string]any{"type": "string"},
 	})); err != nil {
@@ -124,7 +124,7 @@ func TestAParkedWriteResolvesThePublishedDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	actor := substrate.ActorAPI
+	actor := substrate.ActorPerson
 	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
 			_, err := ds.Put(ctx, actor, substrate.PutInput{
@@ -174,7 +174,7 @@ func TestAnIndexTheEngineCannotBuildRefusesTheApplyWhole(t *testing.T) {
 	const kind = publishPackage + "/gauge"
 	before := maxSeqOf(t, ds)
 
-	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
 			map[string]any{"singular": "gauge"},
@@ -212,7 +212,7 @@ func TestARefusedIndexDefinitionLeavesNoIndexBehind(t *testing.T) {
 	ds := open()
 	const kind = publishPackage + "/dial"
 
-	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(publishPackage, 0),
 		vocabulary.KindManifest(publishPackage,
 			map[string]any{"singular": "dial"},
@@ -253,7 +253,6 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	)
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "a bundle with one input to bind",
 			"inputs":      map[string]any{"client": map[string]any{"kind": config}},
@@ -263,10 +262,10 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 			map[string]any{"singular": "config"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorAPI, closure, nil, substrate.BundleInstall{}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, closure, nil, substrate.BundleInstall{}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: config, ID: fid("c1"), Properties: map[string]any{"name": "one"},
 	}); err != nil {
 		t.Fatalf("put the config: %v", err)
@@ -284,7 +283,7 @@ func TestABindParksAtTheRegistryDepLockBeforeItsBundleRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
+	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorPerson, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() { bound <- ds.BindBundleInput(ctx, pkg, "client", fid("c1")) }()
 		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
 		select {
@@ -357,7 +356,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	failed := errors.New("the batch's data write failed")
-	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
+	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorPerson, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		return failed
 	}})
 	if !errors.Is(err, failed) {
@@ -368,7 +367,7 @@ func TestAChangedIndexDefinitionRebuildsTheStaleOrdinalIndex(t *testing.T) {
 	}
 
 	// The corrected retry indexes email at the same ordinal.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, meter("email")); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, meter("email")); err != nil {
 		t.Fatalf("the corrected apply: %v", err)
 	}
 	if def := indexDef(); !strings.Contains(def, "'email'") || strings.Contains(def, "'name'") {
@@ -428,12 +427,12 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 				map[string]any{"properties": props}),
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, token(map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, token(map[string]any{
 		"name": map[string]any{"type": "string"},
 	})); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kind, ID: fid("doomed"), Properties: map[string]any{"name": "doomed"},
 	}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -447,9 +446,9 @@ func TestADeleteParksAtTheRegistryDepLockBeforeItsRecordLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
+	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorPerson, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
-			_, err := ds.Delete(ctx, substrate.ActorAPI, kind, fid("doomed"), substrate.DeleteInput{})
+			_, err := ds.Delete(ctx, substrate.ActorPerson, kind, fid("doomed"), substrate.DeleteInput{})
 			deleted <- err
 		}()
 		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
@@ -497,19 +496,19 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 				map[string]any{"properties": props}),
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, badge(map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, badge(map[string]any{
 		"name": map[string]any{"type": "string"},
 	})); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for _, id := range []string{fid("keep"), fid("gone")} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: kind, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
-	merged, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: kind, Winner: fid("keep"), Loser: fid("gone")})
+	merged, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: kind, Winner: fid("keep"), Loser: fid("gone")})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -522,9 +521,9 @@ func TestASplitParksAtTheRegistryDepLockBeforeItsRowLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorAPI, vocabularyBatch{docs: docs, extra: func(*txn) error {
+	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorPerson, vocabularyBatch{docs: docs, extra: func(*txn) error {
 		go func() {
-			_, err := ds.Split(ctx, substrate.ActorAPI, substrate.SplitInput{Merge: merged.ID})
+			_, err := ds.Split(ctx, substrate.ActorPerson, substrate.SplitInput{Merge: merged.ID})
 			split <- err
 		}()
 		waitParked(t, ds, 1, registryDepKey(ds), changelogLockKey)
@@ -608,10 +607,10 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	ctx := context.Background()
 	open, _ := reopenableWidgetDataset(t)
 	ds := open()
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, refLockDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, refLockDocs()); err != nil {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: refLockPackage + "/target", ID: fid("a"), Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
@@ -632,7 +631,7 @@ func TestDataWriteParksAtTheRegistryDepLockAndKeepsItsRefsRow(t *testing.T) {
 	holderID := fid("h1")
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: refLockPackage + "/holder", ID: holderID,
 			Properties: map[string]any{"points": fid("a")},
 		})
@@ -684,15 +683,15 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 	ctx := context.Background()
 	open, _ := reopenableWidgetDataset(t)
 	ds := open()
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, refLockDocs()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, refLockDocs()); err != nil {
 		t.Fatalf("install the reflock authority: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: refLockPackage + "/target", ID: fid("a"), Properties: map[string]any{},
 	}); err != nil {
 		t.Fatalf("put the target: %v", err)
 	}
-	holder, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	holder, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: refLockPackage + "/holder", ID: fid("h2"), Properties: map[string]any{},
 	})
 	if err != nil {
@@ -710,7 +709,7 @@ func TestPatchParksAtTheRegistryDepLock(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.Patch(ctx, substrate.ActorAPI, holder.Kind, holder.ID, substrate.PatchInput{
+		_, err := ds.Patch(ctx, substrate.ActorPerson, holder.Kind, holder.ID, substrate.PatchInput{
 			Properties: map[string]any{"points": fid("a")},
 		})
 		done <- err

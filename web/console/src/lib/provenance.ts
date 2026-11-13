@@ -4,9 +4,9 @@
  * The wire says three things about where a record's values came from, none of
  * them in a reader's vocabulary. `linkedFrom` is a flat list of source
  * records each naming the mapping that owns its subject slot (decision 0088).
- * `propertyMeta` names each property's manager as an ACTOR string
- * (`function:providers.substrate.reamde.dev:beeper:beepersync`) and, since
- * decision 0094, the SOURCE RECORD behind the value and behind every
+ * `propertyMeta` links each property's manager by the id of its actor record
+ * (decision 0270), read here through the actor directory, and, since
+ * decision 0094, names the SOURCE RECORD behind the value and behind every
  * alternative. And a `recordmapping` declaration says which properties its
  * `map` rules write. This module folds the three into the shapes the tab
  * renders — sources grouped by the mapping that made them, a value's holder as

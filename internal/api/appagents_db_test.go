@@ -144,7 +144,7 @@ func (e *appAgentsEnv) askAndSend(t *testing.T, agent, model string) (thread, in
 		}},
 		appAgentsTurn{content: "asked, and waiting for your approval"},
 	)
-	res, err := e.ds.ChatAgent(ctx, substrate.ActorAPI, agent, substrate.ChatInput{Message: "hello"}, func(substrate.AgentEvent) {})
+	res, err := e.ds.ChatAgent(ctx, substrate.ActorPerson, agent, substrate.ChatInput{Message: "hello"}, func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("run %s: %v", agent, err)
 	}
@@ -176,7 +176,7 @@ func appAgentsUserMessage(t *testing.T, e *appAgentsEnv, thread string) *substra
 // appAgentsApply admits vocabulary documents as the owner.
 func appAgentsApply(t *testing.T, env *dbEnv, docs ...map[string]any) {
 	t.Helper()
-	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("apply vocabulary: %v", err)
 	}
 }

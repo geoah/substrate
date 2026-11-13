@@ -61,7 +61,7 @@ def main(input, host):
 	)
 	ctx := context.Background()
 	for _, id := range []string{"closed", "kept"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: policy, ID: id, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: policy, ID: id, Properties: map[string]any{
 			"selector": map[string]any{"kinds": []any{taskType}}, "action": "refuse",
 		}}); err != nil {
 			t.Fatalf("the owner writes a policy: %v", err)
@@ -93,7 +93,7 @@ def main(input, host):
 
 	// The owner accepts what a function proposed: that is the owner's hand.
 	proposed := mustGet(t, ds, request, "proposed-"+w.ID)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, request, proposed.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, request, proposed.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(proposed.Version),
 	}); err != nil {
 		t.Fatalf("the owner accepts a function's proposal to add a policy: %v", err)

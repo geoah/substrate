@@ -101,7 +101,7 @@ def main(input, host):
 `,
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the delivery fixture: %v", err)
 	}
 	callable := hooks + "/receive"
@@ -179,7 +179,7 @@ func appDeliveryMint(t *testing.T, ds substrate.Dataset, in substrate.MintTokenI
 // appDeliveryRevoke deletes a token's record: it no longer authenticates.
 func appDeliveryRevoke(t *testing.T, ds substrate.Dataset, id string) {
 	t.Helper()
-	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, tokenType, id, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(context.Background(), substrate.ActorPerson, tokenType, id, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("revoke token %s: %v", id, err)
 	}
 }
@@ -521,7 +521,7 @@ func TestATriggerAnAppsTokenReadsNeverCarriesItsKey(t *testing.T) {
 	e := newAppDeliveryEnv(t, false)
 	meta := map[string]substrate.PropertyMeta{
 		"source": {Alternatives: []substrate.PropertyAlternative{
-			{Actor: "bundle:example.com:hooks", Value: map[string]any{"webhook": map[string]any{"key": appHookKey}}},
+			{Actor: vocabulary.ActorID("bundle:example.com:hooks"), Value: map[string]any{"webhook": map[string]any{"key": appHookKey}}},
 		}},
 	}
 	e.wrap = func(ds substrate.Dataset) substrate.Dataset {

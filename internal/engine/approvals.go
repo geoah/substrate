@@ -204,6 +204,13 @@ func (ds *dataset) runApproval(bg context.Context, id string) {
 	if propString(row, "reportedAt") != "" {
 		return
 	}
+	// The approved call and its report act for whom the line that wrote the
+	// approval names. Unread, it is left unreported for the next open.
+	ctx, err = ds.actingFor(ctx, vocabulary.KindLLMApproval, id)
+	if err != nil {
+		ds.svc.log.Warn("substrate: an approval was not settled", "approval", id, "error", err)
+		return
+	}
 	actor := substrate.Actor(agentActorOf(ds, propRefID(row.Props["agent"])))
 	switch row.States[propApprovalState] {
 	case approvalDenied:
@@ -346,13 +353,13 @@ func (ds *dataset) deliverSystemRow(thread, row, content string) {
 			return
 		}
 	}
-	ds.resumeNotifiedThread(thread, "")
+	ds.resumeNotifiedThread(thread, "", row)
 }
 
 // loadApproval reads one approval row, nil when it is gone.
 func (ds *dataset) loadApproval(ctx context.Context, ref eref) (*erow, error) {
 	var row *erow
-	err := ds.inTx(ctx, substrate.ActorAPI, true, func(t *txn) error {
+	err := ds.inTx(ctx, substrate.ActorPerson, true, func(t *txn) error {
 		r, err := t.loadRow(ref, false)
 		if err == nil && r != nil && r.DeletedAt == nil {
 			row = r
@@ -377,6 +384,12 @@ func (ds *dataset) settleInterruptedApprovals(ctx context.Context) error {
 	for _, row := range rows {
 		if propString(row, "reportedAt") != "" {
 			continue
+		}
+		// The report is the approval's: it acts for whom the line that wrote
+		// the approval names.
+		ctx, err := ds.actingFor(ctx, vocabulary.KindLLMApproval, row.ID)
+		if err != nil {
+			return fmt.Errorf("settle interrupted approval %s: %w", row.ID, err)
 		}
 		actor := substrate.Actor(agentActorOf(ds, propRefID(row.Props["agent"])))
 		switch state := row.States[propApprovalState]; state {
@@ -406,7 +419,7 @@ func agentActorOf(ds *dataset, ident string) string {
 	}
 	authority, pkg, name := vocabulary.SplitKindRef(ident)
 	if authority == "" {
-		return string(substrate.ActorAPI)
+		return string(substrate.ActorPerson)
 	}
 	return string(substrate.AgentActor(authority, pkg, name))
 }

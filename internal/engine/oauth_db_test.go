@@ -294,7 +294,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	}
 
 	// The echo function answers with its resolved config.
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if p.refreshes != 1 {
 		t.Fatalf("provider refreshes: %d", p.refreshes)
 	}
-	out, _, err = ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err = ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after refresh: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	// Past the first backoff step an invocation asks the provider again, and
 	// the same reason is not written again.
 	clock.Advance(time.Minute + time.Second)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	p.mu.Lock()
@@ -454,7 +454,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	}
 	refuse(false)
 	clock.Advance(2*time.Minute + time.Second)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	wantCleared("after a good on-demand refresh")
@@ -462,7 +462,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	// The on-demand refresh an invocation makes: the stored token expires
 	// inside the inline window, so the config resolution refreshes it.
 	refuse(true)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	wantFailure("after a refused on-demand refresh")
@@ -1171,7 +1171,6 @@ const (
 func chatBundleDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(chatPackage, 0),
-		vocabulary.ActorManifest(chatPackage, vocabulary.PackageActor(chatPackage)),
 		vocabulary.BundleManifest(chatPackage, map[string]any{
 			"description": "the chat bundle",
 			"installs":    []any{chatAccountType},
@@ -1409,8 +1408,8 @@ func TestOAuthReconnectRequestsASync(t *testing.T) {
 		t.Fatalf("the reconnect wrote %d entries on the account, want 1: %+v", len(changes)-before, changes[before:])
 	}
 	entry := changes[before]
-	if entry.Actor != "substrate.oauth" {
-		t.Fatalf("the reconnect entry's actor = %s, want the OAuth facility", entry.Actor)
+	if entry.Actor != vocabulary.ActorID(substrate.ActorSystem) {
+		t.Fatalf("the reconnect entry's actor = %s, want the system's, the OAuth facility's", entry.Actor)
 	}
 	written := map[string]bool{}
 	names, _ := entry.Payload["properties"].([]any)
@@ -1442,10 +1441,11 @@ func TestOAuthReconnectRequestsASync(t *testing.T) {
 	if started := propTime(t, got, "lastSyncStartedAt"); !requested.After(started) {
 		t.Errorf("syncRequestedAt %s is not after the failed run's start %s", requested, started)
 	}
-	if m := got.PropertyMeta["syncRequestedAt"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierOwner {
+	// The facility is the system's hand (decision 0270).
+	if m := got.PropertyMeta["syncRequestedAt"]; m.Manager != vocabulary.ActorID(substrate.ActorSystem) || m.Tier != substrate.TierOwner {
 		t.Errorf("syncRequestedAt manager = %+v, want the facility at the owner tier", m)
 	}
-	if m := got.PropertyMeta["tokenStatus"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierMachine {
+	if m := got.PropertyMeta["tokenStatus"]; m.Manager != vocabulary.ActorID(substrate.ActorSystem) || m.Tier != substrate.TierMachine {
 		t.Errorf("tokenStatus manager = %+v, want the facility at the machine tier", m)
 	}
 }

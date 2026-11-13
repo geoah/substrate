@@ -65,11 +65,10 @@ func installStreamSync(t *testing.T, ds *dataset, lastAt time.Time, records map[
 			"callable": callable(name),
 		}}
 	}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "streams", Authority: streamSyncPkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(streamSyncPkg, 0),
-			vocabulary.ActorManifest(streamSyncPkg, vocabulary.PackageActor(streamSyncPkg)),
 			vocabulary.KindManifest(streamSyncPkg, map[string]any{"singular": "job"}, map[string]any{
 				"traits":          []any{vocabulary.TraitSyncCore},
 				"displayTemplate": "{name}",
@@ -112,7 +111,7 @@ func installStreamSync(t *testing.T, ds *dataset, lastAt time.Time, records map[
 	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
 	at := lastAt.Format(time.RFC3339Nano)
 	for id, names := range records {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: streamSyncKind, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatalf("put %s: %v", id, err)

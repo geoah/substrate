@@ -35,7 +35,7 @@ func TestASlowRecordTriggerDoesNotDelayADueSchedule(t *testing.T) {
 	defer withTriggerPassBudget(300 * time.Millisecond)()
 	ctx := context.Background()
 	ds := openCursorDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "slow", map[string]any{
 			"description": "one slow fetch per widget",
 			"runtime":     vocabulary.RuntimePython,
@@ -68,7 +68,7 @@ def main(input, host):
 	}
 	// Ids chosen so the slow trigger sorts first: a walk in id order would
 	// reach the schedule only once the slow trigger's drain returned.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "a-slow",
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{pkg + "/widget"}}},
@@ -78,7 +78,7 @@ def main(input, host):
 		t.Fatalf("put slow trigger: %v", err)
 	}
 	startsAt := nowUTC().Add(-30 * time.Minute).Truncate(time.Minute)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "b-hourly",
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -90,7 +90,7 @@ def main(input, host):
 		t.Fatalf("put schedule trigger: %v", err)
 	}
 	for i := range widgets {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: pkg + "/widget", Properties: map[string]any{"name": "w" + string(rune('a'+i))},
 		}); err != nil {
 			t.Fatalf("put widget: %v", err)

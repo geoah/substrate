@@ -537,15 +537,23 @@ func xqCaseFeedFilters(c *C) {
 	c.stepf("`kinds` and `excludeKinds` split the %d-row feed into %d task rows and %d others, with no row in "+
 		"both and none in neither", len(all), len(tasks), len(others))
 
-	// actors: the door's own writes, and nothing a bundle or an agent wrote.
-	api := within(xqReadFeed(c, xqValues("actors", "api")))
-	for _, row := range api {
-		c.requiref(row.Actor == "api", "`actors=api` returned a `%s` row at seq %d", row.Actor, row.Seq)
+	// actors: the person's own writes, named by the id of the person's actor
+	// record, and nothing a bundle or an agent wrote.
+	var person string
+	for _, row := range all {
+		if c.hand(row.Actor) == "person" {
+			person = row.Actor
+			break
+		}
 	}
-	wantAPI := count(func(row changeRow) bool { return row.Actor == "api" })
+	api := within(xqReadFeed(c, xqValues("actors", person)))
+	for _, row := range api {
+		c.requiref(row.Actor == person, "`actors=%s` returned a `%s` row at seq %d", person, row.Actor, row.Seq)
+	}
+	wantAPI := count(func(row changeRow) bool { return row.Actor == person })
 	c.requiref(len(api) == wantAPI && wantAPI > 0,
-		"`actors=api` returned %d rows; the unfiltered feed holds %d", len(api), wantAPI)
-	c.stepf("`actors=api` returned the feed's %d door-written rows and none of the bundle or agent rows", len(api))
+		"`actors=%s` returned %d rows; the unfiltered feed holds %d", person, len(api), wantAPI)
+	c.stepf("`actors=<the person's actor id>` returned the feed's %d rows the person wrote and none of the bundle or agent rows", len(api))
 
 	// ops takes the CHANGELOG's own verbs. put, patch and delete are the
 	// write classes; a value outside the vocabulary is not refused, it

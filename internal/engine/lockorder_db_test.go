@@ -66,7 +66,7 @@ func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
 	former, canonical, last := ids[0], ids[1], ids[2]
 
 	for _, id := range ids {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: raceWidget, ID: id, Properties: map[string]any{"name": id},
 		}); err != nil {
 			t.Fatal(err)
@@ -145,7 +145,6 @@ func installContactSource(t *testing.T, ds *dataset) {
 		Name: "csrc", Authority: csrcPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(csrcPackage, 1),
-			vocabulary.ActorManifest(csrcPackage, vocabulary.PackageActor(csrcPackage)),
 			vocabulary.KindManifest(csrcPackage,
 				map[string]any{"singular": "note"},
 				map[string]any{
@@ -438,7 +437,7 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 	ctx := context.Background()
 	open, _ := reopenableWidgetDataset(t)
 	ds := open()
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, widgetsManifest(false)); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, widgetsManifest(false)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
@@ -462,7 +461,7 @@ func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeTrigger, ID: trigID, Properties: props,
 		})
 		done <- err
@@ -520,7 +519,7 @@ func TestEffectAddressingSerializesWithMerge(t *testing.T) {
 
 	mergeDone := make(chan error, 1)
 	go func() {
-		_, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
+		_, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: w.Kind, Winner: w.ID, Loser: l.ID})
 		mergeDone <- err
 	}()
 	// The merge holds the changelog and record advisory locks and waits on
@@ -593,13 +592,13 @@ func TestEffectListLocksInGlobalOrder(t *testing.T) {
 	ctx := context.Background()
 	// a is the smaller id in the lock order, z the larger.
 	ids := fixtureIDsInOrder("aaa", "zzz")
-	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	a, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, ID: ids[0], Properties: map[string]any{"name": "a"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	z, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	z, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, ID: ids[1], Properties: map[string]any{"name": "z"},
 	})
 	if err != nil {
@@ -752,7 +751,7 @@ func raceSweepAgainstPut(t *testing.T, ds *dataset, id string, shape sweepRound)
 	t.Helper()
 	ctx := context.Background()
 	put := func(name string) error {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: raceWidget, ID: id, Properties: map[string]any{"name": name},
 		})
 		return err
@@ -760,7 +759,7 @@ func raceSweepAgainstPut(t *testing.T, ds *dataset, id string, shape sweepRound)
 	if err := put("first"); err != nil {
 		t.Fatalf("%s: put: %v", id, err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, id, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, id, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("%s: delete: %v", id, err)
 	}
 	gcDone, putDone := make(chan error, 1), make(chan error, 1)
@@ -985,12 +984,12 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 	t.Parallel()
 	ds := newRaceDataset(t)
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, ID: fid("v"), Properties: map[string]any{"name": "v"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, raceWidget, fid("v"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, raceWidget, fid("v"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1024,7 +1023,7 @@ func TestPutAndSweepOnOneTombstoneTakeTheChangelogFirst(t *testing.T) {
 
 	putDone := make(chan error, 1)
 	go func() {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: raceWidget, ID: fid("v"), Properties: map[string]any{"name": "back"},
 		})
 		putDone <- err

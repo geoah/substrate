@@ -293,7 +293,6 @@ func TestAnInstalledClosureKeepsItsPackagesStability(t *testing.T) {
 	closure := func(pkg, stability string) []map[string]any {
 		return []map[string]any{
 			stabilityHeader(pkg, stability),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.BundleManifest(pkg, map[string]any{
 				"description": "one kind", "installs": []any{pkg + "/gizmo"},
 			}),

@@ -329,15 +329,23 @@ describe("what a tool call did", () => {
       resolveTool(
         assistant,
         "lookup",
-        "function:substrate.reamde.dev:core:query"
+        "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query"
       )
     ).toEqual({ function: "substrate.reamde.dev/core/query" })
     // The stamp outranks a name that now means something else.
     expect(
-      resolveTool(assistant, "save", "function:ada.localhost:notes:archive")
+      resolveTool(
+        assistant,
+        "save",
+        "substrate.reamde.dev/core/function/ada.localhost/notes/archive"
+      )
     ).toEqual({ function: "ada.localhost/notes/archive" })
     expect(
-      resolveTool(assistant, "helper", "agent:ada.localhost:notes:titler")
+      resolveTool(
+        assistant,
+        "helper",
+        "substrate.reamde.dev/core/agent/ada.localhost/notes/titler"
+      )
     ).toEqual({ subagent: "ada.localhost/notes/titler" })
     // A matching entry still lends its description.
     const described = record({
@@ -352,7 +360,11 @@ describe("what a tool call did", () => {
       },
     })
     expect(
-      resolveTool(described, "save", "function:ada.localhost:notes:savenote")
+      resolveTool(
+        described,
+        "save",
+        "substrate.reamde.dev/core/function/ada.localhost/notes/savenote"
+      )
     ).toEqual({
       function: "ada.localhost/notes/savenote",
       description: "Saves a note",
@@ -360,15 +372,16 @@ describe("what a tool call did", () => {
   })
 
   it("spells a call's callable the way its rows are stamped", () => {
-    const stamped = "function:ada.localhost:notes:count"
+    const stamped =
+      "substrate.reamde.dev/core/function/ada.localhost/notes/count"
     expect(callableOf(call({ callable: stamped }), {})).toBe(stamped)
     // An unstamped call spells what its name resolves to the same way.
     expect(
       callableOf(call({ name: "save" }), resolveTool(assistant, "save"))
-    ).toBe("function:ada.localhost:notes:savenote")
+    ).toBe("substrate.reamde.dev/core/function/ada.localhost/notes/savenote")
     expect(
       callableOf(call({ name: "titler" }), resolveTool(assistant, "titler"))
-    ).toBe("agent:ada.localhost:notes:titler")
+    ).toBe("substrate.reamde.dev/core/agent/ada.localhost/notes/titler")
     expect(callableOf(call({ name: "ghost" }), {})).toBe("ghost")
   })
 

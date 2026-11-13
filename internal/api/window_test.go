@@ -38,7 +38,7 @@ func seedWindow(ds substrate.Dataset) (dose, meeting string, err error) {
 	ctx := context.Background()
 	pkg := ds.Repository().Authority + "/timeline"
 	dose, meeting = pkg+"/medication", pkg+"/meeting"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "medication"}, map[string]any{
 			"traits": []any{

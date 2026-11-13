@@ -38,10 +38,10 @@ func TestReinstallKeepsAnEditedMetricRecord(t *testing.T) {
 		t.Fatal("the shipped health/spo2 metric carries no description to trim")
 	}
 
-	patch(substrate.ActorConsole, "health/heart_rate", map[string]any{"name": "Pulse"})
+	patch(substrate.ActorPerson, "health/heart_rate", map[string]any{"name": "Pulse"})
 	// A removal is the owner's edit too, though it leaves no value behind.
-	patch(substrate.ActorAPI, "health/spo2", map[string]any{"description": nil})
-	if _, err := ds.Delete(ctx, substrate.ActorCLI, metricKind, "health/resting_heart_rate", substrate.DeleteInput{}); err != nil {
+	patch(substrate.ActorPerson, "health/spo2", map[string]any{"description": nil})
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, metricKind, "health/resting_heart_rate", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the resting heart rate metric: %v", err)
 	}
 	// Every hand but the closure's own holds a record: a door the caller

@@ -23,7 +23,7 @@ func TestANewRecordTakesAMintedID(t *testing.T) {
 	props := func(name string) map[string]any { return map[string]any{"name": name} }
 
 	for _, actor := range []substrate.Actor{
-		substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI,
+		substrate.ActorPerson, substrate.ActorPerson, substrate.ActorPerson,
 		substrate.AppActor("workouts.example.com"),
 		substrate.AgentActor("crew.example.com", "crew", "coach"),
 	} {

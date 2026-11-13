@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 
+import { ACTORS, seedActors } from "@/lib/actors.test-fixtures"
 import type { ChangeRow, ChangeRun, KindInfo } from "@/lib/api/types"
 import {
   dayLabel,
@@ -22,13 +23,15 @@ import {
 } from "./history"
 import { netMoves } from "./change-values"
 
+beforeEach(() => seedActors())
+
 let seq = 100
 function row(over: Partial<ChangeRow>): ChangeRow {
   seq -= 1
   return {
     seq,
     ts: "2026-09-24T12:00:00Z",
-    actor: "console",
+    actor: ACTORS.person.id,
     op: "put",
     recordId: `r${seq}`,
     kind: "ada.example.com/tasks/task",
@@ -67,7 +70,7 @@ describe("foldHistory", () => {
       row({ payload: { created: true }, ts: "2026-09-24T12:00:00Z" }),
       row({
         payload: { created: true },
-        actor: "agent:ada.example.com:llm:helper",
+        actor: ACTORS.substrateAgent.id,
         ts: "2026-09-24T11:59:00Z",
       }),
       row({
@@ -117,33 +120,27 @@ describe("propertyLabel", () => {
 })
 
 describe("viewActors", () => {
-  const sources = {
-    actors: ["console", "substratectl", "substrate", "bundle:core"],
-    agents: ["ada.example.com/llm/helper"],
-    functions: [
-      "providers.substrate.reamde.dev/google/synccontacts",
-      "ada.example.com/notes/stats",
-    ],
-    bundles: ["providers.substrate.reamde.dev/google", "ada.example.com/tasks"],
-  }
+  const actors = Object.values(ACTORS)
   it("reads everything without an actor filter", () => {
-    expect(viewActors("everything", sources)).toBeUndefined()
+    expect(viewActors("everything", actors)).toBeUndefined()
   })
-  it("reads the person's doors for By you", () => {
-    expect(viewActors("you", sources)).toEqual([
-      "api",
-      "console",
-      "substratectl",
-    ])
+  it("reads the person's actor for By you", () => {
+    expect(viewActors("you", actors)).toEqual([ACTORS.person.id])
   })
-  it("derives agent and provider actors from their declarations", () => {
-    expect(viewActors("agents", sources)).toEqual([
-      "agent:ada.example.com:llm:helper",
-    ])
-    expect(viewActors("providers", sources)).toEqual([
-      "bundle:providers.substrate.reamde.dev:google",
-      "function:providers.substrate.reamde.dev:google:synccontacts",
-    ])
+  it("reads agent and provider actors by their records' types and links", () => {
+    expect(viewActors("agents", actors)).toEqual(
+      [ACTORS.editorAgent.id, ACTORS.substrateAgent.id].sort()
+    )
+    expect(viewActors("providers", actors)).toEqual(
+      [
+        ACTORS.googlePackage.id,
+        ACTORS.googleContactsSync.id,
+        ACTORS.linearSync.id,
+        ACTORS.beeperMessagesSync.id,
+        ACTORS.beeperSync.id,
+        ACTORS.githubSync.id,
+      ].sort()
+    )
   })
 })
 
@@ -187,7 +184,13 @@ describe("system changes", () => {
 describe("systemPhrase", () => {
   const CORE = "substrate.reamde.dev/core"
   const GOOGLE = "providers.substrate.reamde.dev/google"
-  const GOOGLE_ACTOR = "bundle:providers.substrate.reamde.dev:google"
+  const GOOGLE_ACTOR = ACTORS.googlePackage.id
+  const NOTES_PACKAGE = {
+    ...ACTORS.notesPackage,
+    id: "act-pkg-example-notes",
+    link: "ada.example.com/notes",
+  }
+  beforeEach(() => seedActors(NOTES_PACKAGE))
 
   function said(rows: ChangeRow[]) {
     const [entry] = foldHistory(rows)
@@ -226,7 +229,7 @@ describe("systemPhrase", () => {
     expect(said([versioned("bundle", GOOGLE, GOOGLE_ACTOR)])?.words).toBe(
       "updated to version 35"
     )
-    expect(said([versioned("package", GOOGLE, "console")])?.words).toBe(
+    expect(said([versioned("package", GOOGLE, ACTORS.person.id)])?.words).toBe(
       "updated the Google package to version 35"
     )
   })
@@ -248,7 +251,7 @@ describe("systemPhrase", () => {
       row({
         kind: `${CORE}/package`,
         recordId: "ada.example.com/notes",
-        actor: "bundle:ada.example.com:notes",
+        actor: NOTES_PACKAGE.id,
         payload: { properties: ["originDigest"] },
         affected: [
           {
@@ -346,21 +349,22 @@ describe("systemPhrase", () => {
       said([
         row({
           kind: `${CORE}/token`,
-          actor: "substrate",
+          actor: ACTORS.system.id,
           payload: { created: true },
         }),
       ])?.words
     ).toBe("signed you in")
     expect(
-      said([row({ kind: `${CORE}/token`, actor: "console", op: "delete" })])
-        ?.words
+      said([
+        row({ kind: `${CORE}/token`, actor: ACTORS.person.id, op: "delete" }),
+      ])?.words
     ).toBe("signed out")
     expect(
       said(
         [1, 2, 3].map(() =>
           row({
             kind: `${CORE}/triggerrun`,
-            actor: "substrate",
+            actor: ACTORS.system.id,
             payload: { created: true },
           })
         )
@@ -372,7 +376,7 @@ describe("systemPhrase", () => {
         row({
           kind: `${CORE}/triggerrun`,
           recordId: id,
-          actor: "substrate",
+          actor: ACTORS.system.id,
           payload: { created: true, properties: ["callableRef"] },
           affected: [
             {
@@ -412,7 +416,7 @@ describe("isHousekeeping", () => {
 
 function run(over: Partial<ChangeRun> = {}): ChangeRun {
   return {
-    actor: "console",
+    actor: ACTORS.person.id,
     kind: "ada.example.com/tasks/task",
     verb: "create",
     count: 60,
@@ -444,7 +448,11 @@ describe("runEntry", () => {
   it("names the token behind a run the server named", () => {
     expect(
       runEntry(
-        run({ actor: "app:local", principalName: "Claude Code" }),
+        run({
+          actor: ACTORS.localApp.id,
+          token: "tok-1",
+          tokenName: "Claude Code",
+        }),
         source
       ).actorName
     ).toBe("Claude Code")
@@ -528,7 +536,8 @@ describe("joinLive", () => {
           count: 3,
           recordId: "t1",
           verb: "update",
-          principalName: "Claude Code",
+          token: "tok-1",
+          tokenName: "Claude Code",
         }),
         source
       ),

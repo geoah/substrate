@@ -225,7 +225,6 @@ func installJobWatcher(t *testing.T, ds substrate.Dataset) {
 		Authority: watcherPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(watcherPackage, 0),
-			vocabulary.ActorManifest(watcherPackage, vocabulary.PackageActor(watcherPackage)),
 			vocabulary.KindManifest(watcherPackage, map[string]any{"singular": "note"}, map[string]any{
 				"properties": map[string]any{"job": map[string]any{"type": "string", "fts": false}},
 			}),

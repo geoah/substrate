@@ -26,7 +26,7 @@ func TestASubagentContinuesTheThreadItAskedIn(t *testing.T) {
 		fakeTurn{content: "the worker asked which color"},
 	)
 	fake.script("rworker", fakeTurn{content: "Which color should it be?"})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, lead, substrate.ChatInput{Message: "start"}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, lead, substrate.ChatInput{Message: "start"}, nil)
 	if err != nil || first.Status != threadOK {
 		t.Fatalf("first turn: %+v %v", first, err)
 	}
@@ -40,7 +40,7 @@ func TestASubagentContinuesTheThreadItAskedIn(t *testing.T) {
 		fakeTurn{content: "built"},
 	)
 	fake.script("rworker", fakeTurn{content: "Built it in blue."})
-	second, err := ds.ChatAgent(ctx, substrate.ActorAPI, lead, substrate.ChatInput{Thread: first.Thread, Message: "blue"}, nil)
+	second, err := ds.ChatAgent(ctx, substrate.ActorPerson, lead, substrate.ChatInput{Thread: first.Thread, Message: "blue"}, nil)
 	if err != nil || second.Status != threadOK {
 		t.Fatalf("second turn: %+v %v", second, err)
 	}

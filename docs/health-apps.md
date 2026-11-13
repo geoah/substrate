@@ -1032,7 +1032,7 @@ curl -sN "$SUBSTRATE_SERVER/api/v1/changes?watch=1&from=50000&generation=pn2vgcq
 ```text
 {"bookmark": 50000, "generation": "pn2vgcqd6wfg"}
 {"seq": 50003, "op": "put", "kind": "substrate.reamde.dev/observations/trace",
- "recordId": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "actor": "function:providers.substrate.reamde.dev:applehealth:adaptapplehealth",
+ "recordId": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "actor": "7zg87w212ngckvh7t9b8mx2jh2",
  "payload": {"created": true, ...},
  "affected": [{"kind": "substrate.reamde.dev/observations/trace", "id": "applehealth/iphone/apple-watch/heart_rate/2026-09-06T07", "version": 1,
                "properties": [{"name": "at", "after": "2026-09-06T07:00:00Z"},

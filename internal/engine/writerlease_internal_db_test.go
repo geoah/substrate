@@ -422,7 +422,7 @@ func TestAWriteThatOutlivesItsLeaseIsRefusedBeforeItCommits(t *testing.T) {
 	}
 
 	armed = true
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, Properties: map[string]any{"name": "must not land"},
 	})
 	armed = false

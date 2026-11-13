@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { SubstrateRecord } from "@/lib/api/types"
 import { originWords } from "@/lib/origin"
@@ -11,31 +12,32 @@ import {
   packageStability,
 } from "./packages"
 
+beforeEach(() => seedActors())
+
 function row(id: string, declaredBy?: string): SubstrateRecord {
   return {
     kind: "substrate.reamde.dev/core/package",
     id,
-    properties: declaredBy ? { declaredBy } : {},
+    properties: declaredBy
+      ? { declaredBy: { ref: `substrate.reamde.dev/core/actor/${declaredBy}` } }
+      : {},
   } as unknown as SubstrateRecord
 }
 
 const rows = packageRows({
   records: [
-    row("ada.example.com/recipes", "agent:ada.example.com:llm:notekeeper"),
-    row("ada.example.com/tasks", "console"),
+    row("ada.example.com/recipes", "act-agent-llm-notekeeper"),
+    row("ada.example.com/tasks", "act-person"),
     row("ada.example.com/people"),
-    row("ada.example.com/training", "app:workouts.example.org"),
-    row(
-      "providers.substrate.reamde.dev/google",
-      "bundle:providers.substrate.reamde.dev:google"
-    ),
+    row("ada.example.com/training", "act-app-workouts-example-org"),
+    row("providers.substrate.reamde.dev/google", "act-pkg-google"),
   ],
 })
 
 describe("packages", () => {
   it("reads who declared each package, absent where nothing stamped it", () => {
     expect(rows.get("ada.example.com/recipes")?.declaredBy).toBe(
-      "agent:ada.example.com:llm:notekeeper"
+      "act-agent-llm-notekeeper"
     )
     expect(rows.get("ada.example.com/people")).toEqual({
       id: "ada.example.com/people",
@@ -50,7 +52,7 @@ describe("packages", () => {
           id: "substrate.reamde.dev/core",
           properties: { stability: "stable" },
         } as unknown as SubstrateRecord,
-        row("ada.example.com/tasks", "console"),
+        row("ada.example.com/tasks", "act-person"),
       ],
     })
     const core = labelled.get("substrate.reamde.dev/core")!
@@ -69,7 +71,7 @@ describe("packages", () => {
           id: "ada.example.com/garden",
           properties: { interface: 1 },
         } as unknown as SubstrateRecord,
-        row("ada.example.com/tasks", "console"),
+        row("ada.example.com/tasks", "act-person"),
       ],
     })
     const garden = named.get("ada.example.com/garden")!
@@ -82,7 +84,7 @@ describe("packages", () => {
 
   it("names the agent only when an agent declared the package", () => {
     expect(packageAgent(rows, "ada.example.com/recipes")).toBe(
-      "agent:ada.example.com:llm:notekeeper"
+      "act-agent-llm-notekeeper"
     )
     expect(packageAgent(rows, "ada.example.com/tasks")).toBeUndefined()
     expect(

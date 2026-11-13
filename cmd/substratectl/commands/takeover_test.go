@@ -15,7 +15,6 @@ import (
 func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 	h := newHarness(t)
 	var got []map[string]string
-	var actors []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != pathVocabularyTakeover {
 			http.NotFound(w, r)
@@ -24,9 +23,8 @@ func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		got = append(got, body)
-		actors = append(actors, r.Header.Get("X-Substrate-Actor"))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"substrate.reamde.dev/core/package","id":"geoah/training","properties":{"declaredBy":"substratectl","takenOverFrom":"https://workouts.example.org/client.json"}}`))
+		_, _ = w.Write([]byte(`{"kind":"substrate.reamde.dev/core/package","id":"geoah/training","properties":{"declaredBy":{"ref":"substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0"},"takenOverFrom":"https://workouts.example.org/client.json"}}`))
 	}))
 	defer srv.Close()
 	h.server = srv.URL
@@ -44,10 +42,10 @@ func TestTakeoverConfirmsThePackageBeforeItSends(t *testing.T) {
 		t.Fatalf("an unconfirmed takeover reached the server: %v", got)
 	}
 	out, _ := h.mustRun("takeover", "geoah/training", "--confirm", "geoah/training")
-	if len(got) != 1 || got[0]["package"] != "geoah/training" || got[0]["confirm"] != "geoah/training" || actors[0] != "substratectl" {
-		t.Fatalf("the server saw %v as %v", got, actors)
+	if len(got) != 1 || got[0]["package"] != "geoah/training" || got[0]["confirm"] != "geoah/training" {
+		t.Fatalf("the server saw %v", got)
 	}
-	if !strings.Contains(out, "taken over from https://workouts.example.org/client.json, declared by substratectl") {
+	if !strings.Contains(out, "taken over from https://workouts.example.org/client.json, declared by substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0") {
 		t.Fatalf("stdout = %q", out)
 	}
 }

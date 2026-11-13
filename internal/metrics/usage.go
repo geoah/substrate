@@ -186,34 +186,14 @@ func ForgetRepository(id string) {
 	names.Unlock()
 }
 
-// ActorClass folds an actor into the hand it writes under, so the changes
-// counter keeps one series per hand rather than one per function, agent,
-// app or caller-claimed name. The functions and agents have counters of
-// their own.
-func ActorClass(actor string) string {
-	switch {
-	case actor == "console":
-		return "console"
-	case actor == "substratectl":
-		return "cli"
-	case actor == "api":
-		return "api"
-	case actor == "substrate":
-		return "system"
-	case actor == "substrate.oauth":
-		return "oauth"
-	case actor == "substrate.webhook":
-		return "webhook"
-	case strings.HasPrefix(actor, "app:"):
-		return "app"
-	case strings.HasPrefix(actor, "function:"):
-		return "function"
-	case strings.HasPrefix(actor, "agent:"):
-		return "agent"
-	case strings.HasPrefix(actor, "bundle:"):
-		return "bundle"
-	case strings.HasPrefix(actor, "substrate."):
-		return "system"
+// ActorClass is the label an actor's changes count under: the type of its
+// actor record (decision 0270), so the changes counter keeps one series per
+// type rather than one per function, agent or app. The functions and agents
+// have counters of their own. A type it does not know is `other`.
+func ActorClass(actorType string) string {
+	switch actorType {
+	case "person", "app", "function", "agent", "package", "system":
+		return actorType
 	}
 	return "other"
 }

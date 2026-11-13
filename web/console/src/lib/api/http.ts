@@ -26,10 +26,6 @@ export {
   LLM_PACKAGE_NAME,
 } from "@/lib/core-kinds"
 
-/** The console names which door a write came through: `X-Substrate-Actor` is
- * ATTRIBUTION, not authorization. */
-const ACTOR = "console"
-
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 export interface RequestOpts {
@@ -159,7 +155,6 @@ export async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
-    "X-Substrate-Actor": ACTOR,
   }
   if (body !== undefined) headers["Content-Type"] = "application/json"
   const token = opts.token ?? (opts.anonymous ? null : getToken())

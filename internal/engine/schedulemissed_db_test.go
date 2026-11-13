@@ -27,7 +27,7 @@ func missedTrigger(t *testing.T, missed string, opts ...Option) (*dataset, strin
 	t.Helper()
 	ctx := context.Background()
 	ds := openCursorDataset(t, opts...)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(missedPkg, "hourly", map[string]any{
 			"description": "mints one task per fire",
 			"runtime":     vocabulary.RuntimePython,
@@ -49,7 +49,7 @@ def main(input, host):
 	if missed != "" {
 		schedule["missed"] = missed
 	}
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"schedule": schedule},
@@ -115,7 +115,7 @@ func TestAScheduleThatStatesAllFiresEachMissedOccurrence(t *testing.T) {
 func TestAScheduleRefusesAnUnknownMissed(t *testing.T) {
 	t.Parallel()
 	ds, _ := missedTrigger(t, "")
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -156,7 +156,7 @@ func TestATriggerAnEditMakesAScheduleTakesItsFireStateAtTheEdit(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := missedTrigger(t, "")
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"enabled":  false,
@@ -168,7 +168,7 @@ func TestATriggerAnEditMakesAScheduleTakesItsFireStateAtTheEdit(t *testing.T) {
 		t.Fatalf("put a record trigger: %v", err)
 	}
 	before := nowUTC()
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, tr.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, tr.ID, substrate.PatchInput{
 		Properties: map[string]any{"source": map[string]any{"schedule": map[string]any{
 			"recurrence": "FREQ=HOURLY", "timezone": "UTC", "missed": "all",
 		}}},

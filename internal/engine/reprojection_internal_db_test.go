@@ -97,7 +97,7 @@ func plantProviders(t *testing.T, ds *dataset, n int, withNote, withPeer bool) (
 	})
 	const batch = 500
 	for from := 0; from < n; from += batch {
-		if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for i := from; i < min(from+batch, n); i++ {
 				id := fmt.Sprintf("p%05d", i)
 				props := map[string]any{"label": "provider " + id, "wire": "openai"}
@@ -338,7 +338,7 @@ func TestTheReprojectionBehindTheOpenRederivesTheRowsThatCarryAMovedProperty(t *
 	mustPutInternal(t, ds1, substrate.PutInput{
 		Kind: reprojProvider, ID: "gone", Properties: map[string]any{"label": "gone", "wire": "openai", "peer": "hub"},
 	})
-	if _, err := ds1.Delete(ctx, substrate.ActorAPI, reprojProvider, "gone", substrate.DeleteInput{}); err != nil {
+	if _, err := ds1.Delete(ctx, substrate.ActorPerson, reprojProvider, "gone", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := indexedRows(t, ds1, "zanzibar"); got != 0 {

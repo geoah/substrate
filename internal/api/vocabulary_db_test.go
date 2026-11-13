@@ -44,7 +44,7 @@ func vocabularyHead(t *testing.T, env *dbEnv) substrate.ChangelogHead {
 // color: lossy over those widgets.
 func vocabularyColorWidgets(t *testing.T, env *dbEnv, n int) []map[string]any {
 	t.Helper()
-	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorAPI, vocabularyWidgets(env, map[string]any{
+	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorPerson, vocabularyWidgets(env, map[string]any{
 		"name":  map[string]any{"type": "string"},
 		"color": map[string]any{"type": "string"},
 	})); err != nil {
@@ -331,14 +331,14 @@ func vocabularyAppPackage(t *testing.T, env *dbEnv) (string, substrate.Actor) {
 	}); err != nil {
 		t.Fatalf("the app declares its package: %v", err)
 	}
-	if row := env.get(t, corePackage+"/package", pkg); row == nil || row.Properties["declaredBy"] != string(app) {
+	if row := env.get(t, corePackage+"/package", pkg); row == nil || !linksActorRecord(row.Properties["declaredBy"], app) {
 		t.Fatalf("the package row = %+v, want it declared by %s", row, app)
 	}
 	return pkg, app
 }
 
 // THE OWNER TAKES OVER AN APP'S PACKAGE (decision 0205): the route hands the
-// engine the package, the confirmation and the door the request names, and
+// engine the package, the confirmation and the person's hand, and
 // answers the package row; the engine's refusals keep their codes. An app's
 // token never reaches the route, its own package's or another's.
 func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
@@ -347,7 +347,7 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	pkg, app := vocabularyAppPackage(t, env)
 	takeover := func(body map[string]any, bearer string) *httptest.ResponseRecorder {
 		t.Helper()
-		return env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", bearer, body, actorHeader, "console")
+		return env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", bearer, body)
 	}
 
 	appToken := env.mint(t, substrate.MintTokenInput{
@@ -358,14 +358,15 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	wantErrorCode(t, takeover(map[string]any{"package": pkg, "confirm": env.repository + "/other"}, env.token), http.StatusUnprocessableEntity, codeValidation)
 	wantErrorCode(t, takeover(map[string]any{"package": env.repository + "/missing", "confirm": env.repository + "/missing"}, env.token), http.StatusNotFound, codeNotFound)
 	wantErrorCode(t, takeover(map[string]any{"package": corePackage, "confirm": corePackage}, env.token), http.StatusConflict, codeConflict)
-	if row := env.get(t, corePackage+"/package", pkg); row.Properties["declaredBy"] != string(app) {
+	if row := env.get(t, corePackage+"/package", pkg); !linksActorRecord(row.Properties["declaredBy"], app) {
 		t.Fatalf("a refused takeover moved the stamps: %+v", row.Properties)
 	}
 
 	rec := takeover(map[string]any{"package": pkg, "confirm": pkg}, env.token)
 	wantStatus(t, rec, http.StatusOK)
 	got := decodeJSON[substrate.Record](t, rec)
-	if got.ID != pkg || got.Properties["declaredBy"] != "console" || got.Properties["takenOverFrom"] != string(app) {
+	if got.ID != pkg || !linksActorRecord(got.Properties["declaredBy"], substrate.ActorPerson) ||
+		got.Properties["takenOverFrom"] != strings.TrimPrefix(string(app), substrate.AppActorPrefix) {
 		t.Fatalf("takeover answered %+v", got)
 	}
 	// The package is no app's now, so a second takeover is the engine's
@@ -410,4 +411,11 @@ func TestAnAppsTokenNeverAppliesVocabulary(t *testing.T) {
 	if got := vocabularyHead(t, env); got != head {
 		t.Fatalf("an app's vocabulary requests wrote: head %+v, was %+v", got, head)
 	}
+}
+
+// linksActorRecord reports whether a stored value links the actor record of a
+// hand (decision 0270).
+func linksActorRecord(v any, hand substrate.Actor) bool {
+	ref, _ := v.(map[string]any)
+	return ref[vocabulary.ReferenceValueKey] == vocabulary.ActorRef(vocabulary.ActorID(hand))["ref"]
 }

@@ -142,8 +142,9 @@ func TestIdempotencyKeyReachesTheFiveOperations(t *testing.T) {
 	}
 }
 
-// The X-Substrate-Actor header reaches CallFunction as its caller, the
-// door a networked call's run row names (#645); no header is the API door.
+// The request's actor reaches CallFunction as its caller, the hand a
+// networked call's run row links (#645): the person for a full-access token,
+// whatever retired header the request sends.
 func TestCallFunctionCallerIsTheRequestActor(t *testing.T) {
 	ds := newIdempotencyRecorder()
 	env := newStubEnv(t, ds)
@@ -154,8 +155,8 @@ func TestCallFunctionCallerIsTheRequestActor(t *testing.T) {
 		header []string
 		want   substrate.Actor
 	}{
-		{[]string{actorHeader, "console"}, substrate.ActorConsole},
-		{nil, substrate.ActorAPI},
+		{[]string{retiredActorHeader, "console"}, substrate.ActorPerson},
+		{nil, substrate.ActorPerson},
 	} {
 		rec := env.do(t, http.MethodPost, path, stubToken, body, tc.header...)
 		wantStatus(t, rec, http.StatusOK)

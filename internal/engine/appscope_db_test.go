@@ -33,17 +33,17 @@ func TestAnAppsTokenWritesNoAccountAndRevokesNoToken(t *testing.T) {
 			t.Fatalf("%s with an app's token = %v, want forbidden", what, err)
 		}
 	}
-	_, err := ds.Patch(app, substrate.ActorAPI, mbAccountType, account.ID, substrate.PatchInput{
+	_, err := ds.Patch(app, substrate.ActorPerson, mbAccountType, account.ID, substrate.PatchInput{
 		Properties: map[string]any{"enabledMail": false},
 	})
 	refused("patching an account", err)
-	_, err = ds.Put(app, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(app, substrate.ActorPerson, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "eve@example.com"},
 	})
 	refused("creating an account", err)
-	_, err = ds.Delete(app, substrate.ActorAPI, mbAccountType, account.ID, substrate.DeleteInput{})
+	_, err = ds.Delete(app, substrate.ActorPerson, mbAccountType, account.ID, substrate.DeleteInput{})
 	refused("deleting an account", err)
-	_, err = ds.Put(app, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(app, substrate.ActorPerson, substrate.PutInput{
 		Kind: mbConfigType, Properties: map[string]any{"clientId": "x"},
 	})
 	refused("creating a bundle input", err)
@@ -56,7 +56,7 @@ func TestAnAppsTokenWritesNoAccountAndRevokesNoToken(t *testing.T) {
 	}
 
 	// An ordinary kind the app's write reaches still writes.
-	if _, err := ds.Put(app, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(app, substrate.ActorPerson, substrate.PutInput{
 		Kind: mbItemType, Properties: map[string]any{"name": "from the app"},
 	}); err != nil {
 		t.Fatalf("an app's write of an ordinary kind: %v", err)
@@ -66,7 +66,7 @@ func TestAnAppsTokenWritesNoAccountAndRevokesNoToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ds.Delete(app, substrate.ActorAPI, "substrate.reamde.dev/core/token", tok.ID, substrate.DeleteInput{})
+	_, err = ds.Delete(app, substrate.ActorPerson, "substrate.reamde.dev/core/token", tok.ID, substrate.DeleteInput{})
 	refused("revoking a token", err)
 	if err == nil || !strings.Contains(err.Error(), "/oauth/revoke") {
 		t.Fatalf("the refusal = %v, want it to name the app's own way out", err)
@@ -155,7 +155,7 @@ func TestAnAppsTokenAcceptsNoChangeRequest(t *testing.T) {
 	app := substrate.WithScopes(ctx, []string{"write:*"})
 	version := req.Version
 	accept := substrate.PatchInput{Properties: map[string]any{"decision": "accepted"}, IfVersion: &version}
-	if _, err := ds.Patch(app, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, "req-1", accept); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.Patch(app, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, "req-1", accept); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an app's accept = %v, want forbidden", err)
 	}
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["name"] != "before" {
@@ -178,7 +178,7 @@ func TestAnAppsTokenPatchesNoBundleInputAndNoOwnerProperty(t *testing.T) {
 	ds := installMailBundle(t)
 	cfg := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: map[string]any{"clientId": "owner"}})
 	app := substrate.WithScopes(ctx, []string{"write:*"})
-	if _, err := ds.Patch(app, substrate.ActorAPI, mbConfigType, cfg.ID, substrate.PatchInput{
+	if _, err := ds.Patch(app, substrate.ActorPerson, mbConfigType, cfg.ID, substrate.PatchInput{
 		Properties: map[string]any{"clientId": "app"},
 	}); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an app's patch of a bundle input = %v, want forbidden", err)
@@ -195,10 +195,10 @@ func TestAnAppsTokenPatchesNoBundleInputAndNoOwnerProperty(t *testing.T) {
 		t.Fatalf("declare the kind: %v", err)
 	}
 	kind := pkg + "/note"
-	if _, err := ds.Put(app, substrate.ActorAPI, substrate.PutInput{Kind: kind, Properties: map[string]any{"text": "x"}}); err != nil {
+	if _, err := ds.Put(app, substrate.ActorPerson, substrate.PutInput{Kind: kind, Properties: map[string]any{"text": "x"}}); err != nil {
 		t.Fatalf("an app's write of a property with no role: %v", err)
 	}
-	if _, err := ds.Put(app, substrate.ActorAPI, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.Put(app, substrate.ActorPerson, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an app's write of a writer: owner property = %v, want forbidden", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); err != nil {
@@ -211,10 +211,10 @@ func TestAnAppsTokenStartsNoProviderConnect(t *testing.T) {
 	ctx := context.Background()
 	_, ds, _, account := installOAuthBundle(t)
 	path := vocabulary.RecordPath(account.Kind, account.ID)
-	if _, err := ds.StartOAuth(substrate.WithScopes(ctx, []string{"write:*"}), substrate.ActorAPI, path); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.StartOAuth(substrate.WithScopes(ctx, []string{"write:*"}), substrate.ActorPerson, path); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("an app's provider connect = %v, want forbidden", err)
 	}
-	if _, err := ds.StartOAuth(ctx, substrate.ActorAPI, path); err != nil {
+	if _, err := ds.StartOAuth(ctx, substrate.ActorPerson, path); err != nil {
 		t.Fatalf("the owner's provider connect: %v", err)
 	}
 }
@@ -301,7 +301,7 @@ func TestAnAppsDecisionAcceptsTheOneRequestItNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(changes); n == 0 || changes[n-1].Actor != actor {
+	if n := len(changes); n == 0 || changes[n-1].Actor != vocabulary.ActorID(actor) {
 		t.Fatalf("the decision's changelog rows = %+v, want the last under %s", changes, actor)
 	}
 	// Rejecting needs no gate, and the app's own namespace is the only one

@@ -62,7 +62,9 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
-          == true && !("contactsLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
+          == true && !("contactsLastSyncedAt" in record.properties) && !("actorPackage"
+          in change && change.actorPackage == "providers.substrate.reamde.dev/google"
+          && change.actorType == "function")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccontacts
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
@@ -101,7 +103,9 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
-          == true && !("gmailLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
+          == true && !("gmailLastSyncedAt" in record.properties) && !("actorPackage"
+          in change && change.actorPackage == "providers.substrate.reamde.dev/google"
+          && change.actorType == "function")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncgmail
 ---
 # Gmail's steady-state re-sync: hourly, honoring each account's syncFrequency.
@@ -135,7 +139,9 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
-          == true && !("calendarLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
+          == true && !("calendarLastSyncedAt" in record.properties) && !("actorPackage"
+          in change && change.actorPackage == "providers.substrate.reamde.dev/google"
+          && change.actorType == "function")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/synccalendar
 ---
 # Calendar's steady-state re-sync.
@@ -273,7 +279,9 @@ data:
         when: >-
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledDrive" in record.properties && record.properties.enabledDrive
-          == true && !("driveLastSyncedAt" in record.properties) && !change.actor.startsWith("function:providers.substrate.reamde.dev:google:")
+          == true && !("driveLastSyncedAt" in record.properties) && !("actorPackage"
+          in change && change.actorPackage == "providers.substrate.reamde.dev/google"
+          && change.actorType == "function")
     callable: substrate.reamde.dev/core/function/providers.substrate.reamde.dev/google/syncdrive
 ---
 # Drive's steady-state re-sync: hourly, honoring each account's syncFrequency.

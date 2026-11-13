@@ -62,7 +62,7 @@ func TestAVerifiedAppIsShownByItsAuthorityAndWritesAsIt(t *testing.T) {
 	e := newPublishedEnv(t, pubClientID)
 	page, minted, secret := e.grantWorkouts("write:"+taskKind, pubRedirect, []string{"write:" + taskKind})
 	app := page.App
-	if !app.Verified || app.Actor != "app:example.org" || app.Publisher.Authority != pubAuthority ||
+	if !app.Verified || app.AppearsAs != "example.org" || app.Publisher.Authority != pubAuthority ||
 		app.Publisher.Name != "Example" || app.Publisher.AppName != "Example Workouts" || app.Publisher.Unconfirmed != "" {
 		t.Fatalf("a verified app reads %+v", app)
 	}
@@ -81,7 +81,7 @@ func TestAnAppWhoseAccessGoesToThisDeviceWritesAsLocal(t *testing.T) {
 	t.Parallel()
 	e := newPublishedEnv(t, pubClientID)
 	page, minted, secret := e.grantWorkouts("write:"+taskKind, "http://127.0.0.1:43123/callback", []string{"write:" + taskKind})
-	if page.App.Verified || page.App.Actor != "app:local" || !page.App.Publisher.Listed ||
+	if page.App.Verified || page.App.AppearsAs != "local" || !page.App.Publisher.Listed ||
 		!strings.Contains(page.App.Publisher.Unconfirmed, "a program on this device") {
 		t.Fatalf("a listed app with a loopback redirect reads %+v", page.App)
 	}
@@ -166,7 +166,7 @@ func TestAPublisherALocalFileVouchesForSaysSo(t *testing.T) {
 		ClientID: pubClientID, RedirectURIs: []string{pubRedirect}, Name: "Workouts", Authority: pubAuthority,
 	}
 	page, minted, _ := e.grantWorkouts("write:"+taskKind, pubRedirect, []string{"write:" + taskKind})
-	if !page.App.Verified || !page.App.Publisher.FromFile || page.App.Actor != "app:example.org" {
+	if !page.App.Verified || !page.App.Publisher.FromFile || page.App.AppearsAs != "example.org" {
 		t.Fatalf("a file-vouched app reads %+v", page.App)
 	}
 	if minted.AppAuthority != pubAuthority || !minted.AppAuthorityFromFile {

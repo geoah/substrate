@@ -62,7 +62,7 @@ func TestAPackageNamesItsFunctionInterface(t *testing.T) {
 // package and runs against the interface its package names.
 func TestInterfaceIsAPackageHeaderKeyAlone(t *testing.T) {
 	for _, short := range []string{
-		vocabulary.DocAuthority, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
+		vocabulary.DocAuthority, vocabulary.DocKind, vocabulary.DocTrait,
 		vocabulary.DocPropertyType, vocabulary.DocRecordMapping, vocabulary.DocFunction,
 		vocabulary.DocAgent, vocabulary.DocBundle,
 	} {

@@ -103,7 +103,7 @@ func TestADoorToolWritesThroughTheAPIAsTheAssistant(t *testing.T) {
 		t.Fatalf("write = %s", text)
 	}
 	changes, err := env.ds.Changes(context.Background(), 0, substrate.ChangeFilter{Kinds: []string{taskKind}, RecordID: id}, 10)
-	if err != nil || len(changes) != 1 || changes[0].Actor != substrate.AppActorLocal || changes[0].Principal != tokID {
+	if err != nil || len(changes) != 1 || changes[0].Actor != vocabulary.ActorID(substrate.AppActorLocal) || changes[0].Token != tokID {
 		t.Fatalf("the write's entries = %+v, %v: want one as %q by %q", changes, err, substrate.AppActorLocal, tokID)
 	}
 	// A create with a minted id is the write a retry could repeat, so its key

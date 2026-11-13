@@ -43,7 +43,7 @@ func declareLostAccountKind(t *testing.T, ds *dataset) {
 			},
 		},
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the account kind: %v", err)
 	}
 }
@@ -377,7 +377,6 @@ func spellingsDocs() []map[string]any {
 	authority, pkg := vocabulary.SplitPackageRef(spellingsPackage)
 	return []map[string]any{
 		vocabulary.PackageManifest(spellingsPackage, 0),
-		vocabulary.ActorManifest(spellingsPackage, vocabulary.PackageActor(spellingsPackage)),
 		vocabulary.BundleManifest(spellingsPackage, map[string]any{
 			"description": "a bundle whose kinds hold secrets",
 			"installs":    []any{spellingsPackage + "/apitoken", spellingsKey, spellingsAccount, spellingsPackage + "/keeper"},
@@ -727,7 +726,7 @@ func TestALostSecretBelowAPropertysTopIsCleared(t *testing.T) {
 				t.Fatal(err)
 			}
 			ds := d.(*dataset)
-			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, nestDocs(false)); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, nestDocs(false)); err != nil {
 				t.Fatalf("declare the kind: %v", err)
 			}
 			inObject, inList := "secret:"+strings.Repeat("a", 32), "secret:"+strings.Repeat("b", 32)
@@ -741,7 +740,7 @@ func TestALostSecretBelowAPropertysTopIsCleared(t *testing.T) {
 			sealUnder(t, ds, inList, nestKind, id)
 			object := "config"
 			if state == "declaration changed" {
-				if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, nestDocs(true)); err != nil {
+				if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, nestDocs(true)); err != nil {
 					t.Fatalf("change the declaration: %v", err)
 				}
 			}

@@ -1,3 +1,4 @@
+import { seedActors } from "@/lib/actors.test-fixtures"
 // @vitest-environment jsdom
 /** The property sheet's promises: the title and the body are not rows, empty
  * properties fold into one line, a click edits a value in place and a save is
@@ -88,6 +89,8 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { ShippedUnits } from "@/components/units-provider.test-fixtures"
 import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
 
+beforeEach(() => seedActors())
+
 /** Every render gets the shipped units, as the signed-in console's
  * `UnitsProvider` gives a page the repository's. */
 const render = (
@@ -98,8 +101,7 @@ const render = (
 const TASK = "ada.example.com/tasks/task"
 const PERSON = "ada.example.com/people/person"
 const CONTACT = "providers.substrate.reamde.dev/google/contact"
-const GOOGLE_SYNC =
-  "function:providers.substrate.reamde.dev:google:synccontacts"
+const GOOGLE_SYNC = "act-fn-google-synccontacts"
 
 function kind(identity: string, definition: Record<string, unknown>): KindInfo {
   const [authority, pkg, name] = identity.split("/")
@@ -180,7 +182,7 @@ const record = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   updatedAt: "2026-09-10T00:00:00Z",
   propertyMeta: {
     location: {
-      manager: "console",
+      manager: "act-person",
       tier: "owner",
       updatedAt: "2026-09-10T00:00:00Z",
     },
@@ -1045,13 +1047,13 @@ describe("OwnershipChip", () => {
     record({ propertyMeta: meta })
 
   it("stays quiet on the owner's own value, the page's default", () => {
-    renderSheet(held({ location: { manager: "console", tier: "owner" } }))
+    renderSheet(held({ location: { manager: "act-person", tier: "owner" } }))
     expect(row("location").querySelector("[data-slot=owner-chip]")).toBeNull()
   })
 
   it("says You on every row when asked who holds each value", () => {
     renderSheet(
-      held({ location: { manager: "console", tier: "owner" } }),
+      held({ location: { manager: "act-person", tier: "owner" } }),
       task,
       false,
       true
@@ -1119,7 +1121,7 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: "console",
+          manager: "act-person",
           tier: "owner",
           alternatives: [
             {
@@ -1162,7 +1164,7 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: "console",
+          manager: "act-person",
           tier: "owner",
           alternatives: [
             { actor: GOOGLE_SYNC, value: "Lisboa", updatedAt: "" },
@@ -1191,7 +1193,7 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: "bundle:providers.substrate.reamde.dev:google",
+          manager: "act-pkg-google",
           tier: "bundle",
         },
       })
@@ -1302,7 +1304,7 @@ describe("PropertySheet under a live refresh", () => {
       record({
         propertyMeta: {
           location: {
-            manager: "console",
+            manager: "act-person",
             tier: "owner",
             alternatives: [
               { actor: GOOGLE_SYNC, value: "Lisboa", updatedAt: "" },

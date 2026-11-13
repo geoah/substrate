@@ -88,6 +88,9 @@ type dataset struct {
 	// tail is the one reader of the changelog's tail the repository's
 	// streams share (changetail.go).
 	tail changeTail
+	// actors is the actor records this process has read standing in the
+	// repository (actors.go actorCache).
+	actors actorCache
 	// observedKinds is the kinds holding an observed segment (measured.go),
 	// so a record of any other kind leaves the fold without a probe.
 	observedKinds observedKinds
@@ -544,6 +547,24 @@ type txn struct {
 	// function/agent dispatch (setEffectEmit) — never inferred from the
 	// actor's spelling.
 	tier substrate.Tier
+	// ensuringActor is set while ensureLinks writes an actor record, so the
+	// record's own entry does not ask for it again.
+	ensuringActor bool
+	// actorsStanding is the id of every actor record this transaction read
+	// standing or wrote; they reach the dataset's cache only once it commits
+	// (actors.go actorLive), so a rollback leaves no record cached that the
+	// store does not hold. actorEpoch is the cache's invalidation count when
+	// the transaction began, before it read any actor record, and
+	// actorsDisabled the records it disabled, which it invalidates again once
+	// its commit is visible.
+	actorsStanding map[string]bool
+	actorEpoch     uint64
+	actorsDisabled []string
+	// onBehalfOf is the actor the request this transaction serves acts for
+	// (substrate.OnBehalfOfFrom): the person, behind installed code a
+	// person's request started (linksOf). Empty on the trigger pass's own
+	// context.
+	onBehalfOf substrate.Actor
 	// principal is the token id the door verified for the request this
 	// transaction serves (substrate.PrincipalFrom), stamped on every
 	// changelog entry it appends and every manager row it lands. Empty when
@@ -758,8 +779,9 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	_, scoped := substrate.ScopesFrom(ctx)
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
-		principal: substrate.PrincipalFrom(ctx), scoped: scoped, now: nowUTC(), internal: internal,
-		decides: substrate.DecisionFrom(ctx),
+		principal: substrate.PrincipalFrom(ctx), onBehalfOf: substrate.OnBehalfOfFrom(ctx),
+		scoped: scoped, now: nowUTC(), internal: internal,
+		decides: substrate.DecisionFrom(ctx), actorEpoch: ds.actors.now(),
 	}
 	// The changelog lock before anything else the transaction locks: the
 	// first key of the global order (rows.go changelogLockKey). The cost is
@@ -815,6 +837,9 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	err = ds.commit(tx, t)
 	if errors.Is(err, substrate.ErrWriteInDoubt) {
 		ds.commitDoubted()
+	}
+	if err == nil {
+		ds.settleActorCache(t)
 	}
 	if t.tokensMoved {
 		switch {
@@ -1382,11 +1407,10 @@ func legacyAppNamespace(actor substrate.Actor, clientID string) string {
 	return string(substrate.AppActor(u.Host))
 }
 
-// metaKeyAllowed enforces the label/annotation namespace rule: a human hand
-// (`api`, `console`, `substratectl`) and the engine's own may write any
-// well-formed key, which is what makes the `owner/…` convention theirs to
-// write; every other actor — an agent, a function, a bundle — is bound to its
-// own actor name as the namespace.
+// metaKeyAllowed enforces the label/annotation namespace rule: the person and
+// the engine may write any well-formed key, which is what makes the `owner/…`
+// convention theirs to write; every other actor — an agent, a function, a
+// bundle — is bound to its own actor key as the namespace.
 //
 // An app writes under its own actor and, beside it, under `app:` and the host
 // of its client id (clientID, substrate.ClientIDFrom): the namespace a binary
@@ -1403,7 +1427,7 @@ func metaKeyAllowed(ctx context.Context, actor substrate.Actor, clientID, key st
 	if ns == actorNamespace(actor) || ns == legacyAppNamespace(actor, clientID) {
 		return nil
 	}
-	return fmt.Errorf("%w: actor %q may not write key %q", substrate.ErrForbidden, actor, key)
+	return fmt.Errorf("%w: %s may not write key %q", substrate.ErrForbidden, handWords(actor), key)
 }
 
 // inRawTx runs fn in a plain scoped transaction: no actor, no fold, no

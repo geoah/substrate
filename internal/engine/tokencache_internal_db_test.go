@@ -67,7 +67,7 @@ func TestATokenIsCachedAndARevokeStopsItAtOnce(t *testing.T) {
 	if err := authenticates(secret); err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, deleted.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, deleted.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the token: %v", err)
 	}
 	if err := authenticates(secret); !errors.Is(err, substrate.ErrAuth) {
@@ -303,7 +303,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 		eventually(t, "the COMMIT waits in Postgres", blocked)
 		return errAnswerLost
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, late.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, late.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
 		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
 	}
 	h.wasReached(t)
@@ -330,7 +330,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 		eventually(t, "the COMMIT waits in Postgres", blocked)
 		return errAnswerLost
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, kept.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, kept.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
 		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
 	}
 	h.wasReached(t)
@@ -357,7 +357,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 		}
 		return errAnswerLost
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, lost.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, lost.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
 		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
 	}
 	h.wasReached(t)
@@ -370,7 +370,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 			}
 			return errAnswerLost
 		})
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, more.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, more.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
 			t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
 		}
 		h.wasReached(t)
@@ -480,7 +480,7 @@ func TestATokenProofThatTimesOutKeepsTheFence(t *testing.T) {
 		eventually(t, "the COMMIT waits in Postgres", held.blocked(t))
 		return errAnswerLost
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, info.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, info.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
 		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
 	}
 	h.wasReached(t)

@@ -61,7 +61,7 @@ func (c *Catalog) installAddons(ctx context.Context, ds substrate.Dataset, provi
 				expect, blocked := c.addonPlanner(ctx, ds, token, addon)
 				if blocked != nil {
 					result.Problem = blocked.Problem
-				} else if _, _, err := c.InstallApproved(ctx, substrate.ActorConsole, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}, expect); err != nil {
+				} else if _, _, err := c.InstallApproved(ctx, substrate.ActorPerson, addon.Package, &addonConsentDataset{Dataset: ds, tokenID: token.ID}, expect); err != nil {
 					result.Problem = "The add-on could not be installed. Open its package page to resolve it."
 					if errors.Is(err, substrate.ErrForbidden) {
 						result.Problem = "The add-on's approval is no longer live. Approve the app again."

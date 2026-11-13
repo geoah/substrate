@@ -128,7 +128,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	// provider's presence instead would report `landed` here and tell the
 	// reader a GitHub user reaches their person while no such declaration
 	// exists.
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, githubProviderID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, githubProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", githubProviderID, err)
 	}
 	if sm := suggestedState(t, people, ds, landedMapping); sm.State != substrate.SuggestedMappingReady {
@@ -137,7 +137,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("installing the provider landed the sample's mapping: %v", err)
 	}
-	user, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	user, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: githubUser, ID: fid("before"),
 		Properties: map[string]any{
 			"account": githubAccount + "/" + mustAccount(t, ds, githubAccount),
@@ -154,7 +154,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	// ROUND THREE: the re-import, which is what lands it. The door's own
 	// report says landed, because the mapping was in the batch that
 	// committed, and a read afterwards agrees.
-	_, report, err := c.Import(ctx, substrate.ActorAPI, peopleSampleID, ds)
+	_, report, err := c.Import(ctx, substrate.ActorPerson, peopleSampleID, ds)
 	if err != nil {
 		t.Fatalf("re-import %s: %v", peopleSampleID, err)
 	}
@@ -171,7 +171,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	// A user mirror written from now on mints the person and the map rules
 	// project onto it: the name, the login as the friendly name, and the
 	// address unioned onto the person's own list.
-	fresh, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	fresh, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: githubUser, ID: fid("user-ada"),
 		Properties: map[string]any{
 			"account": githubAccount + "/acct",
@@ -215,7 +215,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	}
 	landedMapping := homeAuthority + "/tasks/linearissuetask"
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, linearProviderID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, linearProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", linearProviderID, err)
 	}
 	// The provider is here and the mapping fits it, so it is READY before the
@@ -224,7 +224,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 		t.Fatalf("state = %+v, want ready with the provider installed", sm)
 	}
 	importSamples(t, c, ds, peopleSampleID, schedulingSample)
-	_, report, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	_, report, err := c.Import(ctx, substrate.ActorPerson, tasksSampleID, ds)
 	if err != nil {
 		t.Fatalf("import %s: %v", tasksSampleID, err)
 	}
@@ -235,7 +235,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 		t.Fatalf("the issue mapping did not land: %v", err)
 	}
 
-	issue, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	issue, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: linearIssue, ID: fid("issue-1"),
 		Properties: map[string]any{
 			"account":    linearAccount + "/" + mustAccount(t, ds, linearAccount),
@@ -440,10 +440,10 @@ func TestTheVerbatimInstallReportsTheShippedSpelling(t *testing.T) {
 	}
 	shippedMapping := peopleSampleID + "/githubuserperson"
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, githubProviderID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, githubProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", githubProviderID, err)
 	}
-	_, report, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds)
+	_, report, err := c.Install(ctx, substrate.ActorPerson, peopleSampleID, ds)
 	if err != nil {
 		t.Fatalf("install %s verbatim: %v", peopleSampleID, err)
 	}
@@ -475,7 +475,7 @@ func TestTheVerbatimInstallReportsTheShippedSpelling(t *testing.T) {
 // answers its id: every mirror row references the account it synced through.
 func mustAccount(t *testing.T, ds substrate.Dataset, kind string) string {
 	t.Helper()
-	rec, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: "acct"})
+	rec, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: "acct"})
 	if err != nil {
 		t.Fatalf("write the account %s: %v", kind, err)
 	}

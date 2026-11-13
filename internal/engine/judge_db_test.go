@@ -79,7 +79,7 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	if audit["policy"] != vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, policy.ID) {
 		t.Fatalf("audit policy: %v", audit["policy"])
 	}
-	// The held write landed, decided by the POLICY's actor.
+	// The held write landed, decided by the policy: the engine's hand.
 	waitUntil(t, "the judged accept landing", func() bool {
 		got, err := ds.Get(ctx, crewPackage+"/widget", fid("w-judged"))
 		return err == nil && got.Properties["name"] == "wanted"
@@ -90,12 +90,13 @@ func TestJudgeAcceptsWithinThresholds(t *testing.T) {
 	}
 	decidedByPolicy := false
 	for _, c := range changes {
-		if c.Actor == substrate.Actor("policy:"+policy.ID) {
+		// A policy's verdict is the engine's own write (decision 0270).
+		if c.Actor == actorID(substrate.ActorSystem) {
 			decidedByPolicy = true
 		}
 	}
 	if !decidedByPolicy {
-		t.Fatalf("no decision under the policy's actor in %+v", changes)
+		t.Fatalf("no decision under the system's actor in %+v", changes)
 	}
 	// The judge SAW the thread context the policy opted into: its one
 	// completion request carries the editor's prose as data.
@@ -143,7 +144,7 @@ func TestJudgeEscalatesBelowThresholdAndTheOwnerDecides(t *testing.T) {
 	}
 	// The recommendation did not spend the owner's authority: the owner
 	// decides, and the decision still works.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &fresh.Version,
 	}); err != nil {
 		t.Fatalf("owner accept after escalation: %v", err)
@@ -303,7 +304,7 @@ func TestVoluntaryProposalsAreJudgedWhenThePolicyMatches(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-polite"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -451,7 +452,7 @@ func TestAnAgentTurnsTheGuidanceOff(t *testing.T) {
 // must be able to read, and a secret it must not.
 func evidenceWidget(t *testing.T, ds *dataset) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-evidence"),
 		Properties: map[string]any{"name": "the evidence text", "token": "hunter2"},
 	}); err != nil {

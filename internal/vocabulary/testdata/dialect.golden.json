@@ -1,11 +1,6 @@
 {
-  "dialect": 3,
+  "dialect": 4,
   "keys": {
-    "actorDataKeys": [
-      "authority",
-      "package",
-      "tier"
-    ],
     "agentBudgetKeys": [
       "deadlineSeconds",
       "depth",

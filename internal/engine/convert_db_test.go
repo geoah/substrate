@@ -200,7 +200,7 @@ func TestBackfillWritesTheDefaultOntoEveryRecordLackingAValue(t *testing.T) {
 		cvWidget, lacks.ID).Scan(&actor, &tier); err != nil {
 		t.Fatalf("read the manager row: %v", err)
 	}
-	if actor != string(owner) || tier != string(substrate.TierOwner) {
+	if actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
 		t.Fatalf("the backfilled value's manager = %q at %q", actor, tier)
 	}
 	var queued int
@@ -301,7 +301,7 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 		cvWidget, theirs.ID).Scan(&actor, &tier, &stamp); err != nil {
 		t.Fatalf("read the manager row: %v", err)
 	}
-	if actor != string(lib) || tier != string(substrate.TierMachine) || !stamp.Equal(libStamp) {
+	if actor != vocabulary.ActorID(lib) || tier != string(substrate.TierMachine) || !stamp.Equal(libStamp) {
 		t.Fatalf("the remap touched the manager row: %q at %q, stamped %s (was %s)", actor, tier, stamp, libStamp)
 	}
 	if mustGet(t, ds, cvWidget, theirs.ID).Properties["status"] != "working" {

@@ -332,7 +332,11 @@ data:
   # writes nothing until its owner turns one on and reconnects. The syncs
   # are untouched. ADDITIVE. The send and the four calendar changes declare
   # `approval: required` (decision record 0254).
-  version: 51
+  #
+  # 52: a sync trigger's guard tells the package's own functions' writes by
+  # the change's `actorType` and `actorPackage`, since `change.actor` links an
+  # actor record and no longer spells the hand (decision record 0270).
+  version: 52
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:

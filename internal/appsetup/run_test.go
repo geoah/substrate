@@ -46,7 +46,7 @@ func run(t *testing.T, ds *fakeDataset, cat *catalog.Catalog, details ...substra
 
 func runApproved(ds *fakeDataset, cat *catalog.Catalog, approved []substrate.AuthorizationSetup, details ...substrate.AuthorizationDetail) (Outcome, *reports) {
 	r := &reports{}
-	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorConsole, details, approved, everything(), RunOptions{}, r.report)
+	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorPerson, details, approved, everything(), RunOptions{}, r.report)
 	return out, r
 }
 
@@ -252,7 +252,7 @@ func TestARunWhoseRequestIsGoneWritesNothing(t *testing.T) {
 	ds := newFakeDataset()
 	r := &reports{gone: true}
 	details := appSetUp()
-	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorConsole, details, plan(t, ds, cat, details...), everything(), RunOptions{}, r.report)
+	out := NewRunner(cat).Run(context.Background(), ds, substrate.ActorPerson, details, plan(t, ds, cat, details...), everything(), RunOptions{}, r.report)
 	if !out.Gone || out.Failure != nil {
 		t.Fatalf("the run = %+v", out)
 	}

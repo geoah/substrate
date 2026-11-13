@@ -26,7 +26,7 @@ func TestLexicalSearch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging", "calendar")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	emb := newFakeEmbedServer(t)
 	_, ds := newVocabularyDataset(t, "calendar")
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
@@ -261,7 +261,6 @@ func TestDeclaredBodyAndPerPropertyFTS(t *testing.T) {
 		Name: "reader", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:reader"),
 			// A declared body, fts defaulting true for text: indexed.
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "article"},
@@ -485,7 +484,6 @@ func TestARebuildAgreesAfterAnUninstallLeavesTombstones(t *testing.T) {
 	const gizmo = pkg + "/gizmo"
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "a bundle to uninstall", "installs": []any{gizmo},
 		}),

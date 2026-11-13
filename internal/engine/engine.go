@@ -1944,6 +1944,12 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		// The repository's own read-only description of itself. `lifecycle` is
 		// the state a creation is born into, so naming it is assertion, not
 		// transition.
+		// The repository's person and the system are actors from its
+		// creation (decision 0270); every other hand's record is written when
+		// it first writes.
+		if err := t.ensureActors(substrate.ActorSystem, substrate.ActorPerson); err != nil {
+			return err
+		}
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			if err := t.seedDefaultProviders(); err != nil {
 				return err

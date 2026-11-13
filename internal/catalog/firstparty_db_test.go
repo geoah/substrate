@@ -63,7 +63,7 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 		if _, err := ds.KindByRef(ctx, healthID+"/sleep"); !errors.Is(err, substrate.ErrNotFound) {
 			t.Fatalf("a fresh repository already declares health: %v", err)
 		}
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, applehealthID, ds); err != nil {
 			t.Fatalf("install %s without health: %v", applehealthID, err)
 		}
 		requirePublishedInstall(t, c, ds, healthID, healthID+"/sleep")
@@ -75,7 +75,7 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 
 	t.Run("labs", func(t *testing.T) {
 		ds := newDataset(t)
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, labsID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, labsID, ds); err != nil {
 			t.Fatalf("install %s without health: %v", labsID, err)
 		}
 		requirePublishedInstall(t, c, ds, healthID, healthID+"/workout")
@@ -85,7 +85,7 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, labsID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, labsID, ds); err != nil {
 			t.Fatalf("re-install %s: %v", labsID, err)
 		}
 		if after, err := ds.Head(ctx); err != nil || after != head {
@@ -97,7 +97,7 @@ func TestAnInstallBringsThePublishedPackagesItRequires(t *testing.T) {
 	// three (decision record 0193).
 	t.Run("clinical", func(t *testing.T) {
 		ds := newDataset(t)
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, clinicalID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, clinicalID, ds); err != nil {
 			t.Fatalf("install %s without labs or health: %v", clinicalID, err)
 		}
 		requirePublishedInstall(t, c, ds, healthID, healthID+"/workout")
@@ -115,13 +115,13 @@ func TestClinicalRecordsLand(t *testing.T) {
 	ctx := context.Background()
 	ds := newDataset(t)
 	c := loadCatalog(t)
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, clinicalID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, clinicalID, ds); err != nil {
 		t.Fatalf("install %s: %v", clinicalID, err)
 	}
 	kind := func(name string) string { return clinicalID + "/" + name }
 	put := func(k, id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: k, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: k, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s/%s: %v", k, id, err)
 		}
 	}
@@ -220,7 +220,7 @@ func TestAPackageThatDeclaresNoKindsInstallsItsRecords(t *testing.T) {
 	ctx := context.Background()
 	ds := newDataset(t)
 	c := loadCatalog(t)
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, environmentID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, environmentID, ds); err != nil {
 		t.Fatalf("install %s: %v", environmentID, err)
 	}
 	requirePublishedInstall(t, c, ds, environmentID, "")
@@ -250,7 +250,6 @@ func triggerTree(t *testing.T) *catalog.Catalog {
 		pkg := triggerAuthority + "/" + name
 		docs := []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.BundleManifest(pkg, map[string]any{
 				"description": "a provider whose trigger id another package ships too",
 				"installs":    []any{pkg + "/note", pkg + "/notify"},
@@ -319,11 +318,11 @@ func TestAShippedTriggerCannotTakeAnotherPackagesTriggerID(t *testing.T) {
 	ds := newDataset(t)
 	c := triggerTree(t)
 	alpha, beta := triggerAuthority+"/alpha", triggerAuthority+"/beta"
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, alpha, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, alpha, ds); err != nil {
 		t.Fatalf("install %s: %v", alpha, err)
 	}
 
-	_, _, err := c.Install(ctx, substrate.ActorAPI, beta, ds)
+	_, _, err := c.Install(ctx, substrate.ActorPerson, beta, ds)
 	if !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("installing %s over %s's trigger id: err = %v, want a conflict", beta, alpha, err)
 	}
@@ -355,7 +354,7 @@ func TestAShippedTriggerCannotTakeAnotherPackagesTriggerID(t *testing.T) {
 		t.Fatalf("the refused install repointed the trigger at %s", got)
 	}
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, alpha, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, alpha, ds); err != nil {
 		t.Fatalf("re-install %s, which holds the trigger: %v", alpha, err)
 	}
 	if got := trigger(); got != triggerCallable("alpha") {
@@ -371,7 +370,7 @@ func TestAReinstallKeepsAWebhookTheOwnerTurnedOn(t *testing.T) {
 	ctx := context.Background()
 	c := loadCatalog(t)
 	ds := newDataset(t)
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, applehealthID, ds); err != nil {
 		t.Fatalf("install %s: %v", applehealthID, err)
 	}
 	const triggerKind, id, key = "substrate.reamde.dev/core/trigger", "applehealth-webhook", "an-owners-key-0123456789abcdef"
@@ -382,13 +381,13 @@ func TestAReinstallKeepsAWebhookTheOwnerTurnedOn(t *testing.T) {
 	source, _ := row.Properties["source"].(map[string]any)
 	webhook, _ := source["webhook"].(map[string]any)
 	webhook["key"] = key
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: triggerKind, ID: id, Properties: map[string]any{"enabled": true, "source": source},
 	}); err != nil {
 		t.Fatalf("turn the trigger on: %v", err)
 	}
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, applehealthID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, applehealthID, ds); err != nil {
 		t.Fatalf("re-install %s: %v", applehealthID, err)
 	}
 	row, err = ds.Get(ctx, triggerKind, id)
@@ -423,7 +422,6 @@ func requireTree(t *testing.T, v int64, requires bool) *catalog.Catalog {
 		}
 		docs := []map[string]any{
 			vocabulary.PackageManifest(pkg, version),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.BundleManifest(pkg, header),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "note"},
 				map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
@@ -461,7 +459,7 @@ func TestAnUpgradePreviewCountsTheRequirementsTheInstallBrings(t *testing.T) {
 	ctx := context.Background()
 	ds := newDataset(t)
 	needs, needed := requireAuthority+"/needs", requireAuthority+"/needed"
-	if _, _, err := requireTree(t, 1, false).Install(ctx, substrate.ActorAPI, needs, ds); err != nil {
+	if _, _, err := requireTree(t, 1, false).Install(ctx, substrate.ActorPerson, needs, ds); err != nil {
 		t.Fatalf("install %s: %v", needs, err)
 	}
 
@@ -483,7 +481,7 @@ func TestAnUpgradePreviewCountsTheRequirementsTheInstallBrings(t *testing.T) {
 		t.Errorf("the preview does not list %s/note, which the upgrade installs: %+v", needed, plan.Changes)
 	}
 
-	if _, _, err := next.Install(ctx, substrate.ActorAPI, needs, ds); err != nil {
+	if _, _, err := next.Install(ctx, substrate.ActorPerson, needs, ds); err != nil {
 		t.Fatalf("take the upgrade: %v", err)
 	}
 	if _, err := ds.KindByRef(ctx, needed+"/note"); err != nil {

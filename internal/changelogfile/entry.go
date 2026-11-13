@@ -39,13 +39,24 @@ const LineFormat = 1
 // text Postgres stored (`payload::text`); Encode canonicalizes it, so the
 // caller never has to.
 type Entry struct {
-	Seq       int64
-	TS        time.Time
-	Actor     string
-	Principal string
-	Op        string
-	RecordID  string
-	Kind      string
+	Seq int64
+	TS  time.Time
+	// Actor is the id of the actor record that wrote the entry, OnBehalfOf
+	// the id of the one it acted for, "" when it acted for none, and Token
+	// the id of the token record the write stood behind, "" when none did
+	// (decision 0270). The line carries the last two only when set.
+	Actor      string
+	OnBehalfOf string
+	Token      string
+	// Principal is the token id a line from before the actor links carried
+	// (changelog dialect 1), and HasPrincipal says the line carried the key,
+	// so such a line re-encodes to the bytes its sum covers. Only the
+	// conversion to dialect 2 reads them, and it moves the id to Token.
+	Principal    string
+	HasPrincipal bool
+	Op           string
+	RecordID     string
+	Kind         string
 	// CausedBy is the seq of the entry that caused this one; CausedByOK is
 	// false where there is none (a direct write). The line carries the key
 	// only when set.
@@ -159,8 +170,13 @@ func Decode(line []byte) (Entry, [32]byte, error) {
 			}
 		case "actor":
 			err = json.Unmarshal(v, &e.Actor)
+		case "onBehalfOf":
+			err = json.Unmarshal(v, &e.OnBehalfOf)
+		case "token":
+			err = json.Unmarshal(v, &e.Token)
 		case "principal":
 			err = json.Unmarshal(v, &e.Principal)
+			e.HasPrincipal = err == nil
 		case "op":
 			err = json.Unmarshal(v, &e.Op)
 		case "recordId":
@@ -228,14 +244,22 @@ func (e Entry) object() (map[string]any, error) {
 		return nil, fmt.Errorf("changelogfile: seq %d: payload: %w", e.Seq, err)
 	}
 	obj := map[string]any{
-		"seq":       e.Seq,
-		"ts":        e.TS.UTC().Format(TSFormat),
-		"actor":     e.Actor,
-		"principal": e.Principal,
-		"op":        e.Op,
-		"recordId":  e.RecordID,
-		"kind":      e.Kind,
-		"payload":   payload,
+		"seq":      e.Seq,
+		"ts":       e.TS.UTC().Format(TSFormat),
+		"actor":    e.Actor,
+		"op":       e.Op,
+		"recordId": e.RecordID,
+		"kind":     e.Kind,
+		"payload":  payload,
+	}
+	if e.OnBehalfOf != "" {
+		obj["onBehalfOf"] = e.OnBehalfOf
+	}
+	if e.Token != "" {
+		obj["token"] = e.Token
+	}
+	if e.HasPrincipal {
+		obj["principal"] = e.Principal
 	}
 	if e.CausedByOK {
 		obj["causedBy"] = e.CausedBy

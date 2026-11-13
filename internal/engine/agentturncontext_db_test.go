@@ -46,7 +46,7 @@ func userMessagesOf(req map[string]any) []map[string]any {
 
 func putTimezoneSetting(t *testing.T, ds *dataset, zone string) error {
 	t.Helper()
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: timezoneSettingID, Properties: map[string]any{"value": zone},
 	})
 	return err
@@ -57,13 +57,13 @@ func TestTurnContextRidesTheUserMessageAndReplaysVerbatim(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	widget := crewPackage + "/widget"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "the <blue> widget"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
 	fake.script("lib", fakeTurn{content: "it is blue"}, fakeTurn{content: "still blue"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/librarian", substrate.ChatInput{
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/librarian", substrate.ChatInput{
 		Message: "what color is this?", Timezone: "Europe/London",
 		Context: []string{vocabulary.RecordPath(widget, fid("w1")), vocabulary.RecordPath(widget, fid("w1"))},
 	}, nil)
@@ -103,7 +103,7 @@ func TestTurnContextRidesTheUserMessageAndReplaysVerbatim(t *testing.T) {
 
 	// A continuation replays the stored block, byte for byte, and the new
 	// turn carries its own.
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/librarian", substrate.ChatInput{
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/librarian", substrate.ChatInput{
 		Thread: res.Thread, Message: "and now?",
 	}, nil); err != nil {
 		t.Fatalf("chat 2: %v", err)
@@ -127,7 +127,7 @@ func TestTurnContextZoneIsTheRequestsThenTheSettingThenUTC(t *testing.T) {
 		t.Helper()
 		fake.script("chat", fakeTurn{content: "ok"})
 		before := len(fake.requestsOf("chat"))
-		if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi", Timezone: zone}, nil); err != nil {
+		if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi", Timezone: zone}, nil); err != nil {
 			return "", err
 		}
 		users := userMessagesOf(fake.requestsOf("chat")[before])
@@ -162,7 +162,7 @@ func TestTurnContextZoneIsTheRequestsThenTheSettingThenUTC(t *testing.T) {
 			t.Fatalf("setting %q: err = %v, want ErrValidation", zone, err)
 		}
 		n := len(fake.requestsOf("chat"))
-		if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi", Timezone: zone}, nil); !errors.Is(err, substrate.ErrValidation) {
+		if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi", Timezone: zone}, nil); !errors.Is(err, substrate.ErrValidation) {
 			t.Fatalf("request %q: err = %v, want ErrValidation", zone, err)
 		}
 		if len(fake.requestsOf("chat")) != n {
@@ -198,7 +198,7 @@ func TestTurnContextRefusesARecordTheAgentDoesNotRead(t *testing.T) {
 		{"not a record path", "librarian", []string{"widget/w1"}, substrate.ErrValidation},
 		{"too many records", "librarian", paths(substrate.MaxChatContextRecords + 1), substrate.ErrValidation},
 	} {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/"+tc.agent, substrate.ChatInput{Message: "look", Context: tc.context}, nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/"+tc.agent, substrate.ChatInput{Message: "look", Context: tc.context}, nil)
 		if !errors.Is(err, tc.want) {
 			t.Fatalf("%s: err = %v, want %v", tc.name, err, tc.want)
 		}
@@ -238,17 +238,17 @@ func TestTheZoneSettingIsHeldToTheIANASpellingWhereAWriteNamesIt(t *testing.T) {
 		t.Fatalf("setting Europe/Athens: %v", err)
 	}
 	// A value an earlier release admitted, folded as it folded it.
-	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, true, func(tx *txn) error {
 		if _, err := tx.fold(foldOp{Kind: foldRecord, Ref: kindSetting, ID: timezoneSettingID, Delta: &rowDelta{
 			Set: map[string]any{"value": "posixrules"},
 		}}); err != nil {
 			return err
 		}
-		return tx.appendChange(substrate.ActorAPI, substrate.OpPatch, timezoneSettingID, kindSetting, nil)
+		return tx.appendChange(substrate.ActorPerson, substrate.OpPatch, timezoneSettingID, kindSetting, nil)
 	}); err != nil {
 		t.Fatalf("fold an earlier release's zone: %v", err)
 	}
-	patched, err := ds.Patch(ctx, substrate.ActorAPI, kindSetting, timezoneSettingID, substrate.PatchInput{
+	patched, err := ds.Patch(ctx, substrate.ActorPerson, kindSetting, timezoneSettingID, substrate.PatchInput{
 		Properties: map[string]any{"description": "where the owner lives"},
 	})
 	if err != nil {

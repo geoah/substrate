@@ -26,6 +26,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/testenv"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
 
@@ -56,6 +57,13 @@ type keptConversion struct {
 // with a step this table does not name.
 var keptConversions = map[int]keptConversion{
 	2: {why: "drops sealedKey from what each line of core/recoverykey sets; the one record those lines fold to is purged by repository migration 8 after the head, which the appended entries explain, so no record a release served changes here"},
+	3: {
+		why: "link_actors (decision 0270) rewrites every spelling of a hand the engine stored into its actor record: " +
+			"a property's manager and an alternative's actor become the id, a package's declaredBy, a blob's createdBy " +
+			"and a call run's caller a link to the record, a run's and a manager row's principal its token, " +
+			"and a package's actors list goes",
+		record: keptLinkActors,
+	},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.
@@ -175,16 +183,20 @@ func TestEveryConversionStepSaysWhatItDoesToAKeptDirectory(t *testing.T) {
 	}
 }
 
-// keptConvertedActor is what the test's conversion respells the actor `api`
-// as.
+// keptPerson is the person's actor record id, the actor the link_actors
+// step gives every write the API made, which the test's conversion respells.
+var keptPerson = vocabulary.ActorID(substrate.ActorPerson)
+
+// keptConvertedActor is what the test's conversion respells the person's
+// actor id as.
 const keptConvertedActor = "api.converted"
 
 // keptRespellAPIActor is a conversion step no release carries: it respells
-// the actor `api` as keptConvertedActor, on the line, in each effect that
+// the person's actor id as keptConvertedActor, on the line, in each effect that
 // names it, and in each manager row a resync re-states, and leaves a line
 // already respelled as it is.
 func keptRespellAPIActor(e *changelogfile.Entry) error {
-	if e.Actor == string(substrate.ActorAPI) {
+	if e.Actor == keptPerson {
 		e.Actor = keptConvertedActor
 	}
 	dec := json.NewDecoder(bytes.NewReader(e.Payload))
@@ -195,7 +207,7 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p["fold"].([]any)
 	respell := func(m map[string]any) {
-		if m["actor"] == string(substrate.ActorAPI) {
+		if m["actor"] == keptPerson {
 			m["actor"] = keptConvertedActor
 		}
 	}
@@ -222,12 +234,12 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 }
 
 // keptRespelledManagers is what keptRespellAPIActor does to a record a
-// release served, written from the step: every property the actor `api`
-// managed is managed by keptConvertedActor, and nothing else moves.
+// release served, written from the step: every property the person's actor
+// id managed is managed by keptConvertedActor, and nothing else moves.
 func keptRespelledManagers(rec map[string]any) map[string]any {
 	meta, _ := rec["propertyMeta"].(map[string]any)
 	for _, row := range meta {
-		if m, ok := row.(map[string]any); ok && m["manager"] == string(substrate.ActorAPI) {
+		if m, ok := row.(map[string]any); ok && m["manager"] == keptPerson {
 			m["manager"] = keptConvertedActor
 		}
 	}
@@ -242,7 +254,7 @@ func TestAKeptDirectoryComparesThroughAConversion(t *testing.T) {
 	dir := filepath.Join(keptRoot, "v0.123.1")
 	chain := maps.Clone(keptConversions)
 	chain[engine.MaxChangelogDialect()+1] = keptConversion{
-		why:    "the actor `api` is respelled on every line, so every property it managed is managed by api.converted",
+		why:    "the person's actor id is respelled on every line, so every property it managed is managed by api.converted",
 		record: keptRespelledManagers,
 	}
 	k := checkKeptDirectory(t, dir, chain, testenv.WithEngineOptions(engine.WithTestConversionStep("respell_the_api_actor", keptRespellAPIActor)))
@@ -373,4 +385,106 @@ func TestKeptMaterialChecksFailOnAChangedCopy(t *testing.T) {
 			t.Fatalf("the import's refusal does not say the sealed store does not open: %v", err)
 		}
 	})
+}
+
+// keptLinkActors is link_actors on a record a release served, written from
+// the step (internal/engine/conversion_0003_link_actors.go, its header's
+// positions). A release named each hand by its spelling, and every spelling
+// a server served is one of the engine's own forms, which the step reads by
+// substrate.CanonicalActor and turns into the id of the hand's actor record
+// (vocabulary.ActorID).
+func keptLinkActors(rec map[string]any) map[string]any {
+	meta, _ := rec["propertyMeta"].(map[string]any)
+	for _, raw := range meta {
+		m, _ := raw.(map[string]any)
+		if m == nil {
+			continue
+		}
+		if v, ok := m["manager"]; ok {
+			m["manager"] = keptActorID(v)
+		}
+		alts, _ := m["alternatives"].([]any)
+		for _, a := range alts {
+			if am, ok := a.(map[string]any); ok {
+				am["actor"] = keptActorID(am["actor"])
+			}
+		}
+	}
+	props, _ := rec["properties"].(map[string]any)
+	if props == nil {
+		return rec
+	}
+	link := func(key string) {
+		if v, ok := props[key]; ok {
+			props[key] = keptActorLink(v)
+		}
+	}
+	switch rec["kind"] {
+	case vocabulary.CoreKind("package"):
+		delete(props, "actors")
+		link("declaredBy")
+	case vocabulary.CoreKind("blob"):
+		link("createdBy")
+	case vocabulary.CoreKind("triggerrun"):
+		link("caller")
+		if principal, ok := props["principal"]; ok {
+			delete(props, "principal")
+			props["token"] = principal
+		}
+	case vocabulary.CoreKind("recordmerge"):
+		if moved, ok := props["moved"].(map[string]any); ok {
+			keptManagerRows(moved["managers"])
+		}
+	case vocabulary.CoreKind("recordsplit"):
+		result, _ := props["result"].(map[string]any)
+		effects, _ := result["fold"].([]any)
+		for _, raw := range effects {
+			eff, _ := raw.(map[string]any)
+			switch {
+			case eff == nil:
+			case eff["kind"] == "manager":
+				keptManagerRows([]any{eff})
+			case eff["kind"] == "resync":
+				if rows, ok := eff["rows"].(map[string]any); ok {
+					keptManagerRows(rows["managers"])
+				}
+			}
+		}
+	}
+	return rec
+}
+
+// keptManagerRows links each manager row's actor and moves its `principal`
+// to `token` where a token stood.
+func keptManagerRows(v any) {
+	rows, _ := v.([]any)
+	for _, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		row["actor"] = keptActorID(row["actor"])
+		if principal, ok := row["principal"]; ok {
+			delete(row, "principal")
+			if s, _ := principal.(string); s != "" {
+				row["token"] = s
+			}
+		}
+	}
+}
+
+func keptActorID(spelled any) any {
+	s, ok := spelled.(string)
+	if !ok || s == "" {
+		return spelled
+	}
+	return vocabulary.ActorID(substrate.CanonicalActor(substrate.Actor(s)))
+}
+
+func keptActorLink(spelled any) any {
+	id, ok := keptActorID(spelled).(string)
+	if !ok || id == "" {
+		return spelled
+	}
+	return map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), id)}
 }

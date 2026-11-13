@@ -172,21 +172,26 @@ label; if it is a blob you only fetch, make it an annotation.
 
 A key is `<namespace>/<name>`, and both halves are lowercase: a letter first,
 then letters, digits, `_`, `.` and `-`, with `:` and `*` also allowed in the
-namespace so a machine hand's own actor name fits
+namespace so a machine hand's own namespace fits
 (`function:web.example.com:harvest/synced`). A key is not a property name, so
 camelCase is refused — `mneme/feedbackNote` is `mneme/feedbacknote` or
 `mneme/feedback-note` — and the refusal names the half and the character at
 fault rather than the shape.
 
-Which namespace a writer may use depends on its **actor**. A human hand — the
-console, `substratectl`, any request under a repository token, which is actor
-`api` — may write any well-formed key, and `owner/…` is the convention for the
-human's own opinions rather than a rule the server holds. Every other actor is
-bound to its own name as the namespace: a function writes under
+Which namespace a writer may use depends on its **actor**. The repository's
+person — any request under a full-access token, the console and
+`substratectl` included — and the substrate itself may write any well-formed
+key, and `owner/…` is the convention for the person's own opinions rather
+than a rule the server holds. Every other actor is bound to a namespace
+spelled from what it is: a function writes under
 `function:<authority>:<package>:<name>/…`, an agent under
-`agent:<authority>:<package>:<name>/…` and a bundle under
-`bundle:<authority>:<package>/…`, so one writer's state cannot be overwritten
-by another's, and a key outside it is refused as forbidden.
+`agent:<authority>:<package>:<name>/…`, a package's own hand under
+`bundle:<authority>:<package>/…` and an app under `app:` and its publisher
+(`app:example.org/…`, `app:local/…`), so one writer's state cannot be
+overwritten by another's, and a key outside it is refused as forbidden. The
+spelling names a key's namespace and nothing else: history, the change feed
+and every stored attribution link the writer's
+[actor record](api.md#actors) by its id.
 
 ## Kinds and references
 

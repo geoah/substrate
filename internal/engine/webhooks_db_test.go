@@ -408,8 +408,8 @@ func TestWebhookDelivery(t *testing.T) {
 		if manifest.Properties["name"] != "recording.m4a" || manifest.Properties["mediaType"] != "audio/mp4" {
 			t.Fatalf("manifest = %v", manifest.Properties)
 		}
-		if manifest.Properties["createdBy"] != "substrate.webhook" {
-			t.Fatalf("createdBy = %v, want the door's actor", manifest.Properties["createdBy"])
+		if ref, _ := manifest.Properties["createdBy"].(map[string]any); ref[vocabulary.ReferenceValueKey] != vocabulary.ActorRef(vocabulary.ActorID(substrate.ActorSystem))["ref"] {
+			t.Fatalf("createdBy = %v, want the system's actor, the door's", manifest.Properties["createdBy"])
 		}
 	})
 

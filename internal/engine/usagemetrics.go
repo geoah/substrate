@@ -48,7 +48,10 @@ func (ds *dataset) countChanges(pending []pendingEntry) {
 	id := ds.Repository().Authority
 	repo := metrics.Repository(id)
 	for k, n := range sums {
-		metrics.Changes.WithLabelValues(repo, metrics.Name(id, k.kind), k.op, metrics.ActorClass(k.actor)).Add(n)
+		// The entry links its actor record; this process derived the id, so
+		// the type is read without a query.
+		key, _ := vocabulary.ActorKeyOf(k.actor)
+		metrics.Changes.WithLabelValues(repo, metrics.Name(id, k.kind), k.op, metrics.ActorClass(substrate.ActorTypeOf(key))).Add(n)
 	}
 }
 

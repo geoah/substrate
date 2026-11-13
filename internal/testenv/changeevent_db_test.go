@@ -217,7 +217,10 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 	}
 	mustDecode(t, e, http.MethodGet, "/api/v1/changes?first=1000", nil, &all)
 	noLedger("history page", all.Changes)
-	status, raw = e.Do(http.MethodGet, "/api/v1/changes?from=0", nil)
+	// The forward read is one batch from seq 0, and a creation's history
+	// alone is close to a batch, so it is narrowed to triggers: the kind the
+	// ledger entries ride, and the trigger's own write.
+	status, raw = e.Do(http.MethodGet, "/api/v1/changes?from=0&kinds=substrate.reamde.dev/core/trigger", nil)
 	if status != http.StatusOK {
 		t.Fatalf("forward read: %d %s", status, raw)
 	}

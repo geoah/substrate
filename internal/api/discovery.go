@@ -82,10 +82,10 @@ type grammarInfo struct {
 	Collection string `json:"collection"`
 	// RecordPath is a record's URL under the version prefix: its reference.
 	RecordPath string `json:"recordPath"`
-	// Actors is the closed actor domain. The first three are
-	// the doors a request may name in X-Substrate-Actor; the rest are the
-	// substrate's own writing hands and are refused on that header.
-	Actors []string `json:"actors"`
+	// ActorTypes are the types of `substrate.reamde.dev/core/actor` record
+	// a write may link as its actor (decision 0270). No request names one: a
+	// person's token writes as the person, an app's as its app.
+	ActorTypes []string `json:"actorTypes"`
 }
 
 // surfacesInfo names each request surface with its endpoint and its
@@ -174,16 +174,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Record:     "<authority>/<package>/<kind>/<id>",
 			Collection: "/api/" + APIVersion + recordsRoute,
 			RecordPath: "/api/" + APIVersion + "/{authority}/{package}/{kind}/{id}",
-			Actors: []string{
-				string(substrate.ActorAPI), string(substrate.ActorConsole), string(substrate.ActorCLI),
-				substrate.BundleActorPrefix + "<authority>:<package>",
-				substrate.FunctionActorPrefix + "<authority>:<package>:<name>",
-				substrate.AgentActorPrefix + "<authority>:<package>:<name>",
-				substrate.AppActorPrefix + "<authority>",
-				substrate.AppActorPrefix + "local",
-				substrate.AppActorPrefix + "<host>",
-				string(substrate.ActorSystem),
-			},
+			ActorTypes: substrate.ActorTypes,
 		},
 		Endpoints: endpointsInfo{
 			Register: "/register", Login: "/login", Tokens: "/tokens",

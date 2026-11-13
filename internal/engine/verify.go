@@ -2,7 +2,10 @@ package engine
 
 // The verification walk: the changelog table row by row (its seqs, its
 // transaction frames, and with VerifyOptions.Recanonicalize every row's
-// checksum recomputed from its stored columns); the archive, where the
+// checksum recomputed from its stored columns, in the frame of the line it
+// was written as, since a verify opened read-only runs no conversion and may
+// meet a history the boot has not converted, which is a finding of its own);
+// the archive, where the
 // process has one, its manifest and every line of its pieces held to the
 // table's stamped checksums; the sealed rows against the records that should
 // hold their refs and, under the credential key, opened; and every stored
@@ -163,6 +166,24 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 	if incomplete {
 		found(fmt.Sprintf("import: the import of the repository's history has not completed (marked at head %d): the fold is not the history's until the server's next boot finishes it", markedHead))
 	}
+	// A history below this binary's dialect is one the boot has not
+	// converted yet (an upgrade stopped before the conversion committed, or a
+	// repository set aside at it). Its rows are whole in their own frame, and
+	// the fold is not this binary's reading of them until the boot converts.
+	stamped, err := readChangelogDialect(ctx, tx)
+	if err != nil {
+		return report, err
+	}
+	if pending := pendingConversions(s.conversion, stamped); len(pending) > 0 {
+		head, err := tableChangelogHead(ctx, tx)
+		if err != nil {
+			return report, err
+		}
+		if head > 0 {
+			found(fmt.Sprintf("conversion: the history is in changelog dialect %d, and this binary's conversion to %d (%s) has not run: the server's next boot converts it before the repository opens",
+				max(stamped, 1), pending[len(pending)-1].Dialect, conversionNames(pending)))
+		}
+	}
 
 	// The table, row by row: the seq sequence, the transaction frame, and
 	// under Recanonicalize each row's checksum recomputed from its columns.
@@ -216,13 +237,18 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 			}
 			report.HeadHash = hex.EncodeToString(row.hash)
 			if opts.Recanonicalize {
-				_, want, err := changelogfile.Encode(row.entry.fileEntry())
-				if err != nil {
+				if _, _, err := changelogfile.Encode(row.entry.fileEntry()); err != nil {
 					found(fmt.Sprintf("seq %d: payload does not canonicalize: %v", row.entry.Seq, err))
 					continue
 				}
-				if want != [32]byte(row.hash) {
+				// A row is held to the frame its checksum was computed in:
+				// a history the boot has not converted yet holds whole rows
+				// in an earlier frame (framedLine).
+				switch _, frame := framedLine(row); {
+				case frame == frameNone:
 					found(fmt.Sprintf("seq %d: checksum mismatch, the stored row is not what was stamped", row.entry.Seq))
+				case frame == framePrincipal && stamped >= tokenFrameDialect:
+					found(fmt.Sprintf("seq %d: the row is in the frame of changelog dialect %d or earlier, and the history is stamped %d: a conversion passed it over", row.entry.Seq, tokenFrameDialect-1, stamped))
 				}
 			}
 		}
@@ -748,7 +774,7 @@ func scanChecksumPage(ctx context.Context, db dbx, after int64, limit int) ([]ch
 // queryChecksumRows reads the changelog rows tail selects, each as its line.
 func queryChecksumRows(ctx context.Context, db dbx, tail string, args ...any) ([]checksumRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, txn, hash FROM changelog `+tail, args...)
+		SELECT seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload::text, caused_by, txn, hash FROM changelog `+tail, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +784,7 @@ func queryChecksumRows(ctx context.Context, db dbx, tail string, args ...any) ([
 		var r checksumRow
 		var ts time.Time
 		var causedBy, txn sql.NullInt64
-		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.Principal, &r.entry.Op, &r.entry.RecordID,
+		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.OnBehalfOf, &r.entry.Token, &r.entry.Op, &r.entry.RecordID,
 			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &txn, &r.hash); err != nil {
 			return nil, err
 		}

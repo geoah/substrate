@@ -32,7 +32,6 @@ const (
 func stallConnector() enginetest.Manifest {
 	return enginetest.Manifest{Name: "logs", Authority: stallPackage, Manifests: []map[string]any{
 		vocabulary.PackageManifest(stallPackage, 0),
-		vocabulary.ActorManifest(stallPackage, vocabulary.PackageActor(stallPackage)),
 		vocabulary.FunctionManifest(stallPackage, "stall", map[string]any{
 			"description": "logs a line, then sleeps past its timeout",
 			"runtime":     vocabulary.RuntimePython,
@@ -136,7 +135,7 @@ func TestAFunctionKilledAtItsTimeoutKeepsItsLogLines(t *testing.T) {
 	// failure under the same id.
 	expectKilled := func(t *testing.T, fn string) {
 		t.Helper()
-		_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{})
+		_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fn, map[string]any{})
 		if err == nil || !strings.Contains(err.Error(), "invocation exceeded 2s") {
 			t.Fatalf("call %s: err = %v, want the stall's timeout", fn, err)
 		}

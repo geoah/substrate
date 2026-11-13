@@ -27,7 +27,7 @@ func TestEveryPathToAPolicyIsHeldToItsHand(t *testing.T) {
 	props := func(action string) map[string]any {
 		return map[string]any{"selector": map[string]any{"kinds": []any{"substrate.reamde.dev/core/contact"}}, "action": action}
 	}
-	asOwner := func(fn func(tx *txn) error) error { return ds.inTx(ctx, substrate.ActorAPI, false, fn) }
+	asOwner := func(fn func(tx *txn) error) error { return ds.inTx(ctx, substrate.ActorPerson, false, fn) }
 	write := func(tx *txn, id, action string) error {
 		_, err := tx.put(substrate.PutInput{Kind: policy, ID: id, Properties: props(action)})
 		return err

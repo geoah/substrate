@@ -74,6 +74,13 @@ func (l *agentLoop) titleAfterFirstTurn(status, reply string) {
 		return
 	}
 	l.ds.spawn("title thread", func(ctx context.Context) {
+		// The title is the thread's first turn's, whose first record is the
+		// thread this run opened: it acts for whom that line names.
+		ctx, err := l.ds.actingFor(ctx, typeThread, l.threadID)
+		if err != nil {
+			l.ds.svc.log.Warn("substrate: thread title skipped", "thread", l.threadID, "error", err)
+			return
+		}
 		l.titleThread(ctx, reply)
 	})
 }
@@ -206,7 +213,7 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usa
 			if err != nil {
 				return err
 			}
-			if m, ok := managers[propThreadSubject]; ok && m.actor == string(l.actor) {
+			if m, ok := managers[propThreadSubject]; ok && m.actor == actorID(l.actor) {
 				props[propThreadSubject] = title
 			}
 		}

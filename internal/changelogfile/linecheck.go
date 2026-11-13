@@ -24,22 +24,26 @@ import (
 // prefixed hex digest, a timestamp with no quote in it and an integer, so a
 // reader finds them from the end of the line without parsing what is before.
 var (
-	seqKey = []byte(`"seq":`)
-	sumKey = []byte(`"sum":"` + sumPrefix)
-	tsKey  = []byte(`"ts":`)
-	txnKey = []byte(`,"txn":`)
+	seqKey   = []byte(`"seq":`)
+	sumKey   = []byte(`"sum":"` + sumPrefix)
+	tokenKey = []byte(`"token":`)
+	tsKey    = []byte(`"ts":`)
+	txnKey   = []byte(`,"txn":`)
 )
 
 // The keys a canonical line opens with, in the order they sort, up to the
-// tail; `causedBy` is there only when the entry has a cause.
+// tail; `causedBy` is there only when the entry has a cause, `onBehalfOf`
+// only when the actor acted for another, and `principal` only on a line from
+// before the actor links (changelog dialect 1), which the conversion rewrites.
 var (
-	actorKey     = []byte(`{"actor":`)
-	causedByKey  = []byte(`,"causedBy":`)
-	kindKey      = []byte(`,"kind":`)
-	opKey        = []byte(`,"op":`)
-	payloadKey   = []byte(`,"payload":`)
-	principalKey = []byte(`,"principal":`)
-	recordIDKey  = []byte(`,"recordId":`)
+	actorKey      = []byte(`{"actor":`)
+	causedByKey   = []byte(`,"causedBy":`)
+	kindKey       = []byte(`,"kind":`)
+	onBehalfOfKey = []byte(`,"onBehalfOf":`)
+	opKey         = []byte(`,"op":`)
+	payloadKey    = []byte(`,"payload":`)
+	principalKey  = []byte(`,"principal":`)
+	recordIDKey   = []byte(`,"recordId":`)
 )
 
 // lineTail is what parseTail read off a line.
@@ -49,9 +53,9 @@ type lineTail struct {
 	// seqAt is the comma before `"seq"`: line[:seqAt] is every key before
 	// the tail (parseHead).
 	seqAt int
-	// sumAt and tsAt bound the `"sum":"sha256:<hex>",` pair: line[sumAt:tsAt]
-	// is what Encode inserted after hashing the rest.
-	sumAt, tsAt int
+	// sumAt and sumEnd bound the `"sum":"sha256:<hex>",` pair:
+	// line[sumAt:sumEnd] is what Encode inserted after hashing the rest.
+	sumAt, sumEnd int
 	// ts is the timestamp's text, between its quotes.
 	ts []byte
 }
@@ -81,12 +85,21 @@ func parseTail(line []byte) (lineTail, bool) {
 	if open < 0 || tsAt < 1 || !bytes.Equal(line[tsAt:open], tsKey) || line[tsAt-1] != ',' {
 		return t, false
 	}
-	// `,"sum":"sha256:<64 hex>"` before the comma that precedes `"ts"`.
-	sumAt := tsAt - 2 - 2*sha256.Size - len(sumKey)
-	if sumAt < 1 || line[tsAt-2] != '"' || line[sumAt-1] != ',' || !bytes.Equal(line[sumAt:sumAt+len(sumKey)], sumKey) {
+	// `,"token":"<id>"` between `"sum"` and `"ts"` when a token stood behind
+	// the write: an id, a string with no quote in it.
+	next := tsAt
+	if line[tsAt-2] == '"' {
+		open := bytes.LastIndexByte(line[:tsAt-2], '"')
+		if at := open - len(tokenKey); open > 0 && at > 1 && bytes.Equal(line[at:open], tokenKey) && line[at-1] == ',' {
+			next = at
+		}
+	}
+	// `,"sum":"sha256:<64 hex>"` before the comma that precedes the next key.
+	sumAt := next - 2 - 2*sha256.Size - len(sumKey)
+	if sumAt < 1 || line[next-2] != '"' || line[sumAt-1] != ',' || !bytes.Equal(line[sumAt:sumAt+len(sumKey)], sumKey) {
 		return t, false
 	}
-	if _, err := hex.Decode(t.sum[:], line[sumAt+len(sumKey):tsAt-2]); err != nil {
+	if _, err := hex.Decode(t.sum[:], line[sumAt+len(sumKey):next-2]); err != nil {
 		return t, false
 	}
 	// `,"seq":N` before the comma that precedes `"sum"`.
@@ -95,15 +108,16 @@ func parseTail(line []byte) (lineTail, bool) {
 	if !ok || j < len(seqKey)+1 || !bytes.Equal(line[j-len(seqKey):j], seqKey) || line[j-len(seqKey)-1] != ',' {
 		return t, false
 	}
-	t.seq, t.txn, t.seqAt, t.sumAt, t.tsAt = seq, txn, j-len(seqKey)-1, sumAt, tsAt
+	t.seq, t.txn, t.seqAt, t.sumAt, t.sumEnd = seq, txn, j-len(seqKey)-1, sumAt, next
 	t.ts = line[open+1 : comma-1]
 	return t, true
 }
 
 // parseHead holds line[:end], everything before the tail, to the keys Encode
-// writes there and in its order: `actor`, `causedBy` when set, `kind`, `op`,
-// `payload`, `principal` and `recordId`, with a string, an integer, two
-// strings, one JSON value and two strings. A key Decode does not know, a
+// writes there and in its order: `actor`, `causedBy` when set, `kind`,
+// `onBehalfOf` when set, `op`, `payload`, `principal` on a dialect-1 line and
+// `recordId`, with a string, an integer, three strings, one JSON value and
+// two strings. A key Decode does not know, a
 // repeated one or a missing one fails it, and the caller decodes the line:
 // a line a newer writer added a key to is refused as Decode refuses it, even
 // though its bytes hash to its sum.
@@ -119,12 +133,16 @@ func parseHead(line []byte, end int) bool {
 	}
 	i, ok = expect(line, i, kindKey, ok)
 	i, ok = skipString(line, i, ok)
+	if ok && bytes.HasPrefix(line[i:], onBehalfOfKey) {
+		i, ok = skipString(line, i+len(onBehalfOfKey), ok)
+	}
 	i, ok = expect(line, i, opKey, ok)
 	i, ok = skipString(line, i, ok)
 	i, ok = expect(line, i, payloadKey, ok)
 	i, ok = skipValue(line, i, ok)
-	i, ok = expect(line, i, principalKey, ok)
-	i, ok = skipString(line, i, ok)
+	if ok && bytes.HasPrefix(line[i:], principalKey) {
+		i, ok = skipString(line, i+len(principalKey), ok)
+	}
 	i, ok = expect(line, i, recordIDKey, ok)
 	i, ok = skipString(line, i, ok)
 	return ok && i == end
@@ -273,7 +291,7 @@ func (c *lineChecker) check(line []byte) (seq, txn int64, sum [32]byte, err erro
 	if t, ok := parseTail(line); ok && parseHead(line, t.seqAt) && checkTxn(t.seq, t.txn) == nil && validTS(t.ts) {
 		c.h.Reset()
 		c.h.Write(line[:t.sumAt])
-		c.h.Write(line[t.tsAt:])
+		c.h.Write(line[t.sumEnd:])
 		c.out = c.h.Sum(c.out[:0])
 		if bytes.Equal(c.out, t.sum[:]) {
 			return t.seq, t.txn, t.sum, nil

@@ -269,9 +269,9 @@ func TestEveryDeclarationKindAdmitsEveryOrigin(t *testing.T) {
 	origins := []string{vocabulary.SourceBuiltin, vocabulary.SourcePublished, vocabulary.SourceInstalled}
 	// The declaration kinds that carry an origin at all. A function and an
 	// agent do not: `source` on a function is its BODY, and the projection
-	// stamps neither.
+	// stamps neither. An actor is no declaration (decision 0270).
 	carriers := []string{
-		vocabulary.DocAuthority, vocabulary.DocPackage, vocabulary.DocActor, vocabulary.DocKind,
+		vocabulary.DocAuthority, vocabulary.DocPackage, vocabulary.DocKind,
 		vocabulary.DocTrait, vocabulary.DocPropertyType, vocabulary.DocRecordMapping,
 	}
 	for _, short := range carriers {

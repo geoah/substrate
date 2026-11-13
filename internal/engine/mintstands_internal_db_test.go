@@ -28,7 +28,7 @@ func TestAMintStandsOnTheTokenThatAskedForIt(t *testing.T) {
 	if _, err := mint(onAsker, "while it stands"); err != nil {
 		t.Fatalf("a mint on a standing token: %v", err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, asker.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, asker.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	if _, err := mint(onAsker, "after the revoke"); !errors.Is(err, substrate.ErrAuth) {

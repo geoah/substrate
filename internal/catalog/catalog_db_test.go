@@ -22,6 +22,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // credKey is a conforming credential key (base64 of 32 random bytes, ADR 0024),
@@ -54,7 +55,7 @@ var rlRequires = []string{"samples.substrate.reamde.dev/people", "samples.substr
 func importVocabulary(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, _, err := c.Install(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Install(context.Background(), substrate.ActorPerson, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
 		}
 	}
@@ -124,7 +125,7 @@ func TestShippedBundlesInstall(t *testing.T) {
 			}
 			install(rb)
 		}
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, b.ID, ds); err != nil {
 			t.Fatalf("install %s: %v", b.ID, err)
 		}
 	}
@@ -138,7 +139,7 @@ func TestShippedBundlesInstall(t *testing.T) {
 		t.Fatalf("head: %v", err)
 	}
 	for _, b := range c.Bundles() {
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, b.ID, ds); err != nil {
 			t.Fatalf("re-install %s: %v", b.ID, err)
 		}
 		if after, err := ds.Head(ctx); err != nil {
@@ -169,7 +170,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 
 	// Missing vocabulary is refused BEFORE anything is touched, naming the
 	// authority to import first — the whole point of `requires:`.
-	_, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds)
+	_, _, err := c.Install(ctx, substrate.ActorPerson, rlBundleID, ds)
 	if err == nil {
 		t.Fatal("installed a closure whose required vocabulary is absent")
 	}
@@ -178,7 +179,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	}
 	importVocabulary(t, c, ds, rlRequires...)
 
-	b, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds)
+	b, _, err := c.Install(ctx, substrate.ActorPerson, rlBundleID, ds)
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -230,7 +231,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	// package (records 0025 and 0047), not to the owner who asked for them and not to the catalog,
 	// which is a source and never an authority.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{
-		Actors: []substrate.Actor{substrate.BundleActor(rlBundleAuthority, rlBundlePackage)},
+		Actors: []string{vocabulary.ActorID(substrate.BundleActor(rlBundleAuthority, rlBundlePackage))},
 		Kinds:  []string{"substrate.reamde.dev/core/kind"},
 	}, 100)
 	if err != nil {
@@ -246,7 +247,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	// it is taken (issue #643).
 	before := closureVersions(t, ds, b)
 	for i := 2; i <= 3; i++ {
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, rlBundleID, ds); err != nil {
 			t.Fatalf("install %d: %v", i, err)
 		}
 		assertVersionsKept(t, fmt.Sprintf("install %d", i), before, closureVersions(t, ds, b))
@@ -328,7 +329,7 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 		t.Fatalf("load catalog: %v", err)
 	}
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, rlBundleID, ds); err == nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, rlBundleID, ds); err == nil {
 		t.Fatal("install with a broken trigger succeeded, want an admission error")
 	}
 
@@ -412,7 +413,7 @@ func TestReinstallingAnUnchangedProviderWritesNothing(t *testing.T) {
 	if !ok {
 		t.Fatalf("the shipped catalog no longer carries %s", id)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 		t.Fatalf("install 1: %v", err)
 	}
 	first := closureVersions(t, ds, b)
@@ -424,7 +425,7 @@ func TestReinstallingAnUnchangedProviderWritesNothing(t *testing.T) {
 		t.Fatalf("head: %v", err)
 	}
 	for i := 2; i <= 3; i++ {
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, id, ds); err != nil {
 			t.Fatalf("install %d: %v", i, err)
 		}
 		assertVersionsKept(t, fmt.Sprintf("install %d", i), first, closureVersions(t, ds, b))

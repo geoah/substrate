@@ -65,7 +65,7 @@ func TestTheTailReopensAfterACommitThatLandsLate(t *testing.T) {
 	if _, err := late.ExecContext(ctx, `
 		INSERT INTO changelog (seq, actor, op, record_id, kind, payload, principal)
 		VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, '')`,
-		cursor+1, string(substrate.ActorAPI), string(substrate.OpPut), fid("late"), raceWidget); err != nil {
+		cursor+1, string(substrate.ActorPerson), string(substrate.OpPut), fid("late"), raceWidget); err != nil {
 		t.Fatalf("write the late row: %v", err)
 	}
 	// Its client was answered in doubt: what inTxOn runs then.

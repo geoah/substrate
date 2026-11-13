@@ -60,11 +60,10 @@ func createUnitsDataset(t *testing.T, svc substrate.Service, repo string) *datas
 	putConversion(t, ds, "lb-g", "lb", "g", map[string]any{"factor": "453.59237"})
 	putConversion(t, ds, "g-kg", "g", "kg", map[string]any{"factor": "0.001"})
 	quantity := map[string]any{"type": "quantity"}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "holds", Authority: holdsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(holdsPackage, 0),
-			vocabulary.ActorManifest(holdsPackage, vocabulary.PackageActor(holdsPackage)),
 			vocabulary.KindManifest(holdsPackage, map[string]any{"singular": "hold"}, map[string]any{
 				"properties": map[string]any{
 					"weight":  quantity,
@@ -87,7 +86,7 @@ func createUnitsDataset(t *testing.T, svc substrate.Service, repo string) *datas
 func unitRef(id string) map[string]any { return map[string]any{"ref": vocabulary.KindUnit + "/" + id} }
 
 func putUnitErr(ds *dataset, id string, props map[string]any) error {
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindUnit, ID: id, Properties: props})
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindUnit, ID: id, Properties: props})
 	return err
 }
 
@@ -107,7 +106,7 @@ func conversionProps(from, to string, form map[string]any) map[string]any {
 }
 
 func putConversionErr(ds *dataset, id, from, to string, form map[string]any) error {
-	_, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindConversion, ID: id, Properties: conversionProps(from, to, form),
 	})
 	return err
@@ -122,13 +121,13 @@ func putConversion(t *testing.T, ds *dataset, id, from, to string, form map[stri
 
 func putHold(t *testing.T, ds *dataset, id string, props map[string]any) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: holdKind, ID: id, Properties: props}); err != nil {
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: holdKind, ID: id, Properties: props}); err != nil {
 		t.Fatalf("put hold %s: %v", id, err)
 	}
 }
 
 func deleteRecord(ds *dataset, kind, id string, purge bool) error {
-	_, err := ds.Delete(context.Background(), substrate.ActorAPI, kind, id, substrate.DeleteInput{Purge: purge})
+	_, err := ds.Delete(context.Background(), substrate.ActorPerson, kind, id, substrate.DeleteInput{Purge: purge})
 	return err
 }
 
@@ -211,7 +210,7 @@ func TestConversionWrittenBeforeItsUnitsIsJudgedAtCommit(t *testing.T) {
 	t.Parallel()
 	ds := openUnitsDataset(t)
 	ctx := context.Background()
-	err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		for _, in := range []substrate.PutInput{
 			{Kind: vocabulary.KindConversion, ID: "cup-mL", Properties: conversionProps("cup", "mL", map[string]any{"factor": "236.5882365"})},
 			{Kind: vocabulary.KindUnit, ID: "cup", Properties: map[string]any{"name": "cup", "code": "[cup_us]"}},
@@ -279,7 +278,7 @@ func TestRolledBackGraphIsNeverPublished(t *testing.T) {
 		t.Fatal(err)
 	}
 	errRollBack := errors.New("roll back")
-	err = ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	err = ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		if _, err := tx.put(substrate.PutInput{
 			Kind: vocabulary.KindConversion, ID: "lb-g",
 			Properties: conversionProps("lb", "g", map[string]any{"factor": "500"}),
@@ -390,7 +389,7 @@ func TestDeletingAUsedUnitIsRefused(t *testing.T) {
 		{"a declaration's units", "km", "the declaration of " + holdKind + " span"},
 		{"a tombstone", "mg", holdKind},
 	} {
-		err := ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
+		err := ds.inTx(context.Background(), substrate.ActorPerson, false, func(tx *txn) error {
 			for _, ref := range []eref{{vocabulary.KindConversion, "lb-g"}, {vocabulary.KindConversion, "g-kg"}, {vocabulary.KindUnit, c.unit}} {
 				if c.unit != "g" && ref.Kind == vocabulary.KindConversion {
 					continue
@@ -429,20 +428,20 @@ func TestATraceAndAMetricUseTheirUnit(t *testing.T) {
 	putConversion(t, ds, "degX-K", "degX", "K", map[string]any{"factor": "2", "offset": "100"})
 	ctx := context.Background()
 	for id, unit := range map[string]string{"test_mass": "lb", "test_temperature": "K"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: fid(id), Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: metric, ID: fid(id), Properties: map[string]any{
 			"name": id, "unit": unitRef(unit), "form": "gauge",
 		}}); err != nil {
 			t.Fatalf("put the metric %s: %v", id, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: trace, ID: fid("t1"), Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: trace, ID: fid("t1"), Properties: map[string]any{
 		"metric": map[string]any{"ref": metric + "/" + fid("test_temperature")}, "form": "gauge", "unit": "[degX]",
 		"at": "2026-10-07T06:00:00Z", "endsAt": "2026-10-07T07:00:00Z", "utcOffset": 0,
 		"offsets": []any{0, 60000}, "values": []any{"20", "21"}, "revision": 1,
 	}}); err != nil {
 		t.Fatalf("put the trace: %v", err)
 	}
-	err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		if _, err := tx.softDelete(eref{vocabulary.KindConversion, "degX-K"}); err != nil {
 			return err
 		}
@@ -450,7 +449,7 @@ func TestATraceAndAMetricUseTheirUnit(t *testing.T) {
 		return err
 	})
 	wantConflict(t, "a trace's unit", err, "a stored value of "+trace)
-	err = ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	err = ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		if _, err := tx.softDelete(eref{vocabulary.KindConversion, "lb-g"}); err != nil {
 			return err
 		}
@@ -474,7 +473,7 @@ func TestDisconnectingUsedUnitsIsRefused(t *testing.T) {
 	putHold(t, ds, fid("kilos"), map[string]any{"weight": qty("70", "kg")})
 
 	wantConflict(t, "a deleted conversion", deleteRecord(ds, vocabulary.KindConversion, "lb-g", false), "leaves")
-	wantConflict(t, "a deleted intermediate unit", ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	wantConflict(t, "a deleted intermediate unit", ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		for _, ref := range []eref{{vocabulary.KindConversion, "lb-g"}, {vocabulary.KindConversion, "g-kg"}, {vocabulary.KindUnit, "g"}} {
 			if _, err := tx.softDelete(ref); err != nil {
 				return err
@@ -483,12 +482,12 @@ func TestDisconnectingUsedUnitsIsRefused(t *testing.T) {
 		return nil
 	}), "leaves")
 	wantConflict(t, "a retarget", putConversionErr(ds, "lb-g", "lb", "oz", map[string]any{"factor": "16"}), "leaves")
-	_, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-g", substrate.PatchInput{Properties: map[string]any{
+	_, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-g", substrate.PatchInput{Properties: map[string]any{
 		"factor": nil, "expr": "value * 453.59237", "inverse": "value / 453.59237",
 	}})
 	wantConflict(t, "a linear form replaced by an expression", err, "leaves")
 
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		if _, err := tx.softDelete(eref{vocabulary.KindConversion, "lb-g"}); err != nil {
 			return err
 		}
@@ -651,7 +650,7 @@ func TestANormalizedSpellingIsAUse(t *testing.T) {
 		t.Fatalf("tombstone the hold: %v", err)
 	}
 	deleteUG := func() error {
-		return ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+		return ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 			for _, ref := range []eref{{vocabulary.KindConversion, "ug-g"}, {vocabulary.KindUnit, "ug"}} {
 				if _, err := tx.softDelete(ref); err != nil {
 					return err

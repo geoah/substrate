@@ -569,7 +569,9 @@ func (s *scopedDataset) heldRow(ctx context.Context, c substrate.Change) (substr
 	if err != nil || !show {
 		return substrate.Change{}, false, err
 	}
-	row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
+	// The token is the owner's to read: an app's grant would learn other
+	// apps' token ids from it.
+	row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, OnBehalfOf: c.OnBehalfOf, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
 	for _, a := range c.Affected {
 		show, err := s.recordVisible(ctx, a.Kind, a.ID)
 		if err != nil {

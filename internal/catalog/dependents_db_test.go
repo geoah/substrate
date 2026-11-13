@@ -70,7 +70,7 @@ func TestADependentPackageIsNotCheckedWhenItsRequirementChanges(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := c.Install(context.Background(), substrate.ActorAPI, journal, r.ds); err != nil {
+		if _, _, err := c.Install(context.Background(), substrate.ActorPerson, journal, r.ds); err != nil {
 			t.Fatalf("install journal, and base with it: %v", err)
 		}
 		return r, c, release
@@ -93,7 +93,7 @@ func TestADependentPackageIsNotCheckedWhenItsRequirementChanges(t *testing.T) {
 			t.Fatal("journal is quarantined before anything changed")
 		}
 		release(2, false)
-		_, _, err := c.Install(context.Background(), substrate.ActorAPI, base, r.ds)
+		_, _, err := c.Install(context.Background(), substrate.ActorPerson, base, r.ds)
 		if err == nil || !strings.Contains(err.Error(), base+"/item") {
 			t.Fatalf("installing the version that drops item = %v, want it refused naming the kind", err)
 		}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authorize"
@@ -38,22 +37,15 @@ func onMCPDoor(ctx context.Context) bool {
 	return on
 }
 
-// actorHeader names the door the caller writes as. A full-access token
-// carries no actor set, so the header is checked against one rule only: the
-// substrate's own writing hands are refused (substrate.ReservedActor,
-// authenticate below). An app's token ignores it and writes as its derived
-// actor (appActorOf): `app:<authority>` for a verified publisher, `app:local`
-// for a loopback approval, `app:<host>` otherwise, or `api` when it names no
-// client id.
-const actorHeader = "X-Substrate-Actor"
-
-// withRequestAuth binds the request's authenticated write context. The actor
-// is what the caller ASSERTED; the principal beside it is the token id this
-// door RESOLVED, and the engine stamps that on every changelog entry the
-// request appends, so attribution survives the caller's choice of actor name.
+// withRequestAuth binds the request's authenticated write context: the actor
+// the token writes as, derived from the token and never named by the request,
+// the token id the engine stamps on every changelog entry the request
+// appends, and the person the request acts for, which a function or an agent
+// it starts records as its `onBehalfOf` (decision 0270).
 func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo, actor substrate.Actor) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
 	ctx = substrate.WithPrincipal(ctx, tok.ID)
+	ctx = substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
 	return context.WithValue(ctx, ctxKeyActor, actor)
 }
 
@@ -83,17 +75,12 @@ func bearerSecret(r *http.Request) string {
 // holding it is the repository the request runs in. A token an app received
 // gets the scoped dataset instead (decision 0194).
 //
-// The actor is ATTRIBUTION, not authorization: the caller names which door it
-// came through (`X-Substrate-Actor` — the console sends `console`, substratectl sends
-// `substratectl`), and a request that names nothing is `api`, which is exactly what
-// the substrate knows about it. The refusals are the substrate's own writing
-// hands — `substrate`, `substrate.oauth`, the `bundle:` / `function:` /
-// `agent:` paths and the retired `connector:` spelling of the first of them —
-// decided by actor-name equality at write time, so a
-// request allowed to claim one could forge a credential ref, a connected
-// account's address, or a SHIPPED kind declaration (the authority chokepoint,
-// engine/seed.go). This header is the only place a request names an actor, so
-// it is the only place that has to say no.
+// The actor is derived from the token alone: a full-access token writes as
+// the person, an app's as its app (decision 0270). No request names one, so
+// none can claim the substrate's own writing hands, which are decided at
+// write time and could forge a credential ref, a connected account's address
+// or a shipped kind declaration (the authority chokepoint, engine/seed.go).
+// Which client made a write is on its token record.
 // On a refusal ctx is nil and status, code and msg are the answer; cause is
 // set on a 503 alone, the service's error behind it, which is logged and never
 // shown.
@@ -148,7 +135,7 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 				"an assistant's token works at " + h.issuerOf(r) + mcpPath + " alone", nil
 		}
 		actor := appActorOf(tok)
-		if actor != substrate.ActorAPI {
+		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
 		// The owner's hand at the gates a person's door alone passes
@@ -173,48 +160,26 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		// The full client id beside the actor: the label and annotation
 		// namespace the app keeps, which its host-only actor does not tell
 		// apart from another app's on the same host.
-		if actor != substrate.ActorAPI {
+		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
 		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
 	}
-	actor := substrate.ActorAPI
-	if want := strings.TrimSpace(r.Header.Get(actorHeader)); want != "" {
-		if substrate.ReservedActor(substrate.Actor(want)) {
-			return nil, http.StatusForbidden, codeForbidden,
-				"actor " + want + " is reserved: the " + substrate.HostActorNamespace +
-					" namespace, the " + substrate.BundleActorPrefix + ", " +
-					substrate.FunctionActorPrefix + ", " + substrate.AgentActorPrefix + " and " +
-					substrate.AppActorPrefix + " paths, and the retired connector: spelling, are names the substrate derives", nil
-		}
-		actor = substrate.Actor(want)
-	}
-	return withRequestAuth(ctx, ds, tok, actor), 0, "", "", nil
+	// A full-access token is the person's. No request names its actor: a
+	// header an older client still sends is not read.
+	return withRequestAuth(ctx, ds, tok, substrate.ActorPerson), 0, "", "", nil
 }
 
 // appActorOf is the actor an app's token writes under, from what its
 // approval proved (decision 0209). A scoped token with no client id (none
-// the authorization flow mints) writes as `api`.
+// the authorization flow mints) writes as the person.
 func appActorOf(tok substrate.TokenInfo) substrate.Actor {
 	return appActorFor(tok.ClientID, tok.AppAuthority, tok.AppLocal)
 }
 
-// appActorFor is an app's actor: `app:<authority>` when authority was
-// verified as its publisher, `app:local` when its client id or the redirect
-// it was approved for is a loopback address, `app:<host>` of its client id
-// otherwise, and `api` for a client id that names no host.
+// appActorFor is an app's actor (authorize.AppActorFor).
 func appActorFor(clientID, authority string, local bool) substrate.Actor {
-	if authority != "" {
-		return substrate.AppActor(authority)
-	}
-	if c, err := authorize.ParseClientID(clientID); local || (err == nil && c.Local) {
-		return substrate.AppActorLocal
-	}
-	u, err := url.Parse(clientID)
-	if err != nil || u.Host == "" {
-		return substrate.ActorAPI
-	}
-	return substrate.AppActor(u.Host)
+	return authorize.AppActorFor(clientID, authority, local)
 }
 
 // requireAuth admits a full-access token and refuses an app's: every route

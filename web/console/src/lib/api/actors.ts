@@ -1,93 +1,120 @@
-/** The actor grammar's data side. Actors are records: the engine mirrors one
- * `substrate.reamde.dev/core/actor` record per declared actor (its id IS the actor name)
- * — EXCEPT a single-writer bundle whose actor shares its authority's name
- * (record 60): that name's one record is the `authority` mirror. So an actor id
- * resolves against `actors` first, then `authorities`; a name in neither is
- * unregistered but its changelog is still real and browsable.
+/** The actor records. Every hand that writes is one
+ * `substrate.reamde.dev/core/actor` record the engine writes: the
+ * repository's person, an app the person approved, an installed function or
+ * agent, a package's own installs, and the system (decision 0270). A change,
+ * a property's manager and every stored attribution name a hand by its
+ * record's id, never by a spelling.
  *
- * Both mirrors are registry-shaped (tens of rows, changing on bundle install),
- * so one cached read serves everything actor-flavored: the facet's known-name
- * list and the actor view's resolution — no per-actor probing. */
+ * The records change on an install or an approval, so one cached read serves
+ * every actor the console names. It walks every page: an actor is never
+ * deleted, so a repository that installed and removed enough code holds
+ * more than any one page, the disabled ones included, and History filters
+ * and names a change by the whole set. */
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { CORE_AUTHORITY, CORE_PACKAGE_NAME, request } from "./http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  CORE_PACKAGE_NAME,
+  request,
+} from "./http"
 import { listPath } from "./records"
-import type { SubstrateRecord, Page } from "./types"
+import type { Page, SubstrateRecord } from "./types"
 
-const ACTORS = "actor"
-const AUTHORITIES = "authority"
-/** One generous page reads a mirror whole. */
-const MIRROR_PAGE = 500
+/** The page the walk reads at a time. */
+export const ACTORS_PAGE = 500
 
-export interface ActorMirrors {
-  /** `substrate.reamde.dev/core/actor` rows, id = actor name. */
-  actors: SubstrateRecord[]
-  /** `substrate.reamde.dev/core/authority` rows — authority-named actors live here. */
-  authorities: SubstrateRecord[]
+/** The types of actor, the values of an actor record's `type`. */
+export type ActorType =
+  "person" | "app" | "function" | "agent" | "package" | "system"
+
+/** One actor record, as the console reads it. */
+export interface ActorInfo {
+  /** The record's id: what a change and a manager link. */
+  id: string
+  type: ActorType
+  /** The name the record gives the hand. */
+  name: string
+  /** The identity of the function, the agent or the package the actor runs
+   * or installs (`<authority>/<package>/<name>`, a package's
+   * `<authority>/<package>`), where it has one. */
+  link?: string
+  /** An app's publisher: its verified authority, its host, or `local`. */
+  publisher?: string
+  disabled: boolean
 }
 
-async function fetchMirror(
-  name: string,
-  signal?: AbortSignal
-): Promise<SubstrateRecord[]> {
-  const page = await request<Page>(
-    "GET",
-    listPath({
-      authority: CORE_AUTHORITY,
-      package: CORE_PACKAGE_NAME,
-      name,
-      first: MIRROR_PAGE,
-    }),
-    undefined,
-    { signal }
-  )
-  return page.records ?? []
+const TYPES: readonly ActorType[] = [
+  "person",
+  "app",
+  "function",
+  "agent",
+  "package",
+  "system",
+]
+
+function refID(value: unknown, kind: string): string | undefined {
+  const ref = (value as { ref?: unknown } | undefined)?.ref
+  if (typeof ref !== "string") return undefined
+  const prefix = `${CORE_PACKAGE}/${kind}/`
+  return ref.startsWith(prefix) ? ref.slice(prefix.length) : undefined
 }
 
-export const actorMirrorsQueryOptions = queryOptions({
-  queryKey: ["actors", "mirrors"],
-  queryFn: async ({ signal }): Promise<ActorMirrors> => {
-    const [actors, authorities] = await Promise.all([
-      fetchMirror(ACTORS, signal),
-      fetchMirror(AUTHORITIES, signal),
-    ])
-    return { actors, authorities }
+/** The console's reading of one actor record; undefined for a record of no
+ * type it knows. */
+export function actorInfoOf(record: SubstrateRecord): ActorInfo | undefined {
+  const props = record.properties ?? {}
+  const type = props.type
+  if (typeof type !== "string" || !TYPES.includes(type as ActorType))
+    return undefined
+  const link =
+    type === "function" || type === "agent" || type === "package"
+      ? refID(props[type], type)
+      : undefined
+  return {
+    id: record.id,
+    type: type as ActorType,
+    name: typeof props.name === "string" ? props.name : "",
+    link,
+    publisher:
+      typeof props.publisher === "string" ? props.publisher : undefined,
+    disabled: props.disabled === true,
+  }
+}
+
+export const actorsQueryOptions = queryOptions({
+  queryKey: ["actors"],
+  queryFn: async ({ signal }): Promise<ActorInfo[]> => {
+    const out: ActorInfo[] = []
+    let after: string | undefined
+    do {
+      const page = await request<Page>(
+        "GET",
+        listPath({
+          authority: CORE_AUTHORITY,
+          package: CORE_PACKAGE_NAME,
+          name: "actor",
+          first: ACTORS_PAGE,
+          after,
+        }),
+        undefined,
+        { signal }
+      )
+      for (const record of page.records ?? []) {
+        const info = actorInfoOf(record)
+        if (info) out.push(info)
+      }
+      after = page.cursor
+    } while (after)
+    return out
   },
   staleTime: 5 * 60_000,
 })
 
-/** Every declared actor name — mirror ids plus each authority's declared
- * `actors` — for the changelog's actor facet. */
-export function actorNames(mirrors: ActorMirrors): string[] {
-  const names = new Set<string>()
-  for (const e of mirrors.actors) if (e.id) names.add(e.id)
-  for (const a of mirrors.authorities) {
-    const declared = a.properties?.actors
-    if (!Array.isArray(declared)) continue
-    for (const name of declared)
-      if (typeof name === "string" && name) names.add(name)
-  }
-  return [...names].sort()
-}
-
-/** Where an actor's record actually lives. */
-export interface ResolvedActor {
-  record: SubstrateRecord
-  /** The collection holding it — `actors` for mirror rows, `authorities` for
-   * record-60 authority-named bundle actors. */
-  collection: typeof ACTORS | typeof AUTHORITIES
-}
-
-/** null is a definitive "unregistered", not an error — the actor view renders
- * an identity stub over the name's real changelog. */
-export function resolveActor(
-  mirrors: ActorMirrors,
-  id: string
-): ResolvedActor | null {
-  const mirror = mirrors.actors.find((e) => e.id === id)
-  if (mirror) return { record: mirror, collection: ACTORS }
-  const authority = mirrors.authorities.find((e) => e.id === id)
-  if (authority) return { record: authority, collection: AUTHORITIES }
-  return null
+/** The id an actor record is linked by in a stored reference
+ * (`{ref: "substrate.reamde.dev/core/actor/<id>"}`), undefined for anything
+ * else. */
+export function actorRefID(value: unknown): string | undefined {
+  return refID(value, "actor")
 }

@@ -315,10 +315,10 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
 
 → {"id": "9f2k", "kind": "samples.substrate.reamde.dev/people/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
-   "propertyMeta": {"name": {"manager": "console", "tier": "owner",
+   "propertyMeta": {"name": {"manager": "6nk6ekkczdgh399nt2pqpccjz0", "tier": "owner",
      "updatedAt": "2026-08-04T09:12:00Z",
      "alternatives": [
-       {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
+       {"actor": "3wv04ja0n3g3n9s3q6bvkqnysj",
         "value": "ada", "updatedAt": "2026-08-04T08:00:00Z",
         "source": "providers.substrate.reamde.dev/github/user/ada"}]}},
    "linkedFrom": [
@@ -332,9 +332,12 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
       "mapping": "samples.substrate.reamde.dev/people/slackuserperson"}]}
 ```
 
-An alternative's `updatedAt` is its source record's, not the target's, and
-its `source` is that record's path; a machine-held property's manager names
-its `source` too, where its own offer backs the stored value.
+The manager and an alternative's `actor` are the ids of
+[actor records](#actors): here the person, who typed the name, and the
+GitHub sync function. An alternative's `updatedAt` is its source record's,
+not the target's, and its `source` is that record's path; a machine-held
+property's manager names its `source` too, where its own offer backs the
+stored value.
 [Reading provenance](projection.md#reading-provenance-propertymeta) has the
 rule.
 
@@ -987,7 +990,7 @@ stability, its revision and the `surfaces` that serve it:
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
- "vocabulary": {"dialect": 3},
+ "vocabulary": {"dialect": 4},
  "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
               {"name": "auth", "stability": "beta", "revision": 2, "surfaces": ["rest"],
                "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
@@ -999,12 +1002,7 @@ stability, its revision and the `surfaces` that serve it:
              "record": "<authority>/<package>/<kind>/<id>",
              "collection": "/api/v1/records",
              "recordPath": "/api/v1/{authority}/{package}/{kind}/{id}",
-             "actors": ["api", "console", "substratectl",
-                        "bundle:<authority>:<package>",
-                        "function:<authority>:<package>:<name>",
-                        "agent:<authority>:<package>:<name>",
-                        "app:<authority>", "app:local", "app:<host>",
-                        "substrate"]},
+             "actorTypes": ["person", "app", "function", "agent", "package", "system"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp",
                "authorize": "/oauth/authorize", "token": "/oauth/token"},
@@ -1015,6 +1013,9 @@ The example's feature list is abridged; [the features](#the-features) below
 names every entry. `grammar.collection` is the records route and
 `grammar.recordPath` the record path, so a client checks the two shapes it
 must agree with the substrate about before it addresses anything.
+`grammar.actorTypes` is the types of [actor record](#actors) a write may
+link, since the `discovery` feature's revision 3, where it replaced
+`grammar.actors`, the list of actor spellings.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
@@ -2306,60 +2307,92 @@ resets.
 
 ## Actors
 
-Every write is attributed to an **actor**: what wrote the record. The domain is
-closed, seven names:
+Every write is made by an **actor**: one record of
+`substrate.reamde.dev/core/actor` for each hand that writes in the
+repository. The engine writes them, no package declares one, and no request
+names one
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). An
+actor record says what the hand is in its `type`, carries a `name` to show,
+and links what it is:
 
-```
-console                                  a write from the console
-substratectl                             a write from the command line
-api                                      a write from a client holding a token, client unnamed
-bundle:<authority>:<package>             an install, and the package's own hand
-function:<authority>:<package>:<name>    a function's effects
-agent:<authority>:<package>:<name>       an agent's effects
-substrate                                the engine's own hand
-```
+| `type` | The hand | Its link | Written |
+| --- | --- | --- | --- |
+| `person` | the repository's one person, through any of its tokens | none | at the repository's creation |
+| `app` | an app the person approved | `publisher`: its verified authority, the host of its client id, or `local` where its access went to a loopback address ([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)) | at its approval |
+| `function` | an installed function | `function`, its `core/function` record | when its package is installed |
+| `agent` | an installed agent | `agent`, its `core/agent` record | when its package is installed |
+| `package` | a package's own hand: the declarations an install or the seed lays down | `package`, its `core/package` record | when the package is installed |
+| `system` | the substrate itself: recompute, merges, the boot upgrade, and the auth paths that write the credential and token records | none | at the repository's creation |
 
-A machine hand carries the full authority and the package, so two packages that
-share a name under different authorities are two writers, and the segments are
-colons because a `/` is reserved for label and annotation keys
-([0047](decisions/0047-a-kind-lives-in-a-package.md)). `connector:<label>` was
-a second spelling of the bundle hand and is retired
-([0025](decisions/0025-an-actor-carries-the-full-authority.md)); entries
-written under it keep it, because an actor is part of the hashed changelog
-preimage.
+A hand the repository holds no record for yet gets one at its first write.
+The record's id is derived from the hand, so it is opaque, in the minted
+shape, and the same in every rebuild and import: the person is one record,
+and so is the system. An uninstall disables the actor records of the
+package, its functions and its agents (`disabled: true`) rather than deleting
+them, so their old writes still link something, and an install of the
+package again enables each. The record API reads actor records and refuses
+to write one, and a package that ships a document of the actor kind is
+refused at load: an actor is a record the substrate writes for everything
+that acts.
 
-A request names its actor with the optional `X-Substrate-Actor` header, and a
-request that names none is `api`, which is exactly what the substrate knows
-about it. This is **attribution, not authorization**: a full-access token has
-its whole repository either way, so there is nothing an actor name could
-unlock, and an app's token writes as its own actor whatever it names:
-`app:<authority>` when its publisher was verified, `app:local` when its
-access went to a loopback address, else `app:<host>` of its client id
-([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
-What the header cannot do is claim one of the substrate's own writing hands —
-`substrate`, anything under `substrate.`, a `bundle:`/`function:`/`agent:`/`app:`
-name, or the retired `connector:` spelling — because those write past checks a
-request must not skip.
-Naming one is `403 forbidden`.
+**What a write records** is three links, on its
+[changelog entry](changelog.md) and on every change event: `actor`, the id of
+the actor record that wrote it; `onBehalfOf`, the id of the one it acted
+for, absent where it acted for no one; and `token`, the id of the token
+record it stood behind, absent where none did and on every read but the
+owner's (an app's grant and an assistant's read leave it out):
+
+| Write | `actor` | `onBehalfOf` | `token` |
+| --- | --- | --- | --- |
+| A person edits in the console | the person | none | its sign-in's token |
+| The person uses an app | the app | the person | the app's token |
+| An agent the person started | the agent | the person | none |
+| A sync on a schedule | the sync function | none | none |
+| The engine merging synced values | the system | none | none |
+
+An app always acts for the person. Installed code and the engine act for
+the person only when a person's request started them: a delivery the
+trigger pass fires acts for no one. Work that goes on after the request
+that started it returned acts for whom the line that created its own record
+names: a background job for its tool row's, an approved call for its
+approval's, a resumed turn for the resolution's that starts it, a thread's
+title for the thread's, a policy's judge for the request's it decides. A
+settlement after a restart is that work's too, and a thread's acts for the
+line that gave its run the lease. Where that line names no one (a trigger's
+run, or history from before actors were records), the work acts for no
+one.
+
+**No request names its actor.** A full-access token writes as the person,
+and an app's token as its app; which client made a write is its token's.
+This is **attribution, not authorization**: a full-access token has its
+whole repository whatever it writes as, so there is nothing an actor could
+unlock, and the substrate's own hands write past checks a request must not
+skip, so none is a request's to claim. An `X-Substrate-Actor` header an older
+client still sends is ignored, not refused.
+
+Where else a hand is named, it is by the same link: a property's `manager`
+and each alternative's `actor` in a record's `propertyMeta` (since revision 3
+of the `records` feature), a package's `declaredBy`, a blob's `createdBy`, a
+call run's `caller`, and the [change feed's](changelog.md#watching)
+`actors=` and `excludeActors=` filters, which take actor record ids.
+Discovery's `grammar.actorTypes` lists the six types.
 
 Attribution is load-bearing three ways:
 
 - **Provenance**: every accepted write records its actor as the property's
-  manager ([managed properties](projection.md#managed-properties)), and every
-  [changelog row](changelog.md) names who wrote. Because the actor is the
-  caller's own claim, both also record the **principal** the server resolved:
-  the id of the token the request authenticated with, which the header cannot
-  touch.
+  manager ([managed properties](projection.md#managed-properties)), beside
+  the token it stood behind, and every [changelog row](changelog.md) names
+  its actor, the one it acted for and its token.
 - **Yield**: mapping recompute yields to any manager outside the machine tier,
   which is how a hand edit survives a sync.
-- **Self-exclusion**: a [function](functions.md) never sees writes carrying
+- **Self-exclusion**: a [function](functions.md) never sees writes made by
   its own actor, which is one half of what keeps functions from looping.
 
 The manager **tier** a write holds at (owner, bundle, or machine) is explicit
-data on the write context, never derived from an actor's name: the three
-interactive clients (`api`, `console`, `substratectl`) write at the owner
-tier. [Managed properties](projection.md#managed-properties) owns the tier
-rules, who writes at which tier, and how recompute yields to them.
+data on the write context, never read off the actor record: the person and
+an app write at the owner tier. [Managed
+properties](projection.md#managed-properties) owns the tier rules, who writes
+at which tier, and how recompute yields to them.
 
 ## The canonical envelope
 

@@ -36,6 +36,8 @@ import {
   providerOfKind,
   PROVIDERS_AUTHORITY,
 } from "@/lib/actor-identity"
+import { setActorDirectory } from "@/lib/actor-directory"
+import { actorsQueryOptions } from "@/lib/api/actors"
 import { CR_NAME } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, joinKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -499,7 +501,17 @@ export function AppShell() {
   )
 }
 
+/** Fills the actor directory every name for an actor is read from
+ * (actor-directory.ts), and keeps it current with the one cached read. */
+function useActorRecords() {
+  const actors = useQuery(actorsQueryOptions)
+  useEffect(() => {
+    if (actors.data) setActorDirectory(actors.data)
+  }, [actors.data])
+}
+
 function ShellBody() {
+  useActorRecords()
   const [commandOpen, setCommandOpen] = useState(false)
   // The shell outlives every page, so a part of it that failed tries again
   // on the next address.

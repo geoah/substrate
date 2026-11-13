@@ -4,6 +4,8 @@
 
 import { describe, expect, it } from "vitest"
 
+import { seedActors } from "@/lib/actors.test-fixtures"
+
 import { crumbsFor, pageTitle } from "./app-shell"
 
 describe("crumbsFor", () => {
@@ -180,13 +182,14 @@ describe("crumbsFor", () => {
   })
 
   it("reads an actor under History, by name unless technical", () => {
-    expect(crumbsFor("/actors/console")).toEqual([
+    seedActors()
+    expect(crumbsFor("/actors/act-person")).toEqual([
       { label: "History", to: "/history" },
       { label: "You" },
     ])
-    expect(crumbsFor("/actors/console", true)).toEqual([
+    expect(crumbsFor("/actors/act-person", true)).toEqual([
       { label: "History", to: "/history" },
-      { label: "console", mono: true },
+      { label: "act-person", mono: true },
     ])
   })
 

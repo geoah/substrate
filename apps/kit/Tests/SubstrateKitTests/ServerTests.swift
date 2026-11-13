@@ -65,7 +65,7 @@ import FoundationNetworking
         #expect(doc.feature("auth")?.notice == "Before 1.0, sign-in names a person, who then picks a repository.")
         #expect(doc.feature("search")?.surfaces == ["rest"])
         #expect(doc.surfaces.rest?.endpoint == "/api/v1")
-        #expect(doc.grammar.actors.contains("app:<host>"))
+        #expect(doc.grammar.actorTypes.contains("app"))
         #expect(doc.grammar.recordPath == "/api/v1/{authority}/{package}/{kind}/{id}")
         #expect(doc.endpoints.authorize == "/oauth/authorize")
         #expect(doc.endpoints.token == "/oauth/token")

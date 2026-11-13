@@ -20,6 +20,7 @@ import {
 } from "@testing-library/react"
 import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { Toaster } from "@/components/ui/toast"
 import { SUBSTRATE_OAUTH_SOURCE } from "@/lib/api/bundles"
@@ -62,6 +63,8 @@ vi.mock("@/router", () => ({
 }))
 
 import { ProviderPage } from "./provider"
+
+beforeEach(() => seedActors())
 
 const GOOGLE = "providers.substrate.reamde.dev/google"
 const ACCOUNT = `${GOOGLE}/account`
@@ -951,16 +954,8 @@ describe("ProviderPage", () => {
     it("tells what the provider's own actors changed, and links to History", async () => {
       serve({
         changes: [
-          change(
-            3,
-            "function:providers.substrate.reamde.dev:google:synccontacts",
-            "c1"
-          ),
-          change(
-            2,
-            "function:providers.substrate.reamde.dev:google:synccontacts",
-            "c2"
-          ),
+          change(3, "act-fn-google-synccontacts", "c1"),
+          change(2, "act-fn-google-synccontacts", "c2"),
           change(1, "api", "c3"),
         ],
       })
@@ -982,8 +977,8 @@ describe("ProviderPage", () => {
         .filter((u) => !u.includes("watch=1"))
         .map((u) => new URL(u, "http://x").searchParams.getAll("actors"))
       expect(actorsAsked[0]).toEqual([
-        "bundle:providers.substrate.reamde.dev:google",
-        "function:providers.substrate.reamde.dev:google:synccontacts",
+        "act-fn-google-synccontacts",
+        "act-pkg-google",
       ])
       const all = within(section).getByText("See all in History")
       expect(all.closest("a")?.getAttribute("data-to")).toBe("/history")

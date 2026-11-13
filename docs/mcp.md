@@ -71,10 +71,13 @@ answer another app's approval; uninstall or purge a package.
 Code an assistant declares runs as the owner's code does, and reaches what
 the owner's code may, secrets included.
 
-Its writes are its own in History, under its app's actor: `app:local` for
-an assistant on the owner's computer (Claude Code, Codex), the client's
-host or verified authority for a hosted one (claude.ai), and `api` for a
-token the owner made by hand. Its token works at `/mcp` alone.
+Its writes are its own in History, made by its app's
+[actor record](api.md#actors) on behalf of the owner: the app whose
+publisher is `local` for an assistant on the owner's computer (Claude Code,
+Codex), the client's host or verified authority for a hosted one
+(claude.ai), and the person for a token the owner made by hand. Each write
+also links its token, so two assistants on one computer, one local app,
+read apart by their names. Its token works at `/mcp` alone.
 
 ## The tools
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // A body that raises is a server-side execution fault, not invalid caller
@@ -36,7 +37,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	// Valid input, faulting body: the run reached the body and it raised.
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/boom", map[string]any{"title": "ok"})
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/boom", map[string]any{"title": "ok"})
 	if err == nil {
 		t.Fatal("a raising body returned no error")
 	}
@@ -48,7 +49,7 @@ def main(input, host):
 	}
 
 	// Missing the required argument refuses BEFORE the body runs, as validation.
-	_, _, err = ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/boom", map[string]any{})
+	_, _, err = ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/boom", map[string]any{})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("missing required input is %v, want ErrValidation", err)
 	}
@@ -82,7 +83,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 
 	// A valid call: input passes the schema, effects apply under the
 	// function's actor, the output comes back shaped.
-	out, effects, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/adder", map[string]any{"title": "from a call"})
+	out, effects, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/adder", map[string]any{"title": "from a call"})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -111,7 +112,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 		"undeclared key":   map[string]any{"title": "x", "extra": true},
 		"not an object":    "just a string",
 	} {
-		if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/adder", args); err == nil {
+		if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/adder", args); err == nil {
 			t.Fatalf("%s: invalid input accepted", name)
 		}
 	}
@@ -173,7 +174,7 @@ def main(input, host):
 	ctx := substrate.WithPrincipal(context.Background(), "tok-645")
 	name := fnPackage + "/sender"
 
-	if _, n, err := ds.CallFunction(ctx, substrate.ActorConsole, name, map[string]any{"title": "hello"}); err != nil || n != 1 {
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorPerson, name, map[string]any{"title": "hello"}); err != nil || n != 1 {
 		t.Fatalf("call: %d %v", n, err)
 	}
 	runs := callRuns(t, ds)
@@ -182,13 +183,18 @@ def main(input, host):
 	}
 	p := runs[0].Properties
 	want := map[string]any{
-		"status": "ok", "caller": "console", "principal": "tok-645",
+		"status": "ok", "token": "tok-645",
 		"callable": name,
 	}
 	for k, v := range want {
 		if p[k] != v {
 			t.Fatalf("run %s = %v, want %v (%+v)", k, p[k], v, p)
 		}
+	}
+	// The caller links the actor record of the hand that called (decision
+	// 0270).
+	if ref, _ := p["caller"].(map[string]any); ref[vocabulary.ReferenceValueKey] != vocabulary.ActorRef(vocabulary.ActorID(substrate.ActorPerson))["ref"] {
+		t.Fatalf("run caller = %v, want the person's actor record", p["caller"])
 	}
 	if ref, _ := p["callableRef"].(map[string]any); ref["ref"] != "substrate.reamde.dev/core/function/"+name {
 		t.Fatalf("run callableRef: %+v", p["callableRef"])
@@ -207,15 +213,15 @@ def main(input, host):
 	}
 
 	// A large output keeps its size and not its value; no effects, one row.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"big": 5000}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, name, map[string]any{"big": 5000}); err != nil {
 		t.Fatalf("big call: %v", err)
 	}
 	// A body that raises: the call fails and its run row says so.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"fail": true}); !errors.Is(err, substrate.ErrFunctionFault) {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, name, map[string]any{"fail": true}); !errors.Is(err, substrate.ErrFunctionFault) {
 		t.Fatalf("failing call: %v", err)
 	}
 	// A call of relay reaches the network through sender: one row, relay's.
-	if _, n, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/relay", map[string]any{"title": "via"}); err != nil || n != 1 {
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/relay", map[string]any{"title": "via"}); err != nil || n != 1 {
 		t.Fatalf("relay call: %d %v", n, err)
 	}
 	runs = callRuns(t, ds)
@@ -258,14 +264,14 @@ def main(input, host):
 	ds := newFnDataset(t, nil, fn)
 	name := fnPackage + "/shaped"
 
-	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": 5}); err == nil {
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorPerson, name, map[string]any{"title": 5}); err == nil {
 		t.Fatal("a call with input outside `arguments:` ran")
 	}
 	if runs := callRuns(t, ds); len(runs) != 0 {
 		t.Fatalf("a call refused on its input wrote a run row: %+v", runs)
 	}
 
-	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "wrong"}); err == nil {
+	if _, _, err := ds.CallFunction(context.Background(), substrate.ActorPerson, name, map[string]any{"title": "wrong"}); err == nil {
 		t.Fatal("an output outside `returns:` passed")
 	}
 	runs := callRuns(t, ds)
@@ -275,7 +281,7 @@ def main(input, host):
 
 	ctx := keyed("call-645-replay")
 	for i := range 2 {
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, name, map[string]any{"title": "once"})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, name, map[string]any{"title": "once"})
 		if err != nil {
 			t.Fatalf("keyed call %d: %v", i, err)
 		}
@@ -288,7 +294,7 @@ def main(input, host):
 	}
 
 	// An output no row stores (a NUL) still settles: the row keeps its size.
-	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, name, map[string]any{"title": "a\x00b"})
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorPerson, name, map[string]any{"title": "a\x00b"})
 	if err != nil {
 		t.Fatalf("a call whose output carries a NUL failed: %v", err)
 	}
@@ -307,25 +313,6 @@ def main(input, host):
 	}
 	if len(bare) != 1 || bare[0]["outputBytes"] == nil {
 		t.Fatalf("want one ok row with outputBytes and no output (the NUL call's), got %+v", bare)
-	}
-
-	// A caller that is not UTF-8 (a raw `X-Substrate-Actor` byte) still
-	// settles: the row stores the caller cleaned.
-	if _, _, err := ds.CallFunction(context.Background(), substrate.Actor("\xff"), name, map[string]any{"title": "latin"}); err != nil {
-		t.Fatalf("a call whose caller is not UTF-8 failed: %v", err)
-	}
-	runs = callRuns(t, ds)
-	if len(runs) != 4 {
-		t.Fatalf("the non-UTF-8 caller's call wrote %d call runs in all, want 4", len(runs))
-	}
-	var latin []map[string]any
-	for _, r := range runs {
-		if r.Properties["caller"] == "\uFFFD" {
-			latin = append(latin, r.Properties)
-		}
-	}
-	if len(latin) != 1 || latin[0]["status"] != "ok" {
-		t.Fatalf("want one ok row with the caller cleaned to U+FFFD, got %+v", latin)
 	}
 }
 
@@ -453,7 +440,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	for _, mid := range []string{"raiser", "badeffect", "badoutput"} {
-		if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
+		if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/catcher", map[string]any{"mid": mid}); err != nil {
 			t.Fatalf("%s: the catching caller failed: %v", mid, err)
 		}
 		if _, err := ds.Get(ctx, taskType, "a-"+mid); err != nil {
@@ -497,23 +484,23 @@ def main(input, host):
 	ctx := context.Background()
 
 	// Top level: omitted and explicit-null both refuse, and no effects land.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/silent", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/silent", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an omitted output passed the declared shape: %v", err)
 	}
 	if _, err := ds.Get(ctx, taskType, "silent-effect"); err == nil {
 		t.Fatal("effects applied under a refused output")
 	}
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/nuller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/nuller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an explicit null passed the declared shape: %v", err)
 	}
 	// An undeclared result side stays open.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/anyout", nil); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/anyout", nil); err != nil {
 		t.Fatalf("any refused nil: %v", err)
 	}
 	// Nested: the host Call surfaces the same violation to the caller.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/nestcaller", nil); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/nestcaller", nil); err == nil ||
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("a nested omitted output passed: %v", err)
 	}
@@ -540,7 +527,7 @@ def main(input, host):
     return {"output": [k1, k2]}
 `)
 	ds := newFnDataset(t, nil, echo, twice)
-	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, fnPackage+"/twice", nil)
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorPerson, fnPackage+"/twice", nil)
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}

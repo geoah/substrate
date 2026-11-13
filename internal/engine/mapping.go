@@ -937,11 +937,14 @@ func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
+	// The stored row links the actor record; the hand behind it is what
+	// recompute credits (actorKeyOf).
 	if actor != "" {
-		return actor, nil
+		return string(t.actorKeyOf(actor)), nil
 	}
-	if g, ok := t.declarations().PackageByName(vocabulary.KindPackage(m.From)); ok && len(g.Actors) > 0 {
-		return g.Actors[0], nil
+	// No contribution yet: the source kind's package's own hand.
+	if authority, pkg := vocabulary.SplitPackageRef(vocabulary.KindPackage(m.From)); authority != "" && pkg != "" {
+		return string(substrate.BundleActor(authority, pkg)), nil
 	}
 	return string(substrate.ActorSystem), nil
 }
@@ -1290,7 +1293,7 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 				// so the stamp is not always a contributing source's; it is
 				// the same on the live path and the rebuild, which is what
 				// the stamp has to be.
-				current[offerKey{name, s.actor}] = offer{
+				current[offerKey{name, actorID(substrate.Actor(s.actor))}] = offer{
 					value: v, at: cands[0].updatedAt,
 					source: vocabulary.RecordPath(cands[0].a, cands[0].b),
 				}
@@ -1348,7 +1351,8 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 	return nil
 }
 
-// offerKey addresses one property_offers row.
+// offerKey addresses one property_offers row: the property, and the id of the
+// actor record that offers it.
 type offerKey struct{ property, actor string }
 
 // offer is one row's derived content: the value, its source's stamp, and the
@@ -1381,10 +1385,9 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 // stored.
 type managerRow struct {
 	actor string
-	// tier is the tier the row holds at under the transaction's declarations
-	// (heldTierIn): the stored tier unless the actor has since been declared
-	// at the machine tier (record 0113). The yield and the orphan mark read
-	// it.
+	// tier is the tier the row holds at, which the yield and the orphan mark
+	// read. A declaration once moved it (record 0113); no declaration names an
+	// actor now (decision 0270), so it is the tier the write stored.
 	tier substrate.Tier
 	// stored is the tier column as the write recorded it. A kind move copies
 	// it and releaseMachineManaged decides on it, so neither rewrites nor
@@ -1415,7 +1418,7 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 		}
 		out[property] = managerRow{
 			actor:     actor,
-			tier:      heldTierIn(t.declarations(), actor, substrate.Tier(tier)),
+			tier:      substrate.Tier(tier),
 			stored:    substrate.Tier(tier),
 			principal: principal,
 		}

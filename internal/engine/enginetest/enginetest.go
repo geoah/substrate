@@ -112,7 +112,7 @@ func InstallCatalogues(ctx context.Context, ds substrate.Dataset, names ...strin
 		return fmt.Errorf("enginetest: install %v: %w", names, err)
 	}
 	for _, name := range names {
-		if _, _, err := c.Install(ctx, substrate.ActorAPI, CataloguePackage(name), ds); err != nil {
+		if _, _, err := c.Install(ctx, substrate.ActorPerson, CataloguePackage(name), ds); err != nil {
 			return fmt.Errorf("enginetest: install %s: %w", name, err)
 		}
 	}
@@ -578,7 +578,7 @@ func DeclareMappings(ctx context.Context, ds substrate.Dataset, mappings ...map[
 		data["installs"] = append(append([]any(nil), have...), installs...)
 	}
 	docs = append(docs, mappings...)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		return fmt.Errorf("enginetest: declare mappings: %w", err)
 	}
 	return nil

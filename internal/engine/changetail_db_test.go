@@ -22,7 +22,7 @@ func TestTheTailSkipsNoSeqUnderConcurrentWriters(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	ctx := context.Background()
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	tail := substrate.WithTailRead(ctx)
@@ -117,7 +117,7 @@ func TestTheTailReadsAWriteWhoseCommitAnswerWasLost(t *testing.T) {
 	var lose atomic.Bool
 	_, ds := newDataset(t, engine.WithTestCommitInDoubt(lose.Load))
 	ctx := context.Background()
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	tail := substrate.WithTailRead(ctx)

@@ -79,15 +79,15 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
         call.changes = [ChangeStamp(seq: 4, op: "put", kind: Kinds.request, id: "mnopqrstuvwx")]
         #expect(requestID(of: call) == "mnopqrstuvwx")
         let live = ToolCall(
-            id: "c", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            id: "c", name: "propose", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/propose",
             arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
         #expect(requestID(of: live) == "abcdefghijkl")
         let impostor = ToolCall(
-            id: "c", name: "propose", callable: "function:x.example.com:pkg:propose",
+            id: "c", name: "propose", callable: "substrate.reamde.dev/core/function/x.example.com/pkg/propose",
             arguments: "", output: "{\"id\":\"abcdefghijkl\"}", ok: true)
         #expect(requestID(of: impostor) == nil)
         let minted = ToolCall(
-            id: "c", name: "propose", callable: "function:substrate.reamde.dev:core:propose",
+            id: "c", name: "propose", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/propose",
             arguments: "", output: "{\"id\":\"01h2xcejqtf2nbrexx3vqjhp41\"}", ok: true)
         #expect(requestID(of: minted) == "01h2xcejqtf2nbrexx3vqjhp41")
     }
@@ -189,7 +189,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
 @Suite(.timeLimit(.minutes(10))) struct Words {
     @Test func agentNames() {
         #expect(agentName("x.example.com/llmsample/researchAssistant") == "Research assistant")
-        #expect(agentName("agent:x.example.com:pkg:task_triage") == "Task triage")
+        #expect(agentName("substrate.reamde.dev/core/agent/x.example.com/pkg/task_triage") == "Task triage")
     }
 
     @Test func toolSummaries() {
@@ -204,10 +204,25 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 
     @Test func aStampedCallableResolvesWhatRan() {
-        let r = resolveTool(agent: nil, name: "lookup", callable: "agent:x.example.com:pkg:helper")
+        let r = resolveTool(agent: nil, name: "lookup", callable: "substrate.reamde.dev/core/agent/x.example.com/pkg/helper")
         #expect(r.subagent == "x.example.com/pkg/helper")
         let host = resolveTool(agent: nil, name: "query", callable: nil)
         #expect(host.function == HostFunction.query)
+    }
+
+    /// A row stamped before its agent moved an alias names what ran then:
+    /// the stamp's record path decides, and only an unstamped row reads the
+    /// alias as the agent declares it now.
+    @Test func aStampedCallableOutlivesTheAlias() {
+        let agent = Agent(
+            record: Record(
+                id: "x.example.com/pkg/helper", kind: Kinds.agent,
+                properties: [
+                    "tools": [["function": ["ref": .string("\(Kinds.function)/x.example.com/pkg/lookupv2")], "name": "lookup"]]
+                ]))
+        let ran = resolveTool(agent: agent, name: "lookup", callable: "\(Kinds.function)/x.example.com/pkg/lookupv1")
+        #expect(ran.function == "x.example.com/pkg/lookupv1")
+        #expect(resolveTool(agent: agent, name: "lookup", callable: nil).function == "x.example.com/pkg/lookupv2")
     }
 
     @Test func dayGroups() {

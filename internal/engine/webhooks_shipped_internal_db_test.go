@@ -77,7 +77,7 @@ func withHook(source map[string]any, field string, v any) map[string]any {
 // putHook writes Apple Health's webhook trigger on or off from source, as
 // the owner's `substratectl apply -f` of the record does.
 func putHook(ctx context.Context, ds *dataset, enabled bool, source map[string]any) error {
-	_, err := ds.Put(ctx, substrate.ActorCLI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: appleHealthHook, Properties: map[string]any{"enabled": enabled, "source": source},
 	})
 	return err
@@ -111,7 +111,7 @@ func TestAShippedWebhookTriggerIsEnabledOnlyWithAKey(t *testing.T) {
 		t.Fatalf("the install left %s enabled %v under key %q, want it off and keyless", appleHealthHook, enabled, key)
 	}
 
-	_, err := ds.Patch(ctx, substrate.ActorConsole, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}})
+	_, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}})
 	requireOpenRefused(t, "the console's Resume", err, appleHealthHook, appleHealthPackage)
 	if enabled, _, _ := hookState(t, ds); enabled {
 		t.Fatal("the refused Resume left the trigger on")
@@ -170,7 +170,7 @@ func TestAnApprovalKeysAndEnablesAShippedWebhookTrigger(t *testing.T) {
 	if i := appsetup.FirstBlocked(approved); i >= 0 {
 		t.Fatalf("the plan blocks row %d: %+v", i, approved[i].Blocked)
 	}
-	out := appsetup.NewRunner(cat).Run(ctx, ds, substrate.ActorConsole, details, approved, opts, appsetup.RunOptions{},
+	out := appsetup.NewRunner(cat).Run(ctx, ds, substrate.ActorPerson, details, approved, opts, appsetup.RunOptions{},
 		func([]string) bool { return true })
 	if out.Failure != nil {
 		t.Fatalf("the set up stopped: %s", out.Failure.Message)
@@ -206,7 +206,7 @@ func TestAnUpgradeLeavesAShippedWebhookTriggerAsItWas(t *testing.T) {
 	if err := putHook(ctx, ds, false, shipped); err != nil {
 		t.Fatalf("turning it off: %v", err)
 	}
-	if _, err := ds.patchInternal(ctx, substrate.ActorConsole, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}}); err != nil {
+	if _, err := ds.patchInternal(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}}); err != nil {
 		t.Fatalf("leave it open, as a binary from before the rule could: %v", err)
 	}
 	installShippedProvider(t, ds, appleHealthPackage)
@@ -247,7 +247,7 @@ func TestAnOpenShippedWebhookTriggerIsReportedAndKept(t *testing.T) {
 	}
 	ds := open()
 	installAppleHealth(t, ds)
-	if _, err := ds.patchInternal(ctx, substrate.ActorConsole, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}}); err != nil {
+	if _, err := ds.patchInternal(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": true}}); err != nil {
 		t.Fatalf("leave it open, as a binary from before the rule could: %v", err)
 	}
 	const reported = "a webhook trigger a package shipped is enabled with no key"
@@ -278,9 +278,9 @@ func TestAnOpenShippedWebhookTriggerIsReportedAndKept(t *testing.T) {
 		t.Fatalf("the door refused the trigger it admitted before: %v", err)
 	}
 
-	_, err = ds.Patch(ctx, substrate.ActorConsole, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"label": "Apple Health"}})
+	_, err = ds.Patch(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"label": "Apple Health"}})
 	requireOpenRefused(t, "a label written over the open trigger", err, appleHealthHook, appleHealthPackage)
-	if _, err := ds.Patch(ctx, substrate.ActorConsole, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": false}}); err != nil {
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.PatchInput{Properties: map[string]any{"enabled": false}}); err != nil {
 		t.Fatalf("turning the open trigger off: %v", err)
 	}
 }
@@ -342,7 +342,7 @@ func TestAnOwnersOwnWebhookTriggerMayStayOpen(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := appleHealthDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorCLI, substrate.PutInput{Kind: typeTrigger, ID: "my-health-hook", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeTrigger, ID: "my-health-hook", Properties: map[string]any{
 		"enabled":  true,
 		"source":   map[string]any{"webhook": map[string]any{}},
 		"callable": vocabulary.RecordPath(kindFunction, appleHealthPackage+"/applehealthingest"),
@@ -352,7 +352,7 @@ func TestAnOwnersOwnWebhookTriggerMayStayOpen(t *testing.T) {
 	importVocabulary(t, ds, "pebble")
 	for _, id := range []string{"my-health-hook", "pebble-webhook"} {
 		for _, on := range []bool{false, true} {
-			if _, err := ds.Patch(ctx, substrate.ActorConsole, typeTrigger, id, substrate.PatchInput{Properties: map[string]any{"enabled": on}}); err != nil {
+			if _, err := ds.Patch(ctx, substrate.ActorPerson, typeTrigger, id, substrate.PatchInput{Properties: map[string]any{"enabled": on}}); err != nil {
 				t.Fatalf("turning %s enabled %v: %v", id, on, err)
 			}
 		}

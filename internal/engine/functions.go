@@ -799,7 +799,7 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 // (An agent's thread/message rows carry the agent's actor, so the same
 // exclusion keeps an agent off its own transcript.) A function's self also
 // covers the agents it may run (trigger.selfActors).
-func matchChanges(tr *trigger, self map[substrate.Actor]bool, changes []substrate.Change) []substrate.Change {
+func matchChanges(tr *trigger, self map[string]bool, changes []substrate.Change) []substrate.Change {
 	var out []substrate.Change
 	for _, ch := range changes {
 		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
@@ -2627,9 +2627,9 @@ type runRecord struct {
 	pages     int // committed pages for a paged (backfill) delivery; >1 only when the body paged
 	// A call run's audit (callrun.go): the door the call came through, the
 	// token behind it, and what it returned.
-	caller    substrate.Actor
-	principal string
-	output    *callOutput
+	caller substrate.Actor
+	token  string
+	output *callOutput
 }
 
 // putRun writes one run record inside the caller's transaction.
@@ -2660,10 +2660,10 @@ func (t *txn) putRun(r runRecord) error {
 		props["trigger"] = vocabulary.RecordPath(typeTrigger, r.trigger)
 	}
 	if r.caller != "" {
-		props["caller"] = string(r.caller)
+		props["caller"] = vocabulary.ActorRef(actorID(r.caller))
 	}
-	if r.principal != "" {
-		props["principal"] = r.principal
+	if r.token != "" {
+		props["token"] = r.token
 	}
 	if r.output != nil {
 		props["outputBytes"] = r.output.bytes
@@ -4160,17 +4160,16 @@ func (ds *dataset) oneChange(ctx context.Context, query, missing string, args ..
 }
 
 // changeColumns are a changelog row as scanChange reads it.
-const changeColumns = `seq, ts, actor, op, record_id, kind, payload, hash, principal`
+const changeColumns = `seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, hash`
 
 // scanChange reads one changelog row from a query over changeColumns.
 func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	var c substrate.Change
-	var actor, op string
+	var op string
 	var raw, hash []byte
-	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw, &hash, &c.Principal); err != nil {
+	if err := rows.Scan(&c.Seq, &c.TS, &c.Actor, &c.OnBehalfOf, &c.Token, &op, &c.RecordID, &c.Kind, &raw, &hash); err != nil {
 		return c, err
 	}
-	c.Actor = substrate.Actor(actor)
 	c.Op = substrate.Op(op)
 	c.TS = c.TS.UTC()
 	if len(raw) > 0 {

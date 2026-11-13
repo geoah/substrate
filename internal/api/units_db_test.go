@@ -20,7 +20,7 @@ import (
 func TestUnitsRouteListsTheGraph(t *testing.T) {
 	t.Parallel()
 	env := upgradeReopenedEnv(t, func(ctx context.Context, ds substrate.Dataset) {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: vocabulary.KindUnit, ID: "stone", Properties: map[string]any{"name": "stone", "code": "[stone_av]"},
 		}); err != nil {
 			t.Fatalf("put the owner's stone: %v", err)

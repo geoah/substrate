@@ -108,7 +108,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	if ops := policySelectorOps(t, ds); len(ops) != 0 {
 		t.Fatalf("the old declaration declares values %v", ops)
 	}
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-puts",
 		Properties: map[string]any{
 			"selector": map[string]any{"ops": []any{"put", "patch"}},
@@ -119,11 +119,11 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	// `selector: {}` with action gate is the documented "gate every agent
 	// write". A value count that read an absent field as a value outside the
 	// new set would strand exactly the policies that are most correct.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-everything",
 		Properties: map[string]any{"selector": map[string]any{}, "action": "gate"},
 	})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-selectorless",
 		Properties: map[string]any{"action": "gate"},
 	})
@@ -174,7 +174,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	}
 	// The word the request a gate produces carries, which never matched a
 	// write and which the enum cannot admit.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-creates",
 		Properties: map[string]any{
 			"selector": map[string]any{"ops": []any{"create"}},

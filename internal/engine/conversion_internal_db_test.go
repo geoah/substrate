@@ -1,8 +1,8 @@
 package engine
 
 // These tests run the chain through one step no release ships, after the
-// steps the binary carries (testDialect): it respells the actor `api` as
-// `api.converted`, on the line and in each effect that names it, which every
+// steps the binary carries (testDialect): it respells the person's actor id
+// as `api.converted`, on the line and in each effect that names it, which every
 // repository written here holds. That is the shape of what a real step does:
 // a line rewritten in place, its checksum recomputed, the fold rebuilt from
 // it. A step that lands copies this test's form: a repository written at the
@@ -37,6 +37,10 @@ const convertedActor = "api.converted"
 // chain the binary carries, which every repository here is written at.
 var testDialect = chainDialect(conversionSteps) + 1
 
+// personActor is the person's actor record id, the actor the API's writes
+// link, which the test's step respells.
+var personActor = actorID(substrate.ActorPerson)
+
 func testConversion() Option {
 	return func(o *options) {
 		o.conversion = append(append([]conversionStep(nil), conversionSteps...),
@@ -45,9 +49,9 @@ func testConversion() Option {
 }
 
 // respellAPIActor is idempotent, as every step must be: a converted line has
-// no `api` left to respell.
+// no link to the person left to respell.
 func respellAPIActor(e *changelogfile.Entry) error {
-	if e.Actor == string(substrate.ActorAPI) {
+	if e.Actor == personActor {
 		e.Actor = convertedActor
 	}
 	dec := json.NewDecoder(bytes.NewReader(e.Payload))
@@ -58,7 +62,7 @@ func respellAPIActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p[foldPayloadKey].([]any)
 	for _, raw := range effects {
-		if eff, ok := raw.(map[string]any); ok && eff["actor"] == string(substrate.ActorAPI) {
+		if eff, ok := raw.(map[string]any); ok && eff["actor"] == personActor {
 			eff["actor"] = convertedActor
 		}
 	}
@@ -115,7 +119,7 @@ func writeConvertSource(t *testing.T, binary ...Option) convertSource {
 	if err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/contact", ID: fid("ada"), Properties: map[string]any{"name": "Ada"},
 	}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -173,7 +177,7 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 			if !bytes.Equal(sum[:], row.hash) {
 				t.Errorf("seq %d: the stamped checksum is not the line's", e.Seq)
 			}
-			if bytes.Contains(e.Payload, []byte(`"actor": "api"`)) || bytes.Contains(e.Payload, []byte(`"actor":"api"`)) || e.Actor == string(substrate.ActorAPI) {
+			if bytes.Contains(e.Payload, []byte(`"actor": "`+personActor+`"`)) || bytes.Contains(e.Payload, []byte(`"actor":"`+personActor+`"`)) || e.Actor == personActor {
 				t.Errorf("seq %d still spells the actor api: %s", e.Seq, e.Payload)
 			}
 			if e.Actor == convertedActor {
@@ -212,12 +216,12 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(body, []byte(`"actor":"api"`)) {
+		if bytes.Contains(body, []byte(`"actor":"`+personActor+`"`)) {
 			t.Errorf("the archive's %s still spells the actor api", o.Key)
 		}
 	}
 	// The converted repository takes writes in its new dialect.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/contact", fid("ada"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/contact", fid("ada"), substrate.PatchInput{
 		Properties: map[string]any{"name": "Ada L."},
 	}); err != nil {
 		t.Fatalf("write after the conversion: %v", err)
@@ -344,7 +348,7 @@ func TestAConversionSourceIsAtDialectOneWhateverStepsTheBinaryCarries(t *testing
 const thirdActor = "api.three"
 
 // twoSteps is a chain of two steps, through the dialect given, where the
-// first refuses what the second writes: step 2 respells `api` as
+// first refuses what the second writes: step 2 respells the person as
 // `api.converted` and refuses a line spelling `api.three`, and step 3
 // respells `api.converted` as `api.three`. Each step alone is idempotent, so
 // a copy that ever has step 2 run over a line step 3 wrote fails to open
@@ -525,7 +529,7 @@ func holdRestoredAt(t *testing.T, svc substrate.Service, repo string, dialect in
 			switch e.Actor {
 			case actor:
 				spelled++
-			case string(substrate.ActorAPI), convertedActor, thirdActor:
+			case personActor, convertedActor, thirdActor:
 				t.Errorf("seq %d spells the actor %q at dialect %d", e.Seq, e.Actor, dialect)
 			}
 			after = e.Seq
@@ -654,9 +658,9 @@ func TestAnArchiveSeveralDialectsBehindIsWrittenAgainWhole(t *testing.T) {
 	ctx := context.Background()
 	src := writeConvertSource(t)
 	svc, err := OpenForTest(t, ctx, src.dsn, WithDataRoot(src.root), WithArchive(archiveDir(t, src.archive)),
-		WithArchiveInterval(time.Hour), testConversionTo3())
+		WithArchiveInterval(time.Hour), testConversionPast())
 	if err != nil {
-		t.Fatalf("open under a chain to 3: %v", err)
+		t.Fatalf("open under a chain past the test's step: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	d, err := svc.Dataset(ctx, src.repo)
@@ -672,8 +676,8 @@ func TestAnArchiveSeveralDialectsBehindIsWrittenAgainWhole(t *testing.T) {
 		t.Fatalf("verify after the pass: %+v (%v)", report, err)
 	}
 	newest, err := openNewestArchive(ctx, ds.svc.archive, src.id, nil)
-	if err != nil || newest.manifest.ChangelogDialect != 3 {
-		t.Fatalf("the archive's newest manifest: %v, want dialect 3", err)
+	if err != nil || newest.manifest.ChangelogDialect != testDialect+1 {
+		t.Fatalf("the archive's newest manifest: %v, want dialect %d", err, testDialect+1)
 	}
 	listed, err := ds.svc.archive.List(ctx, changelogfile.ArchivePrefix(src.id, newest.archive)+changelogfile.ChangelogSubdir+"/1/")
 	if err != nil || len(listed) != 0 {
@@ -681,14 +685,14 @@ func TestAnArchiveSeveralDialectsBehindIsWrittenAgainWhole(t *testing.T) {
 	}
 }
 
-// testConversionTo3 is testConversion with a third dialect after it, a step
-// that rewrites nothing: a chain longer than one step.
-func testConversionTo3() Option {
+// testConversionPast is testConversion with one dialect more after the
+// test's own, a step that rewrites nothing: a chain longer than the one every
+// repository here is written at, whatever steps the binary carries.
+func testConversionPast() Option {
 	return func(o *options) {
-		o.conversion = []conversionStep{
-			{Dialect: 2, Name: "respell_the_api_actor", Line: respellAPIActor},
-			{Dialect: 3, Name: "a_step_that_rewrites_nothing", Line: func(*changelogfile.Entry) error { return nil }},
-		}
+		o.conversion = append(append([]conversionStep(nil), conversionSteps...),
+			conversionStep{Dialect: testDialect, Name: "respell_the_api_actor", Line: respellAPIActor},
+			conversionStep{Dialect: testDialect + 1, Name: "a_step_that_rewrites_nothing", Line: func(*changelogfile.Entry) error { return nil }})
 	}
 }
 
@@ -704,7 +708,7 @@ func TestADatabaseBehindItsArchiveIsKeptUntilTheOperatorTakesTheArchive(t *testi
 	src := writeConvertSource(t)
 
 	// The archive goes on without that database: restored elsewhere by a
-	// binary of dialect 2, it takes two more contacts in dialect 2.
+	// binary of the test's dialect, it takes two more contacts in it.
 	ahead := filepath.Join(t.TempDir(), "archive")
 	if err := copyTree(src.archive, ahead); err != nil {
 		t.Fatal(err)
@@ -718,14 +722,14 @@ func TestADatabaseBehindItsArchiveIsKeptUntilTheOperatorTakesTheArchive(t *testi
 		t.Fatal(err)
 	}
 	for _, name := range []string{"bea", "cyd"} {
-		if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: "substrate.reamde.dev/core/contact", ID: fid(name), Properties: map[string]any{"name": name},
 		}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
 	if err := d.(*dataset).ArchivePass(ctx); err != nil {
-		t.Fatalf("archive in dialect 2: %v", err)
+		t.Fatalf("archive in the test's dialect: %v", err)
 	}
 	aheadHead, err := tableChangelogHead(ctx, d.(*dataset).db)
 	if err != nil {
@@ -737,9 +741,9 @@ func TestADatabaseBehindItsArchiveIsKeptUntilTheOperatorTakesTheArchive(t *testi
 
 	open := func() (substrate.Service, *dataset) {
 		svc, err := OpenForTest(t, ctx, src.dsn, WithDataRoot(src.root), WithArchive(archiveDir(t, ahead)),
-			WithArchiveInterval(time.Hour), testConversionTo3())
+			WithArchiveInterval(time.Hour), testConversionPast())
 		if err != nil {
-			t.Fatalf("boot the database behind its archive under a chain to 3: %v", err)
+			t.Fatalf("boot the database behind its archive under a chain past the test's step: %v", err)
 		}
 		d, err := svc.Dataset(ctx, src.repo)
 		if err != nil {
@@ -748,8 +752,8 @@ func TestADatabaseBehindItsArchiveIsKeptUntilTheOperatorTakesTheArchive(t *testi
 		return svc, d.(*dataset)
 	}
 	svc, ds := open()
-	if stamp, err := readChangelogDialect(ctx, ds.db); err != nil || stamp != 3 {
-		t.Fatalf("stamp %d (%v), want 3", stamp, err)
+	if stamp, err := readChangelogDialect(ctx, ds.db); err != nil || stamp != testDialect+1 {
+		t.Fatalf("stamp %d (%v), want %d", stamp, err, testDialect+1)
 	}
 	if _, err := ds.Get(ctx, "substrate.reamde.dev/core/contact", fid("bea")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the boot took the archive's contact over the database's history: %v", err)
@@ -1142,4 +1146,269 @@ func copyTree(src, dst string) error {
 		}
 		return os.WriteFile(target, data, 0o600)
 	})
+}
+
+// newFramedWorld is the start gate's two repositories (gateWorld), A holding
+// a record line, a tombstone and the gc line that purged it, with every row
+// of A put back in the frame changelog dialects 1 and 2 wrote and A stamped
+// at dialect: what a release before the actor links left in the table.
+func newFramedWorld(t *testing.T, dialect int) gateWorld {
+	t.Helper()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	svc, err := OpenForTest(t, ctx, w.dsn, WithDataRoot(w.root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := svc.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := d.(*dataset)
+	mustPutInternal(t, ds, substrate.PutInput{Kind: "substrate.reamde.dev/core/contact", ID: fid("bob"), Properties: map[string]any{"name": "Bob"}})
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/contact", fid("bob"), substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db := rawDBOf(t, w.dsn)
+	rows, err := queryChecksumRows(ctx, db, `WHERE repository = $1 ORDER BY seq`, w.a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		old := r.entry.fileEntry()
+		old.Principal, old.HasPrincipal, old.Token = old.Token, true, ""
+		_, sum, err := changelogfile.Encode(old)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE changelog SET hash = $3 WHERE repository = $1 AND seq = $2`, w.a.ID, r.entry.Seq, sum[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE changelog_dialect SET dialect = $2 WHERE repository = $1`, w.a.ID, dialect); err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
+// lineSeq is the seq of A's line of one sort: the record line that wrote
+// Ada, the tombstone of Bob, or the gc line that purged it.
+func (w gateWorld) lineSeq(t *testing.T, which string) int64 {
+	t.Helper()
+	where := map[string]string{
+		"record":    `op = 'put' AND record_id = '` + fid("ada") + `'`,
+		"tombstone": `op = 'delete' AND record_id = '` + fid("bob") + `'`,
+		"gc":        `op = 'gc'`,
+	}[which]
+	var seq sql.NullInt64
+	if err := rawDBOf(t, w.dsn).QueryRow(`SELECT min(seq) FROM changelog WHERE repository = $1 AND `+where, w.a.ID).Scan(&seq); err != nil || !seq.Valid {
+		t.Fatalf("A holds no %s line (%v)", which, err)
+	}
+	return seq.Int64
+}
+
+// tableOf is every column of every row of a repository's changelog, and its
+// dialect stamp, as text: two reads compare byte for byte.
+func tableOf(t *testing.T, dsn, repository string) string {
+	t.Helper()
+	db := rawDBOf(t, dsn)
+	rows, err := db.Query(`
+		SELECT seq, ts::text, actor, on_behalf_of, principal, op, record_id, kind, payload::text,
+			coalesce(caused_by, 0), txn, encode(hash, 'hex')
+		FROM changelog WHERE repository = $1 ORDER BY seq`, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var b strings.Builder
+	for rows.Next() {
+		var seq, causedBy, txn int64
+		var ts, actor, behalf, principal, op, id, kind, payload, hash string
+		if err := rows.Scan(&seq, &ts, &actor, &behalf, &principal, &op, &id, &kind, &payload, &causedBy, &txn, &hash); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintln(&b, seq, ts, actor, behalf, principal, op, id, kind, payload, causedBy, txn, hash)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	var stamp int
+	if err := db.QueryRow(`SELECT dialect FROM changelog_dialect WHERE repository = $1`, repository).Scan(&stamp); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(&b, "stamp", stamp)
+	return b.String()
+}
+
+// A conversion never gives a line a checksum it did not have a right to. A
+// row whose stored checksum no frame reproduces (its checksum damaged, or a
+// column edited under it), whichever line it is and whichever step meets it
+// first, stops the conversion: nothing of the repository is converted or
+// stamped, and the boot check sets the repository aside, naming the seq,
+// while its neighbor serves. A step that rewrote it would have stamped the
+// damage verified: a tombstone or a gc line carries no effect a rebuild
+// could refuse.
+func TestAConversionStopsAtARowItCannotVerify(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		dialect int
+		line    string
+		content bool
+	}{
+		"a dialect-1 record line, its checksum damaged": {dialect: 1, line: "record"},
+		"a dialect-2 record line, its actor edited":     {dialect: 2, line: "record", content: true},
+		"a dialect-1 tombstone, its checksum damaged":   {dialect: 1, line: "tombstone"},
+		"a dialect-2 gc line, its checksum damaged":     {dialect: 2, line: "gc"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			w := newFramedWorld(t, c.dialect)
+			seq := w.lineSeq(t, c.line)
+			damage := `UPDATE changelog SET hash = set_byte(hash, 0, (get_byte(hash, 0) + 1) % 256) WHERE repository = $1 AND seq = $2`
+			if c.content {
+				damage = `UPDATE changelog SET actor = actor || '.edited' WHERE repository = $1 AND seq = $2`
+			}
+			if _, err := rawDBOf(t, w.dsn).Exec(damage, w.a.ID, seq); err != nil {
+				t.Fatal(err)
+			}
+			before := tableOf(t, w.dsn, w.a.ID)
+			s := w.start(t)
+			w.wantAsideAndNeighborServing(t, s)
+			r := s.setAsideOf(w.a.ID, "")
+			if r == nil || r.stage != setAsideAtCheck || !strings.Contains(r.cause.Error(), fmt.Sprintf("seq %d:", seq)) {
+				t.Fatalf("set aside as %+v, want at the boot check naming seq %d", r, seq)
+			}
+			if after := tableOf(t, w.dsn, w.a.ID); after != before {
+				t.Errorf("the refused conversion changed the table or its stamp:\nbefore\n%s\nafter\n%s", before, after)
+			}
+		})
+	}
+}
+
+// A step that leaves a line as it found it leaves its checksum as it found
+// it. Step 2 meets lines in the frame dialect 1 wrote and rewrites none of
+// these, so the table comes out of it byte for byte as it went in but for the
+// stamp; and the test's step, which respells the person's lines, leaves every
+// other line's checksum where it was.
+func TestAStepThatLeavesALineLeavesItsChecksum(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	t.Run("step 2 over lines in the earlier frame", func(t *testing.T) {
+		t.Parallel()
+		w := newFramedWorld(t, 1)
+		before := tableOf(t, w.dsn, w.a.ID)
+		s := w.start(t, func(o *options) { o.conversion = conversionSteps[:1] })
+		if _, err := s.Dataset(ctx, w.a.Authority); err != nil {
+			t.Fatalf("the converted repository: %v", err)
+		}
+		want := strings.Replace(before, "stamp 1\n", fmt.Sprintf("stamp %d\n", conversionSteps[0].Dialect), 1)
+		if after := tableOf(t, w.dsn, w.a.ID); after != want {
+			t.Errorf("step 2 rewrote lines it left as they were:\nbefore\n%s\nafter\n%s", before, after)
+		}
+	})
+	t.Run("a step that rewrites some lines", func(t *testing.T) {
+		t.Parallel()
+		w := newGateWorld(t)
+		sums := func() map[int64]string {
+			out := map[int64]string{}
+			rows, err := queryChecksumRows(ctx, rawDBOf(t, w.dsn), `WHERE repository = $1 ORDER BY seq`, w.a.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range rows {
+				out[r.entry.Seq] = fmt.Sprintf("%x %s", r.hash, r.entry.Actor)
+			}
+			return out
+		}
+		before := sums()
+		s := w.start(t, testConversion())
+		if _, err := s.Dataset(ctx, w.a.Authority); err != nil {
+			t.Fatalf("the converted repository: %v", err)
+		}
+		after, kept, rewritten := sums(), 0, 0
+		for seq, was := range before {
+			switch {
+			case !strings.HasSuffix(was, " "+personActor):
+				if after[seq] != was {
+					t.Errorf("seq %d, not the person's: %s became %s", seq, was, after[seq])
+				}
+				kept++
+			case after[seq] == was:
+				t.Errorf("seq %d, the person's, was not rewritten", seq)
+			default:
+				rewritten++
+			}
+		}
+		if kept == 0 || rewritten == 0 {
+			t.Fatalf("kept %d and rewrote %d lines: the test proves nothing", kept, rewritten)
+		}
+	})
+}
+
+// A verify opened read-only runs no conversion, so it may meet a history the
+// boot has not converted: an upgrade stopped before the conversion committed,
+// or a repository the start set aside at it. Its rows are whole in the frame
+// they were written in, and are held to that frame; the pending conversion is
+// its own finding. A row no frame reproduces is the one checksum mismatch,
+// and a row in the earlier frame under a stamp past it is named too.
+func TestAReadOnlyVerifyHoldsEachRowToItsOwnFrame(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newFramedWorld(t, 2)
+	verify := func() VerifyReport {
+		t.Helper()
+		svc, err := OpenForTest(t, ctx, w.dsn, WithDataRoot(w.root), WithDirectoryReadOnly())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = svc.Close() }()
+		report, err := svc.(*service).VerifyRepositoryWith(ctx, w.a.Authority, VerifyOptions{Recanonicalize: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
+	}
+	mismatches := func(r VerifyReport) []string {
+		var out []string
+		for _, f := range r.Findings {
+			if strings.Contains(f, "checksum mismatch") || strings.Contains(f, "a conversion passed it over") {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+	pending := fmt.Sprintf("conversion: the history is in changelog dialect 2, and this binary's conversion to %d", chainDialect(conversionSteps))
+
+	report := verify()
+	if got := mismatches(report); len(got) > 0 {
+		t.Errorf("whole rows in the earlier frame reported damaged: %v", got)
+	}
+	if !verifyFinding(report, pending) {
+		t.Errorf("no finding says the conversion is pending (%q): %v", pending, report.Findings)
+	}
+
+	seq := w.lineSeq(t, "tombstone")
+	if _, err := rawDBOf(t, w.dsn).Exec(`UPDATE changelog SET hash = set_byte(hash, 0, (get_byte(hash, 0) + 1) % 256) WHERE repository = $1 AND seq = $2`, w.a.ID, seq); err != nil {
+		t.Fatal(err)
+	}
+	if got := mismatches(verify()); len(got) != 1 || !strings.Contains(got[0], fmt.Sprintf("seq %d: checksum mismatch", seq)) {
+		t.Errorf("a damaged row among whole ones: %v, want seq %d's checksum mismatch alone", got, seq)
+	}
+
+	if _, err := rawDBOf(t, w.dsn).Exec(`UPDATE changelog_dialect SET dialect = $2 WHERE repository = $1`, w.a.ID, chainDialect(conversionSteps)); err != nil {
+		t.Fatal(err)
+	}
+	report = verify()
+	if verifyFinding(report, "conversion: the history is in") {
+		t.Errorf("a history at the binary's dialect reported pending: %v", report.Findings)
+	}
+	if !verifyFinding(report, "a conversion passed it over") {
+		t.Errorf("rows in the earlier frame under the binary's stamp pass: %v", report.Findings)
+	}
 }

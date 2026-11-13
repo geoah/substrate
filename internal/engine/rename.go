@@ -42,7 +42,7 @@ func (t *txn) moveManager(ref eref, from, to string) error {
 	}
 	if _, err := t.fold(foldOp{
 		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
-		Property: to, Actor: actor, Tier: tier, Principal: principal,
+		Property: to, Actor: actor, Tier: tier, Token: principal,
 		UpdatedAt: &updatedAt,
 	}); err != nil {
 		return err

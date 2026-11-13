@@ -553,7 +553,7 @@ func historyTool() Tool {
 			"kind":       kindArg,
 			"id":         str("a record id; with kind, that record's changes"),
 			"kinds":      stringList("kinds to narrow to"),
-			"actors":     stringList("actors to narrow to, such as console or app:local"),
+			"actors":     stringList("actors to narrow to: ids of substrate.reamde.dev/core/actor records"),
 			"values":     boolean("include the values before and after each change"),
 			"first":      firstArg,
 			"before":     integer("the previous page's cursor: read the changes below it"),

@@ -107,7 +107,7 @@ data:
 	}
 	// The person's own key: the row is served by it from here on, and the
 	// operator still offers the slot.
-	if _, err := env.ds.Patch(ctx, substrate.ActorAPI, provider, "chatllm", substrate.PatchInput{
+	if _, err := env.ds.Patch(ctx, substrate.ActorPerson, provider, "chatllm", substrate.PatchInput{
 		Properties: map[string]any{"apiKey": "row-own-key"},
 	}); err != nil {
 		t.Fatalf("key the row: %v", err)

@@ -20,7 +20,7 @@ func TestTheWalkDoesNotRetryARowAHandRetriedMeanwhile(t *testing.T) {
 	clock := &TestClock{}
 	ds := openCursorDataset(t, WithTestRetryClock(clock.Now))
 	const pkg = "widgets.test.dev/widgets"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "mirror", map[string]any{
 			"description": "mirrors widgets into tasks, while its provider answers",
 			"runtime":     vocabulary.RuntimePython,
@@ -31,7 +31,7 @@ func TestTheWalkDoesNotRetryARowAHandRetriedMeanwhile(t *testing.T) {
 		t.Fatalf("apply the failing body: %v", err)
 	}
 	triggerID := "on-mirror." + pkg
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pkg + "/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -80,11 +80,11 @@ func TestTheWalkChecksTheCallableItRuns(t *testing.T) {
 			"source":      "def main(input, host):\n    raise host.Temporary(\"the provider is down\")\n",
 		})
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{mirror(map[string]any{})}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{mirror(map[string]any{})}); err != nil {
 		t.Fatalf("apply the failing body: %v", err)
 	}
 	triggerID := "on-mirror." + pkg
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pkg + "/widget", ID: fid("w1"), Properties: map[string]any{"name": "w1"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -102,7 +102,7 @@ func TestTheWalkChecksTheCallableItRuns(t *testing.T) {
 		t.Fatalf("the walk's read: %v, retryable %v", err, err == nil && autoRetryable(tr))
 	}
 	// ...then an apply lets the function call another before the walk runs it.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "helper", map[string]any{
 			"description": "helps", "runtime": vocabulary.RuntimePython,
 			"source": "def main(input, host):\n    return {}\n",

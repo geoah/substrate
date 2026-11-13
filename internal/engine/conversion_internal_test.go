@@ -3,10 +3,14 @@ package engine
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The chain this binary carries is numbered from 2 with no gap, converts to
@@ -83,4 +87,66 @@ func TestARepositoryRunsTheStepsAboveItsStamp(t *testing.T) {
 			t.Errorf("stamped %d: pending %q, want %q", stored, got, want)
 		}
 	}
+}
+
+// The table keeps a line's token in one column whatever key the line held it
+// under, so the walk reads the key from the row's checksum: a row from before the links
+// reaches the step with its `principal`, an empty one included, which is how
+// the actor links tell a line to convert; a row this binary wrote reaches it
+// with its `token`. A row whose checksum no frame reproduces reaches no step:
+// the walk would stamp whatever the step left with a checksum of its own.
+func TestTheWalkHandsAStepTheLineInTheFrameItWasWritten(t *testing.T) {
+	t.Parallel()
+	ts := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	row := func(e changelogfile.Entry) checksumRow {
+		_, sum, err := changelogfile.Encode(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return checksumRow{entry: pendingEntry{
+			Seq: e.Seq, TS: e.TS, Actor: e.Actor, OnBehalfOf: e.OnBehalfOf, Token: lineToken(e),
+			Op: e.Op, RecordID: e.RecordID, Kind: e.Kind, Txn: e.Txn, PayloadText: e.Payload,
+		}, hash: sum[:]}
+	}
+	base := changelogfile.Entry{Seq: 7, Txn: 7, TS: ts, Op: "put", Kind: "k.example.com/p/k", RecordID: "r", Payload: []byte(`{}`)}
+	tombstone := editedLine(base, func(e *changelogfile.Entry) {
+		e.Op, e.Payload = "delete", []byte(`{"fold":[{"kind":"tombstone","ref":"k.example.com/p/k","id":"r"}]}`)
+	})
+	for name, c := range map[string]struct {
+		line                changelogfile.Entry
+		principal, token    string
+		carriesPrincipalKey bool
+	}{
+		"before the links, behind a token": {line: editedLine(base, func(e *changelogfile.Entry) { e.Actor, e.Principal, e.HasPrincipal = "api", "tok", true }), principal: "tok", carriesPrincipalKey: true},
+		"before the links, behind none":    {line: editedLine(base, func(e *changelogfile.Entry) { e.Actor, e.HasPrincipal = "substrate", true }), carriesPrincipalKey: true},
+		"a tombstone before the links":     {line: editedLine(tombstone, func(e *changelogfile.Entry) { e.Actor, e.Principal, e.HasPrincipal = "api", "tok", true }), principal: "tok", carriesPrincipalKey: true},
+		"linked, behind a token":           {line: editedLine(base, func(e *changelogfile.Entry) { e.Actor, e.Token = vocabulary.ActorID(substrate.ActorPerson), "tok" }), token: "tok"},
+		"linked, behind none":              {line: editedLine(base, func(e *changelogfile.Entry) { e.Actor = vocabulary.ActorID(substrate.ActorSystem) })},
+	} {
+		got, err := walkedLine(row(c.line))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if got.HasPrincipal != c.carriesPrincipalKey || got.Principal != c.principal || got.Token != c.token {
+			t.Errorf("%s: the walk hands principal %q (key %v) and token %q, want %q (key %v) and %q",
+				name, got.Principal, got.HasPrincipal, got.Token, c.principal, c.carriesPrincipalKey, c.token)
+		}
+		_, want, _ := changelogfile.Encode(c.line)
+		if _, sum, _ := changelogfile.Encode(got); sum != want {
+			t.Errorf("%s: the line the walk hands does not reproduce the row's checksum", name)
+		}
+
+		damaged := row(c.line)
+		damaged.hash = slices.Clone(damaged.hash)
+		damaged.hash[0] ^= 0xff
+		if _, err := walkedLine(damaged); err == nil || !strings.Contains(err.Error(), "seq 7:") {
+			t.Errorf("%s, its checksum damaged: the walk hands it to a step (%v), want it refused naming seq 7", name, err)
+		}
+	}
+}
+
+func editedLine(e changelogfile.Entry, edit func(*changelogfile.Entry)) changelogfile.Entry {
+	edit(&e)
+	return e
 }

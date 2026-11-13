@@ -260,7 +260,10 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 		"op":    OpOf(ch),
 		"kind":  ch.Kind,
 		"id":    ch.RecordID,
-		"actor": string(ch.Actor),
+		"actor": ch.Actor,
+	}
+	if ch.OnBehalfOf != "" {
+		change["onBehalfOf"] = ch.OnBehalfOf
 	}
 	// The changed-property names, when the payload carries them: the
 	// level-triggered contract names what moved, never the old values.

@@ -45,7 +45,7 @@ func openSpendDataset(t *testing.T, opts ...Option) (*dataset, *fakeLLM) {
 		"freellm": {},
 	} {
 		props["wire"], props["baseURL"], props["apiKey"] = "openai", fake.srv.URL, "row-key-"+id
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put llm/provider row %s: %v", id, err)
 		}
 	}
@@ -80,7 +80,7 @@ func applySpendPackage(t *testing.T, ds *dataset, cappedCents int) {
 			"budgets": map[string]any{"spendCentsPerDay": 1},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install %s: %v", spendPackage, err)
 	}
 }
@@ -88,7 +88,7 @@ func applySpendPackage(t *testing.T, ds *dataset, cappedCents int) {
 // putSpendTrigger points a record trigger on widget creates at one agent.
 func putSpendTrigger(t *testing.T, ds *dataset, agent string) string {
 	t.Helper()
-	rec, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	rec, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{spendPackage + "/widget"}, "ops": []any{"create"}}},
@@ -105,7 +105,7 @@ func putSpendTrigger(t *testing.T, ds *dataset, agent string) string {
 func putSpendWidget(t *testing.T, ds *dataset, id string) int64 {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: spendPackage + "/widget", ID: id, Properties: map[string]any{"name": id},
 	}); err != nil {
 		t.Fatalf("put widget %s: %v", id, err)
@@ -246,7 +246,7 @@ func TestAZeroSpendCapHoldsEveryRun(t *testing.T) {
 	}
 	_, err := ds.CallAgent(ctx, spendPackage+"/zero", "hello")
 	refused("a call", err)
-	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, spendPackage+"/zero", substrate.ChatInput{Message: "hello"}, nil)
+	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, spendPackage+"/zero", substrate.ChatInput{Message: "hello"}, nil)
 	refused("a chat", err)
 
 	trigger := putSpendTrigger(t, ds, "zero")
@@ -275,7 +275,7 @@ func TestARepositorySpendCapHoldsEveryAgent(t *testing.T) {
 	fake.script("open", fakeTurn{content: "one"}, fakeTurn{content: "two"})
 	setCap := func(value, typ string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: kindSetting, ID: spendSettingID,
 			Properties: map[string]any{"value": value, "type": typ},
 		}); err != nil {
@@ -319,7 +319,7 @@ func TestARepositorySpendCapRefusesAValueItCouldNotRead(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openSpendDataset(t)
 	put := func(props map[string]any) error {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kindSetting, ID: spendSettingID, Properties: props})
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kindSetting, ID: spendSettingID, Properties: props})
 		return err
 	}
 	for _, props := range []map[string]any{
@@ -340,13 +340,13 @@ func TestARepositorySpendCapRefusesAValueItCouldNotRead(t *testing.T) {
 		t.Fatalf("the largest cap: %v", err)
 	}
 	for _, props := range []map[string]any{{"value": "-1"}, {"value": "1.5"}, {"type": "string"}} {
-		_, err := ds.Patch(ctx, substrate.ActorAPI, kindSetting, spendSettingID, substrate.PatchInput{Properties: props})
+		_, err := ds.Patch(ctx, substrate.ActorPerson, kindSetting, spendSettingID, substrate.PatchInput{Properties: props})
 		if !errors.Is(err, substrate.ErrValidation) {
 			t.Errorf("patch %v: %v, want a validation error", props, err)
 		}
 	}
 	// A setting under another id keeps the ordinary int rule.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: "spend.test.dev/spend/offset", Properties: map[string]any{"value": "-1", "type": "int"},
 	}); err != nil {
 		t.Fatalf("another int setting at -1: %v", err)
@@ -465,7 +465,7 @@ func TestSpendSumsRootThreadsByWhenTheyFinished(t *testing.T) {
 		if _, ok := props["status"]; !ok {
 			props["status"] = threadOK
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeThread, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeThread, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put thread %s: %v", id, err)
 		}
 	}
@@ -593,7 +593,7 @@ func TestASpendCapCountsARunWhoseSettleNeverCommitted(t *testing.T) {
 	// writes nothing. The thread's first turn (100 cents) is on its row,
 	// which a tombstone keeps counted; the continuation's 200 are on none.
 	fake.script("open", fakeTurn{content: "first"})
-	first, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
+	first, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,11 +602,11 @@ func TestASpendCapCountsARunWhoseSettleNeverCommitted(t *testing.T) {
 	t.Cleanup(unblock2)
 	fake.script("open", fakeTurn{content: "second", arrived: arrived2, release: release2, promptTokens: 20})
 	go func() {
-		_, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
+		_, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived2
-	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, typeThread, first.Thread, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(context.Background(), substrate.ActorPerson, typeThread, first.Thread, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	unblock2()
@@ -648,13 +648,13 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 	ds, fake := openSpendDataset(t)
 	capped := spendPackage + "/capped"
 	fake.script("capped", fakeTurn{content: "long ago"}, fakeTurn{content: "today"})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Message: "hi"}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, capped, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The first turn finished 30 hours ago and cost 5 USD; this process has
 	// long forgotten it.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeThread, first.Thread, substrate.PatchInput{Properties: map[string]any{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeThread, first.Thread, substrate.PatchInput{Properties: map[string]any{
 		"finishedAt": nowUTC().Add(-30 * time.Hour).Format(time.RFC3339Nano), "costUSD": 5.0,
 	}}); err != nil {
 		t.Fatal(err)
@@ -670,7 +670,7 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 	// snapshot read before it already sees the whole thread.
 	var between int64 = -1
 	ds.spend.finishing = func(*spendRun) { between = spentOf(t, ds, "capped", false) }
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Thread: first.Thread, Message: "again"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, capped, substrate.ChatInput{Thread: first.Thread, Message: "again"}, nil); err != nil {
 		t.Fatalf("the continuation, admitted at 0 of 150: %v", err)
 	}
 	ds.spend.finishing = nil
@@ -678,7 +678,7 @@ func TestASpendCapCountsAContinuedChatsWholeThreadAtOnce(t *testing.T) {
 		t.Fatalf("between the settle and the loop's return, on the cached snapshot: %d cents, want 600", between)
 	}
 	want := heldAt("capped", 600, 150)
-	_, err = ds.ChatAgent(ctx, substrate.ActorAPI, capped, substrate.ChatInput{Thread: first.Thread, Message: "and again"}, nil)
+	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, capped, substrate.ChatInput{Thread: first.Thread, Message: "and again"}, nil)
 	if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
 		t.Fatalf("an admission right after the settle: %v, want %q", err, want)
 	}
@@ -697,7 +697,7 @@ func TestASpendCapForgetsSpendThatLeftTheWindow(t *testing.T) {
 	ds, fake := openSpendDataset(t)
 	clock := &TestClock{}
 	ds.spend.now = clock.Now
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: spendSettingID, Properties: map[string]any{"value": "50", "type": "int"},
 	}); err != nil {
 		t.Fatal(err)
@@ -714,7 +714,7 @@ func TestASpendCapForgetsSpendThatLeftTheWindow(t *testing.T) {
 	unblock := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(unblock)
 	// Raised for the lost run only, so it is admitted; lowered again below.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: spendSettingID, Properties: map[string]any{"value": "1000", "type": "int"},
 	}); err != nil {
 		t.Fatal(err)
@@ -731,7 +731,7 @@ func TestASpendCapForgetsSpendThatLeftTheWindow(t *testing.T) {
 	cancel()
 	<-done
 	unblock()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: spendSettingID, Properties: map[string]any{"value": "50", "type": "int"},
 	}); err != nil {
 		t.Fatal(err)
@@ -766,7 +766,7 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 	open := spendPackage + "/open"
 
 	fake.script("open", fakeTurn{content: "first"})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,11 +776,11 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 	fake.script("open", fakeTurn{content: "second", arrived: arrived, release: release, promptTokens: 20})
 	done := make(chan error, 1)
 	go func() {
-		_, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
+		_, err := ds.ChatAgent(ctx, substrate.ActorPerson, open, substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil)
 		done <- err
 	}()
 	<-arrived
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, first.Thread, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeThread, first.Thread, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	unblock()
@@ -790,16 +790,16 @@ func TestGCKeepsAThreadThatSettledInsideTheSpendWindow(t *testing.T) {
 
 	// An old thread, settled 30 hours ago and deleted, is collectable.
 	fake.script("open", fakeTurn{content: "old"})
-	old, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil)
+	old, err := ds.ChatAgent(ctx, substrate.ActorPerson, open, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeThread, old.Thread, substrate.PatchInput{Properties: map[string]any{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeThread, old.Thread, substrate.PatchInput{Properties: map[string]any{
 		"finishedAt": nowUTC().Add(-30 * time.Hour).Format(time.RFC3339Nano),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, old.Thread, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeThread, old.Thread, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -865,7 +865,7 @@ func TestASpendCapCountsALostLeaseSettleUntilTheThreadFinishes(t *testing.T) {
 	if got := spentOf(t, ds, "open", true); got != 200 {
 		t.Fatalf("spend after the late settle = %d cents, want 200", got)
 	}
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: kindSetting, ID: spendSettingID, Properties: map[string]any{"value": "150", "type": "int"},
 	}); err != nil {
 		t.Fatal(err)

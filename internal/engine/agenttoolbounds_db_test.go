@@ -28,7 +28,7 @@ func provisionBoundsAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "boundsllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-boundsllm",
@@ -106,7 +106,7 @@ def main(input, host):
 			"provider": "boundsllm", "model": "broomy", "tools": tools, "permissions": reads,
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the bounds package: %v", err)
 	}
 	return ds, fake
@@ -239,7 +239,7 @@ func TestAgentQueryCardCarriesTheLimitsInForce(t *testing.T) {
 			t.Errorf("tight's query card lacks %q:\n%s", want, tight)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "boundsllm", Properties: map[string]any{"embedModel": "text-embedding-ada-002"},
 	}); err != nil {
 		t.Fatalf("declare the embeddings model: %v", err)
@@ -265,7 +265,7 @@ func TestLexicalSearchDegradesWhenTheTopUpRunsOutOfBudget(t *testing.T) {
 	ds := openInternalDataset(t, WithSearchBudget(budget))
 	importVocabulary(t, ds, "tasks")
 	for id, name := range map[string]string{fid("both"): "flight booking", fid("flight"): "flight to Lisbon", fid("booking"): "booking for dinner"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: "samples.substrate.reamde.dev/tasks/task", ID: id, Properties: map[string]any{"name": name},
 		}); err != nil {
 			t.Fatal(err)

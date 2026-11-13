@@ -404,6 +404,8 @@ const change: Shape<Change> = {
   seq: true,
   ts: true,
   actor: true,
+  onBehalfOf: false,
+  token: false,
   op: true,
   recordId: true,
   kind: true,
@@ -462,7 +464,8 @@ const changeRun: Shape<ChangeRun> = {
   oldestSeq: true,
   newestTs: true,
   oldestTs: true,
-  principalName: false,
+  token: false,
+  tokenName: false,
 }
 
 const changeRunPage: Shape<ChangeRunPage> = {
@@ -717,7 +720,7 @@ const authorizationApp: Shape<AuthorizationApp> = {
   name: false,
   uri: false,
   uriHostDiffers: false,
-  actor: true,
+  appearsAs: true,
   verified: true,
   publisher: true,
 }
@@ -1604,6 +1607,9 @@ const mirrors: Record<string, Record<string, boolean>> = {
  * struct in `internal/substrate`, each with the reason. Everything else they
  * export must be in the golden. */
 const notOnTheWire: Record<string, string> = {
+  // actors.ts
+  ActorInfo:
+    "the console's reading of one actor record, built from a record's properties; the record itself is the SubstrateRecord the golden pins",
   // types.ts
   BundleInstallRequest:
     "the body of the catalog's add route, declared in internal/api (catalogAddRequest) and out of the golden's reach",
@@ -1637,8 +1643,6 @@ const notOnTheWire: Record<string, string> = {
   ApprovalArgument: "one argument of an llm/approval, folded for the card",
   LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
-  ActorMirrors: "client-side actor resolution state",
-  ResolvedActor: "client-side actor resolution state",
   // bundles.ts
   TraitRecords: "a bounded read's result the console derives from a Page",
   // changes.ts

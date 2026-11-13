@@ -81,7 +81,6 @@ func restContacts(t *testing.T, env *dbEnv) string {
 	contact := pkg + "/contact"
 	if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorSystem, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
-		vocabulary.ActorManifest(pkg, string(restContactActor)),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "contact"}, map[string]any{
 			"displayTemplate": "{displayName}",
 			"properties": map[string]any{
@@ -140,8 +139,8 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := meta["name"]
-	if name.Manager == "" || name.Manager == string(restContactActor) || len(name.Alternatives) != 1 ||
-		name.Alternatives[0].Actor != string(restContactActor) || name.Alternatives[0].Value != "Samuel Jones" {
+	if name.Manager == "" || name.Manager == vocabulary.ActorID(restContactActor) || len(name.Alternatives) != 1 ||
+		name.Alternatives[0].Actor != vocabulary.ActorID(restContactActor) || name.Alternatives[0].Value != "Samuel Jones" {
 		t.Fatalf("propertyMeta = %+v, want the owner's name held and the contact's offered beside it", meta)
 	}
 

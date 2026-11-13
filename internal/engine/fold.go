@@ -221,13 +221,14 @@ type foldOp struct {
 	Key   string `json:"key,omitempty"`
 	Value *any   `json:"value,omitempty"`
 
-	// Property/Actor/Tier/Principal carry a manager row; an empty Actor is the
-	// release. Principal is the token id behind the write, empty where no
-	// token stood behind it and on every effect written before #102.
-	Property  string `json:"property,omitempty"`
-	Actor     string `json:"actor,omitempty"`
-	Tier      string `json:"tier,omitempty"`
-	Principal string `json:"principal,omitempty"`
+	// Property/Actor/Tier/Token carry a manager row; an empty Actor is the
+	// release. Actor is the id of the actor record that holds the property
+	// and Token the id of the token behind the write, empty where none stood
+	// behind it (decision 0270).
+	Property string `json:"property,omitempty"`
+	Actor    string `json:"actor,omitempty"`
+	Tier     string `json:"tier,omitempty"`
+	Token    string `json:"token,omitempty"`
 	// UpdatedAt is the manager row's stamp when the effect carries one: a
 	// property rename moves a row and keeps the time its actor last had a
 	// change accepted (rename.go), which is not the rename's time. Absent on
@@ -484,7 +485,7 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		if op.UpdatedAt != nil {
 			at = *op.UpdatedAt
 		}
-		changed, err := t.applyManager(op.ref(), op.Property, substrate.Actor(op.Actor), substrate.Tier(op.Tier), op.Principal, at)
+		changed, err := t.applyManager(op.ref(), op.Property, op.Actor, substrate.Tier(op.Tier), op.Token, at)
 		return foldResult{changed: changed}, err
 	case foldFormerID:
 		if err := t.applyFormerID(op.Ref, op.FormerID, op.ID); err != nil {
@@ -1017,11 +1018,9 @@ type foldManagerRow struct {
 	Property string `json:"property"`
 	Actor    string `json:"actor"`
 	Tier     string `json:"tier"`
-	// Principal is the token id the row's write stood behind, empty where
-	// none did and on every payload written before #102 — the same empty the
-	// column's migration stamped on the rows it found, so replaying old
-	// history reproduces them.
-	Principal string    `json:"principal,omitempty"`
+	// Token is the id of the token the row's write stood behind, empty where
+	// none did. Actor is the actor record's id (decision 0270).
+	Token     string    `json:"token,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
@@ -1080,7 +1079,7 @@ func (t *txn) resyncOf(scope []eref) (foldOp, error) {
 			SELECT property, actor, tier, principal, updated_at FROM property_managers
 			WHERE record_kind = $1 AND record_id = $2 ORDER BY property`, ref, func(rows *sql.Rows) error {
 			m := foldManagerRow{Kind: ref.Kind, ID: ref.ID}
-			if err := rows.Scan(&m.Property, &m.Actor, &m.Tier, &m.Principal, &m.UpdatedAt); err != nil {
+			if err := rows.Scan(&m.Property, &m.Actor, &m.Tier, &m.Token, &m.UpdatedAt); err != nil {
 				return err
 			}
 			m.UpdatedAt = m.UpdatedAt.UTC()
@@ -1159,7 +1158,7 @@ func (t *txn) applyResync(op foldOp) error {
 		if _, err := t.exec(`
 			INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			m.Kind, m.ID, m.Property, m.Actor, m.Tier, m.Principal, m.UpdatedAt); err != nil {
+			m.Kind, m.ID, m.Property, m.Actor, m.Tier, m.Token, m.UpdatedAt); err != nil {
 			return fmt.Errorf("substrate/engine: resync manager %s %s %s: %w", m.Kind, m.ID, m.Property, err)
 		}
 	}

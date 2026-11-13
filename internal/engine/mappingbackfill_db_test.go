@@ -84,7 +84,7 @@ func TestInstallingAMappingLinksTheSourcesThatAlreadyExist(t *testing.T) {
 
 	// The link is the mapping's, as on a source's own write (record 96).
 	full := mustGet(t, ds, typeSlotlessCard, fid("card-ada"))
-	if want := "mapping:" + enginetest.SamplePackage("people") + "/cardperson"; full.PropertyMeta["person"].Manager != want {
+	if want := vocabulary.ActorID(substrate.Actor("mapping:" + enginetest.SamplePackage("people") + "/cardperson")); full.PropertyMeta["person"].Manager != want {
 		t.Fatalf("person manager = %q, want %q", full.PropertyMeta["person"].Manager, want)
 	}
 

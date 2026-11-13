@@ -150,7 +150,6 @@ func opMailDocs(tokenURL string, withProvenance bool) []map[string]any {
 	}
 	return []map[string]any{
 		vocabulary.PackageManifest(opMailPackage, 0),
-		vocabulary.ActorManifest(opMailPackage, vocabulary.PackageActor(opMailPackage)),
 		vocabulary.BundleManifest(opMailPackage, map[string]any{
 			"description": "a mail provider",
 			"inputs": map[string]any{
@@ -222,7 +221,7 @@ func openOpMail(t *testing.T) (*dataset, *opTokenFake, eref) {
 // is minted, so the owner may not name it (decision 0228).
 func opPutAccount(t *testing.T, ds *dataset, name string) eref {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: opMailAccount, ID: fid(name), Properties: map[string]any{"address": name + "@example.com", "enabledMail": true},
 	}); err != nil {
 		t.Fatalf("put account: %v", err)
@@ -235,7 +234,7 @@ func opPutAccount(t *testing.T, ds *dataset, name string) eref {
 // `default`, and a lone record resolves as the sole one.
 func opPutOwnClient(t *testing.T, ds *dataset, name string, props map[string]any) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: opMailConfig, ID: fid(name), Properties: props,
 	}); err != nil {
 		t.Fatalf("put client record %s: %v", name, err)
@@ -256,7 +255,7 @@ func opConnect(t *testing.T, ds *dataset, account eref) string {
 // opConnectErr is opConnect for a hook off the test's goroutine.
 func opConnectErr(ds *dataset, account eref) (string, error) {
 	ctx := context.Background()
-	consent, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
+	consent, err := ds.StartOAuth(ctx, substrate.ActorPerson, vocabulary.RecordPath(account.Kind, account.ID))
 	if err != nil {
 		return "", fmt.Errorf("start: %w", err)
 	}
@@ -274,7 +273,7 @@ func opConnectErr(ds *dataset, account eref) (string, error) {
 // (opPutOwnClient's "default") and reconnects the account, through the
 // operator's client now.
 func opReconnectThroughOperator(ds *dataset, account eref) error {
-	if _, err := ds.Delete(context.Background(), substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(context.Background(), substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 		return fmt.Errorf("delete the own client: %w", err)
 	}
 	got, err := opConnectErr(ds, account)
@@ -441,7 +440,7 @@ func TestOperatorOAuthClientNeverStandsInForARecordOrMixesThePair(t *testing.T) 
 
 	refuses := func(t *testing.T, ds *dataset, account eref, wantCode string) {
 		t.Helper()
-		_, err := ds.StartOAuth(ctx, substrate.ActorAPI, vocabulary.RecordPath(account.Kind, account.ID))
+		_, err := ds.StartOAuth(ctx, substrate.ActorPerson, vocabulary.RecordPath(account.Kind, account.ID))
 		if !errors.Is(err, substrate.ErrGuard) {
 			t.Fatalf("start = %v, want a refusal", err)
 		}
@@ -478,7 +477,7 @@ func TestOperatorOAuthClientNeverStandsInForARecordOrMixesThePair(t *testing.T) 
 		if err := ds.BindBundleInput(ctx, opMailPackage, "client", fid("c1")); err != nil {
 			t.Fatalf("bind: %v", err)
 		}
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("c1"), substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("c1"), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete: %v", err)
 		}
 		refuses(t, ds, account, substrate.SetupDangling)
@@ -587,7 +586,7 @@ func TestOperatorOAuthLegacyAccountCountsAsOwn(t *testing.T) {
 		t.Fatalf("refresh through the person's own client = %d, %v; want one", n, err)
 	}
 
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the own client: %v", err)
 	}
 	// The refreshed token expires inside the window too, so the next pass
@@ -755,7 +754,7 @@ func TestOperatorOAuthConfigResolvesTheClientOnce(t *testing.T) {
 			return
 		}
 		once.Do(func() {
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 				t.Errorf("delete the own client: %v", err)
 			}
 		})
@@ -952,7 +951,7 @@ func TestOperatorOAuthClientStampRereadsTheClient(t *testing.T) {
 		}
 		once.Do(func() {
 			reached = true
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 				t.Errorf("delete the own client: %v", err)
 			}
 		})
@@ -989,7 +988,7 @@ func TestOperatorOAuthRevertedClientChangeClearsOnTheNextToken(t *testing.T) {
 		t.Fatalf("account = %v / %v, want the client-change stamp", row.Props[propTokenStatus], row.Props[propTokenError])
 	}
 
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the own client: %v", err)
 	}
 	if _, entry := opConfigEntry(t, ds); entry["token"] != "at-"+opClientID {
@@ -1033,7 +1032,7 @@ func TestOperatorOAuthOffersOnlyWhereItServes(t *testing.T) {
 			if item := opMailItem(t, ds); item.Source != substrate.SourceOwn || item.OperatorOffers != tc.offers {
 				t.Fatalf("with the person's record: %+v, want own and operatorOffers %v", item, tc.offers)
 			}
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, opMailConfig, fid("default"), substrate.DeleteInput{}); err != nil {
 				t.Fatalf("delete the own client: %v", err)
 			}
 			item := opMailItem(t, ds)

@@ -62,13 +62,8 @@ var vocabularyRecordKinds = map[string]string{
 	kindRecordMapping: vocabulary.DocRecordMapping,
 	kindFunction:      vocabulary.DocFunction,
 	kindAgent:         vocabulary.DocAgent,
-	kindActor:         kindActorLocal,
 	kindBundle:        vocabulary.DocBundle,
 }
-
-// kindActorLocal is actor's manifest short name (vocabulary.DocActor), spelled
-// as a const so the map above stays greppable beside the identities.
-const kindActorLocal = vocabulary.DocActor
 
 // schemaKindRef resolves a manifest kind's SHORT name ("kind")
 // back to its full type identity ("substrate.reamde.dev/core/kind").
@@ -500,14 +495,14 @@ func splitPackage(pkg string) (string, string) {
 	return authority, name
 }
 
-// shippedHands are the actors whose writes leave a shipped record the
+// shippedHands are the ids of the actors whose writes leave a shipped record the
 // shipper's to replace: the shipper, the core seed and the engine. Every one
 // is reserved (substrate.ReservedActor), so no request can claim one and pass
 // its edit off as the shipped record's own. The shipper's own sync writes
 // under the shipper's actor and so leaves the record replaceable, while its
 // functions and agents write under their own actors and hold it.
 func shippedHands(shipper substrate.Actor) []string {
-	return []string{string(shipper), string(substrate.ActorSeed), string(substrate.ActorSystem)}
+	return []string{actorID(shipper), actorID(substrate.ActorSeed), actorID(substrate.ActorSystem)}
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the
@@ -822,12 +817,6 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
-		// An actor the batch declares at the machine tier, or re-declares
-		// there in a package it touches, releases what it holds above it the
-		// same way (recomputeDemotedActors).
-		if err := t.recomputeDemotedActors(ds.registry(), candidate, touched); err != nil {
-			return err
-		}
 		final, err := droppedTypeGuards(t, st.droppedTypes)
 		if err != nil {
 			return err
@@ -1012,22 +1001,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 				if err := authorizeNewPackage(*actor, stored, ds.info.Authority, g); err != nil {
 					return nil, err
 				}
-			}
-		}
-		// An actor's id does not embed its authority (alone among the kinds), so a
-		// document can CLAIM any authority. Check by the actor declaration's CURRENT
-		// authority too: a shipped actor redeclared into an installed package would
-		// otherwise overwrite the shipped row from outside its package.
-		for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
-			if d.Kind != kindActorLocal {
-				continue
-			}
-			g, ok := current.ActorPackage(d.ID)
-			if !ok {
-				continue
-			}
-			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
-				return nil, fmt.Errorf("actor %s belongs to %s: %w", d.ID, g, err)
 			}
 		}
 	}
@@ -1593,9 +1566,10 @@ func (d declaration) version() int64 {
 	return v
 }
 
-// projectPackage writes one authority's declarations: the header, its actors, and
-// every property type, trait, record type, mapping, function, agent and
-// bundle. `projecting` is the whole pass's set of kinds whose own declaration
+// projectPackage writes one authority's declarations: the header and every
+// property type, trait, record type, mapping, function, agent and bundle, and
+// the actor record of the package and of each function and agent it declares,
+// which an install is when they come to be (decision 0270). `projecting` is the whole pass's set of kinds whose own declaration
 // this projection writes, which is what projectionKind reads.
 func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]bool, decls []declaration, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
 	for _, d := range decls {
@@ -1629,6 +1603,11 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		}
 		live[d.key()] = true
 		out[d.short+"\x00"+d.id] = e
+		if key := declarationActor(d); key != "" {
+			if err := t.ensureActors(key); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -1669,7 +1648,7 @@ func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[stri
 	if t.actor == "" || (row != nil && row.DeletedAt == nil) {
 		return nil
 	}
-	props[propPackageDeclaredBy] = string(t.actor)
+	props[propPackageDeclaredBy] = vocabulary.ActorRef(actorID(t.actor))
 	return nil
 }
 
@@ -1787,10 +1766,6 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 		return nil
 	}
 
-	actors := make([]any, 0, len(g.Actors))
-	for _, a := range g.Actors {
-		actors = append(actors, a)
-	}
 	// An AUTHORITY row owns packages and declares nothing else, so its
 	// projection is the row and it is done.
 	if g.IsAuthority() {
@@ -1834,29 +1809,10 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
-			"actors": actors, "source": g.Source,
+			"source":               g.Source,
 			propPackageQuarantined: nil, propPackageQuarantineReason: nil,
 		}); err != nil {
 		return nil, err
-	}
-	for _, a := range g.Actors {
-		// An actor named for its package has no row of its own: the package
-		// row above already holds that id and lists the actor.
-		if a == g.Identity {
-			continue
-		}
-		// The tier is the actor's explicit attribute: projected
-		// onto the row so the rebuild — and every reader — gets data, never
-		// an inference from the actor's spelling.
-		tier := string(substrate.TierMachine)
-		if declared, ok := g.ActorTiers[a]; ok {
-			tier = string(declared)
-		}
-		if err := add(kindActorLocal, kindActor, a,
-			map[string]any{"authority": g.Authority, "package": g.Name, "tier": tier},
-			map[string]any{"source": g.Source}); err != nil {
-			return nil, err
-		}
 	}
 	for _, n := range g.DatatypeOrder {
 		d := g.PropertyTypes[n]
@@ -2184,9 +2140,6 @@ func closureDigest(pkg string, docs []vocabulary.Document) (string, error) {
 	}
 	entries := make([]entry, 0, len(docs))
 	for _, d := range docs {
-		if d.Kind == vocabulary.DocActor && (d.ID == pkg || d.ID == vocabulary.PackageActor(pkg)) {
-			continue
-		}
 		entries = append(entries, entry{Kind: d.Kind, ID: d.ID, Data: minusVersionKey(d.Data)})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -2294,6 +2247,16 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 				return err
 			}
 		}
+		// A package, function or agent leaving takes its hand with it: its
+		// actor record is disabled in this transaction, as an uninstall
+		// disables it, and declaring it again enables it (decision 0270).
+		if short, ok := vocabularyRecordKinds[s.typ]; ok {
+			if key := declarationActor(declaration{short: short, typ: s.typ, id: s.id}); key != "" {
+				if err := t.disableActor(key); err != nil {
+					return fmt.Errorf("substrate/engine: disable the actor of %s: %w", s.id, err)
+				}
+			}
+		}
 		if _, err := t.softDelete(ref); err != nil {
 			return fmt.Errorf("substrate/engine: prune schema row %s: %w", s.id, err)
 		}
@@ -2361,7 +2324,6 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, autho
 	}
 	defer func() { _ = rows.Close() }()
 	out := map[string]vocabulary.Document{}
-	authorityActors := map[string][]string{} // authority id → declared actors
 	for rows.Next() {
 		var id, typ string
 		var raw []byte
@@ -2381,29 +2343,10 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, autho
 		if !ok || !authorities[d.DeclaredPackage()] {
 			continue
 		}
-		if typ == kindPackage {
-			authorityActors[id] = append(authorityActors[id], anyStrings(props["actors"])...)
-		}
 		out[docKey(d)] = d
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-	// Record 60: a package-named actor has no row of its own — the package row
-	// is it. Synthesize its document so the rebuilt package keeps the actor.
-	for aname, actors := range authorityActors {
-		for _, a := range actors {
-			if a != vocabulary.PackageActor(aname) {
-				continue
-			}
-			d, err := vocabulary.DocumentFromMap(vocabulary.ActorManifest(aname, a))
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := out[docKey(d)]; !exists {
-				out[docKey(d)] = d
-			}
-		}
 	}
 	return out, nil
 }
@@ -2433,19 +2376,6 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 			ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
 	}
 	switch short {
-	case kindActorLocal:
-		authority, _ := props["authority"].(string)
-		pkg, _ := props["package"].(string)
-		if authority == "" || pkg == "" {
-			return vocabulary.Document{}, false, nil // a pre-promotion mirror row; the seed rewrites it
-		}
-		d.Data = map[string]any{"authority": authority, "package": pkg}
-		// machine is the parse default, so the rebuilt document omits it —
-		// the boot no-op comparison stays parsed projection against parsed
-		// projection.
-		if tier, _ := props["tier"].(string); tier != "" && tier != string(substrate.TierMachine) {
-			d.Data["tier"] = tier
-		}
 	default:
 		// A DELETED KEY IS NAMED, NEVER DROPPED. The read below is a whitelist, so
 		// a row carrying a spelling the loader retired would otherwise lose it in
@@ -3134,16 +3064,6 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 			data["description"] = desc
 		}
 		d.Data = data
-	case kindActorLocal:
-		authority, _ := props["authority"].(string)
-		pkg, _ := props["package"].(string)
-		if authority == "" || pkg == "" {
-			return d, fmt.Errorf("%w: an actor record carries `authority` and `package` — the package that declares it", substrate.ErrValidation)
-		}
-		d.Data = map[string]any{"authority": authority, "package": pkg}
-		if tier, _ := props["tier"].(string); tier != "" && tier != string(substrate.TierMachine) {
-			d.Data["tier"] = tier
-		}
 	default:
 		d.Data = declarationData(short, props)
 		if len(d.Data) == 0 {

@@ -292,7 +292,7 @@ func caseStory04(c *C) {
 		if byRecord[row.RecordID] == nil {
 			byRecord[row.RecordID] = map[string]string{}
 		}
-		byRecord[row.RecordID][row.Op] = row.Actor
+		byRecord[row.RecordID][row.Op] = c.hand(row.Actor)
 	}
 	for _, req := range requests.Records {
 		ops := byRecord[req.ID]
@@ -344,19 +344,20 @@ func caseStory06(c *C) {
 	rows := c.readChangesForward(0)
 	storyActors := map[string]int{}
 	for _, row := range rows {
-		// `substrate` may write only the seeded packages' own records
+		// The system may write only the seeded packages' own records
 		// (registration, tokens, runs, threads, the keyless provider rows):
 		// a task or a story record written as the system actor would be
 		// laundered attribution. The llm kinds are seeded beside core
 		// (decision record 0077).
-		ok := row.Actor == "api" || strings.HasPrefix(row.Actor, "bundle:") ||
-			(row.Actor == "substrate" && (strings.HasPrefix(row.Kind, "substrate.reamde.dev/core/") || strings.HasPrefix(row.Kind, "substrate.reamde.dev/llm/")))
-		switch row.Actor {
+		hand := c.hand(row.Actor)
+		ok := hand == "person" || strings.HasPrefix(hand, "package ") ||
+			(hand == "system" && (strings.HasPrefix(row.Kind, "substrate.reamde.dev/core/") || strings.HasPrefix(row.Kind, "substrate.reamde.dev/llm/")))
+		switch hand {
 		case actorResolver, actorMatcher, actorReflection, actorArbiter:
 			ok = true
-			storyActors[row.Actor]++
+			storyActors[hand]++
 		}
-		c.requiref(ok, "changelog row %d (%s %s) carries an unaccounted actor %q", row.Seq, row.Op, row.Kind, row.Actor)
+		c.requiref(ok, "changelog row %d (%s %s) carries an unaccounted actor %q", row.Seq, row.Op, row.Kind, hand)
 	}
 	for _, actor := range []string{actorResolver, actorMatcher, actorReflection, actorArbiter} {
 		c.requiref(storyActors[actor] > 0, "no changelog row is attributed to %s", actor)
@@ -437,7 +438,7 @@ func (c *C) requireActor(recordID, op, actor string) {
 	c.t.Helper()
 	for _, row := range c.rowsFor(recordID) {
 		if row.Op == op {
-			c.requiref(row.Actor == actor, "the %s of %s is attributed to %q, want %q", op, recordID, row.Actor, actor)
+			c.requiref(c.hand(row.Actor) == actor, "the %s of %s is attributed to %q, want %q", op, recordID, c.hand(row.Actor), actor)
 			return
 		}
 	}

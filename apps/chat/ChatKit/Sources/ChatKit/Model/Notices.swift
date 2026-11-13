@@ -137,7 +137,7 @@ func requestID(of call: ToolCall) -> String? {
     if call.ok == false { return heldRequestID(toolFailure(call.output)) }
     guard call.ok == true else { return nil }
     if let callable = call.callable {
-        guard callable == "function:substrate.reamde.dev:core:propose" else { return nil }
+        guard callable == "\(Kinds.function)/\(HostFunction.propose)" else { return nil }
     } else if call.name != "propose" {
         return nil
     }

@@ -28,7 +28,7 @@ import (
 
 // --- fixtures ------------------------------------------------------------
 
-// coreDocs is a miniature core: the authority, its actors, the temporal
+// coreDocs is a miniature core: the authority, the temporal
 // capability every other authority binds across the boundary, and one type.
 const coreDocs = `# the substrate's own machinery
 kind: substrate.reamde.dev/core/package
@@ -38,20 +38,6 @@ data:
   authority: core.example.com
   package: core
   version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: owner
-data:
-  authority: core.example.com
-  package: core
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: engram
-data:
-  authority: core.example.com
-  package: core
 ---
 # when a thing sits on the timeline — an instant, or a span
 kind: substrate.reamde.dev/core/trait
@@ -87,14 +73,6 @@ data:
   authority: vocab.example.com
   package: vocab
   version: 1
----
-# the connector-style actor whose authority maps onto contact: the machine tier
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: connector:google
-data:
-  authority: vocab.example.com
-  package: vocab
 ---
 # Amazon's audiobook identifier: the one durable key a library row carries
 kind: substrate.reamde.dev/core/propertytype
@@ -345,12 +323,6 @@ func TestLoadManifestStream(t *testing.T) {
 		t.Fatalf("declared stamp target sentAt = %+v", p)
 	}
 
-	// Actors are their own manifests now, one document each.
-	if got := r.Actors(); len(got) != 3 || got[0] != "connector:google" ||
-		got[1] != "engram" || got[2] != "owner" {
-		t.Fatalf("actors = %v", got)
-	}
-
 	// Object properties: fields declared inline, one level deep,
 	// a bare kind as shorthand — and never FTS, never embed.
 	gc, _ := r.ByIdentity("vocab.example.com/vocab/googlecontact")
@@ -367,12 +339,6 @@ func TestLoadManifestStream(t *testing.T) {
 		emails.Fields["value"].Datatype != vocabulary.DatatypeEmail ||
 		emails.Fields["primary"].Datatype != vocabulary.DatatypeBool {
 		t.Fatalf("googlecontact.emails = %+v", emails)
-	}
-	if g, ok := r.ActorPackage("engram"); !ok || g != "core.example.com/core" {
-		t.Fatalf("actor package = %q", g)
-	}
-	if g, _ := r.PackageByName("core.example.com/core"); len(g.Actors) != 2 {
-		t.Fatalf("package actors = %v", g.Actors)
 	}
 }
 
@@ -675,7 +641,6 @@ func gmailDocs() []map[string]any {
 	const authority = "gmail.connectors.example.com/gmail"
 	return []map[string]any{
 		vocabulary.PackageManifest(authority, 1),
-		vocabulary.ActorManifest(authority, "connector:gmail"),
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "cursor"},
 			map[string]any{"properties": map[string]any{
@@ -1138,12 +1103,6 @@ func TestInstallBumpsVersion(t *testing.T) {
 	if account.To != "core.example.com/core/account" || !account.Cascades() {
 		t.Fatalf("cross-authority reference = %+v", account)
 	}
-	if !contains(r.Actors(), "connector:gmail") {
-		t.Fatal("installed actor missing")
-	}
-	if g, ok := r.ActorPackage("connector:gmail"); !ok || g != "gmail.connectors.example.com/gmail" {
-		t.Fatalf("actor authority = %q", g)
-	}
 }
 
 // A mapping installs with the package that owns its TARGET (record 49):
@@ -1159,7 +1118,6 @@ func TestInstalledMapping(t *testing.T) {
 	// whoever installed this, and this package owns none (record 49).
 	prov, err := parseInstalled(
 		vocabulary.PackageManifest(provider, 1),
-		vocabulary.ActorManifest(provider, "connector:slack"),
 		vocabulary.KindManifest(provider,
 			map[string]any{"singular": "slackuser"},
 			map[string]any{
@@ -1226,12 +1184,6 @@ func TestInstalledMapping(t *testing.T) {
 	if tos := r.MappingsTo(home + "/contactcard"); len(tos) != 1 || tos[0] != m {
 		t.Fatalf("mappings to contactcard = %v", tos)
 	}
-	// The provider's declared actor is still a package actor (the machine
-	// tier's sync half, primitives §6), even though it declares no mapping.
-	if _, ok := r.ActorPackage("connector:slack"); !ok {
-		t.Fatal("connector:slack is not a declared package actor")
-	}
-
 	// The registry-wide rules run at INSTALL, not only at load: a package
 	// installing two mappings of its own where one's `to` is the other's
 	// `from` breaks the bipartite rule, and nothing of it stays installed.
@@ -1473,15 +1425,6 @@ func TestMappings(t *testing.T) {
 	if len(r.MappingsTo(g.Identity)) != 0 {
 		t.Fatal("a source record is managed by nothing")
 	}
-	// The mapping package's declared actor is a package actor — the machine
-	// tier's sync half; a stranger is not.
-	if grp, ok := r.ActorPackage("connector:google"); !ok || grp != "vocab.example.com/vocab" {
-		t.Fatalf("ActorPackage(connector:google) = %q, %v", grp, ok)
-	}
-	if _, ok := r.ActorPackage("stranger.example.com"); ok {
-		t.Fatal("an undeclared actor is nobody's package actor")
-	}
-
 	// The path type-checker the engine reuses.
 	if p, rep, err := vocabulary.PathProperty(g, probe.From); err != nil ||
 		p.Datatype != vocabulary.DatatypeEmail || !rep {
@@ -2729,21 +2672,9 @@ data:
 metadata: {id: x.example.com/x}
 data: {authority: x.example.com, package: x, version: 1}
 `,
-		"duplicate actor": head + `kind: substrate.reamde.dev/core/actor
-metadata: {id: owner}
-data: {authority: x.example.com}
----
-kind: substrate.reamde.dev/core/actor
-metadata: {id: owner}
-data: {authority: x.example.com}
-`,
 		"bad authority name": `kind: substrate.reamde.dev/core/authority
 metadata: {id: Vocab}
 data: {version: 1}
-`,
-		"snake actor": head + `kind: substrate.reamde.dev/core/actor
-metadata: {id: my_actor}
-data: {authority: x.example.com}
 `,
 		// the body DSL
 		"missing names":     typ("  properties: {a: {type: string}}\n"),
@@ -3061,45 +2992,15 @@ func TestValidID(t *testing.T) {
 	}
 }
 
-// The actor grammar admits the closed domain's flat words and the machine
-// hands, which carry the full authority AND the package (records 0025 and
-// 0047). It still admits the retired `connector:<label>` spelling, because an
-// actor DECLARATION carrying it is stored in every repository written before
-// the rename and has to keep loading.
-func TestValidActor(t *testing.T) {
-	for _, ok := range []string{
-		"api", "console", "substratectl", "substrate",
-		"bundle:core", "bundle:samples.substrate.reamde.dev:web",
-		"function:samples.substrate.reamde.dev:web:harvestUrls",
-		"agent:samples.substrate.reamde.dev:web:librarian",
-		"connector:gmail",
-	} {
-		if !vocabulary.ValidActor(ok) {
-			t.Errorf("%q should be a legal actor", ok)
-		}
-	}
-	for _, bad := range []string{
-		"", "Bundle:web", "bundle:web/harvest", "function:web.example.com:Web:harvest",
-		"substrate.oauth", "bundle:", "a:b:c:d:e", "bundle:web bundles",
-	} {
-		if vocabulary.ValidActor(bad) {
-			t.Errorf("%q should not be a legal actor", bad)
-		}
-	}
-}
-
-// An actor is DERIVED from the identity that writes, never authored: a
-// declaration naming a dispatch hand is refused, so no authority can set the
-// tier another authority's callable writes at.
-func TestActorsCarryTheFullAuthority(t *testing.T) {
-	authority := "fn.example.com/fn"
-	if got := vocabulary.PackageActor(authority); got != "bundle:fn.example.com:fn" {
-		t.Fatalf("authority actor %q", got)
-	}
-	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
-		`kind: substrate.reamde.dev/core/package
+// AN ACTOR IS NEVER DECLARED (decision 0270): it is a record the substrate
+// writes for every hand, so a package that ships an actor document is refused
+// whole, whatever the actor it names.
+func TestAnActorDocumentIsRefused(t *testing.T) {
+	for _, id := range []string{"owner", "bundle:fn.example.com:fn", "function:fn.example.com:fn:mirror", "app:notes.example.org"} {
+		_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
+			`kind: substrate.reamde.dev/core/package
 metadata:
-  id: ` + authority + `
+  id: fn.example.com/fn
 data:
   authority: fn.example.com
   package: fn
@@ -3107,93 +3008,14 @@ data:
 ---
 kind: substrate.reamde.dev/core/actor
 metadata:
-  id: function:fn.example.com:fn:mirror
+  id: ` + id + `
 data:
   authority: fn.example.com
   package: fn
-  tier: owner
 `)}})
-	if err == nil || !strings.Contains(err.Error(), "minted at dispatch") {
-		t.Fatalf("a declared function actor must refuse: %v", err)
-	}
-
-	// An app's actor is derived from the token the owner approved: a package
-	// that declared one could move the tier its writes hold at.
-	_, err = vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
-		`kind: substrate.reamde.dev/core/package
-metadata:
-  id: ` + authority + `
-data:
-  authority: fn.example.com
-  package: fn
-  version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: app:notes.example.org
-data:
-  authority: fn.example.com
-  package: fn
-  tier: machine
-`)}})
-	if err == nil || !strings.Contains(err.Error(), "never declared") {
-		t.Fatalf("a declared app actor must refuse: %v", err)
-	}
-}
-
-// actorDeclaration renders one package declaring one actor at one tier — the
-// shape a bundle would ship to claim a hand.
-func actorDeclaration(pkg, actor, tier string) []byte {
-	authority, name, _ := strings.Cut(pkg, "/")
-	return []byte(`kind: substrate.reamde.dev/core/package
-metadata:
-  id: ` + pkg + `
-data:
-  authority: ` + authority + `
-  package: ` + name + `
-  version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: ` + actor + `
-data:
-  authority: ` + authority + `
-  package: ` + name + `
-  tier: ` + tier + `
-`)
-}
-
-// A DECLARED BUNDLE ACTOR IS ITS OWN PACKAGE'S. A tier is declared data and
-// the registry answers with it before the engine's reserved-name fallback, so
-// a package that could declare `bundle:<somebody else>` would decide the tier
-// that bundle's install and mapping writes stand at — owner tier pins against
-// the owner's own recompute. The declarer and the named package must be the
-// same.
-func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
-	const evil, victim = "evil.example.com/evil", "victim.example.com/victim"
-
-	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.PackageActor(victim), "owner"),
-	}})
-	if err == nil || !strings.Contains(err.Error(), "belongs to the package it names") {
-		t.Fatalf("one package declared another's bundle hand: %v", err)
-	}
-
-	// Its own hand is the legal declaration, and the tier it declares is the
-	// tier the registry answers with.
-	r, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.PackageActor(evil), "machine"),
-	}})
-	if err != nil {
-		t.Fatalf("an authority must be able to declare its own hand: %v", err)
-	}
-	tier, ok := r.ActorTier(vocabulary.PackageActor(evil))
-	if !ok || tier != substrate.TierMachine {
-		t.Fatalf("actor tier %q (%v), want machine", tier, ok)
-	}
-	// And it cannot answer for the hand it does not own, at any tier.
-	if _, ok := r.ActorTier(vocabulary.PackageActor(victim)); ok {
-		t.Fatal("the registry answers for a package it never loaded")
+		if err == nil || !strings.Contains(err.Error(), "an actor is a record the substrate writes") {
+			t.Errorf("an actor document %q must be refused: %v", id, err)
+		}
 	}
 }
 
@@ -3266,13 +3088,6 @@ func TestShippedSchemaLoads(t *testing.T) {
 	}
 	for missing := range seeded {
 		t.Errorf("the seeded tree does not declare %s", missing)
-	}
-	// The actor domain is closed and flat: the three doors
-	// and the substrate's own hand.
-	for _, a := range []string{"api", "console", "substratectl", "substrate"} {
-		if !contains(r.Actors(), a) {
-			t.Errorf("actor %q missing", a)
-		}
 	}
 	// Identity is the kind reference <authority>/<package>/<name>, everywhere.
 	for _, ty := range r.Kinds() {

@@ -37,16 +37,6 @@ func newCatalogStubEnv(t *testing.T, ds substrate.Dataset) *testEnv {
 	return newStubEnv(t, ds, func(c *Config) { c.Catalog = cat })
 }
 
-// Adding a sample is an owner action, exactly as adding a published package
-// is: a request attributed to a machine is refused before the closure is
-// touched.
-func TestCatalogAddOfASampleRefusesNonOwner(t *testing.T) {
-	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(rlBundleID)+"/add", stubToken, nil,
-		actorHeader, "reader.substrate.reamde.dev")
-	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
-}
-
 // An unknown id is refused by the CATALOG, not by the router, so the message
 // names the bundle. A bare 404 would also come back from a path that routes
 // nowhere, which is why the body is what this asserts.
@@ -97,17 +87,6 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 	env := newCatalogStubEnv(t, catalogStatusFails{})
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog/"+url.PathEscape(rlBundleID), stubToken, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
-}
-
-// Adding a published package is an owner action: a request ATTRIBUTED to
-// something other than the owner is refused before the closure is touched.
-// The actor rides on the header now — attribution, not authorization — so
-// this is the same refusal reached a shorter way.
-func TestCatalogAddOfAPublishedPackageRefusesNonOwner(t *testing.T) {
-	env := newCatalogStubEnv(t, nil)
-	rec := env.do(t, http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googleBundleID)+"/add", stubToken, nil,
-		actorHeader, "reader.substrate.reamde.dev")
-	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }
 
 // The add body declares its keys: one it does not is refused before the

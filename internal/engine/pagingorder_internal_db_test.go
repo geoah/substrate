@@ -29,7 +29,7 @@ func TestATokenMintedUnderTheOldOrderIsRefusedEverywhere(t *testing.T) {
 	ds := newRaceDataset(t)
 	const pkg = "paging.test.dev/order"
 	item := pkg + "/item"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "item"}, map[string]any{
 			"ids":        map[string]any{"type": vocabulary.IDsNamed},
@@ -43,7 +43,7 @@ func TestATokenMintedUnderTheOldOrderIsRefusedEverywhere(t *testing.T) {
 	// One time for all of them, so a window page breaks its ties on kind and
 	// id.
 	for _, id := range []string{"a", "b", "Zed", "zz"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: item, ID: id, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: item, ID: id, Properties: map[string]any{
 			"name": id, "at": "2026-09-01T09:00:00Z", "endsAt": "2026-09-01T10:00:00Z",
 		}}); err != nil {
 			t.Fatal(err)

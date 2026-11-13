@@ -91,7 +91,7 @@ func installReadingsDeclared(t *testing.T, overrides map[string]any, units func(
 	if units != nil {
 		units(ds)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(overrides),
 	}); err != nil {
@@ -102,7 +102,7 @@ func installReadingsDeclared(t *testing.T, overrides map[string]any, units func(
 		for k, v := range props {
 			in[k] = v
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: in}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: in}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
@@ -133,7 +133,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := installReadings(t, nil)
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
 		"name": "scale", "weight": qv("72.50", "kg"), "temp": qv("98.6", "°F"), "pulse": qv("62", "bpm"),
 		"result": qv("0.5", "ng/mL", "<"),
 	}})
@@ -163,7 +163,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 	}
 	// A quantity declared `fts: true` indexes its value text, number and
 	// unit, so a search finds the record by either.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("tall"), Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid("tall"), Properties: map[string]any{
 		"name": "tall", "height": qv("1.93", "m"),
 	}}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -186,7 +186,7 @@ func TestQuantityStoresReadsAndTitles(t *testing.T) {
 		for k, v := range bad {
 			props[k] = v
 		}
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: props})
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, Properties: props})
 		if !errors.Is(err, substrate.ErrValidation) {
 			t.Fatalf("%s: err = %v, want a validation error", name, err)
 		}
@@ -262,7 +262,7 @@ func TestQuantityFilterNoStoredUnitConvertsIsEmpty(t *testing.T) {
 	ds := installReadings(t, map[string]map[string]any{
 		"heavy": {"weight": qv("80", "kg")},
 	})
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("rested"), Properties: map[string]any{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid("rested"), Properties: map[string]any{
 		"name": "rested", "pulse": qv("58", "/min"),
 	}}); err != nil {
 		t.Fatalf("put: %v", err)
@@ -293,14 +293,14 @@ func TestFilterByALevelWithoutUnits(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openReadingsDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{"ph": map[string]any{"type": "quantity", "unit": "pH"}}),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for name, ph := range map[string]string{"neutral": "7", "acid": "4.5"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: map[string]any{
 			"name": name, "ph": qv(ph, "[pH]"),
 		}}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
@@ -369,7 +369,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 	// component takes no part in a comparison its component does not hold:
 	// it neither refuses the operand nor matches. An operand no kind's
 	// component holds is refused.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "span"}, map[string]any{
 			"displayTemplate": "{name}",
 			"properties": map[string]any{
@@ -380,7 +380,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare weight as a length on a second kind: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: quantityPackage + "/span", ID: fid("ruler"), Properties: map[string]any{"name": "ruler", "weight": qv("1", "m")},
 	}); err != nil {
 		t.Fatalf("put a span: %v", err)
@@ -407,7 +407,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 	}
 	// A kind declaring the name as a state machine disagrees as a string does:
 	// the state branch would compare the operand as text and match nothing.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "kiln"}, map[string]any{
 			"displayTemplate": "{name}",
 			"properties": map[string]any{
@@ -427,7 +427,7 @@ func TestFilterByQuantityWithoutKinds(t *testing.T) {
 	}); !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "name the kinds to compare in filter.kinds") {
 		t.Fatalf("a quantity operand over a quantity and a state: err = %v, want the refusal", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "crate"}, map[string]any{
 			"displayTemplate": "{weight}",
 			"properties":      map[string]any{"weight": map[string]any{"type": "string"}},
@@ -568,7 +568,7 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 	ctx := context.Background()
 	ds := openReadingsDataset(t)
 	labelKind := quantityPackage + "/label"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{
 			"value": map[string]any{"type": "quantity", "unit": "kg"},
@@ -589,11 +589,11 @@ func TestOrderIsResolvedOverTheReadsKinds(t *testing.T) {
 		"ten":   {"weight": qv("10", "kg"), "value": qv("10", "kg"), "score": 100},
 	} {
 		props["name"] = name
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: labelKind, ID: fid("tag"), Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: labelKind, ID: fid("tag"), Properties: map[string]any{
 		"weight": "heavy", "score": "high",
 	}}); err != nil {
 		t.Fatalf("put the label: %v", err)
@@ -718,7 +718,7 @@ func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
 	ctx := context.Background()
 	ds := openReadingsDataset(t)
 	shiftKind := quantityPackage + "/shift"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{"change": map[string]any{"type": "quantity", "unit": "K"}}),
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "shift"}, map[string]any{
@@ -738,7 +738,7 @@ func TestOrderByQuantityKeysEachKindInItsOwnMeasure(t *testing.T) {
 		{shiftKind, "small", qv("10", "Cel")},
 		{shiftKind, "large", qv("20", "K")},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: row.kind, ID: fid(row.name), Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: row.kind, ID: fid(row.name), Properties: map[string]any{
 			"name": row.name, "change": row.change,
 		}}); err != nil {
 			t.Fatalf("put %s: %v", row.name, err)
@@ -824,7 +824,7 @@ func TestQuantityNarrowingsAreRefusedOverLiveRows(t *testing.T) {
 		"pounds": {"weight": qv("155", "[lb_av]")},
 	})
 	apply := func(override map[string]any) error {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(override)})
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{readingManifest(override)})
 		return err
 	}
 	for _, tc := range []struct {
@@ -892,7 +892,7 @@ func TestDroppingAQuantityDeltaIsANarrowing(t *testing.T) {
 	if err := enginetest.PutShippedUnits(ctx, ds, "W"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0), readingManifest(declared),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
@@ -902,33 +902,33 @@ func TestDroppingAQuantityDeltaIsANarrowing(t *testing.T) {
 		"warmer": {"drift": qv("0.3", "Cel")},
 	} {
 		props["name"] = name
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(name), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
 	undelta := readingManifest(map[string]any{"drift": map[string]any{"type": "quantity", "unit": "K"}, "output": declared["output"]})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{undelta}); err == nil ||
 		!strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), "1 live records") {
 		t.Fatalf("dropping delta over a live difference: err = %v", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		readingManifest(map[string]any{"output": map[string]any{"type": "quantity"}, "drift": declared["drift"]}),
 	}); err != nil {
 		t.Fatalf("dropping the output's anchor: %v", err)
 	}
 	// Deleting the difference does not clear the way: a restore would read
 	// it again. Clearing the value does.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid("warmer"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, readingKind, fid("warmer"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err == nil ||
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{undelta}); err == nil ||
 		!strings.Contains(err.Error(), `property "drift"`) || !strings.Contains(err.Error(), "1 deleted records") {
 		t.Fatalf("dropping delta over a deleted difference: err = %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("warmer"), Properties: map[string]any{"name": "warmer", "drift": nil}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid("warmer"), Properties: map[string]any{"name": "warmer", "drift": nil}}); err != nil {
 		t.Fatalf("restore and clear: %v", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{undelta}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{undelta}); err != nil {
 		t.Fatalf("dropping delta once no record holds a difference: %v", err)
 	}
 }
@@ -964,7 +964,7 @@ func TestQuantityDeltaGuardFollowsTheRestore(t *testing.T) {
 		return map[string]any{name: ref}
 	}
 	apply := func(ds *dataset, props map[string]any) error {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(props)})
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{readingManifest(props)})
 		return err
 	}
 	seed := func(t *testing.T) *dataset {
@@ -972,7 +972,7 @@ func TestQuantityDeltaGuardFollowsTheRestore(t *testing.T) {
 		ds := openReadingsDataset(t)
 		props := reference("peer", "", drift)
 		props["drift"] = drift
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			vocabulary.PackageManifest(quantityPackage, 0), readingManifest(props),
 		}); err != nil {
 			t.Fatalf("install: %v", err)
@@ -983,12 +983,12 @@ func TestQuantityDeltaGuardFollowsTheRestore(t *testing.T) {
 			"linked": {"peer": []any{map[string]any{vocabulary.ReferenceValueKey: "target", "drift": qv("0.3", "Cel")}}},
 		} {
 			p["name"] = id
-			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: p}); err != nil {
+			if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: p}); err != nil {
 				t.Fatalf("put %s: %v", id, err)
 			}
 		}
 		for _, id := range []string{"warmer", "linked"} {
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
 				t.Fatalf("delete %s: %v", id, err)
 			}
 		}
@@ -1061,7 +1061,7 @@ func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 		})
 	}
 	ds := openReadingsDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0), declare(drift, drift),
 	}); err != nil {
 		t.Fatalf("install: %v", err)
@@ -1069,13 +1069,13 @@ func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 	put := func(id string, props map[string]any) {
 		t.Helper()
 		props["name"] = id
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid(id), Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
 	del := func(id string) {
 		t.Helper()
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, readingKind, fid(id), substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -1092,7 +1092,7 @@ func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 		"a property":      {declare(bare, drift), `property "drift"`},
 		"a link property": {declare(drift, bare), `link property "drift"`},
 	} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{tc.doc})
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{tc.doc})
 		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), "1 deleted records") {
 			t.Fatalf("%s: err = %v, want a refusal naming %s and the deleted record", name, err, tc.want)
 		}
@@ -1102,7 +1102,7 @@ func TestQuantityDeltaChangeCountsDeletedRecords(t *testing.T) {
 	put("linked", map[string]any{"peer": nil})
 	del("warmer")
 	del("linked")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{declare(bare, bare)}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{declare(bare, bare)}); err != nil {
 		t.Fatalf("dropping delta once no record holds a difference: %v", err)
 	}
 }
@@ -1113,7 +1113,7 @@ func TestQuantityDefaultFillsACreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openReadingsDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		readingManifest(map[string]any{"weight": map[string]any{
 			"type": "quantity", "unit": "kg",
@@ -1122,14 +1122,14 @@ func TestQuantityDefaultFillsACreate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{"name": "empty"}})
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, Properties: map[string]any{"name": "empty"}})
 	if err != nil {
 		t.Fatalf("put: %v", err)
 	}
 	if s := vocabulary.FormatQuantityIn(nil, rec.Properties["weight"]); s != "0 kg" {
 		t.Fatalf("weight = %#v, want the default 0 kg", rec.Properties["weight"])
 	}
-	_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		readingManifest(map[string]any{"weight": map[string]any{
 			"type": "quantity", "unit": "kg",
 			"default": map[string]any{"value": "1", "unit": "m"},
@@ -1148,7 +1148,7 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	ctx := context.Background()
 	ds := openReadingsDataset(t)
 	authority, pkg := vocabulary.SplitPackageRef(quantityPackage)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		{
 			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
@@ -1169,7 +1169,7 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("apply the refinement: %v", err)
 	}
-	rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
 		"name": "roof", "air": qv("-3.5", "°C", ">"),
 	}})
 	if err != nil {
@@ -1178,7 +1178,7 @@ func TestAQuantityPropertyTypeAppliesAndHoldsItsMeasure(t *testing.T) {
 	if rec.Title != "roof: >-3.5 °C" {
 		t.Fatalf("title = %q", rec.Title)
 	}
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: quantityPackage + "/station", Properties: map[string]any{
 		"name": "roof", "air": qv("270", "K"),
 	}})
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "not one of the declared units") {
@@ -1207,7 +1207,7 @@ func TestAQuantityPropertyTypeEditIsHeldInEveryKindThatUsesIt(t *testing.T) {
 			"data":     data,
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(quantityPackage, 0),
 		refinement(map[string]any{"unit": "kg"}),
 		vocabulary.KindManifest(quantityPackage, map[string]any{"singular": "crate"}, map[string]any{
@@ -1224,15 +1224,15 @@ func TestAQuantityPropertyTypeEditIsHeldInEveryKindThatUsesIt(t *testing.T) {
 		{"an unknown unit", map[string]any{"unit": "nonesuch"}, `crate data.properties.load.unit: "nonesuch" names no unit`},
 		{"a listed unit the anchor cannot reach", map[string]any{"unit": "kg", "units": []any{"K"}}, "crate data.properties.load.units: the listed unit K does not convert"},
 	} {
-		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(c.extra)})
+		_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{refinement(c.extra)})
 		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s through the propertytype alone: err = %v, want a refusal naming %q", c.what, err, c.want)
 		}
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{refinement(map[string]any{"unit": "g"})}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{refinement(map[string]any{"unit": "g"})}); err != nil {
 		t.Fatalf("anchor the propertytype to g: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: quantityPackage + "/crate", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: quantityPackage + "/crate", Properties: map[string]any{
 		"load": qv("2", "kg"),
 	}}); err != nil {
 		t.Fatalf("a crate in kg under the g anchor: %v", err)
@@ -1276,7 +1276,7 @@ func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
 			got = append(got, r.Properties["name"].(string))
 		}
 		if pages == 0 {
-			if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, ID: fid("hecto"), Properties: map[string]any{
+			if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, ID: fid("hecto"), Properties: map[string]any{
 				"name": "hecto", "weight": qv("30000", "hg"),
 			}}); err != nil {
 				t.Fatalf("put: %v", err)
@@ -1306,7 +1306,7 @@ func TestOrderByQuantityKeysEveryAdmittedUnit(t *testing.T) {
 func TestQuantityFilterRefusesUnboundedUnitSpellings(t *testing.T) {
 	t.Parallel()
 	ds := installReadings(t, nil)
-	if err := ds.inTx(context.Background(), substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(context.Background(), substrate.ActorPerson, false, func(tx *txn) error {
 		for i := range maxQuantityUnits + 1 {
 			id := fmt.Sprintf("g%d", i+2)
 			if _, err := tx.put(substrate.PutInput{Kind: vocabulary.KindUnit, ID: id, Properties: map[string]any{"name": id}}); err != nil {
@@ -1345,13 +1345,13 @@ func TestQuantityRefusesHostileUnits(t *testing.T) {
 		"m/0", "/0", "(m/0)", "m/(2.0)", "m9", "m5.m5", "10*1000000000", "1234567890123.m",
 		strings.Repeat("(", 9) + "m" + strings.Repeat(")", 9), strings.Repeat("2.", 32) + "m",
 	} {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: readingKind, Properties: map[string]any{
 			"name": "hostile", "pulse": qv("1", code),
 		}})
 		if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "names no unit of this repository") {
 			t.Fatalf("a write in %s: err = %v, want a validation error naming no unit", code, err)
 		}
-		_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{readingManifest(map[string]any{
+		_, err = ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{readingManifest(map[string]any{
 			"pulse": map[string]any{"type": "quantity", "units": []any{code}},
 		})})
 		if err == nil || !strings.Contains(err.Error(), "names no unit of this repository") {

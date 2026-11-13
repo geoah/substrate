@@ -77,12 +77,12 @@ func (r observedRepo) metricRef(id string) map[string]any {
 
 func (r observedRepo) put(t *testing.T, kind, id string, props map[string]any) (*substrate.Record, error) {
 	t.Helper()
-	return r.ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props})
+	return r.ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props})
 }
 
 func (r observedRepo) patch(t *testing.T, kind, id string, props map[string]any) (*substrate.Record, error) {
 	t.Helper()
-	return r.ds.Patch(context.Background(), substrate.ActorAPI, kind, id, substrate.PatchInput{Properties: props})
+	return r.ds.Patch(context.Background(), substrate.ActorPerson, kind, id, substrate.PatchInput{Properties: props})
 }
 
 func (r observedRepo) get(t *testing.T, kind, id string) *substrate.Record {

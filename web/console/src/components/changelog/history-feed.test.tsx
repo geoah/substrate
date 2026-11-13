@@ -13,6 +13,7 @@ import {
 } from "@tanstack/react-router"
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { HistoryEntryRow } from "./history-feed"
 import {
@@ -23,6 +24,8 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 import { foldHistory, runEntry } from "@/lib/history"
+
+beforeEach(() => seedActors())
 
 const TASK = "samples.substrate.reamde.dev/tasks/task"
 
@@ -115,7 +118,7 @@ function patch(withValues: boolean): ChangeRow {
   return {
     seq: 7,
     ts: new Date().toISOString(),
-    actor: "console",
+    actor: "act-person",
     op: "patch",
     recordId: "t1",
     kind: TASK,
@@ -172,7 +175,7 @@ describe("HistoryEntryRow", () => {
   it("says a run the server summarized with its exact count, reading no rows", async () => {
     const entry = runEntry(
       {
-        actor: "console",
+        actor: "act-person",
         kind: TASK,
         verb: "create",
         count: 60,
@@ -203,7 +206,7 @@ describe("HistoryEntryRow", () => {
     )
     const entry = runEntry(
       {
-        actor: "console",
+        actor: "act-person",
         kind: TASK,
         verb: "update",
         count: 1,
@@ -227,7 +230,7 @@ describe("HistoryEntryRow", () => {
     const rows = ["t1", "t2"].map((id, i): ChangeRow => ({
       seq: 20 - i,
       ts: new Date().toISOString(),
-      actor: "console",
+      actor: "act-person",
       op: "patch",
       recordId: id,
       kind: TASK,
@@ -245,7 +248,7 @@ describe("HistoryEntryRow", () => {
     const row: ChangeRow = {
       seq: 1053,
       ts: new Date().toISOString(),
-      actor: "bundle:providers.substrate.reamde.dev:google",
+      actor: "act-pkg-google",
       op: "put",
       recordId: "providers.substrate.reamde.dev/google",
       kind: "substrate.reamde.dev/core/package",
@@ -283,6 +286,6 @@ describe("HistoryEntryRow", () => {
       screen.getByRole("button", { name: "Copy the actor id" })
     ).toBeTruthy()
     // The id reads once, after the sentence, not inside the actor's link.
-    expect(screen.getAllByText("console")).toHaveLength(1)
+    expect(screen.getAllByText("act-person")).toHaveLength(1)
   })
 })

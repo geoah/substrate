@@ -113,7 +113,7 @@ data:
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := NewRunner(published).Run(context.Background(), ds, substrate.ActorConsole, details, omitted, Options{}, RunOptions{}, func([]string) bool { return true })
+	out := NewRunner(published).Run(context.Background(), ds, substrate.ActorPerson, details, omitted, Options{}, RunOptions{}, func([]string) bool { return true })
 	if out.Failure != nil || out.Gone || len(ds.bindings) != 0 || len(ds.installs) != 0 {
 		t.Fatalf("excluded add-on run: %+v, bindings: %v, installs: %v", out, ds.bindings, ds.installs)
 	}
@@ -125,7 +125,7 @@ data:
 	if rows[0].Blocked != nil || rows[0].Package.ProviderInputs[0].Selected != "fits" {
 		t.Fatalf("%+v", rows)
 	}
-	if err := NewRunner(cat).setUpRow(context.Background(), ds, substrate.ActorAPI, details[0], rows[0]); err != nil {
+	if err := NewRunner(cat).setUpRow(context.Background(), ds, substrate.ActorPerson, details[0], rows[0]); err != nil {
 		t.Fatal(err)
 	}
 	if len(ds.bindings) != 1 || ds.bindings[0].Provider != "fits" {

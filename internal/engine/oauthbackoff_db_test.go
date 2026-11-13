@@ -62,7 +62,7 @@ func installBackoffBundle(t *testing.T, docs []map[string]any, providerURL strin
 // entry its config carried.
 func echoAccount(t *testing.T, ds substrate.Dataset) map[string]any {
 	t.Helper()
-	out, _, err := ds.CallFunction(context.Background(), substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(context.Background(), substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Errorf("call: %v", err)
 		return nil
@@ -250,7 +250,7 @@ func singleflightOnce(t *testing.T, lifetime int) {
 
 	invocations := make(chan any, 2)
 	invoke := func() {
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbPackage+"/fresh", map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbPackage+"/fresh", map[string]any{})
 		if err != nil {
 			t.Errorf("call: %v", err)
 		}

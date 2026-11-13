@@ -27,7 +27,6 @@ func pmManifest() enginetest.Manifest {
 		Name: "pm", Authority: pmPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pmPackage, 1),
-			vocabulary.ActorManifest(pmPackage, string(pmsync)),
 			vocabulary.KindManifest(pmPackage,
 				map[string]any{"singular": "card"},
 				map[string]any{

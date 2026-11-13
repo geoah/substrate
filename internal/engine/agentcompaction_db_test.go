@@ -77,7 +77,7 @@ func isSummarizerRequest(req map[string]any) bool {
 func chat(t *testing.T, ds *dataset, thread, text string) (*substrate.AgentResult, []substrate.AgentEvent) {
 	t.Helper()
 	var events []substrate.AgentEvent
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, substrate.ChatInput{Thread: thread, Message: text}, func(ev substrate.AgentEvent) {
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, compactor, substrate.ChatInput{Thread: thread, Message: text}, func(ev substrate.AgentEvent) {
 		events = append(events, ev)
 	})
 	if err != nil {
@@ -373,7 +373,7 @@ func TestCompactionOnOverflowRetriesOnce(t *testing.T) {
 		fakeTurn{status: 400, errBody: overflowBody},
 		fakeTurn{content: "ANOTHER SUMMARY"},
 		fakeTurn{status: 400, errBody: overflowBody})
-	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, compactor, substrate.ChatInput{Thread: thread, Message: "q3"}, func(substrate.AgentEvent) {}); err == nil {
+	if _, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, compactor, substrate.ChatInput{Thread: thread, Message: "q3"}, func(substrate.AgentEvent) {}); err == nil {
 		t.Fatal("a second overflow did not fail the run")
 	}
 	for _, th := range agentThreadsOf(t, ds, "compactor") {
@@ -391,7 +391,7 @@ func TestCompactionOverflowRetriesOnTheLastTurn(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	one := crewPackage + "/compactorone"
 	chatOne := func(thread, text string) *substrate.AgentResult {
-		res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, one, substrate.ChatInput{Thread: thread, Message: text}, func(substrate.AgentEvent) {})
+		res, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, one, substrate.ChatInput{Thread: thread, Message: text}, func(substrate.AgentEvent) {})
 		if err != nil {
 			t.Fatalf("chat %.20q: %v", text, err)
 		}
@@ -482,7 +482,7 @@ func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
 	t.Cleanup(srv.Close)
 	// The window is 1000 with the threshold at 800: one attempt's 500 is under
 	// it, the two attempts' 1000 over it.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "compactllm",
 		Properties: map[string]any{
 			"wire": "anthropic", "baseURL": srv.URL, "apiKey": "row-key-compactllm",
@@ -494,7 +494,7 @@ func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
 	// Two chat runs give the thread a history a compaction could fold.
 	res, _ := chat(t, ds, "", "q1"+hundred)
 	chat(t, ds, res.Thread, "q2"+hundred)
-	ds.continueThread(ctx, res.Thread)
+	ds.continueThread(ctx, res.Thread, "")
 	mu.Lock()
 	defer mu.Unlock()
 	if streams != 2 || oneShots != 2 {

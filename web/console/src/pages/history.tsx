@@ -2,7 +2,7 @@
  * first, as sentences grouped by day, with the live tail on top. Four views
  * narrow it by who made the change: everything, you, your agents, your
  * providers; each is an actor filter the change feed applies server-side.
- * Technical mode adds sequence numbers and raw actor ids, and a Table view
+ * Technical mode adds sequence numbers and actor record ids, and a Table view
  * that is the full changelog table with its facet filters. */
 
 import { useMemo } from "react"
@@ -12,18 +12,17 @@ import { parseAsBoolean, parseAsStringLiteral, useQueryState } from "nuqs"
 import { ChangelogPanel } from "@/components/changelog/changelog-panel"
 import {
   HistoryFeed,
+  HistorySkeleton,
   LiveStatus,
   SystemChangesNote,
 } from "@/components/changelog/history-feed"
-import { functionsQueryOptions } from "@/components/home/overview-cards"
 import { DocPage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
+import { Button } from "@/components/ui/button"
 import { Segmented } from "@/components/ui/segmented"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
-import { actorMirrorsQueryOptions, actorNames } from "@/lib/api/actors"
-import { agentsQueryOptions } from "@/lib/api/agents"
-import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
+import { actorsQueryOptions } from "@/lib/api/actors"
 import {
   HISTORY_LAYOUTS,
   HISTORY_VIEWS,
@@ -41,40 +40,23 @@ const EMPTY: Record<HistoryView, string> = {
   providers: "None of your providers has changed anything yet.",
 }
 
-/** The actor set each view filters on, from the reads that name them. */
-function useViewActors(view: HistoryView): {
-  actors: string[] | undefined
-  ready: boolean
-} {
-  const mirrors = useQuery({ ...actorMirrorsQueryOptions, select: actorNames })
-  const agents = useQuery({
-    ...agentsQueryOptions(),
-    enabled: view === "agents",
-  })
-  const functions = useQuery({
-    ...functionsQueryOptions,
-    enabled: view === "providers",
-  })
-  const bundles = useQuery({
-    ...bundleStatusesQueryOptions,
-    enabled: view === "providers",
-  })
-  const ready =
-    view === "everything" ||
-    (view === "you" && !mirrors.isPending) ||
-    (view === "agents" && !agents.isPending) ||
-    (view === "providers" && !functions.isPending && !bundles.isPending)
+/** The actor set each view filters on, from the repository's actor
+ * records. Every view but everything waits for the whole set: while it loads
+ * or after its read failed there is no set to filter on, and filtering on
+ * none would read as nobody having changed anything. */
+function useViewActors(view: HistoryView) {
+  const records = useQuery(actorsQueryOptions)
+  const byActor = view !== "everything"
   const actors = useMemo(
-    () =>
-      viewActors(view, {
-        actors: mirrors.data ?? [],
-        agents: (agents.data?.records ?? []).map((r) => r.id),
-        functions: (functions.data?.records ?? []).map((r) => r.id),
-        bundles: (bundles.data ?? []).map((b) => b.id),
-      }),
-    [view, mirrors.data, agents.data, functions.data, bundles.data]
+    () => (records.data ? viewActors(view, records.data) : undefined),
+    [view, records.data]
   )
-  return { actors, ready }
+  return {
+    actors,
+    ready: !byActor || records.isSuccess,
+    loading: byActor && records.isPending,
+    failed: byActor && records.isError ? records : undefined,
+  }
 }
 
 export function HistoryPage() {
@@ -90,8 +72,8 @@ export function HistoryPage() {
     )
   )
   const table = technical && layout === "table"
-  const { actors, ready } = useViewActors(view)
-  const nobody = actors !== undefined && actors.length === 0
+  const { actors, ready, loading, failed } = useViewActors(view)
+  const nobody = ready && actors !== undefined && actors.length === 0
   const [showSystem, setShowSystem] = useQueryState(
     "system",
     parseAsBoolean.withDefault(false)
@@ -114,7 +96,9 @@ export function HistoryPage() {
           description="Every change to your data, newest first: by you, your agents and your providers. Nothing is ever lost from here."
           actions={
             <div className="flex items-center gap-3">
-              {!table && !nobody && <LiveStatus status={feed.status} />}
+              {!table && ready && !nobody && (
+                <LiveStatus status={feed.status} />
+              )}
               {technical && (
                 <Segmented
                   label="Layout"
@@ -148,7 +132,20 @@ export function HistoryPage() {
                 />
               )}
             </div>
-            {nobody ? (
+            {loading ? (
+              <HistorySkeleton />
+            ) : failed ? (
+              <div className="flex flex-col items-start gap-2 py-6 text-muted-foreground">
+                <p>Who made each change didn’t load: {failed.error.message}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void failed.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : nobody ? (
               <p className="py-8 text-muted-foreground">{EMPTY[view]}</p>
             ) : (
               <HistoryFeed feed={feed} empty={EMPTY[view]} />

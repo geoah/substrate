@@ -35,7 +35,6 @@ var declarationKinds = map[string]bool{
 	"substrate.reamde.dev/core/function":      true,
 	"substrate.reamde.dev/core/agent":         true,
 	"substrate.reamde.dev/core/bundle":        true,
-	"substrate.reamde.dev/core/actor":         true,
 }
 
 // shippedTree copies the embedded schema tree into a directory the test owns,
@@ -170,7 +169,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 
 	seeded := 0
 	for _, ch := range changesSince(t, ds, 0) {
-		if ch.Actor == substrate.ActorSeed {
+		if ch.Actor == vocabulary.ActorID(substrate.ActorSeed) {
 			seeded++
 		}
 	}
@@ -223,7 +222,6 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	for _, ref := range []struct{ typ, id string }{
 		{"substrate.reamde.dev/core/package", "substrate.reamde.dev/core"},
 		{"substrate.reamde.dev/core/trait", "substrate.reamde.dev/core/temporal"},
-		{"substrate.reamde.dev/core/actor", "api"},
 	} {
 		row, err := ds.Get(ctx, ref.typ, ref.id)
 		if err != nil {
@@ -374,7 +372,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	}
 	sawWidget := false
 	for _, ch := range upgrade {
-		if ch.Actor != substrate.ActorSystem {
+		if ch.Actor != vocabulary.ActorID(substrate.ActorSystem) {
 			t.Fatalf("upgrade entry %d is attributed to %q", ch.Seq, ch.Actor)
 		}
 		if ch.RecordID == "substrate.reamde.dev/core/widget" {
@@ -477,7 +475,6 @@ func declarationRows(t *testing.T, ds substrate.Dataset) map[string][]*substrate
 	out := map[string][]*substrate.Record{}
 	for _, kind := range []string{
 		"substrate.reamde.dev/core/authority", "substrate.reamde.dev/core/package",
-		"substrate.reamde.dev/core/actor",
 		"substrate.reamde.dev/core/kind", "substrate.reamde.dev/core/trait",
 		"substrate.reamde.dev/core/propertytype", "substrate.reamde.dev/core/recordmapping",
 		"substrate.reamde.dev/core/function", "substrate.reamde.dev/core/agent",
@@ -757,7 +754,7 @@ func TestDeclarationAuthority(t *testing.T) {
 		}
 	}
 	hands := []substrate.Actor{
-		owner, substrate.ActorConsole, substrate.ActorCLI,
+		owner, substrate.ActorPerson, substrate.ActorPerson,
 		substrate.AppActor("app.example.org"),
 		substrate.AgentActor(own, "mine", "helper"),
 		substrate.FunctionActor(own, "mine", "helper"),
@@ -814,7 +811,6 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 		}
 		return append([]map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.BundleManifest(pkg, map[string]any{
 				"description": "a provider's mirror kinds", "installs": installs,
 			}),
@@ -846,7 +842,7 @@ func TestAPublishedPackageRefusesATokenDeclarationWrite(t *testing.T) {
 		"name": map[string]any{"type": "string"},
 		"mine": map[string]any{"type": "string"},
 	}))
-	for _, a := range []substrate.Actor{owner, substrate.ActorConsole, substrate.ActorCLI} {
+	for _, a := range []substrate.Actor{owner, substrate.ActorPerson, substrate.ActorPerson} {
 		_, err := ds.ApplyVocabularyDocuments(ctx, a, edit)
 		wantErr(t, err, substrate.ErrForbidden, "actor "+string(a)+" writes a published declaration")
 		if !strings.Contains(err.Error(), pkg) {

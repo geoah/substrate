@@ -6,6 +6,7 @@
  * made: its collections read "Made by <agent>" and its package page gathers
  * what it ships. */
 
+import { actorRefID } from "@/lib/api/actors"
 import { queryOptions } from "@tanstack/react-query"
 
 import { actorIdentity } from "@/lib/actor-identity"
@@ -22,8 +23,8 @@ export interface PackageRow {
   publishedFrom?: string
   /** `<authority>/<package>`, the row's id. */
   id: string
-  /** The actor whose transaction created the row; absent on a package
-   * created before the engine stamped it. */
+  /** The id of the actor record whose transaction created the row; absent
+   * on a package created before the engine stamped it. */
   declaredBy?: string
   /** The label the package states for its kinds (`stable`, `beta`,
    * `experimental`); absent where it states none. */
@@ -53,7 +54,9 @@ export function packageRows(
 ): Map<string, PackageRow> {
   const out = new Map<string, PackageRow>()
   for (const record of page.records ?? []) {
-    const declaredBy = record.properties?.declaredBy
+    // declaredBy links the actor record of whoever declared the package
+    // (decision 0270).
+    const declaredBy = actorRefID(record.properties?.declaredBy)
     const stability = record.properties?.stability
     const functionInterface = record.properties?.interface
     out.set(record.id, {
@@ -61,7 +64,7 @@ export function packageRows(
       ...(typeof record.properties?.publishedFrom === "string"
         ? { publishedFrom: record.properties.publishedFrom }
         : {}),
-      ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
+      ...(declaredBy ? { declaredBy } : {}),
       ...(typeof stability === "string" && stability ? { stability } : {}),
       ...(typeof functionInterface === "number" ? { functionInterface } : {}),
     })
@@ -93,9 +96,9 @@ export const packagesQueryOptions = queryOptions({
   staleTime: 5 * 60_000,
 })
 
-/** The agent actor that declared a package, when an agent did. A door
- * (`console`, `substratectl`), an app, a catalog's bundle or the substrate
- * declaring it is not an app someone's agent made. */
+/** The id of the agent actor that declared a package, when an agent did.
+ * The person, an app, a catalog's package or the substrate declaring it is
+ * not an app someone's agent made. */
 export function packageAgent(
   rows: ReadonlyMap<string, PackageRow> | undefined,
   packageId: string

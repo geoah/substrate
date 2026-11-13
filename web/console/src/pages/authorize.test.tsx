@@ -87,7 +87,7 @@ const REQUEST = {
     name: "Notes for Ada",
     uri: "https://notes-app.example.org",
     uriHostDiffers: true,
-    actor: "app:notes.example.com",
+    appearsAs: "notes.example.com",
     verified: false,
     publisher: { listed: false },
   },
@@ -112,7 +112,7 @@ const LOCAL_REQUEST = {
     clientId: "http://127.0.0.1:8765/client",
     host: "127.0.0.1:8765",
     local: true,
-    actor: "app:local",
+    appearsAs: "local",
     verified: false,
     publisher: { listed: false },
   },
@@ -249,7 +249,7 @@ const SYNC = {
     host: "sync.example.com",
     local: false,
     name: "Substrate Sync",
-    actor: "app:sync.example.com",
+    appearsAs: "sync.example.com",
     verified: false,
     publisher: { listed: false },
   },
@@ -332,7 +332,7 @@ const CLAUDE_CODE_REQUEST = {
     host: "claude.ai",
     local: false,
     name: "Claude Code",
-    actor: "app:local",
+    appearsAs: "local",
     verified: false,
     publisher: { listed: false },
   },
@@ -352,7 +352,7 @@ const CONNECTOR_REQUEST = {
     ...CLAUDE_CODE_REQUEST.app,
     clientId: "https://claude.ai/oauth/mcp-oauth-client-metadata",
     name: "Claude",
-    actor: "app:claude.ai",
+    appearsAs: "claude.ai",
   },
   redirect: {
     uri: "https://claude.ai/api/mcp/auth_callback",
@@ -593,7 +593,7 @@ describe("AuthorizePage", () => {
     const changes = within(details).getByRole("region", {
       name: "Its changes appear as",
     })
-    expect(within(changes).getByText("app:notes.example.com")).toBeTruthy()
+    expect(within(changes).getByText("notes.example.com")).toBeTruthy()
     expect(within(changes).getByText(/never as yours/)).toBeTruthy()
     const automations = screen
       .getByText("Your automations run on its changes")
@@ -831,7 +831,7 @@ describe("AuthorizePage", () => {
       ).toBeTruthy()
       expect(screen.queryByRole("checkbox")).toBeNull()
       expect(screen.queryByText(/Uncheck anything/)).toBeNull()
-      expect(screen.queryByText("app:notes.example.com")).toBeNull()
+      expect(screen.queryByText("notes.example.com")).toBeNull()
       expect(screen.getByText(/Yours, as when you sign in/)).toBeTruthy()
       fireEvent.click(screen.getByRole("button", { name: "Approve" }))
       await waitFor(() => expect(assign).toHaveBeenCalledWith(APPROVED))
@@ -888,7 +888,7 @@ describe("AuthorizePage", () => {
         "“Claude Code”, the name it gives itself, not you."
       )
       expect(changes.textContent).not.toMatch(/Yours/)
-      expect(within(changes).queryByText("app:local") !== null).toBe(technical)
+      expect(within(changes).queryByText("local") !== null).toBe(technical)
 
       // A program on this device receives it: the loopback warning, not the
       // shared callback's.
@@ -2616,7 +2616,7 @@ describe("AuthorizePage", () => {
       host: "cdn.example.net",
       local: false,
       name: "Workouts",
-      actor: "app:example.org",
+      appearsAs: "example.org",
       verified: true,
       publisher: {
         authority: "example.org",

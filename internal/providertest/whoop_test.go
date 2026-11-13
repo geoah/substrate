@@ -1293,7 +1293,7 @@ func TestWhoopSyncRewalksRecoveriesWrittenWithoutACycleID(t *testing.T) {
 		t.Fatalf("the first sync mirrored %d recoveries, want 30", len(rows))
 	}
 	for _, row := range rows {
-		if _, err := ds.Patch(t.Context(), substrate.ActorAPI, whoopRecoveryKind, row.ID,
+		if _, err := ds.Patch(t.Context(), substrate.ActorPerson, whoopRecoveryKind, row.ID,
 			substrate.PatchInput{Properties: map[string]any{"cycleId": nil}}); err != nil {
 			t.Fatal(err)
 		}
@@ -1526,7 +1526,7 @@ func TestWhoopSyncGuardsALegacyRecoveryDeleteWithTheRowsVersion(t *testing.T) {
 // whoopPatch writes props onto one row as another writer would.
 func whoopPatch(t *testing.T, ds substrate.Dataset, kind, id string, props map[string]any) {
 	t.Helper()
-	if _, err := ds.Patch(t.Context(), substrate.ActorAPI, kind, id, substrate.PatchInput{Properties: props}); err != nil {
+	if _, err := ds.Patch(t.Context(), substrate.ActorPerson, kind, id, substrate.PatchInput{Properties: props}); err != nil {
 		t.Fatalf("patch %s/%s: %v", kind, id, err)
 	}
 }
@@ -1727,7 +1727,7 @@ func TestWhoopFunctionsReceiveNoWebhookSecretSetting(t *testing.T) {
 		}
 	})
 	for _, fn := range []string{whoopSyncFn, whoopWebhookFn} {
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fn, map[string]any{})
 		if err != nil {
 			t.Fatalf("call %s: %v", fn, err)
 		}
@@ -1786,7 +1786,7 @@ func TestWhoopWebhookGuardsItsWriteWithTheRowsVersion(t *testing.T) {
 	mustHook(t, ds, cfg, whoopOnTime(t, "04_workout.updated.json"))
 	s, _ = whoopHookStaged(t, ds, cfg, whoopOnTime(t, "04_workout.updated.json"))
 	fake.forget("/v2/activity/workout/" + whoopLateWorkout)
-	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(t.Context(), substrate.ActorPerson, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	// A patch of a deleted row is refused before its version is compared.
@@ -1824,7 +1824,7 @@ func TestWhoopWebhookMarksAnUpdateItCannotReadForTheSync(t *testing.T) {
 	}
 	clearMark := func() {
 		t.Helper()
-		if _, err := ds.Patch(t.Context(), substrate.ActorAPI, whoopWorkoutKind, late,
+		if _, err := ds.Patch(t.Context(), substrate.ActorPerson, whoopWorkoutKind, late,
 			substrate.PatchInput{Properties: map[string]any{"refreshRequestedAt": nil}}); err != nil {
 			t.Fatal(err)
 		}
@@ -1966,7 +1966,7 @@ func TestWhoopRecoveryEventIsKeptWhenOnlyItsSleepCanBeMarked(t *testing.T) {
 	_, ds, fake := newWhoop(t)
 	whoopSync(t, ds, fake, whoopProps(nil))
 	recovery := whoopRow("recovery", whoopCurrentCycle)
-	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopRecoveryKind, recovery, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(t.Context(), substrate.ActorPerson, whoopRecoveryKind, recovery, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	cfg := whoopHookConfig(t, ds, fake)
@@ -2020,7 +2020,7 @@ func TestWhoopWebhookReadsTheRowBeforeAskingWhoop(t *testing.T) {
 	mustHook(t, ds, cfg, whoopOnTime(t, "04_workout.updated.json"))
 
 	fake.onRead("/v2/activity/workout/"+whoopLateWorkout, func() {
-		if _, err := ds.Delete(context.Background(), substrate.ActorAPI, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(context.Background(), substrate.ActorPerson, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
 			t.Errorf("delete the workout during the read: %v", err)
 		}
 	})
@@ -2045,12 +2045,12 @@ func TestWhoopSyncReadsADeletedRowBackBeforeAPageWritesIt(t *testing.T) {
 	whoopSync(t, ds, fake, whoopProps(nil))
 	workout := whoopRow("workout", whoopDeletedWorkout)
 	recovery := whoopRow("recovery", whoopCurrentCycle)
-	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopRecoveryKind, recovery, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(t.Context(), substrate.ActorPerson, whoopRecoveryKind, recovery, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	fake.onRead("/v2/activity/workout", func() {
 		fake.forget("/v2/activity/workout/" + whoopDeletedWorkout)
-		if _, err := ds.Delete(context.Background(), substrate.ActorAPI, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(context.Background(), substrate.ActorPerson, whoopWorkoutKind, workout, substrate.DeleteInput{}); err != nil {
 			t.Errorf("delete the workout during the page read: %v", err)
 		}
 	})

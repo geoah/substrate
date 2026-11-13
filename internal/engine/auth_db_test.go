@@ -367,7 +367,7 @@ func TestDeleteRepositoryErasesItAndFreesTheName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	kept, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	kept, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind:       "substrate.reamde.dev/llm/memory",
 		Properties: map[string]any{"text": "the old repository's"},
 	})

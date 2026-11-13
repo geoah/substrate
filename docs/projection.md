@@ -429,57 +429,37 @@ substrate always knows, per record per property, who holds the current value.
 Beside the actor it records a **tier**, the manager's standing against
 recompute. There are three:
 
-- **machine**: the sync machinery. Package-declared machine actors and
-  the engine's own hand write here, and everything recompute writes is
-  machine-held whatever actor it credits. Machine-held values are recompute's
-  to replace.
+- **machine**: the sync machinery. The engine's own hand and a package's
+  own hand write here, and everything recompute writes is machine-held
+  whatever actor it credits. Machine-held values are recompute's to replace.
 - **bundle**: installed code. Every write a [function](functions.md) or
   [agent](agents.md) makes through its dispatch holds here.
-- **owner**: you. The three interactive clients (`api`, `console`,
-  `substratectl`) are declared at this tier, and so is any other name a
-  request may assert. The moment you type a name into the console, you are the
-  manager of `name`.
+- **owner**: you. The person writes at this tier through any of its tokens,
+  and so does an app the person approved. The moment you type a name into the
+  console, you are the manager of `name`.
 
-**The tier is an explicit attribute of the write context, never an inference
-from the actor's spelling.** A declared actor may carry
-`tier: owner|bundle|machine` on its [actor document](api.md#actors)
-(machine is the default for a package-declared actor), and function and
-agent dispatch stamps the bundle tier on its own writes. An actor no
-declaration knows falls one of two ways. A name a request may assert holds at
-the owner tier: a token has full access to its repository, so a stranger's
-client holds like you, never like the machinery, and it gains nothing by
-picking an unusual name (it could send `api` instead). A
-[reserved](api.md#actors) name — the `substrate` namespace, `bundle:`,
-`function:`, `agent:`, and the retired `connector:` spelling — is one of the
-substrate's own writing hands, which a request may never claim, so an
-undeclared one (a hand whose bundle is gone, a facility like
-`substrate.oauth`) holds at the machine tier and
-recompute replaces it. The governing tier is resolved from the live
-declaration on every write, never frozen at mint, so re-declaring an actor at
-a different tier changes what already-minted tokens may do from their next
-write onward. Renaming an actor never changes write semantics.
+**The tier is an explicit attribute of the write context, never read off the
+[actor record](api.md#actors).** Function and agent dispatch stamps the
+bundle tier on its own writes. The person and an app hold at the owner tier:
+a token has full access to its repository, or the scopes its owner approved,
+so an app's client holds like you, never like the machinery. Every other hand
+is one of the substrate's own (the system, a package's own hand, a function
+or agent whose package is gone, a facility such as the OAuth refresh) and
+holds at the machine tier, so recompute replaces what it wrote. No request
+names its actor, so no request picks its tier, and no package declares an
+actor, so no declaration moves one.
 
 A manager row stores the tier its write was admitted at, and the yield below
-reads that stored tier with one exception: a row whose actor a live
-declaration puts at the machine tier holds at the machine tier, whatever it
-was stored at. Declaring an actor at `tier: machine` therefore releases what
-it already holds: the apply that declares it, and every later apply of the
-package that declares it, recomputes every mapped record it holds above
-machine. An import written under an undeclared name (the owner tier) goes
-back to following its sources, and the release is recompute's ordinary rule:
-a mapped property no live source offers is deleted, and a union keeps only
-its sources' items. An import that must outlive its sources is a source kind
-([Contributing a value](#contributing-a-value)). The reverse does not hold:
-declaring an actor above machine pins only what it writes next, because a
-machine row may be recompute's credit to that actor. A package's own
-`bundle:` hand keeps its stored tier, and a kind move, a merge and a rename
-copy the stored tier
-([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+reads that stored tier; a kind move, a merge and a rename copy it. A
+declaration once released a row by declaring its actor at the machine tier
+([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md));
+with no actor declared anywhere, nothing does now
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)).
 
-Beside the actor and the tier, a manager row records the **principal** of the
-write that set it: the token id the API resolved, where the actor is only
-what the caller claimed. The manager and tier a read reports are the actor and
-its standing; the principal is in the store and on the
+Beside the actor and the tier, a manager row records the **token** of the
+write that set it, where one stood behind it: the person's sign-in or the
+app's token. The manager and tier a read reports are the actor and its
+standing; the token is in the store and on the
 [changelog](changelog.md) entry that wrote it, which is where "which token
 last wrote this property" is answered.
 
@@ -510,16 +490,16 @@ record** it was read from:
 ```json
 "propertyMeta": {
   "name": {
-    "manager": "console",
+    "manager": "6nk6ekkczdgh399nt2pqpccjz0",
     "tier": "owner",
     "alternatives": [
-      {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
+      {"actor": "3wv04ja0n3g3n9s3q6bvkqnysj",
        "value": "ada",
        "source": "providers.substrate.reamde.dev/github/user/ada"}
     ]
   },
   "displayName": {
-    "manager": "function:providers.substrate.reamde.dev:github:githubsync",
+    "manager": "3wv04ja0n3g3n9s3q6bvkqnysj",
     "tier": "machine",
     "source": "providers.substrate.reamde.dev/github/user/ada"
   }
@@ -527,7 +507,9 @@ record** it was read from:
 ```
 
 The owner typed "Ada Lovelace" by hand, GitHub still says "ada", and both
-facts are on the wire. An alternative's `updatedAt` is the `updatedAt` of the
+facts are on the wire. A manager and an alternative's `actor` are the ids of
+[actor records](api.md#actors): here the person and the GitHub sync
+function. An alternative's `updatedAt` is the `updatedAt` of the
 source record it comes from (for a union property, the latest of that actor's
 sources carrying it), not the moment the substrate wrote the row, and its
 `source` is that record's path: like the value, both are a function of the
@@ -626,10 +608,7 @@ ever had, so a merge does not hide a source), and every one of its
 `property_managers` rows holds at the machine
 tier — or it has none at all. A property held above machine is a hand's, and a
 record a hand has written on is not a husk, whether that hand was yours or a
-function's. Releasing the hold (the null patch above) makes it one again, and
-so does declaring the hand's actor at `tier: machine`: a row holds at its
-actor's live machine tier whatever tier it was stored at
-([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md)).
+function's. Releasing the hold (the null patch above) makes it one again.
 
 The mark is derived, like an alternative: nothing writes it into the
 changelog, a re-link clears it on the next recompute, and a

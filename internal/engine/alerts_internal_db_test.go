@@ -91,7 +91,7 @@ func TestAnAbandonedClaimKeepsTheParkedAlertOpen(t *testing.T) {
 	ctx := context.Background()
 	// The schedules start in an hour, so only the record trigger runs.
 	ds := supersedeDataset(t, nowUTC().Add(time.Hour), "create")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -182,7 +182,7 @@ func TestARestartRaisesTheAlertOfTheAgentRunItInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || changes[0].Actor != substrate.Actor(keeper.Actor()) {
+	if len(changes) != 1 || changes[0].Actor != actorID(substrate.Actor(keeper.Actor())) {
 		t.Fatalf("the alert was written by %+v, want one entry under %s", changes, keeper.Actor())
 	}
 

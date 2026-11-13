@@ -33,7 +33,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 	prefix, suffix := key[:8], key[len(key)-4:]
 	masked := prefix + strings.Repeat("*", 32) + suffix
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "leakllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": key,
@@ -48,7 +48,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 		"description": "the key-leak fixture", "prompt": "You are leaker.",
 		"provider": "leakllm", "model": "leak",
 	})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0), leaker,
 	}); err != nil {
 		t.Fatalf("install leaker: %v", err)
@@ -126,7 +126,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "leakllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-leakllm"},
 	}); err != nil {
@@ -163,10 +163,10 @@ def main(input, host):
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		leak,
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install secret tool bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: secretToolPackage + "/sconfig", ID: fid("s-cfg"),
 		Properties: map[string]any{"apiToken": secretToolSecret},
 	}); err != nil {
@@ -179,7 +179,7 @@ def main(input, host):
 		"tools":       []any{map[string]any{"function": secretToolPackage + "/leaktool"}},
 		"permissions": map[string]any{"writes": []any{secretToolPackage + "/snote"}},
 	})
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(agPackage, 0), user,
 	}); err != nil {
 		t.Fatalf("install leaker agent: %v", err)

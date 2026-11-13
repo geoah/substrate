@@ -556,7 +556,6 @@ export function watchChanges(opts: {
         }
         const headers: Record<string, string> = {
           Accept: "application/x-ndjson",
-          "X-Substrate-Actor": "console",
         }
         const token = getToken()
         if (token) headers.Authorization = `Bearer ${token}`

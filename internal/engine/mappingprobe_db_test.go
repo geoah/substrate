@@ -72,7 +72,7 @@ func rowProbe(t *testing.T, ds *dataset, kind, prop string, repeated bool, v str
 func indexedProbe(t *testing.T, ds *dataset, kind, prop string, repeated bool, v string) []string {
 	t.Helper()
 	var out []string
-	if err := ds.inTx(context.Background(), substrate.ActorAPI, true, func(tx *txn) error {
+	if err := ds.inTx(context.Background(), substrate.ActorPerson, true, func(tx *txn) error {
 		var err error
 		out, err = tx.probeCandidates(kind, &vocabulary.Property{Name: prop, Repeated: repeated}, []string{v}, false)
 		return err
@@ -88,7 +88,7 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 	ds := openCoreDataset(t)
 	other := secondRepository(t, ds)
 	for _, d := range []*dataset{ds, other} {
-		if _, err := d.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, probeVocabulary()); err != nil {
+		if _, err := d.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, probeVocabulary()); err != nil {
 			t.Fatalf("apply the probe vocabulary: %v", err)
 		}
 	}
@@ -102,7 +102,7 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 			}
 			props["emails"] = items
 		}
-		if _, err := d.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 	}
@@ -110,7 +110,7 @@ func TestAnExactProbeAnswersWhatTheRowPredicateDid(t *testing.T) {
 	put(ds, probeSubject, fid("a"), "u-1", "a@example.com", "shared@example.com")
 	put(ds, probeSubject, fid("c"), "u-2")
 	put(ds, probeSubject, fid("gone"), "u-3", "gone@example.com")
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, probeSubject, fid("gone"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, probeSubject, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	put(ds, probeOther, fid("o"), "u-2", "a@example.com")
@@ -153,13 +153,13 @@ func TestAnExactProbeSeeksThePropsIndex(t *testing.T) {
 	ctx := context.Background()
 	log := &queryLog{}
 	ds := openCoreDataset(t, WithTestQueryTracer(log))
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, probeVocabulary()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, probeVocabulary()); err != nil {
 		t.Fatalf("apply the probe vocabulary: %v", err)
 	}
 	// Enough rows of the probed kind that a read of the kind shows in the
 	// plan as the rows it filtered out.
 	const n = 1000
-	if err := ds.inTx(ctx, substrate.ActorAPI, false, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, false, func(tx *txn) error {
 		for i := range n {
 			if _, err := tx.put(substrate.PutInput{
 				Kind: probeSubject, ID: fid(fmt.Sprintf("s%04d", i)),

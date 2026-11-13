@@ -41,7 +41,7 @@ const (
 func importSamples(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, _, err := c.Import(context.Background(), substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Import(context.Background(), substrate.ActorPerson, id, ds); err != nil {
 			t.Fatalf("import %s: %v", id, err)
 		}
 	}
@@ -55,7 +55,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// `requires:` is rehomed with everything else, so a sample that declares
 	// against another is refused until THAT one is imported, and the refusal
 	// names it under this repository's authority, which is where it will land.
-	_, _, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	_, _, err := c.Import(ctx, substrate.ActorPerson, tasksSampleID, ds)
 	if err == nil {
 		t.Fatal("imported a sample whose required vocabulary is absent")
 	}
@@ -173,22 +173,6 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	}
 	wantOrigin(t, st3, tasksSampleID, b.Version, true)
 
-	// An ACTOR declared into the package is an edit too: the digest keeps every
-	// actor row but the two the package itself stands for. A re-import over
-	// the edited copy takes the confirmation its preview hands out (decision
-	// record 0070; sampleupgrade_db_test.go holds the refusal without one).
-	reimportConfirmed(t, c, ds, tasksSampleID)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.ActorManifest(homeAuthority+"/tasks", "helper"),
-	}); err != nil {
-		t.Fatalf("declare an actor into the copy: %v", err)
-	}
-	stActor, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
-	if err != nil {
-		t.Fatalf("bundle status after the actor: %v", err)
-	}
-	wantOrigin(t, stActor, tasksSampleID, b.Version, true)
-
 	// A confirmed re-import REPLACES the package (record 0048), edits included,
 	// and re-stamps it: the copy is the shipped closure again and reads so,
 	// even though its versions now sit above the shipped ones.
@@ -225,7 +209,7 @@ func reimportConfirmed(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, i
 	if up != nil && up.PlanHash != "" {
 		confirm = &substrate.ConversionConfirm{PlanHash: up.PlanHash, ChangelogSeq: up.ChangelogSeq}
 	}
-	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorAPI, id, ds, confirm); err != nil {
+	if _, _, err := c.ImportConfirmed(ctx, substrate.ActorPerson, id, ds, confirm); err != nil {
 		t.Fatalf("re-import %s: %v", id, err)
 	}
 }
@@ -265,7 +249,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 			if !ok || rb.KeptBy != substrate.KeptByPublisher || installed[rb.ID] {
 				continue
 			}
-			if _, _, err := c.Install(ctx, substrate.ActorAPI, rb.ID, ds); err != nil {
+			if _, _, err := c.Install(ctx, substrate.ActorPerson, rb.ID, ds); err != nil {
 				t.Fatalf("install %s, which %s requires: %v", rb.ID, b.ID, err)
 			}
 			installed[rb.ID] = true
@@ -274,7 +258,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 	for len(pending) > 0 {
 		var next []*catalog.Bundle
 		for _, b := range pending {
-			if _, _, err := c.Import(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+			if _, _, err := c.Import(ctx, substrate.ActorPerson, b.ID, ds); err != nil {
 				next = append(next, b)
 			}
 		}
@@ -304,7 +288,6 @@ func TestAHandAppliedClosureCarriesNoOrigin(t *testing.T) {
 	const pkg = homeAuthority + "/hand"
 	closure := []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.BundleManifest(pkg, map[string]any{
 			"description": "declared by hand",
 			"installs":    []any{pkg + "/widget"},
@@ -312,7 +295,7 @@ func TestAHandAppliedClosureCarriesNoOrigin(t *testing.T) {
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, closure); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, closure); err != nil {
 		t.Fatalf("apply a closure by hand: %v", err)
 	}
 	st, err := ds.(bundleStatuser).BundleStatus(ctx, pkg)
@@ -350,7 +333,7 @@ func editKind(t *testing.T, ds substrate.Dataset, ref, property string) {
 	}
 	props[property] = map[string]any{"type": "string"}
 	data["properties"] = props
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{{
 		"kind":     kindKindRef,
 		"metadata": map[string]any{"id": ref},
 		"data":     data,
@@ -402,7 +385,7 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 	ctx := context.Background()
 
 	const whoop = "providers.substrate.reamde.dev/whoop"
-	_, _, err := c.Import(ctx, substrate.ActorAPI, whoop, ds)
+	_, _, err := c.Import(ctx, substrate.ActorPerson, whoop, ds)
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("import of a provider = %v, want a validation refusal", err)
 	}
@@ -410,7 +393,7 @@ func TestImportRefusesAProviderAndInstallStillWorks(t *testing.T) {
 		t.Errorf("the refusal does not name the verb that works: %v", err)
 	}
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoop, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoop, ds); err != nil {
 		t.Fatalf("install a provider: %v", err)
 	}
 	// It landed under the authority that publishes it, untouched.
@@ -443,7 +426,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 	ctx := context.Background()
 
 	importSamples(t, c, ds, peopleSampleID, schedulingSample)
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, peopleSampleID, ds); err != nil {
 		t.Fatalf("install %s verbatim beside the imported copy: %v", peopleSampleID, err)
 	}
 	for _, ref := range []string{homeAuthority + "/people/person", peopleSampleID + "/person"} {
@@ -452,7 +435,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 		}
 	}
 
-	if _, _, err := c.Import(ctx, substrate.ActorAPI, calendarSample, ds); err != nil {
+	if _, _, err := c.Import(ctx, substrate.ActorPerson, calendarSample, ds); err != nil {
 		t.Fatalf("import %s beside both spellings of person: %v", calendarSample, err)
 	}
 	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")
@@ -467,7 +450,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 
 	// The verbatim door on calendar names the shipped `scheduling`, which
 	// this repository holds only as its own copy.
-	_, _, err = c.Install(ctx, substrate.ActorAPI, calendarSample, ds)
+	_, _, err = c.Install(ctx, substrate.ActorPerson, calendarSample, ds)
 	if err == nil {
 		t.Fatal("installed calendar verbatim over a scheduling held only as a copy")
 	}
@@ -505,23 +488,23 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 			},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the owner's own people: %v", err)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleSampleID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, peopleSampleID, ds); err != nil {
 		t.Fatalf("install the shipped people verbatim beside it: %v", err)
 	}
 	importSamples(t, c, ds, schedulingSample)
 
 	// The verbatim door still names the shipped scheduling, held here only
 	// as a copy, and says so.
-	_, _, err := c.Install(ctx, substrate.ActorAPI, calendarSample, ds)
+	_, _, err := c.Install(ctx, substrate.ActorPerson, calendarSample, ds)
 	if err == nil || !strings.Contains(err.Error(), homeAuthority+"/scheduling is the same package under another authority") {
 		t.Fatalf("the verbatim door: %v, want the refusal naming the copy", err)
 	}
 
 	// The import door lands.
-	if _, _, err := c.Import(ctx, substrate.ActorAPI, calendarSample, ds); err != nil {
+	if _, _, err := c.Import(ctx, substrate.ActorPerson, calendarSample, ds); err != nil {
 		t.Fatalf("import calendar over a hand-declared people at version 1: %v", err)
 	}
 	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")

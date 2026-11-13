@@ -723,7 +723,7 @@ func TestAppleHealthDeletedRecordsAreAbsent(t *testing.T) {
 		"2026-10-01 10:05:00 +0000", "2026-10-01 10:15:00 +0000",
 		"2026-10-01 10:25:00 +0000", "2026-10-01 10:35:00 +0000")), "hook-1")
 	batch := batchID("iphone", "heart_rate", "minutes", "2026-10-01T10")
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, ahBatch, batch, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, ahBatch, batch, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the batch: %v", err)
 	}
 	deliverAH(t, ds, ahMetricRequest(t, "minutes", "heart_rate", "count/min", heartRows(
@@ -740,7 +740,7 @@ func TestAppleHealthDeletedRecordsAreAbsent(t *testing.T) {
 		t.Fatal("the fixture wrote no workouts")
 	}
 	gone := workouts[0].ID
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, ahWorkout, gone, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, ahWorkout, gone, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the workout: %v", err)
 	}
 	out, _ := deliverAH(t, ds, req, "hook-4")
@@ -872,7 +872,7 @@ func TestAppleHealthTogglesAndPause(t *testing.T) {
 		t.Fatalf("skippedSections = %v", ex.Properties["skippedSections"])
 	}
 
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, ahAccount, "iphone",
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, ahAccount, "iphone",
 		substrate.PatchInput{Properties: map[string]any{"syncPaused": true}}); err != nil {
 		t.Fatalf("pause: %v", err)
 	}

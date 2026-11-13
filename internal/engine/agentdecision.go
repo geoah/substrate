@@ -21,6 +21,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -69,11 +70,12 @@ func (t *txn) recordResolution(ty *vocabulary.Kind, rec *erow, note *resolutionN
 	if err != nil {
 		return err
 	}
-	if err := t.putThreadSystemRow(threadID, env, wrote); err != nil {
+	row, err := t.putThreadSystemRowID(threadID, env, wrote)
+	if err != nil {
 		return err
 	}
 	ds, decider := t.ds, t.actor
-	t.afterCommit = append(t.afterCommit, func() { ds.resumeNotifiedThread(threadID, decider) })
+	t.afterCommit = append(t.afterCommit, func() { ds.resumeNotifiedThread(threadID, decider, row) })
 	return nil
 }
 
@@ -166,11 +168,12 @@ func (t *txn) recordProposalConflict(req *erow, reason string) error {
 	} else if target.ID != "" {
 		env["target"] = vocabulary.RecordPath(target.Kind, target.ID)
 	}
-	if err := t.putThreadSystemRow(threadID, env, t.entries); err != nil {
+	row, err := t.putThreadSystemRowID(threadID, env, t.entries)
+	if err != nil {
 		return err
 	}
 	ds, decider := t.ds, t.actor
-	t.afterCommit = append(t.afterCommit, func() { ds.resumeNotifiedThread(threadID, decider) })
+	t.afterCommit = append(t.afterCommit, func() { ds.resumeNotifiedThread(threadID, decider, row) })
 	return nil
 }
 
@@ -279,18 +282,18 @@ func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 }
 
 // resumeNotifiedThread continues the thread a resolution just reported into,
-// after the resolving transaction committed: the system message is already a
-// row, so the continuation's history replays it and the agent's next turn is
-// its reaction. The invocation carries NO user message — the resolution row
-// is the turn — and runs under the thread's own lease (claimThread), so a
-// thread that is mid-turn refuses cleanly; the loop's settle-time re-check
-// is what then picks the resolution up.
-func (ds *dataset) resumeNotifiedThread(threadID string, decider substrate.Actor) {
+// after the resolving transaction committed: the system message (row) is
+// already a row, so the continuation's history replays it and the agent's
+// next turn is its reaction. The invocation carries NO user message — the
+// resolution row is the turn — and runs under the thread's own lease
+// (claimThread), so a thread that is mid-turn refuses cleanly; the loop's
+// settle-time re-check is what then picks the resolution up.
+func (ds *dataset) resumeNotifiedThread(threadID string, decider substrate.Actor, row string) {
 	ds.spawn("resume notified thread", func(ctx context.Context) {
 		if !ds.admitResume(ctx, threadID, decider) {
 			return
 		}
-		ds.continueThread(ctx, threadID)
+		ds.continueThread(ctx, threadID, row)
 	})
 }
 
@@ -362,8 +365,15 @@ func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (i
 // continueThread runs one continuation of a settled thread: no user message,
 // the stored rows are the whole context. Fire-and-forget by design — a
 // refusal (mid-turn lease, disabled bundle) is logged, and the settle-time
-// re-check or the sweep is the retry.
-func (ds *dataset) continueThread(ctx context.Context, threadID string) {
+// re-check or the sweep is the retry. The continuation acts for whom the line
+// that wrote its first record names: the resolution row (resolution) that
+// starts the turn.
+func (ds *dataset) continueThread(ctx context.Context, threadID, resolution string) {
+	ctx, err := ds.actingFor(ctx, typeMessage, resolution)
+	if err != nil {
+		ds.svc.log.Warn("substrate: resume: whom the turn acts for was not read", "thread", threadID, "error", err)
+		return
+	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: threadID})
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
@@ -415,10 +425,62 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		if !ds.admitResume(ctx, id, "") {
 			continue
 		}
-		ds.continueThread(ctx, id)
+		first, err := ds.firstUnconsumedResolution(ctx, id)
+		if err != nil {
+			ds.svc.log.Warn("substrate: resume: the thread's resolutions were not read", "thread", id, "error", err)
+			continue
+		}
+		if first == "" {
+			continue
+		}
+		ds.continueThread(ctx, id, first)
 		resumed++
 	}
 	return resumed, nil
+}
+
+// firstUnconsumedResolution is the oldest live system row of a settled
+// thread written after it settled: the record the sweep's continuation
+// starts from, "" when there is none.
+func (ds *dataset) firstUnconsumedResolution(ctx context.Context, threadID string) (string, error) {
+	var finished string
+	if err := ds.db.QueryRowContext(ctx, `
+		SELECT COALESCE(props->>'finishedAt', '') FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+		typeThread, threadID).Scan(&finished); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	at, err := time.Parse(time.RFC3339Nano, finished)
+	if err != nil {
+		return "", fmt.Errorf("thread %s settled at %q: %w", threadID, finished, err)
+	}
+	return ds.firstResolution(ctx, threadID, at, nil)
+}
+
+// firstResolution is the oldest live system row of the thread written after
+// `after` and not among consumed: the first record of the turn a
+// continuation runs. "" when there is none.
+func (ds *dataset) firstResolution(ctx context.Context, threadID string, after time.Time, consumed []string) (string, error) {
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(ctx, ds.db, b, "e", threadID)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = ds.db.QueryRowContext(ctx, `
+		SELECT e.id FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(after)+`
+		  AND NOT (e.id = ANY(`+b.textArray(consumed)+`))
+		ORDER BY e.created_at, e.id LIMIT 1`,
+		b.args...).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }
 
 // unconsumedResolutions lists, in id order, the settled threads holding a

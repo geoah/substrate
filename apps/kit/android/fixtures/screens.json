@@ -96,7 +96,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -215,7 +215,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -366,7 +366,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -474,7 +474,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -612,7 +612,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -700,7 +700,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",
@@ -819,7 +819,7 @@
               },
               "features": [],
               "grammar": {
-                "actors": [],
+                "actorTypes": [],
                 "collection": "",
                 "kind": "",
                 "record": "",

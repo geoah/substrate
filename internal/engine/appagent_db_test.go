@@ -22,7 +22,7 @@ func TestTheShippedCoachLoads(t *testing.T) {
 	home := ds.Repository().Authority
 	training, coachPkg := home+"/training", home+"/trainingcoach"
 	memory, routine := training+"/memory", training+"/routine"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "anthropic", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "anthropic", Properties: map[string]any{
 		"wire": "anthropic", "pricing": []any{map[string]any{"model": "claude-sonnet-5-5", "inputPer1M": "2", "outputPer1M": "10"}},
 	}}); err != nil {
 		t.Fatal(err)

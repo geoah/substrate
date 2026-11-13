@@ -24,7 +24,7 @@ func TestAScheduleTriggerPassesItsArguments(t *testing.T) {
 	const pkg = "widgets.test.dev/widgets"
 	install := func(argType string) {
 		t.Helper()
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			vocabulary.FunctionManifest(pkg, "rollup", map[string]any{
 				"description": "mints one task per fire, named for its period",
 				"runtime":     vocabulary.RuntimePython,
@@ -62,7 +62,7 @@ def main(input, host):
 		if args != nil {
 			props["arguments"] = args
 		}
-		return ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeTrigger, Properties: props})
+		return ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeTrigger, Properties: props})
 	}
 	rollup := vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/rollup")
 

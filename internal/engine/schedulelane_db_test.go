@@ -43,7 +43,7 @@ func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int, o
 	t.Helper()
 	ctx := context.Background()
 	ds := openCursorDataset(t, opts...)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(lanePkg, "slow", map[string]any{
 			"description": "one slow fetch per widget",
 			"runtime":     vocabulary.RuntimePython,
@@ -62,7 +62,7 @@ func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int, o
 	for i := range records {
 		// Ids that sort ahead of the schedule's: the old walk reached the
 		// schedule before them only at a pass's start.
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeTrigger, ID: fmt.Sprintf("a-slow-%d", i),
 			Properties: map[string]any{
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{lanePkg + "/widget"}}},
@@ -73,7 +73,7 @@ func laneDataset(t *testing.T, slow, fire time.Duration, records, widgets int, o
 		}
 	}
 	for i := range widgets {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: lanePkg + "/widget", Properties: map[string]any{"name": fmt.Sprintf("w%d", i)},
 		}); err != nil {
 			t.Fatalf("put widget: %v", err)
@@ -110,7 +110,7 @@ func installLaneSyncs(t *testing.T, ds *dataset, names []string, fire time.Durat
 			"source":      laneBody(fire, fmt.Sprintf(`"fire-%s-" + env["fire"]["id"]`, name)),
 		}))
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install schedule functions: %v", err)
 	}
 }
@@ -125,7 +125,7 @@ func putLaneSchedule(t *testing.T, ds *dataset, id, recurrence string, startsAt 
 // `callable` of the lane package.
 func putLaneScheduleOn(t *testing.T, ds *dataset, id, callable, recurrence string, startsAt time.Time) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: id,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{
@@ -428,7 +428,7 @@ func TestAScheduleLaneFiresAtMostOnePassOfMissedOccurrences(t *testing.T) {
 	rewindSchedule(t, ds, "b-hourly", startsAt.Add(-time.Minute))
 	// Widgets written now give the record lane a fresh backlog to drain.
 	for i := range 5 {
-		if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 			Kind: lanePkg + "/widget", Properties: map[string]any{"name": fmt.Sprintf("late%d", i)},
 		}); err != nil {
 			t.Fatalf("put widget: %v", err)

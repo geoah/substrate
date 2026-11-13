@@ -22,7 +22,7 @@ import (
 // are cleared without changing the app's token or access.
 func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, pkg, confirm string) (*substrate.Record, error) {
 	if actor == "" || substrate.ReservedActor(actor) {
-		return nil, fmt.Errorf("%w: taking over a package is the owner's, and %q is not the owner's hand", substrate.ErrForbidden, actor)
+		return nil, fmt.Errorf("%w: taking over a package is the owner's, and %s is not the owner's hand", substrate.ErrForbidden, handWords(actor))
 	}
 	if confirm != pkg {
 		return nil, fmt.Errorf("%w: confirm must repeat the package identity, %q, to take it over", substrate.ErrValidation, pkg)
@@ -41,7 +41,7 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 		if row == nil || row.DeletedAt != nil {
 			return fmt.Errorf("%w: package %s", substrate.ErrNotFound, pkg)
 		}
-		owner := substrate.PackageOwnerOf(row.Props)
+		owner := substrate.PackageOwnerOf(row.Props, t.actorKeyOf)
 		published, _ := row.Props["publishedFrom"].(string)
 		if !owner.App() && published == "" {
 			return fmt.Errorf("%w: %s is not managed by an app: its declarations are already yours to change", substrate.ErrConflict, pkg)
@@ -55,7 +55,7 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 		// the row with its ownership. A `package` kind from before the two
 		// properties (a withheld upgrade) carries the old actor in the
 		// entry's delta alone.
-		props := map[string]any{propPackageDeclaredBy: string(actor)}
+		props := map[string]any{propPackageDeclaredBy: vocabulary.ActorRef(actorID(actor))}
 		if ty.Props[propPackageTakenOverFrom] != nil {
 			props[propPackageTakenOverFrom] = owner.String()
 		}

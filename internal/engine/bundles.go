@@ -545,10 +545,32 @@ func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorSystem, vocabularyBatch{
 		replacePackages: []string{pkg},
 		beforeGuards: func(t *txn) error {
-			return t.tearDownCallableTriggers(callables)
+			if err := t.tearDownCallableTriggers(callables); err != nil {
+				return err
+			}
+			return t.disablePackageActors(pkg, callables)
 		},
 	})
 	return err
+}
+
+// disablePackageActors disables the actor records of a package whose code is
+// leaving: its own and each of its functions' and agents' (decision 0270).
+// Their old writes still link them, and an install of the package again
+// enables each as it writes.
+func (t *txn) disablePackageActors(pkg string, callables map[string]bool) error {
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	keys := []substrate.Actor{substrate.BundleActor(authority, name)}
+	for _, identity := range slices.Sorted(maps.Keys(callables)) {
+		a, p, n := vocabulary.SplitKindRef(identity)
+		keys = append(keys, substrate.FunctionActor(a, p, n), substrate.AgentActor(a, p, n))
+	}
+	for _, key := range keys {
+		if err := t.disableActor(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // packageCallableIdentities lists the identities of a package's functions and

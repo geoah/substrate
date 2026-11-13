@@ -140,7 +140,7 @@ func adapterOutputs(t *testing.T, ds substrate.Dataset) map[string]*substrate.Re
 // function stages and answers the function's output.
 func adaptRow(t *testing.T, ds substrate.Dataset, fn, kind, id string) map[string]any {
 	t.Helper()
-	ch := substrate.Change{Op: substrate.OpPut, Kind: kind, RecordID: id, Actor: substrate.ActorAPI}
+	ch := substrate.Change{Op: substrate.OpPut, Kind: kind, RecordID: id, Actor: vocabulary.ActorID(substrate.ActorPerson)}
 	row, err := ds.Get(context.Background(), kind, id)
 	if err != nil || row.DeletedAt != nil {
 		ch.Op, row = substrate.OpDelete, nil

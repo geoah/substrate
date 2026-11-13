@@ -36,9 +36,9 @@ the thing that installs it can never be spelled apart, and a document whose id
 says anything else is refused naming the package. The package's own word is the
 bundle's name and the middle segment of every installed kind's reference, so it
 is one lowercase word. Two authorities may publish a package of the same word:
-an install writes under `bundle:<authority>:<package>`, so they stay two
-writers, and every kind reference carries its full authority, so the two never
-collide.
+an install writes as the package's own [actor record](api.md#actors), which
+links the package by its full reference, so they stay two writers, and every
+kind reference carries its full authority, so the two never collide.
 `installs:` lists the exact references of everything the closure ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
@@ -99,11 +99,10 @@ closure members, so they never appear in `installs:`.
 The installed callables react through the ordinary machinery: a bundle's
 functions and agents run on the same [changelog](changelog.md) every other write
 lands in, its [mappings](projection.md) fold provider records onto your people
-and tasks, and its writes carry their own machine hands —
-`function:<authority>:<package>:<name>` for a function's effects,
-`agent:<authority>:<package>:<name>` for an agent's,
-`bundle:<authority>:<package>` for the declarations an install lays down
-([actors](api.md#actors)).
+and tasks, and its writes carry their own machine hands, each an
+[actor record](api.md#actors) the install writes: one per function for its
+effects, one per agent for its, and the package's own for the declarations
+an install lays down.
 
 A bundle need not ship an agent for the owner's assistant to use it: a
 function that declares `offer: {agents: true}` is taken as a tool by every
@@ -265,9 +264,11 @@ has returned nor commit behind it.
   registry and its other data stays readable and writable. **enable** reverses
   it, and the backlog delivers.
 - **uninstall**: the bundle goes. The owned package's declarations (the
-  bundle, its kinds, functions, agents, actors, traits, property types, and
-  mappings) are torn down through the same admission an apply uses, and the
-  delivery wiring — every trigger referencing the package's callables — is
+  bundle, its kinds, functions, agents, traits, property types, and
+  mappings) are torn down through the same admission an apply uses, the
+  actor records of the package, its functions and its agents are disabled
+  (never deleted, so their old writes still link them), and the delivery
+  wiring — every trigger referencing the package's callables — is
   tombstoned in the same transaction, before the dropped-callable guard, so a
   full teardown never refuses on its own triggers. Afterwards the kinds leave
   the registry, the callables stop running, and a read of one is a 404.
@@ -422,7 +423,8 @@ enforced in the write path for REST and the CLI alike, not just in the
 console, which offers only the owner's properties for editing. A role is
 checked against the tier its property is written at, and the OAuth
 callback's patch is the one write that holds properties at different tiers:
-it writes the facility's own properties as `substrate.oauth`, clears
+it writes the facility's own properties under the facility's hand, which
+history links as the `system` [actor](api.md#actors), clears
 `syncError` and `syncErrorAt` at the bundle tier, and stamps
 `syncRequestedAt` at the owner tier as the owner's request
 ([0176](decisions/0176-a-reconnect-requests-a-sync.md)).
@@ -434,7 +436,7 @@ consent URL as `url`. A bare id is refused, and the refusal lists every
 account the repository holds under it, so two providers whose accounts share
 a name (`owner` under each) are two records, named apart
 ([0102](decisions/0102-the-oauth-surface-takes-the-full-identity-only.md)).
-It is owner-tier only (the three interactive clients, never installed code)
+It is the person's alone (a full-access token, never an app's or installed code)
 and refuses while the client input does not resolve. The state is HMAC-signed
 over the repository, the record path, and a random nonce, expires in fifteen
 minutes, and
@@ -730,7 +732,7 @@ nothing around them. At open, a record still `running` becomes
 and nothing can be in flight. A SCHEDULE-sourced delivery names no record, so
 the dispatcher stamps nothing around the shipped bundles' hourly runs: there
 the body's own writes are the whole truth, with one addition. A write by the
-kind's own package (its bundle actor, or one of its functions or agents) that
+kind's own package (its package actor, or one of its functions or agents) that
 moves `lastSyncedAt` and leaves `syncState` at `ok` also clears a `syncError`
 and `syncErrorAt` older than the new `lastSyncedAt`, unless the write names
 either half of the pair itself. An account that recovers on the schedule
@@ -935,18 +937,17 @@ second call changes nothing: a declaration counts as changed only when its
 coerced form differs from its stored row (a reference compared as the `{ref:
 …}` object the row holds, a duration in its normalized spelling), so taking an
 unchanged closure again writes no changelog entry and keeps every version.
-It is refused for any actor outside the three
-interactive clients (`api`, `console`, `substratectl`) with a 403, before the
-closure is touched: taking bundle code is a person's action.
+It is refused with a 403 for any [actor](api.md#actors) but the
+person, and an assistant at the MCP door, which acts as the owner, before
+the closure is touched: taking bundle code is a person's action.
 
 Adding a package writes a shipped data record (a record view, a metric record, any
 record a closure ships beside its declarations) only where no other hand ever
 wrote or deleted the one at its id: every entry in the record's changelog is
-the closure's own (`bundle:<authority>:<package>`), the core seed's
-(`bundle:core`) or the engine's (`substrate`). An edit, a removed property
-and a deletion stay as they were left through every add and upgrade,
-whoever made them: the owner at any door they name, an agent, a function or
-another bundle. A record only the closure and the engine wrote takes the
+the closure's own package actor's, the core package's (the seed) or the
+system's. An edit, a removed property and a deletion stay as they were left
+through every add and upgrade, whoever made them: the owner through any
+client, an agent, a function or another bundle. A record only the closure and the engine wrote takes the
 newer shipped one. Triggers are the exception: they name the callables the
 same closure ships, so the route writes them, unless a live trigger with the
 same id delivers to another package's callable, which the route refuses with a
@@ -1146,7 +1147,7 @@ wants its own message or event rows writes them from a function of its own,
 reading the mirrors.
 
 What lands either way is a copy: the bundle's own declarations, written into
-this repository's changelog under `bundle:<authority>:<package>`. So the
+this repository's changelog by the package's own actor. So the
 catalog is the source and the changelog is the truth, and nothing on the
 serving path reads the catalog again. The response is the landed bundle's
 computed status. Uninstall, disable, enable, and purge are the lifecycle verbs

@@ -250,7 +250,6 @@ async function seedObservations(page) {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "X-Substrate-Actor": "console",
     }
     const send = async (method, path, body) => {
       const res = await fetch(path, {
@@ -315,7 +314,6 @@ async function ownerContactName(page) {
     const headers = {
       Accept: "application/json",
       Authorization: `Bearer ${localStorage.getItem("substrate.token")}`,
-      "X-Substrate-Actor": "console",
     }
     const read = async (path) => {
       const res = await fetch(path, { headers })

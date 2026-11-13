@@ -71,7 +71,6 @@ const (
 type client struct {
 	server string
 	token  string
-	actor  string
 	hc     *http.Client
 }
 
@@ -120,9 +119,6 @@ func (c *client) newRequest(ctx context.Context, method, path string, q url.Valu
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	if c.actor != "" {
-		req.Header.Set("X-Substrate-Actor", c.actor)
 	}
 	return req, nil
 }

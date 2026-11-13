@@ -25,11 +25,11 @@ func TestImportRefusesARetiredKindName(t *testing.T) {
 	// sample arrives: the header is the repository's to write.
 	header := vocabulary.PackageManifest(homeAuthority+"/tasks", 0)
 	header["data"].(map[string]any)["retired"] = map[string]any{"kinds": []any{"task"}}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{header}); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{header}); err != nil {
 		t.Fatalf("retire task under the repository's tasks package: %v", err)
 	}
 
-	_, _, err := c.Import(ctx, substrate.ActorAPI, tasksSampleID, ds)
+	_, _, err := c.Import(ctx, substrate.ActorPerson, tasksSampleID, ds)
 	if err == nil {
 		t.Fatal("imported a sample declaring a kind name the repository retired")
 	}

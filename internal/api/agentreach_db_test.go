@@ -53,7 +53,7 @@ func TestChatCoverageFollowsAnAgentsFunctionTool(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ds := newScopedDataset(env.ds, grant, substrate.ActorAPI)
+		ds := newScopedDataset(env.ds, grant, substrate.ActorPerson)
 		got, err := ds.coversAgentReads(context.Background(), talked)
 		if err != nil || got != covered {
 			t.Fatalf("coverage=%v, %v; want %v", got, err, covered)
@@ -91,9 +91,9 @@ func TestCallAndChatGlobsRespectInternalKinds(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				ds := newScopedDataset(env.ds, grant, substrate.ActorAPI)
+				ds := newScopedDataset(env.ds, grant, substrate.ActorPerson)
 				want := exact && pattern == "other.example.com/tools/*"
-				_, _, err = ds.CallFunction(context.Background(), substrate.ActorAPI, summarize, nil)
+				_, _, err = ds.CallFunction(context.Background(), substrate.ActorPerson, summarize, nil)
 				if (err == nil) != want {
 					t.Fatalf("call %s exact %v: %v", pattern, exact, err)
 				}

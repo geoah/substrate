@@ -44,7 +44,7 @@ func traitscopeRedeclare(t *testing.T, env *dbEnv, kind string, edit func(def ma
 	}
 	def := maps.Clone(info.Definition)
 	edit(def)
-	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorAPI, []map[string]any{{
+	if _, err := env.ds.ApplyVocabularyDocuments(t.Context(), substrate.ActorPerson, []map[string]any{{
 		"kind": corePackage + "/kind", "metadata": map[string]any{"id": kind}, "data": def,
 	}}); err != nil {
 		t.Fatalf("redeclare %s: %v", kind, err)

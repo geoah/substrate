@@ -30,13 +30,20 @@ const (
 // current copy by fetching each one (decision 0061). The stored replay
 // effects never reach the wire: a storage spelling is not a contract.
 type Change struct {
-	Seq      int64          `json:"seq"`
-	TS       time.Time      `json:"ts"`
-	Actor    Actor          `json:"actor"`
-	Op       Op             `json:"op"`
-	RecordID string         `json:"recordId"`
-	Kind     string         `json:"kind"`
-	Payload  map[string]any `json:"payload,omitempty"`
+	Seq int64     `json:"seq"`
+	TS  time.Time `json:"ts"`
+	// Actor is the id of the `substrate.reamde.dev/core/actor` record that
+	// wrote the entry, OnBehalfOf the id of the one it acted for, absent where
+	// it acted for no one, and Token the id of the token record the write
+	// stood behind, absent where none did (decision 0270). Each is a link to a
+	// record, never a name.
+	Actor      string         `json:"actor"`
+	OnBehalfOf string         `json:"onBehalfOf,omitempty"`
+	Token      string         `json:"token,omitempty"`
+	Op         Op             `json:"op"`
+	RecordID   string         `json:"recordId"`
+	Kind       string         `json:"kind"`
+	Payload    map[string]any `json:"payload,omitempty"`
 	// Affected names each record the entry changed, at least the addressed
 	// one: one element per (kind, id), in the order the entry first touched
 	// them. A merge lists the winner and the tombstoned loser, a collector's
@@ -48,11 +55,6 @@ type Change struct {
 	// independently recomputable from this wire shape: the payload here is
 	// redacted, and the checksum covers what is stored.
 	Hash string `json:"hash,omitempty"`
-	// Principal is the token id the door verified behind the write, "" where
-	// none stood (the seed, the boot upgrade). It is never on the wire, since
-	// it names a token; History resolves it to the token's name on the
-	// owner's reads alone (ChangeRun.PrincipalName).
-	Principal string `json:"-"`
 }
 
 // ChangeRow is one row of the change feed, history page and watch stream
@@ -119,7 +121,7 @@ func RunVerb(c Change) string {
 // page never ends inside one, so Count is exact however far below the page's
 // other runs it reaches. RecordID is set when the run touched one record.
 type ChangeRun struct {
-	Actor     Actor     `json:"actor"`
+	Actor     string    `json:"actor"`
 	Kind      string    `json:"kind"`
 	Verb      string    `json:"verb"`
 	Count     int       `json:"count"`
@@ -129,11 +131,12 @@ type ChangeRun struct {
 	OldestSeq int64     `json:"oldestSeq"`
 	NewestTS  time.Time `json:"newestTs"`
 	OldestTS  time.Time `json:"oldestTs"`
-	// PrincipalName names the token behind an app's or an `api` run, its
-	// app's claimed name or its label, so two assistants writing as
-	// `app:local` read apart (decision 0230). A run splits on the token for
-	// those actors. Only the owner's reads carry it.
-	PrincipalName string `json:"principalName,omitempty"`
+	// Token is the id of the token behind a person's or an app's run, and
+	// TokenName its app's claimed name or its label, so two assistants
+	// writing as one local app read apart (decision 0230). A run splits on
+	// the token for those actors. Only the owner's reads carry them.
+	Token     string `json:"token,omitempty"`
+	TokenName string `json:"tokenName,omitempty"`
 }
 
 // ChangeRunPage is one history page of run summaries, newest first: the
@@ -205,10 +208,10 @@ type ChangelogHead struct {
 type ChangeFilter struct {
 	Kinds         []string `json:"kinds,omitempty"`
 	Ops           []Op     `json:"ops,omitempty"`
-	Actors        []Actor  `json:"actors,omitempty"`
+	Actors        []string `json:"actors,omitempty"`
 	ExcludeKinds  []string `json:"excludeKinds,omitempty"`
 	ExcludeOps    []Op     `json:"excludeOps,omitempty"`
-	ExcludeActors []Actor  `json:"excludeActors,omitempty"`
+	ExcludeActors []string `json:"excludeActors,omitempty"`
 	// RecordID scopes the feed to one record: rows whose RecordID is the id,
 	// plus a merge or split entry whose payload names the id as `winner` or
 	// `loser`, because each of those changes two records under one entry

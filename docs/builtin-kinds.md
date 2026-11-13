@@ -186,7 +186,7 @@ the whole of what a fresh repository speaks:
 | `repository`         | The repository describing itself from the inside: the `authority` it owns, which is its id (`name` is deprecated and holds the same value), and a `lifecycle` state (`active`, `suspended`, `deleting`). |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
 | `token`              | One bearer credential: label, optional expiry, and the hash of its secret.                                                                          |
-| `actor`              | One declared actor, the name writes are attributed to, and the tier it writes at.                                                                   |
+| `actor`              | One hand that writes: the person, an app, a function, an agent, a package or the system, as its `type`, with a `name` and a link to what it is (`function`, `agent`, `package`, or an app's `publisher`), and `disabled` once its code or approval is gone. The engine writes every one, and every history line, change event and stored attribution links one ([actors](api.md#actors)). |
 | `agent`              | One declared agent: an LLM-loop callable ([agents](agents.md)).                                                                                    |
 | `blob`               | One content-addressed blob: the manifest is the metadata, the bytes live in the byte store; the digest is the id.                                   |
 | `recordmerge`        | One performed merge and what it moved ([merges](projection.md#merges)).                                                                            |
@@ -209,9 +209,9 @@ console-editable and changelog-visible like anything else
 | `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Runs are pruned to the newest few per trigger, but the newest ok run, the parked runs after it and a parked run whose delivery still waits in the ledger stay ([decision 0178](decisions/0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md)). A direct call of a networked function writes one too, with mode `call` and no trigger, never pruned. |
 | `alert` | One ongoing problem the substrate found, such as a trigger whose deliveries keep parking: a `key` its id derives from, a `level`, a `summary`, the last error as `detail`, the records it is `about`, when it was first and last seen, a `count` and a `state` of `open` or `resolved`. The engine opens, updates and resolves it ([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)). |
 
-The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
+The nine [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too. A `package` record carries
+`agent`, `bundle`) live in core too. A `package` record carries
 what its header states, such as `description`, `retired` and `stability`
 (`stable`, `beta` or `experimental`: the label the package states for its
 kinds, absent where the header states none), beside what the engine stamps,

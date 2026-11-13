@@ -113,6 +113,9 @@ func withoutKeysIncluded(included map[string]*substrate.Record) map[string]*subs
 func withoutTriggerPayloads(changes []substrate.Change) []substrate.Change {
 	for i := range changes {
 		c := &changes[i]
+		// Which token stood behind a write is the owner's to read, as on an
+		// app's grant (scopedDataset.heldRow).
+		c.Token = ""
 		if c.Kind == kindTrigger {
 			c.Payload = nil
 		}

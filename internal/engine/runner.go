@@ -43,7 +43,26 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 			return nil, err
 		}
 	}
-	return runner.Envelope(ch, e, ds.Repository().Authority), nil
+	envelope := runner.Envelope(ch, e, ds.Repository().Authority)
+	return withActorFacts(envelope, actorKeyIn(ctx, ds.db, ch.Actor)), nil
+}
+
+// withActorFacts adds to a delivery's change what its actor is, beside the
+// link to its record: its type, and the package whose code or installs it
+// is, so a guard can tell a package's own writes from everyone else's
+// without a spelling (decision 0270).
+func withActorFacts(envelope map[string]any, key substrate.Actor) map[string]any {
+	change, _ := envelope["change"].(map[string]any)
+	if change == nil {
+		return envelope
+	}
+	if typ := substrate.ActorTypeOf(key); typ != "" {
+		change["actorType"] = typ
+	}
+	if pkg := actorPackageOf(key); pkg != "" {
+		change["actorPackage"] = pkg
+	}
+	return envelope
 }
 
 // loadRowDB reads one record row by its full (type, id) identity, outside

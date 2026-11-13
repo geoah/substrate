@@ -13,6 +13,7 @@
 import { ChangeActor } from "@/components/change-actor"
 import { ActorRef } from "@/components/identity/actor-ref"
 import { CodeBlock } from "@/components/code-block"
+import { isSystemActor } from "@/lib/actor-directory"
 import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
 import { affectedLines, changedProperties } from "@/lib/changelog"
@@ -120,7 +121,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
       <DetailRow label="attribution">
         <ChangeActor row={row} />
       </DetailRow>
-      {row.actor === "substrate" && (
+      {isSystemActor(row.actor) && (
         <DetailRow label="committed by">
           <ActorRef actor={row.actor} />
         </DetailRow>

@@ -1,6 +1,7 @@
 # Users, tokens, and actors
 
-A **user** is a human principal: a repository name, a password, and, unless
+A **user** is the person a repository belongs to: a repository name, a
+password, and, unless
 they skipped it at registration, a TOTP second factor
 ([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
 A user owns exactly one **repository**,
@@ -415,8 +416,8 @@ no bearer token at all on any of these changes.
 The generic record API cannot touch either auth kind: the credential cannot be
 put, patched, or deleted through REST or the CLI's record surface,
 and a token can only be **deleted** there, which is exactly revocation. Both
-stay readable and listable. Auth-path writes are attributed to the `substrate`
-actor.
+stay readable and listable. Auth-path writes are made by the repository's
+`system` [actor](api.md#actors).
 
 TOTP is RFC 6238: SHA-1, six digits, a 30-second step, one step of skew either
 way. Codes are one-time — the consumed step is compare-and-swapped under a row
@@ -454,12 +455,15 @@ Everything authenticated is unmetered.
 
 ## Actors are attribution, not authorization
 
-Writes carry an [actor](api.md#actors), and it is worth restating here what it
-is not: an actor is attribution, not authorization. A token holds its whole
-repository whatever name a request puts in `X-Substrate-Actor`, so the header
-unlocks nothing. What it decides is provenance — which property manager a write
-records, which rows a function's trigger excludes as its own, and what the changelog
-says about who did this.
+Every write links an [actor record](api.md#actors), and it is worth restating
+here what it is not: an actor is attribution, not authorization. The server
+derives it from the token, never from the request: a full-access token
+writes as the person, whichever client holds it, and an app's token as its
+app, so there is nothing a request could name and nothing a name could
+unlock. The write also links the token itself, which is how two sign-ins of
+one person read apart. What the actor decides is provenance — which property
+manager a write records, which rows a function's trigger excludes as its own,
+and what the changelog says about who did this.
 
 ## The second factor can be switched off locally
 

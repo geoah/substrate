@@ -386,10 +386,11 @@ type AuthorizationApp struct {
 	// the page warns about: the app is naming a site its client id does not
 	// prove it runs.
 	URIHostDiffers bool `json:"uriHostDiffers,omitempty"`
-	// Actor is what the app's changes are recorded as: `app:<authority>`
-	// for a verified app, `app:local` for one whose access goes to this
-	// device, `app:<host>` otherwise (decision 0209).
-	Actor string `json:"actor"`
+	// AppearsAs is the name the app's changes read under, the publisher its
+	// actor record names (decision 0270): its authority for a verified app,
+	// `local` for one whose access goes to this device, its client id's host
+	// otherwise (decision 0209).
+	AppearsAs string `json:"appearsAs"`
 	// Verified is true when the app's publisher is confirmed: its document
 	// claims an authority, the authority's `_substrate` record names a
 	// document that lists this client id, and the access goes to the

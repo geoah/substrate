@@ -11,7 +11,7 @@ import (
 func sample() Entry {
 	return Entry{
 		Seq: 4190, TS: time.Date(2026, 8, 4, 10, 0, 0, 183742000, time.UTC),
-		Actor: "api", Principal: "k7abc", Op: "put",
+		Actor: "api", OnBehalfOf: "ada", Token: "k7abc", Op: "put",
 		RecordID: "kq3v9x2m41pf", Kind: "samples.substrate.reamde.dev/tasks/task",
 		CausedBy: 4188, CausedByOK: true,
 		Txn:     4192,
@@ -24,9 +24,12 @@ func TestEncodeIsCanonicalAndRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"actor":"api","causedBy":4188,"kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"n":1.5E0,"properties":["name","dueAt"]},"principal":"k7abc","recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:`
+	want := `{"actor":"api","causedBy":4188,"kind":"samples.substrate.reamde.dev/tasks/task","onBehalfOf":"ada","op":"put","payload":{"created":true,"n":1.5E0,"properties":["name","dueAt"]},"recordId":"kq3v9x2m41pf","seq":4190,"sum":"sha256:`
 	if !strings.HasPrefix(string(line), want) {
 		t.Fatalf("line = %s\nwant prefix %s", line, want)
+	}
+	if !strings.Contains(string(line), `","token":"k7abc","ts":`) {
+		t.Fatalf("line = %s\nwant the token between the sum and the time", line)
 	}
 	if strings.Contains(string(line), "\n") {
 		t.Fatal("a line must not contain a newline")
@@ -39,7 +42,7 @@ func TestEncodeIsCanonicalAndRoundTrips(t *testing.T) {
 		t.Fatal("decode returned a different sum than encode")
 	}
 	e := sample()
-	if got.Seq != e.Seq || !got.TS.Equal(e.TS) || got.Actor != e.Actor || got.Principal != e.Principal ||
+	if got.Seq != e.Seq || !got.TS.Equal(e.TS) || got.Actor != e.Actor || got.OnBehalfOf != e.OnBehalfOf || got.Token != e.Token ||
 		got.Op != e.Op || got.RecordID != e.RecordID || got.Kind != e.Kind ||
 		got.CausedBy != e.CausedBy || !got.CausedByOK {
 		t.Fatalf("round trip lost a field: %+v", got)
@@ -73,16 +76,18 @@ func TestEveryFieldMovesTheSum(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutations := map[string]func(*Entry){
-		"seq":       func(e *Entry) { e.Seq++ },
-		"ts":        func(e *Entry) { e.TS = e.TS.Add(time.Microsecond) },
-		"actor":     func(e *Entry) { e.Actor = "system" },
-		"principal": func(e *Entry) { e.Principal = "" },
-		"op":        func(e *Entry) { e.Op = "patch" },
-		"recordId":  func(e *Entry) { e.RecordID = "other" },
-		"kind":      func(e *Entry) { e.Kind = "x.example/p/k" },
-		"causedBy":  func(e *Entry) { e.CausedBy++ },
-		"causedNil": func(e *Entry) { e.CausedByOK = false },
-		"payload":   func(e *Entry) { e.Payload = json.RawMessage(`{"created":false}`) },
+		"seq":        func(e *Entry) { e.Seq++ },
+		"ts":         func(e *Entry) { e.TS = e.TS.Add(time.Microsecond) },
+		"actor":      func(e *Entry) { e.Actor = "system" },
+		"onBehalfOf": func(e *Entry) { e.OnBehalfOf = "" },
+		"token":      func(e *Entry) { e.Token = "" },
+		"principal":  func(e *Entry) { e.Principal, e.HasPrincipal = "k7abc", true },
+		"op":         func(e *Entry) { e.Op = "patch" },
+		"recordId":   func(e *Entry) { e.RecordID = "other" },
+		"kind":       func(e *Entry) { e.Kind = "x.example/p/k" },
+		"causedBy":   func(e *Entry) { e.CausedBy++ },
+		"causedNil":  func(e *Entry) { e.CausedByOK = false },
+		"payload":    func(e *Entry) { e.Payload = json.RawMessage(`{"created":false}`) },
 	}
 	for name, mutate := range mutations {
 		e := sample()

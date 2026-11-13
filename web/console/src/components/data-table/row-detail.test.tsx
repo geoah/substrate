@@ -5,7 +5,8 @@
  * This test pins both. */
 
 import { cleanup, render, screen } from "@testing-library/react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { ChangeRow } from "@/lib/api/types"
 
@@ -27,12 +28,14 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { ChangeDetail } from "./row-detail"
 
+beforeEach(() => seedActors())
+
 /** A write that moved two records: the one it created and one it tombstoned
  * beside it, as the wire names them. */
 const ROW: ChangeRow = {
   seq: 42,
   ts: "2026-08-12T01:10:32Z",
-  actor: "providers.substrate.reamde.dev/github",
+  actor: "act-fn-github-githubsync",
   op: "put",
   recordId: "p1",
   kind: "samples.substrate.reamde.dev/people/person",
@@ -74,7 +77,7 @@ describe("ChangeDetail", () => {
 
   it("attributes the write to its actor", () => {
     render(<ChangeDetail row={ROW} />)
-    expect(screen.getByText("GitHub")).toBeTruthy()
+    expect(screen.getByText("GitHub sync")).toBeTruthy()
   })
 
   it("keeps the raw payload expanded", () => {
@@ -83,13 +86,13 @@ describe("ChangeDetail", () => {
   })
 
   it("shows full source actors and distinguishes the mapping initiator", () => {
-    const source = "function:providers.substrate.reamde.dev:google:synccontacts"
-    const initiator = "function:example.com:people:promotecontact"
+    const source = "act-fn-google-synccontacts"
+    const initiator = "act-fn-people-promotecontact"
     render(
       <ChangeDetail
         row={{
           ...ROW,
-          actor: "substrate",
+          actor: "act-system",
           payload: {
             managers: { name: source },
             mechanism: "mapping",

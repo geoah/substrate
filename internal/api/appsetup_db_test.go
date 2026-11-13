@@ -249,7 +249,7 @@ func (e *appSetupEnv) statusReads() int {
 // does from its provider page.
 func (e *appSetupEnv) install(id string) {
 	e.t.Helper()
-	if _, _, err := e.catalog.Install(context.Background(), substrate.ActorAPI, id, e.db.ds); err != nil {
+	if _, _, err := e.catalog.Install(context.Background(), substrate.ActorPerson, id, e.db.ds); err != nil {
 		e.t.Fatalf("install %s: %v", id, err)
 	}
 }
@@ -301,7 +301,7 @@ func (e *appSetupEnv) heldAt(id string, version int64) {
 	if err != nil || len(cat.Warnings()) > 0 {
 		e.t.Fatalf("load %s at version %d: %v %v", id, version, err, cat.Warnings())
 	}
-	if _, _, err := cat.Install(context.Background(), substrate.ActorAPI, id, e.db.ds); err != nil {
+	if _, _, err := cat.Install(context.Background(), substrate.ActorPerson, id, e.db.ds); err != nil {
 		e.t.Fatalf("install %s at version %d: %v", id, version, err)
 	}
 }
@@ -983,50 +983,6 @@ func TestAnApprovedRequestIsHandedOverWithoutReadingTheRepository(t *testing.T) 
 	wantStatus(t, e.exchange(tokenForm(codeFrom(t, done.Next))), http.StatusOK)
 }
 
-// What a request with details sets up is approved through a human door: the
-// owner's token writing as another actor is refused before anything is
-// reserved or planned, and the console approves the same request after.
-func TestAnApprovalWithDetailsComesThroughAHumanDoor(t *testing.T) {
-	t.Parallel()
-	e := newAppSetupEnv(t)
-	approveAs := func(id, actor, hash string) *httptest.ResponseRecorder {
-		days := 30
-		body, _ := json.Marshal(substrate.AuthorizationApproval{Scopes: resolvedSyncScopes(), LifetimeDays: &days, PlanHash: hash})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/authorizations/"+id, strings.NewReader(string(body)))
-		req.Host = "substrate.example.com"
-		req.Header.Set("Authorization", "Bearer "+e.owner)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set(actorHeader, actor)
-		rec := httptest.NewRecorder()
-		e.h.ServeHTTP(rec, req)
-		return rec
-	}
-	id := e.park(setupRequest(syncScopes, syncDetails))
-	v := e.view(id)
-	before := e.statusReads()
-	rec := approveAs(id, "bob", v.PlanHash)
-	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
-	if body := rec.Body.String(); !strings.Contains(body, "setting up is the owner's act") || !strings.Contains(body, "never as bob") {
-		t.Fatalf("the refusal says %s", body)
-	}
-	if n := e.statusReads() - before; n != 0 {
-		t.Fatalf("a refused door planned the request %d times", n)
-	}
-	if again := e.view(id); again.State != substrate.AuthorizationPending || !again.ExpiresAt.Equal(v.ExpiresAt) || again.PlanHash != v.PlanHash {
-		t.Fatalf("after the refusal = state %q lapsing %v hash %q", again.State, again.ExpiresAt, again.PlanHash)
-	}
-	wantStatus(t, approveAs(id, string(substrate.ActorConsole), v.PlanHash), http.StatusAccepted)
-	if done := e.settle(id); done.State != substrate.AuthorizationApproved {
-		t.Fatalf("the console's approval ended %+v", done.Failure)
-	}
-	// Everything is in place now, and the same door is refused all the same:
-	// a request with details is approved as the owner whatever it finds.
-	inPlace := e.park(setupRequest(syncScopes, syncDetails))
-	v = e.view(inPlace)
-	wantErrorCode(t, approveAs(inPlace, "bob", v.PlanHash), http.StatusForbidden, codeForbidden)
-	wantStatus(t, approveAs(inPlace, string(substrate.ActorCLI), v.PlanHash), http.StatusOK)
-}
-
 func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 	t.Parallel()
 	e := newAppSetupEnv(t)
@@ -1194,7 +1150,7 @@ func TestACheckByAnAppRevokedOnTheWayIsRefused(t *testing.T) {
 	e.db.wrap = func(ds substrate.Dataset) substrate.Dataset {
 		return revokeBeforeTokens{Dataset: seam(ds), revoke: func() {
 			once.Do(func() {
-				if _, err := e.db.ds.Delete(ctx, substrate.ActorAPI, tokenType, info.ID, substrate.DeleteInput{}); err != nil {
+				if _, err := e.db.ds.Delete(ctx, substrate.ActorPerson, tokenType, info.ID, substrate.DeleteInput{}); err != nil {
 					t.Errorf("revoke: %v", err)
 				}
 			})

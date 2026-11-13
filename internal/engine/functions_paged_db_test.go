@@ -38,11 +38,10 @@ func openPagedDataset(t *testing.T, pkg, source string) (*dataset, string) {
 	widgetType := pkg + "/widget"
 	triggerID := "on-page." + authority
 	d := openInternalDataset(t)
-	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, d, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: authority,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pkg, "page", map[string]any{
@@ -219,7 +218,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 	// Erase the already-committed pages: a resume must leave them erased, a
 	// restart-from-zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", id, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -697,11 +696,10 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 	t.Helper()
 	ctx := context.Background()
 	triggerID := "on-pagedsecret"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "pagedsecret", Authority: pagedSecretPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pagedSecretPackage, 0),
-			vocabulary.ActorManifest(pagedSecretPackage, vocabulary.PackageActor(pagedSecretPackage)),
 			vocabulary.BundleManifest(pagedSecretPackage, map[string]any{
 				"description": "the paged secret bundle",
 				"inputs": map[string]any{
@@ -745,7 +743,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("register paged secret bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pagedSecretPackage + "/sconfig", ID: fid("ps-cfg"),
 		Properties: map[string]any{"apiToken": pagedSecretValue},
 	}); err != nil {
@@ -764,7 +762,7 @@ func TestPagedContinuationSecretRejected(t *testing.T) {
 	ctx := context.Background()
 	triggerID := installPagedSecretBundle(t, ds)
 
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pagedSecretPackage + "/widget", Properties: map[string]any{"name": "trip"},
 	})
 	if err != nil {
@@ -826,7 +824,7 @@ func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
 	}
 
 	// Deleting the trigger drops its paged rows in the same transaction.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete trigger: %v", err)
 	}
 	if _, ok := pagedCursor(t, ds, chain); ok {
@@ -869,7 +867,7 @@ func parkMidChain(t *testing.T, pkg string) (*dataset, string, int64, substrate.
 	t.Helper()
 	ctx := context.Background()
 	ds, triggerID := openPagedDataset(t, pkg, brokenPagedBody)
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pkg + "/widget", Properties: map[string]any{"name": "go"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pkg + "/widget", Properties: map[string]any{"name": "go"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -893,7 +891,7 @@ func parkMidChain(t *testing.T, pkg string) (*dataset, string, int64, substrate.
 // fixPagedBody applies pagedBody(3) over brokenPagedBody, same identity.
 func fixPagedBody(t *testing.T, ds *dataset, pkg string) {
 	t.Helper()
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "page", map[string]any{
 			"description": "a paged backfill body",
 			"runtime":     vocabulary.RuntimePython,
@@ -917,7 +915,7 @@ func TestAMidChainParkRetriedUnderAFixedBodyRetires(t *testing.T) {
 
 	fixPagedBody(t, ds, pkg)
 	for _, enabled := range []bool{false, true} {
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
 			Properties: map[string]any{"enabled": enabled},
 		}); err != nil {
 			t.Fatalf("set enabled=%v: %v", enabled, err)
@@ -929,7 +927,7 @@ func TestAMidChainParkRetriedUnderAFixedBodyRetires(t *testing.T) {
 
 	// Erase the committed page: a resume leaves it erased, a restart from
 	// page zero would write it again.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete p-0: %v", err)
 	}
 	ran, err := ds.RetryTriggerFailure(ctx, triggerID, parked.ID)
@@ -965,7 +963,7 @@ func TestAMidChainParkRetriedAsASkipRetiresTheRow(t *testing.T) {
 	pkg := "pagedskip.test.dev/pagedskip"
 	ds, triggerID, seq, parked := parkMidChain(t, pkg)
 
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
 		Properties: map[string]any{"source": map[string]any{"record": map[string]any{
 			"kinds": []any{pkg + "/widget"},
 			"when":  `record != null && record.properties.name == "go"`,
@@ -973,7 +971,7 @@ func TestAMidChainParkRetriedAsASkipRetiresTheRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("guard the trigger: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, pkg+"/widget", parked.RecordID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, pkg+"/widget", parked.RecordID, substrate.PatchInput{
 		Properties: map[string]any{"name": "done"},
 	}); err != nil {
 		t.Fatalf("satisfy the widget: %v", err)
@@ -1057,11 +1055,10 @@ func TestAnInterruptedSweepStartsOverAfterTheByteOrderChange(t *testing.T) {
 	ds := open()
 	importVocabulary(t, ds, "tasks")
 	raw := rawDBOf(t, dsn)
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "sweep", Authority: "sweep.test.dev",
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "item"}, map[string]any{
@@ -1100,7 +1097,7 @@ def main(input, host):
 	}
 	all := []string{"a", "b", "Zed", "zz"}
 	for _, id := range all {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: itemType, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: itemType, ID: id, Properties: map[string]any{"name": id}}); err != nil {
 			t.Fatalf("put item %s: %v", id, err)
 		}
 	}
@@ -1123,7 +1120,7 @@ def main(input, host):
 		t.Fatalf("the database's own collation orders the items %s; the test needs one that sorts case together (the pgvector image's en_US)", got)
 	}
 	restore := withMaxPages(2)
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "go"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "go"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1254,7 +1251,7 @@ func TestMigrationSevenLeavesItsMarkAndAnImportWithoutItStartsTheDrainOver(t *te
 		t.Fatalf("a new repository's mark says %d, want %d", order, substrate.IdentityOrder)
 	}
 
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "pagedmark.test.dev/pagedmark/widget", ID: fid("a"), Properties: map[string]any{"name": "a"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "pagedmark.test.dev/pagedmark/widget", ID: fid("a"), Properties: map[string]any{"name": "a"}})
 	if err != nil {
 		t.Fatal(err)
 	}

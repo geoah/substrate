@@ -264,7 +264,6 @@ func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 		Name: "peers", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:peers"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "node"},
 				map[string]any{

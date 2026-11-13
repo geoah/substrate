@@ -50,7 +50,7 @@ func (d vocabularyTakeover) TakeOverPackage(_ context.Context, actor substrate.A
 }
 
 // THE TAKEOVER ROUTE (decision 0205) hands the dataset the package, the
-// confirmation and the door the request names; a body without a package, or
+// confirmation and the person's hand; a body without a package, or
 // with a key the body does not declare, is refused before the dataset; and
 // the dataset's refusals keep their codes.
 func TestTheTakeoverRouteHandsTheEngineItsInputsAndKeepsItsCodes(t *testing.T) {
@@ -58,9 +58,9 @@ func TestTheTakeoverRouteHandsTheEngineItsInputsAndKeepsItsCodes(t *testing.T) {
 	var asked []string
 	env := newStubEnv(t, vocabularyTakeover{asked: &asked})
 	rec := env.do(t, http.MethodPost, "/api/v1/vocabulary/takeover", stubToken,
-		map[string]any{"package": pkg, "confirm": pkg}, actorHeader, "console")
+		map[string]any{"package": pkg, "confirm": pkg})
 	wantStatus(t, rec, http.StatusOK)
-	if got := fmt.Sprint(asked); got != fmt.Sprint([]string{"console", pkg, pkg}) {
+	if got := fmt.Sprint(asked); got != fmt.Sprint([]string{string(substrate.ActorPerson), pkg, pkg}) {
 		t.Fatalf("the dataset was asked %s", got)
 	}
 

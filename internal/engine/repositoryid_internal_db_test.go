@@ -69,7 +69,7 @@ func writeKeyedByNameSeeded(t *testing.T, seed func(ds *dataset), others ...stri
 		t.Fatal(err)
 	}
 	ds := d.(*dataset)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "substrate.reamde.dev/core/contact", ID: fid("ada"), Properties: map[string]any{"name": "Ada"},
 	}); err != nil {
 		t.Fatal(err)
@@ -374,12 +374,12 @@ func TestKeyingTime(t *testing.T) {
 		        jsonb_build_object('body', repeat('note text ', 30), 'n', g), to_tsvector('simple', 'note ' || g)
 		 FROM generate_series(1, $2::int) g`,
 		`INSERT INTO changelog (repository, seq, actor, op, record_id, kind, payload, principal, txn, hash)
-		 SELECT $1, 1000000 + g, 'api', 'put', 'n' || g, 'keying.example.com/notes/note',
+		 SELECT $1, 1000000 + g, '6nk6ekkczdgh399nt2pqpccjz0', 'put', 'n' || g, 'keying.example.com/notes/note',
 		        jsonb_build_object('fold', jsonb_build_array(jsonb_build_object('kind', 'record', 'delta', jsonb_build_object('set', jsonb_build_object('body', repeat('note text ', 30)))))),
 		        '', 1000000 + g, sha256(g::text::bytea)
 		 FROM generate_series(1, $2::int) g`,
 		`INSERT INTO property_managers (repository, record_kind, record_id, property, actor, tier, updated_at, principal)
-		 SELECT $1, 'keying.example.com/notes/note', 'n' || g, 'body', 'api', 'owner', now(), ''
+		 SELECT $1, 'keying.example.com/notes/note', 'n' || g, 'body', '6nk6ekkczdgh399nt2pqpccjz0', 'owner', now(), ''
 		 FROM generate_series(1, $2::int) g`,
 	} {
 		if _, err := db.ExecContext(ctx, q, k.name, n); err != nil {
@@ -795,6 +795,10 @@ func legacyDirFromArchive(t *testing.T, archiveRoot, root, id, key string) strin
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The writer takes whole transactions, and a page may end inside one: each
+	// append ends at the last line of a page that ends a transaction, and the
+	// rest waits for the next page.
+	var held []changelogfile.Entry
 	for {
 		entries, err := cur.Next(100)
 		if err != nil {
@@ -803,9 +807,20 @@ func legacyDirFromArchive(t *testing.T, archiveRoot, root, id, key string) strin
 		if len(entries) == 0 {
 			break
 		}
-		if err := w.Append(entries); err != nil {
+		held = append(held, entries...)
+		whole := 0
+		for i, e := range held {
+			if e.EndsTransaction() {
+				whole = i + 1
+			}
+		}
+		if err := w.Append(held[:whole]); err != nil {
 			t.Fatal(err)
 		}
+		held = held[whole:]
+	}
+	if err := w.Append(held); err != nil {
+		t.Fatal(err)
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)

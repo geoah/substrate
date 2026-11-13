@@ -7,6 +7,7 @@ import (
 
 	"github.com/geoah/substrate/internal/applet"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // appletsPutPeople stores peopleApplet under the id "people".
@@ -35,15 +36,15 @@ func TestAnAppletRendersItsStartAndRunsAnActionAsTheCaller(t *testing.T) {
 		State:  substrate.AppletState{Screen: "home", UI: map[string]any{"name": "Ada"}},
 		Shown:  &frame.Shown,
 		Action: substrate.AppletAction{Name: "add"},
-	}, actorHeader, "console")
+	})
 	wantStatus(t, rec, http.StatusOK)
 	frame = decodeJSON[substrate.AppletFrame](t, rec)
 	changes, err := env.ds.Changes(t.Context(), head.Seq, substrate.ChangeFilter{Kinds: []string{personKind}}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || changes[0].Op != substrate.OpPut || changes[0].Actor != substrate.ActorConsole {
-		t.Fatalf("the action wrote %+v, want one person put as the console", changes)
+	if len(changes) != 1 || changes[0].Op != substrate.OpPut || changes[0].Actor != vocabulary.ActorID(substrate.ActorPerson) {
+		t.Fatalf("the action wrote %+v, want one person put as the person", changes)
 	}
 	if got := env.get(t, personKind, changes[0].RecordID); got == nil || got.Properties["name"] != "Ada" {
 		t.Fatalf("the action stored %+v", got)

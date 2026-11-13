@@ -132,7 +132,7 @@ func TestBlobGetIsConcurrencyBounded(t *testing.T) {
 	var wg sync.WaitGroup
 	for range maxConcurrentBlobGets + 4 {
 		wg.Go(func() {
-			ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+			ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 			req := httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)
 			h.getBlob(httptest.NewRecorder(), req)
 		})

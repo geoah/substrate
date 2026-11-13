@@ -65,7 +65,7 @@ func restartableAgentDataset(t *testing.T, extra ...Option) (*dataset, *fakeLLM,
 // keeperWebhook puts a webhook trigger running the keeper agent.
 func keeperWebhook(t *testing.T, ds *dataset) string {
 	t.Helper()
-	tr, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"webhook": map[string]any{}},
@@ -520,7 +520,7 @@ func TestARerunRunsTheCallableTheTriggerNamesNow(t *testing.T) {
 	stop()
 	release()
 	scribe := vocabulary.RecordPath(kindAgent, crewPackage+"/scribe")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: trigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"webhook": map[string]any{}},
@@ -568,7 +568,7 @@ func TestTheFirstPassAfterARestartRerunsAFunctionBodysInterruptedAgent(t *testin
 	ds, fake, restart := restartableAgentDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	installRelay(t, ds, fake)
 	noter := vocabulary.RecordPath("substrate.reamde.dev/core/function", relayPackage+"/noter")
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -584,7 +584,7 @@ func TestTheFirstPassAfterARestartRerunsAFunctionBodysInterruptedAgent(t *testin
 	release := func() { once.Do(func() { close(held) }) }
 	t.Cleanup(release)
 	fake.script("sub", fakeTurn{content: "noted", arrived: arrived, release: held})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-crash"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -649,7 +649,7 @@ func TestARerunWaitsWhileItsAgentIsAtASpendCap(t *testing.T) {
 	ds, fake, restart, trigger, failure := interruptedKeeperRun(t, &logs)
 	setCap := func(ds *dataset, cents string) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: kindSetting, ID: spendSettingID,
 			Properties: map[string]any{"value": cents, "type": "int"},
 		}); err != nil {

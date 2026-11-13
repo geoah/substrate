@@ -432,8 +432,8 @@ func xrCaseLabelsAnnotations(c *C) {
 	c.stepf("the single GET carries both maps, unasked")
 }
 
-// xrCasePropertyMeta: REC-08. Provenance is per PROPERTY, not per record: two
-// doors writing two properties of one record leave two managers behind.
+// xrCasePropertyMeta: REC-08. Provenance is per PROPERTY, not per record: each
+// property's manager links the actor record of the hand that wrote it.
 func xrCasePropertyMeta(c *C) {
 	status, raw := c.do(http.MethodPut, xrTaskPath(xrActorsTask), map[string]any{
 		"properties": map[string]any{
@@ -443,8 +443,8 @@ func xrCasePropertyMeta(c *C) {
 	}, nil)
 	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrActorsTask, status, raw)
 
-	// The run's own writes name no door, so they are attributed to `api`. The
-	// console is one of the three doors a request may claim.
+	// A request names no actor: a full-access token writes as the person,
+	// whatever retired header it still sends (decision 0270).
 	status, raw = xrDoAs(c, "console", http.MethodPut, xrTaskPath(xrActorsTask),
 		map[string]any{"properties": map[string]any{"name": "The provenance probe, per the console"}}, nil)
 	c.requiref(status == http.StatusOK, "the console's write answered %d: %s", status, raw)
@@ -453,11 +453,11 @@ func xrCasePropertyMeta(c *C) {
 	name, hasName := got.PropertyMeta["name"]
 	desc, hasDesc := got.PropertyMeta["description"]
 	c.requiref(hasName && hasDesc, "propertyMeta is missing a property: %v", got.PropertyMeta)
-	c.requiref(name.Manager == "console" && name.Tier == "owner",
-		"`name` is managed by %q at tier %q, want console/owner", name.Manager, name.Tier)
-	c.requiref(desc.Manager == "api" && desc.Tier == "owner",
-		"`description` is managed by %q at tier %q, want api/owner", desc.Manager, desc.Tier)
-	c.stepf("the single GET's propertyMeta splits the record by property: `name` is managed by `console`, `description` by `api`, both at the `owner` tier")
+	c.requiref(c.hand(name.Manager) == "person" && name.Tier == "owner",
+		"`name` is managed by %q at tier %q, want the person at owner", c.hand(name.Manager), name.Tier)
+	c.requiref(c.hand(desc.Manager) == "person" && desc.Tier == "owner",
+		"`description` is managed by %q at tier %q, want the person at owner", c.hand(desc.Manager), desc.Tier)
+	c.stepf("the single GET's propertyMeta gives each property its manager: `name` and `description` both link the person's actor record, at the `owner` tier, though the second write sent a retired actor header")
 
 	// No alternative is recorded. An alternative is a live MAPPING offer that
 	// disagrees with the stored value (the property_offers rows a sync
@@ -469,9 +469,9 @@ func xrCasePropertyMeta(c *C) {
 
 	// The changelog says the same thing about the same two writes.
 	rows := c.rowsFor(xrActorsTask)
-	c.requiref(len(rows) == 2 && rows[0].Actor == "api" && rows[1].Actor == "console",
-		"the changelog rows for %s are %v; want a put by api then a put by console", xrActorsTask, rows)
-	c.stepf("the changelog agrees: seq %d put by `api`, seq %d put by `console`", rows[0].Seq, rows[1].Seq)
+	c.requiref(len(rows) == 2 && c.hand(rows[0].Actor) == "person" && c.hand(rows[1].Actor) == "person",
+		"the changelog rows for %s are %v; want two puts by the person", xrActorsTask, rows)
+	c.stepf("the changelog agrees: seq %d and seq %d are both puts by the person", rows[0].Seq, rows[1].Seq)
 
 	// A list row never carries provenance: it is a single-record read.
 	row, ok := xrListFind(c, listOf(tasksCollection, "first=200"), xrActorsTask)

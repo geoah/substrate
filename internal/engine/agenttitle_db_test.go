@@ -62,7 +62,7 @@ func subjectManager(rec *substrate.Record) string {
 
 func chatOnce(t *testing.T, ds *dataset, thread, message string) *substrate.AgentResult {
 	t.Helper()
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, namerAgent, substrate.ChatInput{Thread: thread, Message: message}, func(substrate.AgentEvent) {})
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, namerAgent, substrate.ChatInput{Thread: thread, Message: message}, func(substrate.AgentEvent) {})
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestANewChatThreadOpensWithASubjectFromItsMessage(t *testing.T) {
 	if rec.Title != want {
 		t.Fatalf("title %q, want the subject %q", rec.Title, want)
 	}
-	if m := subjectManager(rec); m != "agent:"+strings.ReplaceAll(namerAgent, "/", ":") {
+	if m := subjectManager(rec); m != actorID(substrate.Actor("agent:"+strings.ReplaceAll(namerAgent, "/", ":"))) {
 		t.Fatalf("subject manager %q, want the agent's actor", m)
 	}
 
@@ -121,7 +121,7 @@ func TestTheFirstTurnTitlesTheThreadAndChargesTheRow(t *testing.T) {
 	if rec.Title != "Trip to Berlin" {
 		t.Fatalf("title %q", rec.Title)
 	}
-	if m := subjectManager(rec); m != "agent:"+strings.ReplaceAll(namerAgent, "/", ":") {
+	if m := subjectManager(rec); m != actorID(substrate.Actor("agent:"+strings.ReplaceAll(namerAgent, "/", ":"))) {
 		t.Fatalf("subject manager %q, want the agent's actor", m)
 	}
 	if got, _ := anyFloat(rec.Properties["totalTokens"]); got != 30 {
@@ -171,7 +171,7 @@ func TestAnOwnerRenameIsNeverOverwritten(t *testing.T) {
 	fake.script("name", fakeTurn{content: "hello"}, fakeTurn{content: "Generated", arrived: arrived, release: release})
 	res := chatOnce(t, ds, "", "first question")
 	<-arrived
-	if _, err := ds.Patch(ctx, substrate.ActorConsole, typeThread, res.Thread, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeThread, res.Thread, substrate.PatchInput{
 		Properties: map[string]any{propThreadSubject: "My rename"},
 	}); err != nil {
 		t.Fatalf("rename: %v", err)
@@ -184,8 +184,8 @@ func TestAnOwnerRenameIsNeverOverwritten(t *testing.T) {
 	if s := rec.Properties[propThreadSubject]; s != "My rename" || rec.Title != "My rename" {
 		t.Fatalf("subject %q title %q, want the rename", s, rec.Title)
 	}
-	if m := subjectManager(rec); m != string(substrate.ActorConsole) {
-		t.Fatalf("subject manager %q, want console", m)
+	if m := subjectManager(rec); m != actorID(substrate.ActorPerson) {
+		t.Fatalf("subject manager %q, want the person", m)
 	}
 
 	// The rename after the generated title holds through a further turn.
@@ -194,7 +194,7 @@ func TestAnOwnerRenameIsNeverOverwritten(t *testing.T) {
 	waitThread(t, ds, res2.Thread, func(r *substrate.Record) bool {
 		return r.Properties[propThreadSubject] == "Second generated"
 	})
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeThread, res2.Thread, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeThread, res2.Thread, substrate.PatchInput{
 		Properties: map[string]any{propThreadSubject: "Kept"},
 	}); err != nil {
 		t.Fatalf("rename: %v", err)
@@ -242,7 +242,7 @@ func TestTitleModelOnTheProviderRowIsUsed(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openTitleDataset(t)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeProvider, "namellm", substrate.PatchInput{Properties: map[string]any{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, typeProvider, "namellm", substrate.PatchInput{Properties: map[string]any{
 		"titleModel": "small",
 		// The title model takes the row's effort, not the agent's; "none"
 		// is the one effort that gets the bare title ceiling.
@@ -311,7 +311,7 @@ func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
 		t.Fatalf("before: %d cents", got)
 	}
 	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Greeting"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, open, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitTitle()
@@ -325,12 +325,12 @@ func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
 	// The thread is deleted while its title call runs.
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fake.script("open", fakeTurn{content: "hello"}, fakeTurn{content: "Gone", arrived: arrived, release: release})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, open, substrate.ChatInput{Message: "again"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, open, substrate.ChatInput{Message: "again"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	<-arrived
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeThread, res.Thread, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the thread: %v", err)
 	}
 	close(release)
@@ -340,5 +340,31 @@ func TestATitleCallCountsAgainstTheSpendCap(t *testing.T) {
 	// and its title's 100 as a lost charge.
 	if got := spentOf(t, ds, "open", true); got != 400 {
 		t.Fatalf("after a title whose thread was deleted: %d cents, want 400", got)
+	}
+}
+
+// The title is written after the turn's request returned, on the background
+// context, and acts for whom the thread acts for: the person who started it
+// (decision 0270).
+func TestTheTitleActsForThePersonWhoStartedTheThread(t *testing.T) {
+	t.Parallel()
+	ds, fake := openTitleDataset(t)
+	fake.script("name", fakeTurn{content: "Berlin has a lot to see."}, fakeTurn{content: `"Trip to Berlin".`})
+	ctx := substrate.WithOnBehalfOf(context.Background(), substrate.ActorPerson)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, namerAgent, substrate.ChatInput{Message: "what should I see in berlin"}, func(substrate.AgentEvent) {})
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	waitThread(t, ds, res.Thread, func(r *substrate.Record) bool {
+		return r.Properties[propThreadSubject] == "Trip to Berlin"
+	})
+	var behalf string
+	if err := ds.db.QueryRowContext(context.Background(), `
+		SELECT on_behalf_of FROM changelog WHERE kind = $1 AND record_id = $2 AND payload::text LIKE '%Trip to Berlin%'
+		ORDER BY seq DESC LIMIT 1`, typeThread, res.Thread).Scan(&behalf); err != nil {
+		t.Fatalf("read the title's line: %v", err)
+	}
+	if behalf != actorID(substrate.ActorPerson) {
+		t.Fatalf("the title acts for %q, want the person", behalf)
 	}
 }

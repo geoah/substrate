@@ -4,6 +4,7 @@
  * runs, and what a provider's kinds fill in of yours. No fetching here; the
  * pages fold these off the reads `lib/api/*` returns. */
 
+import { actorIDOf } from "@/lib/actor-directory"
 import type {
   BundleFeature,
   BundleUpgradeHolder,
@@ -793,22 +794,21 @@ export function toolActivity(
 
 // ── what a provider did ──────────────────────────────────────────────────────
 
-function colons(id: string): string {
-  return id.split("/").join(":")
-}
-
-/** The actors a provider writes as: its bundle, and each of its functions
- * (decision 0025 derives both from the declaration ids). */
+/** The ids of the actors a provider writes as: its package's own, and each of
+ * its functions', read off the actor records the console holds
+ * (decision 0270). */
 export function providerActors(
   bundleId: string,
   functionIds: readonly string[]
 ): string[] {
   return [
-    `bundle:${colons(bundleId)}`,
+    actorIDOf("package", bundleId),
     ...functionIds
       .filter((id) => id.startsWith(`${bundleId}/`))
-      .map((id) => `function:${colons(id)}`),
-  ].sort()
+      .map((id) => actorIDOf("function", id)),
+  ]
+    .filter((id): id is string => id !== undefined)
+    .sort()
 }
 
 /** When a provider last synced one of its kinds: the newest finished run of

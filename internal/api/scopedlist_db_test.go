@@ -29,13 +29,13 @@ func TestAScopedListWhoseGrantReadsAnotherKindBetweenPagesListsAgain(t *testing.
 	}
 	apply := func(docs ...map[string]any) {
 		t.Helper()
-		if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
 	}
 	apply(vocabulary.PackageManifest(pkg, 0), kind("note"))
 	for _, name := range []string{"a", "b", "c"} {
-		if _, err := env.ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pkg + "/note", Properties: map[string]any{"name": name}}); err != nil {
+		if _, err := env.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pkg + "/note", Properties: map[string]any{"name": name}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -81,13 +81,13 @@ func TestAScopedListThatNowReachesNothingListsAgain(t *testing.T) {
 	}
 	apply := func(docs ...map[string]any) {
 		t.Helper()
-		if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 			t.Fatalf("apply: %v", err)
 		}
 	}
 	apply(vocabulary.PackageManifest(pkg, 0), note(""))
 	for _, name := range []string{"a", "b"} {
-		if _, err := env.ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pkg + "/note", Properties: map[string]any{"name": name}}); err != nil {
+		if _, err := env.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pkg + "/note", Properties: map[string]any{"name": name}}); err != nil {
 			t.Fatal(err)
 		}
 	}

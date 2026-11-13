@@ -57,7 +57,7 @@ func TestAgentReachIncludesToolsSubagentsAndCycles(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				ds := newScopedDataset(env.ds, grant, substrate.ActorAPI)
+				ds := newScopedDataset(env.ds, grant, substrate.ActorPerson)
 				got, err := ds.coversAgentReads(context.Background(), talked)
 				if err != nil || got != covered {
 					t.Fatalf("chat coverage = %v, %v, want %v", got, err, covered)

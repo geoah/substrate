@@ -14,6 +14,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 const nav = vi.hoisted(() => ({ to: [] as unknown[] }))
 
@@ -52,6 +53,8 @@ import {
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
 
+beforeEach(() => seedActors())
+
 const TASK = "ada.example.com/tasks/task"
 
 const task: KindInfo = {
@@ -80,8 +83,8 @@ const rec = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-01T00:00:00Z",
   propertyMeta: {
-    name: { manager: "console", tier: "owner" },
-    location: { manager: "console", tier: "owner" },
+    name: { manager: "act-person", tier: "owner" },
+    location: { manager: "act-person", tier: "owner" },
   },
   ...over,
 })
@@ -150,9 +153,9 @@ describe("RecordHeader meta line", () => {
     renderHeader(
       rec({
         propertyMeta: {
-          name: { manager: "console", tier: "owner" },
+          name: { manager: "act-person", tier: "owner" },
           location: {
-            manager: "function:providers.substrate.reamde.dev:google:sync",
+            manager: "act-fn-google-sync",
             tier: "machine",
           },
         },

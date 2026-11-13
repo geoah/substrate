@@ -209,7 +209,7 @@ func TestFirecrawlProviderInstallsSettings(t *testing.T) {
 		t.Fatalf("status setup = %+v, want the one empty-secret item for %s", st.Setup, firecrawlKeyRecord)
 	}
 
-	filled, err := ds.Patch(ctx, substrate.ActorAPI, typeSecret, firecrawlKeyRecord, substrate.PatchInput{
+	filled, err := ds.Patch(ctx, substrate.ActorPerson, typeSecret, firecrawlKeyRecord, substrate.PatchInput{
 		Properties: map[string]any{"value": firecrawlTestKey},
 	})
 	if err != nil {
@@ -285,7 +285,7 @@ func installFirecrawlWithKey(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	requireConfinedBodies(t)
 	installShipped(t, ds, firecrawlPackage)
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, typeSecret, firecrawlKeyRecord, substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, typeSecret, firecrawlKeyRecord, substrate.PatchInput{
 		Properties: map[string]any{"value": firecrawlTestKey},
 	}); err != nil {
 		t.Fatalf("fill in the firecrawl apiKey: %v", err)
@@ -305,7 +305,7 @@ func requireConfinedBodies(t *testing.T) {
 
 func setFirecrawlBase(t *testing.T, ds substrate.Dataset, value string) {
 	t.Helper()
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, typeSetting, firecrawlBaseRecord, substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, typeSetting, firecrawlBaseRecord, substrate.PatchInput{
 		Properties: map[string]any{"value": value},
 	}); err != nil {
 		t.Fatalf("set the firecrawl baseUrl to %q: %v", value, err)
@@ -336,14 +336,14 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 			firecrawlSearchFn: {"query": "anything"},
 			firecrawlScrapeFn: {"url": firecrawlPageURL},
 		} {
-			_, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, input)
+			_, applied, err := ds.CallFunction(ctx, substrate.ActorPerson, fn, input)
 			if err == nil || !strings.Contains(err.Error(), "pinned provider origin") || applied != 0 {
 				t.Fatalf("%s against baseUrl %s: err=%v applied=%d, want the origin-pin refusal", fn, hostile, err, applied)
 			}
 		}
 	}
 	setFirecrawlBase(t, ds, "https://api.firecrawl.dev/v2")
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlSearchFn, map[string]any{"query": "x"}); err == nil || !strings.Contains(err.Error(), "carries a path") {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, firecrawlSearchFn, map[string]any{"query": "x"}); err == nil || !strings.Contains(err.Error(), "carries a path") {
 		t.Fatalf("websearch against a base with a path: %v, want the refusal", err)
 	}
 	if n := countLive(t, ds, firecrawlDocKind); n != 0 {
@@ -360,7 +360,7 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 		"https://":                                    "hostname",
 		"https://user:pass@blog.example.com/blog/how": "credentials",
 	} {
-		_, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": url})
+		_, applied, err := ds.CallFunction(ctx, substrate.ActorPerson, firecrawlScrapeFn, map[string]any{"url": url})
 		if err == nil || !strings.Contains(err.Error(), wantErr) || applied != 0 {
 			t.Fatalf("webscrape(%q): err=%v applied=%d, want a refusal mentioning %q", url, err, applied, wantErr)
 		}
@@ -370,7 +370,7 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 	}
 
 	// websearch: hits come back shaped, and the call writes nothing.
-	out, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, firecrawlSearchFn,
+	out, applied, err := ds.CallFunction(ctx, substrate.ActorPerson, firecrawlSearchFn,
 		map[string]any{"query": "how substrates compose", "limit": 2})
 	if err != nil {
 		t.Fatalf("call websearch: %v", err)
@@ -391,7 +391,7 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 	// webscrape: the content caps at 24000, ONE webdocument lands under
 	// host.ids.minted(url), titled by the page's own title.
 	docID := vocabulary.DerivedMintedID(firecrawlPageURL)
-	out, applied, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
+	out, applied, err = ds.CallFunction(ctx, substrate.ActorPerson, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL})
 	if err != nil {
 		t.Fatalf("call webscrape: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestFirecrawlProviderCallsTools(t *testing.T) {
 	}
 
 	// Re-scrape: the SAME id updates in place.
-	if _, applied, err = ds.CallFunction(ctx, substrate.ActorAPI, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL}); err != nil || applied != 1 {
+	if _, applied, err = ds.CallFunction(ctx, substrate.ActorPerson, firecrawlScrapeFn, map[string]any{"url": firecrawlPageURL}); err != nil || applied != 1 {
 		t.Fatalf("re-scrape: applied=%d err=%v", applied, err)
 	}
 	updated, err := ds.Get(ctx, firecrawlDocKind, docID)
@@ -462,7 +462,7 @@ func TestFirecrawlProviderRefusesRedirects(t *testing.T) {
 			firecrawlSearchFn: {"query": "anything"},
 			firecrawlScrapeFn: {"url": firecrawlPageURL},
 		} {
-			_, applied, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, input)
+			_, applied, err := ds.CallFunction(ctx, substrate.ActorPerson, fn, input)
 			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "redirect") || applied != 0 {
 				t.Fatalf("%s answered %d: err=%v applied=%d, want the redirect refused", fn, code, err, applied)
 			}

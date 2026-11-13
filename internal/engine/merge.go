@@ -384,11 +384,11 @@ func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
 			winnerRef.Kind, winnerRef.ID, m.property, m.actor, m.tier, m.principal, m.updatedAt); err != nil {
 			return nil, err
 		}
-		// The principal travels with the actor and the tier: a later write by
+		// The token travels with the actor and the tier: a later write by
 		// another token moves the row without moving either of those, and the
 		// split must be able to tell that row from the one it migrated.
 		out = append(out, map[string]any{
-			"property": m.property, "actor": m.actor, "tier": m.tier, "principal": m.principal,
+			"property": m.property, "actor": m.actor, "tier": m.tier, "token": m.principal,
 		})
 	}
 	return out, nil
@@ -567,17 +567,17 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 		}
 	}
 	// The manager rows the merge migrated go back too — only where they
-	// still name the migrated actor, tier AND principal, because a row
-	// somebody has since claimed records a write the split must not erase.
-	// A merge record written before the principal was recorded carries no
-	// such key, and the empty string is the right match for it: migration
-	// 0006 stamped exactly that on every row it found, so a row that names
-	// anything else was written by a token after the upgrade.
+	// still name the migrated actor, tier AND token, because a row somebody
+	// has since claimed records a write the split must not erase. A merge
+	// record written before the token was recorded carries no such key, and
+	// the empty string is the right match for it: migration 0006 stamped
+	// exactly that on every row it found, so a row that names anything else
+	// was written by a token after the upgrade.
 	for _, m := range mapsOf(moved["managers"]) {
 		property, _ := m["property"].(string)
 		actor, _ := m["actor"].(string)
 		tier, _ := m["tier"].(string)
-		principal, _ := m["principal"].(string)
+		principal, _ := m["token"].(string)
 		if property == "" || actor == "" || tier == "" {
 			continue
 		}

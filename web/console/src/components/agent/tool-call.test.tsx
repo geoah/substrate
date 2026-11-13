@@ -322,7 +322,8 @@ describe("the tool line", () => {
     const { container } = renderCard(
       call({
         name: "web_scrape",
-        callable: "function:providers.example.com:web:scrape",
+        callable:
+          "substrate.reamde.dev/core/function/providers.example.com/web/scrape",
         arguments: '{"url":"https://example.com/"}',
         output:
           '{"output":{"document":"d1","url":"https://example.com/","content":"# Hi"},"effects":1}',
@@ -461,7 +462,7 @@ describe("the tool line", () => {
     const scoutCall = (over: Partial<ToolCallView> = {}) =>
       call({
         name: "scout",
-        callable: "agent:crew.test.dev:crew:scout",
+        callable: "substrate.reamde.dev/core/agent/crew.test.dev/crew/scout",
         arguments: '{"input":"file it"}',
         output: '{"reply":"Filed.","thread":"th1","status":"ok"}',
         subagentWrites: {
@@ -565,7 +566,9 @@ describe("the tool line", () => {
     )
     // No stamp: the name resolves, spelled as the rows spell a callable.
     expect(
-      screen.getByText("function:substrate.reamde.dev:core:write")
+      screen.getByText(
+        "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write"
+      )
     ).toBeTruthy()
     fireEvent.click(screen.getByRole("button", { name: /Made a change/ }))
     expect(screen.getByText("patch · seq 202")).toBeTruthy()
@@ -591,7 +594,8 @@ describe("the tool line", () => {
       createdAt: "2026-08-13T00:00:00Z",
       updatedAt: "2026-08-13T00:00:00Z",
     }
-    const stamped = "function:substrate.reamde.dev:core:query"
+    const stamped =
+      "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query"
     renderCard(
       call({
         name: "lookup",
@@ -613,7 +617,8 @@ describe("the tool line", () => {
 describe("a tool whose result has a known shape", () => {
   const search = call({
     name: "web_search",
-    callable: "function:providers.substrate.reamde.dev:firecrawl:websearch",
+    callable:
+      "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/firecrawl/websearch",
     arguments: '{"query":"quiet robot vacuum"}',
     output: JSON.stringify({
       effects: 0,

@@ -208,7 +208,7 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 				"secretB": map[string]any{"type": "secret"},
 			}}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare vault kind: %v", err)
 	}
 
@@ -248,7 +248,7 @@ func TestSecretPropsDoNotAliasOneSealedRow(t *testing.T) {
 	// The attack: write secretB as a value naming secretA's sealed row. The
 	// unfixed write treats any ref of this record as a carried ref and stores it
 	// verbatim, aliasing B onto A's row.
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vaultKind, ID: fid("v1"),
 		Properties: map[string]any{"secretB": refA},
 	})

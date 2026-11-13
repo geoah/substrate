@@ -538,17 +538,6 @@ func TestOneSourceCannotParkEveryRequest(t *testing.T) {
 	}
 }
 
-func TestNoRequestClaimsAnAppsActor(t *testing.T) {
-	e := newAuthorizeStub(t)
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/"+taskKind+"/t1", strings.NewReader(`{"properties":{}}`))
-	req.Header.Set("Authorization", "Bearer "+e.owner)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(actorHeader, "app:notes.example.org")
-	rec := httptest.NewRecorder()
-	e.h.ServeHTTP(rec, req)
-	wantStatus(t, rec, http.StatusForbidden)
-}
-
 // Until revoked is 0, so an approval that names no lifetime is refused, never
 // read as 0: forgetting the field must not grant the longest access.
 func TestAnApprovalNamesItsLifetime(t *testing.T) {

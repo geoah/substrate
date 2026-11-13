@@ -42,11 +42,10 @@ func installUnitsFunction(t *testing.T, ds *dataset) string {
         out["across"] = str(e)
     return {"output": out}
 `
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "unitfns", Authority: unitsFnPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(unitsFnPackage, 0),
-			vocabulary.ActorManifest(unitsFnPackage, vocabulary.PackageActor(unitsFnPackage)),
 			vocabulary.FunctionManifest(unitsFnPackage, "convert", map[string]any{
 				"description": "asks every host.units call of the repository's graph",
 				"runtime":     vocabulary.RuntimePython,
@@ -75,7 +74,7 @@ func TestAFunctionConvertsThroughTheRepositorysGraph(t *testing.T) {
 	fn := installUnitsFunction(t, ds)
 	call := func() map[string]any {
 		t.Helper()
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fn, map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fn, map[string]any{})
 		if err != nil {
 			t.Fatalf("call the function: %v", err)
 		}
@@ -142,7 +141,7 @@ func TestAChangeRequestWritesThroughTheGraph(t *testing.T) {
 	}
 	accept := func(req *substrate.Record) error {
 		v := req.Version
-		_, err := ds.Patch(ctx, substrate.ActorAPI, req.Kind, req.ID, substrate.PatchInput{
+		_, err := ds.Patch(ctx, substrate.ActorPerson, req.Kind, req.ID, substrate.PatchInput{
 			Properties: map[string]any{"decision": "accepted"}, IfVersion: &v,
 		})
 		return err
@@ -208,21 +207,21 @@ func TestANarrowingIsPreviewedAndRefusedThroughTheGraph(t *testing.T) {
 		}
 	}
 	narrowing := docs(map[string]any{"type": "quantity", "unit": "m"})
-	plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, narrowing)
+	plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorPerson, narrowing)
 	if err != nil {
 		t.Fatalf("preview the narrowing: %v", err)
 	}
 	if blockers := strings.Join(plan.Blockers, "; "); !strings.Contains(blockers, "weight") || !strings.Contains(blockers, "2 live records") {
 		t.Errorf("the preview's blockers = %q, want the weight's two rows", blockers)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, narrowing); err == nil || !strings.Contains(err.Error(), "2 live records") {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, narrowing); err == nil || !strings.Contains(err.Error(), "2 live records") {
 		t.Errorf("apply the narrowing: err = %v, want the two rows named", err)
 	}
 	widening := docs(map[string]any{"type": "quantity", "unit": "g"})
-	if plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorAPI, widening); err != nil || len(plan.Blockers) != 0 {
+	if plan, err := ds.PlanVocabularyApply(ctx, substrate.ActorPerson, widening); err != nil || len(plan.Blockers) != 0 {
 		t.Errorf("preview an anchor of the same component: %v, blockers %v", err, plan.Blockers)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, widening); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, widening); err != nil {
 		t.Errorf("apply an anchor of the same component: %v", err)
 	}
 }

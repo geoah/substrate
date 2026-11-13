@@ -68,7 +68,7 @@ func TestGetWatchSendsTheTailGrammar(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.changes = []substrate.Change{
-		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: taskKind},
+		{Seq: 42, TS: testNow, Actor: "6nk6ekkczdgh399nt2pqpccjz0", Op: substrate.OpPut, RecordID: "t9", Kind: taskKind},
 	}
 	out, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-w", "--from", "7", "--generation", fakeGeneration)
 	if !strings.Contains(out, "42 ") {
