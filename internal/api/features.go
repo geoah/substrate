@@ -101,7 +101,9 @@ var removedFeatures = []removedFeature{}
 // featureTable is every feature, strongest promise first. An entry's surfaces
 // are the doors that exist today for the feature's own verbs.
 var featureTable = []feature{
-	{name: "discovery", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 2: `vocabulary.dialect`, the declaration format the server
+	// reads (decision 0268).
+	{name: "discovery", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /.well-known/substrate/server.json",
 		"GET /healthz",
 	}},

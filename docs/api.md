@@ -967,12 +967,14 @@ reports: the served API versions; the server build; the
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
 registration asks for; the request surface,
-with its endpoint and its compatibility; and a feature list. No dialect
-is on the wire: the
-[vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) and
-[changelog](changelog.md#the-dialect-a-changelog-is-written-in) dialects are
-stored per repository, and a binary too old for a store refuses to open it,
-which surfaces as `unavailable`. That
+with its endpoint and its compatibility; the
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+this server reads, `vocabulary.dialect`, since the `discovery` feature's
+revision 2; and a feature list. A publisher compares the dialect with the one
+each version of a package needs. The
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in) is not
+on the wire: it is stored per repository, and a binary too old for a store
+refuses to open it, which surfaces as `unavailable`. That
 feature list is what a client reads instead of trying a route to see whether
 it exists: each entry names a feature, which is a group of routes, with its
 stability, its revision and the `surfaces` that serve it:
@@ -981,6 +983,7 @@ stability, its revision and the `surfaces` that serve it:
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
+ "vocabulary": {"dialect": 3},
  "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
               {"name": "auth", "stability": "beta", "revision": 1, "surfaces": ["rest"],
                "notice": "Before 1.0, sign-in names a person, who then picks a repository."},

@@ -955,6 +955,15 @@ type Package struct {
 	// written against, one of FunctionInterfaces, and 0 where the header
 	// names none, which reads as 1. Always 0 on an authority row.
 	Interface int64
+	// Dialect is the vocabulary dialect the header says the package needs,
+	// at most Dialect, and 0 where it states none. Always 0 on an authority
+	// row.
+	Dialect int64
+	// NeedsDialect is the dialect the keys the package's declarations use
+	// need: the highest any of them arrived in (keyIntroducedAt), 0 where
+	// every one is read by every dialect. A header may state more, never
+	// less.
+	NeedsDialect int64
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.

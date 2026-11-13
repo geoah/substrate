@@ -59,6 +59,7 @@ func (l *loader) parseKindIDs(where string, d map[string]any, t *Kind) {
 			l.errf("%s: data.ids.%s: not a key of ids — it takes `type` alone", where, k)
 			return
 		}
+		l.noteKey(idsKeys, k)
 	}
 	v, ok := block["type"].(string)
 	switch {

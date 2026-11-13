@@ -62,6 +62,8 @@ const metadata = {
 }
 const document = {
   server: { version: "v0.121.0" },
+  // A field the kit does not read: the probe still takes the document.
+  vocabulary: { dialect: 3 },
   features: [{ name: "apps", stability: "beta", revision: 1 }],
 }
 

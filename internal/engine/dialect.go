@@ -10,8 +10,9 @@ package engine
 // failure) and the API maps it to `503` with Retry-After.
 //
 // There is no ladder and nothing to promote: a dialect-1 row is a dialect-2
-// row. Dialect 2 marks this release's seeded closure (`oneOf` reference
-// properties, the `quantity` type), which the v0.113.0 loader refuses. That
+// row. Dialect 2 marks the seeded closure that brought `oneOf` reference
+// properties and the `quantity` type, which the v0.113.0 loader refuses, and
+// dialect 3 the package header's `stability`, `interface` and `dialect`. That
 // binary reads the manifest's dialect only when it imports a directory its
 // database has no repository row for, so the stamp refuses that import by
 // name and nothing else; a database restored with the row still in it imports
@@ -27,6 +28,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // ErrVocabularyDialectNewer is the named downgrade refusal: the repository's store
@@ -35,14 +38,16 @@ import (
 // deploy a substrate whose maximum dialect covers the store.
 var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a newer schema dialect than this binary")
 
-// maxVocabularyDialect is the newest dialect this binary speaks. A repository
+// maxVocabularyDialect is the newest dialect this binary speaks: the
+// loader's (vocabulary.Dialect, which a new declaration key raises and which
+// discovery publishes as `vocabulary.dialect`, decision 0268). A repository
 // is stamped here by its creation, one stored lower is raised here at its
 // first open, and one stored above it refuses to open.
-const maxVocabularyDialect = 2
+const maxVocabularyDialect = vocabulary.Dialect
 
-// MaxSchemaDialect is the newest dialect this binary speaks. No dialect is on
-// the wire: it is exported for the tests outside this package that assert what
-// an open stamps and which manifest the gate refuses.
+// MaxSchemaDialect is the newest dialect this binary speaks, exported for the
+// tests outside this package that assert what an open stamps and which
+// manifest the gate refuses.
 func MaxSchemaDialect() int { return maxVocabularyDialect }
 
 // gateVocabularyDialect runs the gate at repository open: refuse a store newer
