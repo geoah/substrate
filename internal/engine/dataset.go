@@ -83,6 +83,9 @@ type dataset struct {
 	// record holds it wrapped to the user's age recipient.
 	dek   []byte
 	watch *broadcaster
+	// observedKinds is the kinds holding an observed segment (measured.go),
+	// so a record of any other kind leaves the fold without a probe.
+	observedKinds observedKinds
 	// generation is the repository's history generation (repositories.go),
 	// the marker every change cursor this dataset hands out is bound to. It
 	// is read once at open: the row changes it only when a boot imports the
