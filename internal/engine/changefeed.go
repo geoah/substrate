@@ -30,27 +30,15 @@ func hideDeliveryEntries(b *builder) {
 // buildChangeFilter appends a ChangeFilter's predicates; the caller owns the
 // seq bound and the ordering.
 func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error {
-	resolveTypes := func(names []string) ([]string, error) {
-		reg := ds.registry()
-		idents := make([]string, 0, len(names))
-		for _, name := range names {
-			t, err := reg.Resolve(name)
-			if err != nil {
-				return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-			}
-			idents = append(idents, t.Identity)
-		}
-		return idents, nil
-	}
 	if len(f.Kinds) > 0 {
-		idents, err := resolveTypes(f.Kinds)
+		idents, err := ds.resolveChangeKinds(f.Kinds)
 		if err != nil {
 			return err
 		}
 		b.add(`kind = ANY(` + b.textArray(idents) + `)`)
 	}
 	if len(f.ExcludeKinds) > 0 {
-		idents, err := resolveTypes(f.ExcludeKinds)
+		idents, err := ds.resolveChangeKinds(f.ExcludeKinds)
 		if err != nil {
 			return err
 		}
@@ -119,6 +107,25 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 			` OR record_id ILIKE ` + p + ` OR payload::text ILIKE ` + p + `)`)
 	}
 	return nil
+}
+
+// resolveChangeKinds resolves a change filter's kind names to identities
+// through the registry in force, so the table's read and the tail's
+// (changetail.go) refuse and match the same names.
+func (ds *dataset) resolveChangeKinds(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	reg := ds.registry()
+	idents := make([]string, 0, len(names))
+	for _, name := range names {
+		t, err := reg.Resolve(name)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		idents = append(idents, t.Identity)
+	}
+	return idents, nil
 }
 
 // escapeLike makes a user string a literal LIKE operand.

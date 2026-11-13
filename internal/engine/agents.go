@@ -316,18 +316,18 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		// A shutdown never opens a thread it will not run.
 		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
 	}
-	// A slot among the repository's running chat turns, held until the
-	// turn settles: a detached turn outlives its client, so nothing else
-	// bounds how many a client can leave running.
-	if n := ds.chatTurns.Add(1); n > maxRunningChatTurns {
-		ds.chatTurns.Add(-1)
-		return nil, fmt.Errorf("%w: %d chat turns are already running in this repository: wait for one to finish, or stop one",
-			substrate.ErrConflict, maxRunningChatTurns)
+	// A slot among the person's running chat turns, held until the turn
+	// settles: a detached turn outlives its client, so nothing else bounds
+	// how many a client can leave running.
+	person, limit := substrate.PersonOf(ctx, ds.scope.Repository), ds.svc.chatTurnsPerPerson
+	if !ds.chatTurns.take(person, limit) {
+		return nil, fmt.Errorf("%w: %d chat turns are already running for this person: wait for one to finish, or stop one",
+			substrate.ErrConflict, limit)
 	}
 	slotHeld := true
 	defer func() {
 		if slotHeld {
-			ds.chatTurns.Add(-1)
+			ds.chatTurns.give(person)
 		}
 	}()
 	hub := newTurnHub()
@@ -349,7 +349,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 	stopOnShutdown := context.AfterFunc(ds.svc.bg.ctx, cancel)
 	slotHeld = false
 	turn := func() {
-		defer ds.chatTurns.Add(-1)
+		defer ds.chatTurns.give(person)
 		defer stopOnShutdown()
 		defer cancel()
 		res, err := (*substrate.AgentResult)(nil), errors.New("the chat turn ended without settling")
@@ -373,8 +373,9 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 	return hub.attach(ctx, emit)
 }
 
-// maxRunningChatTurns is how many detached chat turns a repository runs at
-// once. Each holds a model call, the lifecycle fence's read lock and up to
+// maxRunningChatTurns is how many detached chat turns one person runs at once
+// unless the server sets another number (WithChatTurnsPerPerson). Each holds
+// a model call, the lifecycle fence's read lock and up to
 // agentTurnReplayBytes of replay, and none ends when its client leaves.
 const maxRunningChatTurns = 4
 

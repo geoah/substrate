@@ -1750,9 +1750,11 @@ on its own: not a resolution that landed during the turn, not one that lands
 later, and not the resolution sweep. The owner's next message replays the
 resolution rows with the rest of the history.
 
-A repository runs at most 4 chat turns at once. One more is refused `409
-conflict` (`4 chat turns are already running in this repository: wait for
-one to finish, or stop one`) before anything is written.
+A person runs at most 4 chat turns at once, or the number the server sets
+(`SUBSTRATE_CHAT_TURNS_PER_PERSON`, [running a substrate](operations.md#configuration)).
+A person is the repository's sign-in today. One more is refused `409
+conflict` (`4 chat turns are already running for this person: wait for one
+to finish, or stop one`) before anything is written.
 
 `delta`, `reasoning`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
 matching `message` row carries or will carry. A thread's ordinals are unique:

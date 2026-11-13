@@ -1178,7 +1178,7 @@ func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking
 	if _, err := hex.DecodeString(rest); err != nil {
 		return nil, zero, fmt.Errorf("%w: malformed token", substrate.ErrAuth)
 	}
-	repo, info, err := s.tokenByHash(ctx, hashToken(tokenSecret))
+	repo, info, err := s.cachedTokenByHash(ctx, hashToken(tokenSecret))
 	if err != nil {
 		return nil, zero, err
 	}

@@ -2454,6 +2454,12 @@ func decodeKeyset(cur string) (*keyset, error) {
 // --- changelog ---
 
 func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
+	if substrate.TailRead(ctx) {
+		if out, ok, err := ds.tailChanges(ctx, after, f, limit); ok || err != nil {
+			return out, err
+		}
+		ds.noteChangeRead()
+	}
 	b := &builder{}
 	b.add(`seq > ` + b.arg(after))
 	hideDeliveryEntries(b)
