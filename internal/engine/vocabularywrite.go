@@ -1824,6 +1824,11 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	if g.Stability != "" {
 		header["stability"] = g.Stability
 	}
+	// The named interface alone, as with the label: an absent key stores
+	// nothing and reads as 1 (decision 0265).
+	if g.Interface != 0 {
+		header["interface"] = g.Interface
+	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
 			"actors": actors, "source": g.Source,

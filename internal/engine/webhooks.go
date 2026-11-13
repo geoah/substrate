@@ -303,7 +303,20 @@ func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, r
 	if err != nil {
 		return foldFailure{}, err
 	}
-	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
+	envelope := webhookFireEnvelope(fid, at, ds.Repository().Authority, req, parts, verified)
+	payload, err := ds.parkedEnvelope(ctx, envelope, declared, blobs)
+	if err != nil {
+		return foldFailure{}, err
+	}
+	return foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}, nil
+}
+
+// webhookFireEnvelope is the envelope a public webhook request is delivered
+// in: the fire, the repository and the request, its parts as
+// spoolWebhookParts left them. It is part of the function interface, pinned
+// by functioninput_test.go.
+func webhookFireEnvelope(fid string, at time.Time, authority string, req substrate.WebhookRequest, parts []map[string]any, verified bool) map[string]any {
+	envelope := runner.FireEnvelope(fid, at, authority)
 	request := webhookRequestEnvelope(req, parts)
 	// The mark a later retry or resume reads (checkStoredWebhookSignature):
 	// this request passed the declared signature, so it is not checked
@@ -312,11 +325,7 @@ func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, r
 		request[requestSignatureVerified] = true
 	}
 	envelope["request"] = request
-	payload, err := ds.parkedEnvelope(ctx, envelope, declared, blobs)
-	if err != nil {
-		return foldFailure{}, err
-	}
-	return foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}, nil
+	return envelope
 }
 
 // blobSpool is where a webhook request's bytes go before its envelope names
@@ -741,13 +750,25 @@ func spoolParkedParts(ctx context.Context, blobs blobSpool, parts []any) ([]any,
 // request nothing references (a live delivery, a fire with no body) is left
 // alone.
 func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string]any) error {
+	return restoreRequest(ctx, envelope, func(ctx context.Context, digest string) ([]byte, error) {
+		_, data, err := ds.GetBlob(ctx, digest)
+		return data, err
+	})
+}
+
+// restoreRequest is restoreParkedRequest over any blob store, fetch reading
+// one blob's bytes by digest. It is what decides the request a callable
+// reads at delivery, so the function interface's golden runs it
+// (functioninput_test.go).
+func restoreRequest(ctx context.Context, envelope map[string]any, fetch func(context.Context, string) ([]byte, error)) error {
 	req, _ := envelope["request"].(map[string]any)
 	if body, _ := req["body"].(map[string]any); body != nil && body["blob"] != nil {
-		data, encoding, _, err := ds.storedBodyBytes(ctx, body)
+		digest, _ := body["blob"].(string)
+		data, err := fetch(ctx, digest)
 		if err != nil {
-			return fmt.Errorf("substrate: parked body: %w", err)
+			return fmt.Errorf("substrate: parked body: blob %s: %w", digest, err)
 		}
-		if encoding == "base64" {
+		if encoding, _ := body["encoding"].(string); encoding == "base64" {
 			req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
 		} else {
 			req["body"] = map[string]any{"text": string(data)}
@@ -763,7 +784,7 @@ func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string
 		if digest == "" {
 			continue
 		}
-		_, data, err := ds.GetBlob(ctx, digest)
+		data, err := fetch(ctx, digest)
 		if err != nil {
 			return fmt.Errorf("substrate: parked part %q %s: %w", part["name"], digest, err)
 		}
