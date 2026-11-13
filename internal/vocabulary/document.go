@@ -168,6 +168,19 @@ type Document struct {
 	Labels      map[string]string
 	Annotations map[string]string
 	Data        map[string]any
+
+	// needs is the highest dialect a key of the envelope or of metadata
+	// arrived in, and needsKey that key: read here, before the loader, and
+	// counted toward the package the document builds (noteDocument).
+	needs    int64
+	needsKey string
+}
+
+// noteEnvelope counts key k of set toward what the document needs.
+func (d *Document) noteEnvelope(set map[string]bool, k string) {
+	if at := introducedAt(set, k); at > d.needs || (at > 0 && at == d.needs && k < d.needsKey) {
+		d.needs, d.needsKey = at, k
+	}
 }
 
 // ParseStream splits a `---` separated YAML stream into envelope-validated
@@ -208,6 +221,13 @@ type ShippedRecord struct {
 	Kind       string
 	ID         string
 	Properties map[string]any
+
+	// needs is the highest dialect a key of the record arrived in, and
+	// needsKey that key: what the header of the record's kind's package may
+	// not state less than (LoadShipped), the shipped record's keys being
+	// read here and not by the loader.
+	needs    int64
+	needsKey string
 }
 
 // IsDeclarationRef reports whether a document's kind reference names one of
@@ -261,6 +281,15 @@ func ParseShipped(data []byte) ([]Document, []ShippedRecord, error) {
 	return docs, records, nil
 }
 
+// shippedRecordKeys, shippedRecordMetadataKeys and shippedRecordDataKeys
+// are a shipped record's closed key sets: its kind, its id and its
+// properties, and nothing else.
+var (
+	shippedRecordKeys         = map[string]bool{"kind": true, "metadata": true, "data": true}
+	shippedRecordMetadataKeys = map[string]bool{"id": true}
+	shippedRecordDataKeys     = map[string]bool{"properties": true}
+)
+
 func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string) {
 	var problems []string
 	errf := func(format string, args ...any) {
@@ -270,16 +299,25 @@ func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string)
 	if !ValidAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
 		errf("record: kind %q must be a kind reference, <authority>/<package>/<name>", ref)
 	}
+	var needs int64
+	var needsKey string
+	note := func(set map[string]bool, k string) {
+		if at := introducedAt(set, k); at > needs || (at > 0 && at == needs && k < needsKey) {
+			needs, needsKey = at, k
+		}
+	}
 	for k := range raw {
-		if k != "kind" && k != "metadata" && k != "data" {
+		if !shippedRecordKeys[k] {
 			errf("record %s: unknown key %q (a shipped record is kind, metadata.id and data.properties)", ref, k)
 		}
+		note(shippedRecordKeys, k)
 	}
 	meta := mmap(raw, "metadata")
 	for k := range meta {
-		if k != "id" {
+		if !shippedRecordMetadataKeys[k] {
 			errf("record %s: metadata: unknown key %q (a shipped record carries its id alone)", ref, k)
 		}
+		note(shippedRecordMetadataKeys, k)
 	}
 	id := mstr(meta, "id")
 	if !ValidID(id) {
@@ -287,15 +325,16 @@ func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string)
 	}
 	data := mmap(raw, "data")
 	for k := range data {
-		if k != "properties" {
+		if !shippedRecordDataKeys[k] {
 			errf("record %s %s: data: unknown key %q (properties go under data.properties)", ref, id, k)
 		}
+		note(shippedRecordDataKeys, k)
 	}
 	props := mmap(data, "properties")
 	if len(props) == 0 {
 		errf("record %s %s: data.properties is required", ref, id)
 	}
-	return ShippedRecord{Kind: ref, ID: id, Properties: props}, problems
+	return ShippedRecord{Kind: ref, ID: id, Properties: props, needs: needs, needsKey: needsKey}, problems
 }
 
 // DocumentFromMap turns one already-decoded manifest (a stored declaration
@@ -321,6 +360,7 @@ func documentFrom(raw map[string]any) (Document, []string) {
 	}
 	for k := range raw {
 		if envelopeKeys[k] {
+			d.noteEnvelope(envelopeKeys, k)
 			continue
 		}
 		if replacement, deleted := deletedEnvelopeKeys[k]; deleted {
@@ -340,6 +380,7 @@ func documentFrom(raw map[string]any) (Document, []string) {
 	meta := mmap(raw, "metadata")
 	for k := range meta {
 		if metadataKeys[k] {
+			d.noteEnvelope(metadataKeys, k)
 			continue
 		}
 		if k == "name" {

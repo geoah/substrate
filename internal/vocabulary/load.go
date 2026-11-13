@@ -63,6 +63,9 @@ func LoadShipped(fsys fs.FS) (*Registry, []ShippedRecord, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := holdRecordsToTheirDialect(authorities, records); err != nil {
+		return nil, nil, err
+	}
 	r := NewRegistry()
 	for _, g := range authorities {
 		if err := r.add(g); err != nil {
@@ -245,6 +248,11 @@ type packageDocs struct {
 type loader struct {
 	pkg      *Package
 	problems []string
+	// needs and needsKey are the highest dialect a key of the package being
+	// built arrived in, and that key (noteKey): what its header's `dialect:`
+	// may not state less than.
+	needs    int64
+	needsKey string
 	// source is the origin BuildPackages was called with. One rule reads it —
 	// `runtime: host`, which only the shipped build may declare (function.go)
 	// — because the engine implements only what the engine ships.
@@ -275,6 +283,9 @@ var packageDataKeys = map[string]bool{
 	// against (decision 0265): parsed by parsePackageInterface, refused when
 	// this server does not run it.
 	"interface": true,
+	// `dialect` is the vocabulary dialect the package needs (decision 0268):
+	// parsed by parsePackageDialect, refused above Dialect.
+	"dialect": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -312,6 +323,8 @@ var capabilityDataKeys = map[string]bool{
 // buildPackage assembles one group from its manifests: a package with its
 // members, or the authority row an authority document declares.
 func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *Package {
+	l.needs, l.needsKey = 0, ""
+	l.noteDocuments(gd)
 	authority, name := SplitPackageRef(identity)
 	isAuthority := name == ""
 	if isAuthority {
@@ -380,6 +393,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	g.Description = l.parseDescription(where+": data", gd.header.Data)
 	l.parsePackageStability(where, gd.header.Data, g)
 	l.parsePackageInterface(where, gd.header.Data, g)
+	l.parsePackageDialect(where, gd.header.Data, g)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
@@ -605,6 +619,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	// and the install closure checks against the package's own members; the
 	// inputs resolve in Finalize/Install, after trait bindings.
 	l.buildBundle(gd)
+	l.checkStatedDialect(identity, g)
 	return g
 }
 
@@ -773,6 +788,7 @@ func DeletedDeclarationKeys(short string) map[string]string {
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
 	for k := range data {
 		if allowed[k] {
+			l.noteKey(allowed, k)
 			continue
 		}
 		if replacement, gone := deletedDataKeys[k]; gone {

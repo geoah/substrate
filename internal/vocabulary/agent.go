@@ -3,6 +3,7 @@ package vocabulary
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -83,8 +84,15 @@ const (
 	AgentParamEngineGuidance = "engineGuidance"
 )
 
+// agentParamKeys is `params:`'s closed key set: the request knobs a
+// manifest, and a provider row's defaults under it, may name.
+var agentParamKeys = map[string]bool{
+	AgentParamEngineGuidance: true, AgentParamMaxTokens: true, AgentParamReasoningEffort: true,
+	AgentParamReasoningSummary: true, AgentParamTemperature: true,
+}
+
 // AgentParamKeys is the recognized set, in the order the errors name it.
-var AgentParamKeys = []string{AgentParamEngineGuidance, AgentParamMaxTokens, AgentParamReasoningEffort, AgentParamReasoningSummary, AgentParamTemperature}
+var AgentParamKeys = slices.Sorted(maps.Keys(agentParamKeys))
 
 // AgentReasoningEfforts is the reasoning-effort set, weakest first — the UNION
 // of what the wires accept, because one declaration serves all of them and no
@@ -649,6 +657,10 @@ type AgentParams struct {
 func ParseAgentParams(params map[string]any) (AgentParams, error) {
 	var out AgentParams
 	for _, k := range sortedKeys(params) {
+		if !agentParamKeys[k] {
+			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
+				k, strings.Join(AgentParamKeys, ", "))
+		}
 		switch k {
 		case AgentParamTemperature:
 			f, ok := mfloat(params, k)
@@ -691,9 +703,6 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 				return AgentParams{}, fmt.Errorf("%s: %v — true or false", k, params[k])
 			}
 			out.EngineGuidance = &b
-		default:
-			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
-				k, strings.Join(AgentParamKeys, ", "))
 		}
 	}
 	return out, nil
@@ -718,6 +727,9 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 	if _, err := ParseAgentParams(params); err != nil {
 		l.errf("%s: data.params.%s", where, err)
 		return false
+	}
+	for k := range params {
+		l.noteKey(agentParamKeys, k)
 	}
 	a.Params = params
 	return true

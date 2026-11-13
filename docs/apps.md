@@ -1005,8 +1005,24 @@ that change, revoke every app token under Settings > Apps.
 List the package in your authority document's `packages` array. Each entry
 has `package` (the package name), optional `addonFor` (a package id), and
 `versions`: positive, unique integer versions with `closure` (an HTTPS
-URL) and `sha256` (64 hexadecimal characters). Keep every published
-version's bytes unchanged.
+URL), `sha256` (64 hexadecimal characters) and optional `dialect`, the
+vocabulary dialect the closure needs. Keep every published version's bytes
+unchanged.
+
+```json
+{"package": "garden",
+ "versions": [{"version": 3, "closure": "https://example.com/garden-3.yaml",
+               "sha256": "…", "dialect": 3},
+              {"version": 4, "closure": "https://example.com/garden-4.yaml",
+               "sha256": "…", "dialect": 4}]}
+```
+
+A server installs the newest version whose dialect it reads, the one it
+publishes as `vocabulary.dialect` in [discovery](api.md#discovery): above,
+a server at dialect 3 installs version 3 and passes over version 4. List a
+version's dialect wherever its header states one; a version that lists none
+is fetched first, and passed over when its header needs a newer dialect
+([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 
 A closure is multi-document YAML: one package header, one bundle
 declaration for that package, and its declarations and records. The header's
@@ -1020,7 +1036,7 @@ app's `webhook` detail is what keys it and turns it on
 ([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
 
 Check the candidate with `substratectl publish --check` before uploading
-it. Upload the immutable closure first, update the authority document
+it: it prints the version's entry, with the dialect the header states. Upload the immutable closure first, update the authority document
 second, and release the app build requesting that version last. A changed
 digest at an existing version and a version below the newest published
 version fail the check. Removing or renaming declarations needs

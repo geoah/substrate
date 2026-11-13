@@ -10,6 +10,7 @@ func discoveryJSON(version: String = "v0.114.0", totp: Bool = true) -> String {
       "versions": [{"name": "v1", "status": "served"}],
       "server": {"version": "\#(version)", "build": "0123456789abcdef0123456789abcdef01234567"},
       "changelog": {"horizon": 0},
+      "vocabulary": {"dialect": 3},
       "features": [
         {"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
         {"name": "triggers", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
