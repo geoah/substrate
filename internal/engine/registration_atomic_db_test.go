@@ -88,7 +88,7 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 	if _, err := s.CreateRepository(ctx, "alice.example.com"); err != nil {
 		t.Fatalf("retry with the same name: %v", err)
 	}
-	if _, err := s.repositoryByID(ctx, "alice.example.com"); err != nil {
+	if _, err := s.repositoryByAuthority(ctx, "alice.example.com"); err != nil {
 		t.Fatalf("alice is not registered after the retry: %v", err)
 	}
 	if n := orphanRowCount(t, s); n != 0 {
@@ -129,7 +129,7 @@ func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
 	if _, err := s.CreateRepository(ctx, "legit.example.com"); err != nil {
 		t.Fatalf("create legit repository: %v", err)
 	}
-	legit, err := s.repositoryByID(ctx, "legit.example.com")
+	legit, err := s.repositoryByAuthority(ctx, "legit.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -80,11 +80,12 @@ unique across the substrate, and permanent
 The repository's own `repository` record carries it, so a client that only
 speaks the record API can read it back.
 
-That one name is everywhere: a webhook URL
-(`POST /webhooks/{authority}/{trigger}`) and a delivery envelope's
-`repository.authority` carry it, `RepositoryInfo.id` on the wire is it, and
-the repository's directory under the data root is named by it
-([decision record 0052](decisions/0052-the-authority-is-the-repository-id.md)).
+That one name is everywhere a person or a client names the repository: a
+delivery envelope's `repository.authority` carries it and a webhook URL takes
+it. The repository's storage is keyed by an id minted at registration
+instead (`rnd-…`): the directory under the data root, every table, and the
+webhook address the server gives out
+([decision record 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 
 A request that names no `recoveryPublicKey` asks the server to mint the
 recovery pair, and the response carries the age identity exactly once,

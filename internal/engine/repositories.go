@@ -13,6 +13,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The control plane is one table and one row per user: the
@@ -23,14 +24,16 @@ import (
 
 // Repository is one row of the control-plane table.
 type Repository struct {
-	// ID is the repository's authority (decision 0046): the DNS-style name
-	// chosen at registration, unique across the substrate, permanent, and the
-	// home of the kinds its user declares. It is the primary key, the scope
-	// every repository-scoped query runs under, the DEK wrap's binding and the
-	// name of the directory under the data root.
+	// ID is the repository's key (decision 0261): minted at creation
+	// (vocabulary.NewRepositoryID), never shown as a name and never changed.
+	// It is the primary key, the scope every repository-scoped query runs
+	// under, the DEK wrap's binding and the name of the directory under the
+	// data root. A row a release before ids wrote holds the name here until
+	// the boot gives it an id (repositoryid.go).
 	ID string
-	// Authority always equals ID: the repositories_id_is_authority CHECK holds
-	// the two equal on every row, and the engine writes both.
+	// Authority is the repository's name: the DNS-style name chosen at
+	// registration, unique across the substrate, what its user signs in with,
+	// and the home of the kinds its user declares (decision 0046).
 	Authority string
 	CreatedAt time.Time
 	// DEK is the repository's data-encryption key, WRAPPED under the host
@@ -60,6 +63,16 @@ func newHistoryGeneration() (string, error) {
 
 // scope is the repository's query scope.
 func (r Repository) scope() Scope { return Scope{Repository: r.ID} }
+
+// label names the repository in a refusal an operator reads: by the name they
+// know it by, and by the id its directory, its rows and its writer lease are
+// keyed by, which is what they look it up under.
+func (r Repository) label() string {
+	if r.Authority == "" || r.Authority == r.ID {
+		return r.ID
+	}
+	return r.Authority + " (id " + r.ID + ")"
+}
 
 // info renders the repository the way the read surfaces still describe it.
 func (r Repository) info() substrate.RepositoryInfo {
@@ -515,12 +528,29 @@ func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
 	return r, nil
 }
 
-// repositoryByAuthority finds the repository that owns an authority, which is
-// the repository whose id it is. Two repositories on one substrate cannot own
-// the same one: a kind reference names its authority and nothing else, so a
-// shared authority would be two homes for one name.
+// repositoryByAuthority finds the repository that owns an authority: the one
+// it is the name of. Two repositories on one substrate cannot own the same
+// one: a kind reference names its authority and nothing else, so a shared
+// authority would be two homes for one name.
 func (s *service) repositoryByAuthority(ctx context.Context, authority string) (Repository, error) {
-	return s.repositoryByID(ctx, authority)
+	return s.repositoryByAuthorityOn(ctx, s.maint, authority)
+}
+
+// repositoryByAuthorityOn is the lookup by name on a given maint handle.
+func (s *service) repositoryByAuthorityOn(ctx context.Context, q dbx, authority string) (Repository, error) {
+	return s.scanRepository(q.QueryRowContext(ctx,
+		`SELECT `+repositoryColumns+` FROM repositories WHERE authority = $1`, authority), authority)
+}
+
+// repositoryByKey finds a repository by its id or by its name, which never
+// look alike: an id holds no dot and a name always does. It is the lookup of
+// every door a caller names a repository at (an operator command, a webhook
+// address, a dataset a caller asks for).
+func (s *service) repositoryByKey(ctx context.Context, key string) (Repository, error) {
+	if vocabulary.ValidRepositoryID(key) {
+		return s.repositoryByID(ctx, key)
+	}
+	return s.repositoryByAuthority(ctx, key)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {

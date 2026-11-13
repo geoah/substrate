@@ -32,12 +32,12 @@ func TestAnOpenDuringACreationsDirectoryWriteWaitsForIt(t *testing.T) {
 	var parkOnce, fireOnce sync.Once
 	fired := false
 	s.testOpenWaits = func(id string) {
-		if id == authority {
+		if isRepositoryNamed(s, id, authority) {
 			parkOnce.Do(func() { close(parked) })
 		}
 	}
 	s.testCatchUpPrepared = func(id string) {
-		if id != authority {
+		if !isRepositoryNamed(s, id, authority) {
 			return
 		}
 		fireOnce.Do(func() {
@@ -45,7 +45,7 @@ func TestAnOpenDuringACreationsDirectoryWriteWaitsForIt(t *testing.T) {
 			// What a background loop does once the row is listed: it opens
 			// the repository by its id.
 			go func() {
-				_, err := s.Dataset(ctx, authority)
+				_, err := s.Dataset(ctx, id)
 				opened <- err
 			}()
 			// The creation goes on once the open has either answered or is
@@ -58,7 +58,8 @@ func TestAnOpenDuringACreationsDirectoryWriteWaitsForIt(t *testing.T) {
 			}
 		})
 	}
-	if _, err := s.CreateRepository(ctx, authority); err != nil {
+	info, err := s.CreateRepository(ctx, authority)
+	if err != nil {
 		t.Fatalf("create the repository: %v", err)
 	}
 	// Read after CreateRepository returned, on the goroutine the seam ran on.
@@ -69,7 +70,7 @@ func TestAnOpenDuringACreationsDirectoryWriteWaitsForIt(t *testing.T) {
 		t.Fatalf("an open that found the new repository while its creation wrote the directory failed: %v", err)
 	}
 	s.mu.Lock()
-	_, cached := s.datasets[authority]
+	_, cached := s.datasets[info.ID]
 	s.mu.Unlock()
 	if !cached {
 		t.Fatal("the open returned no error and cached no dataset")
@@ -91,17 +92,17 @@ func TestAnOpenWaitingOnAFailedCreationAnswersNotFound(t *testing.T) {
 	parked := make(chan struct{})
 	var parkOnce, fireOnce sync.Once
 	s.testOpenWaits = func(id string) {
-		if id == authority {
+		if isRepositoryNamed(s, id, authority) {
 			parkOnce.Do(func() { close(parked) })
 		}
 	}
 	s.testCatchUpPrepared = func(id string) {
-		if id != authority {
+		if !isRepositoryNamed(s, id, authority) {
 			return
 		}
 		fireOnce.Do(func() {
 			go func() {
-				_, err := s.Dataset(ctx, authority)
+				_, err := s.Dataset(ctx, id)
 				opened <- err
 			}()
 			select {
@@ -121,4 +122,13 @@ func TestAnOpenWaitingOnAFailedCreationAnswersNotFound(t *testing.T) {
 	if !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("an open that waited on a failed creation answered %v, want not found", err)
 	}
+}
+
+// isRepositoryNamed reports whether id is the repository named authority. The
+// seams pass the id the creation mints, which a test cannot know before the
+// creation returns; the row it is read from is committed before the directory
+// write the seams run in, and still there while the creation is held in one.
+func isRepositoryNamed(s *service, id, authority string) bool {
+	repo, err := s.repositoryByID(context.Background(), id)
+	return err == nil && repo.Authority == authority
 }

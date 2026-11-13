@@ -249,9 +249,11 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 	return out, rows.Err()
 }
 
+// repositoryRowByID finds a repository by its name or its id, which never
+// look alike: an id holds no dot (decision 0261).
 func repositoryRowByID(ctx context.Context, db *sql.DB, repository string) (repositoryRow, error) {
 	r, err := scanRepositoryRow(db.QueryRowContext(ctx,
-		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1`, repository).Scan)
+		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1 OR authority = $1`, repository).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
 	}

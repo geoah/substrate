@@ -153,7 +153,7 @@ func (s *service) SnapshotRepositoryWith(ctx context.Context, repository, destRo
 	if len(s.credKey) == 0 {
 		return SnapshotReport{}, ErrSnapshotNeedsKey
 	}
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return SnapshotReport{}, err
 	}

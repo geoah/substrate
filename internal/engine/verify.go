@@ -142,9 +142,14 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 // snapshot holds its copy to that Log (snapshot.go).
 func (s *service) verifyRepository(ctx context.Context, repository string, opts VerifyOptions) (VerifyReport, *changelogfile.Log, error) {
 	started := time.Now()
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return VerifyReport{}, nil, err
+	}
+	// The open's refusal (engine.go open): a repository still keyed by its
+	// name is read under its id only once a server that writes converted it.
+	if !vocabulary.ValidRepositoryID(repo.ID) {
+		return VerifyReport{}, nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
 	}
 	report := VerifyReport{Repository: repo.ID, Recanonicalized: opts.Recanonicalize}
 	found := func(f string) {

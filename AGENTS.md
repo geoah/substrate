@@ -13,12 +13,14 @@ creates a **repository** and its **user**: one name, one password and a TOTP
 second factor the user may skip and turn on later
 ([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
 That name IS the repository's one **authority** (a bare label is
-completed under the server's host; the home of the kinds the user declares,
-the name they log in with, and the repository's id on disk, in the database
-and on the wire,
+completed under the server's host; the home of the kinds the user declares
+and the name they log in with,
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
-[0052](docs/decisions/0052-the-authority-is-the-repository-id.md),
 [0074](docs/decisions/0074-the-repository-name-is-the-login-name.md)).
+Its storage is keyed by an **id** minted at registration (`rnd-…`): the
+directory on disk, the `repository` column of every table and the webhook
+address the server gives out, so no table or path holds the name
+([0261](docs/decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 There is no username.
 Everything the user has lives in it: an append-only,
 strictly sequential **changelog**, checksummed segment files in the
@@ -364,7 +366,7 @@ words, and what each one replaced:
 | **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
-| **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents | username |
+| **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents; its id (`rnd-…`) keys its storage | username |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 

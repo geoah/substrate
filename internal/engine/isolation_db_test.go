@@ -30,13 +30,16 @@ type pair struct {
 	svc         substrate.Service
 	dsn         string
 	alpha, beta string // repository ids
+	// names is each repository's name by its id: a task's title carries the
+	// name, not the id.
+	names map[string]string
 }
 
 func twoRepositories(t *testing.T) pair {
 	t.Helper()
 	ctx := context.Background()
 	svc, dsn := newService(t)
-	p := pair{svc: svc, dsn: dsn}
+	p := pair{svc: svc, dsn: dsn, names: map[string]string{}}
 	for _, name := range []string{"alpha.example.com", "beta.example.com"} {
 		info, err := svc.CreateRepository(ctx, name)
 		if err != nil {
@@ -47,6 +50,7 @@ func twoRepositories(t *testing.T) pair {
 		} else {
 			p.beta = info.ID
 		}
+		p.names[info.ID] = name
 		ds, err := svc.Dataset(ctx, name)
 		if err != nil {
 			t.Fatal(err)
@@ -447,7 +451,7 @@ func TestRepositoryIsolation(t *testing.T) {
 					t.Fatal(err)
 				}
 				_ = rows.Close()
-				if len(titles) != 1 || titles[0] != id+" only" {
+				if len(titles) != 1 || titles[0] != repos.names[id]+" only" {
 					t.Fatalf("%s matched %q, want its own row alone", id, titles)
 				}
 				// The id half alone, before any join under the policy.
@@ -499,7 +503,7 @@ func TestRepositoryIsolation(t *testing.T) {
 				if err := db.QueryRowContext(ctx, `SELECT title FROM records WHERE id = $1`, fid("shared-id")).Scan(&title); err != nil {
 					t.Fatalf("read %s's task, round %d: %v", id, i, err)
 				}
-				if title != id+" only" {
+				if title != repos.names[id]+" only" {
 					t.Fatalf("%s's handle read %q on round %d", id, title, i)
 				}
 			}

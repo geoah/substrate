@@ -351,8 +351,8 @@ func New(cfg Config) http.Handler {
 	// repository's authority and the trigger; the trigger's own key, when it
 	// declares one, is the credential (the trailing segment, `?key=` or a
 	// bearer header). A GET falls through to the SPA like /login does.
-	r.Post("/webhooks/{authority}/{trigger}", h.postWebhook)
-	r.Post("/webhooks/{authority}/{trigger}/{key}", h.postWebhook)
+	r.Post("/webhooks/{repository}/{trigger}", h.postWebhook)
+	r.Post("/webhooks/{repository}/{trigger}/{key}", h.postWebhook)
 
 	r.Route("/api/"+APIVersion, h.mountResources)
 

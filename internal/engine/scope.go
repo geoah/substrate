@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Scope is the repository every repository-scoped query runs under. It is the
@@ -270,9 +273,38 @@ func (c scopedConnector) Driver() driver.Driver { return c.inner.Driver() }
 // (service.scopedDB), under the same role and the same setting, so the rows
 // this pool sees are the rows a dataset sees. Exported because a test that
 // pokes at rows through a superuser connection would bypass row level
-// security and measure nothing.
+// security and measure nothing. The repository is named by its id or by its
+// name; a name is looked up once, through the DSN's own role, because the
+// scope is the id (decision 0261).
 func OpenScopedDB(dsn, repository, role string) (*sql.DB, error) {
+	if !vocabulary.ValidRepositoryID(repository) {
+		id, err := repositoryIDOf(dsn, repository)
+		if err != nil {
+			return nil, err
+		}
+		repository = id
+	}
 	return openScoped(dsn, Scope{Repository: repository}, role)
+}
+
+// repositoryIDOf is the id of the repository named name, read through the
+// DSN's own role. A name no row holds is its own answer: a repository a
+// release before ids left keyed by its name, or none, which scopes to nothing.
+func repositoryIDOf(dsn, name string) (string, error) {
+	db, err := openMaint(dsn, "")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = db.Close() }()
+	var id string
+	err = db.QueryRowContext(context.Background(), `SELECT id FROM repositories WHERE authority = $1`, name).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return name, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: find repository %s: %w", name, err)
+	}
+	return id, nil
 }
 
 // openMaint opens the BYPASSRLS pool: no repository setting, so an accidental

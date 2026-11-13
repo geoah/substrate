@@ -221,7 +221,7 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 		case substrate.DetailWebhook:
 			out = append(out, substrate.AuthorizationDetail{
 				Type: d.Type, Trigger: d.Trigger,
-				URL: issuer + "/webhooks/" + url.PathEscape(authority) + "/" + url.PathEscape(d.Trigger),
+				URL: issuer + "/webhooks/" + url.PathEscape(ds.Repository().ID) + "/" + url.PathEscape(d.Trigger),
 			})
 		}
 	}

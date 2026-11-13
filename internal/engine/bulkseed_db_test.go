@@ -141,12 +141,13 @@ func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 		t.Fatalf("%s: verify: ok %v, file head %d, table head %d, %d unfinished entries, findings %q",
 			when, report.OK, report.FileHead, report.Head, report.TruncatedEntries, report.Findings)
 	}
-	src, err := changelogfile.RepoDir(engine.DataRootOf(svc), repo)
+	id := repositoryIDByName(t, svc, repo)
+	src, err := changelogfile.RepoDir(engine.DataRootOf(svc), id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, repo)
+	dst, err := changelogfile.RepoDir(root, id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,12 +329,10 @@ func TestAFaultInARegistrationsBulkFlushLeavesNothing(t *testing.T) {
 			if _, err := svc.Dataset(ctx, repo); !errors.Is(err, substrate.ErrNotFound) {
 				t.Fatalf("the failed registration's repository opens: %v", err)
 			}
-			dir, err := changelogfile.RepoDir(engine.DataRootOf(svc), repo)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("the failed registration left its directory: %v", err)
+			// The failed creation's id is gone with it, so no directory at all
+			// is what it leaves.
+			if left, err := changelogfile.ListRepositoryDirs(engine.DataRootOf(svc)); err != nil || len(left) != 0 {
+				t.Fatalf("the failed registration left directories %v (%v)", left, err)
 			}
 			registerUser(t, svc, repo)
 			paths.want(t, "the second registration", "")

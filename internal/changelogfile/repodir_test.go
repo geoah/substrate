@@ -20,9 +20,11 @@ func TestRepoDir(t *testing.T) {
 	if ChangelogDir(got) != filepath.Join(got, "changelog") || BlobsDir(got) != filepath.Join(got, "blobs") || SealedDir(got) != filepath.Join(got, "sealed") {
 		t.Fatal("subdirectory names")
 	}
-	// The grammar is the repository authority's (vocabulary.ValidRepositoryAuthority):
-	// lowercase DNS labels, at least one dot, up to 253 bytes.
-	for _, id := range []string{"a.b", "ada-1.example.com", longAuthority(200)} {
+	// A key is a repository id (vocabulary.ValidRepositoryID), or the
+	// authority a directory from before ids is named by
+	// (vocabulary.ValidRepositoryAuthority): lowercase DNS labels, at least
+	// one dot, up to 253 bytes.
+	for _, id := range []string{testRepoID, "a.b", "ada-1.example.com", longAuthority(200)} {
 		if _, err := RepoDir(root, id); err != nil {
 			t.Errorf("%q: %v", id, err)
 		}
@@ -37,11 +39,11 @@ func TestRepoDir(t *testing.T) {
 		strings.Repeat("x", 64) + ".example.com", longAuthority(254),
 	}
 	for _, id := range bad {
-		if _, err := RepoDir(root, id); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Errorf("RepoDir(%q): err = %v, want ErrRepositoryAuthority", id, err)
+		if _, err := RepoDir(root, id); !errors.Is(err, ErrRepositoryKey) {
+			t.Errorf("RepoDir(%q): err = %v, want ErrRepositoryKey", id, err)
 		}
-		if _, err := EnsureRepoDir(root, id); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Errorf("EnsureRepoDir(%q): err = %v, want ErrRepositoryAuthority", id, err)
+		if _, err := EnsureRepoDir(root, id); !errors.Is(err, ErrRepositoryKey) {
+			t.Errorf("EnsureRepoDir(%q): err = %v, want ErrRepositoryKey", id, err)
 		}
 	}
 	for _, rel := range []string{"", "relative", "./x"} {
@@ -109,8 +111,8 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, RepositoriesDir, name), dirMode); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Fatalf("%s: err = %v, want ErrRepositoryAuthority", name, err)
+		if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryKey) {
+			t.Fatalf("%s: err = %v, want ErrRepositoryKey", name, err)
 		}
 	}
 }

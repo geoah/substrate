@@ -27,6 +27,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const taskKind = "samples.substrate.reamde.dev/tasks/task"
@@ -426,7 +427,7 @@ func TestBootWritesTheDirectoryForARowWithoutOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the boot wrote no manifest: %v", err)
 	}
-	if m.Authority != id || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
+	if m.ID != id || m.Authority != "ada.example.com" || len(m.DEK) == 0 ||
 		m.ChangelogDialect != engine.MaxChangelogDialect() || m.CreatedAt.IsZero() {
 		t.Fatalf("manifest = %+v", m)
 	}
@@ -1350,9 +1351,9 @@ func TestBootSkipsADirectoryWithNoManifest(t *testing.T) {
 }
 
 // Anything else under repositories/ refuses the boot by name: a directory
-// that is neither an authority nor a pre-authority id, and a pre-authority id
-// with no manifest, may each be a repository nothing can import, so neither is
-// skipped. The boot goes through once the entry is moved out.
+// named by neither a repository id nor an authority (a directory from before
+// ids) may be a repository nothing can import, so it is not skipped. The boot
+// goes through once the entry is moved out.
 func TestBootRefusesAStrayDirectoryThatIsNotAnAuthority(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
@@ -1391,8 +1392,8 @@ func longAuthority(n int) string {
 }
 
 // The import door holds an authority to the length registration does: the
-// authority is the repository id and the id of its self-description record,
-// and a record id is at most vocabulary.MaxIDLen bytes, where DNS admits 253.
+// authority is the id of the repository's own `core/authority` record, and a
+// record id is at most vocabulary.MaxIDLen bytes, where DNS admits 253.
 func TestImportRefusesAnAuthorityLongerThanARecordID(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
@@ -1400,14 +1401,18 @@ func TestImportRefusesAnAuthorityLongerThanARecordID(t *testing.T) {
 	_ = svc.Close()
 
 	authority := longAuthority(200)
-	dir, err := changelogfile.EnsureRepoDir(root, authority)
+	id, err := vocabulary.NewRepositoryID()
 	if err != nil {
-		t.Fatalf("the directory layer must admit a DNS-length authority: %v", err)
+		t.Fatal(err)
+	}
+	dir, err := changelogfile.EnsureRepoDir(root, id)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := changelogfile.WriteManifest(dir, changelogfile.Manifest{
-		Format: changelogfile.ManifestFormat, Authority: authority, CreatedAt: time.Now().UTC(),
+		Format: changelogfile.ManifestFormat, ID: id, Authority: authority, CreatedAt: time.Now().UTC(),
 	}); err != nil {
-		t.Fatal(err)
+		t.Fatalf("the manifest must admit a DNS-length authority: %v", err)
 	}
 	_, err = reopen(t, dsn, root)
 	if err == nil {
@@ -1421,11 +1426,14 @@ func TestImportRefusesAnAuthorityLongerThanARecordID(t *testing.T) {
 	}
 }
 
-// The repository's id is its authority at every layer: the control-plane
-// row's primary key and its authority column, RepositoryInfo.ID, the scope a
-// dataset runs under, the self-description record's id, the directory under
-// the data root, the fs blob path, and the binding of the DEK wrap.
-func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
+// A registration mints the repository's id beside its name, and the id keys
+// its storage at every layer (decision 0261): the control-plane row's primary
+// key, RepositoryInfo.ID, the scope a dataset runs under, the self-description
+// record's id, the directory under the data root and the manifest in it, the
+// fs blob path, and the binding of the DEK wrap. The name is the authority
+// column, RepositoryInfo.Authority and the manifest's authority, and never the
+// id.
+func TestRegistrationMintsTheIdBesideTheAuthority(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
@@ -1436,60 +1444,65 @@ func TestRegistrationUsesTheAuthorityAsTheId(t *testing.T) {
 	if err != nil || len(repos) != 1 {
 		t.Fatalf("repositories = %+v, %v", repos, err)
 	}
-	if repos[0].ID != authority || repos[0].Authority != authority {
-		t.Fatalf("RepositoryInfo = %+v, want id and authority %q", repos[0], authority)
+	minted := repos[0].ID
+	if !vocabulary.ValidRepositoryID(minted) || !strings.HasPrefix(minted, vocabulary.RepositoryIDPrefix) ||
+		minted == authority || repos[0].Authority != authority {
+		t.Fatalf("RepositoryInfo = %+v, want a minted %s id and the authority %q", repos[0], vocabulary.RepositoryIDPrefix, authority)
 	}
 	var id, column string
 	var wrapped []byte
 	if err := rawDB(t, dsn).QueryRow(`SELECT id, authority, dek FROM repositories`).Scan(&id, &column, &wrapped); err != nil {
 		t.Fatal(err)
 	}
-	if id != authority || column != authority {
-		t.Fatalf("row id = %q, authority = %q, want both %q", id, column, authority)
+	if id != minted || column != authority {
+		t.Fatalf("row id = %q, authority = %q, want %q and %q", id, column, minted, authority)
 	}
 	ds, err := svc.Dataset(ctx, "ada.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := repositoryIDOf(t, ds); got != authority {
-		t.Fatalf("the dataset's repository id = %q", got)
+	if got := ds.Repository(); got.ID != minted || got.Authority != authority {
+		t.Fatalf("the dataset's repository = %+v", got)
 	}
-	// Every scoped row carries the authority as its repository.
+	// Every scoped row carries the id as its repository.
 	var scoped string
-	if err := rawDB(t, dsn).QueryRow(`SELECT DISTINCT repository FROM changelog`).Scan(&scoped); err != nil || scoped != authority {
-		t.Fatalf("changelog rows are scoped to %q (%v), want %q", scoped, err, authority)
+	if err := rawDB(t, dsn).QueryRow(`SELECT DISTINCT repository FROM changelog`).Scan(&scoped); err != nil || scoped != minted {
+		t.Fatalf("changelog rows are scoped to %q (%v), want %q", scoped, err, minted)
 	}
-	var selfID string
-	if err := rawDB(t, dsn).QueryRow(`SELECT id FROM records WHERE kind = 'substrate.reamde.dev/core/repository'`).Scan(&selfID); err != nil || selfID != authority {
-		t.Fatalf("the self-description record's id = %q (%v), want %q", selfID, err, authority)
+	self, err := ds.Get(ctx, "substrate.reamde.dev/core/repository", minted)
+	if err != nil {
+		t.Fatalf("the self-description record under the id: %v", err)
+	}
+	if self.Properties["name"] != authority || self.Properties["authority"] != authority {
+		t.Fatalf("the self-description names %v / %v, want %q", self.Properties["name"], self.Properties["authority"], authority)
+	}
+	var selves int
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM records WHERE kind = 'substrate.reamde.dev/core/repository'`).Scan(&selves); err != nil || selves != 1 {
+		t.Fatalf("self-description records = %d (%v), want the one under the id", selves, err)
 	}
 
 	root := engine.DataRootOf(svc)
-	dir := filepath.Join(root, changelogfile.RepositoriesDir, authority)
+	dir := filepath.Join(root, changelogfile.RepositoriesDir, minted)
 	m, err := changelogfile.ReadManifest(dir)
 	if err != nil {
 		t.Fatalf("no manifest at %s: %v", dir, err)
 	}
-	if m.Authority != authority || !bytes.Equal(m.DEK, wrapped) {
+	if m.Format != changelogfile.ManifestFormat || m.ID != minted || m.Authority != authority || !bytes.Equal(m.DEK, wrapped) {
 		t.Fatalf("manifest = %+v", m)
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, changelogfile.ManifestName))
-	if err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(filepath.Join(root, changelogfile.RepositoriesDir, authority)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("a directory is named by the authority: %v", err)
 	}
-	if bytes.Contains(raw, []byte(`"id"`)) {
-		t.Fatalf("the manifest carries an id key:\n%s", raw)
+	digest := putBlob(t, ds, []byte("bytes under the id"))
+	if got, err := os.ReadFile(filepath.Join(dir, "blobs", digest)); err != nil || string(got) != "bytes under the id" {
+		t.Fatalf("blob at <root>/repositories/%s/blobs/%s: %q, %v", minted, digest, got, err)
 	}
-	digest := putBlob(t, ds, []byte("bytes under the authority"))
-	if got, err := os.ReadFile(filepath.Join(dir, "blobs", digest)); err != nil || string(got) != "bytes under the authority" {
-		t.Fatalf("blob at <root>/repositories/%s/blobs/%s: %q, %v", authority, digest, got, err)
+	// The DEK wrap is bound to the id and to nothing else.
+	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(minted)); err != nil {
+		t.Fatalf("the DEK does not open under dek\\x00%s: %v", minted, err)
 	}
-	// The DEK wrap is bound to the authority and to nothing else.
-	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(authority)); err != nil {
-		t.Fatalf("the DEK does not open under dek\\x00%s: %v", authority, err)
-	}
-	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD("ada")); err == nil {
-		t.Fatal("the DEK opened under a binding that is not the authority")
+	if _, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(authority)); err == nil {
+		t.Fatal("the DEK opened under the authority, a binding that is not the id")
 	}
 }
 

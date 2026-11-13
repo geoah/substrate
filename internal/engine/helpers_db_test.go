@@ -23,12 +23,10 @@ import (
 // waiting on Postgres, so running one test at a time left the machine idle.
 // What makes it SAFE is that a test shares nothing it can observe — its own
 // database (engine.MigratedDSN, a copy of the migrated template), and its own
-// repository id (testdb.Repository, a name derived from the test's own). The
+// repository (testdb.Repository, a name derived from the test's own). The
 // runner (runner.Shared, one per process) keys function processes on the
-// repository id, and the id is the authority, so two tests registering one
-// name would share function processes and either one's Close would retire
-// the other's mid-delivery.
-// A test that runs function bodies must not register a fixed name.
+// repository id, which creation mints, so two tests never share function
+// processes and one's Close never retires the other's mid-delivery.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
 // (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
@@ -239,6 +237,25 @@ func registerUser(t *testing.T, svc substrate.Service, repository string) (*auth
 		t.Fatalf("register %q: %v", repository, err)
 	}
 	return u, res.Token, res.Secret
+}
+
+// repositoryIDByName is the id of the repository a name belongs to, or of the
+// one an id already names. The id, not the name, names its directory under the
+// data root and scopes its rows (decision 0261), so a test that reaches either
+// from a name asks for it.
+func repositoryIDByName(t *testing.T, svc substrate.Service, name string) string {
+	t.Helper()
+	repos, err := svc.Repositories(context.Background())
+	if err != nil {
+		t.Fatalf("list repositories: %v", err)
+	}
+	for _, r := range repos {
+		if r.Authority == name || r.ID == name {
+			return r.ID
+		}
+	}
+	t.Fatalf("no repository is named %q", name)
+	return ""
 }
 
 func maxSeq(t *testing.T, ds substrate.Dataset) int64 {

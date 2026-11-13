@@ -238,7 +238,7 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 	}
 	dirs, err := changelogfile.ListRepositoryDirs(s.dataRoot)
 	if err != nil {
-		return fmt.Errorf("substrate/engine: boot check: a directory under %s/ is not named by a repository authority; move it out of the data root: %w",
+		return fmt.Errorf("substrate/engine: boot check: a directory under %s/ is not named by a repository id or authority; move it out of the data root: %w",
 			changelogfile.RepositoriesDir, err)
 	}
 	hasRow := make(map[string]bool, len(repos))
@@ -260,7 +260,7 @@ func (s *service) reconcileRepositories(ctx context.Context) error {
 		out, err := s.reconcileRow(ctx, repo, true)
 		if err != nil {
 			s.logInterrupted(ctx, repo.ID)
-			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.ID, err)
+			return fmt.Errorf("substrate/engine: boot check: repository %s: %w", repo.label(), err)
 		}
 		s.logReconcile(out)
 	}
@@ -918,8 +918,32 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	if err != nil {
 		return out, fmt.Errorf("a directory with no `repositories` row must carry a manifest to import: %w", err)
 	}
-	if err := validRepositoryID(m.Authority); err != nil {
-		return out, fmt.Errorf("the manifest names an authority that cannot be a repository id: %w", err)
+	if err := validRepositoryName(m.Authority); err != nil {
+		return out, fmt.Errorf("the manifest names an authority that cannot be a repository's name: %w", err)
+	}
+	// The boot gave every directory from before ids its id first
+	// (repositoryid.go), so the manifest names it.
+	if m.Format != changelogfile.ManifestFormat {
+		return out, fmt.Errorf("the manifest of %s is format %d, which the boot converts before it imports; restart the server", dir, m.Format)
+	}
+	// The name's lease first, held until the boot has published the
+	// repository, as the keying holds it (holdName): a directory given its id
+	// by a boot that died before importing it is resumed here, and a second
+	// server with a copy still keyed by the name must meet the lease rather
+	// than find no row and mint a second id.
+	if err := s.holdName(ctx, m.Authority); err != nil {
+		return out, err
+	}
+	if err := s.keyingFault(importBeforeRow); err != nil {
+		return out, err
+	}
+	// One name, one repository: a directory whose name another repository
+	// in this database holds is a copy of another repository, not this one.
+	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil {
+		return out, fmt.Errorf("the directory %s is repository %s, and this database holds another repository of that name (id %s); move the directory out of the data root or delete that repository",
+			dir, m.Authority, other.ID)
+	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return out, err
 	}
 	// THE WRITER LEASE BEFORE THE ROW, for the reason a creation takes it
 	// before its seed (engine.go createSeededRepository). The insert below
@@ -929,13 +953,13 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// import aborted at the lease with the restored history still on disk and
 	// unimported. Taken here, before the row and before every check that
 	// refuses one, so nothing can claim a directory being imported.
-	leased, err := s.lease.acquireNew(ctx, m.Authority)
+	leased, err := s.lease.acquireNew(ctx, m.ID)
 	// An import that fails releases only the lease IT took. Registered before
 	// the error is read, because acquireNew can report both — a lease taken
 	// on a connection that replaced a dead one.
 	defer func() {
 		if leased {
-			s.lease.release(m.Authority)
+			s.lease.release(m.ID)
 		}
 	}()
 	if err != nil {
@@ -957,7 +981,7 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 		return out, fmt.Errorf("the manifest of repository %s carries no wrapped DEK, so nothing could open its sealed store; restore the directory from a copy whose %s holds one",
 			m.Authority, changelogfile.ManifestName)
 	}
-	dek, err := s.unwrapDEK(m.DEK, m.Authority, m.DEKKeyID)
+	dek, err := s.unwrapDEK(m.DEK, m.ID, m.DEKKeyID)
 	if err != nil {
 		return out, fmt.Errorf("the DEK in the manifest of repository %s does not open: %w. Importing it would leave a repository whose sealed store no login can open; set the key the directory was written under, or move the directory out of the data root",
 			m.Authority, err)
@@ -978,7 +1002,7 @@ func (s *service) importRepositoryDir(ctx context.Context, id string) (reconcile
 	// authority column always equals the id; this is the check that the
 	// manifest agrees with the directory name it was read under.
 	repo := Repository{
-		ID: m.Authority, Authority: m.Authority, CreatedAt: m.CreatedAt,
+		ID: m.ID, Authority: m.Authority, CreatedAt: m.CreatedAt,
 		DEK: m.DEK, DEKKeyID: m.DEKKeyID,
 	}
 	if repo.CreatedAt.IsZero() {
@@ -1051,7 +1075,7 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 		return changelogfile.Manifest{}, err
 	}
 	return changelogfile.Manifest{
-		Format:    changelogfile.ManifestFormat,
+		Format: changelogfile.ManifestFormat, ID: repo.ID,
 		Authority: repo.Authority, CreatedAt: repo.CreatedAt,
 		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
 		DEKKeyID: repo.DEKKeyID,
@@ -1081,7 +1105,7 @@ func (s *service) ensureManifest(ctx context.Context, dir string, repo Repositor
 }
 
 func manifestsEqual(a, b changelogfile.Manifest) bool {
-	return a.Format == b.Format && a.Authority == b.Authority &&
+	return a.Format == b.Format && a.ID == b.ID && a.Authority == b.Authority &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.ChangelogDialect == b.ChangelogDialect &&
 		a.VocabularyDialect == b.VocabularyDialect && bytes.Equal(a.DEK, b.DEK) &&
 		a.DEKKeyID == b.DEKKeyID

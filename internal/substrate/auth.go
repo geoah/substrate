@@ -287,8 +287,8 @@ type TOTPEnrollment struct {
 // from it. The invite code is checked by the HTTP layer, which is where the
 // configuration lives; the engine never sees it.
 type RegisterInput struct {
-	// Repository is the repository's authority (`ada.example.com`), its id
-	// and its user's login name. The HTTP layer resolves a bare label under
+	// Repository is the repository's authority (`ada.example.com`), its name
+	// and its user's login name; the id that keys it is minted at creation. The HTTP layer resolves a bare label under
 	// the host the request reached; the engine requires a concrete
 	// authority, validates the grammar and refuses a taken one.
 	Repository string

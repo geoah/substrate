@@ -1045,7 +1045,7 @@ func oweReferences(t *testing.T, ds substrate.Dataset, dsn, property, droppedKin
 	t.Helper()
 	engine.DrainIndexReprojection(t, ds)
 	db := rawDB(t, dsn)
-	repo := testdb.Repository(t)
+	repo := ds.Repository().ID
 	for _, kind := range kinds {
 		if _, err := db.Exec(`INSERT INTO index_reprojections (repository, kind, refs, refs_properties, fts)
 			VALUES ($1, $2, true, ARRAY[$3::text], false)`, repo, kind, property); err != nil {

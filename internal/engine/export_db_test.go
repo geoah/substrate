@@ -178,8 +178,10 @@ func TestExportOverTheAPIRestoresIntoAnEmptyDatabase(t *testing.T) {
 		t.Fatalf("status %d, Content-Type %q, body %s", resp.status, resp.header.Get("Content-Type"), archive[:min(len(archive), 200)])
 	}
 	_, params, err := mime.ParseMediaType(resp.header.Get("Content-Disposition"))
-	if err != nil || params["filename"] != id+"-"+strconv.FormatInt(head, 10)+".tar" {
-		t.Fatalf("Content-Disposition = %q, want %s-%d.tar", resp.header.Get("Content-Disposition"), id, head)
+	// The download is named after the repository's name, the archive's
+	// directory after its id.
+	if err != nil || params["filename"] != "ada.example.com-"+strconv.FormatInt(head, 10)+".tar" {
+		t.Fatalf("Content-Disposition = %q, want ada.example.com-%d.tar", resp.header.Get("Content-Disposition"), head)
 	}
 
 	names := tarNames(t, archive)

@@ -26,6 +26,7 @@ package testenv_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -182,7 +183,23 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 			diffs = append(diffs, fmt.Sprintf("%s: %s", path, d))
 		}
 	}
-	diffs = append(diffs, keptTriggerDiffs(t, e, wantTriggers, keptCursors(t, filepath.Join(dir, "repositories", fixture.Repository)))...)
+	// A webhook address the server gives out names the repository by its
+	// id (decision 0261); the release gave it out by name.
+	ds, err := e.Service.Dataset(context.Background(), fixture.Repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A directory from before repository ids takes one at the boot, before
+	// its import (decision 0261): it is under the id, and nothing is under
+	// the name.
+	if _, err := os.Stat(filepath.Join(root, "repositories", ds.Repository().ID, "repository.json")); err != nil {
+		t.Errorf("the imported directory is not under its id %s: %v", ds.Repository().ID, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "repositories", fixture.Repository)); !os.IsNotExist(err) {
+		t.Errorf("a directory is still named %s: %v", fixture.Repository, err)
+	}
+	byID := strings.NewReplacer("/webhooks/"+fixture.Repository+"/", "/webhooks/"+ds.Repository().ID+"/")
+	diffs = append(diffs, keptTriggerDiffs(t, e, wantTriggers, keptCursors(t, filepath.Join(dir, "repositories", fixture.Repository)), byID)...)
 	sort.Strings(diffs)
 	if len(diffs) > 0 {
 		t.Fatalf("the directory %s kept imports under the current code into %d difference(s) no entry after its head explains:\n  %s",
@@ -206,6 +223,9 @@ type keptEntry struct {
 	ts       time.Time
 	actor    string
 	affected substrate.AffectedRecord
+	// written is the properties the entry's payload says it wrote, each of
+	// which takes a manager row; a state moves without one.
+	written map[string]bool
 }
 
 func keptAppended(m map[string]*keptTouch) int {
@@ -226,17 +246,24 @@ func ownersHand(manager string) bool {
 
 // check holds the record the current code serves to the release's (nil when
 // the release had none) with the entries applied, nothing taken from what the
-// current code serves: each moved property takes its `after`, and its
-// manager row the entry's actor at the machine tier, stamped with the entry's
-// time; the version and the times follow the last entry that moved the
+// current code serves: each moved property takes its `after`, and each one
+// the entry wrote (its payload's `properties`; a state moves without one) a
+// manager row of the entry's actor at the machine tier, stamped with the
+// entry's time; the version and the times follow the last entry that moved the
 // version; the kind version is the one the boot's write validated against,
 // the kind's as the current code declares it (kindVersion); and everything
 // else is the release's.
 func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind string) json.Number) []string {
 	var out []string
-	want := map[string]any{"properties": map[string]any{}, "propertyMeta": map[string]any{}}
+	var want map[string]any
 	if release != nil {
 		want = keptClone(release)
+	} else {
+		first := k.entries[0].affected
+		want = map[string]any{
+			"id": first.ID, "kind": first.Kind,
+			"properties": map[string]any{}, "labels": map[string]any{}, "propertyMeta": map[string]any{},
+		}
 	}
 	props, _ := want["properties"].(map[string]any)
 	if props == nil {
@@ -271,6 +298,10 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 				continue
 			}
 			props[p.Name] = p.After
+			wrote = true
+			if !e.written[p.Name] {
+				continue
+			}
 			row, _ := meta[p.Name].(map[string]any)
 			if row == nil {
 				row = map[string]any{}
@@ -279,11 +310,13 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 			row["tier"] = string(substrate.TierMachine)
 			row["updatedAt"] = e.ts.UTC().Format(time.RFC3339Nano)
 			meta[p.Name] = row
-			wrote = true
 		}
 		if e.affected.Version > 0 {
 			want["version"] = json.Number(fmt.Sprint(e.affected.Version))
 			want["updatedAt"] = e.ts.UTC().Format(time.RFC3339Nano)
+			if e.affected.Deleted {
+				want["deletedAt"] = e.ts.UTC().Format(time.RFC3339Nano)
+			}
 			if release == nil && k.created {
 				want["createdAt"] = keptFirstTS(k)
 			}
@@ -296,6 +329,12 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 	}
 	if wrote {
 		want["kindVersion"] = kindVersion(fmt.Sprint(want["kind"]))
+		// The title is derived storage (decision 0016), a function of the
+		// properties held above and the kind's template, and a change's
+		// values do not carry it.
+		if title, ok := now["properties"].(map[string]any)["title"]; ok {
+			props["title"] = title
+		}
 	}
 	if d := keptDiff(want, now); d != "" {
 		out = append(out, "differs from the release's record with the boot's entries applied: "+d)
@@ -369,7 +408,13 @@ func keptUpgrade(t *testing.T, e *testenv.Env, head int64) map[string]*keptTouch
 				if a.Deleted && a.Version == 0 {
 					k.purged = true
 				}
-				k.entries = append(k.entries, keptEntry{seq: row.Seq, ts: row.TS, actor: string(row.Actor), affected: a})
+				written := map[string]bool{}
+				if names, ok := row.Payload["properties"].([]any); ok && row.RecordID == a.ID && row.Kind == a.Kind {
+					for _, n := range names {
+						written[fmt.Sprint(n)] = true
+					}
+				}
+				k.entries = append(k.entries, keptEntry{seq: row.Seq, ts: row.TS, actor: string(row.Actor), affected: a, written: written})
 			}
 		}
 		if err := sc.Err(); err != nil {
@@ -467,7 +512,7 @@ func keptCursors(t *testing.T, repoDir string) map[string]int64 {
 // delivery ledger folded (the acknowledged cursor, the last fire, the parked
 // failures), not what the server keeps in memory or the clock and the head
 // moved since (decision 0064; TriggerStatus.LastPassAt).
-func keptTriggerDiffs(t *testing.T, e *testenv.Env, want keptTriggers, acked map[string]int64) []string {
+func keptTriggerDiffs(t *testing.T, e *testenv.Env, want keptTriggers, acked map[string]int64, address *strings.Replacer) []string {
 	t.Helper()
 	unstored := []string{"head", "lag", "lastPassAt", "lastDeliveredAt", "health", "pending", "cursor"}
 	var got struct {
@@ -496,6 +541,9 @@ func keptTriggerDiffs(t *testing.T, e *testenv.Env, want keptTriggers, acked map
 			}
 		}
 		w, g = maps.Clone(w), maps.Clone(g)
+		if path, ok := w["webhookPath"].(string); ok {
+			w["webhookPath"] = address.Replace(path)
+		}
 		for _, k := range unstored {
 			delete(w, k)
 			delete(g, k)
@@ -645,7 +693,7 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		"propertyMeta":{"shipped":{"manager":"substrate","tier":"machine","updatedAt":"`+t0+`"},
 		                "owned":{"manager":"api","tier":"owner","updatedAt":"`+t0+`"}}}`))
 	touch := func(actor, property string) *keptTouch {
-		return &keptTouch{entries: []keptEntry{{seq: 10, ts: ts, actor: actor, affected: substrate.AffectedRecord{
+		return &keptTouch{entries: []keptEntry{{seq: 10, ts: ts, actor: actor, written: map[string]bool{property: true}, affected: substrate.AffectedRecord{
 			Kind: "a.example.com/p/k", ID: "x", Version: 2,
 			Properties: []substrate.PropertyChange{{Name: property, Before: "1", After: "3"}},
 		}}}}

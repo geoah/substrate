@@ -1251,8 +1251,9 @@ data:
   drop `arguments`. A manual run (`POST .../run`) passes no `arguments`
   ([decision 0110](decisions/0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md)).
 - A **`webhook`** arm is a public endpoint: `POST
-  /webhooks/{authority}/{trigger}`, where `authority` is the repository's
-  authority and `trigger` the record's id,
+  /webhooks/{repository}/{trigger}`, where `repository` is the repository's
+  id, as the trigger's status gives it out, or its authority, and `trigger`
+  the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
   delivers one bare fire. All four of its fields are optional. `key`: absent, the
@@ -1542,7 +1543,7 @@ repository.
   case it answers `{"ran": 0}` and the walk in progress or a later pass
   delivers, a schedule checks its
   due occurrence.
-- `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
+- `POST /webhooks/{repository}/{trigger}` is the public door: no bearer, the
   request in the envelope, `202` with `{"fire": id}` once the request is on
   disk in the repository's spool, and one `404` for every refusal (no such
   trigger, disabled, wrong key). The callable's output is never the

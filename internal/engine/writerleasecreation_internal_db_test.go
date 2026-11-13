@@ -53,10 +53,25 @@ func repositoryRowExists(t *testing.T, conn *sql.Conn, authority string) bool {
 	t.Helper()
 	var n int
 	if err := conn.QueryRowContext(context.Background(),
-		`SELECT count(*) FROM repositories WHERE id = $1`, authority).Scan(&n); err != nil {
+		`SELECT count(*) FROM repositories WHERE authority = $1`, authority).Scan(&n); err != nil {
 		t.Fatalf("read the control-plane row: %v", err)
 	}
 	return n > 0
+}
+
+// creatingID is the id of the repository a creation in flight has seeded: the
+// key its committed rows carry that no control-plane row holds yet. The lease
+// is keyed by it, and it is minted inside the creation, so a test watching
+// the window between the seed and the row reads it there. The rows are
+// scoped, so the read runs on the maintenance pool.
+func creatingID(t *testing.T, s *service) string {
+	t.Helper()
+	var id string
+	if err := s.maint.QueryRowContext(context.Background(),
+		`SELECT DISTINCT repository FROM changelog WHERE repository NOT IN (SELECT id FROM repositories)`).Scan(&id); err != nil {
+		t.Fatalf("find the id the creation in flight seeded: %v", err)
+	}
+	return id
 }
 
 // The lease is held DURING the creation, before the row, and a creation that
@@ -68,16 +83,14 @@ func TestACreationLeasesItsRepositoryBeforeThatRowExists(t *testing.T) {
 	probe := leaseProbe(t, dsn)
 	const authority = "alice.example.com"
 
-	if !leaseKeyFree(t, probe, authority) {
-		t.Fatal("the key is held before any creation ran")
-	}
-
 	boom := errors.New("test: the creation failed after the seed committed")
+	var id string
 	var freeDuring, rowDuring bool
 	// The seam fires after the seed and BEFORE the control-plane row, which is
 	// exactly the window another process used to be able to claim.
 	s.testFailAfterSeed = func() error {
-		freeDuring = leaseKeyFree(t, probe, authority)
+		id = creatingID(t, s)
+		freeDuring = leaseKeyFree(t, probe, id)
 		rowDuring = repositoryRowExists(t, probe, authority)
 		return boom
 	}
@@ -91,17 +104,18 @@ func TestACreationLeasesItsRepositoryBeforeThatRowExists(t *testing.T) {
 		t.Fatal("a creation in flight did not hold its repository's writer lease, so another process could claim it and be erased")
 	}
 	// The repository does not exist, so this process is not its writer.
-	if !leaseKeyFree(t, probe, authority) {
+	if !leaseKeyFree(t, probe, id) {
 		t.Fatal("a creation that failed kept its repository's writer lease")
 	}
 
 	// And the retry lands, which is the same assertion from the other side: a
 	// creation cannot be refused by the lease its own failed attempt left.
 	s.testFailAfterSeed = nil
-	if _, err := s.CreateRepository(ctx, authority); err != nil {
+	repo, err := s.CreateRepository(ctx, authority)
+	if err != nil {
 		t.Fatalf("retry after the released lease: %v", err)
 	}
-	if leaseKeyFree(t, probe, authority) {
+	if leaseKeyFree(t, probe, repo.ID) {
 		t.Fatal("a repository that exists is not leased by the process that created it")
 	}
 }
@@ -129,7 +143,7 @@ func TestASecondProcessCannotClaimARepositoryMidCreation(t *testing.T) {
 	s.testFailAfterSeed = func() error {
 		// Mid-creation the second process asks for the lease the way its own
 		// open would, and must be refused.
-		claim = second.lease.acquire(ctx, authority)
+		claim = second.lease.acquire(ctx, creatingID(t, s))
 		return boom
 	}
 	if _, err := s.CreateRepository(ctx, authority); !errors.Is(err, boom) {
@@ -156,7 +170,9 @@ func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
 	const second = "bob.example.com"
 
 	boom := errors.New("test: the creation failed after the seed committed")
+	var firstID string
 	s.testFailAfterSeed = func() error {
+		firstID = creatingID(t, s)
 		// The state a beat leaves after the pinned connection died and the
 		// retake could not reach the database: the refusal latched, and no
 		// connection to unlock this creation's lease on.
@@ -177,7 +193,7 @@ func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
 		t.Fatalf("the failed creation kept a claim: %v", s.lease.held)
 	}
 	// The key went with the session that held it, so it is nobody's.
-	if !leaseKeyFree(t, probe, first) {
+	if !leaseKeyFree(t, probe, firstID) {
 		t.Fatal("the failed creation's lease key is still held")
 	}
 
@@ -185,10 +201,11 @@ func TestACreationThatFailedWithALostLeaseDoesNotBreakTheNextOne(t *testing.T) {
 	// ErrWriterLeaseLost and released its own lease again, and every
 	// registration after it did the same.
 	s.testFailAfterSeed = nil
-	if _, err := s.CreateRepository(ctx, second); err != nil {
+	created, err := s.CreateRepository(ctx, second)
+	if err != nil {
 		t.Fatalf("a registration after one that met a dying lease: %v", err)
 	}
-	if leaseKeyFree(t, probe, second) {
+	if leaseKeyFree(t, probe, created.ID) {
 		t.Fatal("the repository that was created is not leased by the process that created it")
 	}
 	// The retry of the FIRST name lands too: nothing about it was taken.

@@ -724,11 +724,13 @@ type drill struct {
 	holdInvoked chan struct{}
 	runVersion  int64
 
-	// Stage 2: the snapshot root and the recorded points.
-	snapRoot   string
-	snapHead   int64
-	secondHead int64
-	secondFold []byte
+	// Stage 2: the snapshot root and the recorded points, and each
+	// repository's id, which names its directory in a copy.
+	snapRoot          string
+	snapHead          int64
+	secondHead        int64
+	secondFold        []byte
+	drillID, secondID string
 
 	// Stage 3: the rewrapped directory as it stood before the restore booted
 	// (pristine, copied for stages 5 and 6), the restored substrate and what
@@ -1144,13 +1146,28 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Fatalf("open the operator's process: %v", err)
 	}
 	defer func() { _ = operator.Close() }()
+	repos, err := operator.Repositories(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range repos {
+		switch r.Authority {
+		case drillAuthority:
+			d.drillID = r.ID
+		case secondAuthority:
+			d.secondID = r.ID
+		}
+	}
+	if d.drillID == "" || d.secondID == "" {
+		t.Fatalf("the source holds %+v, want %s and %s", repos, drillAuthority, secondAuthority)
+	}
 	d.snapRoot = d.tb(t).TempDir()
 	report, err := operator.(engine.Operator).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
 	if err != nil {
 		t.Fatalf("snapshot %s: %v", drillAuthority, err)
 	}
 	d.snapHead = report.Head
-	if report.Head != d.source.head || report.Repository != drillAuthority || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
+	if report.Head != d.source.head || report.Repository != d.drillID || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
 		t.Errorf("snapshot report = %+v, want head %d for %s under fs with the attachment and %d sealed files", report, d.source.head, drillAuthority, sealedValues)
 	}
 	snap, err := changelogfile.ReadSnapshot(report.Directory)
@@ -1172,7 +1189,7 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Fatalf("snapshot %s: %v", secondAuthority, err)
 	}
 	d.secondHead = secondReport.Head
-	if secondReport.Repository != secondAuthority {
+	if secondReport.Repository != d.secondID {
 		t.Errorf("the second repository's snapshot report = %+v", secondReport)
 	}
 	t.Logf("snapshot: %s at seq %d (%d segments, %d sealed files, %d blobs); %s at seq %d",
@@ -1190,7 +1207,7 @@ func (d *drill) restore(t *testing.T) {
 	ctx := context.Background()
 	tb := d.tb(t)
 	dsnB := testdb.NewSchema(tb)
-	restoreRoot := copyRoot(tb, d.snapRoot, drillAuthority)
+	restoreRoot := copyRoot(tb, d.snapRoot, d.drillID)
 
 	// Without the rewrap the copy is inert on this host, and the refusal
 	// leaves no row behind on the very schema the restore then boots.
@@ -1205,7 +1222,7 @@ func (d *drill) restore(t *testing.T) {
 		t.Errorf("the refused import left %d repositories row(s)", n)
 	}
 
-	dir, err := changelogfile.RepoDir(restoreRoot, drillAuthority)
+	dir, err := changelogfile.RepoDir(restoreRoot, d.drillID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1223,7 +1240,7 @@ func (d *drill) restore(t *testing.T) {
 	if report.Repository != drillAuthority || report.SealedFiles != sealedValues {
 		t.Errorf("rewrap report = %+v, want %s/%s with %d sealed files opened", report, drillAuthority, drillAuthority, sealedValues)
 	}
-	d.pristine = copyRoot(tb, restoreRoot, drillAuthority)
+	d.pristine = copyRoot(tb, restoreRoot, d.drillID)
 
 	// The boot that imports: the same empty schema, migrated from nothing, no
 	// registration. The restored substrate speaks with the source's token,
@@ -1239,7 +1256,7 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].ID != drillAuthority {
+	if len(repos) != 1 || repos[0].ID != d.drillID || repos[0].Authority != drillAuthority {
 		t.Fatalf("the restored database holds %+v, want the one imported repository", repos)
 	}
 	verified, err := e.Service.(engine.Operator).VerifyRepository(ctx, drillAuthority)
@@ -1541,7 +1558,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 	if !(crashes[0].rows < crashes[1].rows && crashes[1].rows < crashes[2].rows) {
 		t.Fatalf("the kills do not land on three distinct boundaries: %d, %d, %d rows", crashes[0].rows, crashes[1].rows, crashes[2].rows)
 	}
-	root := copyRoot(t, d.pristine, drillAuthority)
+	root := copyRoot(t, d.pristine, d.drillID)
 	dsn := testdb.NewSchema(t)
 	open := func(opts ...engine.Option) (substrate.Service, error) {
 		return engine.Open(ctx, dsn, append([]engine.Option{
@@ -1644,8 +1661,8 @@ func (d *drill) secondRestore(t *testing.T) {
 	ctx := context.Background()
 
 	// The same-key restore: the boot imports the directory as it stands.
-	root := copyRoot(t, d.snapRoot, secondAuthority)
-	dir, err := changelogfile.RepoDir(root, secondAuthority)
+	root := copyRoot(t, d.snapRoot, d.secondID)
+	dir, err := changelogfile.RepoDir(root, d.secondID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1701,8 +1718,8 @@ func (d *drill) secondRestore(t *testing.T) {
 	// DEK with the recovery key and rewrites the manifest under the new host's
 	// key; the boot then imports it. A second copy, because the imported one
 	// above now holds a row wrapped under the first key.
-	rewrapRoot := copyRoot(t, d.snapRoot, secondAuthority)
-	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, secondAuthority)
+	rewrapRoot := copyRoot(t, d.snapRoot, d.secondID)
+	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, d.secondID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1738,8 +1755,8 @@ func (d *drill) secondRestore(t *testing.T) {
 
 	// A directory a NEWER binary wrote refuses the boot by name, before any
 	// row lands.
-	newerRoot := copyRoot(t, d.pristine, drillAuthority)
-	newerDir, err := changelogfile.RepoDir(newerRoot, drillAuthority)
+	newerRoot := copyRoot(t, d.pristine, d.drillID)
+	newerDir, err := changelogfile.RepoDir(newerRoot, d.drillID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2304,16 +2321,16 @@ func drainEmbeds(t *testing.T, ds substrate.Dataset) {
 	t.Fatal("the embed queue did not drain in 50 passes")
 }
 
-// copyRoot copies one repository directory out of a data root into a fresh
-// root laid out the same way.
-func copyRoot(t testing.TB, srcRoot, authority string) string {
+// copyRoot copies one repository directory, named by the repository's id, out
+// of a data root into a fresh root laid out the same way.
+func copyRoot(t testing.TB, srcRoot, id string) string {
 	t.Helper()
-	src, err := changelogfile.RepoDir(srcRoot, authority)
+	src, err := changelogfile.RepoDir(srcRoot, id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, authority)
+	dst, err := changelogfile.RepoDir(root, id)
 	if err != nil {
 		t.Fatal(err)
 	}

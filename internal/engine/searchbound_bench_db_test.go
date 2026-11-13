@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/testdb"
 )
 
 // TestLexicalSearchTimingOnALargeRepository seeds a repository with many
@@ -54,7 +53,7 @@ func TestLexicalSearchTimingOnALargeRepository(t *testing.T) {
 			       || CASE WHEN random() < 0.04 THEN ' flight' ELSE '' END
 			       || CASE WHEN random() < 0.08 THEN ' booking' ELSE '' END
 			       || CASE WHEN random() < 0.12 THEN ' confirmation' ELSE '' END AS descr
-		) d`, testdb.Repository(t), taskKind, n); err != nil {
+		) d`, ds.Repository().ID, taskKind, n); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `ANALYZE records`); err != nil {

@@ -113,7 +113,7 @@ func (h *handler) postDomain(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	repository := ds.Repository().ID
+	repository := ds.Repository().Authority
 	writeJSON(w, http.StatusOK, substrate.DomainProof{
 		Name:       domains.Label + "." + repository,
 		Record:     domainRecord(h.publishedRecord(ctx, repository), h.issuerOf(r), state.Proof),
@@ -132,7 +132,7 @@ func (h *handler) postDomain(w http.ResponseWriter, r *http.Request) {
 func (h *handler) postDomainVerify(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	repository := ds.Repository().ID
+	repository := ds.Repository().Authority
 	proof := ""
 	if !h.underPublicHost(repository) {
 		state, err := ds.DomainState(ctx)

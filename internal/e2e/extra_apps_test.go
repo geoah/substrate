@@ -33,6 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func init() {
@@ -305,7 +307,6 @@ func xpCaseAppSetUp(c *C) {
 	tokRaw := raw
 	var tok xpToken
 	c.requiref(json.Unmarshal(tokRaw, &tok) == nil, "the token response is not JSON")
-	webhookURL := md.Issuer + "/webhooks/" + url.PathEscape(r.authority) + "/" + xpWebhook
 	wantScopes := append(slices.Clone(approved), "webhook:"+xpWebhook)
 	gotScopes := strings.Fields(tok.Scope)
 	slices.Sort(wantScopes)
@@ -314,12 +315,21 @@ func xpCaseAppSetUp(c *C) {
 		tok.ExpiresIn != nil && *tok.ExpiresIn == 30*24*3600 && slices.Equal(gotScopes, wantScopes),
 		"the token is type %q for %q, expires_in %v, scope %q", tok.TokenType, tok.Repository, tok.ExpiresIn, tok.Scope)
 	g := tok.AuthorizationDetails
+	// The webhook's address is keyed by the repository's id (decision 0261),
+	// which nothing else the app is handed names: it is held to an id's shape
+	// here, and the delivery below proves it is the door.
+	var webhookURL string
+	if len(g) == 4 {
+		webhookURL = g[3].URL
+	}
+	hookRepository, hookTrigger, _ := strings.Cut(strings.TrimPrefix(webhookURL, md.Issuer+"/webhooks/"), "/")
 	c.requiref(len(g) == 4 &&
 		g[0].Package == xpApplePkg && g[0].Version == apple.Shipped &&
 		g[1].Package == xpAppleHealthPkg && g[1].Version == health.Shipped &&
 		g[2].Kind == xpAccountKind && g[2].ID == xpAccountID && g[2].Properties == nil &&
-		g[3].Trigger == xpWebhook && g[3].URL == webhookURL,
-		"the token's authorization_details = %+v, want the versions held and the webhook at %s", g, webhookURL)
+		g[3].Trigger == xpWebhook && strings.HasPrefix(webhookURL, md.Issuer+"/webhooks/") &&
+		vocabulary.ValidRepositoryID(hookRepository) && hookTrigger == xpWebhook,
+		"the token's authorization_details = %+v, want the versions held and the webhook at %s/webhooks/<the repository's id>/%s", g, md.Issuer, xpWebhook)
 	app := tok.AccessToken
 	c.stepf("the exchange minted a 30-day token for `%s` scoped `%s`; its details name `%s` at %d, `%s` at %d, the account, and %s",
 		tok.Repository, tok.Scope, xpApplePkg, g[0].Version, xpAppleHealthPkg, g[1].Version, webhookURL)
