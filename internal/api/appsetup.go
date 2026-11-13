@@ -285,9 +285,16 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+	app, err := checkedByAnApp(ctx)
+	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
+	}
+	if app {
+		if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
 	}
 	principal := substrate.PrincipalFrom(ctx)
 	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
@@ -312,6 +319,33 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 	}
 	h.checks.keep(principal, raw, h.now(), out)
 	writeJSON(w, http.StatusOK, out)
+}
+
+// checkedByAnApp reports whether the request's token is an app's, the one
+// kind of token with a build for a check to record. A scoped app's token
+// carries its client id in the request, a full-access app's only on its
+// record. An owner's own token asks too and sees every row (docs/apps.md),
+// and has no build: recording one is refused for a token with no client id.
+// A token missing from the list was revoked after the request signed in, and
+// is refused as the build's record refuses it: it is nobody's to answer.
+func checkedByAnApp(ctx context.Context) (bool, error) {
+	if substrate.ClientIDFrom(ctx) != "" {
+		return true, nil
+	}
+	if _, scoped := substrate.ScopesFrom(ctx); scoped {
+		return false, nil
+	}
+	tokens, err := DatasetFrom(ctx).Tokens(ctx)
+	if err != nil {
+		return false, err
+	}
+	id := substrate.PrincipalFrom(ctx)
+	for _, t := range tokens {
+		if t.ID == id {
+			return t.ClientID != "", nil
+		}
+	}
+	return false, fmt.Errorf("%w: a live token is required", substrate.ErrForbidden)
 }
 
 // check plans a check's answer for the request's token.
