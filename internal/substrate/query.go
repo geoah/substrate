@@ -1,6 +1,7 @@
 package substrate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -270,4 +271,21 @@ type RankedPage struct {
 type Scores struct {
 	Lexical  float64 `json:"lexical,omitempty"`
 	Semantic float64 `json:"semantic,omitempty"`
+}
+
+type askedFilterKey struct{}
+
+// WithAskedFilter carries the filter a client sent, before a scoped view
+// narrows it to what its grant reads: a list cursor is bound to the client's
+// request, and what that request resolves to (the kinds the grant reads,
+// which a declaration can change between pages) is the server's to change,
+// answered list-again.
+func WithAskedFilter(ctx context.Context, f Filter) context.Context {
+	return context.WithValue(ctx, askedFilterKey{}, f)
+}
+
+// AskedFilterFrom is the filter WithAskedFilter carries.
+func AskedFilterFrom(ctx context.Context) (Filter, bool) {
+	f, ok := ctx.Value(askedFilterKey{}).(Filter)
+	return f, ok
 }

@@ -11,7 +11,7 @@
   {
     "name": "records",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
       "GET /api/v1/records",
@@ -24,7 +24,7 @@
   {
     "name": "errors",
     "stability": "stable",
-    "revision": 1,
+    "revision": 2,
     "routes": []
   },
   {

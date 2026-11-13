@@ -134,7 +134,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Kind = ti.Identity
 	in.ID = addr.id
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
@@ -165,7 +165,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	if !readRecordJSON(w, r, &in) {
 		return
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
@@ -214,7 +214,7 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, r, err)

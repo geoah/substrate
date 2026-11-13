@@ -187,10 +187,10 @@ Every error is one shape, and the code set is closed
 | `auth` | 401 | The token is missing, revoked or expired. Stop and ask the owner for a new one; do not try a password. |
 | `totp_required` | 401 | Only from the sign-in door: a right password on an account with a second factor, sent no code. You never sign in; ask the owner for a token. |
 | `not_found` | 404 | No such kind, or no such record at that address. Check the kind reference first. |
-| `compacted` | 410 | Your changelog cursor is below the horizon or under another history generation. List again and resume from the new `head`. |
+| `compacted` | 410 | Your changelog cursor is below the horizon or under another history generation, or your list cursor can no longer be resumed. List again from the first page and resume from the new `head`. |
 | `rate_limited`, `unavailable` | 429, 503 | Wait the `Retry-After` the response carries, then retry the same request. |
 | `bad_request` | 400 | A parameter the mode does not honor, or a malformed request. Fix the request. |
-| `internal`, `function_failed` | 500 | The server, or a function's body, faulted. Report it; do not loop. |
+| `internal`, `function_failed` | 500 | The server, or a function's body, faulted. Report it; do not loop. An `internal` or `unavailable` with the reason `in_doubt` is a write that may have landed: read the record before you write it again, or repeat the request under the same `Idempotency-Key`. |
 
 ## Following changes
 
