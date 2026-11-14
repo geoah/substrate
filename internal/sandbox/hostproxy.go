@@ -56,12 +56,20 @@ var errConfinedLookup = errors.New("egress is confined: the proxy resolves a nam
 // runs, so without that a declared name would reach the system resolver, and
 // through it the network, even though the dial is then refused.
 func newHostProxy(hosts []string, only ...netip.Prefix) (*hostProxy, error) {
+	return newHostProxyAsking(nil, hosts, only...)
+}
+
+// newHostProxyAsking is newHostProxy whose dialer asks system for a name
+// where it asks the process's resolver (nil is net.DefaultResolver). A test
+// stands its own in through it rather than swap net.DefaultResolver, which a
+// dial another test left running may still be reading.
+func newHostProxyAsking(system *net.Resolver, hosts []string, only ...netip.Prefix) (*hostProxy, error) {
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
 	allow, _ := egress.ParseAllow(os.Getenv(EgressAllowVar))
-	dialer := &net.Dialer{Timeout: 30 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+	dialer := &net.Dialer{Resolver: system, Timeout: 30 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil {
 			return err
