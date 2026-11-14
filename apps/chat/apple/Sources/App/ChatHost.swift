@@ -41,6 +41,7 @@ final class ChatHost {
     static let shared: ChatHost = {
         #if DEBUG
         if let measured = Measure.parts() { return ChatHost(measured) }
+        if let demo = Demo.parts() ?? Demo.session() { return ChatHost(demo) }
         #endif
         return ChatHost(.device)
     }()
