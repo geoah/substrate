@@ -24,8 +24,9 @@ func init() {
 		xoCaseRepositoryList)
 	registerCase(910, "DUR-01", "A server restart loses nothing",
 		"Stopping the server and starting it again leaves every record byte for byte as it was, the "+
-			"history's head and generation unmoved, and the table head and the segment files' head both "+
-			"at the same seq and checksum; the next write lands at head+1.",
+			"history's head and generation unmoved, and the changelog table at the same head, checksum and "+
+			"entry count; the stop's last archive pass leaves the archive at that head, every line of it held "+
+			"to the table; the next write lands at head+1.",
 		xoCaseRestart)
 	registerCase(920, "OPR-03", "`user reset` re-keys the sign-in and leaves the tokens",
 		"`user reset` runs beside the running server, because a person's sign-in is no repository's "+
@@ -35,14 +36,18 @@ func init() {
 		xoCaseUserReset)
 }
 
-// xoVerify is `repository verify -o json`, narrowed to the heads it holds.
+// xoVerify is `repository verify -o json`, narrowed to the heads it holds:
+// the changelog table's, and the archive's, which is empty where the operator
+// hat runs with no archive (SUBSTRATE_ARCHIVE=off).
 type xoVerify struct {
-	OK       bool     `json:"ok"`
-	Entries  int64    `json:"entries"`
-	Head     int64    `json:"head"`
-	FileHead int64    `json:"fileHead"`
-	HeadHash string   `json:"headHash"`
-	Findings []string `json:"findings"`
+	OK                bool     `json:"ok"`
+	Entries           int64    `json:"entries"`
+	Head              int64    `json:"head"`
+	HeadHash          string   `json:"headHash"`
+	Archive           string   `json:"archive"`
+	ArchiveHead       int64    `json:"archiveHead"`
+	ArchiveUnverified string   `json:"archiveUnverified"`
+	Findings          []string `json:"findings"`
 }
 
 func xoVerifyNow(c *C) xoVerify {
@@ -57,7 +62,7 @@ func xoVerifyNow(c *C) xoVerify {
 
 // xoSnapshot is what DUR-01 compares across the restart: every live record as
 // the wire serves it, the history's head and generation, and the operator's
-// view of both changelog heads.
+// view of the table and the archive.
 type xoSnapshot struct {
 	records    map[string]string
 	head       int64
@@ -162,15 +167,17 @@ func xoCaseRestart(c *C) {
 		return
 	}
 	if ctl, dsn := ctlEnv(); ctl == "" || dsn == "" {
-		c.skipf("%s and %s are not both set, so there is no operator hat to read the segment files' head with", envCtl, envDSN)
+		c.skipf("%s and %s are not both set, so there is no operator hat to read the table's and the archive's heads with", envCtl, envDSN)
 		return
 	}
 
+	// The archive is copied after the commits (decision 0262), so before the
+	// stop it may stand behind the head; only the table is held here.
 	before := xoTakeSnapshot(c)
-	c.requiref(before.verify.Head == before.head && before.verify.FileHead == before.head,
-		"before the restart the heads disagree: the history says %d, the table %d, the files %d", before.head, before.verify.Head, before.verify.FileHead)
-	c.stepf("before: %d live records, head %d in generation `%s`, table and files both at seq %d checksum `%s`",
-		len(before.records), before.head, before.generation, before.verify.FileHead, short(before.verify.HeadHash))
+	c.requiref(before.verify.Head == before.head,
+		"before the restart the heads disagree: the history says %d, the table %d", before.head, before.verify.Head)
+	c.stepf("before: %d live records, head %d in generation `%s`, the table at seq %d checksum `%s` over %d entries, the archive at seq %d",
+		len(before.records), before.head, before.generation, before.verify.Head, short(before.verify.HeadHash), before.verify.Entries, before.verify.ArchiveHead)
 
 	defer c.ensureServer()
 	c.stopServer()
@@ -179,11 +186,11 @@ func xoCaseRestart(c *C) {
 	after := xoTakeSnapshot(c)
 	c.requiref(after.head == before.head && after.generation == before.generation,
 		"the restart moved the history: head %d generation %q, was %d %q", after.head, after.generation, before.head, before.generation)
-	c.requiref(after.verify.Head == before.verify.Head && after.verify.FileHead == before.verify.FileHead &&
-		after.verify.Entries == before.verify.Entries && after.verify.HeadHash == before.verify.HeadHash,
-		"the restart moved a changelog head: table %d files %d checksum %q entries %d, was %d %d %q %d",
-		after.verify.Head, after.verify.FileHead, after.verify.HeadHash, after.verify.Entries,
-		before.verify.Head, before.verify.FileHead, before.verify.HeadHash, before.verify.Entries)
+	c.requiref(after.verify.Head == before.verify.Head && after.verify.Entries == before.verify.Entries &&
+		after.verify.HeadHash == before.verify.HeadHash,
+		"the restart moved the changelog table: head %d checksum %q entries %d, was %d %q %d",
+		after.verify.Head, after.verify.HeadHash, after.verify.Entries,
+		before.verify.Head, before.verify.HeadHash, before.verify.Entries)
 	for key, raw := range before.records {
 		got, ok := after.records[key]
 		c.requiref(ok, "the restart lost %s", key)
@@ -193,7 +200,22 @@ func xoCaseRestart(c *C) {
 		_, ok := before.records[key]
 		c.requiref(ok, "the restart added %s", key)
 	}
-	c.stepf("after: the same %d records byte for byte, head %d in the same generation, table and files at the same seq and checksum", len(after.records), after.head)
+	c.stepf("after: the same %d records byte for byte, head %d in the same generation, the table at the same seq, checksum and entry count", len(after.records), after.head)
+
+	// A clean stop runs one more archive pass (stopArchiver), so the copy an
+	// operator takes of a stopped server is the whole history. The restart
+	// wrote nothing, so no later pass moved the archive past what the stop
+	// left.
+	if after.verify.Archive == "" {
+		c.stepf("SKIPPED the archive head: the operator hat runs with no archive (SUBSTRATE_ARCHIVE=off)")
+	} else {
+		c.requiref(after.verify.ArchiveUnverified == "",
+			"after the restart the archive in `%s` was not held to the table: %s", after.verify.Archive, after.verify.ArchiveUnverified)
+		c.requiref(after.verify.ArchiveHead == after.head,
+			"after the stop and the restart the archive in `%s` stands at seq %d, want the head %d the stop's last pass copies",
+			after.verify.Archive, after.verify.ArchiveHead, after.head)
+		c.stepf("the stop's last archive pass left the archive in `%s` at seq %d, the head, every line of it held to the table", after.verify.Archive, after.verify.ArchiveHead)
+	}
 
 	// The writer resumed where it stopped: the next write is head+1, and it
 	// is the only row after the old head.

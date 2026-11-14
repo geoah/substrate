@@ -560,7 +560,9 @@ func xfCaseAgentToolRoundTrip(c *C) {
 	c.requiref(c.r.stub.count("toolcounter") == before+2, "the model was asked %d times, want 2", c.r.stub.count("toolcounter")-before)
 	c.stepf("turn 1 asked for `wordcount`, the loop ran it, and turn 2 replied %q: two completions, one tool call", res.Reply)
 
-	callable := "function:" + xfAuthority + ":" + xfPackage + ":wordcount"
+	// The engine stamps the callable as the function record's path (decision
+	// 0270), the join every call of one function shares whatever its alias.
+	callable := "substrate.reamde.dev/core/function/" + xfPkg + "/wordcount"
 	var asked, answered bool
 	for _, m := range xfThreadMessages(c, res.Thread) {
 		switch m.prop("role") {

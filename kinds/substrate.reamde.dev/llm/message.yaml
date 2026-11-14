@@ -120,15 +120,17 @@ data:
     # the bytes the provider matched a call by.
     #
     # `name` is the agent's ALIAS, the tool name the model saw, and `callable`
-    # is the identity behind it in the spelling the changelog's actor column
-    # uses (decision record 0025): `function:<authority>:<package>:<name>` for
-    # a function tool, `agent:<authority>:<package>:<name>` for a sub-agent.
-    # A host function is a function record, so it is the function spelling of
-    # that record (`function:substrate.reamde.dev:core:query`). Two agents may
-    # alias one function differently, and an alias may be renamed, so only the
-    # callable joins every call of one function. The engine stamps it on the
-    # call and on the tool row that answers it, and leaves it off a name no
-    # tool of the agent's carries.
+    # is the identity behind it as the record path of the function or agent
+    # record (decision record 0270):
+    # `substrate.reamde.dev/core/function/<authority>/<package>/<name>` for a
+    # function tool, `substrate.reamde.dev/core/agent/<authority>/<package>/<name>`
+    # for a sub-agent. A host function is a function record, so it is that
+    # record's path
+    # (`substrate.reamde.dev/core/function/substrate.reamde.dev/core/query`).
+    # Two agents may alias one function differently, and an alias may be
+    # renamed, so only the callable joins every call of one function. The
+    # engine stamps it on the call and on the tool row that answers it, and
+    # leaves it off a name no tool of the agent's carries.
     toolCalls:
       type: object
       repeated: true

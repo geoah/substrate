@@ -336,7 +336,7 @@ func caseStory05(c *C) {
 }
 
 // caseStory06: the world holds together. Attribution over the whole
-// changelog, every checksum and sidecar verified, and the fold rebuilt to an
+// changelog, every checksum and the archive verified, and the fold rebuilt to an
 // identical graph.
 func caseStory06(c *C) {
 	r := c.r

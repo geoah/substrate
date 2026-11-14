@@ -558,13 +558,17 @@ func xaCasePasswordChange(c *C) {
 	if totp {
 		body["totpCode"] = r.nextTOTPCode(c)
 	}
+	// A credential change names the person, and answers the identity it
+	// changed, completed under the door's host (decision 0274). The run
+	// registered with no repository name, so its repository took that same
+	// completed name: the run's authority.
 	var out struct {
-		Repository string `json:"repository"`
+		Identity string `json:"identity"`
 	}
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/password", body, &out)
 	c.requiref(status == http.StatusOK, "`/password` with the current factors answered %d, want 200%s", status, redacted(status, raw))
-	c.requiref(out.Repository == r.authority, "the change echoed repository %q, want %q", out.Repository, r.authority)
+	c.requiref(out.Identity == r.authority, "the change echoed identity %q, want %q", out.Identity, r.authority)
 	oldPassword := r.password
 	r.password, r.rep.Password = newPassword, newPassword
 	c.stepf("`/password` with the current factors changed the password of `%s`", r.authority)
