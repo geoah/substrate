@@ -251,8 +251,10 @@ func TestScaleTimings(t *testing.T) {
 		FROM changelog WHERE repository = $1`, id).Scan(&lines, &lineBytesTotal, &dbBytes); err != nil {
 		t.Fatal(err)
 	}
-	note(scalePhase{Phase: "generate", Seconds: time.Since(began).Seconds(), Bytes: lineBytesTotal,
-		Note: fmt.Sprintf("%d lines, %d notes, %d blob bytes, database %d bytes", lines, made.Load(), blobs, dbBytes)})
+	note(scalePhase{
+		Phase: "generate", Seconds: time.Since(began).Seconds(), Bytes: lineBytesTotal,
+		Note: fmt.Sprintf("%d lines, %d notes, %d blob bytes, database %d bytes", lines, made.Load(), blobs, dbBytes),
+	})
 
 	// Each timed operation: the database's WAL and temp bytes, the process's
 	// peak heap, and, while the server is up, a write every 100ms beside it
@@ -333,8 +335,10 @@ func TestScaleTimings(t *testing.T) {
 		if err := db.QueryRowContext(ctx, `SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), $1::pg_lsn)::bigint`, walFrom).Scan(&wal); err != nil {
 			t.Fatal(err)
 		}
-		p := scalePhase{Phase: phase, Seconds: took.Seconds(), WALBytes: wal, TempBytes: temp() - tempFrom,
-			HeapPeakMB: float64(heapPeak.Load()) / (1 << 20), Bytes: n}
+		p := scalePhase{
+			Phase: phase, Seconds: took.Seconds(), WALBytes: wal, TempBytes: temp() - tempFrom,
+			HeapPeakMB: float64(heapPeak.Load()) / (1 << 20), Bytes: n,
+		}
 		if live {
 			p.Watchers = watchers
 			slices.Sort(latencies)
@@ -359,10 +363,11 @@ func TestScaleTimings(t *testing.T) {
 	for range watchers {
 		resp := e.Request(watchCtx, http.MethodGet, "/api/v1/records?watch=1&filter="+url.QueryEscape(string(filter)), nil, nil)
 		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
 			t.Fatalf("open a watch: %d", resp.StatusCode)
 		}
 		opened.Add(1)
-		go func() {
+		go func(resp *http.Response) {
 			defer func() { _ = resp.Body.Close() }()
 			sc := bufio.NewScanner(resp.Body)
 			sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
@@ -375,7 +380,7 @@ func TestScaleTimings(t *testing.T) {
 				}
 				delivered.Add(1)
 			}
-		}()
+		}(resp)
 	}
 	opened.Wait()
 
