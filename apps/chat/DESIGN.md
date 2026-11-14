@@ -1124,7 +1124,9 @@ button and Details stack where the text size leaves no room side by side.
   holds the thread at the server's version; no conversation waits with no
   request at the server about it and no wait on the clock of its own (read
   from the effects it asked for, and counted, so another conversation's
-  retry does not keep a dead one alive); no message is written
+  retry does not keep a dead one alive; believed once it has stood so
+  through 100 s of the clock, and at the end of every run with no
+  allowance at all); no message is written
   twice; no row is drawn twice; nothing the person sent is lost (it is in
   a stored row, in a composer or on a message with its card); no failure
   is drawn in two places; a pending message has its send or its card;
