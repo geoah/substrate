@@ -1346,7 +1346,10 @@ data:
   once, not 168 times. `all` fires every occurrence once, oldest first, at
   most ten per dispatcher pass however long the pass lasts, and none is
   coalesced away: the choice for a trigger whose every occurrence is work of
-  its own, such as a reminder per occurrence.
+  its own, such as a reminder per occurrence. A failed occurrence of an
+  `all` schedule stays parked when a later one settles, for its own retry. A
+  trigger an edit makes a schedule takes its fire state at that edit, as a
+  created one does, so its first fire is the next occurrence.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is
@@ -1729,6 +1732,10 @@ repository.
   work the settled fire just did. A webhook request's park and an agent run
   a stop interrupted are never retired this way
   ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)).
+  Nor is another occurrence's park, when the schedule states `missed: all`
+  as the settling occurrence commits, whatever it stated when that run
+  began: every occurrence of it is owed, so each failed one waits for its
+  own retry, the automatic one of a temporary failure or yours.
   A record trigger's park is retired only by a delivery that stamps a sync
   (the record's kind binds `sync` and the callable is a function of the
   kind's own package): when one settles ok, and the body left the record at

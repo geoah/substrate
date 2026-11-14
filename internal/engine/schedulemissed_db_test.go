@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -22,10 +23,10 @@ const missedPkg = "widgets.test.dev/widgets"
 // missedTrigger installs the fire-counting function and an hourly schedule
 // trigger on it, anchored two weeks back, with the given `missed` (none when
 // empty). It runs the pass that initializes the fire state at now.
-func missedTrigger(t *testing.T, missed string) (*dataset, string) {
+func missedTrigger(t *testing.T, missed string, opts ...Option) (*dataset, string) {
 	t.Helper()
 	ctx := context.Background()
-	ds := openCursorDataset(t)
+	ds := openCursorDataset(t, opts...)
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.FunctionManifest(missedPkg, "hourly", map[string]any{
 			"description": "mints one task per fire",
@@ -68,11 +69,12 @@ def main(input, host):
 // THE DONE-WHEN: a week offline runs one sync. The fire state is set back a
 // week, as a server that was off for one leaves it; one pass fires the newest
 // hourly occurrence alone, the fire state lands on it, and no later pass
-// fires the 167 before it.
+// fires the 167 before it. The schedule is read on a clock held half past an
+// hour already gone, so no pass crosses into the next occurrence.
 func TestAWeekOfflineRunsOneSync(t *testing.T) {
 	t.Parallel()
-	ds, triggerID := missedTrigger(t, "")
-	now := nowUTC()
+	now := nowUTC().Truncate(time.Hour).Add(-30 * time.Minute)
+	ds, triggerID := missedTrigger(t, "", WithTestScheduleClock(func() time.Time { return now }))
 	rewindSchedule(t, ds, triggerID, now.Add(-7*24*time.Hour))
 	latest := now.Truncate(time.Hour)
 
@@ -84,9 +86,8 @@ func TestAWeekOfflineRunsOneSync(t *testing.T) {
 	if n := countLiveOf(t, ds, "samples.substrate.reamde.dev/tasks/task"); n != 1 {
 		t.Fatalf("a week offline fired %d occurrences, want 1", n)
 	}
-	// A pass that crossed the hour fired the occurrence it began in.
 	got := firedAtOf(t, ds, triggerID)
-	if !got.Equal(latest) && !got.Equal(nowUTC().Truncate(time.Hour)) {
+	if !got.Equal(latest) {
 		t.Fatalf("fire state %s, want the latest occurrence %s", got, latest)
 	}
 	if _, err := ds.Get(context.Background(), "samples.substrate.reamde.dev/tasks/task", "fire-"+fireID(got)); err != nil {
@@ -143,5 +144,45 @@ func TestARunningFireStaysInFlightWhenANewerOccurrenceIsDue(t *testing.T) {
 	done()
 	if st := triggerStatusOf(t, ds, triggerID); st.InFlight != 0 || st.Pending != 1 {
 		t.Fatalf("after %s ended: in flight %d, pending %d; want 0 and 1", fireID(older), st.InFlight, st.Pending)
+	}
+}
+
+// A trigger an edit makes a schedule takes its fire state at the edit, as a
+// created one does, and a disabled one too: without it the repository's
+// next open would give it one, and every occurrence between the edit and
+// that open would be owed by nobody. The fire state rides the ledger, so a
+// rebuild keeps it.
+func TestATriggerAnEditMakesAScheduleTakesItsFireStateAtTheEdit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := missedTrigger(t, "")
+	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger,
+		Properties: map[string]any{
+			"enabled":  false,
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{"widgets.test.dev/widgets/widget"}}},
+			"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", missedPkg+"/hourly"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("put a record trigger: %v", err)
+	}
+	before := nowUTC()
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, tr.ID, substrate.PatchInput{
+		Properties: map[string]any{"source": map[string]any{"schedule": map[string]any{
+			"recurrence": "FREQ=HOURLY", "timezone": "UTC", "missed": "all",
+		}}},
+	}); err != nil {
+		t.Fatalf("make it a schedule: %v", err)
+	}
+	at := firedAtOf(t, ds, tr.ID)
+	if at.Before(before.Add(-time.Second)) || at.After(nowUTC()) {
+		t.Fatalf("fire state %s, want the edit's time (after %s)", at, before)
+	}
+	if _, err := ds.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := firedAtOf(t, ds, tr.ID); !got.Equal(at) {
+		t.Fatalf("fire state %s after a rebuild, want %s", got, at)
 	}
 }

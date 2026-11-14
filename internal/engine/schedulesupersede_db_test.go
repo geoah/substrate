@@ -5,12 +5,15 @@ package engine
 // recovered no longer reads as 110 runs waiting to be tried again. A later
 // occurrence's park stays, another trigger's parks stay, and a record
 // trigger's park stays whatever a fire does, because each one is its own
-// record's change (syncsupersede_db_test.go has the one exception).
+// record's change (syncsupersede_db_test.go has the one exception). A
+// schedule that states `missed: all` retires none: each of its occurrences
+// is owed, so a failed one waits for its own retry (decision 0267).
 
 import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,6 +136,29 @@ func rewindSchedule(t *testing.T, ds *dataset, triggerID string, at time.Time) {
 	}
 }
 
+// setMissed rewrites a schedule trigger's `missed`. The tests park every
+// occurrence under `all`, which fires each, and settle under `latest`, the
+// only one whose settled fire retires older parks.
+func setMissed(t *testing.T, ds *dataset, triggerID, missed string) {
+	t.Helper()
+	ctx := context.Background()
+	rec, err := ds.Get(ctx, typeTrigger, triggerID)
+	if err != nil {
+		t.Fatalf("read %s: %v", triggerID, err)
+	}
+	source, _ := rec.Properties["source"].(map[string]any)
+	schedule, _ := source["schedule"].(map[string]any)
+	if schedule == nil {
+		t.Fatalf("%s has no schedule: %+v", triggerID, rec.Properties)
+	}
+	schedule["missed"] = missed
+	if _, err := ds.Patch(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.PatchInput{
+		Properties: map[string]any{"source": source},
+	}); err != nil {
+		t.Fatalf("set %s missed %s: %v", triggerID, missed, err)
+	}
+}
+
 // processOnce runs one dispatcher pass.
 func processOnce(t *testing.T, ds *dataset) {
 	t.Helper()
@@ -208,22 +234,12 @@ func TestAScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
 		t.Fatalf("parked: sync status %d, trigger status %d, want 3 each", sync.Parked, tr.Parked)
 	}
 
-	// The body delivers every occurrence but the last. s+1h settles and
-	// retires the parks of s and s+1h; the park of s+2h is a later
-	// occurrence and stays, and s+2h then fails again beside it.
-	setJobSync(t, ds, "def main(input, host):\n"+
-		"    if input[\"envelope\"][\"fire\"][\"id\"] == \""+fireID(s2)+"\":\n"+
-		"        raise RuntimeError(\"upstream returned HTTP 500\")\n"+
-		"    return {\"effects\": []}\n")
-	rewindSchedule(t, ds, supersedeSync, s)
-	processOnce(t, ds)
-	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s2), fireID(s2)}) {
-		t.Fatalf("%s parked %v after s+1h settled, want s+2h's first park and its second", supersedeSync, got)
-	}
-
-	// s+2h settles: nothing of the trigger is left parked, on any read.
+	// Owing the latest alone, the trigger fires s+2h, which settles and
+	// retires every park at or before it: nothing of the trigger is left
+	// parked, on any read.
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
-	rewindSchedule(t, ds, supersedeSync, s1)
+	rewindSchedule(t, ds, supersedeSync, s)
 	processOnce(t, ds)
 	if got := parkedFires(t, ds, supersedeSync); len(got) != 0 {
 		t.Fatalf("%s parked %v after its latest occurrence settled, want none", supersedeSync, got)
@@ -235,8 +251,8 @@ func TestAScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) {
 	if sync.Parked != 0 || sync.LastParkedError != "" || sync.LastParkedAt != nil {
 		t.Fatalf("sync status = %+v, want nothing parked", sync)
 	}
-	if runs := runRowsFor(t, ds, supersedeSync, runStatusOK); runs != 2 {
-		t.Fatalf("%s wrote %d ok runs, want s+1h's and s+2h's", supersedeSync, runs)
+	if runs := runRowsFor(t, ds, supersedeSync, runStatusOK); runs != 1 {
+		t.Fatalf("%s wrote %d ok runs, want s+2h's", supersedeSync, runs)
 	}
 	// Another trigger's parks are its own.
 	if got := parkedFires(t, ds, supersedeTool); !slices.Equal(got, want) {
@@ -318,6 +334,7 @@ func TestARetriedScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T)
 		t.Fatalf("%s parked %+v (%v), want three occurrences", supersedeSync, failures, err)
 	}
 
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
 	var middle int64
 	for _, f := range failures {
@@ -349,6 +366,7 @@ func TestASettledScheduleFireRetiresItsOlderParksInBatches(t *testing.T) {
 		t.Fatalf("%s parked %v, want three occurrences", supersedeSync, got)
 	}
 
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
 	rewindSchedule(t, ds, supersedeSync, s1)
 	processOnce(t, ds)
@@ -404,6 +422,7 @@ func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) 
 	ds.mu.Lock()
 	ds.deliveryFault = nil
 	ds.mu.Unlock()
+	setMissed(t, ds, tr.ID, "latest")
 	rewindSchedule(t, ds, tr.ID, s)
 	processOnce(t, ds)
 	if got := parkedFires(t, ds, tr.ID); len(got) != 0 {
@@ -411,6 +430,140 @@ func TestAnAgentScheduleFireThatSettlesRetiresItsOlderParkedFires(t *testing.T) 
 	}
 	if runs := runRowsFor(t, ds, tr.ID, runStatusOK); runs != 1 {
 		t.Fatalf("wrote %d ok runs, want s+1h's", runs)
+	}
+}
+
+// A schedule that states `missed: all` owes every occurrence, so one that
+// settles retires no older park: an occurrence that failed for a minute
+// stays waiting for its automatic retry, and a later one's success does not
+// take it away, whether the later one was dispatched or retried by hand.
+func TestAnAllScheduleKeepsAnOlderFailureWhenALaterOccurrenceSettles(t *testing.T) {
+	t.Parallel()
+	s := nowUTC().Add(-150 * time.Minute).Truncate(time.Minute)
+	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
+	ds := supersedeDataset(t, s, "update")
+
+	// s fails for now; s+1h and s+2h deliver.
+	setJobSync(t, ds, "def main(input, host):\n"+
+		"    if input[\"envelope\"][\"fire\"][\"id\"] == \""+fireID(s)+"\":\n"+
+		"        raise host.Temporary(\"the provider is down\")\n"+
+		"    return {\"effects\": []}\n")
+	rewindSchedule(t, ds, supersedeSync, s.Add(-time.Minute))
+	processOnce(t, ds)
+	if runs := runRowsFor(t, ds, supersedeSync, runStatusOK); runs != 2 {
+		t.Fatalf("%s wrote %d ok runs, want s+1h's and s+2h's", supersedeSync, runs)
+	}
+	failures, err := ds.TriggerFailures(context.Background(), supersedeSync)
+	if err != nil || len(failures) != 1 || failures[0].FireID != fireID(s) {
+		t.Fatalf("%s parked %+v (%v) after s+1h and s+2h settled, want s's park kept", supersedeSync, failures, err)
+	}
+	if !strings.HasPrefix(failures[0].LastError, temporaryRetryMark) {
+		t.Fatalf("s's park reads %q, want it still waiting for its automatic retry", failures[0].LastError)
+	}
+
+	// A retry by hand of a later occurrence leaves the older park too.
+	setJobSync(t, ds, supersedeRaise)
+	rewindSchedule(t, ds, supersedeSync, s1)
+	processOnce(t, ds)
+	parked, err := ds.TriggerFailures(context.Background(), supersedeSync)
+	if err != nil || len(parked) != 2 {
+		t.Fatalf("%s parked %+v (%v), want s's and s+2h's", supersedeSync, parked, err)
+	}
+	setJobSync(t, ds, supersedeOK)
+	var later int64
+	for _, f := range parked {
+		if f.FireID == fireID(s2) {
+			later = f.ID
+		}
+	}
+	if _, err := ds.RetryTriggerFailure(context.Background(), supersedeSync, later); err != nil {
+		t.Fatalf("retry s+2h: %v", err)
+	}
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s)}) {
+		t.Fatalf("%s parked %v after s+2h's retry settled, want s's park kept", supersedeSync, got)
+	}
+}
+
+// What a settlement retires is the trigger's `missed` when the settlement
+// commits, not when its run began: an owner who switches a trigger to `all`
+// while a later occurrence runs keeps the older failures, whether that
+// occurrence was dispatched or retried by hand. The other way round, a
+// switch to `latest` while an occurrence runs, the settled occurrence
+// retires the parks at or before it: the trigger owes the latest alone now,
+// so a retry of an older one would repeat work nobody asked for again.
+func TestASettlementRetiresByTheMissedInForceWhenItCommits(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := nowUTC().Add(-150 * time.Minute).Truncate(time.Minute)
+	s1, s2 := s.Add(time.Hour), s.Add(2*time.Hour)
+	ds := supersedeDataset(t, s, "update")
+	rewindSchedule(t, ds, supersedeSync, s.Add(-time.Minute))
+	processOnce(t, ds)
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s), fireID(s1), fireID(s2)}) {
+		t.Fatalf("%s parked %v, want three occurrences", supersedeSync, got)
+	}
+	// A body that runs long enough for an edit to land while it runs.
+	setJobSync(t, ds, "import time\ndef main(input, host):\n    time.sleep(2)\n    return {\"effects\": []}\n")
+	pass := func() <-chan error {
+		done := make(chan error, 1)
+		go func() {
+			_, err := ds.ProcessTriggers(ctx)
+			done <- err
+		}()
+		return done
+	}
+
+	// Dispatched: under `latest` s+2h fires, and `all` lands while it runs.
+	// s+2h retires its own older park and no other.
+	setMissed(t, ds, supersedeSync, "latest")
+	rewindSchedule(t, ds, supersedeSync, s1)
+	done := pass()
+	waitFor(t, "s+2h in flight", func() bool { return ds.isFiring(supersedeSync, fireID(s2)) })
+	setMissed(t, ds, supersedeSync, "all")
+	if err := <-done; err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s), fireID(s1)}) {
+		t.Fatalf("%s parked %v after s+2h settled under an edit to all, want s's and s+1h's kept", supersedeSync, got)
+	}
+
+	// Retried: the same, with s+1h retried by hand. Its own row retires as
+	// any delivered retry's does; s's stays.
+	setMissed(t, ds, supersedeSync, "latest")
+	var middle int64
+	failures, err := ds.TriggerFailures(ctx, supersedeSync)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range failures {
+		if f.FireID == fireID(s1) {
+			middle = f.ID
+		}
+	}
+	retried := make(chan error, 1)
+	go func() {
+		_, err := ds.RetryTriggerFailure(ctx, supersedeSync, middle)
+		retried <- err
+	}()
+	waitFor(t, "s+1h's retry in flight", func() bool { _, held := ds.runningClaims.Load(middle); return held })
+	setMissed(t, ds, supersedeSync, "all")
+	if err := <-retried; err != nil {
+		t.Fatalf("retry s+1h: %v", err)
+	}
+	if got := parkedFires(t, ds, supersedeSync); !slices.Equal(got, []string{fireID(s)}) {
+		t.Fatalf("%s parked %v after s+1h's retry settled under an edit to all, want s's kept", supersedeSync, got)
+	}
+
+	// The other way: `latest` lands while s+2h runs under `all`.
+	rewindSchedule(t, ds, supersedeSync, s1)
+	done = pass()
+	waitFor(t, "s+2h in flight", func() bool { return ds.isFiring(supersedeSync, fireID(s2)) })
+	setMissed(t, ds, supersedeSync, "latest")
+	if err := <-done; err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	if got := parkedFires(t, ds, supersedeSync); len(got) != 0 {
+		t.Fatalf("%s parked %v after s+2h settled under an edit to latest, want s's retired", supersedeSync, got)
 	}
 }
 

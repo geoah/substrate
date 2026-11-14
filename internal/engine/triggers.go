@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1037,6 +1038,29 @@ func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 				return err
 			}
 		}
+	}
+	return t.settleDelivery(id)
+}
+
+// initEditedSchedule gives a trigger an edit makes a schedule its fire state
+// at the edit, as initTriggerBookkeeping gives one created with a schedule:
+// the first fire is the next occurrence. Without it the next pass gives the
+// fire state, or, for a trigger disabled before one ran, the repository's
+// next open (ensureScheduleState), and the occurrences between the edit and
+// that open would be owed by nobody. A trigger that has a fire state keeps
+// it: an edit never moves one.
+func (t *txn) initEditedSchedule(id string, props map[string]any) error {
+	src, _ := props["source"].(map[string]any)
+	if _, has := src["schedule"]; !has {
+		return nil
+	}
+	var at time.Time
+	err := t.row(`SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, id).Scan(&at)
+	if err == nil || !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := t.setScheduleTx(id, t.now); err != nil {
+		return err
 	}
 	return t.settleDelivery(id)
 }

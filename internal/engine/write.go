@@ -1479,6 +1479,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			if err := t.pinTriggerCursor(sp.id); err != nil {
 				return nil, err
 			}
+			if err := t.initEditedSchedule(sp.id, row.Props); err != nil {
+				return nil, err
+			}
 		}
 	}
 
