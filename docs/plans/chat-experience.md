@@ -1,9 +1,11 @@
 # Plan: a chat that keeps its place, streams evenly and fails in plain words
 
-Status: proposed 2026-11-14. A plan, not a contract, and nothing in it is
-built. It covers the agent API as a chat client uses it, and Substrate Chat,
-the iPhone, iPad and Mac app ([its design](../../apps/chat/DESIGN.md)). It
-follows [detached chat turns](chat-turns.md), which landed, and sits beside
+Status: proposed 2026-11-14 and being built group by group;
+[#1400](https://github.com/geoah/substrate/issues/1400) says where each
+group is. A plan, not a contract. It covers the agent API as a chat client
+uses it, and Substrate Chat, the iPhone, iPad and Mac app
+([its design](../../apps/chat/DESIGN.md)). It follows
+[detached chat turns](chat-turns.md), which landed, and sits beside
 [what Moss needs next](moss-capabilities.md), which owns attachments,
 schedules and documents and is not repeated here.
 
@@ -53,9 +55,14 @@ was checked against:
   is the rule the console's preferences already follow: what describes the
   person follows the person, what describes one window stays in that window
   ([0132](../decisions/0132-console-preferences-follow-the-person-and-a-window-fact-stays-in-the-browser.md)).
-- **One owner.** There are no other participants, so nothing here adds
-  presence, typing indicators, delivery receipts or a per-person read
-  state. A read position is one value per thread.
+- **A read position is one person's.** A repository can hold several
+  people
+  ([0274](../decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md),
+  [0275](../decisions/0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md)),
+  each with their own devices, so a read position is one value per thread
+  and person. Nothing here adds presence, typing indicators or delivery
+  receipts between them. Where this page says "the owner" it means the
+  person signed in.
 - **A link is a reference.** Every new field that names a record is a
   reference to one kind
   ([0044](../decisions/0044-a-reference-is-the-only-link-between-records.md)).
@@ -181,9 +188,10 @@ owner types the question again.
 
 ### 1. How far the owner has read is a record (M)
 
-One record per thread says what the owner has done with it, apart from
-what the engine writes about the run. Its id is the thread's id, so every
-client finds it without a search.
+One record per thread and person says what that person has done with the
+thread, apart from what the engine writes about the run. Its id is made
+from the thread's id and the person's actor, so every client finds it
+without a search. The example is the mark of a repository's one person.
 
 ```yaml
 kind: substrate.reamde.dev/llm/threadmark
@@ -193,6 +201,8 @@ data:
   properties:
     thread:
       ref: substrate.reamde.dev/llm/thread/8f2c41d07a
+    readBy:
+      ref: substrate.reamde.dev/core/actor/2b7d90e4a1
     readThrough:
       ref: substrate.reamde.dev/llm/message/5b90e3c1f2
     readAt: "2026-11-14T09:41:07Z"
@@ -202,6 +212,7 @@ data:
 | Property | Holds | Points at |
 | --- | --- | --- |
 | `thread` | the thread these marks are about | one `llm/thread` |
+| `readBy` | the person whose marks these are | one `core/actor` of type `person` |
 | `readThrough` | the newest message the owner has seen | one `llm/message` of that thread |
 | `readAt` | when that was | a time |
 | `markedUnread` | the owner chose Mark as Unread | a bool |
@@ -524,8 +535,9 @@ values to tune on a device.
    starts following only once it outgrows the screen. A touch releases
    following; coming to rest within about 80 points of the end takes it up
    again. Following reacts to the content's height, not to a hash of the
-   screen. A send always goes to the end. Jump to Latest says how many
-   messages are below.
+   screen. A send always goes to the end. A chat that was at its end when
+   the app left the front is at its end when it returns, whatever arrived
+   meanwhile. Jump to Latest says how many messages are below.
 8. **Thinking has a window of fixed height.** It shows the newest lines
    while the model thinks, then becomes "Thought for 12 s". It gives its
    height to the answer as the answer starts, so the page does not jump.
@@ -539,8 +551,11 @@ values to tune on a device.
 ### 8c. Failures in plain words
 
 One sentence that says what happened, one button that does the next thing,
-and at most one note. The card sits at the turn that failed, not in an
-alert, and what the owner typed is never lost.
+and at most one note. What the owner typed is never lost. A failure has
+one place by what it is about, never an alert: a turn's failure is a card
+at that turn, a failure of the chat as a whole (a reload, a stream that
+will not open, a rename) is one strip above the composer, and the list's
+is one strip at its top. All three are the same component.
 
 | Cause | The owner reads | Button |
 | --- | --- | --- |
@@ -606,6 +621,16 @@ later.
 - **Text size:** every fixed size scales with the text size, every target
   is at least 44 points, and layouts that cannot fit fall back to a taller
   form.
+- **Keys:** on a Mac, and on an iPad with a keyboard, Return makes a new
+  line and Command-Return sends. An iPhone's Return key makes a new line,
+  as today.
+- **Selection:** a selected row in the list draws its title, preview,
+  agent name and date in colours chosen for the selection's fill. Today
+  they keep the colours chosen for the plain background, and the preview
+  and the date are grey on purple.
+- **Records:** a record reads as one pill wherever it stands: inside a
+  reply's text, under "Linked records" and under a tool row. Today the
+  first is tinted link text and the other two are capsules with an icon.
 - **Reading width:** on an iPad and a Mac the transcript keeps a readable
   measure, about 680 points, however wide the window.
 
