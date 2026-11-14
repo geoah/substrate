@@ -6,13 +6,15 @@
  * record's id, never by a spelling.
  *
  * The records change on an install or an approval, so one cached read serves
- * every actor the console names. It walks every page: an actor is never
+ * every actor the console names. It walks every page (`walkPages`, so a
+ * cursor refused `compacted` starts the walk over): an actor is never
  * deleted, so a repository that installed and removed enough code holds
  * more than any one page, the disabled ones included, and History filters
  * and names a change by the whole set. */
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { walkPages } from "./compacted"
 import {
   CORE_AUTHORITY,
   CORE_PACKAGE,
@@ -86,27 +88,29 @@ export function actorInfoOf(record: SubstrateRecord): ActorInfo | undefined {
 export const actorsQueryOptions = queryOptions({
   queryKey: ["actors"],
   queryFn: async ({ signal }): Promise<ActorInfo[]> => {
+    const { pages } = await walkPages(
+      `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/actor`,
+      (after: string | undefined) =>
+        request<Page>(
+          "GET",
+          listPath({
+            authority: CORE_AUTHORITY,
+            package: CORE_PACKAGE_NAME,
+            name: "actor",
+            first: ACTORS_PAGE,
+            after,
+          }),
+          undefined,
+          { signal }
+        ),
+      (page) => page.cursor || undefined
+    )
     const out: ActorInfo[] = []
-    let after: string | undefined
-    do {
-      const page = await request<Page>(
-        "GET",
-        listPath({
-          authority: CORE_AUTHORITY,
-          package: CORE_PACKAGE_NAME,
-          name: "actor",
-          first: ACTORS_PAGE,
-          after,
-        }),
-        undefined,
-        { signal }
-      )
+    for (const page of pages)
       for (const record of page.records ?? []) {
         const info = actorInfoOf(record)
         if (info) out.push(info)
       }
-      after = page.cursor
-    } while (after)
     return out
   },
   staleTime: 5 * 60_000,

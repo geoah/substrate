@@ -118,6 +118,9 @@ func decode(args json.RawMessage, v any) error {
 // send makes one request and reads a REST refusal as the tool's.
 func send(ctx context.Context, api API, req Request) (json.RawMessage, error) {
 	res := api.Do(ctx, req)
+	if res.Status == http.StatusGone && refusalCode(res.Body) == "compacted" {
+		return nil, compactedRefusal(compact(res.Body))
+	}
 	if res.Status >= 400 {
 		return nil, refuse("the substrate answered %d: %s", res.Status, compact(res.Body))
 	}
@@ -125,6 +128,31 @@ func send(ctx context.Context, api API, req Request) (json.RawMessage, error) {
 		return json.RawMessage("{}"), nil
 	}
 	return res.Body, nil
+}
+
+// compactedRefusal is the substrate's 410 compacted: a cursor or a position
+// it can no longer resume. Its words are what the model does about it, since
+// sending the same cursor again is refused again.
+type compactedRefusal string
+
+func (r compactedRefusal) Error() string {
+	return "the substrate answered 410: " + string(r) + ". The cursor can no longer be resumed: start again from the first " +
+		"page (query without after; history without before and generation) and drop what you read with the old cursor. " +
+		"Start a walk over once: if any page of the walk you started over is refused too, the first or a later one, " +
+		"stop and tell the person the substrate could not resume it, rather than start again."
+}
+
+// refusalCode is the error code of a REST refusal's body, or "".
+func refusalCode(body []byte) string {
+	var e struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &e) != nil {
+		return ""
+	}
+	return e.Error.Code
 }
 
 func compact(b []byte) string {
@@ -302,12 +330,19 @@ type kindEntry struct {
 }
 
 // allKinds reads every kind declaration in reference order, a page at a
-// time, summarized: a repository holds a few hundred.
+// time, summarized: a repository holds a few hundred. A continuation the
+// substrate can no longer resume starts the walk again from the first page,
+// once, with what it read dropped; a second refusal is the tool's error.
 func allKinds(ctx context.Context, api API) ([]kindEntry, error) {
 	var out []kindEntry
-	after := ""
-	for range 20 {
+	after, restarted := "", false
+	for pages := 0; pages < 20; pages++ {
 		page, cursor, err := list(ctx, api, kindKind, nil, 500, after)
+		var compacted compactedRefusal
+		if err != nil && after != "" && !restarted && errors.As(err, &compacted) {
+			out, after, restarted, pages = nil, "", true, -1
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -385,7 +420,8 @@ func queryTool() Tool {
 			"reference properties whose targets come back under included; count answers the filtered set's size. q ranks within " +
 			"kinds by one or two distinctive words (mode hybrid, lexical or semantic). A filter bounding at on both ends is a " +
 			"window read, a repeating record's occurrences included. aggregate (with downsample) buckets measured values. Page with " +
-			"first and the cursor answered, passed back as after. The guide topic query has the grammar in full, with examples.",
+			"first and the cursor answered, passed back as after; a 410 compacted means list again from the first page. The guide " +
+			"topic query has the grammar in full, with examples.",
 		Input: object(map[string]any{
 			"kind":       kindArg,
 			"id":         str("a record id from an earlier result; with kind, reads that record"),
@@ -548,7 +584,8 @@ func historyTool() Tool {
 		Title: "Read the changes",
 		Description: "Read the changelog newest first: what changed, when, and which actor changed it. kind and id narrow it to " +
 			"one record, kinds to some kinds, actors to some actors; values adds each record's values before and after. Page with " +
-			"first: pass the page's cursor back as before and its generation as generation.",
+			"first: pass the page's cursor back as before and its generation as generation; a 410 compacted means read again " +
+			"from the newest page.",
 		Input: object(map[string]any{
 			"kind":       kindArg,
 			"id":         str("a record id; with kind, that record's changes"),

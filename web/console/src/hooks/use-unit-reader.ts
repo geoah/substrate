@@ -6,12 +6,14 @@
  * a unit or conversion record changes, each time the watch opens (a change
  * committed between the fetch and the watch's start reaches no stream), and
  * after a compaction, which ends the watch and starts a new one at the
- * head. */
+ * head, once a minute (RULE W, compacted.ts); a refusal within that minute
+ * stops the watch, and the graph stays as last read. */
 
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { watchChanges } from "@/lib/api/changes"
+import { nothingSaved, reportUnshown } from "@/lib/api/compacted"
 import { getRepository } from "@/lib/api/session"
 import {
   CONVERSION_KIND,
@@ -32,8 +34,12 @@ export function useUnitReader(): UnitReader {
   useEffect(() => {
     const queryKey = JSON.parse(key) as unknown[]
     const refetch = () => void queryClient.invalidateQueries({ queryKey })
+    const reader = `unit graph tail ${key}`
     const handle = watchChanges({
       filter: { kinds: [UNIT_KIND, CONVERSION_KIND] },
+      // The watch opens at the head and the graph names no position. No
+      // status line shows the units' watch yet.
+      reader: { key: reader, drop: nothingSaved, fail: reportUnshown(reader) },
       onRow: (row) => {
         if (unitRecordChanged(row.kind)) refetch()
       },

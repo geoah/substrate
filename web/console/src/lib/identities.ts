@@ -14,7 +14,7 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query"
 import {
   fetchRecordsPage,
   recordsQueryOptions,
-  type ListParams,
+  type FirstPageParams,
 } from "@/lib/api/records"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
@@ -254,7 +254,11 @@ class PickerTimeout extends Error {
 }
 
 /** One page read that gives up after `ms`, aborting the request with it. */
-async function pageWithin(params: ListParams, signal: AbortSignal, ms: number) {
+async function pageWithin(
+  params: FirstPageParams,
+  signal: AbortSignal,
+  ms: number
+) {
   const inner = new AbortController()
   const forward = () => inner.abort()
   signal.addEventListener("abort", forward)

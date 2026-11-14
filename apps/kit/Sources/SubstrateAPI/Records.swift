@@ -116,18 +116,48 @@ public extension SubstrateClient {
     }
 
     /// Every page of a read, up to `limit` rows, the first page's head kept.
+    /// A walk the server can no longer continue starts over once (`walk`).
     func listAll(_ query: ListQuery, limit: Int = 1000) async throws -> RecordPage {
-        var all = try await list(query)
-        var cursor = all.cursor
-        while let next = cursor, all.records.count < limit {
-            var q = query
-            q.after = next
-            let page = try await list(q)
-            all.records += page.records
-            cursor = page.cursor
+        var all = RecordPage(records: [])
+        try await walk(query) { page in
+            let read = try await list(page)
+            // The walk's first page, or the first page it starts over from.
+            if page.after == query.after || page.after == nil {
+                all = read
+            } else {
+                all.records += read.records
+                all.cursor = read.cursor
+            }
+            return all.records.count < limit ? read.cursor : nil
         }
-        all.cursor = cursor
         return all
+    }
+
+    /// Reads a list page by page from `query`'s page: `read` reads the page
+    /// it is handed and answers the cursor to go on from, nil to stop. A
+    /// page whose `after` the server can no longer resume (`410 compacted`),
+    /// the caller's own on the first read or the walk's on a later one,
+    /// hands `read` the list's first page, the same query with no `after`,
+    /// where it drops what it gathered, so a row is neither missed nor read
+    /// twice. That happens once per walk: a second `compacted` is thrown, so
+    /// a server that keeps answering it is a failure after one restart,
+    /// never a loop. A `compacted` on a page with no `after` has no position
+    /// to drop and is thrown as it is, as is any other refusal.
+    func walk(_ query: ListQuery, _ read: (ListQuery) async throws -> String?) async throws {
+        var page = query
+        var restarted = false
+        while true {
+            let cursor: String?
+            do {
+                cursor = try await read(page)
+            } catch let refusal as ServerError where refusal.isCompacted && page.after != nil && !restarted {
+                restarted = true
+                page.after = nil
+                continue
+            }
+            guard let cursor else { return }
+            page.after = cursor
+        }
     }
 
     private func write(

@@ -34,18 +34,20 @@ public struct WorkoutsAPI: Sendable {
     /// Every live record of the kinds, by list pages, to the end of the
     /// list. A read that must stop sooner names a
     /// limit and is told when it was reached (`ListTruncated`), never handed
-    /// a short list as if it were the whole.
+    /// a short list as if it were the whole. A walk the server can no longer
+    /// continue starts over once (`SubstrateClient.walk`).
     public func list(_ kinds: [String], properties: [String: JSONValue] = [:], limit: Int? = nil) async throws -> [FlatRecord] {
-        var query = ListQuery(kinds: kinds, properties: properties, first: 500)
         var out: [FlatRecord] = []
-        while true {
+        try await client.walk(ListQuery(kinds: kinds, properties: properties, first: 500)) { query in
             let response = try await client.send("GET", "api/v1/records", query: query.queryItems)
             let page = try JSONDecoder().decode(Page.self, from: response.data)
+            if query.after == nil { out = [] }
             out += try page.records.map { try Self.record($0) }
-            guard let cursor = page.cursor, !cursor.isEmpty else { return out }
+            guard let cursor = page.cursor, !cursor.isEmpty else { return nil }
             if let limit, out.count >= limit { throw ListTruncated(kinds: kinds, limit: limit) }
-            query.after = cursor
+            return cursor
         }
+        return out
     }
 
     /// A write: a PUT merges, a PATCH merges and clears what it sets to

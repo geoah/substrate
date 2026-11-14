@@ -18,7 +18,7 @@ How to read with query and history: one record, lists and the filter grammar, ra
  "orderBy": [{"property": "dueAt"}], "first": 20}
 ```
 
-The answer is `{records, cursor?, head, generation, included?, matches?, count?}`. Pass `cursor` back as `after` for the next page; no `cursor` means the last page. A cursor is bound to the filter and order it came from. `first` defaults to 20 here, at most 500.
+The answer is `{records, cursor?, head, generation, included?, matches?, count?}`. Pass `cursor` back as `after` for the next page; no `cursor` means the last page. A cursor is bound to the filter and order it came from; on `410 compacted`, list again from the first page. `first` defaults to 20 here, at most 500.
 
 ### The filter
 
@@ -30,15 +30,15 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 - `ids`: a list of ids within the selected kinds.
 - `properties`: `{name: condition}` over declared properties, state properties included.
 - `labels`: `{"owner/starred": {"eq": true}}`, the same conditions, never a bare value.
-- `search`: words against each record's search index, all indexed text at once. A predicate: it keeps your order and says nothing about rank.
-- `deleted`: `true` lists only tombstones; absent lists only live records.
+- `search`: words against all of a record's indexed text. A predicate: it keeps your order and says nothing about rank.
+- `deleted`: `true` lists only tombstones; absent, only live records.
 - `referencing`: `{"ref": "<kind>/<id>", "property": "project"}` (property optional), or `{"refs": [up to 256]}`: the records that point at those. The page adds `matches`: per record, the property (and nested `path`) that points.
 
 ### Conditions
 
 - `eq`, `in` (a list), `gt`, `gte`, `lt`, `lte`, `prefix`, `contains` (an item of a repeated property), `exists` (`true`/`false`), `match` (words in one text property).
 - A reference takes `eq`, `in`, `contains`, `exists`, with `"<kind>/<id>"` values. A `secret` takes none and never orders.
-- `match` applies to string-family and prose properties (`string`, `email`, `url`, `text`, `markdown`…), `title` and labels; a number, instant, state or reference has no words.
+- `match` applies to string-family and prose properties (`string`, `email`, `url`, `text`, `markdown`…), `title` and labels; a number, instant, state or reference has none.
 - Instants are RFC 3339: one day is `{"at": {"gte": "2026-11-08T00:00:00Z", "lt": "2026-11-09T00:00:00Z"}}`.
 - Only declared properties filter and order.
 
@@ -48,9 +48,9 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 
 ### Order, expand, count
 
-- `orderBy`: a list of `{"property", "desc"}`. A declared property, `at`, `endsAt`, `dueAt`, `createdAt` or `updatedAt`, camelCase. Absent, a list is newest first (`createdAt` descending).
+- `orderBy`: a list of `{"property", "desc"}`. A declared property, `at`, `endsAt`, `dueAt`, `createdAt` or `updatedAt`, camelCase. Absent, newest first (`createdAt` descending).
 - `expand`: reference property names a selected kind declares; their targets come back once each under `included`, keyed `"<kind>/<id>"`. One hop.
-- `count: true` adds `count`, the size of the whole filtered set, whatever page you are on. `first: 1` with it answers the count alongside at most one record.
+- `count: true` adds `count`, the size of the whole filtered set. `first: 1` with it answers the count and at most one record.
 
 ## Ranked search
 
@@ -59,8 +59,8 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 ```
 
 - Name the kinds that would hold the answer. A ranked read narrows by `kinds` and `purposes` alone: any other filter arm, `orderBy`, `expand`, `after` and `count` are refused.
-- `q` is one or two distinctive words (a name, a code, a number, a place), never a sentence or a list of common words.
-- `mode`: `hybrid` (default), `lexical` or `semantic`. Semantic needs an embeddings provider; hybrid answers from words without one.
+- `q` is one or two distinctive words (a name, a code, a number, a place), never a sentence.
+- `mode`: `hybrid` (default), `lexical` or `semantic`. Semantic needs an embeddings provider; hybrid works without one.
 - The answer is `{records, scores, pending, capped?, note?}` in rank order, no cursor. `capped` with a `note` says the ranking is partial: use rarer words or fewer kinds.
 - To narrow by property too, list with `filter.search` instead.
 
@@ -112,7 +112,7 @@ The answer is `{metric?, property?, unit?, bucket?, exact, rows: [{start, end, g
 `history` reads changes newest first: `{changes: [{seq, ts, actor, op, kind, recordId, affected}], cursor?, head, generation}`.
 
 - `kind` + `id`: one record's changes. `kinds`, `actors` narrow. `values: true` adds the values before and after.
-- Next page: pass `cursor` as `before` and the page's `generation` beside it.
+- Next page: pass `cursor` as `before` and the page's `generation` beside it; on `410 compacted`, start again from the newest page.
 - `op` is `put`, `patch`, `delete`, `merge` or `split`; `actor` is a `core/actor` record's id.
 
 ## Recipes

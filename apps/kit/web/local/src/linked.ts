@@ -72,11 +72,20 @@ export interface LinkedRecordsOptions {
   /** The waits before a record whose read failed is read again by itself,
    * in ms: one per try, then none until something else reads it. */
   readRetryDelays?: readonly number[]
+  /** The clock the recovery allowance reads, in ms; `Date.now` unless a
+   * test steps it. */
+  now?: () => number
 }
 
 const signedOutWords = "Your access to this server ended. Sign in again."
 const noRecords: ReadonlyMap<string, SubstrateRecord> = new Map()
 const defaultReadRetryDelays = [1_000, 3_000, 10_000, 30_000]
+/** ONE RECOVERY A MINUTE. A watch refused as `compacted` reads everything
+ * again and follows from the head that read gives; another refusal within
+ * this long of that recovery's start is the failure, shown as one, never a
+ * second read. Only the minute passing makes the allowance whole: no
+ * bookmark, landed read or delivered change does. */
+const recoveryAllowance = 60_000
 /** The most records kept known absent; the oldest go first, and one asked
  * for again is read again. */
 const absentLimit = 1_000
@@ -234,6 +243,10 @@ export class LinkedRecords {
   /** The page came back to the front, or online, while a list ran: a
    * follow that paused or ended meanwhile goes when the list is done. */
   private woken = false
+  /** When the last recovery from a `compacted` watch started, by `now`
+   * (recoveryAllowance). */
+  private recoveryStartedAt?: number
+  private readonly now: () => number
   private collected = new Set<string>()
   /** Each record's read in flight, by ticket: one removed or replaced is
    * answered into nothing. */
@@ -257,6 +270,7 @@ export class LinkedRecords {
     this.limit = opts.limit ?? 10_000
     this.followOptions = opts.follow
     this.readRetryDelays = opts.readRetryDelays ?? defaultReadRetryDelays
+    this.now = opts.now ?? Date.now
     this.takeQueue()
     this.statusShot = this.makeStatus()
   }
@@ -675,12 +689,28 @@ export class LinkedRecords {
           if (!this.listing) this.setStatus("live")
           break
         }
-        case "relist":
+        case "relist": {
+          const at = this.now()
+          if (
+            this.recoveryStartedAt !== undefined &&
+            at - this.recoveryStartedAt < recoveryAllowance
+          ) {
+            this.watchState = "ended"
+            this.cursor = undefined
+            this.cache?.relist()
+            this.setStatus(
+              "error",
+              `Your ${this.kept} are not being updated: the server could not resume their history even after reading them again`
+            )
+            break
+          }
+          this.recoveryStartedAt = at
           this.cursor = undefined
           this.cache?.relist()
           this.forgetAbsent()
           this.connect()
           break
+        }
         case "interrupted":
           this.watchState = "paused"
           // A watch that cannot open holds back neither the records nor why
@@ -793,6 +823,17 @@ export class LinkedRecords {
           "needsApproval",
           `Your approval does not reach your ${this.kept}.`
         )
+      // A read the server could not resume even from its first page
+      // (listAll restarts once) is a failure shown as one: it is tried again
+      // when the page comes back or the network does, never on a timer.
+      if (e instanceof SubstrateError && e.compacted) {
+        this.watch?.abort()
+        this.watchState = "ended"
+        return this.setStatus(
+          "error",
+          `Your ${this.kept} are not being updated: ${describe(e)}`
+        )
+      }
       this.setStatus("reconnecting", describe(e))
       if (bookmark)
         this.listRetry = setTimeout(() => {

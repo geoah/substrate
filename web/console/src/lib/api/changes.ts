@@ -24,8 +24,18 @@
  * NOT on the wire: it rides the seek above. A `kind` is a reference
  * (`<authority>/<name>`); its `/` percent-encodes as `%2F` in the query. */
 
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
+import {
+  infiniteQueryOptions,
+  queryOptions,
+  type QueryClient,
+} from "@tanstack/react-query"
 
+import {
+  nothingSaved,
+  recoverOrFail,
+  startOverWhenRefused,
+  type ResumingReader,
+} from "./compacted"
 import { rootPath, envelopeError, request } from "./http"
 import { getToken, sessionExpired } from "./session"
 import {
@@ -153,10 +163,9 @@ export async function fetchChangesPage(opts: {
 
 export interface ChangesFeedOpts {
   first?: number
-  /** Start below this seq (a time seek's answer); 0 = the head. */
-  startBefore?: number
-  /** The generation `startBefore` was read under; required with one above 0. */
-  startGeneration?: string
+  /** History until this instant: the first page reads below the time seek's
+   * answer (`seekQueryOptions`) instead of from the head. */
+  untilMs?: number
   /** Stop paging once a page reaches rows older than this instant — the
    * client half of the time range the wire cannot express. */
   sinceMs?: number
@@ -174,11 +183,8 @@ export function changesInfiniteOptions(
   opts: ChangesFeedOpts = {}
 ) {
   const first = opts.first ?? CHANGELOG_PAGE
-  const startBefore = opts.startBefore ?? 0
-  const start: HistoryPosition = {
-    before: startBefore,
-    generation: opts.startGeneration,
-  }
+  const { untilMs } = opts
+  const start: HistoryPosition = { before: 0 }
   return infiniteQueryOptions({
     queryKey: [
       "changes",
@@ -186,19 +192,22 @@ export function changesInfiniteOptions(
       filterKey(filter),
       {
         first,
-        startBefore,
-        startGeneration: opts.startGeneration ?? null,
+        untilMs: untilMs ?? null,
         sinceMs: opts.sinceMs ?? null,
       },
     ],
-    queryFn: ({ pageParam, signal }) =>
-      fetchChangesPage({
-        before: pageParam.before > 0 ? pageParam.before : undefined,
-        generation: pageParam.generation,
-        first,
-        filter,
-        signal,
-      }),
+    queryFn: ({ pageParam, signal, client }) =>
+      pageParam.before > 0
+        ? fetchChangesPage({
+            before: pageParam.before,
+            generation: pageParam.generation,
+            first,
+            filter,
+            signal,
+          })
+        : untilMs === undefined
+          ? fetchChangesPage({ first, filter, signal })
+          : fetchPageUntil(client, untilMs, { first, filter, signal }),
     initialPageParam: start,
     getNextPageParam: (last): HistoryPosition | undefined => {
       // The server cursor is the continuation (it advances past scope-filtered
@@ -216,6 +225,37 @@ export function changesInfiniteOptions(
       return { before: last.cursor, generation: last.generation }
     },
   })
+}
+
+/** The first page of history until an instant, read below the time seek's
+ * answer. The answer is cached without expiry, so it is a position the
+ * console kept: a page refused `compacted` drops it, never to send it again,
+ * and the read seeks again under the walk's allowance
+ * (`startOverWhenRefused`), keyed by the instant and the filter. */
+function fetchPageUntil(
+  client: QueryClient,
+  untilMs: number,
+  page: { first: number; filter: ChangeFeedFilter; signal: AbortSignal }
+): Promise<ChangePage> {
+  return startOverWhenRefused(
+    {
+      key: `page until ${untilMs} ${JSON.stringify(filterKey(page.filter))}`,
+      drop: () =>
+        client.removeQueries({
+          queryKey: seekQueryOptions(untilMs).queryKey,
+          exact: true,
+        }),
+    },
+    async (resuming) => {
+      const at = await client.fetchQuery(seekQueryOptions(untilMs))
+      resuming()
+      return fetchChangesPage({
+        before: at.before,
+        generation: at.generation,
+        ...page,
+      })
+    }
+  )
 }
 
 // ── run summaries ───────────────────────────────────────────────────────────
@@ -411,19 +451,27 @@ export async function seekBoundary(
 export function seekQueryOptions(untilMs: number) {
   return queryOptions({
     queryKey: ["changes", "seek", untilMs],
-    queryFn: async ({ signal }): Promise<HistoryPosition> => {
-      const headPage = await fetchChangesPage({ first: 1, signal })
-      const generation = headPage.generation
-      const one = async (before: number) =>
-        (await fetchChangesPage({ before, generation, first: 1, signal }))
-          .changes[0]
-      const before = await seekBoundary(
-        async (maxSeq) => one(maxSeq + 1),
-        headPage.changes[0],
-        untilMs
-      )
-      return { before, generation }
-    },
+    // The probes resume the head page's generation: a restore while they
+    // run refuses one, and the seek starts over from a fresh head.
+    queryFn: ({ signal }): Promise<HistoryPosition> =>
+      // The head page is the run's own: nothing outlives a refused one.
+      startOverWhenRefused(
+        { key: `seek ${untilMs}`, drop: nothingSaved },
+        async (resuming) => {
+          const headPage = await fetchChangesPage({ first: 1, signal })
+          const generation = headPage.generation
+          resuming()
+          const one = async (before: number) =>
+            (await fetchChangesPage({ before, generation, first: 1, signal }))
+              .changes[0]
+          const before = await seekBoundary(
+            async (maxSeq) => one(maxSeq + 1),
+            headPage.changes[0],
+            untilMs
+          )
+          return { before, generation }
+        }
+      ),
     staleTime: Infinity,
   })
 }
@@ -434,7 +482,8 @@ export function seekQueryOptions(untilMs: number) {
  * below the retention horizon, or the history was replaced and its generation
  * is not the server's); the client must re-list from a fresh head. `stopped`
  * = a terminal error frame (or a non-retriable open failure) ended the
- * stream, with no silent reconnect loop. */
+ * stream, with no silent reconnect loop; so does a `compacted` within a
+ * minute of the start of the reader's last recovery (RULE W, compacted.ts). */
 export type WatchStatus =
   "connecting" | "live" | "retrying" | "compacted" | "stopped" | "off"
 
@@ -530,17 +579,31 @@ export function watchChanges(opts: {
   filter?: ChangeFeedFilter
   onRow: (row: ChangeRow) => void
   onStatus?: (status: WatchStatus, detail?: string) => void
-  /** Fired on a `compacted` signal — the caller re-lists and re-subscribes
-   * from the fresh head. */
-  onCompacted?: () => void
+  /** Who resumes this watch's position, under RULE W (compacted.ts): the
+   * key of its allowance (what it follows, which a watch opened again for
+   * its recovery keeps), what it drops at a refusal and how it shows the
+   * failure. */
+  reader: ResumingReader
+  /** The recovery, on a `compacted` that starts one: the caller reads again
+   * what it shows and opens a watch at the head. */
+  onCompacted: () => void
 }): WatchHandle {
   const ctrl = new AbortController()
   let cursor = opts.from
   let generation = opts.generation
 
-  const compacted = (detail: string) => {
-    opts.onStatus?.("compacted", detail)
-    opts.onCompacted?.()
+  // RULE W: a `compacted` within a minute of the start of the reader's last
+  // recovery, by this watch or an earlier one under its key, is the failure,
+  // reported as `stopped` with the server's words, never another re-list, so
+  // a server that keeps refusing cannot drive a loop. One later than that is
+  // a new recovery, whatever the stream delivered between.
+  const compacted = (refusal: ApiError) => {
+    if (!recoverOrFail(opts.reader, refusal)) {
+      opts.onStatus?.("stopped", refusal.message)
+      return
+    }
+    opts.onStatus?.("compacted", refusal.message)
+    opts.onCompacted()
   }
 
   void (async () => {
@@ -571,8 +634,7 @@ export function watchChanges(opts: {
         // An unresumable cursor is refused before the stream opens (a 410, not
         // a frame). Re-listing is the only recovery — do not reconnect in a loop.
         if (res.status === 410) {
-          const err = envelopeError(res.status, await parseBody(res))
-          compacted(err.message)
+          compacted(envelopeError(res.status, await parseBody(res)))
           return
         }
         if (!res.ok || !res.body) {
@@ -605,7 +667,16 @@ export function watchChanges(opts: {
               // reconnect would hammer a stream the server just closed. An
               // `auth` frame is the stream's token ending (revoked, or a sign
               // out everywhere): the session is over, as on a 401.
-              if (line.error.code === "compacted") compacted(line.error.message)
+              if (line.error.code === "compacted")
+                compacted(
+                  new ApiError(
+                    "compacted",
+                    line.error.message,
+                    410,
+                    line.error.problems,
+                    line.error.problemDetails
+                  )
+                )
               else if (line.error.code === "auth") {
                 sessionExpired()
                 opts.onStatus?.("off", "session expired")

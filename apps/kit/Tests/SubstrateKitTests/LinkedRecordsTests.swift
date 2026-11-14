@@ -18,6 +18,13 @@ private let online = LinkSnapshot(
     phase: .signedIn, server: URL(string: "https://ada.example.com")!, repository: "ada.example.com",
     online: true)
 
+/// The instant the first refusal in a test is met.
+private let refusedAt = Date(timeIntervalSince1970: 1_793_696_400)
+
+/// Why the notes are not being updated once a refusal came within a minute
+/// of the last read again.
+private let notResumed = "the server could not resume their history even after reading them again"
+
 private func linked() -> LinkedRecords {
     LinkedRecords(kinds: [noteKind], cache: nil, outbox: nil, words: StatusWords(app: "Notes", device: "this iPhone", kept: "notes"))
 }
@@ -97,7 +104,7 @@ struct LinkedRecordsTests {
         #expect(stepper.state.phase == .following)
         // A relist reads again, even one from the read itself.
         _ = stepper.step(.refreshAsked)
-        #expect(stepper.step(.relistNeeded) == [.read(over: [noteKind])])
+        #expect(stepper.step(.relistNeeded(at: refusedAt)) == [.read(over: [noteKind])])
     }
 
     @Test func aNewTokenReplacesTheRunningWatchAndRead() {
@@ -186,6 +193,61 @@ struct LinkedRecordsTests {
         #expect(stepper.step(.linked(online)).contains(.reread([key])))
         _ = stepper.step(.changed(key, note("n1", "Milk")))
         #expect(stepper.state.stale.isEmpty)
+    }
+
+    @Test func aWatchRefusedAgainAtTheHeadItsReadGaveIsAFailureNotAnotherRead() {
+        var stepper = Stepper()
+        let saved = WatchCursor(seq: 1, generation: "g")
+        _ = stepper.step(.loaded([], cursor: saved, queue: []))
+        _ = stepper.step(.linked(online))
+        // The saved position is refused: the kinds are read again.
+        #expect(stepper.step(.relistNeeded(at: refusedAt)) == [.read(over: [noteKind])])
+        let head = WatchCursor(seq: 9, generation: "g2")
+        #expect(stepper.step(.listed([note("n1", "Milk")], cursor: head)) == [.follow(head, over: [noteKind])])
+        // The watch at the head just read is refused too: no third read.
+        #expect(!stepper.step(.relistNeeded(at: refusedAt)).contains(.read(over: [noteKind])))
+        #expect(
+            stepper.records.notice(stepper.state)?.text
+                == "Your notes are not being updated: the server could not resume their history even after reading them again")
+        // The app coming to the front tries again, from a read: the head the
+        // server refused is never sent again.
+        #expect(stepper.state.cursor == nil)
+        #expect(stepper.step(.foregrounded) == [.read(over: [noteKind])])
+    }
+
+    /// One recovery a minute: the watch opening at the head the read gave
+    /// (its bookmark) does not make the allowance whole again, so a refusal
+    /// within the minute is the failure, never a second read.
+    @Test func aWatchRefusedWithinAMinuteOfItsReadAgainIsAFailureEvenAfterItOpened() {
+        var stepper = Stepper()
+        _ = stepper.step(.loaded([], cursor: WatchCursor(seq: 1, generation: "g"), queue: []))
+        _ = stepper.step(.linked(online))
+        #expect(stepper.step(.relistNeeded(at: refusedAt)) == [.read(over: [noteKind])])
+        let head = WatchCursor(seq: 9, generation: "g2")
+        _ = stepper.step(.listed([note("n1", "Milk")], cursor: head))
+        #expect(stepper.step(.watchOpened(head)).isEmpty)
+        #expect(stepper.step(.relistNeeded(at: refusedAt.addingTimeInterval(59))).isEmpty)
+        #expect(stepper.state.phase == .stopped(.refused, notResumed))
+        #expect(stepper.state.cursor == nil)
+    }
+
+    /// The minute past, a refusal is a recovery again, whatever happened
+    /// between: here the read again's watch never opened.
+    @Test func aWatchRefusedAnHourAfterItsReadAgainIsReadAgain() {
+        var stepper = Stepper()
+        _ = stepper.step(.loaded([], cursor: WatchCursor(seq: 1, generation: "g"), queue: []))
+        _ = stepper.step(.linked(online))
+        #expect(stepper.step(.relistNeeded(at: refusedAt)) == [.read(over: [noteKind])])
+        // Listed while the watch could not open, which it keeps trying.
+        _ = stepper.step(.listed([note("n1", "Milk")], cursor: nil))
+        _ = stepper.step(.watchInterrupted("The server could not be reached."))
+        let later = refusedAt.addingTimeInterval(3600)
+        #expect(stepper.step(.relistNeeded(at: later)) == [.read(over: [noteKind])])
+        #expect(stepper.state.phase == .reading)
+        // The read that recovery started is refused within its minute: the
+        // failure, and no read asked for again.
+        #expect(stepper.step(.relistNeeded(at: later.addingTimeInterval(30))).isEmpty)
+        #expect(stepper.state.phase == .stopped(.refused, notResumed))
     }
 
     @Test func aWatchStoppedForGoodOpensAgainOnlyWhenItsReasonMayBeGone() {

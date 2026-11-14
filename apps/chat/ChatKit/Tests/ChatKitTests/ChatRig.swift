@@ -27,6 +27,17 @@ let agentsJSON =
 
 let emptyPage = #"{"head":10,"generation":"g","records":[]}"#
 
+let otherAgent = "x.example.com/pkg/other"
+
+/// One agent, as a list carries it.
+func agentJSON(_ id: String) -> String {
+    #"{"id":"\#(id)","kind":"substrate.reamde.dev/core/agent","version":1,"createdAt":"2026-10-30T10:00:00Z","updatedAt":"2026-10-30T10:00:00Z","properties":{"description":"Helps."}}"#
+}
+
+/// The answer to a cursor the server can no longer resume.
+let compactedJSON =
+    #"{"error":{"code":"compacted","message":"the cursor can no longer be resumed: list again","head":10,"generation":"g"}}"#
+
 let replyStream = [
     #"{"kind":"thread","thread":"t1"}"#,
     #"{"kind":"delta","text":"Hel","turn":1}"#,
@@ -55,15 +66,21 @@ struct ChatRig {
     let clock = TestClock()
     let notifications = RecordedNotifications()
     let background = ScriptedBackground()
-    let base = temporaryFolder("chat")
+    let base: URL
     let storage: ChatStorage
     let preferences = MemoryPreferenceStore()
     let harness: ControllerHarness<ChatApp>
     let scopes: [String]?
 
-    init(_ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos) {
+    /// - Parameter base: the folder the device keeps its repositories in; a
+    ///   rig over another's is the app launched again.
+    init(
+        _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
+        base: URL = temporaryFolder("chat")
+    ) {
         server = ChatServer(routes)
         self.scopes = scopes
+        self.base = base
         storage = ChatStorage(base: base)
         let client = SubstrateClient(server: origin, token: "secret", transport: server)
         let environment = AppEnvironment(

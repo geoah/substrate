@@ -21,6 +21,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { releaseHeldBlobs, restoreHeldBlobs } from "./blobs"
 import { fetchChangesPage, type HistoryPosition } from "./changes"
+import { walkPages } from "./compacted"
 import {
   CORE_PACKAGE,
   collectionPath,
@@ -155,14 +156,20 @@ export async function fetchRecordsPage(
   }
 }
 
-export function recordsQueryOptions(p: ListParams) {
+/** A list read that resumes no position: the first page, or a numbered one
+ * (`offset`), never one at an `after` cursor. A cached query is not a walk,
+ * so a cursor kept in its key would be resent after the server stopped
+ * holding it; a list paged by cursor is an infinite query or a `walkPages`,
+ * under RULE W (compacted.ts). */
+export type FirstPageParams = ListParams & { after?: undefined }
+
+export function recordsQueryOptions(p: FirstPageParams) {
   return queryOptions({
     queryKey: [
       "records",
       scopeKinds(p),
       {
         first: p.first ?? 50,
-        after: p.after ?? null,
         offset: p.offset ?? null,
         filter: listFilter(p) ?? null,
         orderBy: p.orderBy ?? null,
@@ -463,27 +470,27 @@ async function walkCount(
   filter: RecordFilter | undefined,
   signal?: AbortSignal
 ): Promise<RecordCount> {
-  let value = 0
-  let after: string | undefined
-  for (let page = 0; page < COUNT_MAX_PAGES; page++) {
-    const res = await request<Page>(
-      "GET",
-      listPath({
-        authority,
-        package: pkg,
-        name,
-        first: COUNT_PAGE,
-        after,
-        filter,
-      }),
-      undefined,
-      { signal }
-    )
-    value += res.records?.length ?? 0
-    if (!res.cursor) return { value, capped: false }
-    after = res.cursor
-  }
-  return { value, capped: true }
+  const { pages, complete } = await walkPages(
+    `count ${authority}/${pkg}/${name} ${JSON.stringify(filter ?? null)}`,
+    (after: string | undefined) =>
+      request<Page>(
+        "GET",
+        listPath({
+          authority,
+          package: pkg,
+          name,
+          first: COUNT_PAGE,
+          after,
+          filter,
+        }),
+        undefined,
+        { signal }
+      ),
+    (res) => res.cursor || undefined,
+    COUNT_MAX_PAGES
+  )
+  const value = pages.reduce((n, res) => n + (res.records?.length ?? 0), 0)
+  return { value, capped: !complete }
 }
 
 /** How long a count is trusted before it is asked again. */
@@ -894,23 +901,23 @@ async function fetchRecordHistory(
   recordKind: string,
   signal?: AbortSignal
 ): Promise<ChangeRow[]> {
-  const rows: ChangeRow[] = []
-  let before: number | undefined
-  let generation: string | undefined
-  for (let page = 0; page < FORMER_SLICE_MAX_PAGES; page++) {
-    const res = await fetchChangesPage({
-      before,
-      generation,
-      first: FORMER_SLICE_PAGE,
-      filter: { recordId, recordKind, values: true },
-      signal,
-    })
-    rows.push(...res.changes)
-    if (res.cursor === undefined) break
-    before = res.cursor
-    generation = res.generation
-  }
-  return rows
+  const { pages } = await walkPages(
+    `history ${recordKind}/${recordId}`,
+    (at: HistoryPosition | undefined) =>
+      fetchChangesPage({
+        before: at?.before,
+        generation: at?.generation,
+        first: FORMER_SLICE_PAGE,
+        filter: { recordId, recordKind, values: true },
+        signal,
+      }),
+    (res) =>
+      res.cursor === undefined
+        ? undefined
+        : { before: res.cursor, generation: res.generation },
+    FORMER_SLICE_MAX_PAGES
+  )
+  return pages.flatMap((res) => res.changes)
 }
 
 /** The history a merge hid: the wire's `recordId` scope follows one id (plus

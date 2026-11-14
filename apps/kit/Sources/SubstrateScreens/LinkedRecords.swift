@@ -54,7 +54,10 @@ public struct LinkedRecords: Equatable, Sendable {
         case watchOpened(WatchCursor)
         case watchInterrupted(String)
         case watchEnded(WatchStop, String)
-        case relistNeeded
+        /// The watch's position was refused as `compacted`, at this instant
+        /// on the app's clock: the kinds are read again, once a minute
+        /// (`WatchFollower.recovers`).
+        case relistNeeded(at: Date)
         /// The outbox's queue, and the writes it took since it opened.
         case queueReported([OutboxEntry], landed: Set<UUID>)
         case enqueued(Set<UUID>, queue: [OutboxEntry], landed: Set<UUID>)
@@ -70,6 +73,10 @@ public struct LinkedRecords: Equatable, Sendable {
         /// over them.
         case rekinded([String])
     }
+
+    /// Why the records are not being updated when the server refuses, as
+    /// `compacted`, a watch within a minute of the read again it answered.
+    static let notResumed = "the server could not resume their history even after reading them again"
 
     public enum Effect: Equatable, Sendable {
         case load
@@ -185,8 +192,14 @@ public struct LinkedRecords: Equatable, Sendable {
             next.phase = .interrupted(words)
         case let .watchEnded(stop, words):
             next.phase = .stopped(stop, words)
-        case .relistNeeded:
+        case let .relistNeeded(at):
+            // Refused, the position is never sent again, read again or not.
             next.cursor = nil
+            guard WatchFollower.recovers(at: at, after: state.recoveryStarted) else {
+                next.phase = .stopped(.refused, Self.notResumed)
+                break
+            }
+            next.recoveryStarted = at
             next.phase = .reading
         case let .queueReported(entries, landed):
             report(entries, confirming: [], landed: landed, into: &next)
@@ -301,7 +314,8 @@ public struct LinkedRecords: Equatable, Sendable {
     /// What an applied event asks for. The read and the watch follow the
     /// phase it moved: to reading, a read; to following, a watch, unless it
     /// is the watch itself opened again; from running to idle, the watch
-    /// stopped. A relist reads again whatever the phase was. A write goes to
+    /// stopped. A relist reads again whatever the phase was, unless it came
+    /// within a minute of the last and stopped the read. A write goes to
     /// the outbox, and a record a write of which left the queue, or whose
     /// read failed, is read again.
     public func effects(of event: Event, on state: State, from previous: State) -> [Effect] {
@@ -331,7 +345,7 @@ public struct LinkedRecords: Equatable, Sendable {
                 default: break
                 }
             }
-        case .relistNeeded where previous.phase == .reading:
+        case .relistNeeded where previous.phase == .reading && state.phase == .reading:
             out.append(.read(over: kinds(in: state)))
         case .rekinded where state.kinds != previous.kinds:
             // The queue was kept to the old set: the outbox says what of it
@@ -391,6 +405,7 @@ public struct LinkedRecords: Equatable, Sendable {
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
         let (cache, outbox, line, words) = (cache, outbox, line, words)
         let source = environment.client
+        let clock = environment.clock
         switch effect {
         case .load:
             return .once {
@@ -441,7 +456,7 @@ public struct LinkedRecords: Equatable, Sendable {
                         return
                     case .relist:
                         await cache?.relist()
-                        continuation.yield(.relistNeeded)
+                        continuation.yield(.relistNeeded(at: clock.now))
                         return
                     case .row:
                         continue
@@ -474,7 +489,7 @@ public struct LinkedRecords: Equatable, Sendable {
                         // Dropped here, or the read would resume from the
                         // cursor the server just refused.
                         await cache?.relist()
-                        continuation.yield(.relistNeeded)
+                        continuation.yield(.relistNeeded(at: clock.now))
                     case let .interrupted(reason):
                         continuation.yield(.watchInterrupted(reason))
                     case let .ended(end):

@@ -75,7 +75,18 @@ lists after its bookmark (an app token's lists carry no head, decision
 the feed. The cache keeps the cursor with the records, the rows it moved
 past and the kinds it listed under it in one transaction, so a reload
 resumes where it was and reads again what it had not. A 410, a `compacted`
-frame, or a kind the app shows that the cache never listed relists. A save
+frame, or a kind the app shows that the cache never listed relists: the
+kept cursor is dropped, everything is listed again, and the watch follows
+from where that list began. That recovery happens at most once a minute:
+another `compacted` within 60 seconds of the last recovery's start is a
+failure, not another relist, whatever came between (a bookmark, the list
+landing, a change). The status is `error` with words that say the records
+are not being updated, the refused cursor is dropped, and it is tried
+again, from a fresh list, when the page comes back or the network does.
+After a minute with no refusal the next one is recovered again. The clock
+is the `now` option, which a test steps. So is a list refused `compacted` even
+after `listAll` started it over from the first page; a refusal part way
+that the restart cures shows nothing. A save
 that fails is kept and written with the next, or tried once more a few
 seconds later while nothing changes, so the kept cursor never passes a
 change the kept records lack. A record's read answered after its removal,

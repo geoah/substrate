@@ -246,7 +246,7 @@ func TestCallAtDepthCapRefuses(t *testing.T) {
 		inv: &invocation{ds: ds, stack: []string{"widgets.test.dev/widgets/root"}},
 		fn:  fn, key: "k", causalDepth: causalDepthCap - 1,
 	}
-	if _, err := deep.Call(ctx, ident, nil); !errors.Is(err, errCausalDepth) {
+	if _, _, err := deep.Call(ctx, ident, nil); !errors.Is(err, errCausalDepth) {
 		t.Fatalf("call at the cap returned %v, want errCausalDepth", err)
 	}
 
@@ -254,7 +254,7 @@ func TestCallAtDepthCapRefuses(t *testing.T) {
 		inv: &invocation{ds: ds, stack: []string{ident}},
 		fn:  fn, key: "k",
 	}
-	if _, err := cyclic.Call(ctx, ident, nil); err == nil || !strings.Contains(err.Error(), "recursion") {
+	if _, _, err := cyclic.Call(ctx, ident, nil); err == nil || !strings.Contains(err.Error(), "recursion") {
 		t.Fatalf("recursive call returned %v", err)
 	}
 }

@@ -14,7 +14,7 @@ import {
   fetchRecord,
   fetchRecordsPage,
   recordsQueryOptions,
-  type ListParams,
+  type FirstPageParams,
 } from "./records"
 import {
   collectionPath,
@@ -26,6 +26,7 @@ import {
   envelopeError,
   request,
 } from "./http"
+import { walkPages } from "./compacted"
 import { getToken, sessionExpired } from "./session"
 import {
   ApiError,
@@ -219,7 +220,7 @@ export function modelKindUnknown(error: unknown): boolean {
  * server older than the kind holds no model records, and its rows price from
  * their own entries alone, so its refusal reads as no records. */
 export function llmModelsQueryOptions(enabled = true) {
-  const params: ListParams = {
+  const params: FirstPageParams = {
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "model",
@@ -229,15 +230,17 @@ export function llmModelsQueryOptions(enabled = true) {
     ...recordsQueryOptions(params),
     queryFn: async ({ signal }): Promise<Page> => {
       try {
-        const first = await fetchRecordsPage(params, signal)
-        const records = [...first.records]
-        let after = first.cursor
-        while (after) {
-          const page = await fetchRecordsPage({ ...params, after }, signal)
-          records.push(...page.records)
-          after = page.cursor
+        const { pages } = await walkPages(
+          `${CORE_AUTHORITY}/${LLM_PACKAGE_NAME}/model`,
+          (after: string | undefined) =>
+            fetchRecordsPage({ ...params, after }, signal),
+          (page) => page.cursor || undefined
+        )
+        return {
+          records: pages.flatMap((page) => page.records),
+          head: pages[0].head,
+          generation: pages[0].generation,
         }
-        return { records, head: first.head, generation: first.generation }
       } catch (error) {
         if (modelKindUnknown(error))
           return { records: [], head: 0, generation: "" }
@@ -291,7 +294,7 @@ export function threadMessagesQueryOptions(threadId: string) {
   })
 }
 
-function threadMessagesParams(threadId: string): ListParams {
+function threadMessagesParams(threadId: string): FirstPageParams {
   return {
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,

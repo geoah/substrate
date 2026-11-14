@@ -66,6 +66,7 @@ export class FakeSubstrate {
   private rows: Row[] = []
   private seq = 0
   private failures: Failure[] = []
+  private refusedCursors = 0
   private watchers = new Set<{
     kinds: string[]
     push: (line: string) => void
@@ -88,6 +89,14 @@ export class FakeSubstrate {
     times = 1
   ): void {
     this.failures.push({ ...match, status, body, headers, times })
+  }
+
+  /** Refuses the next `times` list continuations (a list with `after`)
+   * with `410 compacted`, as a server does that can no longer resume a
+   * cursor: a restore, or an upgrade that changed the order it was cut in.
+   * Without a head, as an app token's refusal is. */
+  refuseCursors(times = 1): void {
+    this.refusedCursors += times
   }
 
   /** A record written by someone else, as the server would hold it. */
@@ -244,6 +253,14 @@ export class FakeSubstrate {
   }
 
   private list(url: URL): Response {
+    if (url.searchParams.get("after") && this.refusedCursors > 0) {
+      this.refusedCursors--
+      return refused(
+        410,
+        "compacted",
+        "the cursor was minted by another version of the server's paging; list again from the first page"
+      )
+    }
     const filter = JSON.parse(url.searchParams.get("filter") ?? "{}") as {
       kinds?: string[]
     }

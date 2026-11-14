@@ -150,6 +150,9 @@ states.`,
 			}
 			page, err := cl.list(ctx, col.pkg(), col.Name, q)
 			if err != nil {
+				if after != "" && compactedCursor(err) {
+					return listCursorRefused(err)
+				}
 				return err
 			}
 			return a.printRecords(ctx, col, page, output, len(expand) > 0)

@@ -1140,7 +1140,7 @@ def main(input, host):
 	// The continuation it left is after `b`. The server before the upgrade
 	// minted it at its own order's version; this one mints its own, so that
 	// one field is set back, and the position and the counts are kept.
-	var token string
+	var token, oldToken string
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
 		owner, version, err := tx.lockPagedCursor(chain)
 		if err != nil {
@@ -1165,7 +1165,8 @@ def main(input, host):
 		}
 		k.V = substrate.IdentityOrder - 1
 		old, _ := json.Marshal(k)
-		if err := tx.pageTx(owner, chain, base64.RawURLEncoding.EncodeToString(old), version+1, pages, effects, bytes, startedAt); err != nil {
+		oldToken = base64.RawURLEncoding.EncodeToString(old)
+		if err := tx.pageTx(owner, chain, oldToken, version+1, pages, effects, bytes, startedAt); err != nil {
 			return err
 		}
 		return tx.settleDelivery(owner.triggerID)
@@ -1210,20 +1211,43 @@ def main(input, host):
 		}
 		return after
 	}
-	// The retry alone resumes from the refused token and parks again.
-	if after := retry(); len(after) != 1 || !strings.Contains(after[0].LastError, "list again") {
+	// The retry alone resumes from the refused token and parks on the
+	// refusal at once, the token dropped so no retry sends it again
+	// (functions.go refusedContinuation).
+	if after := retry(); len(after) != 1 || !strings.Contains(after[0].LastError, "list again") ||
+		!strings.Contains(after[0].LastError, "the server's paging changed") {
 		t.Fatalf("a retry from the old token: %+v, want it parked on the refusal", after)
 	}
 	if got := seen(); !slices.Equal(got, []string{"a", "b"}) {
 		t.Fatalf("the sweep went on past a token it was refused: saw %v", got)
 	}
+	if row, ok := pagedRowOf(t, ds, chain); !ok || row.cursor != "null" {
+		t.Fatalf("the refused token was kept: %+v (%v)", row, ok)
+	}
 
-	// The upgrade's repository migration starts the drain over.
+	// The upgrade's repository migration starts such a drain over before any
+	// retry reads the old token: the token as the upgrade finds it, again,
+	// and migration 7, which must null it.
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		owner, version, err := tx.lockPagedCursor(chain)
+		if err != nil {
+			return err
+		}
+		if err := tx.pageTx(owner, chain, oldToken, version+1, 2, 2, 0, time.Now().UTC()); err != nil {
+			return err
+		}
+		return tx.settleDelivery(owner.triggerID)
+	}); err != nil {
+		t.Fatalf("the old token again: %v", err)
+	}
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
 		_, err := migrateStartPagedDrainsOver(tx)
 		return err
 	}); err != nil {
 		t.Fatalf("migration 7: %v", err)
+	}
+	if row, ok := pagedRowOf(t, ds, chain); !ok || row.cursor != "null" {
+		t.Fatalf("migration 7 left the drain at %+v (%v), want it started over", row, ok)
 	}
 	if after := retry(); len(after) != 0 {
 		t.Fatalf("the sweep after the migration: %+v, want it done", after)

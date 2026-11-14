@@ -10,6 +10,7 @@ import { actorRefID } from "@/lib/api/actors"
 import { queryOptions } from "@tanstack/react-query"
 
 import { actorIdentity } from "@/lib/actor-identity"
+import { walkPages } from "@/lib/api/compacted"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, splitKind } from "@/lib/api/http"
 import { fetchRecordsPage } from "@/lib/api/records"
 import type { Page } from "@/lib/api/types"
@@ -75,22 +76,24 @@ export function packageRows(
 export const packagesQueryOptions = queryOptions({
   queryKey: ["registry", "packages"],
   queryFn: async ({ signal }) => {
+    const { pages } = await walkPages(
+      `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/package`,
+      (after: string | undefined) =>
+        fetchRecordsPage(
+          {
+            authority: CORE_AUTHORITY,
+            package: CORE_PACKAGE_NAME,
+            name: "package",
+            first: PACKAGE_PAGE,
+            after,
+          },
+          signal
+        ),
+      (page) => page.cursor || undefined
+    )
     const rows = new Map<string, PackageRow>()
-    let after: string | undefined
-    do {
-      const page = await fetchRecordsPage(
-        {
-          authority: CORE_AUTHORITY,
-          package: CORE_PACKAGE_NAME,
-          name: "package",
-          first: PACKAGE_PAGE,
-          after,
-        },
-        signal
-      )
+    for (const page of pages)
       for (const [id, row] of packageRows(page)) rows.set(id, row)
-      after = page.cursor
-    } while (after)
     return rows
   },
   staleTime: 5 * 60_000,

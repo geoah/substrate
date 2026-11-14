@@ -316,7 +316,7 @@ func TestRunCallableRefusesAHostFunction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := ds.runCallableRaw(ctx, fn, runner.Input{Mode: runner.ModeCall}); err == nil ||
+	if _, _, _, _, err := ds.runCallableRaw(ctx, fn, runner.Input{Mode: runner.ModeCall}); err == nil ||
 		!strings.Contains(err.Error(), "reached the runner") {
 		t.Fatalf("the runner backstop did not fire: %v", err)
 	}

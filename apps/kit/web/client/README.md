@@ -23,6 +23,13 @@ A refusal throws a `SubstrateError` with the envelope's `code`, `status`,
 `transient` (429 or 5xx), `retryAfter` and `insufficientScope`. `describe`
 turns anything thrown into words, a network failure included.
 
+A cursor the server can no longer resume is refused `410 compacted`
+(`compacted` on the error, with `head` and `generation` where the server
+gives them). `listAll` then drops every row it read and lists again from
+the first page, once: a second `compacted` in the same read is thrown. A
+`compacted` on a first page, and any other refusal of a later one (a `422`
+for a cursor sent with another filter), are thrown as they are.
+
 ## Kinds, declared once
 
 ```ts

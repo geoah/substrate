@@ -4,13 +4,16 @@
  * invalidates exactly the cached reads those records reach — the record, its
  * collection's pages and counts, the title reads naming it — so the page
  * re-reads through its ordinary queries. `onChange` then hears which records
- * moved, once that re-read has landed, so a page can mark them. */
+ * moved, once that re-read has landed, so a page can mark them. A position
+ * the server no longer holds re-reads everything the scope reaches, once the
+ * stream is following from the head again (lib/api/follow.ts). */
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { createChangeBatcher } from "@/hooks/use-live-records"
-import { watchChanges } from "@/lib/api/changes"
+import { nothingSaved, reportUnshown } from "@/lib/api/compacted"
+import { followChanges } from "@/lib/api/follow"
 import { joinKind } from "@/lib/api/http"
 import { recordWriteReaches } from "@/lib/api/records"
 import type { ChangeRow } from "@/lib/api/types"
@@ -83,6 +86,31 @@ export function liveChangeReaches(
   return recordWriteReaches(queryKey, change.kind, change.id)
 }
 
+/** Whether a cached read can show any record the scope watches: what a
+ * recovery re-reads, since which of them the gap moved is not known. A scope
+ * without kinds watches the whole repository, and so reaches every read. */
+export function liveScopeReaches(
+  queryKey: readonly unknown[],
+  scope: LiveScope
+): boolean {
+  if (!scope.kinds?.length) return true
+  const ids = scope.recordIds?.length ? scope.recordIds : undefined
+  return scope.kinds.some((kind) => {
+    if (queryKey[0] === "record")
+      return (
+        joinKind(
+          String(queryKey[1]),
+          String(queryKey[2]),
+          String(queryKey[3])
+        ) === kind &&
+        (!ids || ids.includes(String(queryKey[4])))
+      )
+    return (ids ?? [""]).some((id) =>
+      liveChangeReaches(queryKey, { kind, id, deleted: false })
+    )
+  })
+}
+
 export function useLiveInvalidation(
   scope: LiveScope,
   onChange?: (changed: LiveChange[]) => void
@@ -115,9 +143,18 @@ export function useLiveInvalidation(
           if (!stopped) onChangeRef.current?.(changed)
         })
     })
-    const handle = watchChanges({
+    const reader = `live invalidation ${kindsKey} ${idsKey}`
+    const handle = followChanges({
       filter: kinds.length ? { kinds } : {},
+      // The watch opens at the head, and the reads it keeps fresh are first
+      // pages. The collection and record pages have no status line for it
+      // yet (issue #1378).
+      reader: { key: reader, drop: nothingSaved, fail: reportUnshown(reader) },
       onRow: (row) => batcher.push(...changedInScope(row, watched)),
+      relist: () =>
+        void queryClient.invalidateQueries({
+          predicate: (q) => liveScopeReaches(q.queryKey, watched),
+        }),
     })
     return () => {
       stopped = true
