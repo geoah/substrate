@@ -159,13 +159,41 @@ struct DraftTests {
         field.type("Hello", at: start)
         try await tell(rig, key, field.reports.say())
         try await rig.send(.send, to: key)
-        try await rig.harness.until { _ in await rig.live(key)?.outcomes.isEmpty == false }
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
         // The field saw neither the clearing nor the text given back until
         // now, and typed meanwhile: it holds both.
         field.type("!", at: start)
         try await tell(rig, key, field.look(await composer(rig, key)))
         #expect(field.text == "Hello!")
         #expect(await rig.live(key)?.draft == "Hello!")
+    }
+
+    @Test func aRefusedSendComesBackAheadOfWhatWasToldSinceAndTheFieldKeepsItsNextKey() async throws {
+        let refusal = #"{"error":{"code":"conflict","message":"a turn is already running on this thread"}}"#
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .json(409, refusal))])
+        rig.server.hold("/chat")
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("Water the basil", at: start)
+        try await tell(rig, key, field.reports.say())
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.phase == .streaming }
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        // Typed and told while the send is out, then a key the conversation
+        // has not heard of when the refusal lands.
+        field.type("and the mint", at: start)
+        try await tell(rig, key, field.reports.say())
+        field.type("!", at: start)
+        rig.server.letGo("/chat")
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
+        // The conversation put the message ahead of what it had heard; the
+        // field takes that and keeps its key at the end.
+        #expect(await composer(rig, key)?.draft == "Water the basil\n\nand the mint")
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        #expect(field.text == "Water the basil\n\nand the mint!")
+        #expect(await rig.live(key)?.draft == "Water the basil\n\nand the mint!")
     }
 
     @Test func aNewLineFromReturnIsTheFieldsAndCommandReturnSendsItWithTheRest() async throws {
@@ -216,7 +244,7 @@ struct DraftTests {
         #expect(field.text == "")
         field.type("P", at: start)
         rig.server.letGo("/chat")
-        try await rig.harness.until { _ in await rig.live(key)?.outcomes.isEmpty == false }
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
         try await tell(rig, key, field.look(await composer(rig, key)))
         #expect(field.text == "HelloP")
         #expect(await rig.live(key)?.draft == "HelloP")
@@ -473,7 +501,7 @@ struct DraftTests {
         field.type("P", at: start)
         let late = field.reports.say()
         rig.server.letGo("/chat")
-        try await rig.harness.until { _ in await rig.live(key)?.outcomes.isEmpty == false }
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
         try await tell(rig, key, late)
         #expect(await rig.live(key)?.draft == "P")
         // The field takes the text back with its key after it, and says so.
