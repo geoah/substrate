@@ -867,10 +867,12 @@ may do and for how long; the app never sees the password.
 - Pictures (`mise run apps:gallery`, into `build/gallery/apple/chat`): a
   conversation's transcript drawn by the app's own rows through its own
   runtime against the fixture's server (`GalleryTests`), in light and in
-  dark: a settled reply with every block at its whole height, and a reply
-  caught as it is written, part way through an emphasis, a table and a
-  fenced block. The tests run inside the app, which the Mac sandboxes, so
-  each picture is attached to the test's result and taken from there.
+  dark: a settled reply with every block at its whole height, a reply that
+  links records (each its pill inside the line, in a paragraph, a list and
+  a table), and a reply caught as it is written, part way through an
+  emphasis, a table and a fenced block. The tests run inside the app, which
+  the Mac sandboxes, so each picture is attached to the test's result and
+  taken from there.
 
 ### Measuring
 
