@@ -93,10 +93,10 @@ export function sharedMetrics(): MetricRecord[] {
       const id = field(doc, 2, "id")
       const name = field(doc, 4, "name")
       if (!id || !name) continue
-      const unit = new RegExp(
-        `^ {4}unit:\\n\\s+ref: ${UNIT_REF.replace(/\./g, "\\.")}(\\S+)$`,
-        "m"
-      ).exec(doc)?.[1]
+      const unit =
+        /^ {4}unit:\n\s+ref: substrate\.reamde\.dev\/core\/unit\/(\S+)$/m.exec(
+          doc
+        )?.[1]
       const codes = [...doc.matchAll(/- system: (.+)\n\s+code: (.+)$/gm)].map(
         (m) => ({ system: unquote(m[1]), code: unquote(m[2]) })
       )

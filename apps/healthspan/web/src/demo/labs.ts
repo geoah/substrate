@@ -486,6 +486,22 @@ const TWINNED: Record<string, [mass: string, molarMass: number]> = {
 }
 
 const DAY = 86_400_000
+
+/** `days` before `today`'s date, at a time of day in UTC: the same day in
+ * every time zone, so a report's id never moves with the zone it is read
+ * in. */
+function daysBefore(today: Date, days: number, hours: number, minutes = 0) {
+  return new Date(
+    Date.UTC(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - days,
+      hours,
+      minutes
+    )
+  )
+}
+
 const LAB = DEMO_SOURCES.lab
 const CLINIC = DEMO_SOURCES.clinic
 const DXA = DEMO_SOURCES.dxa
@@ -510,13 +526,11 @@ export function demoLabRows(today = new Date(), seed = 11): LabRows {
   ]
   const results: SubstrateRecord[] = []
   const reports: SubstrateRecord[] = []
-  const end = today.getTime() - 30 * DAY
   const result = (id: string, props: Record<string, unknown>) =>
     results.push(rec(KIND.labresult, id, props))
 
   for (let i = 0; i < 9; i++) {
-    const at = new Date(end - (8 - i) * 121 * DAY)
-    at.setUTCHours(8, 30, 0, 0)
+    const at = daysBefore(today, 30 + (8 - i) * 121, 8, 30)
     const full = i % 3 === 2
     const source = full ? LAB : CLINIC
     const reportId = `demo/${at.toISOString().slice(0, 10)}`
@@ -627,8 +641,7 @@ export function demoLabRows(today = new Date(), seed = 11): LabRows {
   // Three DXA scans, a year apart: whole-body composition and three
   // regions of body fat.
   for (let k = 0; k < 3; k++) {
-    const at = new Date(today.getTime() - (14 + (2 - k) * 365) * DAY)
-    at.setUTCHours(10, 0, 0, 0)
+    const at = daysBefore(today, 14 + (2 - k) * 365, 10)
     const reportId = `demo-dxa/${at.toISOString().slice(0, 10)}`
     const scan = (
       metric: string,

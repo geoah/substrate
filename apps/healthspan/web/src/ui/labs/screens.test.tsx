@@ -111,8 +111,8 @@ describe("the lab screens on the demo member", () => {
     )
     expect(first).not.toBeNull()
     render(
-      <ReportScreen id="demo/2026-09-24" />,
-      "#/labs/reports/demo%2F2026-09-24"
+      <ReportScreen id="demo/2026-09-25" />,
+      "#/labs/reports/demo%2F2026-09-25"
     )
     expect(text()).toContain("Demo Lab")
     expect(text()).toContain("Accession")
