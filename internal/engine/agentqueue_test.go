@@ -128,8 +128,23 @@ func TestReplayReadsAQueuedMessageWhereTheModelDid(t *testing.T) {
 			want: "user:m0 assistant:calls tool:c0 assistant:a2 user:m1 assistant:a3",
 		},
 		{
-			// Rows from before ordinals were unique, or with none: nothing
-			// moves past a row that carries no ordinal or an equal one.
+			// A resolution lands between the message and the reply that was
+			// streaming, with an ordinal past the message's. The message
+			// still goes behind the reply: the turn it starts must not be
+			// sent a conversation that ends on the assistant.
+			name: "a resolution written between the message and the late reply",
+			rows: []threadRow{
+				queueRow("m0", "user", 0, nil),
+				queueRow("q1", "user", 2, nil),
+				queueRow("s1", msgRoleSystem, 3, nil),
+				queueRow("a1", "assistant", 1, nil),
+			},
+			want: "user:m0 user:s1 assistant:a1 user:q1",
+		},
+		{
+			// Rows from before ordinals were unique, or with none: a row of
+			// an equal ordinal moves nothing, and nothing moves past a row
+			// that carries none.
 			name: "an equal or missing ordinal stops the move",
 			rows: []threadRow{
 				queueRow("m0", "user", 1, nil),

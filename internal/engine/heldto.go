@@ -318,6 +318,27 @@ func (ds *dataset) heldBy(ctx context.Context, kind, id string) (context.Context
 	return withRunHolders(substrate.WithOnBehalfOf(ctx, behalf), persons, held.tokens...), nil
 }
 
+// storedHolders reads a stored `heldTo` as the persons and the tokens it
+// names, the person it acts for first: what a turn that reads a message is
+// held to beside its own holders. A value that names nobody answers none.
+func (ds *dataset) storedHolders(ctx context.Context, v any) ([]substrate.Actor, []string, error) {
+	held, ok := storedHoldersOf(v)
+	if !ok {
+		return nil, nil, nil
+	}
+	var persons []substrate.Actor
+	for _, id := range append([]string{held.onBehalfOf}, held.continuedBy...) {
+		key, err := ds.actorKeyOfID(ctx, id)
+		if err != nil {
+			return nil, nil, err
+		}
+		if key != "" {
+			persons = append(persons, key)
+		}
+	}
+	return persons, held.tokens, nil
+}
+
 // actorKeyOfID is the hand an actor record id stands for, read from the
 // record where the id does not say it; "" for "". Unlike actorKeyIn, a read
 // that fails is an error.

@@ -2050,11 +2050,12 @@ A message adds no model call to the run it joins and moves none of its
 budgets: a steered run is one run under its turns, its tool calls and its
 deadline. It takes none of the person's chat turns, since it starts no run;
 the turn a message starts waits for a free one, as any turn does. The
-run's last turn under a deadline reads no message; they start the next
-turn. A repeat of the request is answered as [a repeat](#a-message-with-its-own-id)
+run's last turn under a deadline reads what was sent too, ahead of the
+engine's word that the turn is the last. A repeat of the request is answered as [a repeat](#a-message-with-its-own-id)
 always is, and writes nothing. The sender is admitted only where they could
 have started the run themselves, as for any message into a thread, and the
-rest of the turn is held to them as well as to whoever started it.
+rest of the turn is held to them as well as to whoever started it. The turn
+that unread messages start is held to every one of their senders.
 
 Two sends are refused as before, `409 conflict` with the reason
 `thread_busy`: a message with no `messageId`, and a message into a running

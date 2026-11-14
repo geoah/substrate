@@ -48,12 +48,14 @@ rest of the run is held to
 **Where it is read.** Before each model call, after the tool results of the
 last one. A call in flight is not touched. A message adds no call and moves
 no budget: a steered run is one run under its turn, tool-call and deadline
-budgets. The run's last turn under a deadline reads none.
+budgets. Every call reads what was sent, the run's last turn under a
+deadline too: a reply written past a message's ordinal must be one that
+read it.
 
 **A message the run never read** (sent during the final answer, or when a
 budget ended the run) starts the next turn itself where the run settled `ok`
-or `overbudget`: a new run, with budgets of its own, held to the message's
-sender. Going on inside the first run would let messages hold one run, its
+or `overbudget`: a new run, with budgets of its own, held to the sender of
+every message it starts from. Going on inside the first run would let messages hold one run, its
 slot and its lifecycle lock open without end. A run that was stopped, or
 failed, starts nothing: the stop is the later word, so 0169's rule stands,
 and a failure is not retried unasked. The message stays in the thread, and
@@ -119,7 +121,10 @@ same shape. A client that sends no id sees no change.
 `TestAQueuedMessageTakesNoSlotAndItsTurnWaitsForOne`,
 `TestContinueTakesUpAMessageNoTurnAnswered`,
 `TestAMessageToAThreadWaitingOnAnAnswerStartsATurnAndLeavesTheQuestion`,
-`TestATurnIsHeldToWhoeverItReadAMessageFrom`;
+`TestATurnIsHeldToWhoeverItReadAMessageFrom`,
+`TestTheNextTurnIsHeldToEverySenderItStartsFrom`,
+`TestTheLastTurnUnderADeadlineReadsAQueuedMessage`,
+`TestAQueuedMessageWhoseCommitAnswerWasLostIsStillRead`;
 `TestReplayReadsAQueuedMessageWhereTheModelDid` in
 `internal/engine/agentqueue_test.go`;
 `TestASteeredConversationIsOneEachWireAccepts` in

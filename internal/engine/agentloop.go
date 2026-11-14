@@ -738,6 +738,9 @@ type agentLoop struct {
 	// them (agentqueue.go). Both under turnMu, with the ordinals.
 	queued      []*queuedMessage
 	queueClosed bool
+	// doubted are the queued messages whose write returned an error and
+	// whose row could not be read afterwards: the settle reads them again.
+	doubted []*queuedMessage
 	// unread are the queued messages the run never handed a model call, as
 	// its last settle found them.
 	unread []string
@@ -962,6 +965,27 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		return nil, nil, err
 	}
 	l.composeSystemPrompt()
+	// The turn that messages sent while the last one ran start reads every
+	// one of them at its first call, so it is held to each sender, not to
+	// the first alone (run.go).
+	var starts []threadRow
+	if in.unanswered {
+		var joiners *runJoiners
+		ctx, joiners = withRunJoiners(ctx)
+		starts = unansweredRows(l.rows)
+		for _, r := range starts {
+			persons, tokens, herr := ds.storedHolders(ctx, r.props[propHeldTo])
+			if herr != nil {
+				fail := turnFailure{cause: substrate.CauseInternal}
+				said := l.sayable("reading whom the turn acts for", herr)
+				if serr := l.settleAfterFailure(ctx, fail, said.Error(), ""); serr != nil {
+					ds.svc.log.Warn("substrate: settling a thread whose senders could not be read", "thread", l.threadID, "error", serr)
+				}
+				return nil, nil, failed(fail, said)
+			}
+			joiners.add(persons, tokens...)
+		}
+	}
 	if root {
 		// The run's charges count against the caps from its first one. A
 		// settle that commits the thread row moves them onto it (settle);
@@ -972,13 +996,10 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		l.in.tally.spend = l.spend
 	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
-	if in.unanswered {
-		// The turn those messages start reads them at its first call: a
-		// client that still shows one as waiting is told so.
-		for _, r := range unansweredRows(l.rows) {
-			turn, _ := anyFloat(r.props["turn"])
-			l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: r.id, Turn: int(turn)})
-		}
+	for _, r := range starts {
+		// A client that still shows one of them as waiting is told.
+		turn, _ := anyFloat(r.props["turn"])
+		l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: r.id, Turn: int(turn)})
 	}
 	return ctx, l, nil
 }
@@ -1040,31 +1061,35 @@ loop:
 		}
 		// An overflow retry comes back here with final already set: the
 		// nudge is in its tail and its turn was handed back.
+		entersFinal := false
 		if !final {
 			if left < reserve {
 				// The last turn is the run's one chance to record its work,
 				// so a turn and a tool-call budget already spent would refuse
 				// the very write the phase exists for: each grants one past
 				// its counter here, and only here.
-				final = true
+				final, entersFinal = true, true
 				maxToolCalls = max(maxToolCalls, l.toolCalls+1)
-				messages = append(messages, llm.Message{Role: llm.RoleUser, Content: finalTurnNudge})
 			} else if l.turns >= ag.Budgets.MaxTurns {
 				break
 			}
 		}
 		// What a person sent while the run went is read here: before a call
 		// the run was making anyway, after the last call's tool results
-		// (decision 0318). The run's last turn is told to record its work,
-		// so it reads none: those start the next turn.
-		if !final {
-			for _, m := range l.takeQueued(lctx) {
-				messages = append(messages, m.message)
-				// The sender continued the run: the rest of it is held to
-				// them too (run.go).
-				joiners.add(m.persons, m.tokens...)
-				l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: m.id, Turn: m.turn})
-			}
+		// (decision 0318). Every call reads it, the run's last turn under a
+		// deadline too: a reply written past a message's ordinal is one that
+		// read it, and nothing else tells a later reader of the rows so.
+		for _, m := range l.takeQueued(lctx) {
+			messages = append(messages, m.message)
+			// The sender continued the run: the rest of it is held to
+			// them too (run.go).
+			joiners.add(m.persons, m.tokens...)
+			l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: m.id, Turn: m.turn})
+		}
+		if entersFinal {
+			// After what the person sent, so the turn's last word is that
+			// it is the last.
+			messages = append(messages, llm.Message{Role: llm.RoleUser, Content: finalTurnNudge})
 		}
 		l.turns++
 		res, err := l.complete(lctx, messages)
@@ -2141,7 +2166,11 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		}
 		// With the row held: a message sent to this turn is in its queue by
 		// now, or finds the thread settled (agentqueue.go).
-		l.unread = l.closeQueue(t.ctx)
+		unread, cerr := l.closeQueue(t)
+		if cerr != nil {
+			return cerr
+		}
+		l.unread = unread
 		row, err := t.loadRow(eref{Kind: typeThread, ID: l.threadID}, true)
 		if err != nil {
 			return err
