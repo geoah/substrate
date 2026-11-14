@@ -70,14 +70,15 @@ var ShippedRoles = []ShippedRole{
 	},
 }
 
-// Roles are the roles one hand holds, resolved against the repository whose
-// authority `~` stands for.
+// Roles are the roles one hand holds, read in the repository whose full name,
+// authority, is another spelling of `~`, where its own kinds are (decision
+// record 0259).
 type Roles struct {
 	roles     []Role
 	authority string
 }
 
-// NewRoles holds roles, with `~` in a pattern standing for authority.
+// NewRoles holds roles, a pattern naming authority read as `~`.
 func NewRoles(roles []Role, authority string) Roles {
 	return Roles{roles: roles, authority: authority}
 }
@@ -167,13 +168,10 @@ func ruleAllows(rule Rule, verb Verb) bool {
 }
 
 func (r Roles) resolve(pattern string) string {
-	if pattern == Home+"/*" || strings.HasPrefix(pattern, Home+"/") {
-		return r.authority + strings.TrimPrefix(pattern, Home)
+	if trait, ok := traitOf(pattern); ok {
+		return TraitPattern(vocabulary.LocalizeRef(trait, r.authority))
 	}
-	if trait, ok := traitOf(pattern); ok && strings.HasPrefix(trait, Home+"/") {
-		return TraitPattern(r.authority + strings.TrimPrefix(trait, Home))
-	}
-	return pattern
+	return vocabulary.LocalizeRef(pattern, r.authority)
 }
 
 func (r Roles) patternReaches(pattern string, kind Kind) bool {

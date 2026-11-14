@@ -40,14 +40,14 @@ func TestACallScopeTakesTheKindGrammarOverFunctionsAndNeverCoreOrLLM(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0].String() != "call:~/tasks/*" || got[0].Resolve("ada.example.com").String() != "call:ada.example.com/tasks/*" {
+	if len(got) != 2 || got[0].String() != "call:~/tasks/*" || got[0].Localize("ada.example.com").String() != "call:~/tasks/*" {
 		t.Fatalf("ParseRequest = %v", got)
 	}
 	if err := CheckStored([]string{"call:ada.example.com/tasks/*"}); err != nil {
 		t.Fatalf("a stored call scope was refused: %v", err)
 	}
-	if err := CheckStored([]string{"call:~/tasks/*"}); err == nil {
-		t.Fatal("a stored call scope still naming ~ was admitted")
+	if err := CheckStored([]string{"call:~/tasks/*"}); err != nil {
+		t.Fatalf("a stored call scope over the repository's own functions refused: %v", err)
 	}
 }
 

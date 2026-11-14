@@ -12,6 +12,8 @@
  * disagreed would either bar a value the server admits or wave through one it
  * refuses. */
 
+import { LOCAL_AUTHORITY } from "@/lib/api/http"
+
 /** A record path's two halves: the referent's kind REFERENCE and its id. */
 export interface RecordPathParts {
   kind: string
@@ -27,15 +29,17 @@ export function recordPath(kind: string, id: string): string {
  * the string is not a path at all.
  *
  * The split rests on the KIND GRAMMAR and on nothing else, so it is
- * deterministic WITHOUT the registry: an authority always carries a dot, and a
- * package name and a kind NAME never do. Every kind carries an authority and a
- * package (decisions 0042 and 0047), so the FIRST segment is the authority, the
- * kind is segments one to three, and a dotless first segment is no path at all.
+ * deterministic WITHOUT the registry: an authority always carries a dot, or is
+ * `~`, the repository's own (decision record 0259), and a package name and a
+ * kind NAME never do. Every kind carries an authority and a package (decisions
+ * 0042 and 0047), so the FIRST segment is the authority, the kind is segments
+ * one to three, and any other dotless first segment is no path at all.
  *
  * The id is EVERYTHING after the kind, slashes included: a DECLARATION
  * record's id is itself a kind reference, so
  * `substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task` is
- * one six-segment path naming one record.
+ * one six-segment path naming one record, and so is
+ * `substrate.reamde.dev/core/kind/~/<package>/<name>`.
  *
  * A string that is not a full path answers `undefined`, which is how an
  * AUTHORED bare id is told from a stored path: a declaration id like
@@ -46,7 +50,8 @@ export function splitRecordPath(path: string): RecordPathParts | undefined {
   const authorityEnd = path.indexOf("/")
   if (authorityEnd <= 0) return undefined
   const authority = path.slice(0, authorityEnd)
-  if (!authority.includes(".")) return undefined
+  if (authority !== LOCAL_AUTHORITY && !authority.includes("."))
+    return undefined
   const packageEnd = path.indexOf("/", authorityEnd + 1)
   if (packageEnd <= authorityEnd + 1) return undefined
   const nameEnd = path.indexOf("/", packageEnd + 1)

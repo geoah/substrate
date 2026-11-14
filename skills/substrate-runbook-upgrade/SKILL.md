@@ -22,7 +22,9 @@ approves the plan in step 3.
 
 Substrate is one Go binary and one Postgres database. A **repository** is
 everything one user has; its name is its **authority**, the DNS-style name
-that kinds are declared under (`ada.example.com/tasks/task`). Every piece of
+the user signs in with (`ada.example.com`). The kinds the user declares and
+the samples they add live in the repository's local namespace, `~`
+(`~/tasks/task`), whatever the repository is called. Every piece of
 upgrade guidance below comes from the changelog and the docs at
 <https://github.com/geoah/substrate>. When this runbook and a note disagree,
 the note for the release wins.
@@ -36,7 +38,7 @@ the note for the release wins.
 | Where each repository's history is kept | the first boot of a release with the archive, from a release before it: the history moves from the data root into the database, and the server starts copying each repository to its archive (step 6) | no: an older binary refuses the migration that boot applies, and reads no archive |
 | The seeded packages (`substrate.reamde.dev/core`, `…/llm`, `…/console`, `…/observations`) | the boot upgrade, at each repository's first open, unless a guard refuses it | no |
 | Installed providers and catalogues (`providers.substrate.reamde.dev/<name>`, `substrate.reamde.dev/health`, `…/labs`, `…/environment`) | the user: the catalog offers the upgrade, and `substratectl add` takes it | no |
-| Added samples (copied to `<authority>/<package>`) | the user: the catalog offers the upgrade, and `substratectl add` takes it | no |
+| Added samples (copied to `~/<package>`) | the user: the catalog offers the upgrade, and `substratectl add` takes it | no |
 | Kinds the user declared | the user; a binary that tightens a contract quarantines the package instead of refusing the repository | yes, by fixing and re-applying the package |
 | API clients, scripts, agents, `substratectl` | the user, following each note's `What to do` | yes |
 

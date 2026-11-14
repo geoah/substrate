@@ -31,10 +31,8 @@ function record(
 
 describe("ownership by id prefix", () => {
   it("reads the bundle and the name out of the id", () => {
-    expect(bundleIdOf("ada.example.com/firecrawl/apiKey")).toBe(
-      "ada.example.com/firecrawl"
-    )
-    expect(settingNameOf("ada.example.com/firecrawl/apiKey")).toBe("apiKey")
+    expect(bundleIdOf("~/firecrawl/apiKey")).toBe("~/firecrawl")
+    expect(settingNameOf("~/firecrawl/apiKey")).toBe("apiKey")
   })
 
   // The server admits exactly `<authority>/<package>/<name>` (engine
@@ -43,9 +41,9 @@ describe("ownership by id prefix", () => {
   it("refuses an id that is not a bundle and one name", () => {
     for (const id of [
       "ada.example.com",
-      "ada.example.com/firecrawl",
-      "ada.example.com/firecrawl/nested/key",
-      "ada.example.com//key",
+      "~/firecrawl",
+      "~/firecrawl/nested/key",
+      "~//key",
     ]) {
       expect(settingNameOf(id)).toBe("")
       expect(bundleIdOf(id)).toBe("")
@@ -54,8 +52,8 @@ describe("ownership by id prefix", () => {
 
   it("leaves a record no bundle owns out of the groups", () => {
     const groups = groupSettings([
-      record("ada.example.com/firecrawl/apiKey", {}),
-      record("ada.example.com/firecrawl/nested/key", {}),
+      record("~/firecrawl/apiKey", {}),
+      record("~/firecrawl/nested/key", {}),
     ])
     expect(groups).toHaveLength(1)
     expect(groups[0].fields.map((f) => f.name)).toEqual(["apiKey"])
@@ -76,17 +74,14 @@ describe("ownership by id prefix", () => {
 describe("groupSettings", () => {
   it("groups by bundle, sorting both the bundles and their fields", () => {
     const groups = groupSettings([
-      record("ada.example.com/web/timeout", { type: "int", value: "30" }),
-      record("ada.example.com/firecrawl/baseURL", {
+      record("~/web/timeout", { type: "int", value: "30" }),
+      record("~/firecrawl/baseURL", {
         type: "url",
         value: "https://api.example.com",
       }),
-      record("ada.example.com/firecrawl/apiKey", {}, SECRET_KIND),
+      record("~/firecrawl/apiKey", {}, SECRET_KIND),
     ])
-    expect(groups.map((g) => g.bundle)).toEqual([
-      "ada.example.com/firecrawl",
-      "ada.example.com/web",
-    ])
+    expect(groups.map((g) => g.bundle)).toEqual(["~/firecrawl", "~/web"])
     expect(groups[0].fields.map((f) => f.name)).toEqual(["apiKey", "baseURL"])
   })
 })

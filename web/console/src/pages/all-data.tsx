@@ -33,8 +33,6 @@ import {
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
-import { repositoryQueryOptions } from "@/lib/api/repository"
-import { getRepository } from "@/lib/api/session"
 import type { KindInfo } from "@/lib/api/types"
 import {
   collectionGroups,
@@ -223,16 +221,12 @@ export function AllDataPage() {
     parseAsStringLiteral(ADD_WAYS)
   )
   const registry = useQuery(kindsQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
   const groups = useMemo(
     () =>
-      collectionGroups(
-        registry.data ?? [],
-        repository.data?.authority ?? getRepository() ?? ""
-      ).filter((g) =>
+      collectionGroups(registry.data ?? []).filter((g) =>
         technical ? true : g.type !== "system" && g.primary.length > 0
       ),
-    [registry.data, repository.data, technical]
+    [registry.data, technical]
   )
 
   return (

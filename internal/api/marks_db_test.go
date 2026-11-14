@@ -25,7 +25,7 @@ var marksSync = substrate.FunctionActor("providers.example.com", "book", "syncbo
 func marksKinds(t *testing.T, env *dbEnv) (contact, entry string) {
 	t.Helper()
 	pkg := env.repository + "/book"
-	contact, entry = pkg+"/contact", pkg+"/entry"
+	contact, entry = "~/book/contact", "~/book/entry"
 	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorSystem, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "contact"}, map[string]any{

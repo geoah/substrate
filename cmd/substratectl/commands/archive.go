@@ -189,13 +189,19 @@ deletion mark, which stays. 'archive report' lists the archives.`,
 }
 
 func (a *app) archiveImportCommand() *cobra.Command {
-	return &cobra.Command{
+	var name string
+	cmd := &cobra.Command{
 		Use:   "import <repository id> <archive id>",
-		Short: "Bring back a repository from one of its archives, past a deletion",
+		Short: "Bring back a repository from one of its archives, past a deletion or under another name",
 		Long: `Restore a repository the database does not hold from the newest manifest
 of one archive you name, into a new archive. A boot restores a repository
 with no rows on its own unless a deletion mark covers its newest archive;
-this is the one way back past that mark.`,
+this is the one way back past that mark.
+
+--name restores it under another name than its manifest gives: the way in
+for an archive the server set aside at start-up because another repository
+here holds its name. Its own kinds are under ~, so no record changes; the
+new archive's first manifest carries the new name. Stop the server first.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := a.openEngineExclusive(cmd.Context())
@@ -203,7 +209,7 @@ this is the one way back past that mark.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			repo, err := svc.ImportArchive(cmd.Context(), args[0], args[1])
+			repo, err := svc.ImportArchive(cmd.Context(), args[0], args[1], name)
 			if err != nil {
 				return lockHint(err)
 			}
@@ -211,4 +217,6 @@ this is the one way back past that mark.`,
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&name, "name", "", "the name the repository takes in place of its manifest's")
+	return cmd
 }

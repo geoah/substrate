@@ -115,6 +115,8 @@ func TestTheKeptDirectoryImportsUnderAnotherKeyWithoutItsSecrets(t *testing.T) {
 		t.Fatalf("give the repository its person: %v", err)
 	}
 	got := keptRead(t, e)
+	// The release's records as the converted history holds them.
+	keptConvert(&want, keptConversions, keptDialect(t, dir, fixture.Repository), fixture.Repository)
 	for _, rec := range want.Records {
 		if rec.Path == "substrate.reamde.dev/core/recoverykey/self" || rec.Path == "substrate.reamde.dev/core/credential/self" {
 			continue
@@ -124,7 +126,7 @@ func TestTheKeptDirectoryImportsUnderAnotherKeyWithoutItsSecrets(t *testing.T) {
 		}
 	}
 	for path, props := range map[string][]string{
-		fixture.Repository + "/creds/oauthclient/00000000000000000000000015": {"clientSecret", "accessToken"},
+		"~/creds/oauthclient/00000000000000000000000015": {"clientSecret", "accessToken"},
 	} {
 		now, ok := got[path]
 		if !ok {

@@ -40,6 +40,10 @@ const (
 	// conformanceRef is the package identity the declarations live in, which
 	// is also the first two segments of every kind reference and every route.
 	conformanceRef = conformanceAuthority + "/" + conformancePackage
+	// conformanceLocal is the same package as every reply names it, in the
+	// repository's own namespace (decision record 0259): the suite writes the
+	// full name, which is another spelling of it.
+	conformanceLocal = "~/" + conformancePackage
 )
 
 // notesPath is the kind prefix every record case writes under; a record path is
@@ -145,7 +149,7 @@ func conformanceCases() []codeCase {
 				"properties": map[string]any{"subject": "the first write"},
 			})
 			rec := wantRecord(t, status, body, http.StatusCreated)
-			if rec.Version != 1 || rec.Kind != conformanceRef+"/note" {
+			if rec.Version != 1 || rec.Kind != conformanceLocal+"/note" {
 				t.Fatalf("created record: %+v", rec)
 			}
 			if rec.Properties["phase"] != "draft" {

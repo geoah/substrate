@@ -50,10 +50,10 @@ const APP_TOKEN = {
   createdAt: "2026-08-11T00:00:00Z",
   expiresAt: "2026-09-10T00:00:00Z",
   scopes: [
-    "read:ada.example.com/tasks/*",
-    "write:ada.example.com/notes/note",
-    "agents:ada.example.com/llm/*",
-    "decide:ada.example.com/llm/substrate",
+    "read:~/tasks/*",
+    "write:~/notes/note",
+    "agents:~/llm/*",
+    "decide:~/llm/substrate",
     "webhook:notes-webhook",
   ],
   clientId: "https://notes.example.com/oauth/client.json",
@@ -156,16 +156,16 @@ describe("Signed in and API tokens", () => {
     expect(within(facts).getByText("Client id")).toBeTruthy()
     expect(within(facts).getByText("Access")).toBeTruthy()
     expect(screen.queryByRole("status")).toBeNull()
-    expect(within(facts).getByText("ada.example.com/tasks/*")).toBeTruthy()
+    expect(within(facts).getByText("~/tasks/*")).toBeTruthy()
     expect(within(facts).getByText("Read records of")).toBeTruthy()
-    expect(within(facts).getByText("ada.example.com/notes/note")).toBeTruthy()
+    expect(within(facts).getByText("~/notes/note")).toBeTruthy()
     expect(within(facts).getByText("Read and write records of")).toBeTruthy()
     expect(
       within(facts).getByText(
         "Talk to, and read the chats of, the agents matching"
       )
     ).toBeTruthy()
-    expect(within(facts).getByText("ada.example.com/llm/*")).toBeTruthy()
+    expect(within(facts).getByText("~/llm/*")).toBeTruthy()
     expect(
       within(facts).getByText(
         "Apply, edit or dismiss changes suggested by the agents matching"
@@ -286,7 +286,7 @@ describe("Signed in and API tokens", () => {
     expect(facts.contains(status)).toBe(false)
     expect(within(facts).getByText("Was approved for")).toBeTruthy()
     expect(within(facts).queryByText("Access")).toBeNull()
-    expect(within(facts).getByText("ada.example.com/tasks/*")).toBeTruthy()
+    expect(within(facts).getByText("~/tasks/*")).toBeTruthy()
     expect(
       screen.getByRole("button", { name: "Revoke Notes for Ada" })
     ).toBeTruthy()

@@ -171,23 +171,22 @@ describe("mergeBundles", () => {
           package: "tasks",
           keptBy: "repository",
         }),
-      ],
-      "ada.example.com"
+      ]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
     expect(byId["providers.substrate.reamde.dev/google"].keptBy).toBe(
       "publisher"
     )
-    expect(byId["ada.example.com/tasks"].keptBy).toBe("repository")
+    expect(byId["~/tasks"].keptBy).toBe("repository")
   })
 
   it("keys a sample by the id it LANDS under, so its status folds onto it", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "ada.example.com/tasks",
+          id: "~/tasks",
           name: "tasks",
-          authority: "ada.example.com",
+          authority: "~",
           package: "tasks",
         }),
       ],
@@ -199,20 +198,19 @@ describe("mergeBundles", () => {
           package: "tasks",
           keptBy: "repository",
         }),
-      ],
-      "ada.example.com"
+      ]
     )
     expect(rows).toHaveLength(1)
-    expect(rows[0].id).toBe("ada.example.com/tasks")
+    expect(rows[0].id).toBe("~/tasks")
     // The shipped id stays reachable: it is what the import door is called with.
     expect(rows[0].catalog?.id).toBe("samples.substrate.reamde.dev/tasks")
     expect(rows[0].installed).toBe(true)
   })
 
   describe("two publishers' samples of one package word", () => {
-    // Both land at ada.example.com/tasks. The copy's origin stamp says which
-    // one it is; the id alone would hand it to the later entry.
-    const HOME = "ada.example.com"
+    // Both land at ~/tasks. The copy's origin stamp says which one it is;
+    // the id alone would hand it to the later entry.
+    const LOCAL = "~"
     const tasks = (authority: string, kind: string, over = {}) =>
       catalog({
         id: `${authority}/tasks`,
@@ -234,9 +232,9 @@ describe("mergeBundles", () => {
       })
     const copy = (origin?: string) =>
       status({
-        id: `${HOME}/tasks`,
+        id: `${LOCAL}/tasks`,
         name: "tasks",
-        authority: HOME,
+        authority: LOCAL,
         package: "tasks",
         inputs: undefined,
         ...(origin && { origin }),
@@ -267,28 +265,27 @@ describe("mergeBundles", () => {
               installed: stamped === "z.example.com",
               upgrade: stamped === "z.example.com" ? UPGRADE : undefined,
             }),
-          ],
-          HOME
+          ]
         )
         expect(rows).toHaveLength(2)
         const held = rows.find((r) => r.status)!
         const offered = rows.find((r) => !r.status)!
         expect(held.key).toBe(`${stamped}/tasks`)
-        expect(held.id).toBe(`${HOME}/tasks`)
+        expect(held.id).toBe(`${LOCAL}/tasks`)
         expect(held.installed).toBe(true)
         expect(held.catalog?.id).toBe(`${stamped}/tasks`)
         expect(held.catalog?.description).toBe(
           `Tasks as ${stamped} ships them.`
         )
         expect(held.catalog?.closure.kinds).toEqual([
-          `${HOME}/tasks/${kinds[stamped as keyof typeof kinds]}`,
+          `${LOCAL}/tasks/${kinds[stamped as keyof typeof kinds]}`,
         ])
         expect(held.upgrade).toEqual(UPGRADE)
         expect(offered.key).toBe(`${other}/tasks`)
         expect(offered.installed).toBe(false)
         expect(offered.catalog?.id).toBe(`${other}/tasks`)
         expect(offered.catalog?.closure.kinds).toEqual([
-          `${HOME}/tasks/${kinds[other as keyof typeof kinds]}`,
+          `${LOCAL}/tasks/${kinds[other as keyof typeof kinds]}`,
         ])
         expect(offered.upgrade).toBeUndefined()
         expect(rows.filter((r) => r.keptBy === "repository")).toHaveLength(2)
@@ -298,11 +295,10 @@ describe("mergeBundles", () => {
     it("still pairs an unstamped copy by the id it landed at", () => {
       const rows = mergeBundles(
         [copy()],
-        [tasks("a.example.com", "task", { installed: true })],
-        HOME
+        [tasks("a.example.com", "task", { installed: true })]
       )
       expect(rows).toHaveLength(1)
-      expect(rows[0].status?.id).toBe(`${HOME}/tasks`)
+      expect(rows[0].status?.id).toBe(`${LOCAL}/tasks`)
       expect(rows[0].catalog?.id).toBe("a.example.com/tasks")
       expect(rows[0].installed).toBe(true)
     })
@@ -317,12 +313,11 @@ describe("mergeBundles", () => {
         [
           tasks("a.example.com", "task", { installed: true }),
           tasks("z.example.com", "todo", { installed: true }),
-        ],
-        HOME
+        ]
       )
       expect(rows.map((r) => [r.key, r.installed, Boolean(r.status)])).toEqual([
         ["a.example.com/tasks", true, false],
-        [`held ${HOME}/tasks`, true, true],
+        [`held ${LOCAL}/tasks`, true, true],
         ["z.example.com/tasks", true, false],
       ])
       const own = rows.find((r) => r.status)!
@@ -358,7 +353,7 @@ describe("mergeBundles", () => {
 
       // Nothing held. a's tasks is the first row at the id, and z's pebble
       // needs z's.
-      const offered = mergeBundles([], [pebble("z.example.com"), ...both], HOME)
+      const offered = mergeBundles([], [pebble("z.example.com"), ...both])
       expect(
         planOf(offered, "z.example.com/pebble").plan.bundles.map((b) => b.key)
       ).toEqual(["z.example.com/tasks", "z.example.com/pebble"])
@@ -367,8 +362,7 @@ describe("mergeBundles", () => {
       // supplier, and nothing is taken for it.
       const met = mergeBundles(
         [copy("z.example.com/tasks")],
-        [pebble("a.example.com"), ...both],
-        HOME
+        [pebble("a.example.com"), ...both]
       )
       const { tree } = planOf(met, "a.example.com/pebble")
       expect(tree[0].present).toBe(true)
@@ -382,8 +376,7 @@ describe("mergeBundles", () => {
             requiresAtLeast: { "a.example.com/tasks": 7 },
           }),
           ...both,
-        ],
-        HOME
+        ]
       )
       expect(
         planOf(low, "a.example.com/pebble").plan.bundles.map((b) => b.key)
@@ -395,9 +388,9 @@ describe("mergeBundles", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "ada.example.com/tasks",
+          id: "~/tasks",
           name: "tasks",
-          authority: "ada.example.com",
+          authority: "~",
           package: "tasks",
           origin: "samples.substrate.reamde.dev/tasks",
         }),
@@ -417,15 +410,10 @@ describe("mergeBundles", () => {
           keptBy: "repository",
           installed: true,
         }),
-      ],
-      "ada.example.com"
+      ]
     )
     expect(rows.map((r) => [r.key, r.id, r.keptBy])).toEqual([
-      [
-        "samples.substrate.reamde.dev/tasks",
-        "ada.example.com/tasks",
-        "repository",
-      ],
+      ["samples.substrate.reamde.dev/tasks", "~/tasks", "repository"],
       [
         "held samples.substrate.reamde.dev/tasks",
         "samples.substrate.reamde.dev/tasks",
@@ -436,7 +424,7 @@ describe("mergeBundles", () => {
 
   it("folds a VERBATIM-installed sample onto its own catalog row", () => {
     // The sample was installed rather than imported, so it is held under the
-    // SHIPPED id. Keying the row by the rehomed id alone showed it twice: once
+    // SHIPPED id. Keying the row by the landed id alone showed it twice: once
     // as an untaken sample, once as an applied-directly bundle.
     const rows = mergeBundles(
       [
@@ -465,21 +453,20 @@ describe("mergeBundles", () => {
             kinds: ["samples.substrate.reamde.dev/tasks/task"],
           },
         }),
-      ],
-      "ada.example.com"
+      ]
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe("samples.substrate.reamde.dev/tasks")
     expect(rows[0].keptBy).toBe("repository")
     expect(rows[0].installed).toBe(true)
-    // Its closure is NOT rehomed: the kinds it holds are under the authority
-    // the tree spells, so a rehomed preview would link nowhere.
+    // Its closure is NOT moved into ~: the kinds it holds are under the
+    // authority the tree spells, so a preview under ~ would link nowhere.
     expect(rows[0].catalog?.closure.kinds).toEqual([
       "samples.substrate.reamde.dev/tasks/task",
     ])
   })
 
-  it("rehomes a sample's requires, because that is what the server looks for", () => {
+  it("moves a sample's requires into ~, because that is what the server looks for", () => {
     const rows = mergeBundles(
       [],
       [
@@ -494,20 +481,15 @@ describe("mergeBundles", () => {
             "substrate.reamde.dev/core",
           ],
         }),
-      ],
-      "ada.example.com"
+      ]
     )
-    expect(rows[0].requires).toEqual([
-      "ada.example.com/people",
-      "substrate.reamde.dev/core",
-    ])
+    expect(rows[0].requires).toEqual(["~/people", "substrate.reamde.dev/core"])
   })
 
   it("leaves a provider's id and requires exactly as published", () => {
     const rows = mergeBundles(
       [],
-      [catalog({ requires: ["samples.substrate.reamde.dev/people"] })],
-      "ada.example.com"
+      [catalog({ requires: ["samples.substrate.reamde.dev/people"] })]
     )
     expect(rows[0].id).toBe("providers.substrate.reamde.dev/google")
     expect(rows[0].requires).toEqual(["samples.substrate.reamde.dev/people"])
@@ -542,8 +524,7 @@ describe("packageRole", () => {
         package: "tasks",
         keptBy: "repository",
       }),
-    ],
-    "ada.example.com"
+    ]
   )
   const role = (id: string) => packageRole(rows.find((r) => r.id === id)!).short
 
@@ -554,7 +535,7 @@ describe("packageRole", () => {
     expect(role("providers.substrate.reamde.dev/slacklive")).toBe("Add-on")
     expect(role("substrate.reamde.dev/clinical")).toBe("Standard collection")
     expect(role("apps.example/coach")).toBe("Published")
-    expect(role("ada.example.com/tasks")).toBe("Sample")
+    expect(role("~/tasks")).toBe("Sample")
     expect(role("x.example.com/x")).toBe("Added by hand")
   })
 
@@ -577,7 +558,7 @@ describe("settingSetupCount", () => {
             {
               code: "setting",
               kind: "substrate.reamde.dev/core/secret",
-              record: "ada.example.com/firecrawl/apiKey",
+              record: "~/firecrawl/apiKey",
               message: "API key is not set",
             },
             // An input's own problem belongs to the Registry's setup chip, not
@@ -590,7 +571,7 @@ describe("settingSetupCount", () => {
             {
               code: "setting",
               kind: "substrate.reamde.dev/core/setting",
-              record: "ada.example.com/web/baseURL",
+              record: "~/web/baseURL",
               message: "Base URL is not set",
             },
           ],
@@ -922,39 +903,32 @@ describe("requirementsOf: what is taken first", () => {
 })
 
 describe("requiresAtLeast: the floor under a requirement (decision record 0070)", () => {
-  const present = new Set([
-    "ada.example.com/people",
-    "ada.example.com/scheduling",
-  ])
+  const present = new Set(["~/people", "~/scheduling"])
   const versions = new Map([
-    ["ada.example.com/people", 3],
-    ["ada.example.com/scheduling", 2],
+    ["~/people", 3],
+    ["~/scheduling", 2],
   ])
   const row = {
-    requires: ["ada.example.com/people", "ada.example.com/scheduling"],
-    requiresAtLeast: { "ada.example.com/people": 4 },
+    requires: ["~/people", "~/scheduling"],
+    requiresAtLeast: { "~/people": 4 },
   }
 
   it("marks a package held below its floor missing, with both versions", () => {
     const reqs = requirementsOf(row, present, versions)
     expect(reqs).toEqual([
       {
-        package: "ada.example.com/people",
+        package: "~/people",
         present: false,
         atLeast: 4,
         held: 3,
       },
-      { package: "ada.example.com/scheduling", present: true, held: 2 },
+      { package: "~/scheduling", present: true, held: 2 },
     ])
   })
 
   it("is met at the floor and above it", () => {
     for (const held of [4, 5]) {
-      const reqs = requirementsOf(
-        row,
-        present,
-        new Map([["ada.example.com/people", held]])
-      )
+      const reqs = requirementsOf(row, present, new Map([["~/people", held]]))
       expect(reqs[0].present).toBe(true)
     }
   })
@@ -967,13 +941,13 @@ describe("requiresAtLeast: the floor under a requirement (decision record 0070)"
 
   it("reads the held versions off the installed rows' statuses", () => {
     const rows = mergeBundles(
-      [status({ id: "ada.example.com/people", version: 3 })],
+      [status({ id: "~/people", version: 3 })],
       [
-        catalog({ id: "ada.example.com/people", installed: true }),
-        catalog({ id: "ada.example.com/tasks", installed: false }),
+        catalog({ id: "~/people", installed: true }),
+        catalog({ id: "~/tasks", installed: false }),
       ]
     )
-    expect([...heldVersions(rows)]).toEqual([["ada.example.com/people", 3]])
+    expect([...heldVersions(rows)]).toEqual([["~/people", 3]])
   })
 })
 
@@ -1630,91 +1604,76 @@ describe("oauthConnectBlocked, the connect gate", () => {
 
 describe("the requirement chain: what one button has to take", () => {
   // pebble requires tasks, tasks requires people and scheduling, and this
-  // repository holds none of them. The wire says only the direct one.
+  // repository holds none of them. The wire says only the direct one. Each
+  // is a sample, so each lands under ~ and names its requirements there.
+  const sample = (pkg: string, over: Partial<CatalogItem> = {}) =>
+    catalog({
+      id: `s.example.com/${pkg}`,
+      name: pkg,
+      authority: "s.example.com",
+      package: pkg,
+      keptBy: "repository",
+      ...over,
+    })
   const rows = mergeBundles(
     [],
     [
-      catalog({
-        id: "s.example.com/pebble",
-        name: "pebble",
-        package: "pebble",
-        keptBy: "repository",
-        requires: ["s.example.com/tasks"],
-      }),
-      catalog({
-        id: "s.example.com/tasks",
-        name: "tasks",
-        package: "tasks",
-        keptBy: "repository",
+      sample("pebble", { requires: ["s.example.com/tasks"] }),
+      sample("tasks", {
         requires: ["s.example.com/people", "s.example.com/scheduling"],
       }),
-      catalog({
-        id: "s.example.com/people",
-        name: "people",
-        package: "people",
-        keptBy: "repository",
-      }),
-      catalog({
-        id: "s.example.com/scheduling",
-        name: "scheduling",
-        package: "scheduling",
-        keptBy: "repository",
-      }),
+      sample("people"),
+      sample("scheduling"),
     ]
   )
-  const pebble = rows.find((r) => r.id === "s.example.com/pebble")!
+  const pebble = rows.find((r) => r.id === "~/pebble")!
 
   it("walks the chain the wire does not carry, and names each supplier", () => {
     const tree = requirementTree(pebble, rows, new Set())
-    expect(tree.map((n) => n.package)).toEqual(["s.example.com/tasks"])
+    expect(tree.map((n) => n.package)).toEqual(["~/tasks"])
     expect(tree[0].row?.name).toBe("tasks")
     expect(tree[0].requires.map((n) => n.package)).toEqual([
-      "s.example.com/people",
-      "s.example.com/scheduling",
+      "~/people",
+      "~/scheduling",
     ])
   })
 
   it("orders the missing ones leaves first, each once", () => {
     const chain = missingChain(requirementTree(pebble, rows, new Set()))
     expect(chain.map((n) => n.package)).toEqual([
-      "s.example.com/people",
-      "s.example.com/scheduling",
-      "s.example.com/tasks",
+      "~/people",
+      "~/scheduling",
+      "~/tasks",
     ])
   })
 
   it("drops what this repository already holds", () => {
     const chain = missingChain(
-      requirementTree(pebble, rows, new Set(["s.example.com/people"]))
+      requirementTree(pebble, rows, new Set(["~/people"]))
     )
-    expect(chain.map((n) => n.package)).toEqual([
-      "s.example.com/scheduling",
-      "s.example.com/tasks",
-    ])
+    expect(chain.map((n) => n.package)).toEqual(["~/scheduling", "~/tasks"])
   })
 
   it("takes a package held below its floor again, in the same pass", () => {
     const floored = mergeBundles(
       [],
       [
-        catalog({
-          id: "s.example.com/pebble",
-          keptBy: "repository",
+        sample("pebble", {
           requires: ["s.example.com/tasks"],
           requiresAtLeast: { "s.example.com/tasks": 4 },
         }),
-        catalog({ id: "s.example.com/tasks", keptBy: "repository" }),
+        sample("tasks"),
       ]
     )
     const chain = missingChain(
       requirementTree(
-        floored.find((r) => r.id === "s.example.com/pebble")!,
+        floored.find((r) => r.id === "~/pebble")!,
         floored,
-        new Set(["s.example.com/tasks"]),
-        new Map([["s.example.com/tasks", 3]])
+        new Set(["~/tasks"]),
+        new Map([["~/tasks", 3]])
       )
     )
-    expect(chain.map((n) => n.package)).toEqual(["s.example.com/tasks"])
+    expect(chain.map((n) => n.package)).toEqual(["~/tasks"])
     expect(chain[0].held).toBe(3)
     expect(chain[0].atLeast).toBe(4)
   })
@@ -1742,6 +1701,13 @@ describe("the requirement chain: what one button has to take", () => {
     const plan = importPlan(pebble, requirementTree(pebble, rows, new Set()))
     expect(plan.refusal).toBe("")
     expect(plan.bundles.map((b) => b.id)).toEqual([
+      "~/people",
+      "~/scheduling",
+      "~/tasks",
+      "~/pebble",
+    ])
+    // The add route is called with each one's shipped id.
+    expect(plan.bundles.map((b) => b.catalog?.id)).toEqual([
       "s.example.com/people",
       "s.example.com/scheduling",
       "s.example.com/tasks",
@@ -1753,22 +1719,19 @@ describe("the requirement chain: what one button has to take", () => {
     const rows = mergeBundles(
       [],
       [
-        catalog({
-          id: "s.example.com/pebble",
-          name: "pebble",
-          keptBy: "repository",
+        sample("pebble", {
           requires: ["s.example.com/tasks", "s.example.com/nowhere"],
         }),
-        catalog({ id: "s.example.com/tasks", keptBy: "repository" }),
+        sample("tasks"),
       ]
     )
-    const row = rows.find((r) => r.id === "s.example.com/pebble")!
+    const row = rows.find((r) => r.id === "~/pebble")!
     const plan = importPlan(row, requirementTree(row, rows, new Set()))
     // Nothing is imported: landing tasks and then refusing on the bundle the
     // reader actually asked for is a half-done job.
     expect(plan.bundles).toEqual([])
     expect(plan.refusal).toBe(
-      "s.example.com/nowhere is not in the catalog, so it cannot be added from here. Nothing is added."
+      "~/nowhere is not in the catalog, so it cannot be added from here. Nothing is added."
     )
   })
 })

@@ -16,11 +16,12 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// recordsStaff declares, under the repository's own authority, two kinds
-// that point at a person (the people sample, which has no pointer from one
-// person to another): a member's `manager`, which may name a person that is
-// not there, and a memo's `author`, whose link carries `since`, beside its
-// repeated `mentions`. It answers the two kind references.
+// recordsStaff declares, under the repository's full name, two kinds that
+// point at a person (the people sample, which has no pointer from one person
+// to another): a member's `manager`, which may name a person that is not
+// there, and a memo's `author`, whose link carries `since`, beside its
+// repeated `mentions`. It answers the two kind references as the repository
+// holds them, in its own namespace, `~` (decision record 0259).
 func recordsStaff(t *testing.T, env *dbEnv) (member, memo string) {
 	t.Helper()
 	env.declare(t, fmt.Sprintf(`
@@ -71,7 +72,7 @@ data:
       kind: %[2]s
       repeated: true
 `, env.repository, personKind))
-	return env.repository + "/staff/member", env.repository + "/staff/memo"
+	return "~/staff/member", "~/staff/memo"
 }
 
 // recordsCount reads the `count` a list answered: absent is (0, false).

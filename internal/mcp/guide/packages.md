@@ -4,13 +4,13 @@ Packages group declarations, govern who may change them, and bring collections, 
 
 ## Ownership and writes
 
-A package is the unit an authority versions and owns, named `<authority>/<package>`. Its kinds are named `<authority>/<package>/<name>`. A kind can pin its own version; otherwise it inherits the package's. Read `overview` for this repository's authority before declaring anything.
+A package is the unit an authority versions and owns, named `<authority>/<package>`. Its kinds are named `<authority>/<package>/<name>`. A kind can pin its own version; otherwise it inherits the package's. The repository's own packages live under `~`, its local namespace: `~/projects`, with kinds `~/projects/project`. The repository's full name is accepted in place of `~` on input, and every answer says `~`.
 
 The stored package's `source` governs declaration writes:
 
 - `builtin`: seeded by the server and changed by its shipped upgrades. An assistant cannot edit its declarations through `apply` or `write`.
 - `published`: installed under the publisher's authority. Its declarations change by adding it again (its upgrade), not ordinary writes.
-- `installed`: the owner's declarations, including added samples. An assistant may change them within its access. New packages must use the owner's authority, for example `ada.example.com/projects`.
+- `installed`: the owner's declarations, including added samples. An assistant may change them within its access. New packages go under `~`, for example `~/projects`.
 
 These restrictions protect declarations, not every data record of their kinds. Ordinary data writes still follow the kind's rules and the assistant's access restrictions. A `substrate.reamde.dev/console/collectionview` record, for example, can be written even though its kind's declaration belongs to a builtin package. Secrets, credentials and tokens are not assistant write surfaces.
 
@@ -33,7 +33,7 @@ Do not infer provider status from `keptBy`. Inspect the entry, especially its re
 
 ## Samples: add a copy
 
-`packages` action `add` on a sample copies its declarations and shipped data under the owner's authority, rewriting references with them. The landed package is writable and remembers its catalog origin.
+`packages` action `add` on a sample copies its declarations and shipped data into `~`, rewriting references with them. The landed package is writable and remembers its catalog origin.
 
 **Adding a sample does not add the samples it requires.** Add each required sample first, respecting dependency order. For the tasks sample, these are three separate `packages` calls:
 
@@ -49,7 +49,7 @@ Do not infer provider status from `keptBy`. Inspect the entry, especially its re
 {"action":"add","id":"samples.substrate.reamde.dev/tasks"}
 ```
 
-For owner authority `ada.example.com`, the task kind then is `ada.example.com/tasks/task`, and its installed bundle id is `ada.example.com/tasks`. Use that landed id for status, inputs and lifecycle actions. Continue using the catalog id for `item` and for adding it again. A fresh repository does not already have these sample collections.
+The task kind then is `~/tasks/task`, and its installed bundle id is `~/tasks`, in every repository. Use that landed id for status, inputs and lifecycle actions. Continue using the catalog id for `item` and for adding it again. A fresh repository does not already have these sample collections.
 
 ## Published packages: add
 

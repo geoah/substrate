@@ -59,7 +59,7 @@ const fn = (id: string) => ({
 })
 
 const assistant = record({
-  id: "ada.localhost/llm/substrate",
+  id: "~/llm/substrate",
   kind: "substrate.reamde.dev/core/agent",
   properties: {
     description: "Chat with your substrate.",
@@ -67,15 +67,13 @@ const assistant = record({
       fn("substrate.reamde.dev/core/query"),
       fn("substrate.reamde.dev/core/write"),
       fn("substrate.reamde.dev/core/propose"),
-      { ...fn("ada.localhost/notes/savenote"), name: "save" },
+      { ...fn("~/notes/savenote"), name: "save" },
     ],
-    subagents: [
-      { ref: "substrate.reamde.dev/core/agent/ada.localhost/notes/titler" },
-    ],
+    subagents: [{ ref: "substrate.reamde.dev/core/agent/~/notes/titler" }],
     permissions: {
       reads: { kinds: [{ ref: "substrate.reamde.dev/core/kind/*" }] },
       writes: [
-        { ref: "substrate.reamde.dev/core/kind/ada.localhost/tasks/task" },
+        { ref: "substrate.reamde.dev/core/kind/~/tasks/task" },
         {
           ref: "substrate.reamde.dev/core/kind/substrate.reamde.dev/core/recordpatchrequest",
         },
@@ -96,10 +94,8 @@ const call = (over: Partial<ToolCallView>): ToolCallView => ({
 
 describe("names", () => {
   it("reads an agent's local name as words", () => {
-    expect(agentName("ada.localhost/llm/substrate")).toBe("Substrate")
-    expect(agentName("ada.localhost/llm/substrateEditor")).toBe(
-      "Substrate editor"
-    )
+    expect(agentName("~/llm/substrate")).toBe("Substrate")
+    expect(agentName("~/llm/substrateEditor")).toBe("Substrate editor")
     expect(agentName("notekeeper")).toBe("Notekeeper")
   })
 
@@ -134,11 +130,11 @@ describe("names", () => {
     const served = record({
       properties: {
         agent: {
-          ref: "substrate.reamde.dev/core/agent/ada.localhost/llm/substrate",
+          ref: "substrate.reamde.dev/core/agent/~/llm/substrate",
         },
       },
     })
-    expect(threadAgentId(served)).toBe("ada.localhost/llm/substrate")
+    expect(threadAgentId(served)).toBe("~/llm/substrate")
     expect(threadAgentId(record({ properties: { agent: "scribe" } }))).toBe(
       "scribe"
     )
@@ -155,13 +151,13 @@ describe("names", () => {
       })
     expect(
       lastChatAgent([
-        thread("record", "ada.localhost/notes/titler"),
-        thread("chat", "ada.localhost/llm/substrate"),
-        thread("chat", "ada.localhost/llm/substrateEditor"),
+        thread("record", "~/notes/titler"),
+        thread("chat", "~/llm/substrate"),
+        thread("chat", "~/llm/substrateEditor"),
       ])
-    ).toBe("ada.localhost/llm/substrate")
+    ).toBe("~/llm/substrate")
     expect(
-      lastChatAgent([thread("schedule", "ada.localhost/notes/titler")])
+      lastChatAgent([thread("schedule", "~/notes/titler")])
     ).toBeUndefined()
     expect(lastChatAgent([])).toBeUndefined()
   })
@@ -309,12 +305,8 @@ describe("what a tool call did", () => {
     expect(resolveTool(assistant, "query").function).toBe(
       "substrate.reamde.dev/core/query"
     )
-    expect(resolveTool(assistant, "save").function).toBe(
-      "ada.localhost/notes/savenote"
-    )
-    expect(resolveTool(assistant, "titler").subagent).toBe(
-      "ada.localhost/notes/titler"
-    )
+    expect(resolveTool(assistant, "save").function).toBe("~/notes/savenote")
+    expect(resolveTool(assistant, "titler").subagent).toBe("~/notes/titler")
     expect(resolveTool(assistant, "unknown")).toEqual({})
     // Unread agent: the host functions still read by their own names.
     expect(resolveTool(undefined, "propose").function).toBe(
@@ -337,22 +329,22 @@ describe("what a tool call did", () => {
       resolveTool(
         assistant,
         "save",
-        "substrate.reamde.dev/core/function/ada.localhost/notes/archive"
+        "substrate.reamde.dev/core/function/~/notes/archive"
       )
-    ).toEqual({ function: "ada.localhost/notes/archive" })
+    ).toEqual({ function: "~/notes/archive" })
     expect(
       resolveTool(
         assistant,
         "helper",
-        "substrate.reamde.dev/core/agent/ada.localhost/notes/titler"
+        "substrate.reamde.dev/core/agent/~/notes/titler"
       )
-    ).toEqual({ subagent: "ada.localhost/notes/titler" })
+    ).toEqual({ subagent: "~/notes/titler" })
     // A matching entry still lends its description.
     const described = record({
       properties: {
         tools: [
           {
-            ...fn("ada.localhost/notes/savenote"),
+            ...fn("~/notes/savenote"),
             name: "save",
             description: "Saves a note",
           },
@@ -363,25 +355,24 @@ describe("what a tool call did", () => {
       resolveTool(
         described,
         "save",
-        "substrate.reamde.dev/core/function/ada.localhost/notes/savenote"
+        "substrate.reamde.dev/core/function/~/notes/savenote"
       )
     ).toEqual({
-      function: "ada.localhost/notes/savenote",
+      function: "~/notes/savenote",
       description: "Saves a note",
     })
   })
 
   it("spells a call's callable the way its rows are stamped", () => {
-    const stamped =
-      "substrate.reamde.dev/core/function/ada.localhost/notes/count"
+    const stamped = "substrate.reamde.dev/core/function/~/notes/count"
     expect(callableOf(call({ callable: stamped }), {})).toBe(stamped)
     // An unstamped call spells what its name resolves to the same way.
     expect(
       callableOf(call({ name: "save" }), resolveTool(assistant, "save"))
-    ).toBe("substrate.reamde.dev/core/function/ada.localhost/notes/savenote")
+    ).toBe("substrate.reamde.dev/core/function/~/notes/savenote")
     expect(
       callableOf(call({ name: "titler" }), resolveTool(assistant, "titler"))
-    ).toBe("substrate.reamde.dev/core/agent/ada.localhost/notes/titler")
+    ).toBe("substrate.reamde.dev/core/agent/~/notes/titler")
     expect(callableOf(call({ name: "ghost" }), {})).toBe("ghost")
   })
 
@@ -399,15 +390,14 @@ describe("what a tool call did", () => {
     expect(
       toolSummary(
         call({
-          arguments:
-            '{"filter":{"kinds":["ada.localhost/tasks/task","ada.localhost/notes/note"]}}',
+          arguments: '{"filter":{"kinds":["~/tasks/task","~/notes/note"]}}',
         }),
         query
       )
     ).toBe("Looked through your tasks and notes")
     expect(
       toolSummary(
-        call({ arguments: '{"kind":"ada.localhost/people/person","id":"g"}' }),
+        call({ arguments: '{"kind":"~/people/person","id":"g"}' }),
         query
       )
     ).toBe("Looked up a person")
@@ -416,9 +406,9 @@ describe("what a tool call did", () => {
     expect(
       toolSummary(
         call({
-          arguments: '{"kind":"ada.localhost/people/person","id":"g"}',
+          arguments: '{"kind":"~/people/person","id":"g"}',
           output:
-            '{"record":{"kind":"ada.localhost/people/person","id":"g","properties":{"title":"Grace Hopper"}}}',
+            '{"record":{"kind":"~/people/person","id":"g","properties":{"title":"Grace Hopper"}}}',
         }),
         query
       )
@@ -467,13 +457,13 @@ describe("what a tool call did", () => {
         arguments: JSON.stringify(args),
         output: JSON.stringify({
           record: {
-            kind: "ada.localhost/reading/book",
+            kind: "~/reading/book",
             id: "b1",
             properties: title ? { title } : {},
           },
         }),
       })
-    const book = { kind: "ada.localhost/reading/book", id: "b1" }
+    const book = { kind: "~/reading/book", id: "b1" }
     const props = (...names: string[]) => ({
       input: { properties: Object.fromEntries(names.map((n) => [n, "x"])) },
     })
@@ -511,7 +501,7 @@ describe("what a tool call did", () => {
     expect(
       toolSummary(
         call({
-          arguments: '{"op":"patch","kind":"ada.localhost/reading/author"}',
+          arguments: '{"op":"patch","kind":"~/reading/author"}',
         }),
         write
       )
@@ -521,8 +511,8 @@ describe("what a tool call did", () => {
       toolSummary(
         call({
           arguments:
-            '{"op":"replace","kind":"ada.localhost/notes/note","id":"n1","property":"body","edits":[{},{}]}',
-          output: '{"kind":"ada.localhost/notes/note","id":"n1","edits":2}',
+            '{"op":"replace","kind":"~/notes/note","id":"n1","property":"body","edits":[{},{}]}',
+          output: '{"kind":"~/notes/note","id":"n1","edits":2}',
         }),
         { function: "substrate.reamde.dev/core/edit", title: "Garden" }
       )
@@ -549,15 +539,15 @@ describe("what a tool call did", () => {
     expect(
       toolSummary(call({}), { function: "substrate.reamde.dev/core/ask" })
     ).toBe("Asked you some questions")
-    expect(
-      toolSummary(call({}), { subagent: "ada.localhost/notes/titler" })
-    ).toBe("Asked Titler")
+    expect(toolSummary(call({}), { subagent: "~/notes/titler" })).toBe(
+      "Asked Titler"
+    )
   })
 
   it("reads any other function by its description, else its name", () => {
     expect(
       toolSummary(call({}), {
-        function: "ada.localhost/notes/savenote",
+        function: "~/notes/savenote",
         description: "Saved a note",
       })
     ).toBe("Saved a note")
@@ -570,9 +560,9 @@ describe("what a tool call did", () => {
         function: "providers.substrate.reamde.dev/google/synccalendar",
       })
     ).toBe("Used Google Calendar sync")
-    expect(
-      toolSummary(call({}), { function: "ada.localhost/notes/savenote" })
-    ).toBe("Used save note")
+    expect(toolSummary(call({}), { function: "~/notes/savenote" })).toBe(
+      "Used save note"
+    )
   })
 
   it("routes a tool", () => {
@@ -595,7 +585,7 @@ describe("what an agent may see and change", () => {
       properties: {
         permissions: {
           reads: {
-            kinds: ["ada.localhost/tasks/task", "ada.localhost/notes/*"],
+            kinds: ["~/tasks/task", "~/notes/*"],
           },
         },
       },
@@ -623,9 +613,7 @@ describe("what an agent may see and change", () => {
     )
     expect(canChange(record({}))).toBe("Nothing")
     expect(
-      canChange(
-        record({ properties: { tools: [fn("ada.localhost/notes/savenote")] } })
-      )
+      canChange(record({ properties: { tools: [fn("~/notes/savenote")] } }))
     ).toBe(
       "Nothing directly. Its tools can, each within what it’s allowed to do"
     )
@@ -776,9 +764,9 @@ describe("offered tools", () => {
     })
   const functions = [
     offering("feeds.example.com/feeds/today", { agents: true }),
-    offering("ada.localhost/notes/savenote", { agents: true }),
-    offering("ada.localhost/notes/stats", { agents: true }),
-    offering("ada.localhost/notes/plain"),
+    offering("~/notes/savenote", { agents: true }),
+    offering("~/notes/stats", { agents: true }),
+    offering("~/notes/plain"),
     offering("other.example.com/other/save", { agents: true, name: "save" }),
     offering("other.example.com/other/withheld", { agents: false }),
   ]
@@ -795,9 +783,10 @@ describe("offered tools", () => {
         toolsFrom: [{ functions: "*" }],
       },
     })
+    // Byte order, the server's: `~` sorts after every letter.
     expect(agentOfferedTools(agent, functions)).toEqual([
-      { function: "ada.localhost/notes/stats", name: "notes_stats" },
       { function: "feeds.example.com/feeds/today", name: "feeds_today" },
+      { function: "~/notes/stats", name: "notes_stats" },
     ])
     const narrow = record({
       ...assistant,

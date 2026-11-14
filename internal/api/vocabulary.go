@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -105,6 +106,16 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 func holdWaitingMappings(ctx context.Context, ds substrate.Dataset, docs []map[string]any, hold bool) ([]map[string]any, []substrate.SuggestedMapping, error) {
 	if !hold {
 		return docs, nil, nil
+	}
+	// The engine stores the repository's own kinds under `~` (decision
+	// record 0259), so the mappings held back are named the way it would
+	// have stored them.
+	if home := ds.Repository().Authority; home != "" {
+		local, err := vocabulary.LocalizeAuthority(docs, home, home)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		docs = local
 	}
 	waiting, err := vocabulary.WaitingMappings(docs, func(kind string) (bool, error) {
 		_, err := ds.KindByRef(ctx, kind)

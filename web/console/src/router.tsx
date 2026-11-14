@@ -14,7 +14,8 @@ import { NuqsAdapter } from "nuqs/adapters/tanstack-router"
 
 import { PageError } from "@/components/page-error"
 import { ShellOrLanding } from "@/components/site/shell-or-landing"
-import { hasSession } from "@/lib/api/session"
+import { LOCAL_AUTHORITY } from "@/lib/api/http"
+import { getRepository, hasSession } from "@/lib/api/session"
 import { ActorPage } from "@/pages/actor"
 import { AgentPage } from "@/pages/agent"
 import { AgentsPage } from "@/pages/agents"
@@ -58,11 +59,34 @@ const rootRoute = createRootRoute()
  * address naming one is a sample to add from All data. */
 const SAMPLES_AUTHORITY = "samples.substrate.reamde.dev"
 
-/** A bundle id, `<authority>/<package>`, as the provider route's params. */
+/** A bundle id, `<authority>/<package>`, as the provider route's params. A
+ * package of the repository's own named by its full name is the one under
+ * `~` (decision record 0259). */
 function bundleTarget(id: string): { authority: string; pkg: string } | null {
   const at = id.lastIndexOf("/")
   if (at <= 0 || at === id.length - 1) return null
-  return { authority: id.slice(0, at), pkg: id.slice(at + 1) }
+  const authority = id.slice(0, at)
+  return {
+    authority: authority === getRepository() ? LOCAL_AUTHORITY : authority,
+    pkg: id.slice(at + 1),
+  }
+}
+
+/** The addresses whose first segment after the section is an authority. */
+const AUTHORITY_ADDRESS = /^\/(data|tools|providers)\/([^/?#]+)(.*)$/
+
+/** `href` with the repository's full name in its authority segment moved to
+ * `~`, or undefined where it names no such thing. The name is another
+ * spelling of `~` (decision record 0259), and the registry lists the
+ * repository's own kinds under `~` alone, so an older link under the name
+ * would find nothing there. */
+export function localHref(
+  href: string,
+  repository: string | null
+): string | undefined {
+  const m = AUTHORITY_ADDRESS.exec(href)
+  if (!repository || !m || m[2] !== repository) return undefined
+  return `/${m[1]}/${LOCAL_AUTHORITY}${m[3]}`
 }
 
 /** The doors' `?redirect=`: where to go once signed in. Kept as written here;
@@ -170,8 +194,12 @@ export async function shellGate(location: {
 const shellRoute = createRoute({
   id: "shell",
   getParentRoute: () => rootRoute,
-  beforeLoad: ({ location }) =>
-    hasSession() ? undefined : shellGate(location),
+  beforeLoad: ({ location }) => {
+    if (!hasSession()) return shellGate(location)
+    const local = localHref(location.href, getRepository())
+    if (local) throw redirect({ href: local, replace: true })
+    return undefined
+  },
   component: ShellOrLanding,
 })
 

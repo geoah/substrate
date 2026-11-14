@@ -741,7 +741,7 @@ func TestBootUpgradeRefusesARenameAStoredMappingReads(t *testing.T) {
 	addShippedMirror(t, renaming, "username")
 	bumpPackageVersion(t, renaming, corePackage, "100")
 	refused := openRefused(t, dsn, renaming)
-	wantRefusedUpgrade(t, refused, "recordmapping "+ownerPackage+"/gadgethandleowner", `declares no property "login"`)
+	wantRefusedUpgrade(t, refused, "recordmapping "+vocabulary.LocalizeRef(ownerPackage, testdb.Repository(t))+"/gadgethandleowner", `declares no property "login"`)
 	svc := openTree(t, dsn, renaming)
 	ds, err := svc.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
@@ -899,7 +899,7 @@ func TestBootUpgradeRefusesARenameAStoredTemplateReads(t *testing.T) {
 	renameShippedLabel(t, tree)
 	refused := openMovedRefused(t, dsn, tree)
 	wantRefusedUpgrade(t, refused,
-		`kind `+viewerPackage+`/providercard: displayTemplate {provider.label} reads property "label" of substrate.reamde.dev/llm/provider, which this apply renames to "displayLabel"; rewrite the template first`)
+		`kind `+vocabulary.LocalizeRef(viewerPackage, testdb.Repository(t))+`/providercard: displayTemplate {provider.label} reads property "label" of substrate.reamde.dev/llm/provider, which this apply renames to "displayLabel"; rewrite the template first`)
 	stillSpeaksTheOldShape(t, dsn)
 
 	// The owner moves the template; the next open lands the rename.

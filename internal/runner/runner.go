@@ -1386,7 +1386,11 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 			return nil, fmt.Errorf("call: function is required")
 		}
 		// The allowlist is checked before the budget charges: an ungranted
-		// call is a deterministic trip that decides the delivery.
+		// call is a deterministic trip that decides the delivery. It is held
+		// to the identity the allowlist is written in, as a read is.
+		if s.backend != nil {
+			in.Function = s.backend.ResolveCallable(in.Function)
+		}
 		if !s.callAllowed(in.Function) {
 			return nil, s.trip(fmt.Errorf("%w: %s calls %s", ErrCallForbidden, s.spec.Function, in.Function))
 		}

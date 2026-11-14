@@ -319,14 +319,14 @@ func ValidTypeGlob(pat string) bool {
 		// ("providers.substrate.reamde.dev/google/*").
 		head := pat[:len(pat)-2]
 		if authority, pkg := SplitPackageRef(head); authority != "" {
-			return ValidAuthority(authority) && ValidPackage(pkg)
+			return ValidKindAuthority(authority) && ValidPackage(pkg)
 		}
-		return ValidAuthority(head)
+		return ValidKindAuthority(head)
 	case strings.Contains(pat, "*"):
 		return false
 	default:
 		authority, pkg, name := SplitKindRef(pat)
-		if authority != "" && (!ValidAuthority(authority) || !ValidPackage(pkg)) {
+		if authority != "" && (!ValidKindAuthority(authority) || !ValidPackage(pkg)) {
 			return false
 		}
 		return ValidName(name)
@@ -1349,6 +1349,7 @@ func (r *Registry) Functions() []*Function {
 // authority, package and name, on a trigger, in an agent's tools, in a
 // `permissions.call` grant and on the call route alike.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
+	nameOrIdentity = r.Localize(nameOrIdentity)
 	var names []string
 	for _, f := range r.Functions() {
 		if f.Identity() == nameOrIdentity {

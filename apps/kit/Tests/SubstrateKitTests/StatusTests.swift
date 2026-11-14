@@ -382,12 +382,16 @@ final class TransportBox: @unchecked Sendable {
             ])
         #expect(ReviewHeading(changes: review, firstSignIn: false) == .moreAccess)
         #expect(ReviewHeading(changes: review.filter(\.leftOut), firstSignIn: false) == .renew)
-        // `~` is the repository's authority, as the token stores it.
+        // `~` is the repository's own namespace, as the token stores it, and
+        // the repository's name is another spelling of it (decision record
+        // 0259).
         var home = manifest
         home.scopes = ["read:~/notes/*"]
         var held = session
-        held.scopes = ["read:ada.example.com/notes/*"]
+        held.scopes = ["read:~/notes/*"]
         held.requestedScopes = ["read:~/notes/*"]
+        #expect(home.leftOut(by: held).isEmpty)
+        held.scopes = ["read:ada.example.com/notes/*"]
         #expect(home.leftOut(by: held).isEmpty)
         // A session that never kept its request left nothing out.
         held.requestedScopes = nil
@@ -405,6 +409,8 @@ final class TransportBox: @unchecked Sendable {
         let asking = home.asking([chore, chore, "write:~/tasks/*"])
         #expect(asking.scopes == ["write:~/tasks/*", chore])
         var session = appSession()
+        session.scopes = ["write:~/tasks/*", chore]
+        #expect(home.beyond(session) == [chore])
         session.scopes = ["write:ada.example.com/tasks/*", chore]
         #expect(home.beyond(session) == [chore])
         session.scopes = nil

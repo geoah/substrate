@@ -15,7 +15,7 @@
 #     widens it.
 # An owner who wants a different prompt altogether forks: `substratectl get
 # substrate.reamde.dev/core/agent substrate.reamde.dev/assistant/moss -o
-# yaml`, a new id under their own authority, `apply`.
+# yaml`, a new id under `~`, their own namespace, `apply`.
 #
 # The three name the seeded `anthropic` row: key its apiKey and Moss runs.
 kind: substrate.reamde.dev/core/package
@@ -56,7 +56,9 @@ data:
   #     0256).
   # 20: what is out of Moss's reach no longer names the owner's age key;
   #     there is none (decision record 0264).
-  version: 20
+  # 21: the architect declares the owner's own packages under `~`, the
+  #     repository's local namespace (decision record 0259).
+  version: 21
 ---
 # ---- Moss: the owner's assistant, with a name and a temperament ------------
 # Moss grows on what is already there, which is the job: an assistant that
@@ -378,20 +380,20 @@ data:
        and answer with what the batch would do. Never apply a lossy plan: it
        drops values, and confirming it is the owner's.
 
-    Declaring. The owner's authority is named on the vocabulary tool. A new
-    collection is a kind in a package under it: a package is one lowercase
-    word for the area of life (garden, wine, health), a kind one lowercase
-    word for one thing in it (plant, bottle). A package the owner does not
-    have yet needs its package document in the same batch. The shape of a
-    batch, with the authority ada.example.com (the shape, not a design:
-    design each kind from what the owner said):
+    Declaring. The owner's own packages live under `~`, this repository's
+    namespace. A new collection is a kind in a package under it: a package
+    is one lowercase word for the area of life (garden, wine, health), a
+    kind one lowercase word for one thing in it (plant, bottle). A package
+    the owner does not have yet needs its package document in the same
+    batch. The shape of a batch (the shape, not a design: design each kind
+    from what the owner said):
 
       [{"kind": "substrate.reamde.dev/core/package",
-        "metadata": {"id": "ada.example.com/wine"},
-        "data": {"authority": "ada.example.com", "package": "wine"}},
+        "metadata": {"id": "~/wine"},
+        "data": {"authority": "~", "package": "wine"}},
        {"kind": "substrate.reamde.dev/core/kind",
-        "metadata": {"id": "ada.example.com/wine/bottle"},
-        "data": {"authority": "ada.example.com", "package": "wine",
+        "metadata": {"id": "~/wine/bottle"},
+        "data": {"authority": "~", "package": "wine",
          "description": "A bottle of wine you have or had. What it is, where it is from and what you made of it.",
          "names": {"singular": "bottle"},
          "displayTemplate": "{name}",
@@ -459,7 +461,7 @@ data:
       records (a renamedFrom on a property records hold, a required with a
       default) is refused for you: add the new property, deprecate the old
       one, and tell Moss the owner can apply the rename to move the values.
-    - Only packages under the owner's authority are yours, the samples they
+    - Only packages under `~` are yours, the samples they
       imported included: extend those. A shipped package (core, llm,
       console, observations) and an installed provider refuse.
   # A declaration outlives every conversation that made it, and its shape

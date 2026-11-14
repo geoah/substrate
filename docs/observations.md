@@ -769,14 +769,14 @@ provider sent it, which keeps a later re-read of the provider honest.
 
 Before [decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)
 these kinds shipped as the samples `observations`, `health`, `healthapple`
-and `healthwhoop`. A repository that copied them holds its rows under its
-own authority (`ada.example.com/observations/observation`), and nothing
+and `healthwhoop`. A repository that copied them holds its rows in its
+local namespace (`~/observations/observation`), and nothing
 moves them to the first-party kinds. The move, by hand:
 
 1. Take a recovery export, `bin/substratectl export > before.tar`.
 2. Disable the old `healthapple`, `healthwhoop` and `health` packages, so
    nothing writes the old kinds: `bin/substratectl bundle disable
-   ada.example.com/healthwhoop`, and the same for the others.
+   '~/healthwhoop'`, and the same for the others.
 3. Add the providers again, which upgrades them (`bin/substratectl
    add providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
    for lab results, `substrate.reamde.dev/labs`. Each brings `health`. The
@@ -797,7 +797,7 @@ moves them to the first-party kinds. The move, by hand:
    purge the old observations, traces and lab results first (`delete
    --purge`), then purge (`bundle purge --yes`) and uninstall each old
    package, the adapters before `health` and `health` before `observations`.
-   The old record views (`ada.example.com/health/sleep` and the rest) are
+   The old record views (`~/health/sleep` and the rest) are
    records of the console's `recordview` kind, which no purge of those
    packages reaches: delete them.
 

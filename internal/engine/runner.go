@@ -516,6 +516,13 @@ func (b *callBackend) ResolveKind(name string) string {
 	return ty.Identity
 }
 
+// ResolveCallable is a function or agent identity as the registry keys it:
+// the repository's full name folded into `~`. Whether anything is declared
+// there is the call's to find out.
+func (b *callBackend) ResolveCallable(name string) string {
+	return b.inv.ds.registry().Localize(name)
+}
+
 // Call runs another function to completion inside this invocation, or an
 // agent the caller names under `permissions.agents` (callAgent). The runner
 // already gated the union of the two allowlists and charged its call budget; the engine's half gates depth, recursion and the
@@ -524,6 +531,9 @@ func (b *callBackend) ResolveKind(name string) string {
 // and its output returns to the calling body.
 func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, error) {
 	ds := b.inv.ds
+	// Which list names the target is read in the identity the lists are
+	// written in (decision record 0259).
+	ident = b.ResolveCallable(ident)
 	if slices.Contains(b.fn.Caps.Agents, ident) {
 		return b.callAgent(ctx, ident, args)
 	}

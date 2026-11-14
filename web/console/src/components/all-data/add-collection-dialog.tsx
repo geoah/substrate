@@ -2,7 +2,7 @@
  * a standard collection (a published package the catalog says adds
  * collections or metrics and connects to nothing, decision record 0238:
  * kept up to date for you, its fields not yours to change), start from a
- * sample (imported under the repository's own authority, the packages it
+ * sample (imported into the repository's own namespace `~`, the packages it
  * needs first; only samples that add a collection, see `collectionSamples`),
  * or declare the kind yourself in YAML. Asking goes to the agent that can
  * declare a kind, and is sent, not only written down. */

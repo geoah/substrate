@@ -139,7 +139,9 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
 	hands := keptHands(got)
-	dropped := keptConvert(&want, conversions, keptDialect(t, dir, fixture.Repository))
+	dialect := keptDialect(t, dir, fixture.Repository)
+	dropped := keptConvert(&want, conversions, dialect, fixture.Repository)
+	keptConvertTriggers(&wantTriggers, conversions, dialect, fixture.Repository)
 
 	var diffs []string
 	seen := map[string]bool{}

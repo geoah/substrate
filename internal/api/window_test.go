@@ -21,13 +21,13 @@ import (
 
 // kindDose and kindMeeting name a medication schedule and a calendar event
 // under the samples authority, for a test of what a token's grant over them
-// reads; seedWindow declares its own kinds under the repository's authority.
+// reads; seedWindow declares its own kinds in the repository's own namespace.
 const (
 	kindDose    = "samples.substrate.reamde.dev/health/medicationschedule"
 	kindMeeting = "samples.substrate.reamde.dev/calendar/calendarevent"
 )
 
-// seedWindow declares, under the repository's own authority, a medication
+// seedWindow declares, in the repository's own namespace, `~`, a medication
 // kind binding temporal, recurring and override (it holds its own overrides)
 // and a meeting kind binding temporal alone, and writes, as the engine's own
 // hand so the ids read as written: a daily 09:00 Athens dose from July 1st
@@ -36,7 +36,7 @@ const (
 // two kind references.
 func seedWindow(ds substrate.Dataset) (dose, meeting string, err error) {
 	ctx := context.Background()
-	pkg := ds.Repository().Authority + "/timeline"
+	pkg := "~/timeline"
 	dose, meeting = pkg+"/medication", pkg+"/meeting"
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),

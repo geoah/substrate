@@ -168,6 +168,13 @@ func WithTestConversionStep(name string, line func(e *changelogfile.Entry) error
 	}
 }
 
+// WithTestAfterTitleRounds runs fn inside the open's title pass
+// (localtitles.go) once its rounds have ended and before it writes, so a
+// test can see what the pass holds then.
+func WithTestAfterTitleRounds(fn func()) Option {
+	return func(o *options) { o.afterTitleRounds = fn }
+}
+
 // WithTestAfterProof runs fn with the door's name (`login`, `password`,
 // `totp`, `signout`, `delete`, `register`) once a request has proved the
 // factors and before it acts, so a test can hold it there while the factors

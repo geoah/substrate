@@ -34,7 +34,7 @@ function row(over: Partial<ChangeRow>): ChangeRow {
     actor: ACTORS.person.id,
     op: "put",
     recordId: `r${seq}`,
-    kind: "ada.example.com/tasks/task",
+    kind: "~/tasks/task",
     ...over,
   }
 }
@@ -75,7 +75,7 @@ describe("foldHistory", () => {
       }),
       row({
         payload: { created: true },
-        kind: "ada.example.com/people/person",
+        kind: "~/people/person",
         ts: "2026-09-24T11:58:00Z",
       }),
     ]
@@ -160,24 +160,24 @@ function kindInfo(identity: string, purpose?: string): KindInfo {
 
 describe("system changes", () => {
   const kinds = kindsByReference([
-    kindInfo("ada.example.com/tasks/task"),
-    kindInfo("ada.example.com/tasks/checklist", "supporting"),
-    kindInfo("ada.example.com/tasks/cursor", "internal"),
+    kindInfo("~/tasks/task"),
+    kindInfo("~/tasks/checklist", "supporting"),
+    kindInfo("~/tasks/cursor", "internal"),
     kindInfo("substrate.reamde.dev/core/triggerrun"),
   ])
 
   it("is a write to an internal kind, core's included", () => {
     const at = (kind: string) => isSystemChange(row({ kind }), kinds)
-    expect(at("ada.example.com/tasks/task")).toBe(false)
-    expect(at("ada.example.com/tasks/checklist")).toBe(false)
-    expect(at("ada.example.com/tasks/cursor")).toBe(true)
+    expect(at("~/tasks/task")).toBe(false)
+    expect(at("~/tasks/checklist")).toBe(false)
+    expect(at("~/tasks/cursor")).toBe(true)
     expect(at("substrate.reamde.dev/core/triggerrun")).toBe(true)
   })
 
   it("judges a kind the registry no longer carries by its reference", () => {
     const at = (kind: string) => isSystemChange(row({ kind }), new Map())
     expect(at("substrate.reamde.dev/core/token")).toBe(true)
-    expect(at("ada.example.com/gone/thing")).toBe(false)
+    expect(at("~/gone/thing")).toBe(false)
   })
 })
 
@@ -295,7 +295,7 @@ describe("systemPhrase", () => {
       said([
         row({
           kind: `${CORE}/agent`,
-          recordId: "ada.example.com/notes/titler",
+          recordId: "~/notes/titler",
           payload: { created: true },
         }),
       ])?.words
@@ -417,7 +417,7 @@ describe("isHousekeeping", () => {
 function run(over: Partial<ChangeRun> = {}): ChangeRun {
   return {
     actor: ACTORS.person.id,
-    kind: "ada.example.com/tasks/task",
+    kind: "~/tasks/task",
     verb: "create",
     count: 60,
     records: 60,

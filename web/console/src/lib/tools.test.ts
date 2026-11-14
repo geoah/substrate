@@ -14,7 +14,9 @@ import {
   isPaused,
   isoDurationWords,
   kindLabeler,
+  kindPatternWords,
   nameWords,
+  originOf,
   outputRows,
   permissionWords,
   permissionsYaml,
@@ -76,11 +78,11 @@ const trigger = (
   })
 
 const GCAL = "providers.substrate.reamde.dev/google/synccalendar"
-const SAVE = "ada.example.com/notes/savenote"
-const STATS = "ada.example.com/notes/stats"
+const SAVE = "~/notes/savenote"
+const STATS = "~/notes/stats"
 const QUERY = "substrate.reamde.dev/core/query"
 const WRITE = "substrate.reamde.dev/core/write"
-const IDLE = "ada.example.com/notes/archive"
+const IDLE = "~/notes/archive"
 
 function fixture(): Tool[] {
   return buildTools(
@@ -103,7 +105,7 @@ function fixture(): Tool[] {
       }),
       fn(SAVE, {
         permissions: {
-          writes: [{ ref: `${KIND}/ada.example.com/notes/note` }],
+          writes: [{ ref: `${KIND}/~/notes/note` }],
         },
         arguments: [
           { name: "id", type: "string", required: true },
@@ -118,14 +120,14 @@ function fixture(): Tool[] {
       fn(IDLE),
     ],
     [
-      agent("ada.example.com/notes/notekeeper", [
+      agent("~/notes/notekeeper", [
         { function: { ref: `substrate.reamde.dev/core/function/${SAVE}` } },
         {
           function: { ref: `substrate.reamde.dev/core/function/${STATS}` },
           name: "count",
         },
       ]),
-      agent("ada.example.com/llm/substrate", [
+      agent("~/llm/substrate", [
         { function: { ref: `substrate.reamde.dev/core/function/${QUERY}` } },
       ]),
     ],
@@ -147,8 +149,7 @@ function fixture(): Tool[] {
           when: "true",
         },
       }),
-    ],
-    "ada.example.com"
+    ]
   )
 }
 
@@ -175,7 +176,7 @@ describe("buildTools", () => {
   it("joins each function with the agents that list it and its triggers", () => {
     const tools = fixture()
     expect(byRef(tools, SAVE).uses).toEqual([
-      { agent: "ada.example.com/notes/notekeeper", name: "savenote" },
+      { agent: "~/notes/notekeeper", name: "savenote" },
     ])
     expect(byRef(tools, STATS).uses[0].name).toBe("count")
     expect(byRef(tools, GCAL).triggers.map((t) => t.id)).toEqual([
@@ -186,6 +187,22 @@ describe("buildTools", () => {
     expect(byRef(tools, SAVE).origin).toEqual({ kind: "yours" })
     expect(byRef(tools, QUERY).origin).toEqual({ kind: "core" })
     expect(byRef(tools, GCAL).origin.kind).toBe("provider")
+  })
+
+  it("reads a tool under ~ as yours and one under another name as theirs", () => {
+    expect(originOf("~", "notes")).toEqual({ kind: "yours" })
+    expect(originOf("ada.example.com", "notes")).toEqual({
+      kind: "other",
+      authority: "ada.example.com",
+    })
+  })
+})
+
+describe("kindPatternWords", () => {
+  it("names a glob over the repository's own kinds as its own", () => {
+    const label = kindLabeler([])
+    expect(kindPatternWords("~/*", label)).toBe("Everything of your own")
+    expect(kindPatternWords("~/notes/*", label)).toBe("Everything in Notes")
   })
 })
 
@@ -548,7 +565,7 @@ describe("runs and status", () => {
     const runs = toolMessageRuns(
       byRef(tools, STATS),
       [msg("count"), msg("stats"), msg("savenote")],
-      () => "ada.example.com/notes/notekeeper"
+      () => "~/notes/notekeeper"
     )
     expect(runs.map((r) => r.key)).toEqual(["msg:m-count"])
     expect(runs[0].happened).toBe("Changed 1 record")
@@ -601,7 +618,7 @@ describe("runs and status", () => {
     const now = Date.parse("2026-09-25T12:00:00Z")
     const latest = runFromToolMessage(
       rec("substrate.reamde.dev/llm/message", "m1", { role: "tool", ok: true }),
-      "ada.example.com/llm/substrate"
+      "~/llm/substrate"
     )
     expect(
       toolStatus(query, latest, { usage: { count: 40, latest }, now })

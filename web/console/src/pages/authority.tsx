@@ -47,7 +47,7 @@ import {
   providerInfo,
 } from "@/lib/actor-identity"
 import { functionsQueryOptions } from "@/lib/api/functions"
-import { splitKind } from "@/lib/api/http"
+import { LOCAL_AUTHORITY, splitKind } from "@/lib/api/http"
 import { isStandard } from "@/lib/bundles"
 import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
@@ -288,7 +288,9 @@ export function AuthorityPage() {
         description={
           providers
             ? "Collections providers publish. Their records are copies, kept up to date by each provider."
-            : "The collections published under this name."
+            : authority === LOCAL_AUTHORITY
+              ? "Your own collections: the ones you made and the samples you added. They are yours to change."
+              : "The collections published under this name."
         }
       />
       <PageState

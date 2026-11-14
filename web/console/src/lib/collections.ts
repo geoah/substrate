@@ -20,7 +20,7 @@ import {
   providerOfKind,
   type ProviderInfo,
 } from "@/lib/actor-identity"
-import { CORE_AUTHORITY, splitKind } from "@/lib/api/http"
+import { CORE_AUTHORITY, LOCAL_AUTHORITY, splitKind } from "@/lib/api/http"
 import {
   isMachineryKind,
   isSeededOwnerData,
@@ -118,13 +118,9 @@ function group(
 }
 
 /** The groups in reading order: the packages by word, then each provider by
- * name, then the substrate's own. A group with no kinds is left out. `home`
- * is the repository's own authority; its package leads others that share its
- * word. */
-export function collectionGroups(
-  kinds: KindInfo[],
-  home = ""
-): CollectionGroup[] {
+ * name, then the substrate's own. A group with no kinds is left out. The
+ * repository's own package, under `~`, leads others that share its word. */
+export function collectionGroups(kinds: KindInfo[]): CollectionGroup[] {
   const packages = new Map<string, KindInfo[]>()
   const system: KindInfo[] = []
   const providers = new Map<string, { info: ProviderInfo; kinds: KindInfo[] }>()
@@ -159,7 +155,8 @@ export function collectionGroups(
     .sort(
       (a, b) =>
         a.word.localeCompare(b.word) ||
-        Number(b.authority === home) - Number(a.authority === home) ||
+        Number(b.authority === LOCAL_AUTHORITY) -
+          Number(a.authority === LOCAL_AUTHORITY) ||
         a.authority.localeCompare(b.authority)
     )
   const words = named.map((p) => p.word)
@@ -168,7 +165,7 @@ export function collectionGroups(
     group(
       `group:package:${id}`,
       "package",
-      shared.has(word) ? `${word} (${authority})` : word,
+      shared.has(word) ? `${word} (${ownerWord(authority)})` : word,
       list
     )
   )
@@ -203,11 +200,19 @@ export function collectionSource(kind: string): string {
 }
 
 /** An authority as its page and crumb name it: "From providers",
- * "Substrate", and any other by its own name, since it is the publisher of
- * the packages under it and not a place of its own. */
+ * "Substrate", the repository's own `~` as "Yours", and any other by its own
+ * name, since it is the publisher of the packages under it and not a place
+ * of its own. */
 export function authorityTitle(authority: string): string {
   if (authority === PROVIDERS_AUTHORITY) return "From providers"
+  if (authority === LOCAL_AUTHORITY) return "Yours"
   return authority === CORE_AUTHORITY ? "Substrate" : authority
+}
+
+/** Who a package belongs to beside its word, where two share one: "yours"
+ * for the repository's own, else the authority that publishes it. */
+function ownerWord(authority: string): string {
+  return authority === LOCAL_AUTHORITY ? "yours" : authority
 }
 
 /** A package as its page and crumb name it: a provider by its own name

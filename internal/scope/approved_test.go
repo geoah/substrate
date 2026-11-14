@@ -57,8 +57,12 @@ func TestAnApprovalCoversAReachAsAGrantCoversAScope(t *testing.T) {
 	if from := ApprovalFrom(g); !from.Covers("ada.example.com/tasks/task", false, Kind{Internal: false}) || from.Covers("ada.example.com/tasks/task", true, Kind{Internal: false}) {
 		t.Fatal("a grant's approval is not the grant's reach")
 	}
-	// An approval holds the stored grammar: no `~`, no `full` beside another.
-	for _, bad := range [][]string{{"read:~/tasks/*"}, {"full", "read:ada.example.com/tasks/*"}, {"nonsense"}} {
+	// An approval holds the stored grammar: no `full` beside another. The
+	// repository's own kinds are `~`, which it stores as asked.
+	if _, err := ApprovalOf([]string{"read:~/tasks/*"}); err != nil {
+		t.Fatalf("ApprovalOf over the repository's own kinds refused: %v", err)
+	}
+	for _, bad := range [][]string{{"full", "read:ada.example.com/tasks/*"}, {"nonsense"}} {
 		if _, err := ApprovalOf(bad); err == nil {
 			t.Fatalf("ApprovalOf(%v) admitted", bad)
 		}

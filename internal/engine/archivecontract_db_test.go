@@ -1716,7 +1716,7 @@ func TestADeletedRepositoryComesBackOnlyByAnExplicitImport(t *testing.T) {
 	if err != nil || len(listed) == 0 {
 		t.Fatalf("the archives of the deleted repository: %v (%v)", listed, err)
 	}
-	if _, err := fresh.(engine.Operator).ImportArchive(ctx, id, listed[0]); err != nil {
+	if _, err := fresh.(engine.Operator).ImportArchive(ctx, id, listed[0], ""); err != nil {
 		t.Fatalf("import the archive explicitly: %v", err)
 	}
 	ds, err = fresh.Dataset(ctx, repository)
@@ -1728,5 +1728,46 @@ func TestADeletedRepositoryComesBackOnlyByAnExplicitImport(t *testing.T) {
 	}
 	if err := engine.ArchivePass(ctx, ds); err != nil {
 		t.Fatalf("the first pass after the import: %v", err)
+	}
+}
+
+// An archive whose history is from before the local namespace spells its
+// repository's name in its lines, which the conversion moves to `~` by the
+// row's name, so it is not imported under another: the server where its name
+// is taken sets it aside, and the import under another name refuses, naming
+// the dialect and changing nothing.
+func TestAnArchiveFromBeforeTheLocalNamespaceIsNotImportedUnderAnotherName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, _ := newService(t, engine.WithoutConversionSteps())
+	repository := testdb.Repository(t)
+	registerUser(t, svc, repository)
+	ds, err := svc.Dataset(ctx, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.ArchivePass(ctx, ds); err != nil {
+		t.Fatal(err)
+	}
+	id := ds.Repository().ID
+	from := engine.DataRootOf(svc) + "/archive"
+	_ = svc.Close()
+
+	holder, dsn := newService(t)
+	registerUser(t, holder, repository)
+	root := engine.DataRootOf(holder)
+	_ = holder.Close()
+	copyDir(t, from, root+"/archive")
+	fresh := mustReopen(t, dsn, root)
+	listed, err := engine.ListArchiveIDs(ctx, fresh, id)
+	if err != nil || len(listed) == 0 {
+		t.Fatalf("the archives of the stranger: %v (%v)", listed, err)
+	}
+	_, err = fresh.(engine.Operator).ImportArchive(ctx, id, listed[0], "other."+repository)
+	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "changelog dialect 1") {
+		t.Fatalf("an import under another name of a dialect-1 archive = %v, want refused naming the dialect", err)
+	}
+	if repos, err := fresh.Repositories(ctx); err != nil || len(repos) != 1 || repos[0].ID == id {
+		t.Fatalf("the refused import left %+v (%v), want the holder alone", repos, err)
 	}
 }

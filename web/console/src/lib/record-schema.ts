@@ -54,14 +54,15 @@ export const TO_ANY = "any"
 const KEY_PATTERNS: Record<string, RegExp> = {
   camel: /^[a-z][a-zA-Z0-9]*$/,
   kindRef:
-    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\/[a-z][a-z0-9]*\/)?[a-z][a-z0-9]*$/,
+    /^((~|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)\/[a-z][a-z0-9]*\/)?[a-z][a-z0-9]*$/,
 }
 
 /** What each contract says when it refuses, in the author's terms rather than
  * the regexp's (`vocabulary.keyPatternRule`). */
 const KEY_RULES: Record<string, string> = {
   camel: "camelCase ([a-z][a-zA-Z0-9]*)",
-  kindRef: "a kind reference (`task` or `tasks.example.com/task`)",
+  kindRef:
+    "a kind reference (`task`, `example.com/work/task` or `~/work/task`)",
 }
 
 /** What a secret-typed property reads back as, everywhere (engine.Redacted).

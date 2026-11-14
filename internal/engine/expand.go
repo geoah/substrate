@@ -56,7 +56,7 @@ func (ds *dataset) referencingTargets(ctx context.Context, x dbx, ref *substrate
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, field, err)
 		}
-		targets = append(targets, eref{Kind: ty.Identity, ID: id})
+		targets = append(targets, eref{Kind: ty.Identity, ID: vocabulary.LocalizeID(ty.Identity, id, ds.info.Authority)})
 	}
 	trail, err := trailIDs(ctx, x, targets)
 	if err != nil {

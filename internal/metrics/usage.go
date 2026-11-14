@@ -66,9 +66,9 @@ func Repository(id string) string {
 
 // Name is the label for a kind reference, a package, or a function's or
 // agent's identity (`<authority>/<package>[/<name>]`) as repository uses it.
-// A name the substrate ships is always in clear. Anonymized, one under the
-// repository's own authority becomes `own:` and the hash of what follows
-// the authority, so one sample imported by two repositories reads as one
+// A name the substrate ships is always in clear. Anonymized, one in the
+// repository's own namespace (`~`, or its name) becomes `own:` and the hash
+// of what follows the authority, so one sample imported by two repositories reads as one
 // name, and any other authority's becomes `ext:` and the hash of the whole.
 // Past the repository's name budget every new name is `overflow`.
 func Name(repository, name string) string {
@@ -86,7 +86,7 @@ func Name(repository, name string) string {
 	switch {
 	case !p.anonymize:
 		return name
-	case authority == repository:
+	case authority == "~" || authority == repository:
 		return "own:" + p.hash(rest)
 	}
 	return "ext:" + p.hash(name)

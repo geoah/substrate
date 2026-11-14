@@ -300,7 +300,7 @@ func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string)
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 	authority, pkg, name := SplitKindRef(ref)
-	if !ValidAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
+	if !ValidKindAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
 		errf("record: kind %q must be a kind reference, <authority>/<package>/<name>", ref)
 	}
 	var needs int64

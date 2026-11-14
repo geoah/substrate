@@ -78,7 +78,7 @@ func restContacts(t *testing.T, env *dbEnv) string {
 	t.Helper()
 	ctx := context.Background()
 	pkg := env.repository + "/contacts"
-	contact := pkg + "/contact"
+	contact := "~/contacts/contact"
 	if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorSystem, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "contact"}, map[string]any{

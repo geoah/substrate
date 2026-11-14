@@ -140,6 +140,17 @@ type conversionRepository struct {
 	// repository's data key, for a Carry that moves a sealed row to the
 	// kind or id its lines now name. The data key never leaves the runner.
 	Reseal func(payload []byte, ref, fromKind, fromID, toKind, toID string) ([]byte, error)
+	// SecretsLeftBehind says a restore left the repository's secrets behind
+	// (lostsecrets.go): a sealed value that does not open under its data key
+	// (Reseal answers errSealedUnopened) is one of them, kept as the record
+	// of its loss until the open clears it, and a Carry moves it to its new
+	// binding as it is. In any other repository such a value is damage.
+	SecretsLeftBehind bool
+	// Actors is every version of every actor record (core/actor) the history
+	// holds, read as Declarations is and in the same dialect: what a step
+	// that moves an actor record learns each hand from (its type and its
+	// link), whether the hand's code is still there or long gone.
+	Actors func() ([]declarationVersion, error)
 	// Declarations is every version of the repository's own vocabulary its
 	// history holds: each write, tombstone and purge of a record of a
 	// declaration kind (core/kind, core/trait, core/package and the rest of
@@ -207,6 +218,9 @@ var conversionSteps = []conversionStep{
 	// The marks are a fold table SQL 0026 created empty, of what the
 	// lines held as `manager` effects, and it re-keyed the derived offers.
 	{Dialect: 5, Name: "marks", Line: markLine, Refolds: true},
+	// The local namespace rewrites the lines that spell the repository's
+	// name, so the records are rebuilt for it without Refolds.
+	{Dialect: localNamespaceDialect, Name: "local_namespace", ForRepository: convertLocalNamespace},
 }
 
 // The conversion's steps, as the import's test seam names them
@@ -502,15 +516,20 @@ func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversi
 	if step.ForRepository == nil {
 		return conversionPass{Line: step.Line}, nil
 	}
-	var versions []declarationVersion
-	var versionsErr error
-	built := false
-	repo := conversionRepository{
-		ID: ds.info.ID, Authority: ds.info.Authority, Reseal: ds.reseal,
-		Declarations: func() ([]declarationVersion, error) {
+	var leftBehind bool
+	if err := ds.svc.maint.QueryRowContext(ctx, `SELECT secrets_left_behind FROM repositories WHERE id = $1`, ds.info.ID).Scan(&leftBehind); err != nil {
+		return conversionPass{}, fmt.Errorf("substrate/engine: conversion step %d (%s): read whether secrets were left behind: %w", step.Dialect, step.Name, err)
+	}
+	// Each reader reads the lines of its kinds from the table once, on its
+	// first call.
+	reader := func(kinds []string, fold func([]changelogfile.Entry) ([]declarationVersion, error)) func() ([]declarationVersion, error) {
+		var versions []declarationVersion
+		var versionsErr error
+		built := false
+		return func() ([]declarationVersion, error) {
 			if !built {
 				built = true
-				rows, err := queryChecksumRows(ctx, tx, `WHERE kind = ANY($1) ORDER BY seq`, vocabularyKindRefs)
+				rows, err := queryChecksumRows(ctx, tx, `WHERE kind = ANY($1) ORDER BY seq`, kinds)
 				if err != nil {
 					versionsErr = err
 				} else {
@@ -520,11 +539,18 @@ func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversi
 							return nil, versionsErr
 						}
 					}
-					versions, versionsErr = declarationVersions(lines)
+					versions, versionsErr = fold(lines)
 				}
 			}
 			return versions, versionsErr
-		},
+		}
+	}
+	repo := conversionRepository{
+		ID: ds.info.ID, Authority: ds.info.Authority, Reseal: ds.reseal, SecretsLeftBehind: leftBehind,
+		Declarations: reader(vocabularyKindRefs, declarationVersions),
+		Actors: reader([]string{kindActor}, func(lines []changelogfile.Entry) ([]declarationVersion, error) {
+			return recordVersions(lines, func(ref string) bool { return ref == kindActor })
+		}),
 	}
 	pass, err := step.ForRepository(repo)
 	if err != nil {
@@ -541,6 +567,12 @@ func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversi
 // write: a record delta onto the record as it stood (a creation starting it
 // over), a tombstone or a purge ending it.
 func declarationVersions(lines []changelogfile.Entry) ([]declarationVersion, error) {
+	return recordVersions(lines, func(ref string) bool { _, ok := vocabularyRecordKinds[ref]; return ok })
+}
+
+// recordVersions folds lines into every version of every record of a kind
+// keep admits, as declarationVersions does for the declaration kinds.
+func recordVersions(lines []changelogfile.Entry, keep func(ref string) bool) ([]declarationVersion, error) {
 	props := map[string]map[string]any{}
 	var out []declarationVersion
 	for _, e := range lines {
@@ -556,7 +588,7 @@ func declarationVersions(lines []changelogfile.Entry) ([]declarationVersion, err
 			}
 			ref, _ := eff["ref"].(string)
 			id, _ := eff["id"].(string)
-			if _, declaration := vocabularyRecordKinds[ref]; !declaration || id == "" {
+			if !keep(ref) || id == "" {
 				continue
 			}
 			key := ref + "/" + id
@@ -640,7 +672,7 @@ func (ds *dataset) reseal(payload []byte, ref, fromKind, fromID, toKind, toID st
 	}
 	raw, err := openRepoPayload(payload, dek, sealedAAD(ref, fromKind, fromID))
 	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: open sealed %s bound to %s %s: %w", ref, fromKind, fromID, err)
+		return nil, fmt.Errorf("%w: substrate/engine: open sealed %s bound to %s %s: %w", errSealedUnopened, ref, fromKind, fromID, err)
 	}
 	aead, err := aeadOf(dek)
 	if err != nil {
@@ -648,6 +680,10 @@ func (ds *dataset) reseal(payload []byte, ref, fromKind, fromID, toKind, toID st
 	}
 	return sealWith(aead, raw, sealedAAD(ref, toKind, toID))
 }
+
+// errSealedUnopened is Reseal's refusal of a payload that does not open
+// under the repository's data key.
+var errSealedUnopened = errors.New("substrate/engine: the sealed value does not open under the repository's data key")
 
 // refusePendingConversion refuses an open of a repository whose history is in
 // a dialect this binary converts: only the boot check converts.
