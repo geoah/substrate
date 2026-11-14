@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 
 	"github.com/geoah/substrate/internal/reach"
 	"github.com/geoah/substrate/internal/scope"
@@ -110,19 +111,80 @@ func withRunHolders(ctx context.Context, persons []substrate.Actor, tokens ...st
 	return context.WithValue(ctx, runHoldersKey{}, next)
 }
 
+// runJoiners are the persons and the tokens that joined a chat turn while it
+// ran: the senders of the messages it read mid-run (agentqueue.go). A hand
+// that continues a run is one the run is held to, and a turn's context is
+// made before anyone joins it, so the set is one value the context points at
+// and the turn adds to. Everything the turn derives its context for (a tool,
+// a sub-agent) reads the same set, from the call that read the message on.
+type runJoiners struct {
+	mu sync.Mutex
+	h  runHolders
+}
+
+type runJoinersKey struct{}
+
+// withRunJoiners gives ctx the set its turn's joiners are added to: the one
+// it already carries, where a turn above made it.
+func withRunJoiners(ctx context.Context) (context.Context, *runJoiners) {
+	if j, _ := ctx.Value(runJoinersKey{}).(*runJoiners); j != nil {
+		return ctx, j
+	}
+	j := &runJoiners{}
+	return context.WithValue(ctx, runJoinersKey{}, j), j
+}
+
+// add holds the rest of the turn to persons and tokens too.
+func (j *runJoiners) add(persons []substrate.Actor, tokens ...string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for _, p := range persons {
+		if substrate.ActorTypeOf(p) == substrate.ActorTypePerson && !slices.Contains(j.h.persons, p) {
+			j.h.persons = append(j.h.persons, p)
+		}
+	}
+	for _, tok := range tokens {
+		if tok != "" && !slices.Contains(j.h.tokens, tok) {
+			j.h.tokens = append(j.h.tokens, tok)
+		}
+	}
+}
+
+// joined are the persons and the tokens that joined the turn ctx belongs to.
+func joined(ctx context.Context) runHolders {
+	j, _ := ctx.Value(runJoinersKey{}).(*runJoiners)
+	if j == nil {
+		return runHolders{}
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return runHolders{persons: slices.Clone(j.h.persons), tokens: slices.Clone(j.h.tokens)}
+}
+
 // heldPersons are the persons whose roles hold the work in ctx beside the
-// one it acts for.
+// one it acts for: those its records added, and those who joined its turn.
 func heldPersons(ctx context.Context) []substrate.Actor {
 	h, _ := ctx.Value(runHoldersKey{}).(runHolders)
-	return h.persons
+	out := h.persons
+	for _, p := range joined(ctx).persons {
+		if !slices.Contains(out, p) {
+			out = append(slices.Clone(out), p)
+		}
+	}
+	return out
 }
 
 // runTokens are the tokens whose grants hold the work in ctx: the request's
-// own, which is its turn's at the turn's start, and every one the work's
-// records added.
+// own, which is its turn's at the turn's start, every one the work's
+// records added, and those of whoever joined its turn.
 func runTokens(ctx context.Context) []string {
 	h, _ := ctx.Value(runHoldersKey{}).(runHolders)
 	out := slices.Clone(h.tokens)
+	for _, tok := range joined(ctx).tokens {
+		if !slices.Contains(out, tok) {
+			out = append(out, tok)
+		}
+	}
 	if p := substrate.PrincipalFrom(ctx); p != "" && !slices.Contains(out, p) {
 		out = append(out, p)
 	}

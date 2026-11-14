@@ -630,3 +630,53 @@ func TestAMessageToAThreadWaitingOnAnAnswerStartsATurnAndLeavesTheQuestion(t *te
 		t.Fatalf("the question after a typed message = %+v, %v, want it still pending", rec, err)
 	}
 }
+
+// Whoever sends a message a turn reads has continued that turn, and the rest
+// of it is held to them too (decision 0276): a person's turn that an app's
+// message joins is held to the app's grant from the call that reads the
+// message, and not before.
+func TestATurnIsHeldToWhoeverItReadAMessageFrom(t *testing.T) {
+	t.Parallel()
+	r := newRunsRepository(t)
+	write := fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", r.note, "", map[string]any{"name": "x"})}}}
+	arrived, release := make(chan struct{}), make(chan struct{})
+	first := write
+	first.arrived, first.release = arrived, release
+	r.fake.script("scribe", first, write, fakeTurn{content: "done."})
+	ada := r.person(r.adaID, substrate.ActorPerson)
+	log := newEventLog()
+	turn := make(chan error, 1)
+	go func() {
+		_, err := r.ds.ChatAgent(ada, substrate.ActorPerson, r.pkg+"/scribe", substrate.ChatInput{Message: "go", MessageID: "m0"}, log.emit)
+		turn <- err
+	}()
+	waitArrived(t, arrived, "the person's turn")
+	thread := log.waitFor(t, substrate.AgentEventThread).Thread
+
+	// An app that may talk to the agent and read what it reads, and write
+	// nothing, sends into the turn.
+	app, appCtx, token := r.app(t, "reader.example.org", "agents:"+r.pkg+"/*", "read:"+r.note)
+	joined := newEventLog()
+	go func() {
+		_, _ = r.ds.ChatAgent(appCtx, app, r.pkg+"/scribe", substrate.ChatInput{Thread: thread, Message: "and another", MessageID: "q1"}, joined.emit)
+	}()
+	waitUntil(t, "the app's message to be queued", func() bool { return eventOf(joined, substrate.AgentEventMessageQueued, "q1") != nil })
+	close(release)
+	if err := waitTurn(t, turn); err != nil {
+		t.Fatal(err)
+	}
+	rows := toolRows(t, r.ds, thread)
+	if len(rows) != 2 {
+		t.Fatalf("%d tool rows, want the two writes", len(rows))
+	}
+	// The call the model made before it read the app's message is the
+	// person's alone. The one after is the app's too, whose grant lacks it.
+	if rows[0]["ok"] != true || !refusedRow(rows[1]) || r.notes(t) != 1 {
+		t.Fatalf("the writes around the app's message = %v, %v with %d notes: want the first made and the second refused", rows[0], rows[1], r.notes(t))
+	}
+	// The message's own row names its sender, and the refused call's row
+	// names the app's token among whom the turn is held to.
+	if held := r.heldRaw(t, typeMessage, "q1"); !strings.Contains(held, token) {
+		t.Fatalf("the queued message is held to %s, want the app's token %s", held, token)
+	}
+}

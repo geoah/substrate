@@ -1001,6 +1001,9 @@ func (l *agentLoop) run(ctx context.Context) (res *substrate.AgentResult, err er
 	// thread itself (agentjobs.go deliverJob).
 	defer l.closeJobs()
 	l.runCtx = ctx
+	// Whoever sends a message the turn reads joins it (agentqueue.go): set
+	// before anything derives a context from this one.
+	ctx, joiners := withRunJoiners(ctx)
 	messages := l.compactAtOpen(ctx, l.opening)
 	if n := len(messages); l.in.continued && n > 0 && messages[n-1].Role == llm.RoleAssistant && len(messages[n-1].ToolCalls) == 0 {
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: continueNudge})
@@ -1059,7 +1062,7 @@ loop:
 				messages = append(messages, m.message)
 				// The sender continued the run: the rest of it is held to
 				// them too (run.go).
-				ctx, lctx = withRunHolders(ctx, m.persons, m.tokens...), withRunHolders(lctx, m.persons, m.tokens...)
+				joiners.add(m.persons, m.tokens...)
 				l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: m.id, Turn: m.turn})
 			}
 		}

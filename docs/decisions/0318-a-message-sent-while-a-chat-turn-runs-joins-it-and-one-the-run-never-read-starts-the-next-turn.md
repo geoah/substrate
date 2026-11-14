@@ -117,7 +117,8 @@ same shape. A client that sends no id sees no change.
 `TestOnlyAChatTurnTakesAMessageAndOnlyOneThatNamesItsID`,
 `TestAQueuedMessageTakesNoSlotAndItsTurnWaitsForOne`,
 `TestContinueTakesUpAMessageNoTurnAnswered`,
-`TestAMessageToAThreadWaitingOnAnAnswerStartsATurnAndLeavesTheQuestion`;
+`TestAMessageToAThreadWaitingOnAnAnswerStartsATurnAndLeavesTheQuestion`,
+`TestATurnIsHeldToWhoeverItReadAMessageFrom`;
 `TestReplayReadsAQueuedMessageWhereTheModelDid` in
 `internal/engine/agentqueue_test.go`;
 `TestASteeredConversationIsOneEachWireAccepts` in
