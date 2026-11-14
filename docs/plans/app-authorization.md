@@ -315,7 +315,7 @@ Three layers, each enough for what it holds:
 3. **The engine.** `substrate.WithScopes` marks the request context, and the
    transaction's `ownerHand` (owner tier and no scope) replaces the bare tier
    at every owner-only gate: revoking a token, any write of an account or a
-   bundle input, adjusting a change request, `writer: owner` properties and
+   bundle input, adjusting a change request, `writer: person` properties and
    `StartOAuth`.
 
 Scopes restrict what an app does directly. What the owner's own
@@ -369,7 +369,7 @@ Resolved here:
   proxy, no operator exception, bounded and rate-limited.
 - The lifecycle is explicit and atomic; replay revocation needs the
   verifier; codes bind the issuer; `resource` is checked at both endpoints.
-- Account and bundle-input writes refused on every mutation; `writer: owner`
+- Account and bundle-input writes refused on every mutation; `writer: person`
   and the change-request adjustment read `ownerHand`.
 - Search is lexical for a scoped token; indirect effects of a write are the
   owner's automation and are disclosed.

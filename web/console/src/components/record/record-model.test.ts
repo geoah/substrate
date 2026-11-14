@@ -241,7 +241,7 @@ describe("duplicateProperties", () => {
     body: { type: "markdown" },
     status: { type: "state", states: ["open", "done"], initial: "open" },
     assignee: { type: "reference", kind: PERSON },
-    token: { type: "string", writer: "oauth" },
+    token: { type: "string", writer: "system" },
     secret: { type: "secret" },
     empty: { type: "string" },
   })

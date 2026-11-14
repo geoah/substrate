@@ -157,7 +157,7 @@ const task = kind(TASK, {
       repeated: true,
       properties: { role: { type: "string", displayName: "role" } },
     },
-    token: { type: "string", writer: "oauth" },
+    token: { type: "string", writer: "system" },
     notes: { type: "string" },
     url: { type: "url" },
     due: { type: "datetime" },

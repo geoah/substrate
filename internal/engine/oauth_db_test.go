@@ -375,8 +375,8 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	for _, d := range docs {
 		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
 			props, _ := d["data"].(map[string]any)["properties"].(map[string]any)
-			props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+			props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 		}
 	}
 	mbPointOAuthAt(docs, p.ts.URL)
@@ -1180,10 +1180,10 @@ func chatBundleDocs() []map[string]any {
 			map[string]any{
 				"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 				"properties": map[string]any{
-					"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
-					"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
-					"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
-					"handle":        map[string]any{"type": "string", "writer": "owner"},
+					"tokenRef":      map[string]any{"type": "secret", "writer": "system"},
+					"tokenStatus":   map[string]any{"type": "string", "writer": "system"},
+					"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system"},
+					"handle":        map[string]any{"type": "string", "writer": "person"},
 				},
 			}),
 	}
@@ -1263,8 +1263,8 @@ func syncAccountDocs(baseURL string, extra ...map[string]any) []map[string]any {
 			props[name] = decl
 		}
 	}
-	props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-	props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+	props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+	props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 	members := append([]map[string]any{
 		mbConfigTypeDoc(), account, mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource),
@@ -1337,7 +1337,7 @@ func accountChanges(t *testing.T, ds substrate.Dataset, account *substrate.Recor
 
 // TestOAuthReconnectClearsTheSyncError: the error pair on a `sync`-trait
 // account describes the grant a reconnect replaces, so the reconnect clears
-// it. The pair is `writer: connector`, which the facility's actor may not
+// it. The pair is `writer: [function, agent]`, which the facility's actor may not
 // write; the clear goes through the bundle tier. The state stays for the
 // next run to settle, and an account that never synced is asked for no run:
 // its first sync is the on-connect trigger's.

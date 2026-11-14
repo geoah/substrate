@@ -233,7 +233,7 @@ data:
   description: one connected account of a bundle; only the substrate's OAuth
     flow may write its credential ref
   # The host-written hands on an account (review-google #2): the account kind
-  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # redeclares these with `writer: system` so only the OAuth facility may set
   # them — a stranger cannot assign a credential ref, a status, or a scope set.
   properties:
     tokenRef: secret
@@ -264,9 +264,9 @@ data:
 # the host-recognized interface behind the console's Connections view and the
 # `sync status` read. An `accountconfig` kind binds it beside the token
 # properties, and every binding kind redeclares the twelve properties with a
-# `writer:` role: `syncRequestedAt` and `syncPaused` are the OWNER's hands
-# (the two things a person does to a sync — ask for one, stop them), the rest
-# are the CONNECTOR's, which the sync function writes through its effects and
+# `writer:`: `syncRequestedAt` and `syncPaused` are a `person`'s (the two
+# things a person does to a sync — ask for one, stop them), the rest are
+# `[function, agent]`, which the sync function writes through its effects and
 # the trigger dispatcher stamps around a record-sourced delivery under the
 # callable's own actor (engine sync.go). `syncState` is a plain string, not a
 # `state` machine (decision 0085): the substrate and the body both write it

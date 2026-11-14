@@ -50,4 +50,21 @@ func TestPublishCheckListsTheDialectTheClosureNeeds(t *testing.T) {
 			t.Fatalf("publish --check = %v, want refused naming the key and dialect 3", err)
 		}
 	})
+	// Every word `writer:` took before dialect 5 is refused now, so any
+	// `writer:` a package carries needs 5 (decision 0290).
+	written := func(header string) []byte {
+		return []byte(strings.Replace(string(closure(header)), "      type: string\n", "      type: string\n      writer: person\n", 1))
+	}
+	t.Run("a writer with no stated dialect lists 5", func(t *testing.T) {
+		out, err := check(t, written(""))
+		if err != nil || !strings.Contains(out, `"dialect": 5`) {
+			t.Fatalf("publish --check = %v\n%s\nwant the entry listed at dialect 5, which `writer:` needs", err, out)
+		}
+	})
+	t.Run("a header that states 4 beside a writer is refused naming 5", func(t *testing.T) {
+		_, err := check(t, written("  dialect: 4\n"))
+		if err == nil || !strings.Contains(err.Error(), "which dialect 5 introduced") {
+			t.Fatalf("publish --check = %v, want refused naming `writer` and dialect 5", err)
+		}
+	})
 }

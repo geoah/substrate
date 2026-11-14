@@ -828,7 +828,7 @@ a function of the account kind's own package, the dispatcher writes the
 other half itself — `running` and the start before the body, `ok` and the
 duration with the body's last effects, `erroring` and the cause with a
 park — under the function's own actor, so the account's kind declares those
-properties `writer: connector` exactly as the ones the body writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+properties `writer: [function, agent]` exactly as the ones the body writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
 
 ## The SDK
 

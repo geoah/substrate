@@ -497,7 +497,8 @@ A `chataction` is a request the owner or an agent writes. Its life:
    so nothing at the door stops the owner moving it: the console never does,
    an agent's write is held by the gate, and the function moves it from the
    bridge's reports. The request properties are the owner's or the agent's;
-   the other outcome properties are the function's (`writer: connector`).
+   the other outcome properties are the function's (`writer: [function,
+   agent]`).
    An action the bridge refuses before claiming it (the chat's `features`
    lack it, the account is not one it runs or is not connected, a rule of
    [section 9](#9-as-the-owner-not-as-a-bot) refuses it) is reported as
@@ -565,7 +566,8 @@ service as Beeper's bundle has.
 | `messageattachment` | supporting | `fileName`, else `content` | one file sent with a message: its metadata and, once fetched, its bytes |
 | `chataction` | supporting | `{action}: {text}` | one thing the owner asked to be done in a chat as them, and what came of it |
 
-The property lists, each `writer: connector` unless it says otherwise:
+The property lists, each `writer: [function, agent]` unless it says
+otherwise:
 
 - **`instance`**: `instanceId` (string, required), `instanceName`, `version`,
   `networks` (repeated object: `network`, `displayName`), `appliedSeq` (int),
@@ -586,7 +588,7 @@ The property lists, each `writer: connector` unless it says otherwise:
   `phoneNumber`, `user` (reference to the owner's own `user` row),
   `connectionState` (enum as in `account.state`), `connectionMessage`,
   `warnings` (repeated object: `code`, `message`, `until`). Owner's
-  (`writer: owner`): `displayName`, `syncPaused`, `syncRequestedAt`,
+  (`writer: person`): `displayName`, `syncPaused`, `syncRequestedAt`,
   `downloadMedia` (enum `none`, `small`, `all`; `small` means images and voice
   notes up to 5 MiB), `sendsPerHour` (int, default 30), `sendsPerDay` (int,
   default 200), `unlinkRequestedAt` (datetime).
@@ -621,7 +623,7 @@ The property lists, each `writer: connector` unless it says otherwise:
   owner`): `allowNewChat` (bool), `cancelRequestedAt`. Outcome properties:
   `state` (a state machine with the transitions of
   [section 6.5](#65-actions-the-execution-protocol), which takes no
-  `writer:`), and, `writer: connector`, `attempt`, `claimedVersion`,
+  `writer:`), and, `writer: [function, agent]`, `attempt`, `claimedVersion`,
   `result` (reference to `message`), `errorCode`, `errorMessage`. Sending a
   file is phase 2: it adds a top-level `file` (`blobref`), which the bridge
   reads under 0219.
@@ -811,9 +813,9 @@ better than a forwarded loopback port. It is its own decision.
 Each rule sits where it can be enforced.
 
 **In the kinds.** `allowNewChat`, the send limits, `downloadMedia`,
-`syncPaused` and `unlinkRequestedAt` are `writer: owner`: only the owner's
-unscoped hand writes them (`mayWriteProp` in `internal/engine/write.go`),
-which refuses every app token and every function and agent. An agent's held
+`syncPaused` and `unlinkRequestedAt` are `writer: person`: only the person
+writes them (`checkPropertyOwnership` in `internal/engine/write.go`), which
+refuses every app, function and agent. An agent's held
 request that the owner accepts applies as the owner, which is the owner
 deciding. An assistant reaching the repository over MCP with the owner's
 token holds the owner's hand (0230); that is the owner's choice to make and
@@ -1122,7 +1124,7 @@ this codebase, and both found the draft unready to build from. What changed:
   multipart parts.
 - **What only the owner writes** (both). The draft had the bridge enforce
   `allowNewChat`, which it cannot, since an app sees no provenance. Now
-  `writer: owner` holds it at the door, the gate policy's selector is spelled
+  `writer: person` holds it at the door, the gate policy's selector is spelled
   out, and `confirmation: always` is ruled out because no allow can lift it.
 - **Sign-in** (both). The key the console seals to is checked against its
   writer, bound to the step's `txnId`, held in memory only, minted only for

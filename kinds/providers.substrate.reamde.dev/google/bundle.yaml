@@ -52,7 +52,7 @@
 #     a name can overwrite another's.
 #   - NO SYNC BOOKKEEPING ON A MIRROR. A stream cursor lives on the account
 #     row; the PER-CALENDAR cursor lives in `calendarsync`, a provider-owned
-#     state kind with `writer: connector` on every property, so draining a
+#     state kind with `writer: [function, agent]` on every property, so draining a
 #     calendar's events never bumps the calendar row's version.
 #   - NO CONSUMER SLOT. No `person`, no `task`, no `episode`. A provider knows
 #     nothing about Mneme; the link a `recordmapping` makes is the mapping's.
@@ -83,6 +83,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: google
+  dialect: 5
   # 25 (T-023, the failure matrix): `retryNotBefore` on the account — a 429
   # SAYS WHEN, Google's quota is the ACCOUNT's, so the wall one stream meets
   # stops the other two walking into it and a "sync now" does not move it.
@@ -336,7 +337,8 @@ data:
   # 52: a sync trigger's guard tells the package's own functions' writes by
   # the change's `actorType` and `actorPackage`, since `change.actor` links an
   # actor record and no longer spells the hand (decision record 0270).
-  version: 52
+  # 53: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 53
 ---
 kind: substrate.reamde.dev/core/bundle
 metadata:
@@ -1164,8 +1166,8 @@ data:
 # accountconfig (its records ARE the bundle's connected accounts; the host
 # writes tokenRef + tokenStatus + grantedScopes over the OAuth facility). The
 # enabled-scopes toggles, the sync cadence and one STREAM-PREFIXED slice of
-# connector state per feature all live here — each with a `writer:` role so
-# only its rightful hand may set it.
+# connector state per feature all live here — each with a `writer:` so only
+# its rightful hand may set it.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: providers.substrate.reamde.dev/google/account
@@ -1193,24 +1195,24 @@ data:
   traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
   displayTemplate: "{email}"
   properties:
-    # The OAuth facility's hands on the account (writer: oauth — only the
+    # The OAuth facility's hands on the account (writer: system — only the
     # facility's actor may set them).
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: the credential-store reference the OAuth facility writes;
         never a raw token
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: "the connection state the facility last reported (pending
         | connected | erroring)"
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: the OAuth scopes the last consent was granted for; drives
         reconnect-on-new-feature
@@ -1219,14 +1221,14 @@ data:
     # refresh or reconnect.
     tokenError:
       type: string
-      writer: oauth
+      writer: system
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
         token, as a sentence saying what to do with the provider's answer
         on the next line; empty while it works
     tokenErrorAt:
       type: datetime
-      writer: oauth
+      writer: system
       displayName: Sign-in error at
       description: when the OAuth facility first recorded the current sign-in
         error
@@ -1237,7 +1239,7 @@ data:
     # secret.
     oauthClient:
       type: object
-      writer: oauth
+      writer: system
       displayName: Sign-in client
       description: the OAuth client this account's grant was issued to, written
         by the OAuth facility at connect; empty on an account connected before
@@ -1260,7 +1262,7 @@ data:
     # flag on a mirror). "Mail I sent" is `from eq emailaddress/<this row>`.
     email:
       type: email
-      writer: oauth
+      writer: system
       displayName: Email
       description: the connected Google account's address, set by the OAuth
         facility from the grant (oauth2/v3/userinfo)
@@ -1275,7 +1277,7 @@ data:
     address:
       type: reference
       kind: providers.substrate.reamde.dev/google/emailaddress
-      writer: connector
+      writer: [function, agent]
       displayName: Address
       description: the hub row for this account's own address — the identity
         every attendee list, mail header and address book converges on
@@ -1284,12 +1286,12 @@ data:
     # exactly the streams this account has turned on.
     enabledContacts:
       type: bool
-      writer: owner
+      writer: person
       displayName: Contacts
       description: sync this account's Google Contacts address book
     enabledGmail:
       type: bool
-      writer: owner
+      writer: person
       displayName: Gmail
       description: sync this account's Gmail threads and messages (a restricted
         Google scope)
@@ -1299,25 +1301,25 @@ data:
     # reconnect.
     enabledGmailWrite:
       type: bool
-      writer: owner
+      writer: person
       displayName: Gmail sending
       description: let your agents draft, send and label mail as this account
         (a restricted Google scope)
     enabledCalendar:
       type: bool
-      writer: owner
+      writer: person
       displayName: Calendar
       description: sync this account's Google calendars, their recurring series
         and their events
     enabledCalendarWrite:
       type: bool
-      writer: owner
+      writer: person
       displayName: Calendar editing
       description: let your agents create, change and delete events and answer
         invitations on this account's calendars
     enabledDrive:
       type: bool
-      writer: owner
+      writer: person
       displayName: Drive
       description: sync this account's Google Drive files and the text of
         its Docs, Sheets and Slides (a restricted Google scope)
@@ -1342,7 +1344,7 @@ data:
     # kept a stale `erroring` status. The runner stamps this property instead.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: stamp this to ask every enabled stream for a sync now,
         whatever the cadence says
@@ -1353,19 +1355,19 @@ data:
     # the toggles and the cursors are exactly where they were when it lifts.
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: "while true no stream on this account syncs: the dispatcher
         skips its deliveries and the scheduled bodies pass over it"
     contactsSyncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts request acknowledged
       description: the `syncRequestedAt` the contacts stream last acted on;
         equal means this stream has spent the request
     gmailSyncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail request acknowledged
       description: the `syncRequestedAt` the gmail stream last acted on; equal
         means this stream has spent the request
@@ -1381,19 +1383,19 @@ data:
     calendarPending:
       type: string
       repeated: true
-      writer: connector
+      writer: [function, agent]
       displayName: Calendars owed
       description: the calendar ids an interrupted walk has not reached yet;
         the next requested run resumes from exactly these
     calendarSyncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Calendar request acknowledged
       description: the `syncRequestedAt` the calendar stream last acted on;
         equal means this stream has spent the request
     driveSyncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Drive request acknowledged
       description: the `syncRequestedAt` the drive stream last acted on; equal
         means this stream has spent the request
@@ -1412,7 +1414,7 @@ data:
           label: "Once a day"
       required: true
       default: daily
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: "how often this account syncs on a schedule (default once
         a day); Sync now runs one at any time"
@@ -1437,11 +1439,11 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: "how far back the first sync of Gmail, Calendar and Drive
         reaches; Contacts always syncs the whole address book"
-    # Connector STATE the sync bodies own (writer: connector — only installed
+    # Connector STATE the sync bodies own (writer: [function, agent] — only installed
     # bundle code may set these). Two tiers:
     #
     #   THE ROLLUP — `lastSyncedAt` + `syncStatus`, account-level and
@@ -1457,7 +1459,7 @@ data:
     #   gmail backfill.
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: the account-level rollup — when ANY of this account's streams
         last finished
@@ -1487,14 +1489,14 @@ data:
     # repository — every e2e one — has nothing to migrate.
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: "never | running | ok | erroring | throttled — the account-level
         rollup state, raised the way syncStatus is and never cleared over
         another enabled stream's live failure. absent until the first drain"
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: "the account-level rollup outcome (ok | ok (N skipped)
         | erroring: <reason>)"
@@ -1510,38 +1512,38 @@ data:
     # WHO WRITES THEM. The three stream bodies, through their effects, on
     # every path they already patch the account on; and the dispatcher, around
     # a record-sourced delivery, under this bundle's own actor — which is why
-    # `writer: connector` holds for the engine's hand as well as for ours, and
+    # `writer: [function, agent]` holds for the engine's hand as well as for ours, and
     # why a stamp cannot fire the trigger that made it (a record trigger never
     # delivers its own callable's writes).
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: the one human line the last run left — the same sentence
         syncStatus carries, without the erroring prefix doing double duty
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: "when the last run began: stamped by the dispatcher around
         a record-sourced delivery, and by the body itself on the scheduled
         path, where no dispatcher is watching"
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: how long the last run took, stamped beside lastSyncStartedAt
         by whichever of the two hands wrote it
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request served
       description: "equals syncRequestedAt once EVERY enabled stream has answered
         that request; the per-stream answers are the three <stream>SyncRequestedAck
         properties and syncStreams.<stream>.requestedAck"
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: "{phase, done, total, pending} for the drain that last
         reported — phase names the stream and the walk it was on"
@@ -1550,19 +1552,19 @@ data:
       # prose, not ours to redeclare as an object.
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: the last failure's text, from a stream body or from a parked
         delivery the dispatcher stamped; a later run that ends ok, or a reconnect,
         clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: "contacts, gmail, calendar and drive, each as {state, message,
         lastAt, pending, requestedAck} — the per-stream half of the trait"
@@ -1576,20 +1578,20 @@ data:
     # 429 with no usable hint still sets a minute.
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       description: "the instant Google's Retry-After allows the next call;
         while it is in the future no stream on this account is due"
     # --- contacts stream state ----------------------------------------------
     contactsSyncToken:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts sync token
       description: the People API sync token — stored each run so the next
         is incremental
     contactsLastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts last synced
       description: when contacts last finished — this stream's own cadence
         anchor and first-run guard
@@ -1604,13 +1606,13 @@ data:
           label: "erroring"
         - value: "disabled"
           label: "disabled"
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts sync state
       description: "this stream's own state; the sentence behind it is contactsSyncStatus.
         absent until this stream has run"
     contactsSyncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts sync status
       description: "this stream's own outcome, so a gmail or calendar failure
         can never hide a contacts one"
@@ -1627,12 +1629,12 @@ data:
     # stream had no guard at all, and since T-031 it walks an address book AND
     # a Workspace directory per account.
     #
-    # NO `writer: connector`. An OBJECT property's key set has no `writer`
+    # NO `writer: [function, agent]`. An OBJECT property's key set has no `writer`
     # (the apply refuses the closure with `unknown key "writer"`), which is
     # the same engine ask `gmailBackfillResume` carries.
     contactsResume:
       type: object
-      writer: connector
+      writer: [function, agent]
       displayName: Contacts resume
       description: "the unfinished contacts walk this account resumes from:
         which stream, both page tokens, both sync tokens and the sweep evidence"
@@ -1683,7 +1685,7 @@ data:
             is skipped rather than run against a truncated snapshot
     contactsDirectorySyncToken:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Directory sync token
       description: the People sync token for this account's Workspace directory
         walk, kept apart from the address book's
@@ -1696,26 +1698,26 @@ data:
           label: "unavailable"
         - value: "needsreconsent"
           label: "needs reconsent"
-      writer: connector
+      writer: [function, agent]
       displayName: Directory state
       description: "ok | unavailable (no Workspace directory) | needsreconsent
         (this grant predates the directory scope)"
     contactsDirectoryStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Directory status
       description: what the last directory walk did, or why it was skipped;
         a skipped directory never fails the contacts sync
     # --- gmail stream state -------------------------------------------------
     gmailHistoryId:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail history id
       description: the highest fully-drained Gmail historyId — the next run's
         incremental floor
     gmailBackfillAnchorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail backfill anchor
       description: the run-start instant the first gmail sync stamped; backfillDepth
         reaches back from here
@@ -1727,12 +1729,12 @@ data:
     # resumes from can be read, filtered and — when a walk wedges — reasoned
     # about without decoding a blob by hand.
     gmailBackfillResume:
-      # `writer: connector` on an OBJECT: the loader admits the role on every
+      # `writer: [function, agent]` on an OBJECT: the loader admits the role on every
       # property shape (`objectPropKeys`, internal/vocabulary/load.go), so the
       # declared shape keeps the connector-only guard the `json` it replaced
       # had, and no editing surface offers a page token to the owner.
       type: object
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail backfill resume
       description: "the unfinished walk this account resumes from: the page
         token, its window and the evidence a sweep it still owes needs"
@@ -1816,7 +1818,7 @@ data:
             so the next fire reads them before the walk moves on
     gmailLastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail last synced
       description: when the gmail stream last drained — this stream's own
         cadence anchor and first-run guard
@@ -1831,13 +1833,13 @@ data:
           label: "erroring"
         - value: "disabled"
           label: "disabled"
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail sync state
       description: "this stream's own state; the sentence behind it is gmailSyncStatus.
         absent until this stream has run"
     gmailSyncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Gmail sync status
       description: "this stream's own outcome, so a calendar failure can never
         hide a gmail one"
@@ -1848,13 +1850,13 @@ data:
     # page of events never bumps the calendar row's version.
     calendarBackfillAnchorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Calendar backfill anchor
       description: the run-start instant the first calendar sync stamped;
         backfillDepth reaches back from here
     calendarLastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Calendar last synced
       description: when the calendar stream last drained — this stream's own
         cadence anchor and first-run guard
@@ -1869,13 +1871,13 @@ data:
           label: "erroring"
         - value: "disabled"
           label: "disabled"
-      writer: connector
+      writer: [function, agent]
       displayName: Calendar sync state
       description: "this stream's own state; the sentence behind it is calendarSyncStatus.
         absent until this stream has run"
     calendarSyncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Calendar sync status
       description: "this stream's own outcome, so a gmail failure can never
         hide a calendar one"
@@ -1888,23 +1890,23 @@ data:
     # it and stamps the `newStartPageToken` the last page hands back.
     driveStartPageToken:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Drive start page token
       description: the Drive changes token the last completed walk ended on
         — the next run's incremental floor
     driveBackfillAnchorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Drive backfill anchor
       description: the run-start instant the first drive sync stamped; backfillDepth
         reaches back from here on modifiedTime
-    # NO `writer: connector`, for the reason `gmailBackfillResume` and
+    # NO `writer: [function, agent]`, for the reason `gmailBackfillResume` and
     # `contactsResume` have none: an OBJECT property's key set has no `writer`
     # (the apply refuses the closure with `unknown key "writer"`) — the same
     # engine ask, unchanged.
     driveResume:
       type: object
-      writer: connector
+      writer: [function, agent]
       displayName: Drive resume
       description: "the unfinished drive walk this account resumes from: the
         page token or changes token, its window, the exports still owed and
@@ -1955,7 +1957,7 @@ data:
             completed run reports the whole count
     driveLastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Drive last synced
       description: when the drive stream last drained — this stream's own
         cadence anchor and first-run guard
@@ -1975,13 +1977,13 @@ data:
         # The other three streams sync on; this one says what it is owed.
         - value: "needsreconsent"
           label: "needs reconsent"
-      writer: connector
+      writer: [function, agent]
       displayName: Drive sync state
       description: "this stream's own state; the sentence behind it is driveSyncStatus.
         absent until this stream has run"
     driveSyncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Drive sync status
       description: "this stream's own outcome, so a gmail or calendar failure
         can never hide a drive one"
@@ -12481,7 +12483,7 @@ data:
 # NO SYNC STATE. Version 17 put `syncToken`, `syncWalk` and `syncGeneration`
 # here, so every page of every calendar's drain bumped this row's version and
 # fired every trigger watching it. They live in `calendarsync` now, one state
-# row per calendar, `writer: connector` throughout.
+# row per calendar, `writer: [function, agent]` throughout.
 #
 # `kind: "calendar#calendarListEntry"` and the LIST's own `etag` are the
 # response envelope and are not declared; the ENTRY's `etag` is the object's
@@ -12715,7 +12717,7 @@ data:
 # promise the engine does not keep is worse than none. Engine ask: enforce
 # `unique` on a reference.
 #
-# `writer: connector` on every SCALAR — only installed bundle code may set
+# `writer: [function, agent]` on every SCALAR — only installed bundle code may set
 # them, so neither the owner nor the console can hand the drain a token. The
 # `calendar` reference CANNOT say it: `writer` is not one of the keys a
 # reference declaration admits (`referencePropKeys`), so the pointer itself is
@@ -12754,19 +12756,19 @@ data:
     # --- the drain's own state ----------------------------------------------
     syncToken:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync token
       description: "this calendar's events `nextSyncToken` — committed only
         from the page that carried it, which is the last one"
     syncWalk:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync walk
       description: "the walk the stored token was minted under, stamped once
         that walk's sweep completed; a token from another walk reads as absent"
     generation:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Generation
       description: the generation token the last full re-read of this calendar
         ran under, so a resumed sweep knows which pass it is finishing

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A bundle is the install unit (record 63): one document declaring the PACKAGE
@@ -263,7 +265,7 @@ type BundleOAuth2 struct {
 	// metadata:{primary}}]}` (People).
 	EmailEndpoint string
 	// EmailProperty is the OPTIONAL account property the derived email lands in
-	// (writer: oauth, so the facility's actor may set it and the user cannot).
+	// (writer: system, so the facility's actor may set it and the user cannot).
 	// Set together with EmailEndpoint; empty disables the write.
 	EmailProperty string
 }
@@ -868,11 +870,11 @@ func (r *Registry) resolveBundle(g *Package) []string {
 					where, toggle))
 			}
 		}
-		// emailProperty must name a writer: oauth property on some bundle type —
-		// the facility writes it as its own actor, and only a writer: oauth slot
+		// emailProperty must name a writer: system property on some bundle type —
+		// the facility writes it as its own actor, and only a writer: system slot
 		// keeps the owner out of it.
 		if name := b.OAuth2.EmailProperty; name != "" && !g.hasOAuthWritableProp(name) {
-			problems = append(problems, fmt.Sprintf("%s: data.oauth2.emailProperty %q names no `writer: oauth` property on any of the bundle's types",
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.emailProperty %q names no `writer: system` property on any of the bundle's types",
 				where, name))
 		}
 	}
@@ -891,11 +893,11 @@ func (g *Package) hasBoolToggle(name string) bool {
 }
 
 // hasOAuthWritableProp reports whether some type in the authority declares name as
-// a `writer: oauth` property — the slot the facility writes the derived email
-// into, unreachable to the owner.
+// a `writer: system` property — the slot the facility writes the derived email
+// into, unreachable to a person.
 func (g *Package) hasOAuthWritableProp(name string) bool {
 	for _, tn := range g.KindOrder {
-		if p, ok := g.Kinds[tn].Prop(name); ok && p.Writer == WriterOAuth {
+		if p, ok := g.Kinds[tn].Prop(name); ok && p.WrittenOnlyBy(substrate.ActorTypeSystem) {
 			return true
 		}
 	}

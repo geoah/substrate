@@ -96,6 +96,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: whoop
+  dialect: 5
   # 10, because substrate's catalogue ships this package at 9 and a package
   # that reaches a repository has to outrank what is installed there. What it
   # is NOT is a compatible successor: version 9 declares `recovery.cycleId` as
@@ -183,7 +184,8 @@ data:
   # on the line after it; a connection failure says which kind it was.
   # The adapter's stamp follows the package to `whoop@27`; what it writes
   # is unchanged.
-  version: 27
+  # 28: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 28
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -829,7 +831,7 @@ data:
     apiBase:
       type: url
       default: https://api.prod.whoop.com/developer
-      writer: owner
+      writer: person
       # The body PINS the origin the access token may travel to: exactly
       # https://api.prod.whoop.com, or a loopback host (127.0.0.1 / localhost /
       # ::1, any scheme) as the test seam. Anything else refuses BEFORE
@@ -844,8 +846,8 @@ data:
 # ---- the account type: one connected WHOOP member ---------------------------
 # accountconfig (its records ARE the bundle's connected accounts; the host
 # writes tokenRef + tokenStatus + grantedScopes + email over the OAuth
-# facility). Every property carries a `writer:` role so only its rightful hand
-# may set it.
+# facility). Every property carries a `writer:` so only its rightful hand may
+# set it.
 #
 # EVERY CURSOR IN THIS CLOSURE IS HERE (`docs/kind-design.md` §1). WHOOP has no
 # sync token: the read window IS the incremental contract, so `syncCursors`
@@ -880,20 +882,20 @@ data:
     # ---- identity and the grant (the OAuth facility's) --------------------
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: the credential-store reference the OAuth facility writes;
         never a raw token
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: "the connection state the facility last reported — a growing
         list, not an enum (pending | connected | erroring)"
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: the OAuth scopes the last consent was granted for; drives
         reconnect-on-new-feature
@@ -902,14 +904,14 @@ data:
     # refresh or reconnect.
     tokenError:
       type: string
-      writer: oauth
+      writer: system
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
         token, as a sentence saying what to do with the provider's answer
         on the next line; empty while it works
     tokenErrorAt:
       type: datetime
-      writer: oauth
+      writer: system
       displayName: Sign-in error at
       description: when the OAuth facility first recorded the current sign-in
         error
@@ -920,7 +922,7 @@ data:
     # secret.
     oauthClient:
       type: object
-      writer: oauth
+      writer: system
       displayName: Sign-in client
       description: the OAuth client this account's grant was issued to, written
         by the OAuth facility at connect; empty on an account connected before
@@ -939,7 +941,7 @@ data:
               label: Your own
     email:
       type: email
-      writer: oauth
+      writer: system
       displayName: Email
       description: >-
         the connected member's address, set by the OAuth facility off GET
@@ -950,7 +952,7 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/whoop/user
-      writer: connector
+      writer: [function, agent]
       displayName: Member
       # Minted from the `user_id` that rides on every record WHOOP returns, so
       # it lands even with the profile toggle off. NOT `mustExist`: the first
@@ -962,33 +964,33 @@ data:
     # ---- what the owner asked for ----------------------------------------
     enabledProfile:
       type: bool
-      writer: owner
+      writer: person
       displayName: Profile
       description: >-
         mirror the member's profile and body measurement — the two sibling
         calls that fill the `user` row
     enabledCycles:
       type: bool
-      writer: owner
+      writer: person
       displayName: Cycles
       description: mirror the physiological cycles, the days WHOOP scores
         strain over, each from one sleep onset to the next, and the identity
         a recovery hangs off
     enabledRecovery:
       type: bool
-      writer: owner
+      writer: person
       displayName: Recovery
       description: mirror the recovery scores (recovery percentage, HRV, resting
         heart rate, SpO2, skin temperature)
     enabledSleep:
       type: bool
-      writer: owner
+      writer: person
       displayName: Sleep
       description: mirror the sleeps — performance, stage summary and how
         much sleep WHOOP said was needed
     enabledWorkouts:
       type: bool
-      writer: owner
+      writer: person
       displayName: Workouts
       description: mirror the workouts — sport, strain, heart-rate zones and
         distance
@@ -1003,7 +1005,7 @@ data:
           label: "Once a day"
       required: true
       default: hourly
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: "the scheduled sync cadence for this account (default hourly
         — WHOOP re-scores through the day)"
@@ -1024,7 +1026,7 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: "how far back the first sync reaches (none = from connect
         time forward; steady-state re-syncs read a short overlap window)"
@@ -1036,14 +1038,14 @@ data:
     # future — the sync's own stamp would never overtake it.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: stamp this to ask for a sync now, whatever the cadence
         says
-    # ---- the sync's own bookkeeping (writer: connector) -------------------
+    # ---- the sync's own bookkeeping (writer: [function, agent]) -------------------
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request acknowledged
       description: the `syncRequestedAt` the last sync acted on — equal means
         the request is spent
@@ -1051,7 +1053,7 @@ data:
       type: datetime
       keyed: true
       keyPattern: camel
-      writer: connector
+      writer: [function, agent]
       # WHOOP has no sync token, so this floor IS the incremental contract.
       # Keyed per stream so one stream stalling never advances another's tail.
       displayName: Sync cursors
@@ -1062,7 +1064,7 @@ data:
       type: datetime
       keyed: true
       keyPattern: camel
-      writer: connector
+      writer: [function, agent]
       # A COLD WALK'S FLOOR IS PART OF THE CURSOR (`docs/provider-practices.md`
       # §4, which Slack paid for). `backfillDepth: last90d` is `now - 90 days`
       # and `now` moves: a cold walk cut off by a 429 and restarted an hour
@@ -1077,7 +1079,7 @@ data:
         it began, not a newer one
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       # A 429 says WHEN (`docs/provider-practices.md` §5): WHOOP's published
       # limit is 100 requests a minute and its 429 carries `Retry-After`. The
@@ -1089,13 +1091,13 @@ data:
         refuses to start before it
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: when the last sync ATTEMPT finished (ok or erroring) —
         the cadence anchor and the on-connect trigger's guard
     lastCompletedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       # `lastSyncedAt` is the last ATTEMPT; this is the last walk that ran out
       # of work, and only this one is evidence that anything finished
       # (`docs/provider-practices.md` §4).
@@ -1104,7 +1106,7 @@ data:
         sync finished, as opposed to being attempted
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       description: "the last sync outcome (ok | ok (N skipped) | ok (M pending)
         | erroring: <reason>)"
       displayName: Sync status
@@ -1120,7 +1122,7 @@ data:
     # a property a live row holds is a narrowing the upgrade refuses.
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: >-
         while true the dispatcher skips this account's deliveries and the
@@ -1128,7 +1130,7 @@ data:
         the body having to know a delivery was refused
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: >-
         never | running | ok | erroring | throttled. One function walks the
@@ -1136,14 +1138,14 @@ data:
         429 is `throttled` and stands until WHOOP's own instant passes
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: >-
         the one human line the last run left — the same sentence syncStatus
         carries, without its `erroring` prefix
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: >-
         when the last run began. The dispatcher stamps it around a record-sourced
@@ -1151,13 +1153,13 @@ data:
         its own
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: how long that run took, from the same two hands — one invocation
         of a bounded drain, not the whole walk
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: >-
         {phase, done, total, pending} off the drain's own bookkeeping — the
@@ -1165,19 +1167,19 @@ data:
         have drained, and how many are still queued
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: the last error text, from the body's own failure path or
         from a parked delivery the dispatcher stamped; a later run that ends
         ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: >-
         trait contract — unwritten here: the four collections are one function,
@@ -2656,7 +2658,7 @@ data:
 
 
     def _stamp(host, acct, aid, cur, error=None, completed=False):
-        """The connector stamp — every `writer: connector` property in one patch.
+        """The connector stamp — every `writer: [function, agent]` property in one patch.
 
         `lastSyncedAt` marks the ATTEMPT finished either way: it anchors the
         cadence AND drops the on-connect trigger's guard, so an erroring stamp can
@@ -3892,7 +3894,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `whoop-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "whoop@27"
+    ADAPTER = "whoop@28"
 
     OBSERVATION = "substrate.reamde.dev/observations/observation"
     SOURCE = "substrate.reamde.dev/observations/source"

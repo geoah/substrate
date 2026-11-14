@@ -12,7 +12,7 @@ import {
 import { fieldOf, type FormField } from "@/lib/record-form"
 import {
   bodyProperty,
-  ownerWritable,
+  personWritable,
   propSpecsByName,
   systemSpecs,
   titleProperty,
@@ -24,7 +24,7 @@ import type { UnitReader } from "@/lib/unit-reader"
 export type RowLock =
   /** The engine stamps it and refuses a write that disagrees. */
   | "managed"
-  /** A declared `writer:` other than the owner: the host keeps it. */
+  /** A declared `writer:` that leaves out `person`: the host keeps it. */
   | "host"
   /** A provider's own copy: the whole record is read-only here. */
   | "provider"
@@ -145,7 +145,7 @@ export function sheetRows(
         ? "managed"
         : fromId
           ? "id"
-          : !ownerWritable(spec)
+          : !personWritable(spec)
             ? "host"
             : undefined
     rows.push({

@@ -2001,13 +2001,6 @@ var uniqueForbiddenKinds = map[Datatype]string{
 	DatatypeBlobRef: "a blob-ref names bytes many records may legitimately share",
 }
 
-// writerRoles is the closed set of a property's `writer:` restriction: who
-// alone may write the property, enforced in the write path after the merged
-// row is known.
-var writerRoles = map[string]bool{
-	WriterOAuth: true, WriterConnector: true, WriterOwner: true,
-}
-
 // objectPropKeys is an object property's own key set: no fts, no
 // embed, no filter machinery: object properties stay out of all three until
 // a consumer arrives. `repeated: true` is allowed, and `keyed: true` is
@@ -2019,8 +2012,8 @@ var objectPropKeys = map[string]bool{
 	"type": true, "fields": true, "repeated": true, "description": true,
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 	"deprecated": true,
-	// A connector's resume cursor is an object, and it is the connector's hand
-	// exactly as a scalar cursor is: without the role every editing surface
+	// A sync's resume cursor is an object, and its function writes it exactly
+	// as it writes a scalar cursor: without a `writer:` every editing surface
 	// offered it to the owner as a form (the Connections page asked a person
 	// to type a page token).
 	"writer": true,
@@ -2052,9 +2045,9 @@ var referencePropKeys = map[string]bool{
 	"mustExist": true, "onDelete": true, "properties": true, "subject": true,
 	"keyed": true, "keyPattern": true, "managed": true,
 	// A connection's identity (`account.user`, `account.address`) is a
-	// reference the drain writes once it knows who the token belongs to; the
-	// role keeps it off the owner's form, where it was a picker over an empty
-	// collection.
+	// reference the drain writes once it knows who the token belongs to; its
+	// `writer:` keeps it off the owner's form, where it was a picker over an
+	// empty collection.
 	"writer": true,
 	// `unique` on a pointer is the one-to-one link: at most one live record may
 	// name any given referent. Reserved like everywhere else: nothing enforces
@@ -2126,13 +2119,8 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// whatever that shape is. The write path enforces the role by property
 	// NAME (engine checkPropertyOwnership), so nothing below depends on the
 	// datatype. A state machine takes none; its key set refuses the key.
-	if w := mstr(d, "writer"); w != "" {
-		if !writerRoles[w] {
-			l.errf("%s: writer %q is not a role — one of %s, %s, %s", where, w,
-				WriterOAuth, WriterConnector, WriterOwner)
-		} else {
-			p.Writer = w
-		}
+	if raw, ok := d["writer"]; ok {
+		p.Writers = l.parseWriters(where, raw)
 	}
 	if p.Keyed && p.Repeated {
 		l.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
@@ -2638,6 +2626,13 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 		fd := asMap(fdef)
 		if s, ok := fdef.(string); ok {
 			fd = map[string]any{"type": s}
+		}
+		// A field takes no `writer:`: the write path holds a property's value
+		// whole, so the property's `writer:` is what guards its fields
+		// (decision 0290).
+		if _, has := fd["writer"]; has {
+			l.errf("%s: a field takes no `writer:` — the property's `writer:` guards its whole value, so put it on the property", fwhere)
+			continue
 		}
 		// The forbidden kinds are refused by name before the parse: a state
 		// declaration would otherwise fail on its missing machine first.
@@ -3248,3 +3243,48 @@ func mslice(m map[string]any, k string) []any {
 
 // Two bundles may share a first label: an actor carries the full authority
 // (record 0025), so the label is a display name and nothing keys on it.
+
+// parseWriters reads a property's `writer:` (decision 0290): one type of
+// actor, or a list of them, each one of substrate.ActorTypes and none twice.
+// A word from before actor types is refused naming the one that replaced it,
+// as the envelope's retired keys are.
+func (l *loader) parseWriters(where string, raw any) []string {
+	var words []string
+	switch v := raw.(type) {
+	case string:
+		words = []string{v}
+	case []any:
+		for _, w := range v {
+			s, ok := w.(string)
+			if !ok {
+				l.errf("%s: writer: each entry is a type of actor, not %v", where, w)
+				return nil
+			}
+			words = append(words, s)
+		}
+	default:
+		l.errf("%s: writer: a type of actor or a list of them — %s — not %v", where, strings.Join(substrate.ActorTypes, ", "), raw)
+		return nil
+	}
+	if len(words) == 0 {
+		l.errf("%s: writer: an empty list admits no writer — name a type of actor, or drop the key", where)
+		return nil
+	}
+	var out []string
+	for _, w := range words {
+		if instead, retired := retiredWriters[w]; retired {
+			l.errf("%s: writer %q is retired: write %s", where, w, instead)
+			return nil
+		}
+		if !slices.Contains(substrate.ActorTypes, w) {
+			l.errf("%s: writer %q is not a type of actor — %s", where, w, strings.Join(substrate.ActorTypes, ", "))
+			return nil
+		}
+		if slices.Contains(out, w) {
+			l.errf("%s: writer names %q twice", where, w)
+			return nil
+		}
+		out = append(out, w)
+	}
+	return out
+}

@@ -32,15 +32,16 @@ const (
 // rmEvery is the ledger of a repository every migration this binary carries
 // has run on.
 var rmEvery = map[int]string{
-	1: "qualify_bare_declaration_names",
-	2: "qualify_bare_selector_kinds",
-	3: "name_units_by_unit_records",
-	4: "name_applet_runtimes",
-	5: "remove_reply_relay_contacts",
-	6: "key_the_repository_record_by_its_id",
-	7: "start_paged_drains_over",
-	8: "purge_the_recovery_key",
-	9: "link_actors",
+	1:  "qualify_bare_declaration_names",
+	2:  "qualify_bare_selector_kinds",
+	3:  "name_units_by_unit_records",
+	4:  "name_applet_runtimes",
+	5:  "remove_reply_relay_contacts",
+	6:  "key_the_repository_record_by_its_id",
+	7:  "start_paged_drains_over",
+	8:  "purge_the_recovery_key",
+	9:  "link_actors",
+	10: "name_writers_by_actor_type",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen

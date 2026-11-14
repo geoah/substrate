@@ -1355,7 +1355,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// `writer:`-restricted property (tokenRef/tokenStatus/grantedScopes →
 	// oauth; syncToken/lastSyncedAt/syncStatus → connector; email/toggles →
 	// owner) accepts a change only from its role's actor.
-	if err := t.checkPropertyOwnership(sp.ty, sp.ref(), accepted); err != nil {
+	if err := t.checkPropertyOwnership(sp.ty, accepted); err != nil {
 		return nil, err
 	}
 
@@ -1797,23 +1797,77 @@ func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
 	return ok && bundleInputKind(b, ty.Identity)
 }
 
-// checkPropertyOwnership holds every CHANGED property with a `writer:`
-// restriction to its role's actor. Enforced uniformly —
-// including internal writes — so the OAuth facility, the connector function
-// and the owner each write only their own hands; the console blacklist is a
-// convenience, not the boundary.
-func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, ref eref, accepted []string) error {
+// checkPropertyOwnership holds every CHANGED property with a `writer:` to
+// the types of actor it names (decision 0290), by the type of the hand that
+// chose the value. Enforced uniformly, including internal writes, so the sync
+// function, the person and the OAuth facility each write only their own
+// hands; the console's form is a convenience, not the boundary. The engine's
+// own pass writes any property (systemDecides), and no other hand writes a
+// guarded property it could not before (systemhands_test.go lists the
+// system's sites).
+//
+// A mapping's recompute writes no guarded property, whoever started it. The
+// value it carries was chosen by whoever wrote the winning source, and what
+// the engine stores of that (a source record's manager, the first of a
+// union's contributors) is attribution, not proof of who chose each value,
+// so nothing here could hold it to that hand. The write that would carry or
+// remove such a value is refused, as the direct write by an unknown hand
+// would be.
+func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, accepted []string) error {
+	if t.systemDecides() {
+		return nil
+	}
 	for _, name := range accepted {
 		p, ok := ty.Prop(name)
-		if !ok || p.Writer == "" {
+		if !ok || p.Writers == nil {
 			continue
 		}
-		if !t.mayWriteProp(p.Writer, t.propTier(ref, name)) {
-			return fmt.Errorf("%w: %s.%s is written by the %q role, not %s",
-				substrate.ErrForbidden, ty.Identity, name, p.Writer, handWords(t.actor))
+		if t.recomputing {
+			return fmt.Errorf("%w: %s.%s is written by %s, and a mapping writes no property that names its writers: write it directly",
+				substrate.ErrForbidden, ty.Identity, name, strings.Join(p.Writers, " or "))
 		}
+		typ, who := t.writerOf(t.actor)
+		if typ == substrate.ActorTypeSystem || p.WrittenBy(typ) {
+			continue
+		}
+		// The hand in words, never its spelling: an accepted change request
+		// stores the refusal (handWords).
+		return fmt.Errorf("%w: %s.%s is written by %s, not by %s",
+			substrate.ErrForbidden, ty.Identity, name, strings.Join(p.Writers, " or "), who)
 	}
 	return nil
+}
+
+// systemDecides reports whether a write is the engine's own pass, deciding or
+// replaying a value, which writes any property. A recompute carries its
+// sources' values and a policy's acceptance carries a request's, so neither
+// is, though both write as a hand of the system's type.
+func (t *txn) systemDecides() bool {
+	return substrate.ActorTypeOf(t.actor) == substrate.ActorTypeSystem && !t.recomputing && !isPolicyActor(t.actor)
+}
+
+// writerOf is the type a guarded property holds a hand to, and the hand in
+// words with it for a refusal. A policy rule accepts for the person whose
+// rule it is, and is held as the person is, as the owner tier held it
+// before. A scoped token whose hand reads as the person (one whose client id
+// names no app) is held to no type, as `owner` refused a scoped token.
+func (t *txn) writerOf(hand substrate.Actor) (string, string) {
+	typ := substrate.ActorTypeOf(hand)
+	switch {
+	case isPolicyActor(hand):
+		return substrate.ActorTypePerson, "a policy rule, which accepts for the person (person)"
+	case t.scoped && typ == substrate.ActorTypePerson:
+		return "", "the owner through a scoped token that names no app"
+	case typ == "":
+		return "", handWords(hand) + " (an actor of no type)"
+	}
+	return typ, handWords(hand) + " (" + typ + ")"
+}
+
+// isPolicyActor reports whether a hand is a change-request policy rule's
+// (judge.go decideAsPolicy).
+func isPolicyActor(hand substrate.Actor) bool {
+	return strings.HasPrefix(string(hand), "policy:")
 }
 
 // checkManagedProps holds a SUPPLIED managed property to the value the row
@@ -1853,22 +1907,6 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 			substrate.ErrValidation, sp.ty.Identity, name)
 	}
 	return nil
-}
-
-// mayWriteProp reports whether this transaction's actor, writing at tier,
-// fills a property-writer role: oauth is the facility's own actor, connector
-// is a bundle-tier write context (installed code; the tier is write-context
-// data), owner is an owner-tier one.
-func (t *txn) mayWriteProp(writer string, tier substrate.Tier) bool {
-	switch writer {
-	case vocabulary.WriterOAuth:
-		return t.actor == actorOAuth
-	case vocabulary.WriterConnector:
-		return tier == substrate.TierBundle
-	case vocabulary.WriterOwner:
-		return tier == substrate.TierOwner && !t.scoped
-	}
-	return true
 }
 
 // propTiers is the tier each named property of one record's write stands

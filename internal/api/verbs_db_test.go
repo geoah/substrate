@@ -151,10 +151,10 @@ func verbsHub(t *testing.T, env *dbEnv, triggers map[string]string) (account, re
 	pkg := env.repository + "/hub"
 	account, repo = pkg+"/account", pkg+"/repo"
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	m := enginetest.Manifest{
 		Name: "hub", Authority: pkg,

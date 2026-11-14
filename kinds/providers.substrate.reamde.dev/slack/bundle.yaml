@@ -33,7 +33,7 @@
 #     through `{profile.displayName}`.
 #   * NO sync bookkeeping on a mirror row. A conversation's history cursors
 #     moved to `slack/conversationsync`, a provider-owned state kind with a
-#     cascading reference at the conversation and `writer: connector` on
+#     cascading reference at the conversation and `writer: [function, agent]` on
 #     every property — so a page of history never bumps the conversation's
 #     version and never fires a trigger watching it. The per-STREAM state
 #     (where the users and conversations walks stopped, and the queue a
@@ -96,6 +96,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: slack
+  dialect: 5
   # 3 — T-021, hydration and coverage: `files.info` and `bots.info` are read
   # for every file and bot the walk names, the file kind declares the whole
   # measured inventory (media, canvas, external, access, shares) instead of
@@ -179,7 +180,8 @@ data:
   # historyStatus, the `erroring:` status, postmessage's error) is a plain
   # sentence saying what to do, with Slack's method and error word on a
   # second line; token_revoked and token_expired are permanent.
-  version: 23
+  # 24: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 24
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -237,7 +239,7 @@ data:
   properties:
     userToken:
       type: secret
-      writer: owner
+      writer: person
       displayName: User token
       description: >-
         the pasted Slack USER token (xoxp-…); a bot token sees neither your
@@ -245,7 +247,7 @@ data:
         and postmessage, scrubbed on the way out
     apiBase:
       type: url
-      writer: owner
+      writer: person
       # The body PINS the origin the token may travel to: https on a
       # slack.com host, or a loopback host as the test seam.
       description: >-
@@ -255,7 +257,7 @@ data:
 # ---- the account type: one connected workspace ----------------------------
 # accountconfig WITHOUT oauth2. The trait contracts tokenRef/tokenStatus/
 # grantedScopes onto every implementing type, so they are declared below as
-# DORMANT: `writer: oauth` means only the OAuth facility may ever set them,
+# DORMANT: `writer: system` means only the OAuth facility may ever set them,
 # and no flow runs for this bundle.
 #
 # THIS IS NOT A MIRROR. It is the connection: the owner's toggles, what the
@@ -289,14 +291,14 @@ data:
     # The accountconfig trait's contracted properties — DORMANT here.
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: >-
         accountconfig trait contract — unused: the pasted token lives on the
         bundle config, and no OAuth flow runs
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: >-
         accountconfig trait contract — unused: no OAuth flow ever reports
@@ -304,7 +306,7 @@ data:
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: >-
         accountconfig trait contract — unused: no consent, no scopes. What
@@ -312,13 +314,13 @@ data:
     # The owner's hands.
     displayName:
       type: string
-      writer: owner
+      writer: person
       displayName: Name
       description: a name for this connection, shown wherever the account
         is listed
     enabledMessages:
       type: bool
-      writer: owner
+      writer: person
       displayName: Messages
       description: >-
         sync this workspace's people, conversations and messages — one toggle,
@@ -326,14 +328,14 @@ data:
         in and the person who wrote it
     enabledMembers:
       type: bool
-      writer: owner
+      writer: person
       displayName: Rosters
       description: >-
         also walk each channel's member list. Off by default: it is one extra
         API call per channel and rosters move slowly
     conversationFilter:
       type: string
-      writer: owner
+      writer: person
       description: >-
         optional case-insensitive substring a conversation's name must contain
         for its MESSAGES to sync. Every conversation is still mirrored
@@ -341,14 +343,14 @@ data:
     # predates the trait and keeps its meaning exactly; `syncPaused` is new.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: >-
         stamp this with the current time to ask for a sync now, whatever the
         cadence says. The next completed sync closes the request
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: >-
         while true the dispatcher skips this account's deliveries and the
@@ -364,7 +366,7 @@ data:
           label: Once a day
       required: true
       default: hourly
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
@@ -384,7 +386,7 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: >-
         how far back the first sync walks each conversation's history (default
@@ -395,7 +397,7 @@ data:
     team:
       type: reference
       kind: providers.substrate.reamde.dev/slack/team
-      writer: connector
+      writer: [function, agent]
       displayName: Workspace
       description: >-
         the workspace this token belongs to, from auth.test's team_id. The
@@ -403,7 +405,7 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/slack/user
-      writer: connector
+      writer: [function, agent]
       displayName: You
       description: >-
         the Slack user this token belongs to, from auth.test's user_id — who
@@ -412,7 +414,7 @@ data:
     # slack/conversationsync, not here and not on the conversation.
     streamCursors:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Stream cursors
       description: >-
         where each stream stopped: the users and conversations list cursors,
@@ -420,7 +422,7 @@ data:
         whole by every page
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last attempted
       description: >-
         when the sync last ATTEMPTED a walk — the cadence anchor. A bounded
@@ -428,7 +430,7 @@ data:
         evidence that anything finished; lastCompletedAt is
     lastCompletedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last completed
       description: >-
         when a walk last ran to the end with no work left. The cold test reads
@@ -436,7 +438,7 @@ data:
         still a first sync
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       description: >-
         the instant Slack's Retry-After named on the last 429, honoured by
@@ -444,7 +446,7 @@ data:
         is holding the account back
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: >-
         the last sync outcome — ok, ok (N pending), ok (N pending, rate limited),
@@ -462,7 +464,7 @@ data:
     # per-stream entries below are the breakdown.
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: >-
         never | running | ok | erroring | throttled — the account-level state.
@@ -470,14 +472,14 @@ data:
         `throttled` while Slack's Retry-After holds it
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: >-
         the one human line the last run left — the same sentence syncStatus
         carries, so the two never disagree
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: >-
         when the last run began. The dispatcher stamps it around a record-sourced
@@ -485,21 +487,21 @@ data:
         record
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: >-
         how long the last run took, stamped by the dispatcher for a record-sourced
         delivery and by the body on the scheduled path
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request served
       description: >-
         equals syncRequestedAt once every stream has answered that request
         — for this bundle, once a walk has run out of work
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: >-
         "{phase, done, total, pending}" for the bounded drain: the phase it
@@ -507,19 +509,19 @@ data:
         hold
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: >-
         the last error text, from the body or from a parked delivery. A later
         run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: >-
         users, conversations and messages, each as "{state, message, lastAt,
@@ -2792,7 +2794,7 @@ data:
 # ---- the connector's per-conversation state --------------------------------
 # NOT A MIRROR. This is where the history cursors that used to sit on the
 # conversation row live: a provider-owned state kind with a required cascading
-# reference at the conversation and `writer: connector` on every property, so
+# reference at the conversation and `writer: [function, agent]` on every property, so
 # a page of history bumps THIS row's version and never the conversation's, and
 # a trigger watching conversations does not fire on every drain.
 #
@@ -2832,7 +2834,7 @@ data:
         so this one alone is unrestricted
     latestTs:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: History cursor
       description: >-
         the newest message ts mirrored. The next run reads from this less
@@ -2840,7 +2842,7 @@ data:
         its first reply is read again with its reply count
     repliesTs:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Replies cursor
       description: >-
         the newest reply ts mirrored from any thread here. The thread walk
@@ -2849,7 +2851,7 @@ data:
     threadWatch:
       type: string
       repeated: true
-      writer: connector
+      writer: [function, agent]
       displayName: Watched threads
       description: >-
         the ts of every thread parent seen here, newest first and capped.
@@ -2857,13 +2859,13 @@ data:
         parent is invisible unless its thread is re-asked
     membersSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Roster synced
       description: when this conversation's member list was last walked —
         rosters are refreshed at most daily
     historyStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: History status
       description: >-
         the last outcome for THIS conversation — ok, or a sentence saying

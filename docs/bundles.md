@@ -410,24 +410,25 @@ the wire. The scopes actually granted persist on the account as
 `grantedScopes`, so enabling a further stream after the grant landed does not
 widen it: the account needs a reconnect before that stream can succeed.
 
-Per-property `writer:` ownership backs this on the row, in three declared
-roles: `oauth`, only the facility's own actor, holding `tokenRef`,
-`tokenStatus`, `grantedScopes` and the `email` it read from the grant;
-`connector`, only installed bundle code, holding a sync's own state
-(`syncToken`, `lastSyncedAt`, `syncStatus`), its resume cursors and the
+A property's `writer:` backs this on the row: it names the types of
+[actor](api.md#actors) that may write the property
+([0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)), and an
+account kind uses three: `system`, the substrate's own hand, holding
+`tokenRef`, `tokenStatus`, `grantedScopes` and the `email` it read from the
+grant; `[function, agent]`, the sync's installed code, holding a sync's own
+state (`syncToken`, `lastSyncedAt`, `syncStatus`), its resume cursors and the
 identity references it mints once it knows whose token it holds
-(`account.user`, `account.address`); and `owner`, only an owner-tier actor,
-holding the feature toggles, `syncFrequency` and `backfillDepth`. The role is
-declared on a property of any shape, a scalar, an object or a reference, and
-enforced in the write path for REST and the CLI alike, not just in the
-console, which offers only the owner's properties for editing. A role is
-checked against the tier its property is written at, and the OAuth
-callback's patch is the one write that holds properties at different tiers:
-it writes the facility's own properties under the facility's hand, which
-history links as the `system` [actor](api.md#actors), clears
-`syncError` and `syncErrorAt` at the bundle tier, and stamps
-`syncRequestedAt` at the owner tier as the owner's request
-([0176](decisions/0176-a-reconnect-requests-a-sync.md)).
+(`account.user`, `account.address`); and `person`, the owner, holding the
+feature toggles, `syncFrequency` and `backfillDepth`. A writer is declared on
+a property of any shape, a scalar, an object or a reference, and enforced in
+the write path for REST and the CLI alike, not just in the console, which
+offers only the properties a person may write for editing. The write path
+reads the type of the write's actor, and the system may write any property:
+the OAuth callback's patch is the system's, so it writes the facility's own
+properties, clears `syncError` and `syncErrorAt` at the bundle tier, and
+stamps `syncRequestedAt` at the owner tier as the owner's request
+([0176](decisions/0176-a-reconnect-requests-a-sync.md)), each half only where
+the kind gives it to the hand it stands for.
 
 The flow itself is two endpoints. `POST …/oauth/start` takes the
 account record as `record`, its record path
@@ -465,7 +466,7 @@ trades the refresh token for every credential expiring within ten minutes,
 marks `tokenStatus: erroring` when that fails, and skips disabled bundles.
 Beside `erroring` it writes `tokenError` (the provider's HTTP status and RFC
 6749 error code, never its description) and `tokenErrorAt`, on an account kind
-that declares both `writer: oauth`; a good refresh or a reconnect clears them.
+that declares both `writer: system`; a good refresh or a reconnect clears them.
 On a `sync`-trait account all three also appear on its `GET
 /api/v1/sync/status` row and in the `TOKEN` column of `substratectl sync
 status`.
@@ -536,7 +537,7 @@ lists no setup item for a client input the operator covers, and `GET
 provider ([operator defaults](api.md#operator-defaults)).
 
 Each account records the client its grant was issued to, in `oauthClient`, a
-`writer: oauth` object of `clientId` and `source` (`operator` or `own`) that
+`writer: system` object of `clientId` and `source` (`operator` or `own`) that
 the callback writes; Google, GitHub and WHOOP declare it. A grant works only
 with the client that issued it, so the refresh loop and an invocation compare
 the record with the client resolving now. On a mismatch the account is not
@@ -670,23 +671,23 @@ the substrate had no word for it: each sync function wrote its outcome onto
 the account as free text under names it chose, and the console could show
 token status only. The core **`sync`** trait is that word. An account kind
 binds it beside `accountconfig` and redeclares its twelve properties, each
-with a `writer:` — the OWNER's two hands, and the CONNECTOR's ten:
+with a `writer:` — the PERSON's two hands, and the SYNC's ten:
 
 ```yaml
 traits: [substrate.reamde.dev/core/accountconfig, substrate.reamde.dev/core/sync]
 properties:
-  syncRequestedAt:    {type: datetime, writer: owner}      # Sync now
-  syncPaused:         {type: bool, writer: owner}          # Pause / Resume
-  syncState:          {type: string, writer: connector}    # never | running | ok | erroring | throttled
-  syncMessage:        {type: string, writer: connector}    # the one human line
-  lastSyncedAt:       {type: datetime, writer: connector}
-  lastSyncStartedAt:  {type: datetime, writer: connector}  # stamped by the dispatcher
-  lastSyncDurationMs: {type: int, writer: connector}       # stamped by the dispatcher
-  syncRequestedAck:   {type: datetime, writer: connector}  # equals syncRequestedAt once served
-  syncProgress:       {type: json, writer: connector}      # {phase, done, total, pending}
-  syncError:          {type: string, writer: connector}
-  syncErrorAt:        {type: datetime, writer: connector}
-  syncStreams:        {type: json, writer: connector}      # name -> {cursor, lastAt, pending, state, message, requestedAck}
+  syncRequestedAt:    {type: datetime, writer: person}             # Sync now
+  syncPaused:         {type: bool, writer: person}                 # Pause / Resume
+  syncState:          {type: string, writer: [function, agent]}    # never | running | ok | erroring | throttled
+  syncMessage:        {type: string, writer: [function, agent]}    # the one human line
+  lastSyncedAt:       {type: datetime, writer: [function, agent]}
+  lastSyncStartedAt:  {type: datetime, writer: [function, agent]}  # stamped by the dispatcher
+  lastSyncDurationMs: {type: int, writer: [function, agent]}       # stamped by the dispatcher
+  syncRequestedAck:   {type: datetime, writer: [function, agent]}  # equals syncRequestedAt once served
+  syncProgress:       {type: json, writer: [function, agent]}      # {phase, done, total, pending}
+  syncError:          {type: string, writer: [function, agent]}
+  syncErrorAt:        {type: datetime, writer: [function, agent]}
+  syncStreams:        {type: json, writer: [function, agent]}      # name -> {cursor, lastAt, pending, state, message, requestedAck}
 ```
 
 (Flow mappings here for the page's width; a shipped declaration writes each
@@ -719,8 +720,8 @@ the request and the new `tokenStatus` are one patch, so the trigger sees them
 in one change and fires once. A first connect stamps no request: the
 on-connect trigger runs the first sync
 ([0176](decisions/0176-a-reconnect-requests-a-sync.md)). The stamps are written under the CALLABLE's own actor at
-the bundle tier, the write context the body's effects use: `writer: connector`
-holds, and a record trigger never delivers its own callable's writes, so a
+the bundle tier, the write context the body's effects use: `writer: [function,
+agent]` holds, and a record trigger never delivers its own callable's writes, so a
 stamp cannot fire the trigger that made it. A record whose owner set
 `syncPaused` has those deliveries settled as skips, so a pause stops the sync
 without the body knowing. A function of any other package triggered on the

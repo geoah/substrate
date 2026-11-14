@@ -25,10 +25,10 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	const pkg = "widgets.test.dev/widgets"
 	const jobKind = pkg + "/job"
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	failing := func(name, message string) map[string]any {
 		return vocabulary.FunctionManifest(pkg, name, map[string]any{
@@ -146,7 +146,8 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	// A run that completes after the park is the newer word: the record's
 	// own `ok` stands, the park still counted beside it.
 	later := st.LastParkedAt.Add(time.Minute)
-	actor := substrate.Actor(vocabulary.PackageActor(pkg))
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	actor := substrate.FunctionActor(authority, name, "jobsync")
 	if err := ds.inTx(ctx, actor, false, func(t *txn) error {
 		return t.asSyncWriter(actor, func() error {
 			_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{

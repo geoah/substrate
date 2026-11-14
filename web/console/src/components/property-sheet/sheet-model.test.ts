@@ -37,7 +37,7 @@ const task: KindInfo = {
       project: { type: "reference", kind: "ada.example.com/tasks/project" },
       priority: { type: "enum", values: ["low", "high"] },
       stamp: { type: "datetime", managed: true },
-      token: { type: "string", writer: "oauth" },
+      token: { type: "string", writer: "system" },
       tags: { type: "string", repeated: true },
       born: { type: "date" },
     },

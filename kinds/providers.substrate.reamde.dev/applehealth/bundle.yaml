@@ -18,6 +18,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: applehealth
+  dialect: 5
   # 2: a metric batch row keeps its own `units` where a unit preference
   # changed under it, a batch records `coverage`, the receipt counts
   # `stale`, and composed ids escape a part one to one. 3: every delivery
@@ -28,7 +29,8 @@ data:
   # writing the first-party observations and health kinds (record 0192).
   # 5: the adapter maps mindful minutes, water, eleven nutrients and basal
   # body temperature, into the metrics health version 2 adds.
-  version: 5
+  # 6: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 6
 ---
 # No inputs and no OAuth: the app authenticates with the key the owner sets
 # on the webhook trigger, and the accounts are records the owner writes.
@@ -85,31 +87,31 @@ data:
   properties:
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: "accountconfig trait contract, unused: the app authenticates
         with the webhook trigger's key"
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: "accountconfig trait contract, unused: no OAuth flow reports
         a status here"
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: "accountconfig trait contract, unused: the app sends whatever
         its automation selects"
     displayName:
       type: string
-      writer: owner
+      writer: person
       displayName: Name
       description: "a name for this phone, shown wherever the account is listed"
     timezone:
       type: timezone
-      writer: owner
+      writer: person
       displayName: Time zone
       description: "the IANA zone a date without an offset is read in; the
         app's dates carry offsets, so this is a fallback, and UTC when unset"
@@ -117,7 +119,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Health metrics
       description: "keep the health metrics (heart rate, steps, sleep, weight
         and the rest) a delivery carries; off drops them, and the app does
@@ -126,7 +128,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Workouts
       description: "keep the workouts a delivery carries; off drops them,
         and the app does not send them again"
@@ -134,7 +136,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: State of mind
       description: "keep the state of mind entries a delivery carries; off
         drops them, and the app does not send them again"
@@ -142,7 +144,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Medications
       description: "keep the medication doses a delivery carries; off drops
         them, and the app does not send them again"
@@ -150,7 +152,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Symptoms
       description: "keep the symptoms a delivery carries; off drops them,
         and the app does not send them again"
@@ -158,7 +160,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Cycle tracking
       description: "keep the cycle tracking entries a delivery carries; off
         drops them, and the app does not send them again"
@@ -166,7 +168,7 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: ECG
       description: "keep the ECG recordings a delivery carries; off drops
         them, and the app does not send them again"
@@ -174,82 +176,82 @@ data:
       type: bool
       required: true
       default: true
-      writer: owner
+      writer: person
       displayName: Heart rate notifications
       description: "keep the heart rate notifications a delivery carries;
         off drops them, and the app does not send them again"
     lastExport:
       type: reference
       kind: providers.substrate.reamde.dev/applehealth/export
-      writer: connector
+      writer: [function, agent]
       displayName: Last delivery
       description: "the last delivery this phone sent that was written"
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: "while true every delivery from this phone is dropped unwritten;
         the app does not send it again"
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: "sync trait contract, unused: the phone decides when it
         sends, so nothing here can ask for a delivery"
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request acknowledged
       description: "sync trait contract, unused, for the same reason as syncRequestedAt"
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: "running while a delivery is being written over several
         pages, ok once it is; a refused delivery parks on the trigger instead"
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: "what the last delivery wrote: records written, records
         deleted, records left unchanged, records a later delivery had already
         written, metric rows read"
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: "when the last delivery finished writing"
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: "when the last delivery arrived"
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: "from the last delivery's arrival to the end of its writing,
         in milliseconds"
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: "{phase, done, total, pending} while a delivery is written
         over several pages; cleared when it finishes"
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: "sync trait contract: cleared by every delivery that is
         written, because a refused one parks on the trigger with its reason"
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: "when syncError was written; cleared with it"
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: "sync trait contract, unwritten: one delivery is one stream"
 ---
@@ -2929,7 +2931,7 @@ data:
     # what a mirror row becomes: the new package version is what offers
     # a repository the upgrade. Then replay `applehealth-to-health` from 0:
     # every output is rewritten at the revision it already holds.
-    ADAPTER = "applehealth@5"
+    ADAPTER = "applehealth@6"
 
     PROVIDER = "providers.substrate.reamde.dev/applehealth/"
     BATCH = PROVIDER + "metricbatch"

@@ -160,6 +160,18 @@ func newAppSetupEnv(t *testing.T, opts ...dbOption) *appSetupEnv {
 	return &appSetupEnv{authorizeEnv: e, catalog: cat, seam: seam}
 }
 
+// shipped is the version of a package this binary ships, read from the
+// catalog: what an install lands and a set up's row reports, which moves with
+// every change to the package's declarations, so no test names the number.
+func (e *appSetupEnv) shipped(id string) int64 {
+	e.t.Helper()
+	b, ok := e.catalog.ByID(id)
+	if !ok {
+		e.t.Fatalf("the catalog ships no %s", id)
+	}
+	return b.Version
+}
+
 func (e *appSetupEnv) view(id string) substrate.AuthorizationRequest {
 	e.t.Helper()
 	rec := e.show(id)
@@ -347,7 +359,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		t.Fatalf("view = state %q hash %q, %d details, %d rows", v.State, v.PlanHash, len(v.Details), len(v.Setup))
 	}
 	apple := v.Setup[0]
-	if apple.Action != substrate.SetupInstall || apple.Package.KeptBy != substrate.KeptByPublisher || apple.Package.Shipped != 4 ||
+	if apple.Action != substrate.SetupInstall || apple.Package.KeptBy != substrate.KeptByPublisher || apple.Package.Shipped != e.shipped(applePkg) ||
 		apple.Package.Held != 0 || apple.Package.Required != 3 || len(apple.Package.Kinds) == 0 || len(apple.Package.Functions) != 0 {
 		t.Fatalf("apple row = %+v %+v", apple, apple.Package)
 	}
@@ -357,7 +369,7 @@ func TestTheApprovalPageShowsWhatApprovingSetsUp(t *testing.T) {
 		}
 	}
 	health := v.Setup[1]
-	if health.Action != substrate.SetupInstall || health.Package.Shipped != 5 ||
+	if health.Action != substrate.SetupInstall || health.Package.Shipped != e.shipped(appleHealthPkg) ||
 		len(health.Package.Requires) != 1 || health.Package.Requires[0].ID != healthPkg ||
 		health.Package.Requires[0].Action != substrate.SetupInstall || health.Package.Requires[0].Shipped == 0 {
 		t.Fatalf("applehealth row = %+v %+v", health, health.Package)
@@ -516,7 +528,7 @@ data:
 		"a version the server does not ship": {
 			details: `[{"type":"package","package":"` + appleHealthPkg + `","version":99}]`,
 			action:  substrate.SetupInstall, reason: substrate.BlockServerUpdate,
-			problem: "This server ships version 5; the app needs version 99. The server needs an update first.",
+			problem: fmt.Sprintf("This server ships version %d; the app needs version 99. The server needs an update first.", e.shipped(appleHealthPkg)),
 		},
 		// A package neither the binary nor an authority document offers
 		// is not published, in the catalog's words, which name it.
@@ -651,7 +663,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 		t.Fatalf("the minted token holds %v, want the webhook's scope", minted.Scopes)
 	}
 	got := res.AuthorizationDetails
-	if len(got) != 4 || got[0].Version != 4 || got[1].Version != 5 || got[2].Kind != healthAccount || got[2].ID != syncAccountID ||
+	if len(got) != 4 || got[0].Version != e.shipped(applePkg) || got[1].Version != e.shipped(appleHealthPkg) || got[2].Kind != healthAccount || got[2].ID != syncAccountID ||
 		got[2].Properties != nil || got[3].URL != "https://substrate.example.com/webhooks/"+repo+"/"+healthWebhook {
 		t.Fatalf("authorization_details = %+v", got)
 	}
@@ -669,7 +681,7 @@ func TestApprovingRunsTheSetUpAndTheTokenCarriesIt(t *testing.T) {
 			t.Fatalf("row %d after the set up = %+v", i, row)
 		}
 	}
-	if v.Setup[0].Package.Held != 4 || v.Setup[3].Webhook.Keyed != true {
+	if v.Setup[0].Package.Held != e.shipped(applePkg) || v.Setup[3].Webhook.Keyed != true {
 		t.Fatalf("rows after the set up = %+v %+v", v.Setup[0].Package, v.Setup[3].Webhook)
 	}
 	if v.Previous == nil || !slices.Contains(v.Previous.Scopes, "webhook:"+healthWebhook) {
@@ -1040,7 +1052,7 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 			t.Fatalf("row %d = %+v", i, row)
 		}
 	}
-	if p := got.Setup[0].Package; p.Held != 4 || p.Shipped != 4 || p.Kinds != nil || p.Requires != nil || p.KeptBy != "" {
+	if p := got.Setup[0].Package; p.Held != e.shipped(applePkg) || p.Shipped != p.Held || p.Kinds != nil || p.Requires != nil || p.KeptBy != "" {
 		t.Fatalf("a package row carries %+v, want versions alone", p)
 	}
 	if w := got.Setup[3].Webhook; w.Enabled || w.Keyed || w.Package != appleHealthPkg {

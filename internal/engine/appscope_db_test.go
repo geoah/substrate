@@ -169,8 +169,8 @@ func TestAnAppsTokenAcceptsNoChangeRequest(t *testing.T) {
 	}
 }
 
-// A bundle input's settings carry no `writer:` role, so the gate is what
-// refuses an app's patch of one; and a `writer: owner` property on an
+// A bundle input's settings carry no `writer:`, so the gate is what
+// refuses an app's patch of one; and a `writer: person` property on an
 // ordinary kind is the owner's alone.
 func TestAnAppsTokenPatchesNoBundleInputAndNoOwnerProperty(t *testing.T) {
 	t.Parallel()
@@ -189,17 +189,25 @@ func TestAnAppsTokenPatchesNoBundleInputAndNoOwnerProperty(t *testing.T) {
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "note"}, map[string]any{"properties": map[string]any{
 			"text":     map[string]any{"type": "string"},
-			"verified": map[string]any{"type": "bool", "writer": "owner"},
+			"verified": map[string]any{"type": "bool", "writer": "person"},
 		}}),
 	}); err != nil {
 		t.Fatalf("declare the kind: %v", err)
 	}
 	kind := pkg + "/note"
-	if _, err := ds.Put(app, substrate.ActorPerson, substrate.PutInput{Kind: kind, Properties: map[string]any{"text": "x"}}); err != nil {
-		t.Fatalf("an app's write of a property with no role: %v", err)
+	// An app's token writes as its app (decision 0270), and `writer:` reads
+	// the actor's type (decision 0290).
+	appActor := substrate.AppActor("notes.example.com")
+	if _, err := ds.Put(app, appActor, substrate.PutInput{Kind: kind, Properties: map[string]any{"text": "x"}}); err != nil {
+		t.Fatalf("an app's write of a property with no writer: %v", err)
 	}
-	if _, err := ds.Put(app, substrate.ActorPerson, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); !errors.Is(err, substrate.ErrForbidden) {
-		t.Fatalf("an app's write of a writer: owner property = %v, want forbidden", err)
+	if _, err := ds.Put(app, appActor, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an app's write of a writer: person property = %v, want forbidden", err)
+	}
+	// An assistant's token runs at the owner's tier (decision 0230), and it
+	// writes as its app too, so a person's property refuses it as well.
+	if _, err := ds.Put(substrate.WithAssistant(ctx), substrate.AppActor("assistant.example.com"), substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an assistant's write of a writer: person property = %v, want forbidden", err)
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: kind, Properties: map[string]any{"verified": true}}); err != nil {
 		t.Fatalf("the owner's write of it: %v", err)

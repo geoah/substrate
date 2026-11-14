@@ -1,5 +1,5 @@
 {
-  "dialect": 4,
+  "dialect": 5,
   "keys": {
     "agentBudgetKeys": [
       "deadlineSeconds",
@@ -375,10 +375,19 @@
     ]
   },
   "introducedAt": {
+    "objectPropKeys": {
+      "writer": 5
+    },
     "packageDataKeys": {
       "dialect": 3,
       "interface": 3,
       "stability": 3
+    },
+    "propKeys": {
+      "writer": 5
+    },
+    "referencePropKeys": {
+      "writer": 5
     }
   }
 }

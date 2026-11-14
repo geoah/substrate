@@ -23,7 +23,7 @@ import { changeLabel } from "@/lib/agent-chat"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { type ReviewRow } from "@/lib/changerequests"
 import { fieldOf } from "@/lib/record-form"
-import { ownerWritable, type PropSpec } from "@/lib/record-schema"
+import { personWritable, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { useUnits } from "@/hooks/use-units"
 
@@ -97,7 +97,7 @@ export function ReviewComparison({
 
   function sheetRow(row: ReviewRow): SheetRow | undefined {
     const spec = specs.get(row.key)
-    if (!spec || spec.managed || !ownerWritable(spec)) return undefined
+    if (!spec || spec.managed || !personWritable(spec)) return undefined
     // A state moves from where the record stands, along its transitions; a
     // new record starts where the machine starts it.
     if (spec.kind === "state" && (create || !target)) return undefined

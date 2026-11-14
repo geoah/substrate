@@ -97,10 +97,12 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: linear
+  dialect: 5
   # 23: every failure the sync writes reads as a sentence for the owner,
   # with Linear's raw words on a second line; a rejected key and a refused
   # team are recognised.
-  version: 23
+  # 24: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 24
 ---
 # ---- the bundle document: the install unit -----------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -162,7 +164,7 @@ data:
   properties:
     apiKey:
       type: secret
-      writer: owner
+      writer: person
       displayName: API key
       description: >-
         the pasted Linear personal API key (lin_api_…, from Settings → Security
@@ -170,7 +172,7 @@ data:
         see. Redacted on read, injected only into the sync body
     apiBase:
       type: url
-      writer: owner
+      writer: person
       # The body PINS the origin the key may travel to: exactly
       # https://api.linear.app, or a loopback host (127.0.0.1 / localhost /
       # ::1, any scheme) as the test seam. Anything else refuses BEFORE
@@ -185,7 +187,7 @@ data:
 # ---- the account type: one connected Linear workspace ------------------------
 # accountconfig WITHOUT oauth2. The trait contracts tokenRef / tokenStatus /
 # grantedScopes onto every implementing kind, so they are declared below as
-# DORMANT: `writer: oauth` means only the OAuth facility may ever set them,
+# DORMANT: `writer: system` means only the OAuth facility may ever set them,
 # and no flow runs for this bundle.
 #
 # THIS IS NOT A MIRROR. It is the connection: the owner's toggles, what the
@@ -228,14 +230,14 @@ data:
     # ---- the accountconfig trait's contracted properties — DORMANT here ----
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: >-
         accountconfig trait contract — unused: the pasted key lives on the
         bundle config, and no OAuth flow runs
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: >-
         accountconfig trait contract — unused: no OAuth flow ever reports
@@ -243,7 +245,7 @@ data:
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: >-
         accountconfig trait contract — unused: no consent, no scopes. What
@@ -251,13 +253,13 @@ data:
     # ---- the owner's hands -------------------------------------------------
     displayName:
       type: string
-      writer: owner
+      writer: person
       displayName: Name
       description: a name for this connection, shown wherever the account
         is listed
     enabledWorkspace:
       type: bool
-      writer: owner
+      writer: person
       displayName: Workspace
       description: >-
         mirror the workspace itself — the organization, its teams and members,
@@ -265,12 +267,12 @@ data:
         references these rows
     enabledProjects:
       type: bool
-      writer: owner
+      writer: person
       displayName: Projects and cycles
       description: mirror the projects and the cycles work is planned into
     enabledIssues:
       type: bool
-      writer: owner
+      writer: person
       displayName: Issues
       description: >-
         mirror the issues updated inside the backfill window, with their labels,
@@ -286,7 +288,7 @@ data:
           label: Once a day
       required: true
       default: hourly
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
@@ -306,7 +308,7 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: >-
         how far back the first issues walk reaches, by the issue's own `updatedAt`
@@ -323,11 +325,11 @@ data:
     # whatever the clocks say.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: stamp this to ask for a sync now, whatever the cadence
         says
-    # The owner's SECOND hand on a sync (the trait's other `writer: owner`
+    # The owner's SECOND hand on a sync (the trait's other `writer: person`
     # property): stop them. The dispatcher settles a paused record's
     # deliveries as skips, and the scheduled path passes over a paused
     # account in `_due` — so neither the console's Sync-now button nor the
@@ -337,7 +339,7 @@ data:
     # instruction, not a lock.
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: "while true, the dispatcher skips this account's deliveries
         and the scheduled walk passes over it"
@@ -347,7 +349,7 @@ data:
     organization:
       type: reference
       kind: providers.substrate.reamde.dev/linear/organization
-      writer: connector
+      writer: [function, agent]
       displayName: Workspace
       description: >-
         the workspace this key belongs to, from the `organization` query.
@@ -355,15 +357,15 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/linear/user
-      writer: connector
+      writer: [function, agent]
       displayName: You
       description: >-
         the Linear member this key authenticates as, from the `viewer` query
         — who "me" is, and what every owner-relative question filters on
-    # ---- the sync's own bookkeeping (writer: connector) ---------------------
+    # ---- the sync's own bookkeeping (writer: [function, agent]) ---------------------
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request acknowledged
       description: the `syncRequestedAt` the last sync acted on — equal means
         the request is spent
@@ -371,14 +373,14 @@ data:
       type: datetime
       keyed: true
       keyPattern: camel
-      writer: connector
+      writer: [function, agent]
       displayName: Sync cursors
       description: >-
         the per-stage incremental floor, keyed by stage (issues, projects,
         cycles, …) — one stage stopping never advances another's tail
     syncPending:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Pending walk
       # The unfinished WALK, durable across runs. A drain is bounded (512
       # invocations, two minutes) and a paged checkpoint dies with it, so a
@@ -391,27 +393,27 @@ data:
         — the walk the next run picks straight back up
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: when the last sync ATTEMPT finished, ok or erroring — the
         cadence anchor, and what drops the on-connect guard
     lastCompletedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last completed
       description: >-
         when a walk last ran out of work. Only this says anything finished,
         and only this decides whether the next walk is cold
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       description: >-
         when Linear's rate limiter said to come back (`Retry-After`, or the
         `X-RateLimit-Requests-Reset` instant). No request is made before it
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: "the last sync outcome (ok | ok (deferred: <stage> xN)
         | erroring: <reason>) — the LEGACY rollup string, kept beside the
@@ -428,33 +430,33 @@ data:
     # would only ever refuse a sync.
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: "never | running | ok | erroring | throttled — the account-level
         state the Connections page renders as a chip; a walk Linear rate-limited
         is `throttled`, not `erroring`"
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: "the one human line the last run left — the same sentence
         `syncStatus` carries, without its legacy `erroring:` prefix"
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: when the last run began — stamped by the dispatcher around
         a record-sourced delivery, and by the body itself on the schedule
         path
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: how long the last run took, from the same two hands as
         lastSyncStartedAt
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       # `{phase, done, total, pending}` over the STAGE WALK, which is what a
       # bounded drain here actually makes progress through: `phase` is the
@@ -468,18 +470,18 @@ data:
         a walk is still parked"
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: the last error text, from the body or a parked delivery;
         a later run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       # Declared because the trait contracts it and a reader must find the
       # key; written by NOBODY here. This bundle has one function and one

@@ -604,7 +604,7 @@ developer experience. What changed:
   app's blob; and one `internal/e2e` case, APP-01, that approves Sync's
   request, exchanges the code, delivers with the token and revokes it.
 - **Docs** (both): this plan, 0202 and [apps](../apps.md) say who may
-  approve a set up, the order it runs in, that `writer: owner` is allowed
+  approve a set up, the order it runs in, that `writer: person` is allowed
   (Astra), the detail grammar and the block reasons, the timing, and what a
   rollback does to a `webhook:` token (Fable).
 

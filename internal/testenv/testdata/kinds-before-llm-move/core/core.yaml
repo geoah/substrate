@@ -91,7 +91,7 @@ data:
   description: "one connected account of a bundle; the host writes its credential
     ref"
   # The host-written hands on an account (review-google #2): the account kind
-  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # redeclares these with `writer: system` so only the OAuth facility may set
   # them — a stranger cannot assign a credential ref, a status, or a scope set.
   properties:
     tokenRef: secret

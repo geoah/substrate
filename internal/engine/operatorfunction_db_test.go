@@ -619,8 +619,8 @@ def main(input, host):
 }
 
 // meterSyncKind declares the account kind's properties the way a provider's
-// account kind binds the `sync` trait: the owner's two hands `writer: owner`,
-// the rest `writer: connector`.
+// account kind binds the `sync` trait: the owner's two hands `writer: person`,
+// the rest `writer: [function, agent]`.
 func meterSyncKind() map[string]any {
 	props := map[string]any{"name": map[string]any{"type": "string"}}
 	for name, typ := range map[string]string{
@@ -628,10 +628,10 @@ func meterSyncKind() map[string]any {
 		"lastSyncStartedAt": "datetime", "lastSyncDurationMs": "int", "syncRequestedAck": "datetime",
 		"syncProgress": "json", "syncError": "string", "syncErrorAt": "datetime", "syncStreams": "json",
 	} {
-		props[name] = map[string]any{"type": typ, "writer": "connector", "fts": false}
+		props[name] = map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	for name, typ := range map[string]string{"syncRequestedAt": "datetime", "syncPaused": "bool"} {
-		props[name] = map[string]any{"type": typ, "writer": "owner", "fts": false}
+		props[name] = map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	return map[string]any{
 		"traits":          []any{vocabulary.TraitSyncCore},

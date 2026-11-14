@@ -59,10 +59,10 @@ func supersedeDatasetOn(t *testing.T, ds *dataset, startsAt time.Time, ops ...an
 	t.Helper()
 	ctx := context.Background()
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	callable := func(name string) string {
 		return vocabulary.RecordPath("substrate.reamde.dev/core/function", supersedePkg+"/"+name)

@@ -87,9 +87,9 @@ describe("the columns a kind opens without", () => {
       definition: {
         properties: {
           name: { type: "string" },
-          notes: { type: "string", writer: "owner" },
-          syncToken: { type: "string", writer: "connector" },
-          accessToken: { type: "secret", writer: "oauth" },
+          notes: { type: "string", writer: "person" },
+          syncToken: { type: "string", writer: ["function", "agent"] },
+          accessToken: { type: "secret", writer: "system" },
           nickname: { type: "string", deprecated: true },
         },
       },
@@ -102,7 +102,7 @@ describe("the columns a kind opens without", () => {
     expect(hidden).not.toContain(propertyColumnId("notes"))
   })
 
-  it("hides a deprecated property of any kind, but not what a writer role keeps", () => {
+  it("hides a deprecated property of any kind, but not what a declared writer keeps", () => {
     const task = {
       ...kind("ada.example.com/tasks/task"),
       definition: {

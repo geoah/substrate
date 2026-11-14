@@ -682,8 +682,8 @@ type txn struct {
 	recomputing        bool
 	recomputeManagers  map[string]substrate.Actor
 	// propTiers names properties of one record's write that stand at a tier
-	// other than the transaction's (propTier): each is held to its `writer:`
-	// role at that tier, and its manager row records it. The OAuth callback
+	// other than the transaction's (propTier), which its manager row records.
+	// The OAuth callback
 	// sets it for its one patch (oauth.go completeOAuth), so the facility's
 	// own fields, the connector's error pair it clears and the owner's sync
 	// request it stamps land in one changelog entry.

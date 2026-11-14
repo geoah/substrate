@@ -44,8 +44,8 @@ func withTokenErrorProps(docs []map[string]any) []map[string]any {
 	for _, d := range docs {
 		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
 			props, _ := d["data"].(map[string]any)["properties"].(map[string]any)
-			props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+			props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 		}
 	}
 	return docs

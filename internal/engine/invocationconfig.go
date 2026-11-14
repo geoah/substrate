@@ -20,7 +20,7 @@ import (
 // tokenRef is a secret-typed credential-store reference — never a raw token —
 // tokenStatus is the connection state the facility last reported, and
 // grantedScopes is the scope set the last consent was granted for. All three
-// carry `writer: oauth`: only the OAuth facility may set them.
+// carry `writer: system`: only the OAuth facility may set them.
 const (
 	propTokenRef      = "tokenRef"
 	propTokenStatus   = "tokenStatus"

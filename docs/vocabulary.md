@@ -377,9 +377,12 @@ against the old shape. The contract has three parts.
 format a server reads: the closed key sets of every declaration document
 ([decision 0268](decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md),
 which amends [0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
-It is 4 today. A server refuses a document carrying a key it does not know,
+It is 5 today. A server refuses a document carrying a key it does not know,
 so every key added to a declaration, removed from one or moved between two
-raises the number, in the release that admits it. Dialect 4 took the actor
+raises the number, in the release that admits it. Dialect 5 made a
+property's `writer:` name types of actor
+([0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)), so
+every `writer:` a package carries needs it; dialect 4 took the actor
 document out, so a package declares no actor
 ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md));
 dialect 3 added the package
@@ -1150,6 +1153,60 @@ status:
 - A machine's initial state may be proposed, and each proposed state has a
   transition to an open one.
 - It sits where `done:` and `dropped:` may, and changes no stored record.
+
+## Who may write a property
+
+A property's `writer:` names the types of [actor](api.md#actors) that may
+write it
+([decision 0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)):
+one type, or a list of them, from the six an actor record's `type` holds,
+`person`, `app`, `function`, `agent`, `package` and `system`.
+
+```yaml
+properties:
+  syncFrequency:
+    type: string
+    writer: person             # the person, through any of their tokens
+  syncToken:
+    type: string
+    writer: [function, agent]  # a sync's installed code
+  tokenRef:
+    type: secret
+    writer: system             # the substrate's own hand, the OAuth facility
+```
+
+- **Absent**, any actor may write the property.
+- **The check** reads the type of the hand that chose the value: a scoped
+  app's token and an assistant's write as their app, a person's sign-in and
+  any other full-access token as the person, installed code as its function
+  or agent, and the substrate as the system. A write by any other type is
+  refused `403 forbidden`, naming the property, the types it admits, and
+  the hand in words with its type. A scoped token whose client id names no
+  app reads as the person and writes no property with a `writer:`.
+- **The system's own pass** writes any property, for what the engine itself
+  decides or replays: the OAuth facility's tokens, a sync's run cut short, a
+  migration's rewrite. A value it only carries is held to the hand that
+  chose it. A [mapping](projection.md#record-mappings)'s recompute writes no
+  property with a `writer:`, whoever started it: what the engine keeps of
+  who wrote a source is attribution, not proof of who chose each value, so
+  the write that would carry or remove such a value is refused. A
+  change-request policy that accepts a request carries the request's values
+  for the person whose rule it is, and is held as the person is.
+- **Any shape** takes it on a property: a scalar, an object or a reference.
+  A state machine does not, since its transitions say what moves it. A
+  field of an object takes none: the property's `writer:` guards its whole
+  value, and one on a field is refused at load.
+- **The console** offers a property for editing only where a person may
+  write it.
+- **Refused at load**, naming what is wrong: an empty list (it admits no
+  writer), a type named twice, a word that is not a type of actor, and the
+  three words `writer:` took before actor types, each naming its
+  replacement: `owner` is `person`, `connector` is `[function, agent]` and
+  `oauth` is `system`. A declaration stored with one of them is rewritten at
+  the repository's first open under this release, by repository migration 10,
+  as ordinary record writes, whatever its package's admission; one stored on
+  a field, which never had an effect, is removed. The key's value changed
+  shape at vocabulary dialect 5, which a package that declares it states.
 
 ## Reference properties
 

@@ -113,7 +113,9 @@ var featureTable = []feature{
 	// and the aggregate read of the list route are features of their own
 	// below, each with its own label. Revision 3: a property's manager and
 	// each alternative link the actor record of their hand (decision 0270).
-	{name: "records", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 4: a definition a kind's record serves names its properties'
+	// writers as a type of actor or a list of them (decision 0290).
+	{name: "records", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -211,7 +213,9 @@ var featureTable = []feature{
 		"POST /api/v1/authorizations/check",
 		"POST /api/v1/vocabulary/takeover",
 	}},
-	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 2: a definition's `writer:` takes a type of actor or a list of
+	// them, and the three words before refuse (decision 0290).
+	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/vocabulary/apply",
 		"POST /api/v1/vocabulary/plan",
 		"GET /api/v1/vocabulary/upgrade",
@@ -281,8 +285,9 @@ var featureTable = []feature{
 	}},
 	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
 	// experimental while the protocol's stateless revision and the tool set
-	// settle.
-	{name: "mcp", stability: substrate.StabilityExperimental, revision: 2, surfaces: []string{surfaceMCP}, routes: []string{
+	// settle. Revision 3: describe_kind's definition names its properties'
+	// writers as a type of actor or a list of them (decision 0290).
+	{name: "mcp", stability: substrate.StabilityExperimental, revision: 3, surfaces: []string{surfaceMCP}, routes: []string{
 		"* /mcp",
 		"GET /.well-known/oauth-protected-resource/mcp",
 	}},

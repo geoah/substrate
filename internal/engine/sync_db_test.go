@@ -12,15 +12,15 @@ import (
 
 // The `sync` trait's fixture: a kind binding it beside the test package's
 // widgets, declared the way a provider's account kind declares it — the
-// owner's two hands `writer: owner`, the rest `writer: connector`.
+// owner's two hands `writer: person`, the rest `writer: [function, agent]`.
 const jobType = fnPackage + "/job"
 
 func syncProps() map[string]any {
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	return map[string]any{
 		"name":               map[string]any{"type": "string"},

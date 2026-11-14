@@ -11,7 +11,7 @@ package engine
 // no record, sealed value, changelog line or function.
 //
 // Each account records the client its grant was issued to (`oauthClient`, a
-// `writer: oauth` object of the client id and whose client it was). A grant
+// `writer: system` object of the client id and whose client it was). A grant
 // is bound to the client that obtained it, so an account whose recorded
 // client is not the one resolving now is not refreshed and reads as needing
 // a reconnect.
@@ -162,7 +162,7 @@ func (ds *dataset) operatorCovers(b *vocabulary.Bundle, ri resolvedInput) *opera
 // operatorOAuthClient returns the operator's client for a package, or nil and
 // why not. The defaults file must list the package under `oauthClients`, the
 // repository must hold it as a published provider, and every account kind
-// of the package must declare `oauthClient` as `writer: oauth`: a grant whose
+// of the package must declare `oauthClient` as `writer: system`: a grant whose
 // client cannot be recorded could not be told from one through the person's
 // own, so an older install of the provider is upgraded before the operator's
 // client serves it. The reason is empty where the file does not list the
