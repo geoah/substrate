@@ -258,6 +258,10 @@ struct TranscriptPiece: Identifiable {
         case turn
         case page(Int)
         case tail
+        /// The card of a turn that failed, under its last row.
+        case failure(FailurePresentation)
+        /// The line above the first turn its reader had not seen.
+        case newLine(NewLine)
     }
 
     /// The transcript's spacing, the Markdown blocks' and a turn's parts'.
@@ -270,10 +274,28 @@ struct TranscriptPiece: Identifiable {
     let part: Part
     let closer: CGFloat
 
-    static func pieces(of turns: [TurnPresentation]) -> [TranscriptPiece] {
+    /// - Parameters:
+    ///   - failures: by a turn's id, the card drawn under it. It is a row
+    ///     of its own, so every element of the stack is one view: a lazy
+    ///     stack walks all of its elements at each update to count the
+    ///     views of one that may be one or two.
+    ///   - newLine: the line drawn above the first turn that was not read,
+    ///     a row of its own for the same reason, and the row such a chat
+    ///     opens at.
+    static func pieces(
+        of turns: [TurnPresentation], failures: [String: FailurePresentation] = [:], newLine: NewLine? = nil
+    ) -> [TranscriptPiece] {
         var out: [TranscriptPiece] = []
         out.reserveCapacity(turns.count)
         for turn in turns {
+            if let newLine, newLine.turn == turn.id {
+                out.append(TranscriptPiece(id: "\(turn.id)/new", turn: turn, part: .newLine(newLine), closer: 0))
+            }
+            defer {
+                if let failure = failures[turn.id] {
+                    out.append(TranscriptPiece(id: "\(turn.id)/failure", turn: turn, part: .failure(failure), closer: 0))
+                }
+            }
             guard case let .assistant(reply) = turn.body else {
                 out.append(TranscriptPiece(id: turn.id, turn: turn, part: .turn, closer: 0))
                 continue
@@ -303,7 +325,7 @@ extension TranscriptPiece {
     /// the transcript's order: the last turn a reader can see.
     static func lastTurn(among rows: [String], of turns: [TurnPresentation]) -> String? {
         let onScreen = Set(rows)
-        return pieces(of: turns).last { onScreen.contains($0.id) }?.turn.id
+        return pieces(of: turns).last { onScreen.contains($0.id) || onScreen.contains("\($0.turn.id)/failure") }?.turn.id
     }
 }
 
@@ -312,9 +334,15 @@ struct TranscriptPieceView: View {
     let piece: TranscriptPiece
     let cards: [String: CardPresentation]
     let expandThinking: Bool
+    /// What a failure's button does.
+    var act: (FailureAction) -> Void = { _ in }
 
     var body: some View {
         switch (piece.part, piece.turn.body) {
+        case let (.failure(failure), _):
+            FailureView(failure: failure, act: act)
+        case let (.newLine(line), _):
+            NewLineView(line: line).padding(.top, 8)
         case let (.page(page), .assistant(reply)):
             ReplyPageView(id: piece.turn.id, reply: reply, page: page, expandThinking: expandThinking)
                 .equatable()

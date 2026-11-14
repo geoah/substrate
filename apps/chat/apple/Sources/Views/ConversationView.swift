@@ -150,12 +150,12 @@ struct ConversationView: View {
         }
     }
 
-    /// The row a chat that opens at a turn is put at: the turn's first,
-    /// which the "New" line is drawn above. Nil for a chat that opens at
-    /// its end, and until the rows hold the turn.
+    /// The row a chat that opens at a turn is put at: the "New" line above
+    /// the turn, or the turn's first row where it has none. Nil for a chat
+    /// that opens at its end, and until the rows hold the turn.
     private func opening(_ screen: ConversationScreen) -> String? {
         guard case let .turn(id) = screen.opens else { return nil }
-        return TranscriptPiece.pieces(of: screen.turns).first { $0.turn.id == id }?.id
+        return TranscriptPiece.pieces(of: screen.turns, newLine: screen.newLine).first { $0.turn.id == id }?.id
     }
 
     private var act: (FailureAction) -> Void {
@@ -550,19 +550,10 @@ struct TranscriptRows: View {
                 .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
         }
-        let pieces = TranscriptPiece.pieces(of: screen.turns)
-        // The last row of each turn, by the turn's id.
-        let ends = Dictionary(pieces.map { ($0.turn.id, $0.id) }, uniquingKeysWith: { _, last in last })
-        // The first row of the turn the person had not read, where the
-        // chat was opened with more than they had.
-        let new = screen.newLine.flatMap { line in pieces.first { $0.turn.id == line.turn }?.id }
-        ForEach(pieces) { piece in
-            if piece.id == new, let line = screen.newLine { NewLineView(line: line).padding(.top, 8) }
-            TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking)
-            // A turn's failure is a card at that turn, under its last row.
-            if ends[piece.turn.id] == piece.id, let failure = screen.failures.turns[piece.turn.id] {
-                FailureView(failure: failure, act: act)
-            }
+        // A turn's failure is a card at that turn, a row under its last;
+        // the "New" line is a row above the first turn that was not read.
+        ForEach(TranscriptPiece.pieces(of: screen.turns, failures: screen.failures.turns, newLine: screen.newLine)) { piece in
+            TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking, act: act)
         }
         if screen.typing {
             TypingDots()
