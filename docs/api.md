@@ -2374,7 +2374,9 @@ scoped app's token is refused with `403 forbidden`; an app the owner
 approved for `full` access holds a token without scopes, like a sign-in's
 ([0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)),
 and reads the list. The `retention` feature in
-discovery is `experimental`: nothing drops an entry by it yet.
+discovery is `experimental`. The
+[compaction pass](operations.md#the-compaction-pass) compacts what is past
+each kind's `effective` retention.
 
 ## Operator defaults
 

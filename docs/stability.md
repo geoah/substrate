@@ -143,11 +143,21 @@ shape. A feature may be withdrawn. The records written through it are not
 lost, and they stay readable through the records route.
 
 History is the changelog entries older than a record's latest state. It is
-kept for as long as the kind's retention says: a kind states `all`, `none` or
+kept for as long as its kind's retention says: a kind states `all`, `none` or
 a length of time, its package header may state it for its kinds, and a
 repository may override it per kind
-([the reserved keys](vocabulary.md#the-reserved-keys)). Nothing drops an
-entry by it yet ([not in force yet](#what-is-not-in-force-yet)).
+([the reserved keys](vocabulary.md#the-reserved-keys)). The latest state of
+every record is always kept. A background pass replaces a record's entries
+past its kind's retention with one entry holding that state, and forgets old
+deletions: what the history still holds of a record removed for good, longer
+ago than the server keeps deletions, may go too. A resume from below a
+deletion the pass forgot is told `compacted`, and lists again
+([the horizon](changelog.md#frames-and-the-horizon)); a resume from below a
+compaction, and above that, reads on and meets the entries that hold each
+record's state. A permanent delete, and a forget of a record's history,
+erase it at once where nothing holds the erasure back.
+[The compaction pass](operations.md#the-compaction-pass) gives the settings,
+what holds a forgetting or an erasure back, and what each leaves.
 
 ## Only additions, surface by surface
 
@@ -163,9 +173,9 @@ refusing any request field it does not know with `400 bad_request`:
 2. **Check a feature's revision before you send something that revision
    added.** A newer app's new request field fails on an older server, so the
    app asks first. If a release adds a field to the body of
-   `POST /api/v1/records`, `records` goes to revision 2, and an app sends
-   the field only to a server that lists `records` at 2 or later. A server
-   from before revisions lists none, which meets no minimum.
+   `POST /api/v1/records`, `records` goes up one revision, and an app sends
+   the field only to a server that lists `records` at that revision or
+   later. A server from before revisions lists none, which meets no minimum.
 
 The first-party clients each carry that check: `hasFeature(doc, name,
 atLeast)` in the console and in the web app kit, and
@@ -184,11 +194,19 @@ remapped enum value) rewrites the stored records in the same step
 Nothing converts a record between versions as it is read.
 
 So an incompatible change to a stable kind is made beside it: a new property,
-or a new kind, with the old one marked `deprecated: true` and kept. A kind is
-never renamed, whatever its package's label: other repositories hold records
-of it under its name, and every door a published package comes through
-refuses a `movedFrom` that would move them
+or a new kind, with the old one marked `deprecated: true` and kept. A kind
+a publisher published is never renamed, whatever its package's label: other
+repositories hold records of it under its name, and every door a published
+package comes through refuses a `movedFrom` that would move them
 ([vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
+
+Two things do move a kind, its records with it. An upgrade of the server's
+own seeded packages may move one of their kinds to a new name, as the `llm`
+package took four kinds from `core`
+([decision 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)),
+and it takes none from a `stable` package within 1.x, which only gains
+kinds. Publishing a package of your own moves its kinds out of `~` once, by
+your own act ([publishing](publishing.md)).
 
 ### Declarations
 
@@ -376,13 +394,10 @@ are experimental:
 
 ## What is not in force yet
 
-The code does not hold these clauses today:
+One clause of this page is not in force yet:
 
 - **The server is below 1.0, and a release may still break anything
   labelled here, `stable` included.** The labels say what 1.0 will promise.
   Until then a break ships as it does today, as an entry under BREAKING
   CHANGES in the release's section of `CHANGELOG.md` with the steps to
   follow, and with no notice a release ahead.
-- **History is complete.** A kind states its retention and a repository may
-  override it, and nothing prunes or compacts a changelog by it yet:
-  `changelog.horizon` in discovery is 0.

@@ -310,7 +310,9 @@ reads as all), `OVERRIDE` is this repository's
 is the one that applies ([retention](vocabulary.md#the-reserved-keys)). An override
 is an ordinary record: `apply` one whose `appliesTo` names the kind's
 declaration and whose `retention` is the value, `delete` it to go back to
-the declared one. Nothing drops an entry by it yet.
+the declared one. The
+[compaction pass](operations.md#the-compaction-pass) compacts what is past
+each kind's `EFFECTIVE` retention.
 
 ## Writing
 

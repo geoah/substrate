@@ -1174,8 +1174,7 @@ said. A kind move on the shipped upgrade carries the override with the rows
 to the kind they moved to; where that kind holds an override of its own,
 the one that keeps longer stands on it and the other is deleted.
 `GET /api/v1/retention` and `substratectl retention` answer what applies
-([retention](api.md#retention)). **Nothing drops an entry by it yet**: the
-compaction that does is a later release.
+([retention](api.md#retention)).
 
 **`ids:` says who names a new record of the kind**
 ([record 0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
