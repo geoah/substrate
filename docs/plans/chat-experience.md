@@ -24,7 +24,7 @@ Four things the owner notices today, each with its cause further down:
    a reply, code and tables that read well, a list that says what is
    running, motion that explains what changed.
 
-Nine changes answer them. Sizes are S, M and L as in the other plans.
+Ten changes answer them. Sizes are S, M and L as in the other plans.
 
 | # | Change | Side | Size | What the owner gets |
 | --- | --- | --- | --- | --- |
@@ -37,6 +37,7 @@ Nine changes answer them. Sizes are S, M and L as in the other plans.
 | 7 | Push to a closed device, through the app publisher's relay | server, app, relay | L | A reply or a question reaches a phone in a pocket |
 | 8 | Even streaming, plain failures and a fuller interface in the app | app | M | The app reads as carefully as the answers do |
 | 9 | Tests that hold all of it | app | S | The polish does not wear off |
+| 10 | The app's structure: draw only what changed, one model of a turn, failures kept as values | app, kit | M | Typing and streaming stay smooth in a long chat; the fixes above stop being patches |
 
 [The order](#the-order) puts the app-only work first, because it needs no
 server change and removes the blink, the bursts and the button-less
@@ -505,7 +506,8 @@ values to tune on a device.
    the replay is longer.
 3. **Parsing leaves the main thread.** One parse runs and the newest text
    waits. A result never replaces a newer one. A parse starts at most 30
-   times a second.
+   times a second. [The structure section](#10-the-apps-structure-m) says
+   where the parse should live.
 4. **Finished blocks hold still.** A reply is split into blocks. A block's
    identity is its position and a hash of its text, so only the last, open
    block is drawn again. A reply several screens long is split into
@@ -648,13 +650,180 @@ later.
   timings (which stream dropped, how long a parse took, why following
   stopped) and never a word of a message.
 
+## 10. The app's structure (M)
+
+Changes 8a to 8e say what the owner should see. This section is about the
+code under them: whether the app is built so that those behaviours come
+out of its structure, or have to be patched on. It was read, not profiled,
+so its first step is to measure.
+
+### What is sound and stays
+
+- **One loop.** A command becomes events, a pure engine applies them, a
+  presenter draws the state as a value, and effects start only after that,
+  all on the runtime's own executor ([the kit](../../apps/kit/README.md)).
+  SwiftUI draws values and sends commands. The same ChatKit runs on Linux
+  and is what an Android app would draw from.
+- **Late results cannot land.** Every read and run carries an epoch or a
+  generation, and a result from an older one is dropped. The seven rules
+  in the app's design are tests, on a harness with its own clock.
+- **The cache is honest.** What the device keeps is the server's, checked
+  by the thread's version, and never treated as the truth.
+- **Two cheap guards exist.** Stored turns are presented once per read
+  (`Presentation/TurnMemo.swift`), and a turn's view is `Equatable`.
+
+None of the changes below replaces the loop. They change what goes round
+it, and how much.
+
+### What the experience pays for
+
+**A. Every change redraws the whole tree.** The runtime publishes one
+value for the whole app, and SwiftUI holds it as one observable property
+(`apps/kit/Sources/SubstrateUI/PresentationModel.swift`). Every view reads
+it through `host.chats`. So one streamed delta, 20 times a second, does
+all of this:
+
+- The root presenter runs again (`ChatApp/ChatAppPresenter.swift:12`). It
+  rebuilds every list row with its date stamp and preview, runs each
+  window's search over the transcripts in memory, and rebuilds every open
+  conversation, Settings and the key sheets.
+- The whole tree is compared for equality three times: in the host, in
+  the loop and in the model.
+- Every view that read the property evaluates its body again, and the
+  transcript compares each of up to 500 turns to find the one that
+  changed.
+
+Typing pays the same. Each keystroke is a command (`ComposerBar.swift:86`)
+whose event presents at once (`Conversation/Conversation.swift:205`), and
+the draft's text is part of the tree.
+
+What to change:
+
+- **The root presenter is made of parts, each kept until what it reads
+  changes**: the list, each window, each conversation, Settings. A delta
+  in one conversation then rebuilds that conversation's live turn and
+  nothing else. `TurnMemo` already does this for one part.
+- **The model publishes by path.** The host already knows which child's
+  presentation changed. `PresentationModel` should keep one observable
+  slot per controller path, so the conversation view observes its
+  conversation and the list observes the list. This is a kit change, and
+  Tasks and Workouts gain from it too.
+- **A draft stays out of the tree while it is typed.** The field owns its
+  text and tells the engine after a pause, as it already tells the disk
+  after 0.6 seconds. The tree carries the draft only when the engine
+  changes it (a refused send returning its text, a dictation landing).
+
+**B. Markdown is parsed by the view.** `TurnPresentation` carries a
+reply's text, and the SwiftUI view parses it in its body, on the main
+thread, on every flush. The parser itself is already in ChatKit
+(`Model/Markdown.swift`).
+
+- The presenter should parse, and the turn should carry its blocks as a
+  keyed list whose ids are a block's position and a hash of its text. The
+  parse then runs on the runtime's executor, off the main thread, with no
+  new machinery.
+- A finished block is an unchanged row of that list, so SwiftUI leaves it
+  alone, and the kit's keyed list already sends only changed rows over the
+  Android bridge.
+- Closing unfinished Markdown (8b rule 5) becomes one function in ChatKit
+  with tests on every prefix of a reply, where the existing Markdown tests
+  already work that way.
+
+**C. A turn has two models.** A streaming turn is a `LiveOverlay` turn
+with an id of its own. A stored turn comes from the transcript fold. The
+presenter joins them, a `handingOver` phase swaps one for the other, and
+rule 3 ("no rows under a live overlay") and the emptied overlay on attach
+exist to stop the two from showing the same text twice.
+
+- One fold should take both stored rows and stream events and produce one
+  list of turns keyed by `turn`. An event is a provisional row; the stored
+  row with the same key replaces it.
+- The handover then stops being a phase: it is the fold receiving rows. An
+  attach is the fold receiving events it may already hold. The blink, the
+  reset of open sections and the doubled-text guard all go with the second
+  model.
+- With `at` on the wire (change 2) the fold is exact. Before it, the fold
+  can keep the longer of the text it holds and the text replayed.
+
+**D. A failure becomes a sentence too early.** `Failure` is built where
+the request fails and carries its `words` (`API/Failure.swift:8`). The
+conversation's state then keeps `error: String?`
+(`Conversation/ConversationState.swift:92`). By the time the presenter
+draws it, nothing says what was being attempted, which is how a failed
+Stop reads as "couldn't answer".
+
+- State should keep a value: what was attempted (a send, a stop, a
+  reload, a rename, a card's answer) and why it failed (a `cause` from
+  change 3, a status, no connection). The presenter chooses the sentence
+  and the button, in one switch.
+- This is the structure 8c's table needs. Without it the table is a
+  second layer of matching over strings.
+
+**E. The transcript is a lazy stack of rows of any height.** A lazy stack
+estimates the height of rows it has not drawn, and a reply several
+screens tall makes those estimates poor: scrolling to the end lands on an
+estimate, then corrects.
+
+- Splitting a reply into block rows (8b rule 4, and B above) bounds a
+  row's height and may be enough.
+- If jumps remain after that, the transcript should move to the
+  platform's collection view with self-sizing cells that host the same
+  SwiftUI rows, which measures exactly. That is a larger change with a
+  separate path for the Mac, so it is decided by measurement, not here.
+
+**F. Lists are whole arrays with a fixed window.** The chat list is the
+first 100 threads and a transcript is the newest 500 rows, each loaded
+and presented whole. Paging (8d) needs the state to hold a window that
+grows at its ends, and the presenter to draw only what is near the
+screen.
+
+**G. The views carry their own numbers.** The chat's views hold about 230
+literal paddings, fonts, spacings and radii, and use none of the kit's
+design tokens, though the kit has roles for text, spacing and radius
+(`apps/kit/Sources/SubstrateUI/DesignTokens.swift`). They animate in 14
+places and check Reduce Motion in 3. So "the interface needs more love"
+has no one place to be answered.
+
+- The chat's type scale, spacing, radii and motion become tokens, in the
+  kit where another app would share them. A change of feel is then one
+  edit.
+- Every animation goes through one function that honours Reduce Motion,
+  which is what the source-reading test in change 9 checks.
+
+**H. Nothing measures the view layer.** Every test is in ChatKit. The
+app's own tests cover the sign-in receiver, the Keychain item and inline
+links. Nothing records a frame, counts a body evaluation or times a
+parse, and the app has no signposts.
+
+- Signposts and counters on the four costs above: a presenter run, a
+  publish, a body evaluation per view, a parse. The runtime already keeps
+  counters and a trace for tests; the same numbers go into the
+  diagnostics file of change 9.
+- These land first, so A to E are sized by numbers from a device with a
+  500-row chat, not by reading.
+
+### What to leave alone
+
+- **The loop and its rules.** They are why the app does not lose or
+  duplicate messages, and they are well tested.
+- **The device's storage.** JSON files written whole are fine for 100
+  chats and 500 rows. A database on the device is worth it only if the
+  app must search or page without the server, and the server already
+  searches.
+- **The size of the engines.** They are long and split by concern; that
+  costs the reader, not the owner.
+
+One small repair while there: `SystemNotificationDelegate` is declared
+three times in `apps/kit/Sources/SubstrateDeviceApple/SystemNotifications.swift`,
+two of them nested inside functions.
+
 ## The order
 
 | Phase | Pull requests | What the owner gets |
 | --- | --- | --- |
-| 1, app only | 8b rules 1 to 5 and 7 to 10; 8c with today's matching; permission timing and the notification hold from 8a; reply actions, code and tables from 8d; the seeded server from 9 | No blink, steady text, a button on every failure |
+| 1, app only | Measurement from 10 H first; then 10 A to D, which carry 8b rules 1 to 5 and 10 and 8c's card with today's matching; 8b rules 7 to 9; permission timing and the notification hold from 8a; reply actions, code and tables from 8d on the tokens of 10 G; the seeded server from 9 | No blink, steady text, smooth typing in a long chat, a button on every failure |
 | 2, server and both clients | Change 1 with its migration; change 2; change 3; change 4 | Read state on every device; resumed answers stream; failures named; safe resend |
-| 3 | Change 5; change 6; notification actions; pin and archive on the mark; search and paging | A list that says more, steering, answers from the lock screen |
+| 3 | Change 5; change 6; notification actions; pin and archive on the mark; search, and paging on 10 F; 10 E if the numbers ask for it | A list that says more, steering, answers from the lock screen |
 | 4 | Change 7; a Live Activity; Web Push for the console | A closed phone hears about it |
 
 Phase 2's four changes are independent of each other and each is one pull
