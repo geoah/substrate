@@ -238,6 +238,9 @@ type options struct {
 	// afterTitleRounds is the title pass's test seam (localtitles.go): a
 	// hook run between its rounds and its writes. Tests only.
 	afterTitleRounds func()
+	// provisionRoles stands in for ensureRoles, so a test can see whether a
+	// start provisions the roles. Tests only.
+	provisionRoles func(context.Context, *sql.DB) error
 	// nameDoorsOpen lifts the early refusals of a name the repository holds a
 	// package under (repositorynames.go). Tests only.
 	nameDoorsOpen bool
@@ -1031,11 +1034,14 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// files must not touch the database. The repositories directory is made
 	// here so a repository's own directory is always one level below a
 	// directory the engine owns, with the mode that keeps the bytes private.
+	// A read-only process makes none: it reads the writer's (issue #828).
 	if o.dataRoot == "" || !filepath.IsAbs(o.dataRoot) {
 		return nil, fmt.Errorf("%w (got %q)", ErrNoDataRoot, o.dataRoot)
 	}
-	if err := os.MkdirAll(filepath.Join(o.dataRoot, changelogfile.RepositoriesDir), 0o700); err != nil {
-		return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", changelogfile.RepositoriesDir, err)
+	if !o.dirReadOnly {
+		if err := os.MkdirAll(filepath.Join(o.dataRoot, changelogfile.RepositoriesDir), 0o700); err != nil {
+			return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", changelogfile.RepositoriesDir, err)
+		}
 	}
 	instanceID, err := loadInstanceID(o.dataRoot, o.dirReadOnly)
 	if err != nil {
@@ -1149,7 +1155,13 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	admin.SetMaxIdleConns(4)
 	admin.SetConnMaxIdleTime(repositoryConnIdle)
 	if o.blobs == nil {
-		fsBlobs, err := blobbytes.NewFS(o.dataRoot)
+		// A read-only process makes nothing at or under the root, and needs
+		// no root to be there (issue #828).
+		open := blobbytes.NewFS
+		if o.dirReadOnly {
+			open = blobbytes.OpenFS
+		}
+		fsBlobs, err := open(o.dataRoot)
 		if err != nil {
 			_ = admin.Close()
 			return nil, err
@@ -1312,8 +1324,16 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// every repository could read and write every other. So Open REFUSES unless
 	// both roles exist with exactly the right attributes; the dev escape hatch
 	// (WithInsecureAllowSuperuser) turns the refusal into a warning and nothing
-	// else.
-	ensureErr := ensureRoles(ctx, admin)
+	// else. A read-only process creates and grants nothing (issue #828): it
+	// checks the roles the server made, and is refused without them.
+	var ensureErr error
+	if !s.readOnly {
+		provision := ensureRoles
+		if o.provisionRoles != nil {
+			provision = o.provisionRoles
+		}
+		ensureErr = provision(ctx, admin)
+	}
 	degraded := false
 	if err := requireRoles(ctx, admin); err != nil {
 		if !o.insecureAllowSuperuser {

@@ -1171,6 +1171,11 @@ func (ds *dataset) prepareFunctions(ctx context.Context, reg *vocabulary.Registr
 // toolchain change, a corrupted cache) is a real outage in the making, so a
 // failure surfaces as an ERROR naming what will park, not a shrug.
 func (ds *dataset) warmFunctions() {
+	// A read-only process runs no function, so it starts no runner process
+	// and writes nothing to its cache (issue #828).
+	if ds.svc.readOnly {
+		return
+	}
 	fns := hostFunctionsRemoved(ds.registry().Functions())
 	if len(fns) == 0 {
 		return

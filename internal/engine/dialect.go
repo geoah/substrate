@@ -42,7 +42,8 @@ var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a
 // loader's (vocabulary.Dialect, which a new declaration key raises and which
 // discovery publishes as `vocabulary.dialect`, decision 0268). A repository
 // is stamped here by its creation, one stored lower is raised here at its
-// first open, and one stored above it refuses to open.
+// first open by a process that writes, and one stored above it refuses to
+// open.
 const maxVocabularyDialect = vocabulary.Dialect
 
 // MaxSchemaDialect is the newest dialect this binary speaks, exported for the
@@ -54,6 +55,11 @@ func MaxSchemaDialect() int { return maxVocabularyDialect }
 // than this binary, then stamp an unstamped one. The stamp is the store's
 // SHAPE, not a count of promotions run, so a fresh repository leaves its first
 // open at the binary's maximum and never writes here again.
+//
+// A read-only open reads the stamp and leaves it (issue #828): it runs beside
+// the repository's writer, which may be a release before this one, and a
+// stamp raised under that server would have it refuse the repository at its
+// next start.
 func (ds *dataset) gateVocabularyDialect(ctx context.Context) error {
 	stored, err := readVocabularyDialect(ctx, ds.db)
 	if err != nil {
@@ -62,7 +68,7 @@ func (ds *dataset) gateVocabularyDialect(ctx context.Context) error {
 	if err := admitVocabularyDialect(ds.info.ID, stored); err != nil {
 		return err
 	}
-	if stored == maxVocabularyDialect {
+	if stored == maxVocabularyDialect || ds.svc.readOnly {
 		return nil
 	}
 	if _, err := ds.db.ExecContext(ctx, vocabularyDialectStamp, maxVocabularyDialect); err != nil {

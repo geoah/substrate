@@ -2800,8 +2800,12 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 			ds.info.ID, q.name, q.reason)
 	}
 	ds.setParked(newParkedSet(ds.reg, parked, unparsedNames(unparsed)))
-	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
-		return err
+	// The marks are the writer's to keep: a read-only open serves the same
+	// closures without them and leaves the rows as stored (issue #828).
+	if !ds.svc.readOnly {
+		if err := ds.clearGroupQuarantine(ctx, good); err != nil {
+			return err
+		}
 	}
 	for _, q := range quarantined {
 		// Every value here came off a stored row, so each one passes the log
@@ -2809,6 +2813,9 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 		// prose (triggers.go). A crafted declaration cannot forge a log line.
 		ds.svc.log.Error("substrate: quarantining a stored closure that no longer loads under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
 			"repository", logSafeID(ds.info.ID), "package", logSafeID(q.name), "reason", logSafeText(q.reason))
+		if ds.svc.readOnly {
+			continue
+		}
 		if err := ds.markGroupQuarantined(ctx, q.name, q.reason); err != nil {
 			return err
 		}

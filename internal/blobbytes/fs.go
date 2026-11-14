@@ -61,6 +61,19 @@ func NewFS(root string) (*FS, error) {
 	return &FS{root: filepath.Clean(root)}, nil
 }
 
+// OpenFS is NewFS for a reader: it creates nothing, and the root need not be
+// there, so a read of bytes under a root that is not there answers that they
+// are not there.
+func OpenFS(root string) (*FS, error) {
+	if root == "" {
+		return nil, errors.New("blobbytes: the fs backend needs a root directory")
+	}
+	if !filepath.IsAbs(root) {
+		return nil, fmt.Errorf("blobbytes: the fs root %q must be an absolute path", root)
+	}
+	return &FS{root: filepath.Clean(root)}, nil
+}
+
 // Repository binds the backend to one repository's blobs directory,
 // <root>/repositories/<authority>/blobs. The id is checked against the
 // authority grammar first, so it is always exactly one path segment. Nothing

@@ -209,6 +209,11 @@ func shippedPackages(reg *vocabulary.Registry) map[string]bool {
 // took the name) is skipped whole: the upgrade never seizes a name it does not
 // already own here.
 func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
+	// A read-only open serves the stored declarations and appends nothing
+	// (issue #828): the upgrade is the writer's, at its next open.
+	if ds.svc.readOnly {
+		return nil
+	}
 	reg := ds.svc.base
 	// The diff and the guards are shippedupgrade.go's: PlanShippedUpgrade
 	// stages the same way and serves the answer as `GET
