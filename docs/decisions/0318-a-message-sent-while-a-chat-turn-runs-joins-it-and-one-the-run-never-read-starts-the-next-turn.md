@@ -43,7 +43,9 @@ running sub-agent's thread, a call's and a triggered run's refuse as before.
 The message takes no chat-turn slot and passes no spend check: it adds no
 run. Its sender is held to `mayContinue` as before, and is added to whom the
 rest of the run is held to
-([0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
+([0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)). A write whose
+commit was sent and never answered is settled by reading its row, before
+the next call or the settle goes on.
 
 **Where it is read.** Before each model call, after the tool results of the
 last one. A call in flight is not touched. A message adds no call and moves

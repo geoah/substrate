@@ -423,6 +423,14 @@ func (ds *dataset) continueThreadFrom(ctx context.Context, r deferredResume, ope
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return
 	}
+	if r.sent {
+		// The turn reads every message that waits, so it is held to each of
+		// their senders, from before its first read (its pinned context) on.
+		if ctx, err = ds.heldToUnanswered(ctx, threadID); err != nil {
+			ds.svc.log.Warn("substrate: resume: whom the waiting messages act for was not read", "thread", threadID, "error", err)
+			return
+		}
+	}
 	agentID := referenceID(row.Props["agent"])
 	ag, err := ds.registry().ResolveAgent(agentID)
 	if err != nil {

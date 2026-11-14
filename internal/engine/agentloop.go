@@ -738,9 +738,6 @@ type agentLoop struct {
 	// them (agentqueue.go). Both under turnMu, with the ordinals.
 	queued      []*queuedMessage
 	queueClosed bool
-	// doubted are the queued messages whose write returned an error and
-	// whose row could not be read afterwards: the settle reads them again.
-	doubted []*queuedMessage
 	// unread are the queued messages the run never handed a model call, as
 	// its last settle found them.
 	unread []string
@@ -965,26 +962,12 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		return nil, nil, err
 	}
 	l.composeSystemPrompt()
-	// The turn that messages sent while the last one ran start reads every
-	// one of them at its first call, so it is held to each sender, not to
-	// the first alone (run.go).
+	// The turn that messages sent while the last one ran start says which
+	// it reads; it was held to their senders before it read anything
+	// (continueThreadFrom).
 	var starts []threadRow
 	if in.unanswered {
-		var joiners *runJoiners
-		ctx, joiners = withRunJoiners(ctx)
 		starts = unansweredRows(l.rows)
-		for _, r := range starts {
-			persons, tokens, herr := ds.storedHolders(ctx, r.props[propHeldTo])
-			if herr != nil {
-				fail := turnFailure{cause: substrate.CauseInternal}
-				said := l.sayable("reading whom the turn acts for", herr)
-				if serr := l.settleAfterFailure(ctx, fail, said.Error(), ""); serr != nil {
-					ds.svc.log.Warn("substrate: settling a thread whose senders could not be read", "thread", l.threadID, "error", serr)
-				}
-				return nil, nil, failed(fail, said)
-			}
-			joiners.add(persons, tokens...)
-		}
 	}
 	if root {
 		// The run's charges count against the caps from its first one. A
@@ -1079,7 +1062,20 @@ loop:
 		// (decision 0318). Every call reads it, the run's last turn under a
 		// deadline too: a reply written past a message's ordinal is one that
 		// read it, and nothing else tells a later reader of the rows so.
-		for _, m := range l.takeQueued(lctx) {
+		sent, qerr := l.takeQueued(lctx)
+		if qerr != nil {
+			// A message whose write was left in doubt could not be read: a
+			// reply written now would stand past a message it may not have
+			// read, so the run ends here, as it does when its rows cannot be
+			// read.
+			fail := turnFailure{cause: substrate.CauseInternal}
+			said := l.sayable("reading a message sent to the turn", qerr)
+			if serr := l.settleAfterFailure(ctx, fail, said.Error(), reply); serr != nil {
+				l.ds.svc.log.Warn("substrate: settling a thread whose queued message could not be read", "thread", l.threadID, "error", serr)
+			}
+			return nil, failed(fail, said)
+		}
+		for _, m := range sent {
 			messages = append(messages, m.message)
 			// The sender continued the run: the rest of it is held to
 			// them too (run.go).
@@ -2008,13 +2004,18 @@ func (t *txn) lastReplyCut(threadID string) (bool, error) {
 // replayOrder), every role included: replay (replayView) and compaction
 // planning both work from them.
 func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
+	return l.ds.threadRows(ctx, l.threadID)
+}
+
+// threadRows is loadThreadRows for the thread threadID.
+func (ds *dataset) threadRows(ctx context.Context, threadID string) ([]threadRow, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
-	thread, err := threadMessagesWhere(ctx, l.ds.db, b, "e", l.threadID)
+	thread, err := threadMessagesWhere(ctx, ds.db, b, "e", threadID)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := l.ds.db.QueryContext(ctx, `
+	rows, err := ds.db.QueryContext(ctx, `
 		SELECT e.id, e.props FROM records e
 		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
 		ORDER BY e.created_at, e.id`,

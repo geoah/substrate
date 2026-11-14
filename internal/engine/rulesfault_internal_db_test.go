@@ -311,6 +311,22 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		r.ds.continueThread(context.Background(), thread, row)
 		return len(r.fake.requestsOf("scribe")) == before, "the thread resumed"
 	},
+	"heldto.go:storedHolders": func(t *testing.T, r *runsRepository) (bool, string) {
+		// A message no reply came after: the turn it would start is held to
+		// its sender, read from the message's own row.
+		r.fake.script("scribe", fakeTurn{status: 500})
+		if _, err := r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/scribe", substrate.ChatInput{Message: "go", MessageID: "unanswered-1"}, nil); err == nil {
+			return false, "the failing turn answered"
+		}
+		row, err := r.ds.loadRowDB(context.Background(), eref{Kind: typeMessage, ID: "unanswered-1"})
+		if err != nil || row == nil {
+			return false, fmt.Sprint("the unanswered message: ", err)
+		}
+		r.fail("holders")
+		defer r.heal()
+		_, err = r.ds.heldToUnanswered(context.Background(), referenceID(row.Props[msgRelThread]))
+		return errRefused(err)
+	},
 	"agentdecision.go:recordResolution": func(t *testing.T, r *runsRepository) (bool, string) {
 		req := r.proposed(t)
 		r.fail("holders")
