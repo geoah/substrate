@@ -30,6 +30,7 @@ import {
   type ModelKey,
   type OperatorWords,
 } from "@/lib/operator-defaults"
+import { USD } from "@/lib/money"
 import { andList } from "@/lib/providers"
 
 const PROVIDER_KIND = `${LLM_PACKAGE}/provider`
@@ -313,10 +314,10 @@ export function pricingWithout(row: SubstrateRecord, model: string): unknown[] {
  * one. Prices are US dollars (decision record 0316). */
 export function priceWords(price: Price): string {
   return [
-    `US$${price.input.text} input`,
-    `US$${price.output.text} output`,
-    price.cacheRead && `US$${price.cacheRead.text} cache reads`,
-    price.cacheWrite && `US$${price.cacheWrite.text} cache writes`,
+    `${USD}${price.input.text} input`,
+    `${USD}${price.output.text} output`,
+    price.cacheRead && `${USD}${price.cacheRead.text} cache reads`,
+    price.cacheWrite && `${USD}${price.cacheWrite.text} cache writes`,
   ]
     .filter(Boolean)
     .join(" · ")

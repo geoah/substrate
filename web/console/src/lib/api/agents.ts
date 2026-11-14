@@ -260,45 +260,54 @@ export function llmModelsQueryOptions(enabled = true) {
   })
 }
 
-/** The owner's override of one agent's budgets (`llm/agentbudget`, decision
- * record 0314), or null where there is none. The server keeps one live record
- * per agent, so the first match is the one. A server older than the kind
- * refuses it as unknown, which reads as none. */
-export function agentBudgetQueryOptions(agentId: string) {
+/** The owner's overrides of one agent's budgets (`llm/agentbudget`,
+ * decision record 0314). The server keeps one live record per agent, so this
+ * is one record or none, but an import folds history in without that check,
+ * so every record naming the agent is read and the caller picks the one the
+ * engine holds to (heldBudget). A server older than the kind refuses it as
+ * unknown, which reads as none. */
+export function agentBudgetsQueryOptions(agentId: string) {
   const params: FirstPageParams = {
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "agentbudget",
-    first: 1,
+    first: AGENT_BUDGETS_READ,
     filter: { properties: { agent: { eq: `${AGENT_KIND}/${agentId}` } } },
   }
   return queryOptions({
     queryKey: [...recordsQueryOptions(params).queryKey, "agentbudget"],
-    queryFn: async ({ signal }): Promise<SubstrateRecord | null> => {
+    queryFn: async ({ signal }): Promise<SubstrateRecord[]> => {
       try {
-        const page = await fetchRecordsPage(params, signal)
-        return page.records[0] ?? null
+        return (await fetchRecordsPage(params, signal)).records
       } catch (error) {
-        if (kindUnknown(error, AGENT_BUDGET_KIND)) return null
+        if (kindUnknown(error, AGENT_BUDGET_KIND)) return []
         throw error
       }
     },
   })
 }
 
-/** Set the owner's daily cap for one agent, in US cents: on its override
- * where there is one, else on a new one. */
+/** How many overrides of one agent the read takes: one is the rule, and more
+ * than a handful would be a repository no one has. */
+const AGENT_BUDGETS_READ = 50
+
+/** Set the owner's daily cap for one agent, in US cents, on the override
+ * that holds, or on a new one where there is none. The others an import left
+ * are deleted first: the server refuses a write to one override while
+ * another names the same agent. */
 export async function saveAgentSpendCap(
   agentId: string,
   cents: number,
-  budget: SubstrateRecord | null
+  held: SubstrateRecord | undefined,
+  others: readonly SubstrateRecord[]
 ): Promise<void> {
-  if (budget) {
+  for (const record of others) await deleteRecord(record)
+  if (held) {
     await patchRecord(
       CORE_AUTHORITY,
       LLM_PACKAGE_NAME,
       "agentbudget",
-      budget.id,
+      held.id,
       { properties: { spendCentsPerDay: cents } }
     )
     return
@@ -311,10 +320,12 @@ export async function saveAgentSpendCap(
   })
 }
 
-/** Remove the owner's override of one agent's budgets, so the cap it
- * declares holds again. The daily cap is the only limit it carries today. */
-export function removeAgentBudget(budget: SubstrateRecord): Promise<void> {
-  return deleteRecord(budget)
+/** Remove every override of one agent's budgets, so the cap it declares
+ * holds again. The daily cap is the only limit one carries today. */
+export async function removeAgentBudgets(
+  budgets: readonly SubstrateRecord[]
+): Promise<void> {
+  for (const record of budgets) await deleteRecord(record)
 }
 
 /** The standing rules for agent writes (`recordpatchpolicy`). */

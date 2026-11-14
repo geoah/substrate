@@ -21,6 +21,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
 import {
   agentCapInForce,
+  heldBudget,
   capInputText,
   capWords,
   costWords,
@@ -30,8 +31,8 @@ import {
   type CapSpend,
 } from "@/lib/agent-runs"
 import {
-  agentBudgetQueryOptions,
-  removeAgentBudget,
+  agentBudgetsQueryOptions,
+  removeAgentBudgets,
   saveAgentSpendCap,
 } from "@/lib/api/agents"
 import type { SubstrateRecord } from "@/lib/api/types"
@@ -54,9 +55,10 @@ export function AgentSpendCap({
   /** What counts against the cap, once the agent's runs are read. */
   spend: CapSpend | undefined
 }) {
-  const budget = useQuery(agentBudgetQueryOptions(agentId))
+  const budget = useQuery(agentBudgetsQueryOptions(agentId))
   const [editing, setEditing] = useState(false)
-  const cap = agentCapInForce(declared, budget.data)
+  const budgets = budget.data ?? []
+  const cap = agentCapInForce(declared, budgets)
   const reached =
     cap.source !== "none" &&
     spend !== undefined &&
@@ -88,7 +90,7 @@ export function AgentSpendCap({
               <CapEditor
                 agentId={agentId}
                 name={name}
-                budget={budget.data ?? null}
+                budgets={budgets}
                 cap={cap}
                 declared={declared}
                 onDone={() => setEditing(false)}
@@ -127,6 +129,12 @@ export function AgentSpendCap({
       />
       <div className="mt-2 flex flex-col gap-0.5 text-[12.5px] text-faint">
         {budget.isSuccess && <p>{capSource(cap, declared)}</p>}
+        {budgets.length > 1 && (
+          <p>
+            {budgets.length} overrides name this agent, left by an import; the
+            lowest holds. Changing or removing your cap leaves one.
+          </p>
+        )}
         {reached && (
           <p>
             Its triggers hold their deliveries, and a chat with it is refused,
@@ -166,14 +174,15 @@ function capSource(cap: AgentCapInForce, declared: number | undefined) {
 function CapEditor({
   agentId,
   name,
-  budget,
+  budgets,
   cap,
   declared,
   onDone,
 }: {
   agentId: string
   name: string
-  budget: SubstrateRecord | null
+  /** Every override naming the agent: one, as a rule. */
+  budgets: readonly SubstrateRecord[]
   cap: AgentCapInForce
   declared: number | undefined
   onDone: () => void
@@ -196,16 +205,20 @@ function CapEditor({
   // override is read again either way.
   const reread = () =>
     queryClient.invalidateQueries({
-      queryKey: agentBudgetQueryOptions(agentId).queryKey,
+      queryKey: agentBudgetsQueryOptions(agentId).queryKey,
     })
+  const held = heldBudget(budgets)
 
   const save = useMutation({
     mutationFn: (cents: number | null) =>
       cents !== null
-        ? saveAgentSpendCap(agentId, cents, budget)
-        : budget
-          ? removeAgentBudget(budget)
-          : Promise.resolve(),
+        ? saveAgentSpendCap(
+            agentId,
+            cents,
+            held,
+            budgets.filter((b) => b !== held)
+          )
+        : removeAgentBudgets(budgets),
     onSuccess: (_, cents) => {
       toast.add({
         type: "success",
@@ -258,7 +271,7 @@ function CapEditor({
           {save.isPending && <Spinner />}
           Save
         </Button>
-        {budget && (
+        {budgets.length > 0 && (
           <Button
             type="button"
             variant="outline"
@@ -282,7 +295,7 @@ function CapEditor({
       {error === undefined ? (
         <p id="agent-spend-cap-hint" className="text-[12.5px] text-faint">
           {CAP_HINT}
-          {budget && ` Removing yours: ${fallback}.`}
+          {budgets.length > 0 && ` Removing yours: ${fallback}.`}
         </p>
       ) : (
         <p

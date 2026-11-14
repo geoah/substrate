@@ -631,7 +631,7 @@ const SPEND_ROWS: Array<{
   },
   {
     label: "Cost",
-    // "$0" beside tokens a run recorded no cost for would read as free.
+    // "US$0" beside tokens a run recorded no cost for would read as free.
     value: (s) => (noCostRecorded(s) ? "No cost recorded" : costWords(s.cost)),
     floor: (s) => !noCostRecorded(s) && (!s.spendComplete || s.unpriced > 0),
   },

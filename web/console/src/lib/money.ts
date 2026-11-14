@@ -419,3 +419,8 @@ export function rememberCurrency(code: string): void {
     // Storage denied: the next blank input opens on no currency.
   }
 }
+
+/** How the console writes US dollars on agent spend: every price, cost, cap
+ * and allowance of the LLM layer is counted in USD whatever a vendor bills
+ * (decision record 0316), and a bare `$` would not say which dollar. */
+export const USD = "US$"

@@ -8,6 +8,7 @@
 import { threadStartedAt } from "@/lib/agent-chat"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { readReference, type SubstrateRecord } from "@/lib/api/types"
+import { USD } from "@/lib/money"
 import { kindPatternWords } from "@/lib/tools"
 import { allowVerbs, policyIdOf, type PolicyOp } from "@/lib/agent-rules"
 
@@ -154,7 +155,7 @@ export function runCost(thread: SubstrateRecord): number | undefined {
 
 /** Whether a run spent tokens and recorded no cost for them. The loop prices
  * a run by its provider row as the row stood then and writes `costUSD: 0`
- * for a model the row had no price for, so "$0" beside tokens would read as
+ * for a model the row had no price for, so "US$0" beside tokens would read as
  * free. The thread row alone decides: today's pricing and today's sub-agents
  * cannot say what an old run was priced at. Every cost on the agent page is
  * the cost a run RECORDED, a root run's included, which records each
@@ -200,11 +201,6 @@ export function tokenWords(n: number): string {
 function trim(n: number): string {
   return n >= 100 ? String(Math.round(n)) : n.toFixed(1).replace(/\.0$/, "")
 }
-
-/** How the console writes US dollars: agent spend is counted in USD
- * whatever currency a vendor bills (decision record 0316), and a bare `$`
- * would not say which dollar. */
-const USD = "US$"
 
 /** An estimated cost in US dollars, to the cent, and to the tenth of a cent
  * under one. */
@@ -504,13 +500,33 @@ export function budgetSpendCap(
     : undefined
 }
 
+/** The override that holds where several name one agent, as the engine
+ * picks it (`engine/spend.go` ownerSpendCaps): the lowest cap, the lower id
+ * on a tie. The server keeps one per agent, so several are only history an
+ * import folded in. Where none sets a cap, the first by id. */
+export function heldBudget(
+  budgets: readonly SubstrateRecord[]
+): SubstrateRecord | undefined {
+  const live = budgets
+    .filter((b) => !b.deletedAt)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  let held: SubstrateRecord | undefined
+  for (const b of live) {
+    const cents = budgetSpendCap(b)
+    if (cents === undefined) continue
+    const have = held ? budgetSpendCap(held) : undefined
+    if (have === undefined || cents < have) held = b
+  }
+  return held ?? live[0]
+}
+
 /** Which cap holds an agent's runs, read as the engine reads it
  * (`engine/spend.go` agentSpendCap). */
 export function agentCapInForce(
   declared: number | undefined,
-  budget: SubstrateRecord | null | undefined
+  budgets: readonly SubstrateRecord[]
 ): AgentCapInForce {
-  const own = budgetSpendCap(budget)
+  const own = budgetSpendCap(heldBudget(budgets))
   if (own !== undefined) return { source: "own", cents: own }
   if (declared !== undefined) return { source: "declared", cents: declared }
   return { source: "none" }

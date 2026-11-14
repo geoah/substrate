@@ -266,8 +266,9 @@ three keyless provider rows, and the shipped units.** The agent runtime's
 data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `model`, one model a provider offers and what it costs,
 `thread`, `message`, `interaction`, `memory`, the owner's
-standing facts an agent pins, and `instruction`, the owner's standing
-direction to one agent), out of core so core is not
+standing facts an agent pins, `instruction`, the owner's standing
+direction to one agent, and `agentbudget`, the owner's override of one
+agent's budgets), out of core so core is not
 everything ([0077](docs/decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md));
 the `agent` kind stays core's, because a manifest document is a record of a
 core kind whatever package it describes. Creation also writes three keyless

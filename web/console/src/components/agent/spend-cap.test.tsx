@@ -35,8 +35,9 @@ function budget(id: string, cents: number) {
 
 describe("AgentSpendCap", () => {
   const fetchMock = vi.fn<typeof fetch>()
-  let stored: ReturnType<typeof budget> | null
+  let stored: ReturnType<typeof budget>[]
   let failNext: boolean
+  let unknownKind: boolean
   const reads: string[] = []
   const writes: { method: string; path: string; body?: unknown }[] = []
 
@@ -44,8 +45,9 @@ describe("AgentSpendCap", () => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     saveSession("substrate_tok_current", "geoah", "tok-1")
-    stored = null
+    stored = []
     failNext = false
+    unknownKind = false
     reads.length = 0
     writes.length = 0
     fetchMock.mockImplementation(async (url, init) => {
@@ -54,7 +56,15 @@ describe("AgentSpendCap", () => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       if (path.startsWith("/api/v1/records") && method === "GET") {
         reads.push(path)
-        return json(200, { records: stored ? [stored] : [] })
+        if (unknownKind)
+          return json(422, {
+            error: {
+              code: "validation",
+              message:
+                'validation failed: unknown type "substrate.reamde.dev/llm/agentbudget"',
+            },
+          })
+        return json(200, { records: stored })
       }
       if (failNext) {
         failNext = false
@@ -63,18 +73,20 @@ describe("AgentSpendCap", () => {
       }
       if (path === "/api/v1/records" && method === "POST") {
         writes.push({ method, path, body })
-        stored = budget("minted", body.properties.spendCentsPerDay)
-        return json(200, stored)
+        const made = budget("minted", body.properties.spendCentsPerDay)
+        stored = [made]
+        return json(200, made)
       }
       if (path.startsWith(BUDGET_PATH)) {
         const id = decodeURIComponent(path.slice(BUDGET_PATH.length))
         writes.push({ method, path: id, body })
-        if (method === "PATCH" && stored) {
-          stored.properties.spendCentsPerDay = body.properties.spendCentsPerDay
-          return json(200, stored)
+        const held = stored.find((r) => r.id === id)
+        if (method === "PATCH" && held) {
+          held.properties.spendCentsPerDay = body.properties.spendCentsPerDay
+          return json(200, held)
         }
         if (method === "DELETE") {
-          stored = null
+          stored = stored.filter((r) => r.id !== id)
           return new Response(null, { status: 204 })
         }
       }
@@ -142,7 +154,7 @@ describe("AgentSpendCap", () => {
   })
 
   it("changes your override in place and removes it", async () => {
-    stored = budget("moss", 150)
+    stored = [budget("moss", 150)]
     renderCap()
     expect(await screen.findByText("US$1.50 in any 24 hours")).toBeTruthy()
     // US$2 spent against the US$1.50 that holds.
@@ -173,7 +185,7 @@ describe("AgentSpendCap", () => {
   })
 
   it("reads the override again after a write that failed", async () => {
-    stored = budget("moss", 150)
+    stored = [budget("moss", 150)]
     renderCap()
     await screen.findByText("US$1.50 in any 24 hours")
     const before = reads.length
@@ -188,5 +200,43 @@ describe("AgentSpendCap", () => {
     expect(
       screen.getByRole<HTMLInputElement>("textbox", { name: "Cap" }).value
     ).toBe("5")
+  })
+
+  it("shows the override the engine holds where an import left several, and keeps one", async () => {
+    stored = [budget("high", 1000), budget("low", 100)]
+    renderCap()
+    expect(await screen.findByText("US$1.00 in any 24 hours")).toBeTruthy()
+    expect(
+      screen.getByText(
+        "2 overrides name this agent, left by an import; the lowest holds. Changing or removing your cap leaves one."
+      )
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Cap" }), {
+      target: { value: "4" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+    await waitFor(() => expect(writes).toHaveLength(2))
+    // The other goes first: the server refuses a write to one override
+    // while another names the same agent.
+    expect(writes).toEqual([
+      { method: "DELETE", path: "high", body: undefined },
+      {
+        method: "PATCH",
+        path: "low",
+        body: { properties: { spendCentsPerDay: 400 } },
+      },
+    ])
+    expect(await screen.findByText("US$4.00 in any 24 hours")).toBeTruthy()
+  })
+
+  it("reads a server older than the kind as no override", async () => {
+    unknownKind = true
+    renderCap()
+    expect(await screen.findByText("US$3.00 in any 24 hours")).toBeTruthy()
+    expect(
+      screen.getByText("Declared by the agent. A cap you set replaces it.")
+    ).toBeTruthy()
   })
 })

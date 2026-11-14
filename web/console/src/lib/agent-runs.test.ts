@@ -11,6 +11,7 @@ import {
   costWords,
   durationWords,
   failureGroups,
+  heldBudget,
   isConversation,
   parseCapDollars,
   periodTotals,
@@ -503,36 +504,62 @@ describe("agent runs", () => {
   })
 
   it("holds an agent to the cap its owner's budget sets, else to the one it declares", () => {
-    const budget = (cents: unknown, deletedAt?: string): SubstrateRecord => ({
+    const budget = (
+      id: string,
+      cents: unknown,
+      deletedAt?: string
+    ): SubstrateRecord => ({
       ...rec({
         agent: {
           ref: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss",
         },
         spendCentsPerDay: cents,
       }),
+      id,
       kind: "substrate.reamde.dev/llm/agentbudget",
       deletedAt,
     })
     // The owner's cap replaces the declared one, raising or lowering it.
-    expect(agentCapInForce(300, budget(1000))).toEqual({
+    expect(agentCapInForce(300, [budget("a", 1000)])).toEqual({
       source: "own",
       cents: 1000,
     })
-    expect(agentCapInForce(300, budget(0))).toEqual({ source: "own", cents: 0 })
+    expect(agentCapInForce(300, [budget("a", 0)])).toEqual({
+      source: "own",
+      cents: 0,
+    })
     // A budget that sets no cap, a deleted one and none at all leave the
     // declared cap holding.
-    expect(agentCapInForce(300, budget(undefined))).toEqual({
+    expect(agentCapInForce(300, [budget("a", undefined)])).toEqual({
       source: "declared",
       cents: 300,
     })
-    expect(agentCapInForce(300, budget(500, "2026-11-14T00:00:00Z"))).toEqual({
+    expect(
+      agentCapInForce(300, [budget("a", 500, "2026-11-14T00:00:00Z")])
+    ).toEqual({ source: "declared", cents: 300 })
+    expect(agentCapInForce(300, [])).toEqual({
       source: "declared",
       cents: 300,
     })
-    expect(agentCapInForce(300, null)).toEqual({
-      source: "declared",
-      cents: 300,
+    expect(agentCapInForce(undefined, [])).toEqual({ source: "none" })
+  })
+
+  it("picks the override the engine holds where history left several", () => {
+    const budget = (id: string, cents?: number): SubstrateRecord => ({
+      ...rec(cents === undefined ? {} : { spendCentsPerDay: cents }),
+      id,
+      kind: "substrate.reamde.dev/llm/agentbudget",
     })
-    expect(agentCapInForce(undefined, null)).toEqual({ source: "none" })
+    // The lowest cap, the lower id on a tie, whatever order the page has.
+    expect(
+      heldBudget([budget("c", 1000), budget("b", 100), budget("a", 100)])?.id
+    ).toBe("a")
+    expect(agentCapInForce(300, [budget("b", 1000), budget("a", 100)])).toEqual(
+      { source: "own", cents: 100 }
+    )
+    // One that sets no cap holds only where none does.
+    expect(heldBudget([budget("a"), budget("b", 500)])?.id).toBe("b")
+    expect(heldBudget([budget("b"), budget("a")])?.id).toBe("a")
+    expect(heldBudget([])).toBeUndefined()
   })
 })

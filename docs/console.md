@@ -1056,7 +1056,9 @@ what its runs spent in the last 24 hours
 ([the daily spend cap](agents.md#the-daily-spend-cap)). **Set a cap** and
 **Change** write your own cap for it, in US dollars, on the agent's
 `llm/agentbudget`, which replaces the one it declares; **Remove your cap**
-deletes it, so the declared one holds again. Every price, cost, cap and
+deletes it, so the declared one holds again. Where an import left more than
+one override of the agent, the section shows the one that holds, the
+lowest, says how many there are, and leaves one at the next change. Every price, cost, cap and
 allowance the console shows is in US dollars and written `US$`: agent spend
 is counted in USD whatever a vendor bills in
 ([decision 0316](decisions/0316-agent-spend-is-counted-in-us-dollars.md)).
