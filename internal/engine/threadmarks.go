@@ -50,7 +50,7 @@ const (
 
 	// filterMe is the value a filter condition on a reference to an actor may
 	// name for the person the request acts for.
-	filterMe = "me"
+	filterMe = substrate.FilterMe
 )
 
 // threadMarkID is the id of the mark of one thread and one person's actor.

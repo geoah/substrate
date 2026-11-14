@@ -124,7 +124,9 @@ var featureTable = []feature{
 	// is another spelling of `~` on input (decision 0259).
 	// Revision 7: the `forget` action, and a permanent delete's reply naming
 	// what remains of its erasure (`erasure`, decision 0304).
-	{name: "records", stability: substrate.StabilityStable, revision: 7, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 8: `me` in a filter's condition on a reference to an actor,
+	// the person the request acts for (decision 0311).
+	{name: "records", stability: substrate.StabilityStable, revision: 8, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
