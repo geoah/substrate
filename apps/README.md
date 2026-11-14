@@ -1277,9 +1277,9 @@ console/apple/Support/              the console app's Info.plist per platform an
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
 console/apple/Sources/Shell/        the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
-chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/; and its tests, the seven rules by number among them; portable
-chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/
-chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader
+chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/, Fixtures/ (a repository's chats made up, for a measurement and a gallery); and its tests, the seven rules by number among them; portable
+chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/, Measure/ (a debug build's fixture server and the run `apple:measure:chat` times)
+chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader, and a conversation drawn from the fixture for the gallery
 sync/apple/Sources/                 Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens
