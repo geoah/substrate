@@ -1149,7 +1149,15 @@ button and Details stack where the text size leaves no room side by side.
   `aSeedRunsTheSameWayWhateverRunsBesideIt` holds it. It holds for work
   woken from the run's thread, so nothing in a seeded run may wait on real
   time, a dispatch queue or the main actor: a request that reaches the
-  server from another thread breaks a rule of its own.
+  server from another thread breaks a rule of its own. The suite leans on
+  that hook, `swift_task_enqueueGlobal_hook`, which is the Swift
+  runtime's own and no public API. It was run on Swift 6.4.2, Apple's on
+  macOS 27 and swift.org's on Linux (the `swift:6.4` image
+  `apps:test:linux` pins). On a toolchain that has dropped the symbol, or
+  kept it and stopped calling it, every seeded test fails with a sentence
+  that says so (`SeededThread.Unordered`): none skips, and none runs on
+  the pool instead. `everyJobStartedOnItRunsOnItInTheOrderItWasEnqueued`
+  holds the hook to what the suite needs of it.
   Rules the app is known to break in code another group is rebuilding are
   listed in `SeededRun.known`: noted, not failed, and a conversation that
   breaks one is still held to every rule the leftover does not touch. A
