@@ -747,6 +747,24 @@ So `mise run test` spends nothing even on a machine whose environment is full
 of keys — the live suite runs when you ask for it by name, and never as a side
 effect of running the tests.
 
+### Its fixtures run on every run
+
+Every live case's fixture, everything up to its first completion, runs in
+the default suites, so a fixture that rots fails on the pull request that
+rots it and not in the weekly job. None of these reads a key or buys a
+completion:
+
+- `TestEveryLiveCaseReachesItsFirstCall` (`internal/llm`) runs every adapter
+  case up to its first completion, through the wire's real client, to a local
+  endpoint that refuses it. It fails on a `TestLive…` case it does not list.
+- `TestTheCoachPersonasSeedAndReachTheirFirstCall` and
+  `TestTheLiveAgentChainInstallsAndReachesItsFirstCall` (`internal/engine`)
+  seed the coach personas and install the chain as their live cases do, then
+  make the first call against the same kind of endpoint.
+  `TestEveryLiveCaseNamesTheTestOfItsFixture` holds the engine's live cases to
+  a table that names each one's fixture test, and fails on a `TestLive…` case
+  the table does not name.
+
 ## The end-to-end suite
 
 `mise run test:e2e` drives the dev substrate over HTTP exactly as a client
