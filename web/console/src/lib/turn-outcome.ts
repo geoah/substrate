@@ -278,6 +278,51 @@ export function cutReplyOutcome(
   return undefined
 }
 
+/** Whether the stored rows hold a message of the person's that no reply
+ * came after: a `user` row whose `turn` is past every `assistant` row's. By
+ * ordinal, since the result of a tool call under way when the message was
+ * sent can come after it. One sent while a turn ran is left so when that
+ * turn was stopped or failed, or the turn it would have started did not
+ * (decision 0318). */
+export function hasUnansweredMessage(
+  rows: { properties: Record<string, unknown> }[]
+): boolean {
+  let asked = -1
+  let replied = -1
+  for (const { properties } of rows) {
+    const turn = properties.turn
+    if (typeof turn !== "number") continue
+    if (properties.role === "user") asked = Math.max(asked, turn)
+    if (properties.role === "assistant") replied = Math.max(replied, turn)
+  }
+  return asked > replied
+}
+
+/** How a thread that settled fine reads when its last message has no
+ * reply: the turn that message would have started did not start. */
+export function unansweredOutcome(
+  rows: { properties: Record<string, unknown> }[],
+  name: string
+): TurnOutcome | undefined {
+  if (!hasUnansweredMessage(rows)) return undefined
+  return {
+    tone: "quiet",
+    title: `${name} hasn’t answered your last message.`,
+    action: CONTINUE,
+  }
+}
+
+/** What a turn that did not finish says about a message it never read:
+ * one sent while the turn ran, which the stop, the failure or the limit
+ * came before. Going on with the thread reads it, so the note names the
+ * button that does. */
+export function unreadMessageNote(action: TurnAction): string {
+  const unread = "It hasn’t read your last message."
+  return action.kind === "continue"
+    ? `${unread} ${action.label}, and it will.`
+    : unread
+}
+
 function isCause(cause: string | undefined): cause is TurnCause {
   return cause !== undefined && Object.hasOwn(BY_CAUSE, cause)
 }

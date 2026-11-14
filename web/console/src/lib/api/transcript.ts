@@ -144,6 +144,13 @@ export interface TurnView {
   /** On a live user turn: the id the message was sent under, which is its
    * stored row's id. */
   sentId?: string
+  /** On a live user turn sent while a turn was running (decision 0318):
+   * `waiting` until the model is handed it, then `taken`. A waiting message
+   * stays at the bottom, and what the run does meanwhile is drawn above
+   * it. */
+  queued?: "waiting" | "taken"
+  /** On such a turn: its row's `turn` ordinal, once the server has said. */
+  sentTurn?: number
 }
 
 /** Where a live assistant turn's text belongs: the `turn` ordinal its
@@ -815,6 +822,124 @@ export interface LiveOverlay {
 
 export const EMPTY_OVERLAY: LiveOverlay = { turns: [], closed: false }
 
+// ── a message sent while the turn runs ─────────────────────────────────────
+
+/** Whether a live turn is a message the model has not been handed yet. */
+function isWaiting(turn: TurnView): boolean {
+  return turn.role === "user" && turn.queued === "waiting"
+}
+
+/** Applies `change` to the overlay without its trailing waiting messages,
+ * then puts them back under the result: whatever a run does while a message
+ * waits (the rest of the reply that was streaming, its tool calls) happened
+ * before the model read it, and is drawn above it. */
+function aboveWaiting(
+  live: LiveOverlay,
+  change: (head: LiveOverlay) => LiveOverlay
+): LiveOverlay {
+  let cut = live.turns.length
+  while (cut > 0 && isWaiting(live.turns[cut - 1])) cut--
+  if (cut === live.turns.length) return change(live)
+  const next = change({ turns: live.turns.slice(0, cut), closed: live.closed })
+  return {
+    turns: [...next.turns, ...live.turns.slice(cut)],
+    closed: next.closed,
+  }
+}
+
+/** Adds a message sent while the turn runs, waiting at the bottom, or, for
+ * one the overlay already holds, notes the ordinal the server gave its
+ * row. */
+export function pushQueued(
+  live: LiveOverlay,
+  message: {
+    id: string
+    content: string
+    turn?: number
+    contextRecords?: ContextRecord[]
+  },
+  seq: number
+): LiveOverlay {
+  const at = live.turns.findIndex(
+    (t) => t.role === "user" && t.sentId === message.id
+  )
+  if (at >= 0) {
+    if (message.turn === undefined || live.turns[at].sentTurn !== undefined)
+      return live
+    const turns = [...live.turns]
+    turns[at] = { ...turns[at], sentTurn: message.turn }
+    return { ...live, turns }
+  }
+  return {
+    ...live,
+    turns: [
+      ...live.turns,
+      {
+        key: `live-u${seq}`,
+        role: "user",
+        content: message.content,
+        tools: [],
+        sentId: message.id,
+        queued: "waiting",
+        ...(message.turn !== undefined ? { sentTurn: message.turn } : {}),
+        ...(message.contextRecords?.length
+          ? { contextRecords: message.contextRecords }
+          : {}),
+      },
+    ],
+  }
+}
+
+/** Marks a waiting message as handed to the model: it keeps its place, and
+ * the reply that reads it is drawn under it. Every waiting message above it
+ * was handed over with it: the model reads them in order. */
+export function takeQueued(live: LiveOverlay, id: string): LiveOverlay {
+  const at = live.turns.findIndex((t) => isWaiting(t) && t.sentId === id)
+  if (at < 0) return live
+  return {
+    turns: live.turns.map((t, i) =>
+      i <= at && isWaiting(t) ? { ...t, queued: "taken" } : t
+    ),
+    // The reply that reads it is a new turn, whatever the last one was doing.
+    closed: true,
+  }
+}
+
+/** Takes a message that the server never took out of the overlay. */
+export function dropQueued(live: LiveOverlay, id: string): LiveOverlay {
+  if (!live.turns.some((t) => t.queued && t.sentId === id)) return live
+  return {
+    ...live,
+    turns: live.turns.filter((t) => !(t.queued && t.sentId === id)),
+  }
+}
+
+/** The ids of the messages the overlay holds that were sent while the turn
+ * ran. The overlay shows each where the run read it, so the stored row of
+ * one is left out of the transcript while the overlay is up. */
+export function queuedIds(live: LiveOverlay): Set<string> {
+  const ids = new Set<string>()
+  for (const t of live.turns) if (t.queued && t.sentId) ids.add(t.sentId)
+  return ids
+}
+
+/** Whether the overlay holds a message the model has not been handed. */
+export function hasWaiting(live: LiveOverlay): boolean {
+  return live.turns.some(isWaiting)
+}
+
+/** A reply or thinking of ordinal `turn` belongs to a call that read every
+ * message whose row's ordinal is below it, so those are taken, whether or
+ * not the event that says so arrived (an attach whose replay was cut). A
+ * tool event says nothing of the kind, and is never passed here. */
+function readThrough(live: LiveOverlay, turn: number | undefined): LiveOverlay {
+  if (turn === undefined) return live
+  const read = live.turns.filter(
+    (t) => isWaiting(t) && t.sentTurn !== undefined && t.sentTurn < turn
+  )
+  return read.reduce((next, t) => takeQueued(next, t.sentId ?? ""), live)
+}
+
 /** Text or a tool call after reasoning: the model is no longer thinking. */
 function doneThinking(turn: TurnView): TurnView {
   return turn.thinking ? { ...turn, thinking: false } : turn
@@ -894,6 +1019,18 @@ export function pushReasoning(
   now: number = Date.now(),
   where: Placement = {}
 ): LiveOverlay {
+  return aboveWaiting(readThrough(live, where.turn), (head) =>
+    reasoningInto(head, text, seq, now, where)
+  )
+}
+
+function reasoningInto(
+  live: LiveOverlay,
+  text: string,
+  seq: number,
+  now: number,
+  where: Placement
+): LiveOverlay {
   const turns = [...live.turns]
   let at = placedTurn(turns, where.turn)
   if (at < 0 && opensTurn(live, where.turn)) {
@@ -942,6 +1079,17 @@ export function pushDelta(
   seq: number,
   where: Placement = {}
 ): LiveOverlay {
+  return aboveWaiting(readThrough(live, where.turn), (head) =>
+    deltaInto(head, text, seq, where)
+  )
+}
+
+function deltaInto(
+  live: LiveOverlay,
+  text: string,
+  seq: number,
+  where: Placement
+): LiveOverlay {
   const turns = [...live.turns]
   let at = placedTurn(turns, where.turn)
   if (at < 0 && opensTurn(live, where.turn)) {
@@ -976,6 +1124,14 @@ export function pushDelta(
  * the turn dispatched before it said anything. A call the overlay already
  * shows (a replay) is left as it is. */
 export function pushToolStart(
+  live: LiveOverlay,
+  call: ToolCallView,
+  seq: number
+): LiveOverlay {
+  return aboveWaiting(live, (head) => toolStartInto(head, call, seq))
+}
+
+function toolStartInto(
   live: LiveOverlay,
   call: ToolCallView,
   seq: number
@@ -1077,6 +1233,13 @@ export function settleMentions(
   live: LiveOverlay,
   mentions: AgentMention[] | undefined
 ): LiveOverlay {
+  return aboveWaiting(live, (head) => mentionsInto(head, mentions))
+}
+
+function mentionsInto(
+  live: LiveOverlay,
+  mentions: AgentMention[] | undefined
+): LiveOverlay {
   const last = live.turns[live.turns.length - 1]
   if (!mentions?.length || !last || last.role !== "assistant") return live
   const turns = [...live.turns]
@@ -1088,6 +1251,14 @@ export function settleMentions(
  * summary text (the row does, and replaces this line at handover), and the
  * next delta or tool call opens a new assistant turn after it. */
 export function pushCompacted(
+  live: LiveOverlay,
+  compaction: Pick<CompactionView, "tokensBefore" | "covered">,
+  seq: number
+): LiveOverlay {
+  return aboveWaiting(live, (head) => compactedInto(head, compaction, seq))
+}
+
+function compactedInto(
   live: LiveOverlay,
   compaction: Pick<CompactionView, "tokensBefore" | "covered">,
   seq: number
@@ -1139,6 +1310,19 @@ function jobStateOf(record: SubstrateRecord): string | undefined {
 }
 
 export function settleTool(
+  live: LiveOverlay,
+  call: ToolCallView,
+  output: string,
+  ok: boolean,
+  seq: number,
+  job?: string
+): LiveOverlay {
+  return aboveWaiting(live, (head) =>
+    toolSettledInto(head, call, output, ok, seq, job)
+  )
+}
+
+function toolSettledInto(
   live: LiveOverlay,
   call: ToolCallView,
   output: string,
