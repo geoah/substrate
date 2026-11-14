@@ -202,7 +202,7 @@ func TestThePassForgetsAnOldDeletionAndMovesTheHorizon(t *testing.T) {
 	t.Parallel()
 	var clock time.Time
 	svc, ds, dsn := newDatasetWithDSN(t,
-		engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour),
+		engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour), engine.WithTestPurgeKeepsHistory(),
 		engine.WithTestCompactionClock(func() time.Time { return clock }))
 	ctx := context.Background()
 	db := rawDB(t, dsn)
@@ -496,7 +496,7 @@ func TestARecordWhoseEveryLineIsHeldIsCompactedOnceTheyGo(t *testing.T) {
 // the next pass forgets it and moves the horizon to its deletion.
 func TestADeletionWhoseEveryLineIsHeldIsForgottenOnceTheyGo(t *testing.T) {
 	t.Parallel()
-	f := newHeldFixture(t, engine.WithDeletionsKept(time.Hour))
+	f := newHeldFixture(t, engine.WithDeletionsKept(time.Hour), engine.WithTestPurgeKeepsHistory())
 	const task = "samples.substrate.reamde.dev/tasks/task"
 	gone := mustPut(t, f.ds, owner, substrate.PutInput{Kind: task, Properties: map[string]any{"name": "gone"}})
 	created := f.newestLine(t, gone.ID)
@@ -616,7 +616,7 @@ func TestADeletionAKeptLineHoldsIsForgottenOnceItGoes(t *testing.T) {
 	t.Parallel()
 	var clock time.Time
 	svc, ds, dsn := newDatasetWithDSN(t,
-		engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour),
+		engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour), engine.WithTestPurgeKeepsHistory(),
 		engine.WithTestCompactionClock(func() time.Time { return clock }))
 	ctx := context.Background()
 	db := rawDB(t, dsn)
@@ -707,7 +707,7 @@ func TestAPassStoppedAtEachStageIsFinishedByTheNext(t *testing.T) {
 			killed := errors.New("test: the server stopped here")
 			clock := time.Now().UTC().Add(2 * time.Hour)
 			svc, ds, dsn := newDatasetWithDSN(t,
-				engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour),
+				engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour), engine.WithTestPurgeKeepsHistory(),
 				engine.WithTestCompactionClock(func() time.Time { return clock }),
 				engine.WithTestCompactionRetention(func(kind string) (bool, time.Duration) { return kind != passPkg+"/brief", 0 }),
 				engine.WithTestCompactionFault(func(s string) error {
@@ -747,6 +747,11 @@ func TestAPassStoppedAtEachStageIsFinishedByTheNext(t *testing.T) {
 			rebuild()
 			want := engine.FoldRows(t, ds)
 			db := rawDB(t, dsn)
+			// A repository from before the index, which the pass derives
+			// first (a new one is indexed from its creation).
+			if _, err := db.Exec(`UPDATE compaction_state SET foreign_upto = 0, foreign_done = false`); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := ds.(passer).CompactionPass(ctx); !errors.Is(err, killed) {
 				t.Fatalf("the pass stopped at %q: %v, want the stop", stage, err)
 			}

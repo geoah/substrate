@@ -126,7 +126,7 @@ type RebuildReport struct {
 var foldTables = append([]string{
 	"refs", "former_ids", "annotations", "property_marks", "records",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest",
-	"unit_graph", "unit_uses",
+	"unit_graph", "unit_uses", "compaction_erasures",
 }, deliveryTables...)
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
@@ -516,6 +516,9 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"annotations": `SELECT to_jsonb(a) FROM (
 				SELECT record_kind, record_id, key, value, updated_at
 				FROM annotations ORDER BY record_kind, record_id, key) a`,
+		"compaction_erasures": `SELECT to_jsonb(e) FROM (
+				SELECT record_kind, record_id, upto, live, line, since
+				FROM compaction_erasures ORDER BY record_kind, record_id) e`,
 		"property_marks": `SELECT to_jsonb(m) FROM (
 				SELECT record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at
 				FROM property_marks ORDER BY record_kind, record_id, property) m`,

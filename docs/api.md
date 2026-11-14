@@ -401,7 +401,8 @@ recreate at will.
 `DELETE ?purge=true` runs that purge in the delete itself, so a writer can
 start a record over: the tombstone lands if the record was live, what it owns
 through `onDelete: cascade` is tombstoned for the sweep, the row is
-hard-deleted, and the changelog records a `gc` entry with reason `purged`.
+hard-deleted, and the changelog keeps a `gc` entry with reason `purged` and
+no value, by the caller, where the record's history was.
 The next `put` at the id creates a fresh record, and a mapping source
 resolves its subject again through the probes when that `put` leaves the
 subject slot out, which is how one identity is re-resolved after a mapping's
@@ -419,6 +420,40 @@ conflict` naming the canonical id, because the former id resolves to the
 winner. A declaration record answers `422 validation`: it leaves through
 admission
 ([decision record 0122](decisions/0122-a-delete-may-purge-so-a-put-starts-the-record-over.md)).
+
+A purge also erases the record's history
+([decision record 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)):
+no value of it is left in the changelog, the records or the key store, and
+the archive holds none once its next pass has published. It reaches what
+holds the record's values by a typed link: the change requests that target
+it, the records merged into it, the merge's and split's own records, and each
+mapped target's copy of a value it derived
+([0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)),
+all in the delete's one transaction, which a finalizer on any record it
+would take (the merge's own hold on its loser aside) refuses whole, `409
+conflict` naming that record, and leaves the `gc` line with no value. What the record owns is not
+erased with it: it is tombstoned for the sweep, as above, and its own history
+stays until the compaction pass forgets old deletions
+(`SUBSTRATE_DELETIONS_KEPT`) or until it is permanently deleted itself. The
+reply carries `erasure`: `purged` names, by record path, every other record
+the delete purged and erased with it; `tombstoned`, where the record owned
+any, counts the records its cascade tombstoned, which keep their history as
+said; `pending` is false once the history is erased, and while it
+is not, `waits` names each
+enabled trigger it waits for (one that has not been delivered the deletion
+and is delivering), `held` says what else holds it, and `damaged` names the
+line known not to verify it waits on until its row is written back. The
+compaction pass finishes what waits. A stored `Idempotency-Key` outcome of the
+record goes with it, and a retry under that key is told so. Out of reach: text
+another record quotes, a request already in the webhook spool, a provider's
+sync, and every copy taken before.
+
+`POST <record path>/forget` is the owner's: on a live record it erases the
+history before its current state, the same way
+([0306](decisions/0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md)),
+and waits for a parked failure or a drain on one of its lines; on a record
+whose erasure waits, it finishes it. `{"finish": true}` passes every trigger
+the erasure waits for. It answers the `erasure`.
 Purging an account runs its whole `onDelete: cascade` inside the request,
 under the repository's write lock, and the mirrors it owns are only
 tombstoned: a sync within the sweep window restores them with their old
@@ -1066,7 +1101,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`). |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 6 adds it, and the record's `erasure` on a permanent delete's reply). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |

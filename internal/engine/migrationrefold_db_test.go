@@ -276,7 +276,9 @@ func seedRefoldSource(t *testing.T) refoldSource {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	root := t.TempDir()
-	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root))
+	// A store from releases before the erasure, whose purges kept their
+	// history, as the migrations' own stores did.
+	svc, err := engine.OpenForTest(t, ctx, dsn, engine.WithDataRoot(root), engine.WithTestPurgeKeepsHistory())
 	if err != nil {
 		t.Fatalf("open the source: %v", err)
 	}

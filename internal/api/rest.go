@@ -187,6 +187,30 @@ func (h *handler) postRelease(w http.ResponseWriter, r *http.Request) {
 	h.markAction(w, r, substrate.Dataset.Release)
 }
 
+// postForget erases a live record's history but its current state, or
+// finishes an erasure that waits (decision 0304): the owner's alone.
+func (h *handler) postForget(w http.ResponseWriter, r *http.Request) {
+	ds, ti, addr, ok := h.record(w, r)
+	if !ok {
+		return
+	}
+	if bad := unsupportedParam(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
+	var in substrate.ForgetInput
+	if r.ContentLength != 0 && !readRecordJSON(w, r, &in) {
+		return
+	}
+	ctx := r.Context()
+	status, err := ds.Forget(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 func (h *handler) markAction(w http.ResponseWriter, r *http.Request,
 	act func(substrate.Dataset, context.Context, substrate.Actor, string, string, substrate.MarkInput) (*substrate.Record, error),
 ) {

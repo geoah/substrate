@@ -205,6 +205,7 @@ var conversionSteps = []conversionStep{
 	{Dialect: 4, Name: "move_body_into_properties", Line: moveBodyIntoProperties},
 	{Dialect: 5, Name: "marks", Line: markLine},
 	conversionStateEntries,
+	conversionErasures,
 }
 
 // The conversion's steps, as the import's test seam names them

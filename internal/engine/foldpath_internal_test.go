@@ -47,6 +47,8 @@ var foldWriteSites = map[string]string{
 	"compact.go:writeStateRow":   "the state effect's row, written whole",
 	"compact.go:restateSideRows": "the state effect's annotations and marks",
 	"compact.go:applyLedger":     "the ledger effect's delivery rows",
+	"erase.go:applyErase":        "the erase effect's intent, which a replay of its line notes again",
+	"erase.go:finishErasure":     "the intent's row, taken out with the erase effect the erasure takes off its line, so a replay notes neither",
 	// A compaction's capture replays one record's effects through foldOne
 	// inside a savepoint and rolls it back, so nothing it writes outlives
 	// the read of the rows it takes the state from.
@@ -131,6 +133,7 @@ var foldPrimitives = map[string][]string{
 	"applyDelivery":   {"fold.go:foldOne", "compact.go:applyLedger"},
 	"upsertPage":      {"delivery.go:applyDelivery", "compact.go:applyLedger"},
 	"applyState":      {"fold.go:foldOne"},
+	"applyErase":      {"fold.go:foldOne"},
 	"applyLedger":     {"fold.go:foldOne"},
 	"writeStateRow":   {"compact.go:applyState"},
 	"restateSideRows": {"compact.go:applyState"},

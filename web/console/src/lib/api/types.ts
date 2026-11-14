@@ -176,12 +176,40 @@ export interface SubstrateRecord {
    * "nothing maps onto this kind" and "nothing has linked yet" read the
    * same way they do on the server (decision 0088). */
   linkedFrom?: LinkedRecord[]
+  /** What remains of erasing the record's history, on a permanent delete's
+   * reply alone (decision 0304). */
+  erasure?: Erasure
   /** Set on an occurrence a window read COMPUTED from a series' rule rather
    * than read from a stored row: the series' kind, the id `<seriesId>_<slot>`,
    * the series' properties with the slot in its temporal columns and
    * `recurrenceOf`/`originalAt` filled, version 0. Writing the envelope back at
    * its id materializes it as an override. */
   computed?: boolean
+}
+
+/** Where erasing one record's history stands (decision 0304). */
+export interface Erasure {
+  kind: string
+  id: string
+  live: boolean
+  pending: boolean
+  since?: string
+  waits?: ErasureWait[]
+  held?: string
+  /** The line that does not verify the erasure is held on. */
+  damaged?: number
+  /** Every other record the permanent delete purged with this one, by path. */
+  purged?: string[]
+  /** How many records it owned the delete tombstoned for the sweep: deleted
+   * with it, each keeping its own history until old deletions are forgotten. */
+  tombstoned?: number
+}
+
+/** An enabled trigger an erasure waits for. */
+export interface ErasureWait {
+  trigger: string
+  cursor: number
+  since: string
 }
 
 /** One inbound mapping-owned link (`substrate.LinkedRecord`): a source record

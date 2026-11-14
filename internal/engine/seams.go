@@ -263,7 +263,8 @@ func WithTestCompactionClock(now func() time.Time) Option {
 // (WithTestCompactionFault): inside a batch's transaction, before its
 // commit; after a batch committed; once every batch of a kind's window
 // committed, before its mark moves; inside a batch of the foreign-effects
-// index's derivation; and inside a batch that forgets deletions.
+// index's derivation; inside a batch that forgets deletions; and between a
+// permanent delete's or a forget's commit and its erasure.
 const (
 	CompactionInBatch    = compactionInBatch
 	CompactionAfterBatch = compactionAfterBatch
@@ -271,7 +272,16 @@ const (
 	CompactionInIndex    = compactionInIndex
 	CompactionInForget   = compactionInForget
 	CompactionToForget   = compactionToForget
+	ErasureBetween       = erasureBetween
 )
+
+// WithTestPurgeKeepsHistory makes a permanent delete keep the record's
+// history, as a release before the erasure did: what the compaction pass
+// forgets as an old deletion, and what a repository migration reads of a
+// purged record. Tests only.
+func WithTestPurgeKeepsHistory() Option {
+	return func(o *options) { o.purgeKeepsHistory = true }
+}
 
 // WithTestCompactionFault hands each stage of a compaction pass to fn; an
 // error from it stops the pass there, as a server killed at that stage

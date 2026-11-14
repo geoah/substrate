@@ -1632,6 +1632,14 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	e.DeletedAt = &del
 	if r.URL.Query().Get("purge") == "true" {
 		delete(f.records, id)
+		// What the server's reply says of a record whose erasure waits on a
+		// trigger, with a change request purged beside it.
+		e.Erasure = &substrate.Erasure{
+			Kind: e.Kind, ID: e.ID, Pending: true,
+			Held:       "a line of the record a parked failure or a drain names",
+			Purged:     []string{"substrate.reamde.dev/core/recordpatchrequest/r1"},
+			Tombstoned: 2,
+		}
 		writeJSON(w, http.StatusOK, e)
 		return
 	}

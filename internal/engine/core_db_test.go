@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -883,10 +884,24 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 	if _, err := ds.Get(ctx, kind, fid("t1")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the purged record still reads: %v", err)
 	}
+	// A permanent delete erases the record's history (decision 0304): what
+	// is left of it is the caller's purged `gc` line, with no value.
 	rows := changesSince(t, ds, before)
-	if len(rows) != 2 || rows[0].Op != substrate.OpDelete || rows[1].Op != substrate.OpGC ||
-		rows[1].Payload["reason"] != "purged" || rows[1].Actor != vocabulary.ActorID(owner) {
-		t.Fatalf("want a delete then a purged gc row by the caller, got %+v", rows)
+	if len(rows) != 1 || rows[0].Op != substrate.OpGC ||
+		rows[0].Payload["reason"] != "purged" || rows[0].Actor != vocabulary.ActorID(owner) {
+		t.Fatalf("want the purged gc row by the caller alone, got %+v", rows)
+	}
+	var history []substrate.Op
+	for _, c := range changesSince(t, ds, 0) {
+		if c.RecordID == fid("t1") {
+			history = append(history, c.Op)
+		}
+	}
+	if !slices.Equal(history, []substrate.Op{substrate.OpGC}) {
+		t.Fatalf("the purged record's history is %v, want its gc line alone", history)
+	}
+	if gone.Erasure == nil || gone.Erasure.Pending {
+		t.Fatalf("the purge's erasure is %+v, want it done", gone.Erasure)
 	}
 
 	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("t1"), Properties: map[string]any{"name": "Sync"}})
