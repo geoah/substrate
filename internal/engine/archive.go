@@ -100,6 +100,7 @@ var ErrArchiveDiverged = errors.New("substrate/engine: the archive is not as thi
 // The pass's durable steps, as the test seam names them (testArchiveFault).
 const (
 	archiveAfterSpool     = "after the spool was copied, before the snapshot"
+	archiveAfterSnapshot  = "after the snapshot, before the record is read"
 	archiveAfterListing   = "after the listing was held to the record"
 	archiveAfterObjectRow = "after an object's row, before its put"
 	archiveAfterObjectPut = "after an object's put, before its row said put"
@@ -351,6 +352,13 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 		if err != nil {
 			a.known = false
 		}
+		// The refusal of a row that does not verify outlives the pass it
+		// failed (damage.go).
+		if seq := damagedLineOf(err); seq > 0 {
+			if nerr := ds.noteDamageAlone(ctx, seq, "archive"); nerr != nil {
+				ds.svc.log.Warn("substrate: a line that does not verify was not noted", "repository", ds.info.ID, "seq", seq, "error", nerr)
+			}
+		}
 	}()
 	if a.stopped != "" {
 		return fmt.Errorf("%w: %s", ErrArchiveDiverged, a.stopped)
@@ -394,17 +402,19 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 		return err
 	}
 	snapshotTaken()
+	if err := ds.svc.archiveFault(archiveAfterSnapshot); err != nil {
+		return err
+	}
 	dialect, err := readChangelogDialect(ctx, tx)
 	if err != nil {
 		return err
 	}
-	// A compaction rewrote the lines from rewriteFrom on (compact.go): the
-	// pieces that hold them are written again from the snapshot, and the
-	// mark is cleared once a publication holds them, unless another
-	// compaction came after the snapshot.
-	var rewriteFrom sql.NullInt64
-	var rewrites int64
-	if err := tx.QueryRowContext(ctx, `SELECT rewrite_from, rewrites FROM archive_records`).Scan(&rewriteFrom, &rewrites); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	// The lines a compaction rewrote or removed (compact.go): the pieces
+	// that hold them are written again from the snapshot, and the rows are
+	// cleared once a publication holds them, but a row a later compaction
+	// stamped again.
+	rewritten, rewriteSeen, err := readRewritten(ctx, tx)
+	if err != nil {
 		return err
 	}
 	// The sealed table whole, every column of every row, hashed in the
@@ -456,7 +466,7 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	ds.reportUnrecordedManifests(listed)
 	if a.rec.pending == nil && head == a.mark && dialect == a.dialect && print == a.sealedPrint &&
 		spoolPrint == a.spoolPrint && manifestPrint == a.manifestPrint && a.missing == 0 && a.pendingBlobs == 0 && !a.anyDropped() &&
-		!rewriteFrom.Valid {
+		len(rewritten) == 0 {
 		return nil
 	}
 
@@ -534,18 +544,25 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 			_, first, _, _, _ := changelogfile.ParsePieceObjectName(pieces[n-1].Name)
 			pieces, from = pieces[:n-1], first-1
 		}
-		// Only the pieces wholly below what a compaction rewrote still hold
-		// the lines the table holds.
-		for rewriteFrom.Valid && len(pieces) > 0 {
-			_, first, last, _, _ := changelogfile.ParsePieceObjectName(pieces[len(pieces)-1].Name)
-			if last < rewriteFrom.Int64 {
-				break
-			}
-			pieces, from = pieces[:len(pieces)-1], first-1
-		}
 	}
-	for _, p := range pieces {
-		b.selected[p.Name] = true
+	// The pieces holding a line a compaction rewrote are written again, run
+	// by run; the others are kept.
+	segments, from, err := rewriteSegments(ctx, tx, pieces, from, rewritten)
+	if err != nil {
+		return err
+	}
+	pieces = nil
+	for _, sg := range segments {
+		if sg.piece != nil {
+			b.selected[sg.piece.Name] = true
+			pieces = append(pieces, *sg.piece)
+			continue
+		}
+		written, _, err := b.writePieces(ctx, tx, dialect, sg.first-1, sg.last, pacer.pace)
+		if err != nil {
+			return err
+		}
+		pieces = append(pieces, written...)
 	}
 	headSum := ""
 	if head > from {
@@ -587,8 +604,8 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	if err := ds.finishPending(ctx, false); err != nil {
 		return err
 	}
-	if rewriteFrom.Valid {
-		if _, err := ds.db.ExecContext(ctx, `UPDATE archive_records SET rewrite_from = NULL WHERE rewrites = $1`, rewrites); err != nil {
+	if len(rewritten) > 0 {
+		if _, err := ds.db.ExecContext(ctx, `DELETE FROM archive_rewritten WHERE rewrite <= $1`, rewriteSeen); err != nil {
 			return err
 		}
 	}
@@ -839,7 +856,7 @@ func writePieces(ctx context.Context, q dbx, after, head, pieceBytes int64, pace
 				return written, "", fmt.Errorf("substrate/engine: seq %d does not encode as a changelog line: %w", e.Seq, err)
 			}
 			if !bytes.Equal(row.hash, s[:]) {
-				return written, "", fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)
+				return written, "", &damagedLineError{seq: e.Seq, err: fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)}
 			}
 			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
 			size += int64(len(line)) + 1
@@ -1488,4 +1505,69 @@ func putBlob(ctx context.Context, store archive.Store, key string, local blobbyt
 		return 0, err
 	}
 	return size, store.Put(ctx, key, body, size)
+}
+
+// readRewritten is every seq a compaction rewrote or removed that no
+// publication holds yet, in order, and the highest compaction it read.
+func readRewritten(ctx context.Context, q dbx) ([]int64, int64, error) {
+	rows, err := q.QueryContext(ctx, `SELECT seq, rewrite FROM archive_rewritten ORDER BY seq`)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var seqs []int64
+	var seen int64
+	for rows.Next() {
+		var seq, rewrite int64
+		if err := rows.Scan(&seq, &rewrite); err != nil {
+			return nil, 0, err
+		}
+		seqs, seen = append(seqs, seq), max(seen, rewrite)
+	}
+	return seqs, seen, rows.Err()
+}
+
+// archiveSegment is one stretch of a manifest's chain: a piece kept as it
+// is, or a range of seqs written again.
+type archiveSegment struct {
+	piece       *changelogfile.ArchivePiece
+	first, last int64
+}
+
+// rewriteSegments splits the pieces a pass starts from into the ones it
+// keeps and the runs it writes again: a run is the pieces holding a seq a
+// compaction rewrote, extended to the next piece while its last seq holds no
+// line, so every run ends at a line and the ranges stay one after another. A
+// run that reaches the end of the pieces joins the tail the pass writes from
+// `from`, which it returns moved back.
+func rewriteSegments(ctx context.Context, q dbx, pieces []changelogfile.ArchivePiece, from int64, rewritten []int64) ([]archiveSegment, int64, error) {
+	out := make([]archiveSegment, 0, len(pieces))
+	for i := 0; i < len(pieces); i++ {
+		_, first, last, _, _ := changelogfile.ParsePieceObjectName(pieces[i].Name)
+		at, _ := slices.BinarySearch(rewritten, first)
+		if at == len(rewritten) || rewritten[at] > last {
+			out = append(out, archiveSegment{piece: &pieces[i]})
+			continue
+		}
+		for {
+			var held bool
+			if err := q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM changelog WHERE seq = $1)`, last).Scan(&held); err != nil {
+				return nil, 0, err
+			}
+			next := i + 1
+			if next < len(pieces) {
+				_, nf, nl, _, _ := changelogfile.ParsePieceObjectName(pieces[next].Name)
+				j, _ := slices.BinarySearch(rewritten, nf)
+				if !held || (j < len(rewritten) && rewritten[j] <= nl) {
+					i, last = next, nl
+					continue
+				}
+			} else if !held {
+				return out, first - 1, nil
+			}
+			break
+		}
+		out = append(out, archiveSegment{first: first, last: last})
+	}
+	return out, from, nil
 }

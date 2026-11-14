@@ -36,7 +36,7 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
-		a.repositoryRebuildCommand(), a.repositoryCompactCommand(), a.repositoryReembedCommand(),
+		a.repositoryRebuildCommand(), a.repositoryCompactCommand(), a.repositoryHistoryCommand(), a.repositoryReembedCommand(),
 		a.repositoryVerifyCommand(),
 		a.repositoryRotateGenerationCommand(), a.repositoryReindexCommand())
 	return cmd
@@ -358,6 +358,76 @@ is why it is the backup.`,
 			return nil
 		},
 	}
+}
+
+func (a *app) repositoryHistoryCommand() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "history <repository>",
+		Short: "Measure a repository's history by kind: entries and bytes, largest first",
+		Long: `Measure a repository's history by kind: how many entries are addressed to each
+kind's records, how many bytes their payloads hold as stored, and when the
+oldest of them was written. Postgres sums it, so the command reads no line and
+runs beside a live server. It is what a kind's retention is chosen from. It
+also says where the compaction pass stands: the repository's horizon, the
+record trigger that holds forgetting deletions back, and how far each kind is
+compacted.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := a.openEngineReadOnly(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			kinds, err := svc.HistoryByKind(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			status, err := svc.CompactionStatus(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			if output == "json" {
+				return printJSON(a.out, map[string]any{"kinds": kinds, "compaction": status})
+			}
+			var entries, bytes int64
+			for _, k := range kinds {
+				entries, bytes = entries+k.Entries, bytes+k.Bytes
+			}
+			fmt.Fprintf(a.out, "%-60s %10s %12s %6s  %s\n", "KIND", "ENTRIES", "BYTES", "SHARE", "OLDEST")
+			for _, k := range kinds {
+				share := 0.0
+				if bytes > 0 {
+					share = 100 * float64(k.Bytes) / float64(bytes)
+				}
+				fmt.Fprintf(a.out, "%-60s %10d %12d %5.1f%%  %s\n", k.Kind, k.Entries, k.Bytes, share, k.Oldest.Format(time.RFC3339))
+			}
+			fmt.Fprintf(a.out, "%-60s %10d %12d\n", "total", entries, bytes)
+			fmt.Fprintf(a.out, "\nhorizon: seq %d (a resume from below it is told compacted); deletions looked at up to seq %d\n", status.Horizon, status.ForgotUpTo)
+			if p := status.LastPass; p != nil {
+				if status.LastPassEnded {
+					fmt.Fprintf(a.out, "the last pass ran out of its budget at %s: the next goes on from where it stopped\n", p.Format(time.RFC3339))
+				} else {
+					fmt.Fprintf(a.out, "the last pass finished at %s\n", p.Format(time.RFC3339))
+				}
+			}
+			if len(status.Damaged) > 0 {
+				fmt.Fprintf(a.out, "seq %v found not to verify: nothing at or above seq %d is compacted until its row is written back from a whole copy; the next pass then goes on by itself\n", status.Damaged, status.Damaged[0])
+			}
+			if h := status.HeldBy; h != nil {
+				fmt.Fprintf(a.out, "held back by trigger %s, its cursor at seq %d since %s: no deletion past it is forgotten\n", h.Trigger, h.Seq, h.Since.Format(time.RFC3339))
+			}
+			for _, k := range status.Kinds {
+				fmt.Fprintf(a.out, "compacted %s up to seq %d: %d records, %d entries removed, last at %s\n", k.Kind, k.UpTo, k.Records, k.Removed, k.At.Format(time.RFC3339))
+				if k.Held > 0 {
+					fmt.Fprintf(a.out, "  %d of its records wait on a parked failure, a drain or the webhook spool for the rest of their compaction; a round of their retries takes %d passes\n", k.Held, k.HeldRound)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: json")
+	return cmd
 }
 
 func (a *app) repositoryCompactCommand() *cobra.Command {

@@ -66,7 +66,7 @@ func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds subs
 	// `head` and `generation` are the watch handoff, as on a list envelope:
 	// `watch?from={head}&generation={generation}` tails what this page did not
 	// hold.
-	body := substrate.ChangePage{Changes: kept, Head: head.Seq, Generation: head.Generation}
+	body := substrate.ChangePage{Changes: kept, Head: head.Seq, Generation: head.Generation, Horizon: head.Horizon}
 	switch {
 	case len(kept) > first:
 		// Overshoot: return the first `first` readable rows and set the cursor to

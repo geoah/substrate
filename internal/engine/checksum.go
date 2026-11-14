@@ -53,6 +53,9 @@ type pendingEntry struct {
 	// the bytes Go sent.
 	PayloadText []byte
 	Line        []byte
+	// Foreign is every record the line carries an effect on and is not
+	// addressed to: its rows of the foreign-effects index (compactindex.go).
+	Foreign []eref
 }
 
 // fileEntry is the pending entry in the shape the file format encodes.

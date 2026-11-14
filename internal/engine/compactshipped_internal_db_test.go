@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -392,6 +393,114 @@ func TestACompactionLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
 	}
 	if n := f.lines(ti.mirrored); n != 1 {
 		t.Errorf("the mirror's record has %d lines after the compaction, want its state's one", n)
+	}
+	f.checkUpgrade(ti)
+}
+
+// The pass: past their retention and past the deletion period, after
+// `repository compact`, the shipped records keep every line and the
+// deletions among them stay in history, an ordinary record is compacted and
+// its old deletion forgotten, and the next open leaves each shipped record
+// as the person left it.
+func TestThePassLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionRetention(func(string) (bool, time.Duration) { return false, 0 }),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	tc := f.touch()
+	gone, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: tc.ordinary.Kind, Properties: map[string]any{"name": "gone"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.ds.Delete(ctx, substrate.ActorPerson, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The head is never forgotten.
+	if _, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: tc.ordinary.Kind, Properties: map[string]any{"name": "after"}}); err != nil {
+		t.Fatal(err)
+	}
+	shipped := append([]eref{tc.edited, tc.untouched}, tc.deleted...)
+	before := map[eref]int{}
+	for _, r := range shipped {
+		before[r] = f.lines(r)
+	}
+	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	report, err := f.ds.CompactionPass(ctx)
+	if err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	if report.Forgotten != 1 {
+		t.Errorf("the pass forgot %d deletions, want the ordinary record's alone", report.Forgotten)
+	}
+	for _, r := range shipped {
+		if got := f.lines(r); got != before[r] {
+			t.Errorf("%s %s has %d lines after the pass, want its %d", r.Kind, r.ID, got, before[r])
+		}
+	}
+	if n := f.lines(tc.ordinary); n != 1 {
+		t.Errorf("the ordinary record has %d lines after the pass, want its state's one", n)
+	}
+	if n := f.lines(eref{Kind: gone.Kind, ID: gone.ID}); n != 0 {
+		t.Errorf("the ordinary record deleted long ago has %d lines after the pass, want it forgotten", n)
+	}
+	f.shipNewer()
+	f.reopen()
+	f.checkNextOpen(tc)
+}
+
+// The pass over what an installed package ships: past every retention and
+// the deletion period, the presets keep every line and the deletion among
+// them stays in history, so the upgrade leaves each as the person left it;
+// a record the package's function wrote, a mirror's, is compacted, and one
+// it wrote that the person deleted long ago is forgotten.
+func TestThePassLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionRetention(func(string) (bool, time.Duration) { return false, 0 }),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	ti := f.touchInstalled()
+	gone := f.mirror("gone")
+	if _, err := f.ds.Delete(ctx, substrate.ActorPerson, gone.Kind, gone.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The head is never forgotten.
+	f.mirror("after")
+	shipped := []eref{ti.edited, ti.deleted, ti.untouched}
+	before := map[eref]int{}
+	for _, r := range shipped {
+		before[r] = f.lines(r)
+	}
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	report, err := f.ds.CompactionPass(ctx)
+	if err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	if report.Forgotten != 1 {
+		t.Errorf("the pass forgot %d deletions, want the mirror's record's alone", report.Forgotten)
+	}
+	for _, r := range shipped {
+		if got := f.lines(r); got != before[r] {
+			t.Errorf("preset %s has %d lines after the pass, want its %d", r.ID, got, before[r])
+		}
+	}
+	if n := f.lines(ti.mirrored); n != 1 {
+		t.Errorf("the mirror's record has %d lines after the pass, want its state's one", n)
+	}
+	if n := f.lines(gone); n != 0 {
+		t.Errorf("the mirror's record deleted long ago has %d lines after the pass, want it forgotten", n)
 	}
 	f.checkUpgrade(ti)
 }

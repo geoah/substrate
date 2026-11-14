@@ -430,7 +430,9 @@ func (t *txn) settleFold() error {
 		// it rolls back rather than committing a hash over the wrong bytes.
 		return fmt.Errorf("substrate/engine: settleFold touched seq %d, which is not this transaction's last appended entry", t.maxSeq)
 	}
-	t.pending[len(t.pending)-1].PayloadText = stored
+	last := &t.pending[len(t.pending)-1]
+	last.PayloadText = stored
+	last.Foreign = mergeRefs(last.Foreign, foreignOf(ops, eref{Kind: last.Kind, ID: last.RecordID}))
 	return nil
 }
 

@@ -84,6 +84,7 @@ type bulkEntry struct {
 	kind     string
 	raw      []byte
 	causedBy sql.NullInt64
+	foreign  []eref
 }
 
 // The stages a bulk run's flush reports to its test seam (WithTestBulkFault),
@@ -450,7 +451,7 @@ func (t *txn) flushBulkEntries(b *bulkWrite) error {
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i].seq < got[j].seq })
 	for i, e := range entries {
-		t.appended(e.links, e.op, e.recordID, e.kind, e.causedBy, got[i].seq, got[i].text)
+		t.appended(e.links, e.op, e.recordID, e.kind, e.causedBy, got[i].seq, got[i].text, e.foreign)
 	}
 	return nil
 }

@@ -264,6 +264,19 @@ func run() error {
 		slog.Info("archiving each repository", "store", archiveStore.String(), "interval", cfg.Archive.Interval)
 		opts = append(opts, engine.WithArchive(archiveStore), engine.WithArchiveInterval(cfg.Archive.Interval))
 	}
+	// The compaction pass (decision 0300): entries past their kind's
+	// retention become each record's state entry, and an old deletion is
+	// forgotten, which moves the repository's horizon.
+	every, err := cfg.Compaction.Every()
+	if err != nil {
+		return err
+	}
+	if every == 0 {
+		slog.Info("the compaction pass is off (SUBSTRATE_COMPACTION_INTERVAL=off): history only grows")
+		opts = append(opts, engine.WithCompactionInterval(-1))
+	} else {
+		opts = append(opts, engine.WithCompactionInterval(every), engine.WithDeletionsKept(cfg.Compaction.DeletionsKept))
+	}
 	if cfg.OrphanGrace > 0 {
 		// Loud, and at boot: this deployment DELETES records the sweep finds
 		// orphaned, and the window is the only thing between a connector

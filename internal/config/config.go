@@ -77,6 +77,8 @@ type Config struct {
 	// Archive is where each repository is copied after its writes commit
 	// (archive.go).
 	Archive Archive
+	// Compaction is the compaction pass's (compaction.go).
+	Compaction Compaction
 	// InviteCode gates the ONE door into a fresh substrate: registering
 	// creates a repository and its user, and with a code set the door
 	// admits only a request that presents it. UNSET, THE DOOR READS NO CODE
@@ -287,6 +289,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.Archive.Validate(); err != nil {
+		return err
+	}
+	if err := c.Compaction.Validate(); err != nil {
 		return err
 	}
 	if c.RepositoryConnections < MinRepositoryConnections {

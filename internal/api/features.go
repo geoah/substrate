@@ -149,7 +149,8 @@ var featureTable = []feature{
 	// 0270). Revision 3: a change names the repository's own kinds `~/…`
 	// (decision 0259). Revision 4: `affected[].state`, a compaction's state
 	// entry (decision 0296).
-	{name: "changefeed", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 5: `horizon` on a page, the repository's own (decision 0300).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/changes",
 	}},
 	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
