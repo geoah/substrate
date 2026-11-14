@@ -50,6 +50,8 @@ var wireTypes = map[string]any{
 
 	"SubstrateRecord":     Record{},
 	"LinkedRecord":        LinkedRecord{},
+	"Erasure":             Erasure{},
+	"ErasureWait":         ErasureWait{},
 	"ReferenceSite":       ReferenceSite{},
 	"Referencing":         Referencing{},
 	"RankedPage":          RankedPage{},

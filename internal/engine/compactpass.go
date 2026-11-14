@@ -56,6 +56,7 @@ const (
 	compactionInIndex    = "inside a batch of the index's derivation"
 	compactionInForget   = "inside a batch that forgets deletions"
 	compactionToForget   = "before a batch that forgets deletions takes the lock"
+	erasureBetween       = "after a permanent delete or a forget committed, before its erasure"
 )
 
 // compactionFault is the pass's test seam: nil but in a test.
@@ -117,9 +118,11 @@ type CompactionPassReport struct {
 	Records int      `json:"records"`
 	Removed int      `json:"removed"`
 	// Forgotten is how many deleted records the pass forgot whole.
-	Forgotten int  `json:"forgotten"`
-	Finished  bool `json:"finished"`
-	Took      time.Duration
+	Forgotten int `json:"forgotten"`
+	// Erased is how many records' erasures the pass finished.
+	Erased   int  `json:"erased"`
+	Finished bool `json:"finished"`
+	Took     time.Duration
 }
 
 // CompactionPass runs one compaction pass over the repository, bounded by
@@ -151,6 +154,14 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 	indexed, err := ds.backfillForeign(ctx, func(ctx context.Context) error { return pace(ctx, 0) })
 	report.Indexed = indexed
 	if err != nil || !indexed {
+		return report, budgetEnded(err)
+	}
+	// What a call left of an erasure (erase.go): a crash between its two
+	// transactions, a hold that ended, a row written back.
+	erased, err := ds.eraseNow(ctx, nil, false)
+	report.Erased = len(erased.Erased)
+	if err != nil {
+		report.Took = time.Since(started)
 		return report, budgetEnded(err)
 	}
 	kinds, err := ds.compactionKinds(ctx)
@@ -385,9 +396,21 @@ type CompactionStatus struct {
 	HeldBy        *HorizonHold    `json:"heldBy,omitempty"`
 	Kinds         []CompactedKind `json:"kinds,omitempty"`
 	// Damaged is every line a reader found not to verify: nothing at or
-	// above the lowest is compacted until its row is written back from a
-	// whole copy (damage.go).
+	// above the lowest is compacted or erased until its row is written back
+	// from a whole copy (damage.go).
 	Damaged []int64 `json:"damaged,omitempty"`
+	// Erasures is every record whose history's erasure waits (erase.go):
+	// since when, up to which line, and whether its current state stays.
+	Erasures []WaitingErasure `json:"erasures,omitempty"`
+}
+
+// WaitingErasure is one record whose history waits to be erased.
+type WaitingErasure struct {
+	Kind  string    `json:"kind"`
+	ID    string    `json:"id"`
+	UpTo  int64     `json:"upTo"`
+	Live  bool      `json:"live"`
+	Since time.Time `json:"since"`
 }
 
 // CompactedKind is one kind's compaction mark.
@@ -444,6 +467,13 @@ func (s *service) CompactionStatus(ctx context.Context, repository string) (Comp
 	}
 	if err := errors.Join(damaged.Err(), damaged.Close()); err != nil {
 		return st, err
+	}
+	pending, err := ds.pendingErasures(ctx, ds.db, nil)
+	if err != nil {
+		return st, err
+	}
+	for _, e := range pending {
+		st.Erasures = append(st.Erasures, WaitingErasure{Kind: e.Kind, ID: e.ID, UpTo: e.UpTo, Live: e.Live, Since: e.Since})
 	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT m.kind, m.upto, m.records, m.removed,

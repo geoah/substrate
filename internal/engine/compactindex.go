@@ -189,6 +189,17 @@ func (ds *dataset) backfillForeign(ctx context.Context, pace func(context.Contex
 	}
 }
 
+// markForeignIndexed records that the index covers the whole history: a
+// creation, whose every line the write path indexed as it appended it. An
+// erasure reads a record's lines by the index and waits for its derivation
+// otherwise (compact.go).
+func (t *txn) markForeignIndexed() error {
+	_, err := t.exec(`
+		INSERT INTO compaction_state (foreign_upto, foreign_done) VALUES (0, true)
+		ON CONFLICT (repository) DO UPDATE SET foreign_done = true, updated_at = now()`)
+	return err
+}
+
 // resetForeignIndex makes the pass derive the index again from the start:
 // history came in by a path that does not index it (an import).
 func (t *txn) resetForeignIndex() error {

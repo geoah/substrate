@@ -118,8 +118,10 @@ var featureTable = []feature{
 	// Revision 5: `marks` in place of `propertyMeta`, each property's
 	// `pinned`, `setBy`, `onBehalfOf`, `derivedFrom` and `setAt`, its
 	// alternatives keyed by source record, and the `pin` and `release`
-	// actions (decision 0284).
-	{name: "records", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}, routes: []string{
+	// actions (decision 0284). Revision 6: the `forget` action, and a
+	// permanent delete's reply naming what remains of its erasure
+	// (`erasure`, decision 0304).
+	{name: "records", stability: substrate.StabilityStable, revision: 6, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -128,6 +130,7 @@ var featureTable = []feature{
 		"DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
 		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/pin",
 		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/release",
+		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/forget",
 	}},
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route

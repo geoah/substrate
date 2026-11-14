@@ -438,3 +438,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
 | [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
 | [0300](0300-a-paced-pass-compacts-what-is-past-each-kinds-retention-and-forgets-old-deletions.md) | A paced pass compacts what is past each kind's retention, and forgets old deletions | accepted |
+| [0304](0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md) | A permanent delete erases the record's history, and what remains to erase is in the history | accepted |
+| [0305](0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md) | A permanent delete reaches what holds the record's values, and not what it owns | accepted |
+| [0306](0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md) | A record has a forget door that erases its history before its current state | accepted |

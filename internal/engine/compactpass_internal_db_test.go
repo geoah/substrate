@@ -116,10 +116,12 @@ func TestTheArchiveAfterTenPassesHoldsTheTableAndUploadsWhatChanged(t *testing.T
 // changed is one no batch of R reads; a reader notes it (the backfill, the
 // door, an archive pass that refuses it, whose note outlives the failed
 // pass), and the pass then compacts what lies below it and leaves every
-// column of every row from it up as it was, R's lines and a later purged
-// task's deletion among them. Once the row is written back, the next pass
-// drops the note, compacts R and forgets the deletion by itself, a rebuild
-// gives the fold from before the damage, and the archive holds the table.
+// column of every row from it up as it was, R's lines among them, and looks
+// for deletions to forget no further. (A later purged task is forgotten at
+// its permanent delete, before the damage: erase.go.) Once the row is
+// written back, the next pass drops the note and compacts R by itself, a
+// rebuild gives the fold from before the damage, and the archive holds the
+// table.
 func TestThePassWaitsBelowALineKnownNotToVerify(t *testing.T) {
 	t.Parallel()
 	for _, noter := range []string{"the backfill", "the door", "the archive pass"} {
@@ -195,9 +197,14 @@ func TestThePassWaitsBelowALineKnownNotToVerify(t *testing.T) {
 			}
 			deletion := slices.Max(lines(gone))
 			put("the head")
-			if noter != "the backfill" {
-				// The index is whole before the damage: a pass inside every
-				// retention runs the backfill and compacts nothing.
+			if noter == "the backfill" {
+				// A repository from before the index: the pass derives it
+				// first (a new one is indexed from its creation).
+				if _, err := d.db.ExecContext(ctx, `UPDATE compaction_state SET foreign_upto = 0, foreign_done = false`); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				// A pass inside every retention compacts nothing.
 				pass()
 			}
 			want := FoldRows(t, d)
@@ -256,26 +263,23 @@ func TestThePassWaitsBelowALineKnownNotToVerify(t *testing.T) {
 				if got := lines(below); len(got) != 2 || got[1] != bad {
 					t.Fatalf("pass %d: the task below has lines %v, want its state and the damaged line %d", round, got, bad)
 				}
-				if st := status(); st.Horizon >= deletion || st.ForgotUpTo >= bad {
-					t.Fatalf("pass %d: the horizon is %d and deletions are looked at up to %d, want both below seq %d", round, st.Horizon, st.ForgotUpTo, bad)
+				if st := status(); st.ForgotUpTo >= bad {
+					t.Fatalf("pass %d: deletions are looked at up to %d, want below seq %d", round, st.ForgotUpTo, bad)
 				}
 			}
 			if _, err := d.db.ExecContext(ctx, `UPDATE changelog SET record_id = $2 WHERE seq = $1`, bad, r); err != nil {
 				t.Fatal(err)
 			}
-			report, err := d.CompactionPass(ctx)
-			if err != nil {
-				t.Fatal(err)
-			}
+			pass()
 			if got := status().Damaged; len(got) != 0 {
 				t.Fatalf("after the repair the notes are %v, want none", got)
 			}
 			if got := lines(r); len(got) != 1 {
 				t.Fatalf("after the repair R has lines %v, want one state", got)
 			}
-			if report.Forgotten != 1 || len(lines(gone)) != 0 || status().Horizon < deletion {
-				t.Fatalf("after the repair the pass forgot %d records, the purged one has lines %v and the horizon is %d, want it forgotten and the horizon at %d",
-					report.Forgotten, lines(gone), status().Horizon, deletion)
+			if len(lines(gone)) != 0 || status().Horizon < deletion || status().ForgotUpTo < bad {
+				t.Fatalf("after the repair the purged task has lines %v, the horizon is %d and deletions are looked at up to %d, want none, at least %d and past %d",
+					lines(gone), status().Horizon, status().ForgotUpTo, deletion, bad)
 			}
 			if _, err := d.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
 				t.Fatalf("rebuild: %v", err)

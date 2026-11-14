@@ -39,7 +39,8 @@ package engine
 // dialect 4 held who managed it and at which tier (decision 0284,
 // conversion_0005_marks.go); dialect 6 adds the two state entries a
 // compaction writes, `state` and `ledger` (compact.go), which an older
-// binary's fold refuses. Each step rewrites the rung below into its own. A change that teaches the writer a spelling an older binary's
+// binary's fold refuses; dialect 7 adds the `erase` effect, an erasure's
+// intent (erase.go). Each step rewrites the rung below into its own. A change that teaches the writer a spelling an older binary's
 // fold would refuse or misread (a new fold effect kind, a new op, a payload
 // shape an old decoder reads differently) bumps maxChangelogDialect in the
 // same commit, and changelogdialect_internal_test.go is what makes the first
@@ -67,7 +68,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 6
+const maxChangelogDialect = 7
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay.
 // No dialect is on the wire: it is exported for the tests outside this package

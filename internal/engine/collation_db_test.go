@@ -57,6 +57,8 @@ var identityColumns = [][2]string{
 	{"compaction_marks", "held_after"},
 	{"compaction_held", "record_kind"},
 	{"compaction_held", "record_id"},
+	{"compaction_erasures", "record_kind"},
+	{"compaction_erasures", "record_id"},
 	{"observed_segments", "kind"},
 	{"observed_segments", "record_id"},
 	{"observed_latest", "record_id"},

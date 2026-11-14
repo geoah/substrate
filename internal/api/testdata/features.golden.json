@@ -11,13 +11,14 @@
   {
     "name": "records",
     "stability": "stable",
-    "revision": 5,
+    "revision": 6,
     "routes": [
       "DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
       "GET /api/v1/records",
       "GET /api/v1/{a1}/{a2}/{a3}/{a4}",
       "PATCH /api/v1/{a1}/{a2}/{a3}/{a4}",
       "POST /api/v1/records",
+      "POST /api/v1/{a1}/{a2}/{a3}/{a4}/forget",
       "POST /api/v1/{a1}/{a2}/{a3}/{a4}/pin",
       "POST /api/v1/{a1}/{a2}/{a3}/{a4}/release",
       "PUT /api/v1/{a1}/{a2}/{a3}/{a4}"

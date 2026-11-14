@@ -975,6 +975,14 @@ func (s *scopedDataset) Release(ctx context.Context, _ substrate.Actor, typ, id 
 	return s.cut(ctx, rec)
 }
 
+// Forget is the owner's alone, which the engine holds an app's hand to.
+func (s *scopedDataset) Forget(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.ForgetInput) (*substrate.Erasure, error) {
+	if err := s.requireWrite(ctx, typ); err != nil {
+		return nil, err
+	}
+	return s.inner.Forget(ctx, s.actor, typ, id, in)
+}
+
 func (s *scopedDataset) Merge(context.Context, substrate.Actor, substrate.MergeInput) (*substrate.Record, error) {
 	return nil, errScope("merge")
 }
