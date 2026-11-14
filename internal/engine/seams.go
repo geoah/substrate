@@ -468,6 +468,16 @@ func WithTestCompactionBatches(records, lines int, seen func(kind string, ids []
 	return func(o *options) { o.compactionBatches, o.compactionBatch = [2]int{records, lines}, seen }
 }
 
+// WithTestCompactionBytes bounds the pass's batches at n stored bytes beyond
+// their largest line in the place of compactionBatchBytes, 0 keeping the
+// bound, and tells read, when it is not nil, of every batch a pass
+// committed, a forgetting's included: its kind, its records, and the lines
+// it took as input for them, their stored bytes and the two largest of
+// them. Tests only.
+func WithTestCompactionBytes(n int64, read func(kind string, ids []string, lines int, bytes, largest, second int64)) Option {
+	return func(o *options) { o.compactionBytes, o.compactionRead = n, read }
+}
+
 func actorPositionsInRecord(kind string, set map[string]any, out *[]ActorPosition) {
 	for _, path := range actorIDPositions[kind] {
 		actorValuesAt(set, path, func(v any) { *out = append(*out, ActorPosition{Name: kind + "/" + path, Value: v}) })

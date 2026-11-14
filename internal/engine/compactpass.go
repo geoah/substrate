@@ -19,11 +19,12 @@ package engine
 //
 // ONE UNIT OF WORK is a batch of records of one kind, compacted in one
 // transaction that holds the changelog lock, which every writer takes: a
-// write waits for at most one batch. A batch is 25 records or 1,000 lines of
-// their history, whichever comes first, and a record longer than that is
-// compacted alone in steps of it (compactLong): what one batch's transaction
-// reads is bounded by the lines, beside the transactions it re-frames and
-// the repository's barriers (compactionBatchLines). After each batch the pass
+// write waits for at most one batch. A batch is 25 records, 1,000 lines of
+// their history or 32 MiB of those lines as stored beyond the largest,
+// whichever comes first, and a record past that is compacted alone in steps
+// of it (compactLong): what one batch's transaction reads is bounded by the
+// lines and their bytes, beside the transactions it re-frames and the
+// repository's barriers (compactionBatchLines). After each batch the pass
 // sleeps as long as the batch took, so writes have the lock at least half the
 // time, and it stops at its budget and goes on at the next pass. The
 // window's progress, its cutoff and the last record it finished, is kept with
@@ -83,22 +84,52 @@ func (ds *dataset) compactionFault(stage string) error {
 	return ds.svc.compactionFault(stage)
 }
 
-// compactionBatchRecords and compactionBatchLines bound every transaction of
-// the pass, a window's batch, a held retry and a forgetting alike: the
-// records it compacts and the lines of history they hold, whichever it meets
-// first. Of one record a transaction reads what the record keeps below the
-// step and the step, never more than twice compactionBatchLines: a record
-// longer than it is compacted alone in steps of it, and one that still keeps
-// as many after a step is passed by (compactLong). Across a batch's records,
-// held ones included, it reads no more than compactionBatchLines. Beside
-// them a transaction reads the other lines of each transaction it re-frames,
-// one whose end it removes (reframedDamage), and the repository's barriers
-// (compactBarriers: the lines its parked failures, its drains and its parked
-// webhook fires name), which grow with what waits to be delivered, not with
-// the history.
+// compactionBatchRecords, compactionBatchLines and compactionBatchBytes bound
+// every batch of the pass, a window's batch, a held retry, a long record's
+// step, a forgetting and a kept deletion alike: the records it compacts, the
+// lines of history they hold, and those lines' stored bytes beyond the
+// largest of them (lineSize.over), whichever it meets first.
+//
+// Of one record a step reads what the record retains below the step before
+// (the state that step left, and what stays under a hold) and up to
+// compactionBatchLines new lines, so fewer than twice compactionBatchLines:
+// a record past the bounds is compacted alone in steps, and one that still
+// retains as many lines after a step is passed by (compactLong). By bytes a
+// batch of records, and a step of a record's stepping after its first in a
+// pass, ends before the line that would take what it reads past
+// compactionBatchBytes beyond its largest line, so it reads at most the
+// bound and one line, a line larger than the bound being that one. What a
+// step retains cannot be shed, since the step replays from it, and the first
+// step of a stepping cannot tell it from new lines; so that step, and one
+// whose first new line passes the bound, take the line that does (stepAt).
+// What a record retains is under the bound beyond its own largest line, or
+// it is passed by, so such a step reads at most the bound beyond the two
+// largest lines it reads, and every step takes at least one new line: no
+// record is held by its bytes alone. Across a batch's records, held ones
+// included, it reads no more than compactionBatchLines lines and
+// compactionBatchBytes beyond the largest.
+//
+// The bytes are what Postgres stores (pg_column_size of the payload),
+// compressed where it compressed them, so a batch is chosen from the same
+// reads that count its lines and no payload is read to size it. What a step
+// holds in memory is its lines decompressed, as text, and decoded, so it
+// depends on how they compress: a saved position of ids and timestamps
+// measured about twice its stored size, an opaque one its stored size, and
+// a value that compresses ten to one is ten times it. The bound is half an
+// archive piece (DefaultArchivePieceBytes), about a piece of text for the
+// shape measured.
+//
+// Two reads of the pass are outside the bounds. An erasure takes its record
+// whole, in one transaction (erase.go eraseOne, #1452). And a batch that
+// removes a transaction's last line verifies that whole transaction's lines
+// (reframedDamage, transactionDamage, #1453), which neither bound counts.
+// Beside them a batch reads the repository's barriers (compactBarriers: the
+// lines its parked failures, its drains and its parked webhook fires name),
+// which grow with what waits to be delivered, not with the history.
 const (
-	compactionBatchRecords = 25
-	compactionBatchLines   = 1000
+	compactionBatchRecords       = 25
+	compactionBatchLines         = 1000
+	compactionBatchBytes   int64 = 32 << 20
 )
 
 // compactionBudget bounds the time one pass works before it stops and leaves
@@ -256,12 +287,12 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 // meets it again, after a restore or a lowered mark, writes nothing.
 //
 // A forgetting reads every line of what it forgets, so it is held to the
-// line bound as a compaction is: a page's records of one kind are forgotten
-// as many at a time as the bound admits by their lines (lineBatch), and one
-// longer than the bound alone is first compacted in steps up to the cutoff
+// bounds as a compaction is: a page's records of one kind are forgotten as
+// many at a time as the bounds admit by their lines and bytes (lineBatch),
+// and one past them alone is first compacted in steps up to the cutoff
 // (compactLong), whatever its kind keeps, since all of it goes after. That
 // leaves it its state with no row on its purge's line, which is forgotten
-// next. One that still keeps more than the bound, under a purge of an
+// next. One that still keeps as much as a bound, under a purge of an
 // earlier life or a line something holds, is passed by: its deletion stays,
 // as one a hold keeps does, and the next pass looks at it again.
 func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func(context.Context, time.Duration) error) (int, error) {
@@ -362,7 +393,7 @@ func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func
 			for len(ids) > 0 {
 				batch, total, last := ds.lineBatch(ids, lines)
 				ids = ids[slices.Index(ids, last)+1:]
-				if len(batch) == 1 && total > ds.batchLines() {
+				if len(batch) == 1 && !ds.within(total) {
 					id := batch[0]
 					ref := eref{Kind: kind, ID: id}
 					if stepped[id] {
@@ -490,6 +521,8 @@ func (ds *dataset) forgetBatch(ctx context.Context, kind string, ids []string, k
 				report.heldBack = held.heldBack
 			}
 			report.read += held.read
+			report.readBytes += held.readBytes
+			report.readLargest, report.readSecond = largestTwo(report.readLargest, report.readSecond, held.readLargest, held.readSecond)
 			report.Removed += held.Removed
 			report.touched = append(report.touched, held.touched...)
 			report.Damaged = max(report.Damaged, held.Damaged)
@@ -499,9 +532,7 @@ func (ds *dataset) forgetBatch(ctx context.Context, kind string, ids []string, k
 		return report, err
 	}
 	ds.compacted(report)
-	if seen := ds.svc.compactionBatch; seen != nil {
-		seen(kind, ids, report.UpTo, report.read)
-	}
+	ds.sawBatch(kind, ids, report.UpTo, report)
 	return report, nil
 }
 
@@ -956,20 +987,40 @@ const dropWindow = `
 	ON CONFLICT (repository, kind) DO UPDATE SET upto = EXCLUDED.upto,
 		window_upto = 0, window_after = '', updated_at = now()`
 
-// lineBatch is the next batch of ids, in order: as many as the line bound
-// admits by their lines up to the batch's seq, at least one. It answers the
-// batch, its lines and the last id it took.
-func (ds *dataset) lineBatch(ids []string, lines map[string]int) ([]string, int, string) {
+// lineSize is what lines come to: how many, their stored bytes, and the
+// largest of them.
+type lineSize struct {
+	lines          int
+	bytes, largest int64
+}
+
+// over is the bytes beyond the largest line, what the byte bound holds: a
+// line larger than the bound is taken alone.
+func (s lineSize) over() int64 { return s.bytes - s.largest }
+
+func (s lineSize) plus(o lineSize) lineSize {
+	return lineSize{lines: s.lines + o.lines, bytes: s.bytes + o.bytes, largest: max(s.largest, o.largest)}
+}
+
+// within is whether a transaction may read lines of size s.
+func (ds *dataset) within(s lineSize) bool {
+	return s.lines <= ds.batchLines() && s.over() <= ds.batchBytes()
+}
+
+// lineBatch is the next batch of ids, in order: as many as the bounds admit
+// by their lines up to the batch's seq, at least one. It answers the batch,
+// what its lines come to and the last id it took.
+func (ds *dataset) lineBatch(ids []string, lines map[string]lineSize) ([]string, lineSize, string) {
 	var batch []string
 	var last string
-	total := 0
+	var total lineSize
 	for _, id := range ids {
-		n := lines[id]
-		if len(batch) > 0 && total+n > ds.batchLines() {
+		next := total.plus(lines[id])
+		if len(batch) > 0 && !ds.within(next) {
 			break
 		}
-		batch, total, last = append(batch, id), total+n, id
-		if total >= ds.batchLines() {
+		batch, total, last = append(batch, id), next, id
+		if total.lines >= ds.batchLines() || total.over() >= ds.batchBytes() {
 			break
 		}
 	}
@@ -978,9 +1029,8 @@ func (ds *dataset) lineBatch(ids []string, lines map[string]int) ([]string, int,
 
 // compactWindow compacts the records of kind with a line in (from, to] in
 // byte order after after, batch by batch, each batch's commit keeping how far
-// the window got. A batch is the next records the line bound admits
-// (lineBatch), and a record longer than the line bound alone is compacted in
-// steps (compactLong).
+// the window got. A batch is the next records the bounds admit (lineBatch),
+// and a record past them alone is compacted in steps (compactLong).
 func (ds *dataset) compactWindow(ctx context.Context, kind string, from, to int64, after string,
 	pace func(context.Context, time.Duration) error, tally func(CompactReport),
 ) error {
@@ -996,7 +1046,7 @@ func (ds *dataset) compactWindow(ctx context.Context, kind string, from, to int6
 		batch, total, last := ds.lineBatch(ids, lines)
 		started := time.Now()
 		switch {
-		case len(batch) == 1 && total > ds.batchLines():
+		case len(batch) == 1 && !ds.within(total):
 			id := batch[0]
 			if _, err := ds.compactLong(ctx, kind, id, to, func(t *txn, r CompactReport, done bool) error {
 				finished := after
@@ -1037,9 +1087,9 @@ const windowProgress = `
 
 // compactHeld retries one batch of kind's held records, ids in byte order
 // from where the last retry got to, by the window's rule up to the cutoff
-// in force: as many as the line bound admits, or a longer one alone in steps
+// in force: as many as the bounds admit, or a larger one alone in steps
 // (compactLong). Each stays held where a hold still keeps it, where it still
-// keeps as many lines as the bound, where the cutoff stands below the mark,
+// keeps as many lines or bytes as the bounds, where the cutoff stands below the mark,
 // whose lines between the two a later pass compacts, and, for a longer one,
 // until the step that finishes it. It answers the last record it took.
 func (ds *dataset) compactHeld(ctx context.Context, kind string, ids []string, cutoff, mark int64,
@@ -1062,7 +1112,7 @@ func (ds *dataset) compactHeld(ctx context.Context, kind string, ids []string, c
 		return nil
 	}
 	started := time.Now()
-	if len(batch) == 1 && total > ds.batchLines() {
+	if len(batch) == 1 && !ds.within(total) {
 		id := batch[0]
 		_, err = ds.compactLong(ctx, kind, id, cutoff, func(t *txn, _ CompactReport, done bool) error {
 			// A held record leaves the list only in the step that finishes
@@ -1086,27 +1136,31 @@ func (ds *dataset) compactHeld(ctx context.Context, kind string, ids []string, c
 	return last, pace(ctx, time.Since(started))
 }
 
-// compactLong compacts one record whose history up to to is longer than the
-// line bound in steps, each a transaction of its own up to the seq of the
-// record's next line-bound-th line after the step before: the state a step
-// leaves stands for all it replaced, so the next step replays that state, what
-// the record keeps below it, and the bound's lines past the step before.
+// compactLong compacts one record whose history up to to is past the bounds
+// in steps, each a transaction of its own up to the seq stepAt answers: the
+// line-bound-th line after the step before, or the line before the one that
+// would take what the step reads past the byte bound. The state a step
+// leaves stands for all it replaced, so the next step replays that state,
+// what the record keeps below it, and the lines past the step before.
 // What a compaction keeps (a line something holds, a purge that is not the
 // record's last, every effect under them) stays and is read again, so after
-// each step the record's lines at or below it are counted, in the step's own
-// transaction: where they are still as many as the bound, the step gained
-// nothing that lets the next stay within twice it, and the pass stops
-// stepping and passes the record by, through passBy in the same transaction.
-// No step therefore reads more than twice the bound of the record, and a
-// record that cannot be compacted within it costs a bounded read at each
-// later pass. progress runs in each step's transaction, done where the step
+// each step the record's lines at or below it are measured, in the step's
+// own transaction: where they are still as many lines as the bound, or as
+// many bytes beyond the largest, the step gained nothing that lets the next
+// stay within the bounds, and the pass stops stepping and passes the record
+// by, through passBy in the same transaction. No step therefore reads more
+// than twice the line bound of the record, nor more than the byte bound
+// beyond the two largest lines it reads (compactionBatchBytes), and a
+// record that cannot be compacted within them costs a bounded read at each
+// later pass. A step takes at least one new line, so no record is held by
+// its bytes alone. progress runs in each step's transaction, done where the step
 // is the last or the record is passed by; it answers whether it was.
 func (ds *dataset) compactLong(ctx context.Context, kind, id string, to int64,
 	progress func(t *txn, r CompactReport, done bool) error, passBy func(t *txn) error,
 	pace func(context.Context, time.Duration) error, tally func(CompactReport),
 ) (bool, error) {
 	for prev := int64(0); ; {
-		step, err := ds.lineAt(ctx, kind, id, prev, to, ds.batchLines())
+		step, err := ds.stepAt(ctx, kind, id, prev, to)
 		if err != nil {
 			return false, err
 		}
@@ -1119,14 +1173,13 @@ func (ds *dataset) compactLong(ctx context.Context, kind, id string, to int64,
 		report, err := ds.compactBatch(ctx, kind, []string{id}, step, func(t *txn, r CompactReport) error {
 			done, passed = final, false
 			if !final {
-				var kept int
+				var kept lineSize
 				if err := t.row(`
-					SELECT (SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2 AND seq <= $3)
-					     + (SELECT count(*) FROM changelog_foreign WHERE record_kind = $1 AND record_id = $2 AND seq <= $3)`,
-					kind, id, step).Scan(&kept); err != nil {
+					SELECT count(*), coalesce(sum(size), 0)::bigint, coalesce(max(size), 0)::bigint FROM (`+recordLinesSQL+`) l`,
+					kind, []string{id}, step).Scan(&kept.lines, &kept.bytes, &kept.largest); err != nil {
 					return err
 				}
-				if kept >= ds.batchLines() {
+				if kept.lines >= ds.batchLines() || kept.over() >= ds.batchBytes() {
 					if err := passBy(t); err != nil {
 						return err
 					}
@@ -1144,6 +1197,31 @@ func (ds *dataset) compactLong(ctx context.Context, kind, id string, to int64,
 			return false, err
 		}
 	}
+}
+
+// sawBatch tells a test what a batch read (WithTestCompactionBatches,
+// WithTestCompactionBytes).
+func (ds *dataset) sawBatch(kind string, ids []string, upTo int64, r CompactReport) {
+	if seen := ds.svc.compactionBatch; seen != nil {
+		seen(kind, ids, upTo, r.read)
+	}
+	if read := ds.svc.compactionRead; read != nil {
+		read(kind, ids, r.read, r.readBytes, r.readLargest, r.readSecond)
+	}
+}
+
+// largestTwo is the largest of sizes and the next.
+func largestTwo(sizes ...int64) (int64, int64) {
+	var first, second int64
+	for _, s := range sizes {
+		switch {
+		case s > first:
+			first, second = s, first
+		case s > second:
+			second = s
+		}
+	}
+	return first, second
 }
 
 // holdRecord puts the record on the held list (compaction_held), for the
@@ -1187,34 +1265,40 @@ func (ds *dataset) compactBatch(ctx context.Context, kind string, ids []string, 
 		return report, fmt.Errorf("substrate/engine: compact %s up to seq %d: %w", kind, upTo, err)
 	}
 	ds.compacted(report)
-	if seen := ds.svc.compactionBatch; seen != nil {
-		seen(kind, ids, upTo, report.read)
-	}
+	ds.sawBatch(kind, ids, upTo, report)
 	return report, ds.compactionFault(compactionAfterBatch)
 }
 
-// recordLines is how many lines up to to each record of ids of kind has: its
-// own and the ones that carry an effect on it for another record, what a
-// compaction of it reads.
-func (ds *dataset) recordLines(ctx context.Context, kind string, ids []string, to int64) (map[string]int, error) {
-	out := map[string]int{}
+// recordLinesSQL is the lines up to $3 of each record of kind $1 with an id
+// in $2, what a compaction of it reads: its own and the ones that carry an
+// effect on it for another record, each with its record's id, its seq and
+// its stored size. A size is read off the row, never off the payload's TOAST
+// chunks, so it costs what counting the lines costs.
+const recordLinesSQL = `
+	SELECT record_id AS id, seq, pg_column_size(payload)::bigint AS size FROM changelog
+	WHERE kind = $1 AND record_id = ANY($2) AND seq <= $3
+	UNION ALL
+	SELECT f.record_id, f.seq, pg_column_size(c.payload)::bigint FROM changelog_foreign f
+	JOIN changelog c ON c.seq = f.seq
+	WHERE f.record_kind = $1 AND f.record_id = ANY($2) AND f.seq <= $3`
+
+// recordLines is what the lines up to to of each record of ids of kind come
+// to (recordLinesSQL).
+func (ds *dataset) recordLines(ctx context.Context, kind string, ids []string, to int64) (map[string]lineSize, error) {
+	out := map[string]lineSize{}
 	if len(ids) == 0 {
 		return out, nil
 	}
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, count(*) FROM (
-			SELECT record_id AS id FROM changelog WHERE kind = $1 AND record_id = ANY($2) AND seq <= $3
-			UNION ALL
-			SELECT record_id FROM changelog_foreign WHERE record_kind = $1 AND record_id = ANY($2) AND seq <= $3
-		) l GROUP BY id`, kind, ids, to)
+		SELECT id, count(*), coalesce(sum(size), 0)::bigint, coalesce(max(size), 0)::bigint FROM (`+recordLinesSQL+`) l GROUP BY id`, kind, ids, to)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id string
-		var n int
-		if err := rows.Scan(&id, &n); err != nil {
+		var n lineSize
+		if err := rows.Scan(&id, &n.lines, &n.bytes, &n.largest); err != nil {
 			return nil, err
 		}
 		out[id] = n
@@ -1222,20 +1306,41 @@ func (ds *dataset) recordLines(ctx context.Context, kind string, ids []string, t
 	return out, rows.Err()
 }
 
-// lineAt is the seq of the n-th line of the record, its own or one carrying
-// an effect on it, after after and up to to, or to where it has fewer.
-func (ds *dataset) lineAt(ctx context.Context, kind, id string, after, to int64, n int) (int64, error) {
-	var seq int64
+// stepAt is where the next step of a record's compaction after after ends,
+// up to to: at the line-bound-th line past after, or at the line that
+// takes the record's lines up to it past the byte bound beyond the largest
+// of them, or at to where neither comes first. By bytes the step ends before
+// that line, but for two steps that take it: the first of a stepping
+// (after is 0), which cannot tell the lines the record retains from a
+// step of an earlier pass from new ones, and one whose first new line it
+// is. What a record retains is under the byte bound beyond its largest line
+// (compactLong passes it by otherwise), and what lines come to beyond their
+// largest only grows as lines are added, so that line is always a new one:
+// every step takes at least one, and reads at most the byte bound beyond
+// the two largest lines it reads.
+func (ds *dataset) stepAt(ctx context.Context, kind, id string, after, to int64) (int64, error) {
+	var seq, prev int64
+	var n int
 	err := ds.db.QueryRowContext(ctx, `
-		SELECT seq FROM (
-			SELECT seq FROM changelog WHERE kind = $1 AND record_id = $2 AND seq > $3 AND seq <= $4
-			UNION
-			SELECT seq FROM changelog_foreign WHERE record_kind = $1 AND record_id = $2 AND seq > $3 AND seq <= $4
-		) l ORDER BY seq OFFSET $5 LIMIT 1`, kind, id, after, to, n-1).Scan(&seq)
-	if errors.Is(err, sql.ErrNoRows) {
+		SELECT seq, coalesce(prev, 0), n FROM (
+			SELECT seq, lag(seq) OVER w AS prev,
+				count(*) FILTER (WHERE seq > $4) OVER w AS n,
+				sum(size) OVER w - max(size) OVER w AS over
+			FROM (SELECT DISTINCT seq, size FROM (`+recordLinesSQL+`) l) l
+			WINDOW w AS (ORDER BY seq)
+		) s WHERE seq > $4 AND (n > $5 OR over > $6) ORDER BY seq LIMIT 1`,
+		kind, []string{id}, to, after, ds.batchLines(), ds.batchBytes()).Scan(&seq, &prev, &n)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return to, nil
+	case err != nil:
+		return 0, err
+	case n > ds.batchLines():
+		return prev, nil
+	case n == 1 || after == 0:
+		return seq, nil
 	}
-	return seq, err
+	return prev, nil
 }
 
 // batchRecords and batchLines are the bounds of one batch: the records, and
@@ -1252,6 +1357,15 @@ func (ds *dataset) batchLines() int {
 		return n
 	}
 	return compactionBatchLines
+}
+
+// batchBytes is the bound of one batch's stored bytes beyond its largest
+// line.
+func (ds *dataset) batchBytes() int64 {
+	if n := ds.svc.compactionBytes; n > 0 {
+		return n
+	}
+	return compactionBatchBytes
 }
 
 // cutoffBefore is the newest seq whose line was written before t, 0 for

@@ -78,6 +78,10 @@ type options struct {
 	// what it is told of each batch, in a test (WithTestCompactionBatches).
 	compactionBatches [2]int
 	compactionBatch   func(kind string, ids []string, upTo int64, lines int)
+	// compactionBytes and compactionRead are the pass's byte bound and what
+	// it is told each batch read, in a test (WithTestCompactionBytes).
+	compactionBytes int64
+	compactionRead  func(kind string, ids []string, lines int, bytes, largest, second int64)
 	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
 	archiveFault func(stage string) error
 	// shippedRefusal is the shipped upgrade's test seam
@@ -714,6 +718,8 @@ type service struct {
 	compactionFault    func(stage string) error
 	compactionBatches  [2]int
 	compactionBatch    func(kind string, ids []string, upTo int64, lines int)
+	compactionBytes    int64
+	compactionRead     func(kind string, ids []string, lines int, bytes, largest, second int64)
 	purgeKeepsHistory  bool
 	archive            archive.Store
 	archiving          bool
@@ -1253,6 +1259,8 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		compactionFault:       o.compactionFault,
 		compactionBatches:     o.compactionBatches,
 		compactionBatch:       o.compactionBatch,
+		compactionBytes:       o.compactionBytes,
+		compactionRead:        o.compactionRead,
 		purgeKeepsHistory:     o.purgeKeepsHistory,
 		archivePieceBytes:     o.archivePieceBytes,
 		archiveStepBytes:      o.archiveStepBytes,
