@@ -31,6 +31,7 @@ extension ChatAppState {
         state.baselined = false
         state.forgetOnSignOut = true
         state.approvalsKnown = false
+        state.recoveryStarted = nil
         return state
     }
 
