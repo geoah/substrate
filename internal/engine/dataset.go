@@ -365,6 +365,11 @@ type dataset struct {
 	// it up to date behind the open.
 	reindexFrom int
 	reindex     backgroundPass
+	// reindexOwed is a reindex a retake of the writer lease stopped and has
+	// not started again (leasefirst.go resetForRetake). It outlives a reset
+	// whose stop timed out: the run it canceled may be over by the next
+	// retake, which would otherwise find nothing to start again.
+	reindexOwed atomic.Bool
 
 	// reprojectPending is whether index re-derivations were owed at the open
 	// (reprojection.go checkIndexReprojections) or requested since by a
@@ -380,6 +385,14 @@ type dataset struct {
 	// compactionStop ends the repository's compaction passes
 	// (compactpass.go).
 	compactionStop func()
+	// compactionRun is the compactor's pass in flight, so a retake of the
+	// writer lease can end it and wait it out (endCompactionPass): a pass
+	// holds each kind's horizon from when it read it.
+	compactionRun struct {
+		mu     sync.Mutex
+		cancel context.CancelFunc
+		done   chan struct{}
+	}
 }
 
 func (ds *dataset) close() {

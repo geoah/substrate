@@ -53,7 +53,7 @@ func TestTheByteOrderMigrationSeesARegistrationEitherWay(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = conn.Close() }()
-		if err := applyMigration(ctx, conn, byteOrder); err == nil || !strings.Contains(err.Error(), "holds repository "+name) {
+		if err := applyMigration(ctx, conn, byteOrder, nil); err == nil || !strings.Contains(err.Error(), "holds repository "+name) {
 			t.Fatalf("0021 after a registration its server still holds: %v, want it refused naming %s", err, name)
 		}
 	})

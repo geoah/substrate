@@ -414,7 +414,11 @@ Pin the image to the target tag (`ghcr.io/geoah/substrate:0.105.0`) and
 apply every env var change the notes list. Start exactly one server process,
 and only after every old one has stopped. A rolling deploy that starts the
 new process beside the old one is refused, because a repository has one
-writer.
+writer. From v0.123.1 or before, see the old one gone first: no session
+whose `application_name` starts with `substrate-writer-` is left in
+`pg_stat_activity`. A server of those releases that only lost its
+connection takes its lease back once the new start has migrated, and goes
+on under the new schema.
 
 On compose, replace `build: .` or the old tag with that `image:`, then:
 

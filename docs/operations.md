@@ -1986,9 +1986,40 @@ share a data root
 ([0083](decisions/0083-a-repository-has-one-writer-and-a-second-is-refused-at-open.md)).
 The exclusion is **the database's writer lease**: the server takes a Postgres
 session-level advisory lock per repository, keyed by its id, on one
-connection pinned for the life of the process, when it opens the repository
-(at the boot check, before any import and before any write). It holds
-whatever the second process's data root or archive is.
+connection pinned for the life of the process. It holds whatever the second
+process's data root or archive is.
+
+**A start takes every lease before it applies a migration**
+([0324](decisions/0324-a-start-takes-every-writer-lease-before-it-migrates-and-a-retaken-lease-checks-the-migrations.md)).
+Its first act after checking the roles is to read every repository, under a
+lock that stops a new one from appearing, and take each one's lease. A server
+of a release before ids holds them by name, so a repository's name is asked
+of too. Then it applies the pending migrations on the same connection, and
+before each one checks again that no repository it does not hold has
+appeared. Only then does it sweep, build indexes or open a repository.
+
+So **a second start beside a running server** is refused before it has
+applied a migration or written a row, whatever it has pending: the running
+server holds its repositories' leases. The refusal names the repository and
+the holder, and `schema_migrations` is as it was. What a start does before
+the lease it has done: it made `repositories/` under its data root and the
+two isolation roles where they were absent, and beside a running server
+both exist already. A start that finds a database with no
+tables has nothing to hold and migrates it. A read-only command takes no
+lease and applies no migration.
+
+**A deployment replaces its one server process and never rolls two.** A
+rolling update that starts the new process before it stops the old one
+waits for ever: the new one is refused for as long as the old one runs.
+Stop the old process, then start the new one.
+
+**From v0.123.1 or before, see the old server gone before the first
+start.** A server of those releases retakes its lease without reading the
+migrations (below): one whose lease connection drops while the new start
+migrates, and which then stops, takes the lease back and goes on under a
+schema it was not built for. Stop it, and check that no session whose
+`application_name` starts with `substrate-writer-` is left in
+`pg_stat_activity`, before you start this release.
 
 A server that cannot take the lease **does not boot**. The error names the
 repository and the rule:
@@ -2051,6 +2082,21 @@ lock, and again immediately before it commits, so a write that queued behind
 another one cannot land under a lease that went away while it waited. Every
 later beat tries again, so a Postgres that restarted is recovered from without
 restarting the server, and the recovery is logged at `WARN`.
+
+**A retake checks the migrations.** A lease proves a session, not a process:
+while a server's connection was down, another may have started, migrated the
+database and stopped. So a retake reads `schema_migrations` and compares it
+with what the server started under. Where they differ, the server logs at
+`ERROR` that another server migrated the database meanwhile, lets its leases
+go, stops its passes and refuses every write with `503 unavailable` for the
+rest of its life: restart it. Where they are the same, every write stays
+refused while it stops the passes that hold a position in memory (the search
+reindex, the reprojection and a compaction pass in flight) and has the
+archive pass read its archive record again; then writes are accepted, and
+then the passes start again, so none of them goes on from where it stood
+while the lease was gone. A retake sees a migration, not a server: one of
+the same release that started, served and stopped while the lease was down
+goes unseen.
 
 A connection the server gave up on is not always one Postgres has noticed is
 gone: after a network blip the old backend can live on, still holding every

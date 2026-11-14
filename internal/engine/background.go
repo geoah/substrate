@@ -193,12 +193,13 @@ func (p *backgroundPass) again(ctx context.Context, done chan struct{}) bool {
 }
 
 // stop cancels the running pass and waits for it to return, up to the drain
-// budget the service's own shutdown gives a detached task. final is the
-// dataset closing: nothing starts after it. The service's shutdown already
-// waited its one budget for every detached task and said so if any outlived
-// it; waiting again there, once per repository it closes, would multiply
-// that budget. pass names the pass in the line logged otherwise.
-func (p *backgroundPass) stop(ds *dataset, final bool, pass string) {
+// budget the service's own shutdown gives a detached task, and reports
+// whether it returned. final is the dataset closing: nothing starts after
+// it. The service's shutdown already waited its one budget for every
+// detached task and said so if any outlived it; waiting again there, once
+// per repository it closes, would multiply that budget. pass names the pass
+// in the line logged otherwise.
+func (p *backgroundPass) stop(ds *dataset, final bool, pass string) bool {
 	p.mu.Lock()
 	if final {
 		p.closed = true
@@ -206,19 +207,21 @@ func (p *backgroundPass) stop(ds *dataset, final bool, pass string) {
 	cancel, done := p.cancel, p.done
 	p.mu.Unlock()
 	if cancel == nil {
-		return
+		return true
 	}
 	cancel()
 	if ds.svc.bg.stopping() {
-		return
+		return false
 	}
 	timer := time.NewTimer(backgroundDrainTimeout)
 	defer timer.Stop()
 	select {
 	case <-done:
+		return true
 	case <-timer.C:
 		ds.svc.log.Error("substrate: a background pass did not stop within the drain budget",
 			"repository", logSafeID(ds.scope.Repository), "pass", pass, "timeout", backgroundDrainTimeout)
+		return false
 	}
 }
 

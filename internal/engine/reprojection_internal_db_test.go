@@ -750,7 +750,7 @@ func TestTheByteOrderMigrationRefusesWhileAServerHoldsARepository(t *testing.T) 
 			t.Fatal(err)
 		}
 		defer func() { _ = conn.Close() }()
-		return applyMigration(ctx, conn, byteOrder)
+		return applyMigration(ctx, conn, byteOrder, nil)
 	}
 	if _, err := raw.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 21`); err != nil {
 		t.Fatal(err)
