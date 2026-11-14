@@ -431,12 +431,13 @@ func TestAnthropicSurfacesAnAPIError(t *testing.T) {
 // carried apart so the cost stamp prices it at its own rate.
 func TestAnthropicMapsStopReasonAndCacheCounts(t *testing.T) {
 	for reason, want := range map[string]string{
-		"end_turn":      StopEnd,
-		"stop_sequence": StopEnd,
-		"max_tokens":    StopLength,
-		"tool_use":      StopToolCall,
-		"refusal":       StopOther,
-		"pause_turn":    StopOther,
+		"end_turn":                      StopEnd,
+		"stop_sequence":                 StopEnd,
+		"max_tokens":                    StopLength,
+		"tool_use":                      StopToolCall,
+		"refusal":                       StopFilter,
+		"pause_turn":                    StopOther,
+		"model_context_window_exceeded": StopLength,
 	} {
 		t.Run(reason, func(t *testing.T) {
 			srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {

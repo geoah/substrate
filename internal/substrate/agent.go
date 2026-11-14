@@ -177,6 +177,12 @@ const (
 	// AgentEventReasoning is a streamed piece of the model's thinking, in Text,
 	// ahead of the turn's deltas; only from a model and wire that expose it.
 	AgentEventReasoning = "reasoning"
+
+	// AgentEventLagged ends an attach whose client read slower than the turn
+	// wrote (decision 0317): the stream stops, the turn runs on, and the
+	// client attaches again. It is not a failure of the turn, so it is not an
+	// error event.
+	AgentEventLagged = "lagged"
 )
 
 // AgentEvent is one streamed loop event (the chat transport; ndjson on the
@@ -232,6 +238,12 @@ type AgentEvent struct {
 	// attaches after reading the rows drops every replayed event at or below
 	// the highest turn it holds.
 	Turn int `json:"turn,omitempty"`
+	// At rides delta and reasoning (decision 0317): how many Unicode code
+	// points of this turn's text of that kind came before this piece, so a
+	// client writes the piece where it belongs and a replay is safe to apply
+	// twice. Text and reasoning count apart, each from 0 with its `turn`. A
+	// pointer, because the first piece's 0 is written.
+	At *int `json:"at,omitempty"`
 	// Status rides the idle event: the thread row's status.
 	Status string `json:"status,omitempty"`
 	// Job rides a toolFinished event of a background call (decision record

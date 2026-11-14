@@ -45,6 +45,12 @@ type fakeTurn struct {
 	errBody string
 	// retryAfter, with status set, is the failure's Retry-After header.
 	retryAfter string
+	// pieces, on a streamed turn, are the content deltas as sent, in place of
+	// content's two halves; content is still the one-shot reply. dropAfter,
+	// when positive, closes the connection after that many pieces, with no
+	// finish reason: a provider that drops the call mid-reply.
+	pieces    []string
+	dropAfter int
 	// arrived (closed on receipt) and release (blocks the response) build
 	// concurrency barriers.
 	arrived chan struct{}
@@ -250,9 +256,24 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Content streams as two deltas so the collector sees real chunking.
-	if turn.content != "" {
+	if turn.content != "" || len(turn.pieces) > 0 {
 		half := len(turn.content) / 2
-		for i, part := range []string{turn.content[:half], turn.content[half:]} {
+		parts := []string{turn.content[:half], turn.content[half:]}
+		if len(turn.pieces) > 0 {
+			parts = turn.pieces
+		}
+		for i, part := range parts {
+			if turn.dropAfter > 0 && i == turn.dropAfter {
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				if hj, ok := w.(http.Hijacker); ok {
+					if conn, _, err := hj.Hijack(); err == nil {
+						_ = conn.Close()
+					}
+				}
+				return
+			}
 			if part == "" {
 				continue
 			}

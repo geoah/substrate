@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -392,6 +393,10 @@ func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (i
 // refusal (mid-turn lease, disabled bundle) is logged, and the settle-time
 // re-check or the sweep is the retry. The continuation is held to whom the
 // resolution row (resolution) that starts the turn names in its `heldTo`.
+//
+// A chat thread's continuation runs as a detached chat turn does (decision
+// 0317, resumeChatTurn): it streams into a hub, so an attach shows it and a
+// stop stops it, and it holds one of its person's chat-turn slots.
 func (ds *dataset) continueThread(ctx context.Context, threadID, resolution string) {
 	ctx, err := ds.heldBy(ctx, typeMessage, resolution)
 	if err != nil {
@@ -415,8 +420,13 @@ func (ds *dataset) continueThread(ctx context.Context, threadID, resolution stri
 	}
 	defer release()
 	mode, _ := row.Props["mode"].(string)
-	_, err = ds.runAgent(ctx, ag, agentInvocation{mode: mode, threadID: threadID, resume: true})
-	if errors.Is(err, errResumeStopped) {
+	in := agentInvocation{mode: mode, threadID: threadID, resume: true}
+	if mode == agentModeChat {
+		err = ds.resumeChatTurn(ctx, ag, in)
+	} else {
+		_, err = ds.runAgent(ctx, ag, in)
+	}
+	if errors.Is(err, errResumeStopped) || errors.Is(err, errResumeWaits) {
 		return
 	}
 	if err != nil && ctx.Err() == nil {
@@ -424,6 +434,66 @@ func (ds *dataset) continueThread(ctx context.Context, threadID, resolution stri
 		// continuation that failed on its own; the sweep is the retry.
 		ds.svc.log.Warn("substrate: resume: the continuation failed", "thread", threadID, "agent", agentID, "error", err)
 	}
+}
+
+// errResumeWaits ends a chat thread's continuation that found its person's
+// chat-turn slots all taken: nothing was claimed, the resolution row stays
+// unconsumed, and the sweep runs the continuation once a slot is free.
+var errResumeWaits = errors.New("the person's chat turns are all running: the resume waits for the sweep")
+
+// resumeChatTurn runs a chat thread's continuation as a detached chat turn
+// (decision 0317): the loop publishes into a hub the thread's attaches and
+// stops reach, runs on a context a stop and the shutdown cancel, and writes
+// and settles past that cancellation, so a stop or a shutdown settles it
+// `stopped` with what it streamed kept, as a sent turn's does. It holds one
+// of its person's chat-turn slots from before the claim to after the settle;
+// with none free it runs nothing (errResumeWaits). It returns when the turn
+// has settled: the caller is already a background task of the service.
+func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) error {
+	person, limit := ds.turnPerson(ctx), ds.svc.chatTurnsPerPerson
+	if !ds.chatTurns.take(person, limit) {
+		ds.svc.log.Info("substrate: resume: the person's chat turns are all running, the resume waits for the sweep",
+			"thread", in.threadID, "limit", limit)
+		return errResumeWaits
+	}
+	defer ds.chatTurns.give(person)
+	hub := newTurnHub()
+	in.hub = hub
+	runCtx, l, err := ds.prepareAgentRun(ctx, ag, in)
+	if err != nil {
+		hub.finish(nil, err)
+		return err
+	}
+	// The run keeps the context's values (whom it is held to, the fence's
+	// lease, the spend admission) and drops its cancellation.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(runCtx))
+	defer cancel()
+	hub.setRun(runCtx, cancel)
+	defer context.AfterFunc(ds.svc.bg.ctx, cancel)()
+	res, err := (*substrate.AgentResult)(nil), errors.New("the resumed chat turn ended without settling")
+	defer func() { hub.finish(res, err) }()
+	res, err = l.run(runCtx)
+	return err
+}
+
+// turnPerson is the person whose chat-turn slots a turn on ctx counts
+// under: the identity a request's token acts for, and for work with no
+// request behind it (a resumed turn) the person it is held to, which is the
+// same key that person's own sends count under. Work no person stands
+// behind counts under the repository.
+func (ds *dataset) turnPerson(ctx context.Context) string {
+	if id := substrate.IdentityFrom(ctx); id != "" {
+		return id
+	}
+	switch behalf := substrate.OnBehalfOfFrom(ctx); {
+	case behalf == substrate.ActorPerson:
+		if first, _ := ds.firstPerson.Load().(string); first != "" {
+			return first
+		}
+	case strings.HasPrefix(string(behalf), substrate.PersonActorPrefix):
+		return strings.TrimPrefix(string(behalf), substrate.PersonActorPrefix)
+	}
+	return ds.scope.Repository
 }
 
 // SweepResolutions resumes settled threads whose newest resolution row

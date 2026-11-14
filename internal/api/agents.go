@@ -168,7 +168,7 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 	// A drain before the first event waits for it: the refusal or the
 	// stream it opens is still this request's answer.
 	draining := h.draining
-	ticker := time.NewTicker(heartbeatInterval)
+	ticker := time.NewTicker(agentHeartbeatInterval)
 	defer ticker.Stop()
 	// A revoke and a sign out everywhere move the changelog, so the stream
 	// reads its token again whenever it moves, and ends with its token.
@@ -263,14 +263,16 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 }
 
 // errorEvent is the event a stream that already sent its 200 ends with. Four
-// different things end a stream this way, and the event tells them apart:
+// different things end a stream this way, and the event tells them apart (a
+// reader that fell behind the turn is not one of them: its stream ends with
+// a lagged event, which the hub emits):
 //
 //   - The turn failed: `cause` is the cause its thread settled with, from
 //     the closed set, with `retryAfter` where the provider named a wait. No
 //     other error event carries a cause.
 //   - The stream's token no longer stands: `code` is `auth` (leaseEnded).
-//   - This reader fell behind the turn, or the person's roles changed:
-//     `code` is `unavailable`, and the client attaches again.
+//   - The person's roles changed: `code` is `unavailable`, and the client
+//     attaches again.
 //   - The server faulted while producing the stream: `code` is `internal`
 //     and the words are masked.
 //

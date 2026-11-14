@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -102,15 +103,20 @@ func TestASlowSubscriberIsDroppedNotWaitedFor(t *testing.T) {
 	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th"})
 	block, ready := make(chan struct{}), make(chan struct{})
 	ended := make(chan error, 1)
+	var last substrate.AgentEvent
 	go func() {
 		first := true
-		_, err := h.attach(context.Background(), func(substrate.AgentEvent) {
+		res, err := h.attach(context.Background(), func(ev substrate.AgentEvent) {
 			if first {
 				first = false
 				close(ready)
 			}
 			<-block
+			last = ev
 		})
+		if res != nil {
+			err = errors.New("a dropped attach answered a result")
+		}
 		ended <- err
 	}()
 	// Subscribed: the attach is emitting its replay.
@@ -120,9 +126,96 @@ func TestASlowSubscriberIsDroppedNotWaitedFor(t *testing.T) {
 		h.publish(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "x"})
 	}
 	close(block)
-	if err := <-ended; !errors.Is(err, errAttachFellBehind) {
-		t.Fatalf("a slow attach ended with %v, want errAttachFellBehind", err)
+	// Falling behind is no failure of the turn: the attach ends with its own
+	// event, naming the thread to attach to again, and no error.
+	if err := <-ended; err != nil {
+		t.Fatalf("a slow attach ended with %v, want no error", err)
 	}
+	if last.Kind != substrate.AgentEventLagged || last.Thread != "th" {
+		t.Fatalf("a slow attach ended on %+v, want the lagged event", last)
+	}
+}
+
+// at is a position for an event.
+func at(n int) *int { return &n }
+
+// applyAt writes a piece into text at its position, counted in code points,
+// as a client does: over what is there, never emptying it first.
+func applyAt(text []rune, ev substrate.AgentEvent) []rune {
+	piece := []rune(ev.Text)
+	end := *ev.At + len(piece)
+	for len(text) < end {
+		text = append(text, ' ')
+	}
+	copy(text[*ev.At:], piece)
+	return text
+}
+
+// A replay holds a turn's consecutive pieces as one event at the first
+// piece's position, so a client that already shows part of the turn writes
+// the replay over it and the live pieces after it, and reads the same text
+// as one that saw every piece.
+func TestAReplayedTurnIsPlacedByPosition(t *testing.T) {
+	t.Parallel()
+	h := newTurnHub()
+	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th"})
+	pieces := []string{"The balcony ", "plants 🌿 need ", "wa", "ter twice a week."}
+	var live []substrate.AgentEvent
+	pos := 0
+	for _, p := range pieces {
+		ev := substrate.AgentEvent{Kind: substrate.AgentEventDelta, Turn: 3, Text: p, At: at(pos)}
+		pos += len([]rune(p))
+		live = append(live, ev)
+	}
+	// A reasoning piece between two runs of text counts on its own.
+	h.publish(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Turn: 3, Text: "thinking", At: at(0)})
+	for _, ev := range live[:3] {
+		h.publish(ev)
+	}
+	// A client that saw the first two pieces attaches again mid-turn.
+	shown := applyAt(applyAt(nil, live[0]), live[1])
+	done := make(chan []substrate.AgentEvent, 1)
+	go func() {
+		var got []substrate.AgentEvent
+		_, _ = h.attach(context.Background(), func(ev substrate.AgentEvent) { got = append(got, ev) })
+		done <- got
+	}()
+	waitSubscribed(t, h)
+	h.publish(live[3])
+	h.finish(&substrate.AgentResult{Thread: "th"}, nil)
+	var replayed int
+	for _, ev := range <-done {
+		if ev.Kind != substrate.AgentEventDelta {
+			continue
+		}
+		if ev.At == nil || ev.Turn != 3 {
+			t.Fatalf("a delta carries no position: %+v", ev)
+		}
+		replayed++
+		shown = applyAt(shown, ev)
+	}
+	// The three retained pieces came back as one event at 0, then the live one.
+	if replayed != 2 {
+		t.Fatalf("the attach saw %d delta events, want the merged replay and one live piece", replayed)
+	}
+	if want := "The balcony plants 🌿 need water twice a week."; string(shown) != want {
+		t.Fatalf("placed by position the turn reads %q, want %q", string(shown), want)
+	}
+}
+
+// waitSubscribed blocks until an attach is subscribed to h.
+func waitSubscribed(t *testing.T, h *turnHub) {
+	t.Helper()
+	for range 2000 {
+		h.mu.Lock()
+		n := len(h.subs)
+		h.mu.Unlock()
+		if n > 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("no attach subscribed")
 }
 
 func TestAStopBeforeTheRunContextTakesEffect(t *testing.T) {

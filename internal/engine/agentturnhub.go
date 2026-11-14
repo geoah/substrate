@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"unsafe"
 
@@ -19,7 +18,7 @@ import (
 // agentTurnReplayBytes bounds the memory a hub retains for a late attacher:
 // each retained event's own size plus its text, arguments, output and error.
 // Consecutive deltas (or reasoning pieces) of one turn are retained as one
-// event, so a reply
+// event, which keeps the first piece's position (`at`), so a reply
 // streamed a token at a time costs its text, not an event per token. Past
 // the bound the hub keeps the prefix it has and retains nothing further;
 // live subscribers still receive everything, and the thread's
@@ -29,11 +28,6 @@ const agentTurnReplayBytes = 4 << 20
 // agentTurnSubscriberBuffer is how many events a subscriber may fall behind
 // before the hub drops it. publish never blocks the loop on a slow client.
 const agentTurnSubscriberBuffer = 256
-
-// errAttachFellBehind ends an attach whose client read slower than the turn
-// wrote: the hub dropped it rather than hold the loop. It is not the turn's
-// failure, and the same attach made again succeeds, so it is ErrUnavailable.
-var errAttachFellBehind = fmt.Errorf("%w: stream fell behind; attach again", substrate.ErrUnavailable)
 
 type turnSubscriber struct {
 	ch      chan substrate.AgentEvent
@@ -255,8 +249,10 @@ func (h *turnHub) wait(ctx context.Context) (*substrate.AgentResult, error) {
 
 // attach streams the turn through emit: the thread event, the retained
 // replay, a truncated frame when the replay overflowed, then live events,
-// then done. It returns the settled result, the loop's error, ctx.Err() when
-// the client left first, or errAttachFellBehind.
+// then done. It returns the settled result, the loop's error, or ctx.Err()
+// when the client left first. A client that read slower than the turn wrote
+// gets one lagged event and no result: the hub dropped it rather than hold
+// the loop, which is no failure of the turn, and it attaches again.
 func (h *turnHub) attach(ctx context.Context, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	if emit == nil {
 		emit = func(substrate.AgentEvent) {}
@@ -304,7 +300,8 @@ func (h *turnHub) attach(ctx context.Context, emit func(substrate.AgentEvent)) (
 		dropped := sub.dropped
 		h.mu.Unlock()
 		if dropped {
-			return nil, errAttachFellBehind
+			emit(substrate.AgentEvent{Kind: substrate.AgentEventLagged, Thread: h.threadID()})
+			return nil, nil
 		}
 	}
 	res, err := h.wait(ctx)
@@ -315,6 +312,16 @@ func (h *turnHub) attach(ctx context.Context, emit func(substrate.AgentEvent)) (
 		emit(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
 	}
 	return res, nil
+}
+
+// threadID is the thread the turn runs on, "" before its thread event.
+func (h *turnHub) threadID() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.thread == nil {
+		return ""
+	}
+	return h.thread.Thread
 }
 
 func (h *turnHub) unsubscribe(sub *turnSubscriber) {

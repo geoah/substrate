@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -826,6 +827,9 @@ type agentLoop struct {
 	// sent is set once the claim's own transaction wrote the turn's user row
 	// under the id its client chose (putSentMessage).
 	sent bool
+	// turnStreamed is set once the completion holding replyTurn streamed a
+	// piece: its events carry positions under that ordinal.
+	turnStreamed bool
 	// settledStatus and settledReason are what the last settle committed,
 	// which a stop arriving during it may have turned into `stopped`, and
 	// settledCause the cause it wrote beside them.
@@ -1038,15 +1042,7 @@ loop:
 			if stopped, why := l.stopReason(ctx); stopped {
 				// A stop or a shutdown ended the call: what streamed so far
 				// is the turn's reply, written before the settle.
-				status, reason, reply = threadStopped, why, l.partial.String()
-				if reply != "" {
-					// The settle comes first: a partial reply that cannot be
-					// written is logged, and the thread still settles.
-					if perr := l.putReply(ctx, l.reasoning.stamp(map[string]any{"role": "assistant", "content": reply})); perr != nil {
-						l.ds.svc.log.Warn("substrate: a stopped chat turn's partial reply was not written",
-							"thread", l.threadID, "error", perr)
-					}
-				}
+				status, reason, reply = threadStopped, why, l.keepPartial(ctx, cutByStop)
 				break
 			}
 			if ctx.Err() == nil && errors.Is(lctx.Err(), context.DeadlineExceeded) {
@@ -1054,8 +1050,9 @@ loop:
 				// (the outer context is live). It settles like the other two
 				// deadline sites, on this thread and with its spend so far: an
 				// error here would retry the delivery on a fresh thread with a
-				// fresh deadline, buying the same overrun again.
-				reason = deadlineReason(final)
+				// fresh deadline, buying the same overrun again. What the call
+				// had streamed is the turn's reply, as a stop's is.
+				reason, reply = deadlineReason(final), l.keepPartial(ctx, cutByStop)
 				break
 			}
 			if errors.Is(err, llm.ErrContextTooLong) && !overflowRetried {
@@ -1088,8 +1085,12 @@ loop:
 				return nil, failed(fail, refusal)
 			}
 			// The cause is the wire's own sorting of the failure, and the
-			// reason the words the thread may keep (agentcause.go).
+			// reason the words the thread may keep (agentcause.go). What the
+			// call streamed before it failed is kept as the turn's reply,
+			// written before the settle: a provider that drops the
+			// connection after three paragraphs costs the fourth, not all.
 			fail, words := l.modelFailure(err)
+			reply = l.keepPartial(ctx, cutByFailure)
 			serr := l.settleAfterFailure(ctx, fail, words, reply)
 			if isAllowance(err) {
 				// The allowance's own refusal, whose sentinel the entries
@@ -1116,6 +1117,7 @@ loop:
 		if len(calls) == 0 {
 			// The final tool-free reply is the loop's natural end.
 			props := map[string]any{"role": "assistant", "content": content}
+			l.stampCut(props, cutOf(res.Stop))
 			l.mentions = l.stampMentions(ctx, props, content, messages)
 			if err := l.putReply(ctx, l.reasoning.stamp(props)); err != nil {
 				return nil, l.failWrite(ctx, err)
@@ -1135,6 +1137,7 @@ loop:
 		if content != "" {
 			props["content"] = content
 		}
+		l.stampCut(props, cutOf(res.Stop))
 		if err := l.putReply(ctx, l.reasoning.stamp(props)); err != nil {
 			return nil, l.failWrite(ctx, err)
 		}
@@ -1403,13 +1406,78 @@ func (l *agentLoop) settleContext(ctx context.Context) (context.Context, context
 	return l.writeContext(ctx)
 }
 
+// The ways a reply is cut short, as an assistant row's `cutBy` says them
+// (decision 0317). A row with none is a reply the model finished.
+const (
+	propCutBy = "cutBy"
+	// cutByLength is the model's output limit, or its context window.
+	cutByLength = "length"
+	// cutByFilter is the provider withholding the rest.
+	cutByFilter = "filter"
+	// cutByStop is the run ending the call: a hand's stop, a shutdown, or
+	// the run's own deadline.
+	cutByStop = "stop"
+	// cutByFailure is the call failing after it had streamed text.
+	cutByFailure = "failure"
+)
+
+// cutOf is the `cutBy` of a reply the model's call returned with the wire's
+// stop reason: "" for one it finished, or ended to call tools.
+func cutOf(stop string) string {
+	switch stop {
+	case llm.StopLength:
+		return cutByLength
+	case llm.StopFilter:
+		return cutByFilter
+	}
+	return ""
+}
+
+// stampCut writes how a reply was cut short into its row's properties. A
+// repository whose stored message kind predates the property (a shipped
+// upgrade that has not landed) writes the row without it: the reply must
+// land whatever the declaration says.
+func (l *agentLoop) stampCut(props map[string]any, cut string) {
+	if cut == "" {
+		return
+	}
+	ty, ok := l.ds.registry().ByIdentity(typeMessage)
+	if !ok {
+		return
+	}
+	if _, declared := ty.Prop(propCutBy); declared {
+		props[propCutBy] = cut
+	}
+}
+
+// keepPartial writes what the current completion streamed before it was cut
+// short as the turn's assistant row, at the ordinal its deltas carried, and
+// answers that text: "" when nothing streamed. The caller's settle comes
+// after it whatever happens here: a partial reply that cannot be written is
+// logged, and the thread still settles.
+func (l *agentLoop) keepPartial(ctx context.Context, cut string) string {
+	text := l.partial.String()
+	if text == "" {
+		return ""
+	}
+	props := l.reasoning.stamp(map[string]any{"role": "assistant", "content": text})
+	l.stampCut(props, cut)
+	if err := l.putReply(ctx, props); err != nil {
+		l.ds.svc.log.Warn("substrate: a chat turn's partial reply was not written",
+			"thread", l.threadID, "cutBy", cut, "error", err)
+	}
+	// Written once: a later path of the same run must not write it again.
+	l.partial.Reset()
+	return text
+}
+
 // putReply writes the current completion's assistant row at the ordinal its
 // deltas carried, then releases the reservation.
 func (l *agentLoop) putReply(ctx context.Context, props map[string]any) error {
 	wctx, done := l.writeContext(ctx)
 	defer done()
 	turn := l.reserveReplyTurn()
-	l.replyTurn = -1
+	l.replyTurn, l.turnStreamed = -1, false
 	return l.putMessageAt(wctx, l.actor, turn, props)
 }
 
@@ -1765,9 +1833,17 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 			// No lease, or an expired one: a crashed turn — take over.
 		}
 		// Under the row lock too: a continue takes up unfinished work, and a
-		// thread whose last turn finished has none.
+		// thread whose last turn finished has none, unless its reply was cut
+		// short (the model's limit, a filter), which settles `ok` all the
+		// same.
 		if l.in.continued && status == threadOK {
-			return fmt.Errorf("%w: %w: thread %s: send a message to go on", substrate.ErrConflict, substrate.ErrNothingToContinue, l.in.threadID)
+			cut, err := t.lastReplyCut(l.in.threadID)
+			if err != nil {
+				return err
+			}
+			if !cut {
+				return fmt.Errorf("%w: %w: thread %s: send a message to go on", substrate.ErrConflict, substrate.ErrNothingToContinue, l.in.threadID)
+			}
 		}
 		l.threadID = l.in.threadID
 		l.leaseAt = l.leaseUntil()
@@ -1781,6 +1857,33 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		}
 		return l.putSentMessage(t)
 	})
+}
+
+// lastReplyCut reports whether the thread's newest turn is an assistant
+// reply that was cut short (`cutBy`). The engine's own rows, a summary and a
+// resolution's system row, are not turns of the conversation and are passed
+// over.
+func (t *txn) lastReplyCut(threadID string) (bool, error) {
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
+	if err != nil {
+		return false, err
+	}
+	var role, cut string
+	err = t.row(`
+		SELECT coalesce(e.props->>'role', ''), coalesce(e.props->>'`+propCutBy+`', '') FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND coalesce(e.props->>'role', '') NOT IN (`+b.arg(msgRoleSystem)+`, `+b.arg(msgRoleSummary)+`)
+		ORDER BY (e.props->>'turn')::bigint DESC, e.created_at DESC LIMIT 1`,
+		b.args...).Scan(&role, &cut)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return role == "assistant" && cut != "", nil
 }
 
 // loadThreadRows reads a continued thread's message rows in stored order,
@@ -3486,15 +3589,33 @@ func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.
 	l.partial.Reset()
 	var onDelta func(llm.Delta)
 	if l.in.emit != nil {
+		// A turn's text is never restarted: a call made again for a turn that
+		// already streamed (the retry after a context overflow) streams under
+		// a new ordinal, so a piece's position always counts from the first
+		// piece its `turn` ever carried. The abandoned ordinal names no row.
+		if l.replyTurn >= 0 && l.turnStreamed {
+			l.replyTurn = -1
+		}
+		l.turnStreamed = false
 		turn := l.reserveReplyTurn()
+		// Each piece says how many code points of its kind this turn streamed
+		// before it (decision 0317): text and reasoning count apart, and both
+		// start at 0 with the turn.
+		textAt, reasoningAt := 0, 0
 		onDelta = func(d llm.Delta) {
 			switch {
 			case d.Reasoning != "":
+				at := reasoningAt
+				reasoningAt += utf8.RuneCountInString(d.Reasoning)
+				l.turnStreamed = true
 				l.reasoning.add(d.Reasoning, time.Now())
-				l.event(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: d.Reasoning, Turn: turn})
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: d.Reasoning, Turn: turn, At: &at})
 			case d.Text != "":
+				at := textAt
+				textAt += utf8.RuneCountInString(d.Text)
+				l.turnStreamed = true
 				l.partial.WriteString(d.Text)
-				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text, Turn: turn})
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: d.Text, Turn: turn, At: &at})
 			}
 		}
 	}
