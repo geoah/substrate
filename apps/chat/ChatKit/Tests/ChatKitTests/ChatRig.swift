@@ -72,7 +72,7 @@ func featuresRoute(agents revision: Int) -> ChatServer.Route {
 /// background work.
 struct ChatRig {
     let server: ChatServer
-    let clock = TestClock()
+    let clock: TestClock
     let notifications = RecordedNotifications()
     let background = ScriptedBackground()
     let base: URL
@@ -87,15 +87,34 @@ struct ChatRig {
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
         base: URL = temporaryFolder("chat")
     ) {
-        server = ChatServer(routes)
+        self.init(server: ChatServer(routes), transport: nil, scopes: scopes, platform: platform, base: base, clock: TestClock(), ids: SequentialIDs())
+    }
+
+    /// The app launched over another server than the scripted one, on a
+    /// clock and with ids the caller keeps: a launch after a kill goes on
+    /// in the same world, and mints no id a launch before it did.
+    init(transport: any HTTPTransport, clock: TestClock, ids: any IDSource, base: URL, platform: ChatPlatform = .ios) {
+        self.init(server: ChatServer(), transport: transport, scopes: nil, platform: platform, base: base, clock: clock, ids: ids)
+    }
+
+    private init(
+        server: ChatServer, transport: (any HTTPTransport)?, scopes: [String]?, platform: ChatPlatform, base: URL, clock: TestClock,
+        ids: any IDSource
+    ) {
+        self.server = server
+        self.clock = clock
         self.scopes = scopes
         self.base = base
         storage = ChatStorage(base: base)
-        let client = SubstrateClient(server: origin, token: "secret", transport: server)
+        let transport = transport ?? server
+        var client = SubstrateClient(server: origin, token: "secret", transport: transport)
+        // The client waits out a busy server's 429 or 503 before it asks
+        // again: on the rig's clock, like every other wait.
+        client.pause = { seconds in try await clock.sleep(until: clock.now.addingTimeInterval(seconds)) }
         let environment = AppEnvironment(
-            clock: clock, ids: SequentialIDs(), locale: Locale(identifier: "en_US"),
+            clock: clock, ids: ids, locale: Locale(identifier: "en_US"),
             timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
-            devices: DeviceServices(transport: server, notifications: notifications, background: background))
+            devices: DeviceServices(transport: transport, notifications: notifications, background: background))
         harness = ControllerHarness(
             ChatApp(storage: storage, preferences: preferences, platform: platform, verifiesParts: true), clock: clock,
             environment: environment)
