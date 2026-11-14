@@ -82,6 +82,7 @@ import Testing
         .padding(.top, 12)
         .padding(.bottom, 16)
         .environment(\.recordTitles, screen?.titles ?? [:])
+        .replyLinks()
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: .infinity, alignment: streaming ? .bottom : .top)
         .clipped()
@@ -105,6 +106,9 @@ import Testing
                 }
             })
         #expect(kinds == ["paragraph", "heading", "code", "quote", "list", "table", "rule"])
+        // And is long enough to be drawn as more than one row.
+        guard case let .assistant(reply)? = host.conversation(key)?.turns.last?.body else { return }
+        #expect(reply.pages.count > 1 && reply.blocks.rows.map(\.block) == blocks)
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil), .timeLimit(.minutes(5)))

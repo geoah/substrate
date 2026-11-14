@@ -378,18 +378,63 @@ falling back to `DictationTranscriber` where the transcriber is unavailable.
 
 ### Markdown
 
-Replies are Markdown. A block parser (paragraphs, headings, nested ordered
-and unordered lists, task items, fenced and indented code, quotes, tables,
-rules) renders blocks as SwiftUI views and inline spans through
-`AttributedString(markdown:)` with `inlineOnlyPreservingWhitespace`. It is
-safe on any prefix of a reply: an unclosed fence is code, a half table is
-text. Settled messages are parsed once and memoized; only the streaming one
-re-parses on each flush; text past 200,000 characters is plain. Code blocks
-scroll sideways and have Copy. A link opens only when it is `http`, `https`,
-`mailto`, a console path (`[Books](/applets/books)`, which opens that page
-of the console on the signed-in server) or a record link (below), and one
-that opens outside the app carries the external-link mark beside its text,
-which VoiceOver reads as "opens in your browser".
+Replies are Markdown. A block parser in ChatKit (paragraphs, headings,
+nested ordered and unordered lists, task items, fenced and indented code,
+quotes, tables, rules) reads a reply into blocks, and the views draw each
+block as SwiftUI and its inline spans through `AttributedString(markdown:)`
+with `inlineOnlyPreservingWhitespace`. Text past 200,000 characters is
+plain.
+
+- **The presenter parses.** An assistant turn's presentation carries its
+  blocks as a keyed list of rows (`AssistantTurn.blocks`), made where the
+  presentation is made, on the runtime's executor and never the main
+  thread. A row's id is its block's position and a hash of what it holds
+  (FNV-1a, the same on every device), so a finished block is the same row
+  at every flush after it and only the last, still being written, is
+  another. A reply's rows are kept for its text: a piece of reasoning or a
+  tool's event leaves them as they were. A stored turn's are made once per
+  read.
+- **One parse at a time, at most 20 a second.** A reply's pieces share a
+  50 ms window (`Conversation.textWindow`), so its text is presented, and
+  so parsed, once in each however fast they arrive. The presenter runs one
+  at a time, so the pieces that arrive during a parse wait and are parsed
+  together, and no presentation follows one made of newer text.
+- **Unfinished Markdown is closed before it is parsed** (`Markdown.closed`),
+  while a reply is being written, so the page only ever grows: an open
+  emphasis, strikethrough or code span is closed where the text ends; a
+  marker with nothing in it yet, or that may be half of a longer one, is
+  left out until more arrives; a link reads as its label until its address
+  is whole; a table is a header row from its first cell, the line under it
+  written for it; a task item's box is drawn once its brackets are there;
+  a line that is only the start of a block (a bullet's mark, one or two
+  dashes, part of a fence's closing line) waits. Inside code nothing is
+  touched. A finished reply is parsed as it stands, so what a stream drew
+  at its end is what its stored row draws.
+- **A long reply is several rows of the transcript.** Past about a screen
+  and a half of text (`Markdown.pageWeight`) a reply's next block starts
+  another row (`AssistantTurn.pages`), and what stands under its text
+  (sources, linked records, tool calls) is a row of its own. A block's
+  page depends on the blocks before it alone, so pages do not move as the
+  reply is written. The lazy stack then measures rows of about a screen,
+  and a flush lays out the last one.
+- **Nothing a reply's views read changes at a flush but its own rows.** A
+  block is drawn by its position, so the one being written keeps its view
+  (and where its code or its table was scrolled to), and a finished one is
+  an equal value there, which is not drawn again. What a link opens and
+  how a sub-agent's conversation opens are set once above the transcript
+  as values that compare (`replyLinks()`, `OpenThreadAction`): an action
+  set as a closure at each draw read as changed, and every text under it
+  resolved again.
+
+Two texts are still parsed where they are drawn, once each and kept: a
+compaction's summary and a sub-agent's answer under its call, which show
+only when opened and are never being written.
+
+Code blocks scroll sideways and have Copy. A link opens only when it is
+`http`, `https`, `mailto`, a console path (`[Books](/applets/books)`, which
+opens that page of the console on the signed-in server) or a record link
+(below), and one that opens outside the app carries the external-link mark
+beside its text, which VoiceOver reads as "opens in your browser".
 
 ## The interface
 
@@ -438,7 +483,8 @@ bubble is a tinted fill. The transcript softens under the composer with
 - Title: the chat's title (tap to rename, optimistic); subtitle: "with
   <Agent>", or "Working…" while it runs.
 - **User turns**: right-aligned tinted bubbles; Copy in the context menu.
-- **Assistant turns**: full width, Markdown, no bubble; Copy and Share.
+- **Assistant turns**: full width, Markdown, no bubble; Copy and Share (Copy
+  alone while the reply is being written).
 - **Thinking**: "Thinking…" with a shimmer while the model reasons, then
   "Thought for 6 s", collapsed; tap to read.
 - **Tool calls**: one line per call in the console's words ("Searched for
@@ -754,7 +800,7 @@ may do and for how long; the app never sees the password.
 
 **Polish (v1)**
 
-22. Delta coalescing; memoized Markdown; equatable turn views; a presenter made of kept parts, and a tree published in parts.
+22. Delta coalescing; Markdown parsed in the presenter, closed while it is written, a long reply in several rows; equatable turn views; a presenter made of kept parts, and a tree published in parts.
 23. Haptics; the send/stop morph; the thinking shimmer.
 24. Search over titles, previews and cached transcripts.
 25. Technical details.
@@ -778,6 +824,14 @@ may do and for how long; the app never sees the password.
   terminal frames), replay dropping by set membership, the Markdown parser on
   every prefix of a document, previews, titles and day groups, the tool words
   and path encoding.
+- A reply as it is written (`MarkdownClosingTests`, `MarkdownRowsTests`):
+  at every prefix of several replies, what is drawn is the start of what
+  the whole reply draws, with no marker in it the reply does not show, it
+  never shrinks, and a finished block never changes kind; the same prefixes
+  parsed as they stand fail that, which is how the test is known to see.
+  Only the last row changes between two flushes; the streamed path ends on
+  the blocks of a one-shot parse; pages never move; a reply is parsed once
+  for its text and once a window.
 - The list's rules against a scripted server (`ChatServer`, a transport
   that holds a stream part way), through the kit's `ControllerHarness`, each
   of the seven by its number: a send streams and hands
@@ -835,8 +889,8 @@ flush of the stream, or a key typed:
 | main thread | every pass of the main run loop from waking to waiting again, summed, per step; and the longest pass |
 | presenter | each controller's presenter, by its type: time per step, the longest run, and runs per step |
 | flush, publish | the tree presented and sent, on the runtime's executor; the half of a publish the model does on the main thread |
-| body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a reply's Markdown, a Markdown block, the composer |
-| Markdown | parses per step and what one took; lines of inline Markdown made into styled text |
+| body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a row of a reply's text and what stands under it, its Markdown, a Markdown block, the composer |
+| Markdown | parses per step and what one took, and what closing the text for display took, both on the runtime's executor; lines of inline Markdown made into styled text on the main thread |
 | key to drawn | from the key to the end of the run loop's pass it was pressed in, which has drawn it |
 
 The numbers are a machine's: the table's first line says which, and a

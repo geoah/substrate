@@ -2,8 +2,7 @@ import ChatKit
 import SubstrateKit
 import SwiftUI
 
-/// Parsed blocks, memoized by text: a settled reply is parsed once, and only
-/// the streaming one parses again on each flush.
+/// Parsed blocks, memoized by text, for the texts a view parses itself.
 @MainActor
 enum MarkdownCache {
     private static var blocks: [String: [MarkdownBlock]] = [:]
@@ -20,20 +19,35 @@ enum MarkdownCache {
     }
 }
 
-/// A reply's Markdown, as SwiftUI views.
+/// Markdown as SwiftUI views: a reply's rows, parsed where its presentation
+/// was made, or a text parsed here once and kept (a summary, a sub-agent's
+/// answer under its call), which is never one being written. What a link in
+/// it opens is the transcript's to say (`replyLinks()`), set once above it.
 struct MarkdownView: View {
-    @Environment(\.openRecord) private var openRecord
-    @Environment(\.openURL) private var openURL
-    let text: String
-    /// The streaming reply is parsed again with every flush and never cached.
-    var live = false
+    private let text: String
+    private let rows: ArraySlice<MarkdownRow>?
     /// The `kind/id` paths the engine found no record for: their links read
     /// as their text alone.
-    var missing: Set<String> = []
+    private let missing: Set<String>
+
+    init(text: String, missing: Set<String> = []) {
+        self.text = text
+        rows = nil
+        self.missing = missing
+    }
+
+    init(rows: ArraySlice<MarkdownRow>, missing: Set<String> = []) {
+        text = ""
+        self.rows = rows
+        self.missing = missing
+    }
 
     var body: some View {
         let _ = Meter.shared.count(.body, "Markdown")
-        let blocks = live ? Markdown.parse(text) : MarkdownCache.parse(text)
+        let blocks = rows.map { $0.map(\.block) } ?? MarkdownCache.parse(text)
+        // By position: the block being written keeps its view, and with it
+        // where its code or its table was scrolled to. A finished block is
+        // an equal value there, which is not drawn again.
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 BlockView(block: block)
@@ -43,7 +57,20 @@ struct MarkdownView: View {
         // A record a line links is the kit's pill, drawn behind its words.
         .recordPillText()
         .environment(\.missingRecords, missing)
-        .environment(
+    }
+}
+
+/// What a link in a reply opens: a record in the app, a console page on the
+/// signed-in server, anything else where the system opens it. Set once for
+/// a transcript and never where a reply is drawn: an action is a closure,
+/// which nothing can compare, so a view that set one at each of its draws
+/// had every text under it read its environment and resolve again.
+private struct ReplyLinks: ViewModifier {
+    @Environment(\.openRecord) private var openRecord
+    @Environment(\.openURL) private var openURL
+
+    func body(content: Content) -> some View {
+        content.environment(
             \.openURL,
             OpenURLAction { url in
                 guard let reference = linkedRecord(url) else {
@@ -60,6 +87,11 @@ struct MarkdownView: View {
                 return .handled
             })
     }
+}
+
+extension View {
+    /// The links of every reply drawn under this view open as a reply's do.
+    func replyLinks() -> some View { modifier(ReplyLinks()) }
 }
 
 extension EnvironmentValues {

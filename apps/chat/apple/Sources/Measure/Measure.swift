@@ -78,6 +78,7 @@ enum Measure {
         // The chats read ahead after the list have landed.
         try? await Task.sleep(for: .seconds(4))
         let parse = standalone { _ = Markdown.parse(reply) }
+        let rows = standalone { _ = Markdown.rows(reply, open: true) }
 
         var phases: [Phase] = []
         var opened: [String] = []
@@ -135,6 +136,9 @@ enum Measure {
             passes.stop()
             phases.append(Phase(name: "200 characters typed", steps: typed, entries: Meter.shared.stop()))
         }
+        opened.insert(
+            String(format: "The same closed for display, parsed and made into rows: %.2f ms on average, %.2f ms at best.", rows.mean, rows.least),
+            at: 0)
         return table(phases, label: label, parse: parse, opened: opened, typed: typed)
     }
 
@@ -169,6 +173,7 @@ enum Measure {
         }
         rows.append(("Markdown parses per step", { cell($0, "parse", time: false) }))
         rows.append(("Markdown parse, ms per step (longest parse)", { cell($0, "parse", time: true) }))
+        rows.append(("closing unfinished Markdown, ms per step (longest)", { cell($0, "close", time: true) }))
         rows.append(("inline Markdown made into text, per step", { cell($0, "inline", time: false) }))
         rows.append(("inline Markdown, ms per step (longest)", { cell($0, "inline", time: true) }))
         rows.append(("key to drawn, ms (longest)", { cell($0, "key", time: true) }))

@@ -253,6 +253,7 @@ extension ChatApp {
             }
         kept.keep(under: "\(scope)/turn/") { name in live.turns.contains { name == "\(scope)/turn/\($0.id)" } }
         kept.keep(under: "\(scope)/tool/") { name in live.turns.contains { name.hasPrefix("\(scope)/tool/\($0.id)#") } }
+        kept.keep(under: "\(scope)/blocks/") { name in live.turns.contains { name == "\(scope)/blocks/\($0.id)" } }
         var scan = made.scan
         scan.merge(CardScan(live.turns))
         let working = live.phase == .streaming || live.phase == .background
