@@ -5,7 +5,7 @@ import SubstrateRuntime
 /// The block structure of a reply. Inline spans (emphasis, code, links) stay
 /// as text here and are rendered by `AttributedString(markdown:)`, which
 /// reads them but not blocks.
-public indirect enum MarkdownBlock: Hashable, Sendable {
+public indirect enum MarkdownBlock: Codable, Hashable, Sendable {
     case paragraph(String)
     case heading(level: Int, text: String)
     /// `closed` is false while a streaming reply has not yet sent the fence's
@@ -17,19 +17,21 @@ public indirect enum MarkdownBlock: Hashable, Sendable {
     case rule
 }
 
-public struct MarkdownListItem: Hashable, Sendable {
+public struct MarkdownListItem: Codable, Hashable, Sendable {
     /// A task item's box: nil on a plain item.
     public var checked: Bool?
     public var blocks: [MarkdownBlock]
 }
 
-public enum MarkdownAlignment: Hashable, Sendable { case leading, center, trailing }
+public enum MarkdownAlignment: String, Codable, Hashable, Sendable { case leading, center, trailing }
 
 public extension MeterPoint {
     /// One parse of a reply's Markdown into blocks.
     static let parse = MeterPoint("parse")
     /// One line of inline Markdown made into styled text.
     static let inline = MeterPoint("inline")
+    /// A reply still being written closed for display, before its parse.
+    static let close = MeterPoint("close")
 }
 
 /// A small CommonMark-shaped block parser: what a model writes, read the way
@@ -182,7 +184,7 @@ public enum Markdown {
 
     // MARK: Lists
 
-    private struct Marker {
+    struct Marker {
         var indent: Int
         var ordered: Bool
         var number: Int
@@ -191,7 +193,7 @@ public enum Markdown {
         var content: Int
     }
 
-    private static func listMarker(_ line: String) -> Marker? {
+    static func listMarker(_ line: String) -> Marker? {
         let indent = indentation(line)
         guard indent < 4 else { return nil }
         let rest = Array(line.dropFirst(indent))
@@ -280,7 +282,7 @@ public enum Markdown {
         String(line.dropFirst(min(n, indentation(line))))
     }
 
-    private static func fence(_ trimmed: String) -> (marker: String, language: String?)? {
+    static func fence(_ trimmed: String) -> (marker: String, language: String?)? {
         for ch in ["`", "~"] {
             let run = trimmed.prefix(while: { String($0) == ch })
             guard run.count >= 3 else { continue }
@@ -292,7 +294,7 @@ public enum Markdown {
         return nil
     }
 
-    private static func heading(_ trimmed: String) -> (level: Int, text: String)? {
+    static func heading(_ trimmed: String) -> (level: Int, text: String)? {
         let hashes = trimmed.prefix(while: { $0 == "#" }).count
         guard (1 ... 6).contains(hashes) else { return nil }
         let rest = trimmed.dropFirst(hashes)
@@ -305,13 +307,13 @@ public enum Markdown {
         return (hashes, text)
     }
 
-    private static func isRule(_ trimmed: String) -> Bool {
+    static func isRule(_ trimmed: String) -> Bool {
         let chars = trimmed.filter { $0 != " " }
         guard chars.count >= 3, let c = chars.first, "-*_".contains(c) else { return false }
         return chars.allSatisfy { $0 == c }
     }
 
-    private static func delimiterRow(_ line: String) -> [MarkdownAlignment]? {
+    static func delimiterRow(_ line: String) -> [MarkdownAlignment]? {
         let t = line.trimmingCharacters(in: .whitespaces)
         guard t.contains("-"), t.allSatisfy({ "|:- ".contains($0) }) else { return nil }
         let parts = cells(t)
@@ -326,7 +328,7 @@ public enum Markdown {
         return out
     }
 
-    private static func cells(_ line: String) -> [String] {
+    static func cells(_ line: String) -> [String] {
         var t = line.trimmingCharacters(in: .whitespaces)
         if t.hasPrefix("|") { t.removeFirst() }
         if t.hasSuffix("|"), !t.hasSuffix("\\|") { t.removeLast() }
