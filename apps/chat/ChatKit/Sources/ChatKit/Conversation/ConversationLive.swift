@@ -10,6 +10,7 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     var draftRevision: Int
     var draftReplaced: String
     var draftBefore: String
+    var draftGiven: [DraftGiven] = []
     var turns: [Turn]
     /// An attach's replay lost events: the overlay may miss text.
     var incomplete: Bool
@@ -48,7 +49,7 @@ extension Conversation {
         }
         return ConversationLive(
             thread: state.thread, agent: agent(state), name: name(state), draft: state.carried, draftRevision: state.draftRevision,
-            draftReplaced: state.draftReplaced, draftBefore: state.draftBefore,
+            draftReplaced: state.draftReplaced, draftBefore: state.draftBefore, draftGiven: state.given,
             turns: turns, incomplete: state.overlay.incomplete,
             liveKey: streaming ? state.overlay.turns.last(where: { $0.role == .assistant })?.id : nil,
             awaitingFirstEvent: streaming && state.overlay.turns.last?.role == .user,

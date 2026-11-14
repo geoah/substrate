@@ -279,10 +279,17 @@ row has the same id, so the handover replaces nothing.
   the draft, with nothing left standing beside it. The unsent messages
   keep an order of their own beside the drafts': a write of the drafts
   alone that was asked for later and landed first does not keep a message
-  out of the folder.
-- **A folder that cannot be written** (a full disk) does not hold a
-  message back: it goes, the drafts file is left as it was, and the
-  message is kept only while the app runs. The person is told, in the
+  out of the folder. Each order's mark moves only once its file is
+  written, so a later write that failed never lets an earlier one take a
+  message out of the unsent ones on account of drafts that are not there.
+  A message put back into the composer is in no other place, so it is
+  said beside the draft (`draftGiven`), and a field that keeps its own
+  text over the rewrite (what it held was typed over the text the rewrite
+  stands in place of) takes the message all the same, above its own.
+- **A folder that cannot be written** (a full disk, or one that could not
+  be opened at sign-in) does not hold a message back: it goes, the drafts
+  file is left as it was, and the message is kept only while the app
+  runs. The person is told, in the
   strip above the composer: "Your message is on its way, but it isn't
   saved on this device yet." with "Keep Substrate Chat open until it shows
   as sent." under it and the device's own words under Details (for a
@@ -290,7 +297,8 @@ row has the same id, so the handover replaces nothing.
   yet."). There is nothing to press: the list writes again after 2, 5 and
   15 seconds and then every half minute, and with every change to the
   unsent messages. The strip goes when a write lands or the server has
-  the message.
+  the message. A folder that never opened is not opened again by these
+  writes: its strip stays until the message is the server's.
 - **An answer that never came** (a 5xx, a gateway's page, a dropped
   connection, a timeout, a stream that ended before `thread`, the app
   suspended mid-request) leaves it unknown whether the message arrived, and
@@ -342,7 +350,8 @@ row has the same id, so the handover replaces nothing.
   the folder keeps a draft for it, written there before, the new chat's
   composer takes that draft under what was typed in it, as Edit Message
   puts a message above what was typed since: both texts stay, in the
-  composer and in the folder, and neither is dropped.
+  composer and in the folder, and neither is dropped, also where the
+  field holds other text than the conversation last heard.
 - **After a kill.** At the next launch the message is back at its place
   (a new chat's with the next New Chat) and is read for by its id. Found,
   it is the stored row: the chat is bound to its thread and read, and

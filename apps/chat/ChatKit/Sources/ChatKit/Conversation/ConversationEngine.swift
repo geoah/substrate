@@ -23,6 +23,8 @@ extension Conversation {
             rewrite(&next, text)
         case let .filled(text):
             rewrite(&next, text)
+            // The person put this text in the place of what was there.
+            next.given = []
         case let .heard(words):
             rewrite(&next, joined(next.draft, words))
         case let .chose(agent):
@@ -269,7 +271,10 @@ extension Conversation {
         // hears of the composer's text at once, as of one given back.
         if let older = draftFound, next.draftTaken != older {
             next.draftTaken = older
-            if !next.draft.contains(older) { rewrite(&next, Self.above(next.draft, older)) }
+            if !next.draft.contains(older) {
+                rewrite(&next, Self.above(next.draft, older))
+                give(&next, older, below: true)
+            }
             next.gaveBack = true
         }
         if case var .send(run)? = next.run, run.unkept, let pending = next.pending, kept == pending.id {
@@ -353,7 +358,19 @@ extension Conversation {
     /// text, and keeps after it what it has typed and not said.
     private func giveBack(_ state: inout State, _ message: String) {
         rewrite(&state, Self.above(message, state.draft))
+        give(&state, message, below: false)
         state.gaveBack = true
+    }
+
+    /// The rewrite just made put `text` into the composer, and it is in no
+    /// other place: the tree says so beside the draft, for a field that
+    /// keeps its own text over the rewrite.
+    private func give(_ state: inout State, _ text: String, below: Bool) {
+        state.given.append(DraftGiven(text: text, below: below, revision: state.draftRevision))
+        // A field looks at every revision while it is on screen, and takes
+        // the tree's whole text when it comes to one: the last few are all
+        // any field can have missed.
+        state.given = Array(state.given.suffix(8))
     }
 
     // MARK: A message under its own id
@@ -506,7 +523,11 @@ extension Conversation {
     ) {
         startRun(&state)
         // Continue sends its own words and leaves what is being typed alone.
-        if fromDraft { rewrite(&state, "") }
+        if fromDraft {
+            rewrite(&state, "")
+            // What the composer was given went with the draft that is sent.
+            state.given = []
+        }
         state.turnFailure = nil
         state.lastFailure = nil
         // The strip's failure was about a send or this chat's last run: a
