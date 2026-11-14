@@ -112,7 +112,7 @@ const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 const KindLLMThread = "substrate.reamde.dev/llm/thread"
 
 // KindLLMThreadMark is how far one person has read one thread (decision
-// record 0311): the one kind the shipped `viewer` role writes.
+// record 0313): the one kind the shipped `viewer` role writes.
 const KindLLMThreadMark = "substrate.reamde.dev/llm/threadmark"
 
 // The two kinds' pre-move identities (record 0077). The boot upgrade never

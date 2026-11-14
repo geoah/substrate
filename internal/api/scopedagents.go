@@ -18,7 +18,7 @@ import (
 // Those scopes name agents, not kinds, so what they make readable is decided
 // record by record: an agent row whose id matches, a thread whose agent
 // matches, that thread's messages, interactions and approvals (decision
-// 0254), each person's mark of it (decision 0311), and the change requests
+// 0254), each person's mark of it (decision 0313), and the change requests
 // such a thread proposed. A kind a read or write scope reaches whole is
 // answered exactly as before; one the agent verbs alone reach is ROW-GATED.
 const (
@@ -452,7 +452,7 @@ var rowPatchable = map[string][]string{
 // person the write acts for, so it names nothing the caller does not hold.
 var markWritable = []string{"thread", "readBy", "readThrough", "readAt", "markedUnread"}
 
-// putMark is a put of a thread mark through a view (decision 0311). A
+// putMark is a put of a thread mark through a view (decision 0313). A
 // person whose roles write the kind writes it as any other, but for
 // `readBy`: the actor kind is a control kind their rules do not read, and
 // the engine admits there only their own actor. An app's token writes it

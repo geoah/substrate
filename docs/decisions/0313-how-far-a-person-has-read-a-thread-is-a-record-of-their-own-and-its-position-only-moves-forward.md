@@ -4,7 +4,7 @@ date: 2026-11-14
 decision-makers: George Antoniadis
 ---
 
-# 0311. How far a person has read a thread is a record of their own, and its position only moves forward
+# 0313. How far a person has read a thread is a record of their own, and its position only moves forward
 
 ## Context and Problem Statement
 

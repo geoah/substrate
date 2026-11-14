@@ -354,7 +354,7 @@ func (h *handler) postRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A thread mark's id is built from its thread and its person, never
-	// minted (decision 0311), so a POST may find the mark there: it is then
+	// minted (decision 0313), so a POST may find the mark there: it is then
 	// a write of that record, answered as one.
 	if ent.Kind == kindThreadMark && !ent.Created {
 		writeJSON(w, http.StatusOK, ent)

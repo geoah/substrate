@@ -1,6 +1,6 @@
 package engine
 
-// Thread marks (threadmarks.go, decision 0311): a mark is named for its
+// Thread marks (threadmarks.go, decision 0313): a mark is named for its
 // thread and its person, a person writes only their own, its position only
 // moves forward, a thread settles naming its newest message, and what waits
 // on a person is counted on the thread.

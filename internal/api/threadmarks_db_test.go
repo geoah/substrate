@@ -1,6 +1,6 @@
 package api
 
-// Thread marks over HTTP on the real engine (decision 0311): a mark's
+// Thread marks over HTTP on the real engine (decision 0313): a mark's
 // dot-joined id travels the REST path, a viewer keeps their own and nobody
 // else's, `me` lists the caller's own marks beside another person's, and an
 // app's `agents:` scope reaches the marks of the threads it reaches.

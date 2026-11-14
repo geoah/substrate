@@ -1,6 +1,6 @@
 package engine
 
-// THREAD MARKS (decision record 0311). How far one person has read one thread
+// THREAD MARKS (decision record 0313). How far one person has read one thread
 // is a record of `llm/threadmark`, one per thread and person, and the thread
 // carries the two facts a list compares it with: `lastMessage`, the newest
 // message it held when it last settled, and `waitingOnPerson`, how many of
@@ -435,7 +435,7 @@ func (ds *dataset) personOfRequest(ctx context.Context) (substrate.Actor, bool) 
 
 // resolveMe rewrites, in a filter's property conditions, the value `me` on a
 // reference pinned to the actor kind into the actor of the person the
-// request acts for (decision record 0311). A person reads their own marks
+// request acts for (decision record 0313). A person reads their own marks
 // without knowing their actor's id, and one who may not read actor records
 // still filters by their own. The filter is copied where it changes.
 func (ds *dataset) resolveMe(ctx context.Context, types []*vocabulary.Kind, f substrate.Filter) (substrate.Filter, error) {

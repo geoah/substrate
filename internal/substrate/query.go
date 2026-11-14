@@ -32,7 +32,7 @@ type Cond struct {
 }
 
 // FilterMe is the value a condition on a reference to an actor may name for
-// the person the request acts for (decision record 0311): `readBy: {eq: "me"}`
+// the person the request acts for (decision record 0313): `readBy: {eq: "me"}`
 // lists the caller's own thread marks, whoever else has read the threads.
 const FilterMe = "me"
 

@@ -1,5 +1,5 @@
 /** The signed-in person's read state over the chats a page lists (decision
- * 0311): which are unread, the two actions a person takes on one, and the
+ * 0313): which are unread, the two actions a person takes on one, and the
  * write that follows reading the chat that is open.
  *
  * The open chat is read when it has settled and its window has been in

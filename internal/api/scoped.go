@@ -751,7 +751,7 @@ func (s *scopedDataset) checkReferenceFilters(ctx context.Context, kinds []strin
 			}
 			for _, v := range condValues(c) {
 				str, ok := v.(string)
-				// `me` names the caller's own actor (decision 0311), which
+				// `me` names the caller's own actor (decision 0313), which
 				// tells them nothing of anybody else's.
 				if ok && str == substrate.FilterMe && declared == kindActorRow {
 					continue

@@ -1,4 +1,4 @@
-/** The signed-in person's thread marks (decision 0311): how far they have
+/** The signed-in person's thread marks (decision 0313): how far they have
  * read each chat. One list read serves a page of threads, filtered to the
  * caller's own marks by `readBy: me`, so another person's marks of the same
  * threads never come back. A write names the thread alone: the server builds
