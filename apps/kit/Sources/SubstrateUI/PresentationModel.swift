@@ -32,7 +32,8 @@ public final class PresentationModel<Root: Controller> {
     /// The model made the runtime, so it closes it when it goes.
     @ObservationIgnored private var ownsRuntime = false
     /// One observable value per path a part goes out under, made when the
-    /// part is first published or first read, whichever comes first.
+    /// part is first published or first read, whichever comes first, and
+    /// kept from then on, empty while the path holds no part.
     @ObservationIgnored private var slots: [[ChildKey]: PartSlot] = [:]
     /// The runtime has said how the tree stands: until it has, the parts
     /// are the first presentation's.
@@ -109,9 +110,10 @@ public final class PresentationModel<Root: Controller> {
             gone += slots.keys.filter { !held.contains($0) }
         }
         for path in gone {
-            // Whoever read it is drawn again and finds none; the next reader
-            // starts a slot afresh.
-            slots.removeValue(forKey: path)?.value = nil
+            // Whoever read it is drawn again and finds none. The slot
+            // stays: a view that read the path before anything was
+            // published there, or after it went, is told when a part is.
+            if let slot = slots[path], slot.value != nil { slot.value = nil }
         }
         for part in update.changed { slot(part.path).value = part.value }
         presentation = update.presentation
