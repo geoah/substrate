@@ -10,6 +10,7 @@ struct ConversationView: View {
     let key: ChildKey
     let scene: String
     @State private var dictation = Dictation()
+    @State private var draftField = DraftField()
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var atBottom = true
     @State private var keySheet: KeySheet?
@@ -61,6 +62,7 @@ struct ConversationView: View {
             )
             .equatable()
         }
+        .environment(\.draftField, draftField)
         .navigationTitle(screen.title)
         .navigationSubtitle(screen.subtitle)
         #if os(iOS)
