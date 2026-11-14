@@ -44,7 +44,7 @@ public extension Markdown {
     private static func written(_ text: String) -> [MarkdownBlock] {
         guard text.count <= limit else { return parse(text) }
         var lines = lines(text)
-        var blocks = parse(lines: lines)
+        var blocks = Meter.shared.time(.parse) { parse(lines: lines) }
         if case let .code(_, code, closed)? = innermost(blocks) {
             // A fence's closing line arrives a mark at a time: until it is
             // whole it would draw as a line of the code. So would the line
@@ -62,6 +62,7 @@ public extension Markdown {
 
         // The last line, where it is the start of a block.
         let given = lines
+        var held = false
         var lineEnded = lines.count > 1 && lines[lines.count - 1].isEmpty
         if !lineEnded, let last = lines.last {
             let bare = unquoted(last)
@@ -70,6 +71,7 @@ public extension Markdown {
                 // line of bold begin alike, and a table with one pipe.
                 lines.removeLast()
                 lineEnded = true
+                held = true
             } else if let marker = listMarker(bare) {
                 let rest = String(bare.dropFirst(min(marker.content, bare.count))).trimmingCharacters(in: .whitespaces)
                 if ["[ ]", "[x]", "[X]"].contains(rest) {
@@ -78,6 +80,7 @@ public extension Markdown {
                 } else if ["[", "[x", "[X"].contains(rest) {
                     lines.removeLast()
                     lineEnded = true
+                    held = true
                 }
             }
         }
@@ -88,9 +91,11 @@ public extension Markdown {
         if run == 1 || run == 2 {
             let header = body.count - run
             let columns = cells(body[header]).count
-            if header == 0 || body[header - 1].trimmingCharacters(in: .whitespaces).isEmpty,
-                cells(body[header]).contains(where: { !$0.isEmpty })
-            {
+            // Where the parser starts a table: at the text's start, under a
+            // blank line, and under a heading, which is a block by itself.
+            let above = header > 0 ? body[header - 1].trimmingCharacters(in: .whitespaces) : ""
+            let headed = header > 0 && body[header - 1].prefix(while: { $0 == " " }).count < 4 && heading(above) != nil
+            if above.isEmpty || headed, cells(body[header]).contains(where: { !$0.isEmpty }) {
                 let rule = "|" + String(repeating: " --- |", count: columns)
                 if run == 1 {
                     lines.insert(rule, at: header + 1)
@@ -103,12 +108,15 @@ public extension Markdown {
                 }
             }
         }
-        if lines != given { blocks = parse(lines: lines) }
+        if lines != given { blocks = Meter.shared.time(.parse) { parse(lines: lines) } }
 
         // What is open inline, in the block still being written. A blank
         // line ends a paragraph, and a line's end a heading or a table's row:
-        // what such a block left open is its writer's, and stays.
-        let blankEnded = given.count > 1 && given[given.count - 1].isEmpty && given[given.count - 2].trimmingCharacters(in: .whitespaces).isEmpty
+        // what such a block left open is its writer's, and stays. A line
+        // held back stood after whatever blank line there is: one is
+        // enough then, where the text's own end takes two.
+        let blank = lines.reversed().prefix { $0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        let blankEnded = blank >= (held ? 1 : 2) && blank < lines.count
         return closingLast(blocks, paragraph: !blankEnded, line: !lineEnded)
     }
 

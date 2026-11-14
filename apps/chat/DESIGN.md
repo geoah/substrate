@@ -423,7 +423,12 @@ plain.
   stake and parsed again only if that changed it, and what is open inline
   is closed in the one block still being written. A finished reply is
   parsed as it stands, so what a stream drew at its end is what its stored
-  row draws.
+  row draws. Two things are left as they are: a table is a header row
+  early only where its first line stands at the text's start, under a
+  blank line or under a heading, so one inside a quote or a list item reads
+  as text until its second line arrives; and a marker its writer never
+  closed (in a heading, a table's cell or a paragraph that has ended) is
+  drawn closed while it is the last thing written and as written after.
 - **A long reply is several rows of the transcript.** Past about a screen
   and a half of text (`Markdown.pageWeight`) a reply's next block starts
   another row (`AssistantTurn.pages`), and what stands under its text
