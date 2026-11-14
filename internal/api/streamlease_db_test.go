@@ -33,6 +33,12 @@ type holdingChat struct {
 
 func (d holdingChat) ChatAgent(ctx context.Context, _ substrate.Actor, _ string, _ substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "tA"})
+	// emit returns once the handler has taken an event, which is before it
+	// reads the token and writes it, and the handler takes the next only
+	// after writing the one before: the second event is what says the first
+	// is out, so a revoke after it ends a stream and is never the refusal a
+	// token that died before its first event gets.
+	emit(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "held"})
 	close(d.started)
 	<-ctx.Done()
 	return nil, ctx.Err()
