@@ -80,6 +80,7 @@ import {
   attachThread,
   continueThread,
   newMessageId,
+  OWN_MESSAGE_ID_REVISION,
   stopThread,
   streamChat,
   THREAD_LISTS_KEY,
@@ -90,6 +91,7 @@ import {
   type ChatHandle,
 } from "@/lib/api/agents"
 import { pendingApprovalsQueryOptions } from "@/lib/api/approvals"
+import { discoveryQueryOptions, hasFeature } from "@/lib/api/discovery"
 import { LLM_PACKAGE } from "@/lib/api/http"
 import { USD } from "@/lib/money"
 import {
@@ -110,12 +112,14 @@ import { cn } from "@/lib/utils"
 import { CopyButton } from "@/components/identity/copy-button"
 import {
   addUnsent,
+  CONTINUE_MESSAGE,
   keepUnsent,
   moveUnsent,
   RESEND_DELAYS_MS,
   setUnsent,
   unsentKey,
   useUnsent,
+  type SentRequest,
   type Unsent,
 } from "@/lib/unsent-messages"
 
@@ -239,7 +243,9 @@ function OutcomeNote({
   const lead =
     kind === "refused"
       ? `Your message wasn’t sent. ${restored ? "It was put back in the box below, and a copy is here." : "A copy is here."}`
-      : "The server didn’t answer, so your message may not have arrived. Sending it again is safe: it cannot be sent twice."
+      : onSendAgain
+        ? "The server didn’t answer, so your message may not have arrived. Sending it again is safe: it cannot be sent twice."
+        : "The server didn’t answer, so your message may not have arrived. Look for it in the chat, or for a new chat in the chat list, before sending it again. It is below, to copy."
   return (
     <div
       role="alert"
@@ -336,8 +342,19 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // An unanswered send waiting to go again, under the same messageId.
-  const [resending, setResending] = useState(false)
+  // The unanswered send this page is sending again, as its entry in the
+  // unsent store, or 0. The entry is written as soon as a send goes
+  // unanswered, so leaving the chat mid-wait keeps the message and its id.
+  const [resendingId, setResendingId] = useState(0)
+  const resending = resendingId !== 0
+  // What the server takes: a console bundled in an app meets servers from
+  // before a message could name its id and a thread could be continued.
+  // Until the server has said, the page speaks to the one it was built
+  // with; an older one refuses the unknown field and nothing is sent.
+  const discovery = useQuery(discoveryQueryOptions)
+  const ownIds =
+    !discovery.data ||
+    hasFeature(discovery.data, "agents", OWN_MESSAGE_ID_REVISION)
   // A continue the server refused, in the server's words.
   const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
@@ -747,16 +764,25 @@ export function Conversation({
     settleRun(run)
   }
 
-  // Sends `text`, or sends an unanswered message once more under the id it
-  // went out with (`again`), which cannot send it twice.
-  function send(text = draft, again?: { messageId: string }) {
+  // Sends `text`, or sends an unanswered message once more as the request it
+  // went out as (`again`), which cannot send it twice. Where the server
+  // takes no message id, a send goes without one and is never sent again.
+  function send(text = draft, again?: SentRequest) {
     const message = text.trim()
+    const to = again?.agent ?? agentId
     // `blockedReason` says why on the composer, and the text stays there.
-    if (!message || blockedReason || !agentId || keylessProvider) return
+    if (!message || blockedReason || !to || keylessProvider) return
     // A message sent again leaves what is being typed alone.
     if (!again && text === draft) onDraft("")
-    const messageId = again?.messageId ?? newMessageId()
-    const sentContext = context?.length ? context : undefined
+    const messageId = again?.messageId ?? (ownIds ? newMessageId() : undefined)
+    const sentContext = again
+      ? again.context
+      : context?.length
+        ? context
+        : undefined
+    // The thread the request names: a message sent again goes where it went,
+    // whatever chat the page shows now.
+    const sentTo = again ? again.thread : current
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
       return parts ? [parts] : []
@@ -790,12 +816,18 @@ export function Conversation({
     }
     update(sent)
     setStreaming(true)
-    runThreadRef.current = current
+    runThreadRef.current = sentTo
     // This page's own run is not attached to again.
     setAttachedFor(current)
     const run = ++runRef.current
-    const sentTo = current
     const sentKey = unsentAt
+    // The message's entry in the unsent store, once it has gone unanswered.
+    let entry = 0
+    const forget = () => {
+      if (entry) setUnsent(sentKey, entry, null)
+      entry = 0
+      setResendingId(0)
+    }
 
     // One request, and the same one again each time it goes unanswered: the
     // same thread, the same text, the same id.
@@ -815,18 +847,40 @@ export function Conversation({
         if (named && idle) return settleIdle(run, idle)
         if (named && done) return settleRun(run)
         if (named) return reattach(run, runThreadRef.current, 0)
-        if (unanswered !== undefined && attempt < RESEND_DELAYS_MS.length) {
+        if (unanswered !== undefined && !entry) {
+          // Kept outside the page from the first lost answer, with the
+          // request it went out as: a chat that is left while the message
+          // waits to go again still has it, and its id, on return.
+          entry = addUnsent(sentKey, {
+            kind: "unanswered",
+            reason: unanswered,
+            message,
+            restored: false,
+            ...(messageId && {
+              request: {
+                agent: to,
+                thread: sentTo,
+                messageId,
+                ...(sentContext && { context: sentContext }),
+              },
+            }),
+          })
+        }
+        if (
+          unanswered !== undefined &&
+          messageId &&
+          attempt < RESEND_DELAYS_MS.length
+        ) {
           // The message keeps its place on the page while it goes again.
           console.warn("chat: the send went unanswered, sending it again", {
             thread: sentTo,
             attempt: attempt + 1,
             reason: unanswered,
           })
-          setResending(true)
+          setResendingId(entry)
           clearTimeout(resendRef.current)
           resendRef.current = setTimeout(() => {
             if (run !== runRef.current) return
-            setResending(false)
             post(attempt + 1)
           }, RESEND_DELAYS_MS[attempt])
           return
@@ -837,7 +891,7 @@ export function Conversation({
         setSettledAt(settledBefore)
         setStreaming(false)
         setStopping(false)
-        setResending(false)
+        setResendingId(0)
         if (unanswered !== undefined) {
           console.error("chat: the send went unanswered", {
             thread: sentTo,
@@ -846,18 +900,11 @@ export function Conversation({
           // The message may have arrived all the same: the thread's rows
           // and the chat lists are read again.
           void client.invalidateQueries({ queryKey: ["records"] })
-          addUnsent(sentKey, {
-            kind: "unanswered",
-            reason: unanswered,
-            message,
-            messageId,
-            restored: false,
-          })
         }
       }
 
       handleRef.current = streamChat({
-        agent: agentId,
+        agent: to,
         thread: sentTo || undefined,
         message,
         messageId,
@@ -866,10 +913,12 @@ export function Conversation({
           if (run !== runRef.current) return
           if (ev.kind === "thread" && ev.thread) {
             named = true
+            // The server holds the message: nothing is left to send again.
+            forget()
             setAttachedFor(ev.thread)
             // The turn holds its context now; a refusal before this kept it
             // for the retry.
-            if (sentContext) onContextDone?.()
+            if (sentContext && !again) onContextDone?.()
           }
           // The server already held the message and its turn has settled.
           if (ev.kind === "idle") {
@@ -903,6 +952,7 @@ export function Conversation({
             code: err.code,
             message: err.message,
           })
+          forget()
           end()
           addUnsent(sentKey, {
             kind: "refused",
@@ -930,6 +980,8 @@ export function Conversation({
   function goOn() {
     const thread = current
     if (!thread || blockedReason || keylessProvider) return
+    // A server with no `continue` route goes on only when written to.
+    if (!ownIds) return send(CONTINUE_MESSAGE)
     void dropReads()
     setError(null)
     setGoOnError(null)
@@ -1121,22 +1173,23 @@ export function Conversation({
               The server didn’t answer. Sending your message again…
             </p>
           )}
-          {outcomes.map((o) => (
-            <OutcomeNote
-              key={o.id}
-              outcome={o}
-              onDiscard={() => setUnsent(unsentAt, o.id, null)}
-              onSendAgain={
-                o.messageId
-                  ? () => send(o.message, { messageId: o.messageId! })
-                  : undefined
-              }
-              blocked={
-                blockedReason ??
-                (keylessProvider ? "Add an API key first" : undefined)
-              }
-            />
-          ))}
+          {/* The one this page is sending again is said by the line above. */}
+          {outcomes
+            .filter((o) => o.id !== resendingId)
+            .map((o) => (
+              <OutcomeNote
+                key={o.id}
+                outcome={o}
+                onDiscard={() => setUnsent(unsentAt, o.id, null)}
+                onSendAgain={
+                  o.request ? () => send(o.message, o.request) : undefined
+                }
+                blocked={
+                  blockedReason ??
+                  (keylessProvider ? "Add an API key first" : undefined)
+                }
+              />
+            ))}
           {reloadFailed && (
             <div
               role="alert"

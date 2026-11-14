@@ -1023,8 +1023,13 @@ panel on the right.
   ([a message with its own id](agents.md#a-message-with-its-own-id)), so
   sending it again cannot send it twice: the console does so up to three
   times, keeping the message where it is in the chat, and then shows it in a
-  note with **Send again**. A message the server refused comes back to the
-  box with the server's words.
+  note with **Send again**, which sends the request it first went out as,
+  to the chat it was for. A message left waiting when you open another chat
+  is kept in its own chat with the same button. A message the server refused
+  comes back to the box with the server's words. Against a server from
+  before messages had ids (a console inside an app can meet one), a message
+  goes out once, an unanswered one is shown to copy, and Continue sends
+  "Continue where you left off." as before.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

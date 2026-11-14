@@ -550,3 +550,59 @@ func TestContinueGivesAnOverBudgetRunAFreshBudget(t *testing.T) {
 		t.Fatalf("the continuation's request ended with %+v, want the last tool result", last)
 	}
 }
+
+// A hand that may not continue a thread learns nothing about a message on it
+// from a guessed id: not the thread, not the agent, not whether the text
+// matches. The refusal is the one a put at a taken id would be.
+func TestAGuessedMessageIDSaysNothingAboutAThreadTheHandMayNotContinue(t *testing.T) {
+	t.Parallel()
+	r := newRunsRepository(t)
+	r.fake.script("proposer", fakeTurn{content: "one."}, fakeTurn{content: "two."})
+	opening := substrate.ChatInput{Message: "ada's own words", MessageID: "guess-1"}
+	res, err := r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/proposer", opening, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := substrate.ChatInput{Thread: res.Thread, Message: "and more", MessageID: "guess-2"}
+	if _, err := r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/proposer", later, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// The app talks to scribe alone, and guesses ids of the proposer's chat.
+	app, ctx, _ := r.app(t, "guesser.example.com", "agents:"+r.pkg+"/scribe")
+	var said []string
+	for _, in := range []substrate.ChatInput{
+		{Message: "ada's own words", MessageID: "guess-1"},
+		{Message: "a wrong guess", MessageID: "guess-1"},
+		{Message: "and more", MessageID: "guess-2"},
+		{Message: "and more", MessageID: "guess-2", Thread: "some-other-thread"},
+	} {
+		log := newEventLog()
+		_, err := r.ds.ChatAgent(ctx, app, r.pkg+"/scribe", in, log.emit)
+		if !errors.Is(err, errMessageIDTaken) || len(log.snapshot()) != 0 {
+			// A named thread the app may not continue is refused before the
+			// id is read at all.
+			if in.Thread != "" && errors.Is(err, substrate.ErrForbidden) {
+				continue
+			}
+			t.Fatalf("%+v = %v with events %+v, want the id refused as taken and no stream", in, err, log.snapshot())
+		}
+		if strings.Contains(err.Error(), res.Thread) || strings.Contains(err.Error(), "proposer") || strings.Contains(err.Error(), "text") {
+			t.Fatalf("%+v was refused with %q, which says where the id is", in, err)
+		}
+		said = append(said, strings.ReplaceAll(err.Error(), in.MessageID, "<id>"))
+	}
+	for _, s := range said {
+		if s != said[0] {
+			t.Fatalf("the refusals differ, so they tell the guesses apart: %q", said)
+		}
+	}
+	if n := len(r.fake.requestsOf("scribe")); n != 0 {
+		t.Fatalf("%d model calls for the guesses, want none", n)
+	}
+	// Ada, who may continue it, is told what is wrong with her own request.
+	_, err = r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/proposer", substrate.ChatInput{Message: "changed", MessageID: "guess-1"}, nil)
+	if !errors.Is(err, errMessageIDTaken) || !strings.Contains(err.Error(), "another text") {
+		t.Fatalf("ada's own mismatch = %v, want it named", err)
+	}
+}

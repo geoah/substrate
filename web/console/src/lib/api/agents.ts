@@ -690,6 +690,12 @@ export function browserTimezone(): string | undefined {
   }
 }
 
+/** The revision of the server's `agents` feature that takes a chat body's
+ * `messageId` and serves a thread's `continue` (decision 0312). A console
+ * bundled in an app meets older servers, which refuse the field as unknown
+ * and answer the route 404. */
+export const OWN_MESSAGE_ID_REVISION = 3
+
 /** An id for a message this client is about to send: a UUID, which is a
  * legal record id. The fallback is for a page served without a secure
  * context, where `randomUUID` is absent. */
@@ -715,8 +721,10 @@ export function streamChat(
     /** Continues an existing thread; empty opens one. */
     thread?: string
     message: string
-    /** The id this client chose for the message (`newMessageId`). */
-    messageId: string
+    /** The id this client chose for the message (`newMessageId`). Left out
+     * for a server that does not take one (`OWN_MESSAGE_ID_REVISION`): it
+     * refuses a body field it does not know. */
+    messageId?: string
     /** The records the message is about, as record paths. */
     context?: string[]
   } & StreamHandlers
@@ -724,9 +732,9 @@ export function streamChat(
   const body: ChatRequest = {
     thread: opts.thread ?? "",
     message: opts.message,
-    messageId: opts.messageId,
     timezone: browserTimezone(),
   }
+  if (opts.messageId) body.messageId = opts.messageId
   if (opts.context?.length) body.context = opts.context
   return openAgentStream(
     `${corePath("agent", opts.agent)}/chat`,

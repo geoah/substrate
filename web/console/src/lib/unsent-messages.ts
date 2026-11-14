@@ -14,6 +14,21 @@ import { getRepository } from "@/lib/api/session"
  * in a notice, with a button that sends it once more. */
 export const RESEND_DELAYS_MS = [1_000, 3_000, 8_000]
 
+/** A chat request as it was sent: where it went and under which id. A
+ * request is sent again exactly as it was, never rebuilt from the page it
+ * is shown on, which may have moved to another chat since. */
+export interface SentRequest {
+  agent: string
+  /** The thread it continued; empty for a message that opens a chat. */
+  thread: string
+  messageId: string
+  context?: string[]
+}
+
+/** The words Continue sends to a server that has no `continue` route (below
+ * revision 3 of its `agents` feature), where going on is a message. */
+export const CONTINUE_MESSAGE = "Continue where you left off."
+
 /** What became of one send that started no turn. */
 export interface Unsent {
   id: number
@@ -25,9 +40,11 @@ export interface Unsent {
   /** The server's words, or what failed. */
   reason: string
   message: string
-  /** The id an unanswered message was sent under: sending it again under
-   * the same id cannot send it twice. */
-  messageId?: string
+  /** The request an unanswered message went out as, whole: sending that
+   * same request again cannot send the message twice, because the server
+   * knows its `messageId`. Absent where the server takes no such id, and the
+   * message can then only be copied. */
+  request?: SentRequest
   /** The message was also put back into the composer. Its notice shows the
    * saved copy either way, because the composer may be cleared since. */
   restored: boolean

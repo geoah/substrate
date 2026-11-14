@@ -1833,7 +1833,10 @@ again:
 - **The record is something else.** `409 conflict`, and nothing is written:
   the id names a message of another thread, a message with another text, a
   row that is no sent message, or a deleted one. A request with no `thread`
-  repeats only the message its thread opened with.
+  repeats only the message its thread opened with. The refusal says which
+  only to a hand that may continue the thread the id is on; any other hand
+  is told that the id is taken and nothing more, so a guessed id says
+  nothing about a chat its sender cannot reach.
 
 So the first message of a new chat, repeated, never opens a second thread,
 and two copies of one request that race run one turn: the copy that lost is
@@ -1846,6 +1849,12 @@ be repeated safely. The chat route takes no `Idempotency-Key`
 ([idempotency](api.md#idempotency-and-retries)): a key's stored outcome
 answers a repeat for 24 hours and is not part of the repository's history,
 and a stream has no outcome to store.
+
+`messageId` and the continue route below arrive with revision 3 of the
+`agents` [feature](api.md#the-features). A server below it refuses the
+field as unknown (`400 bad_request`) and answers the route `404`, so a
+client that may meet one reads the revision first, sends without an id
+there, and does not repeat an unanswered send.
 
 ### Continue
 

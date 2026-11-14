@@ -40,7 +40,8 @@ whose id names that same message (a user row of the thread it names, or the
 row its thread opened with when it names none, of the agent it addresses,
 with the text it sends) writes nothing and runs nothing: its stream opens
 with the `thread` event and is then what an attach answers. An id that names
-anything else is `409 conflict`. A key in `idempotency_keys` would answer for
+anything else is `409 conflict`, which says what it names only to a hand that
+may continue the thread it is on. A key in `idempotency_keys` would answer for
 24 hours, is not in the changelog, and would hold no outcome for a stream;
 the record is the repository's history, so the check survives a restart, a
 restore and any length of time. Two copies that race are settled by the
@@ -85,6 +86,7 @@ nothing to a conversation that ends on the assistant's turn.
 `TestCopiesOfASendRaceToOneTurn`,
 `TestAMessageIDThatIsNotThisMessageIsRefused`,
 `TestARepeatedSendHoldsAcrossARestart`,
+`TestAGuessedMessageIDSaysNothingAboutAThreadTheHandMayNotContinue`,
 `TestContinueTakesUpAStoppedTurnWithNoUserMessage`,
 `TestContinueTriesAFailedTurnAgain`,
 `TestContinueRefusesAThreadATurnRunsOn`,
