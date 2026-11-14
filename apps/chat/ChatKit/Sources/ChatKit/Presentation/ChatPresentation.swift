@@ -24,7 +24,6 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     public var defaultAgent: AgentChoice?
     public var settings: ChatSettingsPresentation
     public var unread: Int
-    public var renameProblem: String?
     /// For each provider without a key.
     public var keys: [String: KeySheet]
     /// The provider whose key was just saved: its sheet closes.

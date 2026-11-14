@@ -24,13 +24,23 @@ public struct ConversationState: Codable, Equatable, Sendable {
         var sentTo: String?
         /// The overlay a failed handover left, still the only view of that run.
         var kept: [Turn]
-        var failedBefore: String?
+        var failedBefore: Failure?
         /// The newest turn held before the send, for a delivery check; nil
         /// while the rows are unread or stale.
         var baseline: Int?
         var sentAt: Date
         var named = false
         var done = false
+        /// The person typed it; false for the words Continue sends to a
+        /// server without the continue route, which are never given back.
+        var typed = true
+        /// A continue: the thread run again with no message.
+        var resumes = false
+        /// The server answered with an event.
+        var started = false
+        /// Nobody pressed anything: a rate limit lifted. Such a run never
+        /// writes a message in the person's name.
+        var automatic = false
     }
 
     /// An attach's run.
@@ -51,6 +61,9 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// What an applied event asks the runtime to do, made fresh by each.
     enum Ask: Codable, Equatable, Sendable {
         case chat(agent: String, thread: String?, message: String)
+        case resume(thread: String)
+        /// Wakes the engine when a rate limit lifts.
+        case countdown(Date)
         case attach(thread: String)
         case wait(attempt: Int, seconds: Double)
         case handover(thread: String)
@@ -103,19 +116,35 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var overlay = LiveOverlay.empty
     var seq = 0
     var stopping = false
-    /// The server's words for a run that failed; its card words what
-    /// happened around them (`TurnFailureWords`).
-    var error: String?
-    var outcomes: [Outcome] = []
+    /// The turn's failure, as the stream said it or as a Try Again met it:
+    /// drawn at the turn until the next run answers.
+    var turnFailure: Failure?
+    /// A failure of the chat as a whole, drawn above the composer: a send
+    /// that started no turn, a stop that failed, a stream that will not
+    /// open. A second one replaces the first.
+    var chatFailure: Failure?
+    /// A send whose delivery is being read for.
+    var lost: Lost?
     /// The handover read failed or outlasted its wait: the overlay stays.
-    var reloadFailed: String?
+    var reloadFailed: Failure?
+    /// The reload failure whose Try Again is out: drawn working in its place.
+    var reloading: Failure?
+    /// The rate limit's end the engine waits on, and whether it already
+    /// tried again on its own for this failure: once, never in a loop.
+    var armed: Date?
+    var autoRetried = false
+    /// The server told this conversation it does not serve the continue
+    /// route: the list remembers it for the session.
+    var continueUnserved = false
     var deleted = false
     /// Moved when a run settles, for the view's haptic and announcement.
     var settles = 0
     var listenOnOpen = false
     var run: Run?
-    /// The last failure an attach saw, shown if the turn ended on it.
-    var lastError: String?
+    /// The last failure a stream saw, shown if the turn ended on it. While
+    /// it is set and the run streams, the app is reconnecting, which is a
+    /// state and never drawn as a failure.
+    var lastFailure: Failure?
     var polling = false
     var pollAgain = false
     /// The failure the last event met, for the parent to tell the link.
@@ -128,5 +157,24 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var ownsTranscript: Bool { phase != .idle || reloadFailed != nil }
     var active: Bool { phase != .idle }
     var streaming: Bool { phase == .streaming }
-    var checking: Bool { outcomes.contains { $0.kind == .checking } }
+    var checking: Bool { lost != nil }
+    /// A continue is out and the server has said nothing yet: the failure
+    /// whose button was pressed stays drawn, working.
+    var resuming: Bool {
+        if case let .send(run)? = run, run.resumes, !run.started, phase == .streaming { return true }
+        return false
+    }
+    /// A stream dropped and is being opened again.
+    var reconnecting: Bool { phase == .streaming && lastFailure != nil }
+    /// What keeps the conversation after its window left: a failure above
+    /// the composer still to be read, or a check under way.
+    var held: Int { (chatFailure != nil ? 1 : 0) + (lost != nil ? 1 : 0) }
+
+    /// A send that ended with no answer either way, while it is read for.
+    struct Lost: Codable, Equatable, Sendable {
+        var id: UUID
+        var message: String
+        var typed: Bool
+        var failure: Failure
+    }
 }

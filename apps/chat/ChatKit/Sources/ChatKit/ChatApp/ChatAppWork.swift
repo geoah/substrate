@@ -26,7 +26,9 @@ extension ChatApp {
         let preferences = preferences
         let notifications = environment.devices.notifications
         let background = environment.devices.background
-        @Sendable func failed(_ error: any Error, _ client: SubstrateClient) -> Failure { Failure(error, server: client.server) }
+        @Sendable func failed(_ attempt: Failure.Attempt, _ error: any Error, _ client: SubstrateClient) -> Failure {
+            Failure(attempt, error, server: client.server)
+        }
         @Sendable func pause(_ seconds: Double) async -> Bool {
             do {
                 try await clock.sleep(until: clock.now.addingTimeInterval(seconds))
@@ -124,7 +126,7 @@ extension ChatApp {
                 do {
                     return Event(.refreshed(try await Self.refresh(client, plan)))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.refreshFailed(failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.refreshFailed(failed(.refresh, error, client)))
                 }
             }
         case let .cards(plan, threads):
@@ -133,7 +135,7 @@ extension ChatApp {
                 do {
                     return Event(.cardsRead(try await Self.cards(client, plan, threads: threads)))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.readFailed(failed(.refresh, error, client)))
                 }
             }
         case let .openings(threads):
@@ -146,7 +148,7 @@ extension ChatApp {
                             first: 500, orderBy: "turn:asc,createdAt:asc"))
                     return Event(.openingsRead(openingMessages(page.records)))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.readFailed(failed(.refresh, error, client)))
                 }
             }
         case let .read(thread, first, epoch, version):
@@ -159,7 +161,7 @@ extension ChatApp {
                             thread: thread, epoch: epoch, version: version, rows: page.records.reversed(),
                             full: page.records.count >= first))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.rowsFailed(thread: thread, epoch: epoch, failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.rowsFailed(thread: thread, epoch: epoch, failed(.rows, error, client)))
                 }
             }
         case let .prefetch(lease, items):
@@ -182,7 +184,7 @@ extension ChatApp {
                 do {
                     return try await client.record(Kinds.thread, thread).map { Event(.threadFetched($0)) }
                 } catch {
-                    return Task.isCancelled ? nil : Event(.readFailed(failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.readFailed(failed(.refresh, error, client)))
                 }
             }
         case let .watch(lease, head, kinds):
@@ -208,11 +210,11 @@ extension ChatApp {
                             await cache.relist()
                             yield(.watchRelist(at: clock.now))
                         case .interrupted:
-                            break
+                            yield(.watchInterrupted(true))
                         case let .ended(end):
                             switch end {
-                            case .signedOut: yield(.watchEnded(nil, Failure(kind: .sessionExpired, words: "")))
-                            case .needsApproval: yield(.watchEnded(nil, Failure(kind: .needsApproval, words: "")))
+                            case .signedOut: yield(.watchEnded(nil, Failure(.feed, .sessionEnded)))
+                            case .needsApproval: yield(.watchEnded(nil, Failure(.feed, .needsApproval)))
                             case let .refused(words): yield(.watchEnded(words, nil))
                             }
                         }
@@ -239,7 +241,7 @@ extension ChatApp {
                 do {
                     return Event(.renamed(try await client.patch(Kinds.thread, thread, properties: ["subject": .string(subject)])))
                 } catch {
-                    return Event(.renameFailed(thread: thread, before: before, failed(error, client)))
+                    return Event(.renameFailed(thread: thread, before: before, failed(.rename, error, client)))
                 }
             }
         case let .setKey(provider, key):
@@ -248,7 +250,7 @@ extension ChatApp {
                 do {
                     return Event(.keySet(try await client.patch(Kinds.provider, provider, properties: ["apiKey": .string(key)])))
                 } catch {
-                    return Event(.keyFailed(failed(error, client)))
+                    return Event(.keyFailed(failed(.addKey, error, client)))
                 }
             }
         case let .readCard(reference, target):
@@ -273,7 +275,7 @@ extension ChatApp {
                         return Event(.cardRead(id, request, target: read))
                     }
                 } catch {
-                    return Task.isCancelled ? nil : Event(.cardFailed(reference.id, failed(error, client)))
+                    return Task.isCancelled ? nil : Event(.cardFailed(reference.id, failed(.card, error, client)))
                 }
             }
         case let .writeCard(id, kind, properties, ifVersion):
@@ -282,26 +284,27 @@ extension ChatApp {
                 do {
                     return Event(.cardWritten(id, try await client.patch(kind, id, properties: properties, ifVersion: ifVersion)))
                 } catch {
-                    return Event(.cardWriteFailed(id, failed(error, client), conflict: Self.conflictWords(kind)))
+                    return Event(.cardWriteFailed(id, failed(kind == Kinds.interaction ? .answer : .decide, error, client)))
                 }
             }
         case let .decideUnread(id, accept, shown):
             return .once {
                 guard let client = await source.current() else { return nil }
-                let conflict = Self.conflictWords(Kinds.request)
                 do {
                     guard let held = try await client.record(Kinds.request, id) else {
-                        return Event(.cardWriteFailed(id, Failure(kind: .other, words: "This suggestion is no longer there."), conflict: conflict))
+                        return Event(.cardWriteFailed(id, Failure(.decide, .http(status: 404, code: "not_found", reason: nil))))
                     }
                     if let diff = held["diff"]?["properties"]?.object, diff != shown {
-                        return Event(.cardWriteFailed(id, Failure(kind: .other, words: conflict), conflict: conflict))
+                        // Not the change on screen any more: as a write over a
+                        // version that moved is refused.
+                        return Event(.cardWriteFailed(id, Failure(.decide, .http(status: 409, code: "conflict", reason: nil))))
                     }
                     let record = try await client.patch(
                         Kinds.request, id, properties: ["decision": .string(accept ? "accepted" : "rejected")],
                         ifVersion: held.version)
                     return Event(.cardWritten(id, record))
                 } catch {
-                    return Event(.cardWriteFailed(id, failed(error, client), conflict: conflict))
+                    return Event(.cardWriteFailed(id, failed(.decide, error, client)))
                 }
             }
 
@@ -314,7 +317,7 @@ extension ChatApp {
                     let read = ChatAppStep.GuidanceStep.read(memories: try await memories.records, instructions: try await instructions.records)
                     return Event(.guidance(read))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.guidance(.readFailed(failed(error, client))))
+                    return Task.isCancelled ? nil : Event(.guidance(.readFailed(failed(.guidance, error, client))))
                 }
             }
         case let .writeGuidance(reference, properties, before):
@@ -324,7 +327,7 @@ extension ChatApp {
                     let record = try await client.patch(reference.kind, reference.recordID, properties: properties, ifVersion: before.version)
                     return Event(.guidance(.written(record)))
                 } catch {
-                    return Event(.guidance(.writeFailed(reference, failed(error, client), before: before)))
+                    return Event(.guidance(.writeFailed(reference, failed(.guidanceChange, error, client), before: before)))
                 }
             }
         case let .deleteGuidance(reference, before):
@@ -334,7 +337,7 @@ extension ChatApp {
                     try await client.delete(reference.kind, reference.recordID, ifVersion: before.version)
                     return Event(.guidance(.deleted(reference)))
                 } catch {
-                    return Event(.guidance(.writeFailed(reference, failed(error, client), before: before)))
+                    return Event(.guidance(.writeFailed(reference, failed(.guidanceChange, error, client), before: before)))
                 }
             }
 
@@ -534,7 +537,7 @@ extension ChatApp {
                 known = (read.chats + read.automated).map(\.id)
             } catch {
                 out.failed.formUnion(batch.filter { $0.kind == Kinds.thread })
-                out.failure = Failure(error, server: client.server)
+                out.failure = Failure(.feed, error, server: client.server)
             }
         }
         let agentKinds: Set<String> = [Kinds.agent, Kinds.provider, Kinds.model]
@@ -547,7 +550,7 @@ extension ChatApp {
                 out.keys = read.keys
             } catch {
                 out.failed.formUnion(batch.filter { agentKinds.contains($0.kind) })
-                out.failure = Failure(error, server: client.server)
+                out.failure = Failure(.feed, error, server: client.server)
             }
         }
         let cardKinds: Set<String> = [Kinds.interaction, Kinds.request, Kinds.approval]
@@ -556,7 +559,7 @@ extension ChatApp {
                 out.cards = try await cards(client, plan, threads: known)
             } catch {
                 out.failed.formUnion(batch.filter { cardKinds.contains($0.kind) })
-                out.failure = Failure(error, server: client.server)
+                out.failure = Failure(.feed, error, server: client.server)
             }
         }
         return out
@@ -581,10 +584,6 @@ extension ChatApp {
             group.cancelAll()
             return first
         }
-    }
-
-    static func conflictWords(_ kind: String) -> String {
-        kind == Kinds.interaction ? "The questions changed since you read them. Check them again." : "It changed since you read it. Check it again."
     }
 
     /// A record cache's key, `kind/id`, back as its parts: a kind is three

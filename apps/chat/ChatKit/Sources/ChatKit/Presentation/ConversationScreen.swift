@@ -23,9 +23,9 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     /// A send is out and nothing has come back yet.
     public var typing: Bool
     public var status: [ConversationNote]
-    /// The last turn ended before it finished, and nothing runs now.
-    public var unfinished: UnfinishedNotice?
-    public var outcomes: [OutcomePresentation]
+    /// What failed, where each is drawn: a card at its turn, one strip
+    /// above the composer.
+    public var failures: ScreenFailures
     /// The thread's reference and the run's figures, each labelled, where
     /// the owner asked for technical details.
     public var technical: [LabeledValue]?
@@ -39,7 +39,6 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var composer: ComposerPresentation
     public var streaming: Bool
     public var stopping: Bool
-    public var error: String?
     public var expandThinking: Bool
 }
 
@@ -54,54 +53,22 @@ public struct NewChatHero: Codable, Equatable, Sendable {
     public var keyless: KeylessCallout?
 }
 
-/// A line about the run: working elsewhere, an answer arriving in part, an
-/// error, a reload that did not land, a chat that is gone.
+/// A line about the run that is no failure: working elsewhere, an answer
+/// arriving in part, a chat that is gone. What failed is `failures`.
 public struct ConversationNote: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Hashable, Sendable {
-        case partial, background, failed, reloadFailed, deleted
+        case partial, background, deleted
     }
 
     public var kind: Kind
     public var title: String?
     public var message: String
-    /// "Try Again", for a reload that did not land.
-    public var action: String?
-    /// The server's own words for a failed run, beneath the card's.
-    public var detail: String?
 
-    public init(kind: Kind, title: String?, message: String, action: String? = nil, detail: String? = nil) {
+    public init(kind: Kind, title: String?, message: String) {
         self.kind = kind
         self.title = title
         self.message = message
-        self.action = action
-        self.detail = detail
     }
-}
-
-/// A chat whose last turn ended before it finished: what happened, why, and
-/// a way to go on.
-public struct UnfinishedNotice: Codable, Hashable, Sendable {
-    public var tone: UnfinishedTurn.Tone
-    public var title: String
-    public var detail: String?
-    /// "Continue"
-    public var action: String
-    /// Why Continue cannot send now, as the composer says it.
-    public var blocked: String?
-    /// What Continue does: "Sends “Continue where you left off.”"
-    public var hint: String
-}
-
-/// A send that started no turn, as its card says it.
-public struct OutcomePresentation: Codable, Hashable, Sendable, Identifiable {
-    public enum Kind: String, Codable, Hashable, Sendable { case refused, checking, unknown }
-
-    public var id: String
-    public var kind: Kind
-    public var title: String?
-    public var message: String
-    /// The text, to copy; nil while it is checked.
-    public var text: String?
 }
 
 public struct ComposerPresentation: Codable, Equatable, Sendable {

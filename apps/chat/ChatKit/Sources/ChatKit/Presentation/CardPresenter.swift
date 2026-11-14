@@ -35,7 +35,7 @@ enum CardPresenter {
                 : state == "answered" ? "You answered" : "You dismissed these"
         return QuestionCard(
             title: title, loading: record == nil, pending: pending, questions: questions,
-            problem: card?.problem.map { "That didn't go through: \($0)" }, busy: card?.busy, answer: "Answer", dismiss: "Dismiss")
+            problem: card?.problem.map { FailurePresenter.line($0) }, busy: card?.busy, answer: "Answer", dismiss: "Dismiss")
     }
 
     static func suggestion(
@@ -77,7 +77,7 @@ enum CardPresenter {
             console: canDecide ? nil : session?.console("change-requests/\(segment(id))"),
             consoleNote: canDecide ? nil : "Substrate Chat wasn't approved to apply suggestions. Decide this one in the console.",
             apply: op == "create" ? "Add It" : op == "delete" ? "Delete It" : "Apply", destructive: op == "delete", dismiss: "Dismiss",
-            problem: decision == "proposed" ? card?.problem.map { "That didn't go through: \($0)" } : nil, busy: card?.busy)
+            problem: decision == "proposed" ? card?.problem.map { FailurePresenter.line($0) } : nil, busy: card?.busy)
     }
 
     static func approval(_ id: String, card: ChatAppState.Card?, pending: Record?, outcome: ApprovalNotice?) -> ApprovalCard {
@@ -113,7 +113,7 @@ enum CardPresenter {
             asks: pending ? "\(agent) wants to run" : "\(agent) asked to run",
             tool: record?["tool"]?.text ?? outcome?.tool ?? "", arguments: arguments,
             error: state == "failed" ? record?["error"]?.text ?? outcome?.error : nil,
-            problem: card?.problem.map { "That didn't go through: \($0)" }, busy: card?.busy, approve: "Approve", decline: "Decline")
+            problem: card?.problem.map { FailurePresenter.line($0) }, busy: card?.busy, approve: "Approve", decline: "Decline")
     }
 
     /// Each suggestion's `propose` call, by the request it landed.

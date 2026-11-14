@@ -14,6 +14,8 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
     enum Answer {
         case json(Int, String)
         case stream([String], holdAfter: Int? = nil)
+        /// The request fails on the device: no answer comes.
+        case fail(URLError.Code)
     }
 
     struct Route {
@@ -89,6 +91,8 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
     func lines(for request: URLRequest) async throws -> LineStream {
         let (answer, url) = await answer(for: request)
         switch answer {
+        case let .fail(code):
+            throw URLError(code)
         case let .json(status, body):
             let head = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
             return LineStream(head: head, body: Data(body.utf8))

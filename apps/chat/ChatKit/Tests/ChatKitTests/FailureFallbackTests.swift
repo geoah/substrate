@@ -15,7 +15,9 @@ private func keylessRoutes(threads: String = emptyPage, status: String = "ok") -
     ] + baseRoutes(threads: threads, status: status)
 }
 
-@Suite("A failed run's card", .timeLimit(.minutes(10)))
+/// The matching over the server's text, which a server that names causes
+/// makes unnecessary: kept while a server that does not is still in use.
+@Suite("A failed run read off the server's text", .timeLimit(.minutes(10)))
 struct FailureWordsTests {
     /// What the agent loop sends after a provider's 401: its own wrapping
     /// first, the provider's answer inside.
@@ -23,13 +25,22 @@ struct FailureWordsTests {
         "substrate: validation failed: agent x.example.com/pkg/helper: llm: error, status code: 401, "
         + "status: 401 Unauthorized, message: Incorrect API key provided: sk-…abcd."
 
+    static func card(_ text: String, provider: String?) -> FailurePresentation {
+        var context = FailurePresenter.Context()
+        context.agent = "Helper"
+        context.provider = provider
+        context.providerPage = provider.map { _ in "https://s.example.com/data/substrate.reamde.dev/llm/provider/openai" }
+        return FailurePresenter.present(Failure(.reply, .run(status: "error", cause: nil), said: text), context)
+    }
+
     @Test func aRefusedKeySaysSoAndKeepsTheServersWordsApart() {
-        let note = TurnFailureWords.note(Self.refusedKey, agent: "Helper", provider: "OpenAI")
-        #expect(note.kind == .failed)
-        #expect(note.title == "OpenAI refused the API key")
-        #expect(note.message == "Helper couldn't answer. Replace the key on OpenAI's provider record, then send again.")
-        #expect(note.detail == Self.refusedKey)
-        #expect(!note.message.contains("substrate:") && note.title?.contains("substrate:") == false)
+        let card = Self.card(Self.refusedKey, provider: "OpenAI")
+        #expect(card.tone == .bad)
+        #expect(card.sentence == "OpenAI refused the API key.")
+        #expect(card.button?.title == "Replace Key")
+        #expect(card.button?.action == .open("https://s.example.com/data/substrate.reamde.dev/llm/provider/openai"))
+        #expect(card.details == FailureDetails(title: "Details", label: "The server said", text: Self.refusedKey))
+        #expect(!card.sentence.contains("substrate:") && card.note?.contains("substrate:") != true)
     }
 
     @Test func eachProvidersRefusalReadsAsOne() {
@@ -37,23 +48,37 @@ struct FailureWordsTests {
             "anthropic: authentication_error: invalid x-api-key", "API key not valid. Please pass a valid API key. API_KEY_INVALID",
             "401 Unauthorized",
         ] {
-            #expect(TurnFailureWords.cause(text) == .keyRefused, "\(text)")
+            #expect(FailureFallback.cause(text) == .keyRefused, "\(text)")
         }
-        #expect(TurnFailureWords.cause("error, status code: 429, message: Rate limit reached") == .limited)
-        #expect(TurnFailureWords.cause("You exceeded your current quota") == .limited)
-        #expect(TurnFailureWords.cause("agent x: tool y: no such record") == .other)
-        #expect(TurnFailureWords.cause("a run of 4012 tokens") == .other)
+        #expect(FailureFallback.cause("error, status code: 429, message: Rate limit reached") == .limited)
+        #expect(FailureFallback.cause("You exceeded your current quota") == .limited)
+        #expect(FailureFallback.cause("agent x: tool y: no such record") == .other)
+        #expect(FailureFallback.cause("a run of 4012 tokens") == .other)
+    }
+
+    @Test func theTextNamesTheCauseAServerWouldHaveSent() {
+        #expect(FailureFallback.cause(status: "error", reason: "401 Unauthorized") == .providerKeyRefused)
+        #expect(FailureFallback.cause(status: "error", reason: "status code: 429, message: Rate limit reached") == .providerRateLimited)
+        #expect(FailureFallback.cause(status: "error", reason: "You exceeded your current quota") == .providerBilling)
+        #expect(FailureFallback.cause(status: "error", reason: "agent x: tool y: no such record") == nil)
+        #expect(FailureFallback.cause(status: "overbudget", reason: "max turns reached (8)") == .turnLimit)
+        #expect(FailureFallback.cause(status: "overbudget", reason: "max tool calls reached (32)") == .toolCallLimit)
+        #expect(FailureFallback.cause(status: "overbudget", reason: "deadline exceeded after a last turn") == .deadline)
+        #expect(FailureFallback.cause(status: "stopped", reason: "stopped: the server shut down during the turn") == .shutdown)
+        #expect(FailureFallback.cause(status: "stopped", reason: "stopped by api") == .owner)
+        #expect(FailureFallback.cause(status: "ok", reason: "401 Unauthorized") == nil)
     }
 
     @Test func aProviderUnknownToTheAppStillReadsWhole() {
-        let limited = TurnFailureWords.note("status code: 429", agent: "Helper", provider: nil)
-        #expect(limited.title == "The provider is turning requests down")
-        let other = TurnFailureWords.note("agent x: tool y: no such record", agent: "Helper", provider: nil)
-        #expect(other.title == "Helper couldn't answer" && other.message == "The run ended in an error.")
-        #expect(other.detail == "agent x: tool y: no such record")
-        let key = TurnFailureWords.note("401 Unauthorized", agent: "Helper", provider: nil)
-        #expect(key.title == "The provider refused the API key")
-        #expect(key.message == "Helper couldn't answer. Replace the key on the provider record, then send again.")
+        let limited = Self.card("status code: 429", provider: nil)
+        #expect(limited.sentence == "The provider is limiting requests." && limited.button?.title == "Try Again")
+        let other = Self.card("agent x: tool y: no such record", provider: nil)
+        #expect(other.sentence == "Helper couldn't finish this reply." && other.note == nil)
+        #expect(other.details?.text == "agent x: tool y: no such record")
+        let key = Self.card("401 Unauthorized", provider: nil)
+        #expect(key.sentence == "The provider refused the API key.")
+        // No page to open: the one button is still there.
+        #expect(key.button?.title == "Try Again")
     }
 
     @Test func anOpenedChatNamesItsProvider() async throws {
@@ -65,8 +90,9 @@ struct FailureWordsTests {
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
-        let note = try #require(await rig.conversation(key)?.status.first)
-        #expect(note.title == "OpenAI refused the API key" && note.detail == "401 Unauthorized")
+        let card = try #require(await rig.card(key))
+        #expect(card.sentence == "OpenAI refused the API key." && card.details?.text == "401 Unauthorized")
+        #expect(card.button == FailureButton(title: "Replace Key", action: .open("https://s.example.com/data/substrate.reamde.dev/llm/provider/openai"), external: true))
     }
 }
 

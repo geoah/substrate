@@ -254,10 +254,10 @@ struct ConversationRuns {
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
-        try await rig.harness.until { _ in await rig.live(key)?.outcomes.isEmpty == false }
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
         let live = try #require(await rig.live(key))
-        #expect(live.outcomes.first?.kind == .refused)
-        #expect(live.outcomes.first?.reason == "a turn is already running on this thread")
+        #expect(live.chatFailure?.attempt == .send && live.chatFailure?.why == .http(status: 409, code: "conflict", reason: nil))
+        #expect(live.chatFailure?.said == "a turn is already running on this thread" && live.chatFailure?.unconfirmed == false)
         #expect(live.draft == "Hi")
         #expect(live.phase == .idle && live.overlay.turns.isEmpty && live.thread == nil)
         // The field takes the text it gave back.
@@ -274,8 +274,10 @@ struct ConversationRuns {
         // The check reads a second later: the clock moves to each sleep as
         // it begins, its presentation's window and then the check's, and no
         // further than two seconds on.
-        try await rig.harness.until(advancing: 2) { _ in await rig.live(key)?.outcomes.contains { $0.kind == .unknown } == true }
-        #expect(await rig.live(key)?.outcomes.contains { $0.kind == .refused } == false)
+        try await rig.harness.until(advancing: 2) { _ in await rig.live(key)?.chatFailure?.unconfirmed == true }
+        #expect(await rig.live(key)?.chatFailure?.why == .notTheAPI(status: 502))
+        // What was typed is back in the composer.
+        #expect(await rig.conversation(key)?.composer.draft == "Hi")
         // Nothing is sent again on its own.
         #expect(rig.server.count("/chat") == 1)
     }
@@ -317,7 +319,7 @@ struct ListRules {
                 .init(method: "GET", path: "/api/v1/records", query: "llm/interaction", answer: .json(403, forbidden)),
             ] + baseRoutes(threads: threads), scopes: ["agents:*"])
         try await rig.signIn()
-        #expect(await rig.harness.state.refreshError == nil)
+        #expect(await rig.harness.state.listFailure == nil)
         #expect(await rig.harness.state.interactions.map(\.id) == ["i1"])
         let cards = rig.server.requests.filter { $0.contains("/api/v1/records") && $0.contains("llm/interaction") }
         #expect(!cards.isEmpty && cards.allSatisfy { $0.contains(named) })
@@ -542,9 +544,10 @@ struct ListRules {
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
-        let notes = try #require(await rig.conversation(key)?.status)
-        #expect(notes.map(\.kind) == [.failed])
-        #expect(notes.first?.title == "The provider refused the API key" && notes.first?.detail == "401 Unauthorized")
+        let card = try #require(await rig.card(key))
+        #expect(card.sentence == "The provider refused the API key.")
+        #expect(card.details == FailureDetails(title: "Details", label: "The server said", text: "401 Unauthorized"))
+        #expect(await rig.conversation(key)?.status.isEmpty == true)
     }
 
     @Test func aWindowLeavingKeepsAConversationAnotherShows() async throws {

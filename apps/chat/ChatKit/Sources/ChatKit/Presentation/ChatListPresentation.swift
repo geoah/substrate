@@ -4,9 +4,12 @@ public struct ChatListPresentation: Codable, Equatable, Sendable {
     public var sections: [DaySection]
     /// "Offline. Showing saved chats."
     public var offline: String?
-    /// "Couldn't refresh: …"
-    public var problem: String?
-    public var feedProblem: String?
+    /// The list's one failure, drawn at its top: a refresh that failed,
+    /// the change feed ended, a rename of a chat no window shows.
+    public var failure: FailurePresentation?
+    /// The change feed dropped and is being opened again: a state, not a
+    /// failure.
+    public var reconnecting: Bool
     /// Nothing to list yet, and why; nil while there is.
     public var empty: EmptyList?
     /// Nothing held yet: the first read is on its way.

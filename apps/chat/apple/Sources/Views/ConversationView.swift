@@ -7,6 +7,7 @@ import SwiftUI
 struct ConversationView: View {
     @Environment(ChatHost.self) private var host
     @Environment(\.scenePhase) private var phase
+    @Environment(\.openURL) private var openURL
     let key: ChildKey
     let scene: String
     @State private var dictation = Dictation()
@@ -29,7 +30,7 @@ struct ConversationView: View {
         let _ = Meter.shared.count(.body, "Transcript")
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] })
+                TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -57,12 +58,22 @@ struct ConversationView: View {
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .safeAreaBar(edge: .bottom) {
-            ComposerBar(
-                key: key, screen: screen, dictation: dictation, atBottom: atBottom,
-                onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
-                onKey: { keySheet = host.chats?.keys[$0] }
-            )
-            .equatable()
+            VStack(spacing: 8) {
+                // A failure of the chat as a whole: one strip, directly
+                // above the composer.
+                if let strip = screen.failures.strip {
+                    FailureView(failure: strip, act: act)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: 820)
+                        .transition(.opacity)
+                }
+                ComposerBar(
+                    key: key, screen: screen, dictation: dictation, atBottom: atBottom,
+                    onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
+                    onKey: { keySheet = host.chats?.keys[$0] }
+                )
+                .equatable()
+            }
         }
         .environment(\.draftField, draftField)
         .navigationTitle(screen.title)
@@ -79,7 +90,11 @@ struct ConversationView: View {
         .onChange(of: phase) { _, phase in
             if phase != .active, dictation.active { Task { await stopListening(screen) } }
         }
-        .sensoryFeedback(.error, trigger: screen.error)
+        .sensoryFeedback(trigger: screen.failures.spoken) { _, spoken in spoken == nil ? nil : .error }
+        // VoiceOver hears a failure when it appears in the chat on screen.
+        .onChange(of: screen.failures.spoken) { _, spoken in
+            if let spoken { AccessibilityNotification.Announcement(spoken).post() }
+        }
         .sheet(item: $keySheet) { ProviderKeySheet(sheet: $0) }
         .alert("Rename Chat", isPresented: $renaming) {
             TextField("Title", text: $newTitle)
@@ -116,6 +131,11 @@ struct ConversationView: View {
         }
     }
 
+    private var act: (FailureAction) -> Void {
+        let actions = FailureActions(host: host, scene: scene, key: key, openURL: openURL) { keySheet = host.chats?.keys[$0] }
+        return { actions($0) }
+    }
+
     private func stopListening(_ screen: ConversationScreen) async {
         // The field said what it holds when the app left the front: what
         // was heard lands after it, in the conversation.
@@ -128,10 +148,8 @@ struct ConversationView: View {
         var h = Hasher()
         h.combine(screen.turns.count)
         h.combine(screen.turns.last)
-        h.combine(screen.outcomes.count)
         h.combine(screen.approvals)
-        h.combine(screen.unfinished)
-        h.combine(screen.error)
+        h.combine(screen.failures.turns)
         h.combine(screen.typing)
         return h.finalize()
     }
@@ -147,6 +165,8 @@ struct TranscriptRows: View {
     let key: ChildKey
     /// Add a key for the provider named.
     let onKey: (String) -> Void
+    /// What a failure's button does.
+    let act: (FailureAction) -> Void
 
     var body: some View {
         if let hero = screen.hero {
@@ -160,8 +180,15 @@ struct TranscriptRows: View {
                 .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
         }
-        ForEach(TranscriptPiece.pieces(of: screen.turns)) { piece in
+        let pieces = TranscriptPiece.pieces(of: screen.turns)
+        // The last row of each turn, by the turn's id.
+        let ends = Dictionary(pieces.map { ($0.turn.id, $0.id) }, uniquingKeysWith: { _, last in last })
+        ForEach(pieces) { piece in
             TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking)
+            // A turn's failure is a card at that turn, under its last row.
+            if ends[piece.turn.id] == piece.id, let failure = screen.failures.turns[piece.turn.id] {
+                FailureView(failure: failure, act: act)
+            }
         }
         if screen.typing {
             TypingDots()
@@ -236,8 +263,8 @@ private struct NewChatHeroView: View {
     }
 }
 
-/// What became of the run: working elsewhere, an error, sends that started
-/// no turn, a handover that did not land, a chat that is gone.
+/// What the run is doing that is no failure: working elsewhere, an answer
+/// arriving in part, a chat that is gone.
 private struct ConversationStatus: View {
     @Environment(ChatHost.self) private var host
     let screen: ConversationScreen
@@ -257,137 +284,10 @@ private struct ConversationStatus: View {
                         .font(.subheadline)
                         .foregroundStyle(.quietText)
                 }
-            case .failed:
-                VStack(alignment: .leading, spacing: 10) {
-                    ProblemBox(title: note.title, message: note.message)
-                    if let detail = note.detail {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("The server said")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                            Text(detail)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        // Under the message, past the box's symbol.
-                        .padding(.leading, 26)
-                    }
-                }
-                .card(tint: .red)
-            case .reloadFailed:
-                VStack(alignment: .leading, spacing: 10) {
-                    ProblemBox(message: note.message, tint: .orange)
-                    if let action = note.action {
-                        Button(action) { host.send(.retryReload, to: key) }
-                            .buttonStyle(.bordered)
-                    }
-                }
-                .card(tint: .orange)
             case .deleted:
                 ProblemBox(title: note.title, message: note.message, tint: .secondary, systemImage: "trash")
                     .card()
             }
         }
-        if let unfinished = screen.unfinished {
-            UnfinishedCard(notice: unfinished) { host.send(.continueTurn, to: key) }
-        }
-        ForEach(screen.outcomes) { outcome in
-            OutcomeCard(outcome: outcome) {
-                if let id = UUID(uuidString: outcome.id) { host.send(.dismiss(id), to: key) }
-            }
-        }
-    }
-}
-
-/// A chat whose last turn ended before it finished: what happened, why, and
-/// Continue, held back with the composer's reason while a send cannot go.
-private struct UnfinishedCard: View {
-    let notice: UnfinishedNotice
-    let onContinue: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: symbol)
-                    .foregroundStyle(tint ?? .secondary)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(notice.title).font(.subheadline.weight(.semibold))
-                    if let detail = notice.detail {
-                        Text(detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .accessibilityElement(children: .combine)
-            Button(notice.action, action: onContinue)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(notice.blocked != nil)
-                .help(notice.blocked ?? notice.hint)
-                .accessibilityHint(notice.blocked ?? notice.hint)
-                // Under the words, past the symbol.
-                .padding(.leading, 26)
-        }
-        .card(tint: tint)
-    }
-
-    private var symbol: String {
-        switch notice.tone {
-        case .bad: "exclamationmark.circle.fill"
-        case .warn: "exclamationmark.triangle.fill"
-        case .quiet: "pause.circle.fill"
-        }
-    }
-
-    private var tint: Color? {
-        switch notice.tone {
-        case .bad: .red
-        case .warn: .orange
-        case .quiet: nil
-        }
-    }
-}
-
-private struct OutcomeCard: View {
-    let outcome: OutcomePresentation
-    let dismiss: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            switch outcome.kind {
-            case .refused:
-                ProblemBox(title: outcome.title, message: outcome.message)
-            case .checking:
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text(outcome.message)
-                        .font(.subheadline)
-                }
-            case .unknown:
-                ProblemBox(title: outcome.title, message: outcome.message, tint: .orange)
-            }
-            if let text = outcome.text {
-                Text(text)
-                    .font(.subheadline)
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.background, in: .rect(cornerRadius: 10))
-                HStack {
-                    Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(text) }
-                    Button("Dismiss", action: dismiss)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-        }
-        .card(tint: outcome.kind == .refused ? .red : .orange)
     }
 }

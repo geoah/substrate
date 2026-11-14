@@ -47,13 +47,11 @@ struct ChatListView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .listRowSeparator(.hidden)
-            } else if let problem = list?.problem {
-                ProblemBox(message: problem, tint: .orange)
+            } else if let failure = list?.failure {
+                // The list's one failure: a strip at its top.
+                FailureView(failure: failure) { FailureActions(host: host, scene: scene, openURL: openURL)($0) }
                     .listRowSeparator(.hidden)
-            }
-            if let problem = chats?.renameProblem {
-                ProblemBox(title: "Couldn't rename", message: problem, tint: .orange)
-                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
             ForEach(sections) { section in
                 Section {
