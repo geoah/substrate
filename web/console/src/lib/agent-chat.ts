@@ -37,6 +37,7 @@ import {
 import type { KindPurpose } from "@/lib/definition"
 import { relativeTime } from "@/lib/format"
 import { displayName, displayPlural, lowerFirst } from "@/lib/kind-names"
+import { USD } from "@/lib/money"
 import { splitRecordPath } from "@/lib/record-path"
 import {
   propSpecsByName,
@@ -214,7 +215,7 @@ export function tallyWords(t: ThreadTally): string[] {
         : ""
     out.push(`${plural(t.totalTokens, "token", "tokens")}${split}`)
   }
-  if (t.costUSD !== undefined) out.push(`$${t.costUSD.toFixed(4)}`)
+  if (t.costUSD !== undefined) out.push(`${USD}${t.costUSD.toFixed(4)}`)
   return out
 }
 

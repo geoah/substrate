@@ -52,7 +52,7 @@ it("names the package and the agent, says the cap in dollars and the model on it
   ).toBe("one")
   expect(screen.getByRole("option", { name: "My AI" })).toBeTruthy()
   const agent = screen.getByRole("listitem")
-  expect(agent.textContent).toContain("Run spends up to $1.00 a day")
+  expect(agent.textContent).toContain("Run spends up to US$1.00 a day")
   expect(agent.textContent).toContain("Model gateway/a")
   expect(screen.queryByText(/US cents/)).toBeNull()
   // Identifiers wait behind the switch.

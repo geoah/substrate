@@ -1524,6 +1524,13 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		_ = admin.Close()
 		return nil, err
 	}
+	// A key of the file's budget.repositories that finds no repository is
+	// logged at the start (operatorallowance.go); each repository resolves
+	// its own allowance at its first read.
+	if err := s.checkOperatorAllowances(ctx); err != nil {
+		s.log.Warn("substrate: the operator defaults file's budget.repositories was not checked at the start",
+			"error", err)
+	}
 	return s, nil
 }
 

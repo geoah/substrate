@@ -8,6 +8,7 @@
 import { threadStartedAt } from "@/lib/agent-chat"
 import { displayPlural, lowerFirst } from "@/lib/kind-names"
 import { readReference, type SubstrateRecord } from "@/lib/api/types"
+import { USD } from "@/lib/money"
 import { kindPatternWords } from "@/lib/tools"
 import { allowVerbs, policyIdOf, type PolicyOp } from "@/lib/agent-rules"
 
@@ -154,7 +155,7 @@ export function runCost(thread: SubstrateRecord): number | undefined {
 
 /** Whether a run spent tokens and recorded no cost for them. The loop prices
  * a run by its provider row as the row stood then and writes `costUSD: 0`
- * for a model the row had no price for, so "$0" beside tokens would read as
+ * for a model the row had no price for, so "US$0" beside tokens would read as
  * free. The thread row alone decides: today's pricing and today's sub-agents
  * cannot say what an old run was priced at. Every cost on the agent page is
  * the cost a run RECORDED, a root run's included, which records each
@@ -201,12 +202,13 @@ function trim(n: number): string {
   return n >= 100 ? String(Math.round(n)) : n.toFixed(1).replace(/\.0$/, "")
 }
 
-/** Dollars, to the cent, and to the tenth of a cent under one. */
+/** An estimated cost in US dollars, to the cent, and to the tenth of a cent
+ * under one. */
 export function costWords(usd: number): string {
-  if (usd === 0) return "$0"
-  if (usd < 0.001) return "under $0.001"
-  if (usd < 1) return `$${usd.toFixed(3)}`
-  return `$${usd.toFixed(2)}`
+  if (usd === 0) return `${USD}0`
+  if (usd < 0.001) return `under ${USD}0.001`
+  if (usd < 1) return `${USD}${usd.toFixed(3)}`
+  return `${USD}${usd.toFixed(2)}`
 }
 
 // ── when, how long, and who asked ───────────────────────────────────────────
@@ -479,6 +481,62 @@ export function agentSpendCap(agent: SubstrateRecord): number | undefined {
   return cents !== undefined && cents >= 0 ? cents : undefined
 }
 
+/** The cap one agent's runs are held to, whoever's key pays (decision
+ * record 0314): the cap the owner's override of its budgets sets, which
+ * replaces the declared one, else the cap it declares. */
+export type AgentCapInForce =
+  | { source: "own"; cents: number }
+  | { source: "declared"; cents: number }
+  | { source: "none" }
+
+/** The daily cap an `llm/agentbudget` sets, or undefined where it sets none.
+ * A value past the kind's maximum, which only an import can store, sets none,
+ * as the engine reads it. */
+export function budgetSpendCap(
+  budget: SubstrateRecord | null | undefined
+): number | undefined {
+  if (!budget || budget.deletedAt) return undefined
+  const cents = num(budget.properties.spendCentsPerDay)
+  return cents !== undefined &&
+    Number.isInteger(cents) &&
+    cents >= 0 &&
+    cents <= Number.MAX_SAFE_INTEGER
+    ? cents
+    : undefined
+}
+
+/** The override that holds where several name one agent, as the engine
+ * picks it (`engine/spend.go` ownerSpendCaps): the lowest cap, the lower id
+ * on a tie. The server keeps one per agent, so several are only history an
+ * import folded in. Where none sets a cap, the first by id. */
+export function heldBudget(
+  budgets: readonly SubstrateRecord[]
+): SubstrateRecord | undefined {
+  const live = budgets
+    .filter((b) => !b.deletedAt)
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  let held: SubstrateRecord | undefined
+  for (const b of live) {
+    const cents = budgetSpendCap(b)
+    if (cents === undefined) continue
+    const have = held ? budgetSpendCap(held) : undefined
+    if (have === undefined || cents < have) held = b
+  }
+  return held ?? live[0]
+}
+
+/** Which cap holds an agent's runs, read as the engine reads it
+ * (`engine/spend.go` agentSpendCap). */
+export function agentCapInForce(
+  declared: number | undefined,
+  budgets: readonly SubstrateRecord[]
+): AgentCapInForce {
+  const own = budgetSpendCap(heldBudget(budgets))
+  if (own !== undefined) return { source: "own", cents: own }
+  if (declared !== undefined) return { source: "declared", cents: declared }
+  return { source: "none" }
+}
+
 export interface CapSpend {
   /** What the runs counted against the cap recorded, in US dollars. */
   usd: number
@@ -516,9 +574,9 @@ export function capWindowSpend(
   return { usd, complete: !truncated || reached < from, running }
 }
 
-/** A cap in cents as dollars, to the cent: "$1.50", "$0.00". */
+/** A cap in US cents as US dollars, to the cent: "US$1.50", "US$0.00". */
 export function capWords(cents: number): string {
-  return `$${centsAsDollars(cents)}`
+  return `${USD}${centsAsDollars(cents)}`
 }
 
 /** Whole cents as "1.50", in integers: a float division misreads a cap near
@@ -574,7 +632,7 @@ export function repositorySpendCap(
 export function parseCapDollars(
   text: string
 ): { cents: number } | { error: string } {
-  const typed = text.trim().replace(/^\$\s*/, "")
+  const typed = text.trim().replace(/^(US)?\$\s*/i, "")
   if (typed.startsWith("-")) return { error: "A cap can’t be negative." }
   const m = /^(\d*)(?:\.(\d*))?$/.exec(typed)
   if (!m || (m[1] === "" && !m[2])) {

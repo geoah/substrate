@@ -80,9 +80,10 @@ type TriggerStatus struct {
 	LastParkedError string     `json:"lastParkedError,omitempty"`
 	LastParkedAt    *time.Time `json:"lastParkedAt,omitempty"`
 	// Held says why the dispatcher holds a trigger's deliveries: for an agent
-	// trigger, the spend cap reached (the agent's `budgets.spendCentsPerDay`
-	// or the repository's `substrate.reamde.dev/llm/spendCentsPerDay`
-	// setting) and the spend so far, or the operator's daily allowance; for
+	// trigger, the spend cap reached (the cap the owner's `llm/agentbudget`
+	// for the agent sets, else its `budgets.spendCentsPerDay`, or the
+	// repository's `substrate.reamde.dev/llm/spendCentsPerDay` setting) and
+	// the spend so far, or the operator's daily allowance; for
 	// a function trigger whose function runs on the operator's key, the
 	// allowance. A held delivery is not claimed, so the cursor or fire state
 	// stays and nothing parks; the next dispatcher pass after the spend falls

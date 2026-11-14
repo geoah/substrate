@@ -176,7 +176,7 @@ describe("rule A: what a row offers", () => {
       window: 200000,
     })
     expect(priceWords(offers[0].price!)).toBe(
-      "$4 input · $20 output · $0.20 cache reads"
+      "US$4 input · US$20 output · US$0.20 cache reads"
     )
   })
 
@@ -188,7 +188,7 @@ describe("rule A: what a row offers", () => {
     })
     const [offer] = rowOffers(anthropic, [OPUS], undefined)
     expect(offer.source).toBe("row")
-    expect(priceWords(offer.price!)).toBe("$5 input · $25 output")
+    expect(priceWords(offer.price!)).toBe("US$5 input · US$25 output")
     expect(offer.shadowsRecord).toBe(true)
     // The record's window stands where the entry states none.
     expect(offer.window).toBe(200000)
@@ -229,7 +229,7 @@ describe("rule A: what a row offers", () => {
     })
     const [offer] = rowOffers(openai, [], undefined)
     expect(offer).toMatchObject({ model: "gpt-5", source: "row" })
-    expect(priceWords(offer.price!)).toBe("$1.25 input · $0 output")
+    expect(priceWords(offer.price!)).toBe("US$1.25 input · US$0 output")
   })
 
   it("takes the later of two entries for one model", () => {
@@ -244,7 +244,7 @@ describe("rule A: what a row offers", () => {
     })
     const offers = rowOffers(openai, [], undefined)
     expect(offers.map((o) => o.model)).toEqual(["gpt-5", "gpt-5-mini"])
-    expect(priceWords(offers[0].price!)).toBe("$3 input · $4 output")
+    expect(priceWords(offers[0].price!)).toBe("US$3 input · US$4 output")
   })
 
   it("lists a record without both base rates as unpriced, with its window", () => {
@@ -291,7 +291,7 @@ describe("rule A: what a row offers", () => {
       undefined
     )
     expect(offers.map((o) => [o.model, o.record?.id])).toEqual([["gpt-5", "a"]])
-    expect(priceWords(offers[0].price!)).toBe("$1.25 input · $10 output")
+    expect(priceWords(offers[0].price!)).toBe("US$1.25 input · US$10 output")
   })
 
   it("offers exactly the operator's list on a row the operator serves", () => {
@@ -350,7 +350,7 @@ describe("rule A: what a row offers", () => {
       (o) => o.model === "claude-opus-5-5"
     )
     expect(priceWords(opus!.price!)).toBe(
-      "$4 input · $20 output · $0.20 cache reads"
+      "US$4 input · US$20 output · US$0.20 cache reads"
     )
     expect(windowWords(opus!.window!)).toBe("200k tokens")
   })
@@ -669,7 +669,7 @@ describe("the words", () => {
       })
     )
     expect(priceWords(facts.price!)).toBe(
-      "$0.10 input · $0.50 output · $0.125 cache writes"
+      "US$0.10 input · US$0.50 output · US$0.125 cache writes"
     )
     expect(windowWords(1048576)).toBe("1M tokens")
   })

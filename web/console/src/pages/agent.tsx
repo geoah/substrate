@@ -18,6 +18,7 @@ import { BotIcon, MessageSquarePlusIcon, PencilIcon } from "lucide-react"
 import { AgentManifest } from "@/components/agent/agent-manifest"
 import { AgentMark } from "@/components/agent/agent-mark"
 import { AgentRef } from "@/components/agent/agent-ref"
+import { AgentSpendCap } from "@/components/agent/spend-cap"
 import { AllowRules } from "@/components/agent/always-allow"
 import { GrantsEditor } from "@/components/agent/grants-editor"
 import { AddKeyButton } from "@/components/agent/model-key-link"
@@ -56,14 +57,12 @@ import {
   agentLimits,
   agentSpendCap,
   capWindowSpend,
-  capWords,
   costWords,
   durationWords,
   failureGroups,
   isConversation,
   periodTotals,
   policySentence,
-  reachedCap,
   runOutlastsInvocation,
   runCost,
   runDurationMs,
@@ -76,7 +75,6 @@ import {
   runUnpriced,
   tokenWords,
   type AgentLimit,
-  type CapSpend,
   type FailureGroup,
   type GroupTotals,
   type PeriodTotals,
@@ -369,22 +367,14 @@ export function AgentPage() {
         specs={agentKind ? propSpecsByName(agentKind) : []}
       />
 
-      {spendCap !== undefined && (
-        <>
-          <SectionHead
-            title="Daily spend cap"
-            hint="what its runs may spend in any 24 hours"
-          />
-          <SpendCap
-            cap={spendCap}
-            spend={
-              runs.isSuccess
-                ? capWindowSpend(threads, { truncated })
-                : undefined
-            }
-          />
-        </>
-      )}
+      <AgentSpendCap
+        agentId={id}
+        name={name}
+        declared={spendCap}
+        spend={
+          runs.isSuccess ? capWindowSpend(threads, { truncated }) : undefined
+        }
+      />
 
       <SectionHead
         title="Always allowed"
@@ -517,58 +507,6 @@ function Limits({
   )
 }
 
-/** The agent's cap beside what counts against it now, from the runs the page
- * read. At the cap the server holds its runs; the trigger status says so too,
- * and counts what running runs have spent, which their rows do not carry
- * until they settle. */
-function SpendCap({ cap, spend }: { cap: number; spend?: CapSpend }) {
-  const reached = spend !== undefined && reachedCap(spend.usd, cap)
-  return (
-    <>
-      <Facts
-        rows={[
-          ["Cap", `${capWords(cap)} in any 24 hours`],
-          [
-            "Spent in the last 24 hours",
-            spend === undefined ? (
-              <EmptyValue>Its runs didn’t load</EmptyValue>
-            ) : (
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="tabular-nums">
-                  {!spend.complete && (
-                    <span className="text-faint">at least </span>
-                  )}
-                  {costWords(spend.usd)}
-                </span>
-                {reached && <Pill tone="warn">At the cap</Pill>}
-              </span>
-            ),
-          ],
-        ]}
-      />
-      <div className="mt-2 flex flex-col gap-0.5 text-[12.5px] text-faint">
-        {reached && (
-          <p>
-            Its triggers hold their deliveries, and a chat with it is refused,
-            until its spend falls under the cap or you raise it. A held delivery
-            waits and runs then.
-          </p>
-        )}
-        <p>
-          Counts the cost each run it started recorded when it finished,
-          including the agents it asked.
-        </p>
-        {spend !== undefined && spend.running > 0 && (
-          <p>
-            A run still going counts against the cap as it spends, and shows
-            here once it finishes.
-          </p>
-        )}
-      </div>
-    </>
-  )
-}
-
 /** Where one run opens: a conversation in the chat app, any other run (a
  * sub-agent's, a judgement) as its thread record. */
 function RunLink({
@@ -693,7 +631,7 @@ const SPEND_ROWS: Array<{
   },
   {
     label: "Cost",
-    // "$0" beside tokens a run recorded no cost for would read as free.
+    // "US$0" beside tokens a run recorded no cost for would read as free.
     value: (s) => (noCostRecorded(s) ? "No cost recorded" : costWords(s.cost)),
     floor: (s) => !noCostRecorded(s) && (!s.spendComplete || s.unpriced > 0),
   },

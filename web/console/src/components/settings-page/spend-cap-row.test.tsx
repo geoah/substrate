@@ -158,7 +158,7 @@ describe("SpendCapRow", () => {
     renderRow()
     expect(await screen.findByText("No cap")).toBeTruthy()
     expect(screen.getByText("Spent in the last 24 hours")).toBeTruthy()
-    expect(await screen.findByText("$1.75")).toBeTruthy()
+    expect(await screen.findByText("US$1.75")).toBeTruthy()
     expect(screen.queryByText("At the cap")).toBeNull()
   })
 
@@ -177,8 +177,8 @@ describe("SpendCapRow", () => {
         value: "150",
       },
     })
-    expect(await screen.findByText("$1.50 in any 24 hours")).toBeTruthy()
-    // $1.75 spent against a $1.50 cap.
+    expect(await screen.findByText("US$1.50 in any 24 hours")).toBeTruthy()
+    // US$1.75 spent against a US$1.50 cap.
     expect(await screen.findByText("At the cap")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Change" }))
@@ -190,7 +190,7 @@ describe("SpendCapRow", () => {
     // The name is written only when the record is created, so a name the
     // owner gave it since stays.
     expect(puts[1]).toEqual({ properties: { type: "int", value: "2000" } })
-    expect(await screen.findByText("$20.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$20.00 in any 24 hours")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Change" }))
     fireEvent.click(screen.getByRole("button", { name: "Remove the cap" }))
@@ -247,7 +247,7 @@ describe("SpendCapRow", () => {
   it("reads a signed cap as the engine does", async () => {
     stored = setting("+2000")
     renderRow()
-    expect(await screen.findByText("$20.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$20.00 in any 24 hours")).toBeTruthy()
   })
 
   it("says an unreadable cap holds every run, and offers to change it", async () => {
@@ -289,14 +289,14 @@ describe("SpendCapRow", () => {
         ],
       })
     renderRow()
-    expect(await screen.findByText("$0.290")).toBeTruthy()
+    expect(await screen.findByText("US$0.290")).toBeTruthy()
     expect(await screen.findByText("At the cap")).toBeTruthy()
   })
 
   it("counts the runs deleted since they finished", async () => {
     deletedPage = () => json(200, { records: DELETED })
     renderRow()
-    expect(await screen.findByText("$2.00")).toBeTruthy()
+    expect(await screen.findByText("US$2.00")).toBeTruthy()
     expect(screen.queryByText("at least")).toBeNull()
   })
 
@@ -321,8 +321,8 @@ describe("SpendCapRow", () => {
         records: [{ ...run, updatedAt: hoursAgo(1), deletedAt: hoursAgo(1) }],
       })
     renderRow()
-    expect(await screen.findByText("$10.00 in any 24 hours")).toBeTruthy()
-    expect(await screen.findByText("$6.00")).toBeTruthy()
+    expect(await screen.findByText("US$10.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$6.00")).toBeTruthy()
     expect(screen.queryByText("At the cap")).toBeNull()
   })
 
@@ -342,14 +342,14 @@ describe("SpendCapRow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }))
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toEqual({ properties: { type: "int", value: "2000" } })
-    expect(await screen.findByText("$20.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$20.00 in any 24 hours")).toBeTruthy()
   })
 
   it("gives the spend as a floor when the deleted runs don't load", async () => {
     deletedPage = () =>
       json(500, { error: { code: "internal", message: "boom" } })
     renderRow()
-    expect(await screen.findByText("$1.75")).toBeTruthy()
+    expect(await screen.findByText("US$1.75")).toBeTruthy()
     expect(screen.getByText("at least")).toBeTruthy()
     expect(
       screen.getByText(
@@ -368,7 +368,7 @@ describe("SpendCapRow", () => {
         cursor: "next",
       })
     renderRow()
-    expect(await screen.findByText("$1.25")).toBeTruthy()
+    expect(await screen.findByText("US$1.25")).toBeTruthy()
     expect(screen.getByText("at least")).toBeTruthy()
     expect(
       screen.getByText(

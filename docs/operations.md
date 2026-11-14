@@ -862,8 +862,21 @@ file the server behaves as the section above says. With it:
   Firecrawl sample, never gets it
   ([decision 0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
 - Every operator-paid call first reserves its worst-case cost against the
-  allowance, `budget.centsPerDay`, per repository and per UTC calendar day,
-  and settles to its reported cost after; a function call reserves its
+  allowance, per repository and per UTC calendar day, and settles to its
+  reported cost after. The allowance is `budget.centsPerDay`, or the
+  repository's own line under `budget.repositories`, keyed by its id (`rnd-…`,
+  from `substratectl --dsn … repository list`) or its full name
+  ([decision 0314](decisions/0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md)).
+  Prefer the id: it never changes, and a name stops finding the repository
+  90 days after a rename. Two lines that find one repository hold the
+  lower, and the start logs a line that finds none, finds one by a former
+  name, or finds one another line found. A repository resolves its line at
+  its first read, so one registered later under a listed name takes it
+  too. An agent's own spend caps hold beside the allowance
+  ([the daily spend cap](agents.md#the-daily-spend-cap)), so a person whose
+  agent declares less than their allowance raises the agent's cap
+  themselves. An older binary refuses `budget.repositories`, so remove it
+  before rolling back; a function call reserves its
   `pricePerCall` and settles at it once its body may have started, or at
   nothing when the runner never started it. A call that reports no
   usage, or only part of it, counts at that worst case, unless it reported
@@ -949,9 +962,12 @@ functionSecrets:
   providers.substrate.reamde.dev/firecrawl:
     apiKey: {file: /run/secrets/firecrawl}
     consumers: [websearch, webscrape]          # the functions that receive the key
-    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # cents, one per consumer
+    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # US cents, one per consumer
 budget:
-  centsPerDay: 200                 # the allowance: per repository, everything operator-paid
+  centsPerDay: 200                 # the allowance in US cents: per repository, everything operator-paid
+  repositories:                    # optional; a repository's own allowance, by its id or full name
+    rnd-0abcdefghjkmnpqrstvwxyz012:
+      centsPerDay: 1000
 ```
 
 Key material is never written in the file: every key is `{file: /path}`, an

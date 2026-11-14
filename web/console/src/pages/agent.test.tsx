@@ -339,7 +339,7 @@ describe("AgentPage", () => {
     })
     expect(within(rows[1]).getByText("Done")).toBeTruthy()
     expect(within(rows[1]).getByText("4.0s")).toBeTruthy()
-    expect(within(rows[1]).getByText("$0.012")).toBeTruthy()
+    expect(within(rows[1]).getByText("US$0.012")).toBeTruthy()
     // A run another agent asked for opens as its thread record.
     const asked = within(rows[0]).getByText("Asked by another agent")
     expect(asked.getAttribute("data-to")).toBe(
@@ -360,9 +360,9 @@ describe("AgentPage", () => {
     // two runs of the week; the month adds the one from 20 days ago.
     expect(spendRow("Runs", "Runs it started")).toEqual(["1", "2", "3"])
     expect(spendRow("Cost", "Runs it started")).toEqual([
-      "$0.012",
-      "$0.042",
-      "$0.542",
+      "US$0.012",
+      "US$0.042",
+      "US$0.542",
     ])
     expect(spendRow("Tokens used", "Runs it started")).toEqual([
       "1.2k",
@@ -373,9 +373,9 @@ describe("AgentPage", () => {
     expect(screen.getByText(/^Cost is what each run recorded/)).toBeTruthy()
     // The run another agent asked for is its own group, never added in.
     expect(spendRow("Cost", "When another agent asked it")).toEqual([
-      "$0.002",
-      "$0.002",
-      "$0.002",
+      "US$0.002",
+      "US$0.002",
+      "US$0.002",
     ])
     expect(screen.queryByText(/at least/)).toBeNull()
   })
@@ -416,10 +416,11 @@ describe("AgentPage", () => {
   })
 
   it("shows a declared daily spend cap beside what its finished runs spent in the last 24 hours", async () => {
-    // Without a cap there is nothing to show.
+    // Without a declared cap or one of yours it has none, and you may set one.
     mount()
     await screen.findByRole("table", { name: "What it spent" })
-    expect(screen.queryByText("Daily spend cap")).toBeNull()
+    expect(await screen.findByText("No cap")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Set a cap" })).toBeTruthy()
     cleanup()
 
     const base = fetchMock.getMockImplementation()!
@@ -437,11 +438,14 @@ describe("AgentPage", () => {
     await screen.findByText("Daily spend cap")
     const value = (label: string) =>
       screen.getByText(label).nextElementSibling?.textContent ?? ""
-    expect(value("Cap")).toBe("$0.01 in any 24 hours")
+    await waitFor(() => expect(value("Cap")).toBe("US$0.01 in any 24 hours"))
+    expect(
+      screen.getByText("Declared by the agent. A cap you set replaces it.")
+    ).toBeTruthy()
     // The chat it started (1.2 cents, 2 hours ago) counts; the run another
     // agent asked it for is on that agent's cap.
     await waitFor(() =>
-      expect(value("Spent in the last 24 hours")).toBe("$0.012At the cap")
+      expect(value("Spent in the last 24 hours")).toBe("US$0.012At the cap")
     )
     expect(screen.getByText(/^Its triggers hold their deliveries/)).toBeTruthy()
   })
@@ -476,7 +480,7 @@ describe("AgentPage", () => {
     expect(within(first).getByText("None recorded")).toBeTruthy()
     expect(within(second).getByText("3.0s")).toBeTruthy()
     // One of the day's two runs recorded no cost: its cost is a floor.
-    expect(spendRow("Cost")[0]).toBe("at least $0.010")
+    expect(spendRow("Cost")[0]).toBe("at least US$0.010")
     // Technical mode names each run by its full reference.
     expect(
       within(first).getByText(`${THREAD}/t-unpriced`, { exact: false })

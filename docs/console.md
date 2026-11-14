@@ -1045,11 +1045,23 @@ chat) is what the agent is and may do: **Can see** and **Can change**,
 edited by collection and written as its `permissions`, an edit that would
 leave a tool it holds without its grant held back with the reason; the tools
 it uses and the agents it can ask; **Always allowed**, each rule with
-**Revoke**; the other rules its changes go through, in words; and its last
-fifty **Recent runs**, with how many there were, how many didn't finish, the
+**Revoke**; the other rules its changes go through, in words; its **Daily
+spend cap**; and its last fifty **Recent runs**, with how many there were, how many didn't finish, the
 tokens and the cost, and per run what started it, how it ended (and why, when
 it failed), its tokens and its cost. With Technical details on it adds the
 references and the declaration.
+
+**Daily spend cap** says what holds the agent's runs and who set it, beside
+what its runs spent in the last 24 hours
+([the daily spend cap](agents.md#the-daily-spend-cap)). **Set a cap** and
+**Change** write your own cap for it, in US dollars, on the agent's
+`llm/agentbudget`, which replaces the one it declares; **Remove your cap**
+deletes it, so the declared one holds again. Where an import left more than
+one override of the agent, the section shows the one that holds, the
+lowest, says how many there are, and leaves one at the next change. Every price, cost, cap and
+allowance the console shows is in US dollars and written `US$`: agent spend
+is counted in USD whatever a vendor bills in
+([decision 0316](decisions/0316-agent-spend-is-counted-in-us-dollars.md)).
 
 The [`llm/provider`](agents.md#providers) rows are the **AI models** on
 [Providers](#providers): an agent names one by id, its panel says which and
@@ -1156,7 +1168,8 @@ Where the operator pays for any of them, the **AI models** heading carries
 today's allowance: what it has spent of the day's limit, split by what spent
 it (chat, search by meaning, tools, sign-in), and when it resets, in your own
 time zone. Your own keys do not count against it, and it is separate from
-your own daily spend cap in [Settings](#settings). Where a tool runs on the
+your own daily spend caps, in [Settings](#settings) and on each agent's
+page. Where a tool runs on the
 operator's key, the **Tools for your agents** heading says "counts toward
 today's allowance from _Site_", and the card names the tool by what it does
 ("Web search for your agents."). The allowance is never at the top of the page

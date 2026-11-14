@@ -755,3 +755,34 @@ func TestCodeWritingARunsKindsIsHeldToThePerson(t *testing.T) {
 		t.Fatalf("an agent acting for the admin renaming a thread: %v", err)
 	}
 }
+
+// An owner's override of an agent's budgets is a control kind (decision
+// 0314): an editor's rules and a function whose writes are a glob do not
+// reach it, and an admin writes it. Moss's own glob is held by namedOnly
+// (TestAnAgentCannotWriteItsOwnBudgetsThroughAGlob).
+func TestAnAgentBudgetIsWrittenByAnAdminAndNoGlob(t *testing.T) {
+	t.Parallel()
+	rr := newRolesRepository(t)
+	ds := rr.ds
+	props := func() map[string]any {
+		return map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, vocabulary.PackageAssistant+"/moss")},
+			"spendCentsPerDay": 1_000_000,
+		}
+	}
+	_, err := ds.Put(rr.as(rr.boID), substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindLLMAgentBudget, Properties: props()})
+	if !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an editor's write of an agent budget = %v, want it refused", err)
+	}
+	glob := []string{"*"}
+	err = ds.inTx(context.Background(), substrate.FunctionActor("x.example.com", "p", "f"), false, func(tx *txn) error {
+		tx.setEffectEmit(glob)
+		return tx.applyEffects(glob, []effect{{Action: effectPut, Type: vocabulary.KindLLMAgentBudget, ID: "by-glob", Properties: props()}})
+	})
+	if !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("a function's write of an agent budget by a glob = %v, want it refused", err)
+	}
+	if _, err := ds.Put(rr.as(rr.adaID), substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindLLMAgentBudget, Properties: props()}); err != nil {
+		t.Fatalf("the admin's write of an agent budget: %v", err)
+	}
+}

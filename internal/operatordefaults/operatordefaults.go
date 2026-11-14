@@ -3,8 +3,9 @@
 // an operator default is a key or an OAuth client the operator supplies, used
 // only where a repository holds none of its own, and the file's budget is the
 // allowance that bounds what the operator pays for one repository in one UTC
-// day (docs/plans/host-defaults.md, decision 0235). A deployment without the
-// file has no operator defaults, and nothing in this package runs.
+// day (docs/plans/host-defaults.md, decision 0235), set per repository where
+// the file names one (decision 0314). A deployment without the file has no
+// operator defaults, and nothing in this package runs.
 //
 // The file holds no key material itself. Every credential is a reference, `{file:
 // /path}` or `{env: NAME}`, resolved once at Load and held in this process
@@ -171,7 +172,13 @@ type FunctionSecret struct {
 
 // Budget is the allowance, per repository and UTC day, in US cents.
 type Budget struct {
+	// CentsPerDay is the allowance of every repository Repositories does not
+	// name.
 	CentsPerDay int64
+	// Repositories is the allowance of each repository the file names, keyed
+	// by the repository's name or id as the file wrote it (decision 0314).
+	// The engine resolves the keys; this package only checks their shape.
+	Repositories map[string]int64
 }
 
 // Secret is key material read from a file or an environment variable. Its
@@ -365,6 +372,11 @@ type functionSecretDoc struct {
 }
 
 type budgetDoc struct {
+	CentsPerDay  *int64                          `yaml:"centsPerDay"`
+	Repositories map[string]*repositoryBudgetDoc `yaml:"repositories"`
+}
+
+type repositoryBudgetDoc struct {
 	CentsPerDay *int64 `yaml:"centsPerDay"`
 }
 
@@ -438,6 +450,22 @@ func (d *document) validate(dir string) (*Config, error) {
 		return nil, errors.New("budget.centsPerDay is a whole number of cents at or above 0")
 	}
 	c.Budget.CentsPerDay = *d.Budget.CentsPerDay
+	for _, key := range slices.Sorted(maps.Keys(d.Budget.Repositories)) {
+		doc := d.Budget.Repositories[key]
+		if !vocabulary.ValidRepositoryID(key) && !vocabulary.ValidRepositoryAuthority(key) {
+			return nil, fmt.Errorf("budget.repositories: %q is not a repository's full name (one with a dot) or its id", key)
+		}
+		if doc == nil || doc.CentsPerDay == nil {
+			return nil, fmt.Errorf("budget.repositories.%s: centsPerDay is required", key)
+		}
+		if *doc.CentsPerDay < 0 {
+			return nil, fmt.Errorf("budget.repositories.%s: centsPerDay is a whole number of cents at or above 0", key)
+		}
+		if c.Budget.Repositories == nil {
+			c.Budget.Repositories = map[string]int64{}
+		}
+		c.Budget.Repositories[key] = *doc.CentsPerDay
+	}
 
 	seen := map[string]bool{}
 	for i, p := range d.Install {

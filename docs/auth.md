@@ -448,8 +448,9 @@ vocabulary is and who may do what
 ([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)):
 triggers; policies; AI providers and the
 models they offer; a package's settings, the kinds its bundle takes as
-inputs, and the accounts that connect it; applets; declarations; actors;
-and roles. A kind's description says its class (`control`, with `sign-in`
+inputs, and the accounts that connect it; applets; declarations, with
+the overrides that stand in for a key of one (a kind's `core/retention`, an
+agent's `llm/agentbudget`); actors; and roles. A kind's description says its class (`control`, with `sign-in`
 for sign-in material). A rule reaches one only by naming that kind; `*`
 never does. `admin` reaches every one by being `admin`. A change request is
 not one: deciding it writes its target as the person who decides, so an

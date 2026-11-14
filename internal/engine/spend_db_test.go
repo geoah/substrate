@@ -167,6 +167,187 @@ func heldAt(agent string, spent, capCents int) string {
 		spendPackage, agent, spent, capCents)
 }
 
+// putAgentBudget writes the owner's override of one agent of spendPackage,
+// setting its daily cap, and returns the record's id.
+func putAgentBudget(t *testing.T, ds *dataset, agent string, cents int) string {
+	t.Helper()
+	rec, err := ds.Put(context.Background(), substrate.ActorPerson, agentBudgetInput(agent, map[string]any{"spendCentsPerDay": cents}))
+	if err != nil {
+		t.Fatalf("put the owner's budgets of %s: %v", agent, err)
+	}
+	return rec.ID
+}
+
+// agentBudgetInput is a create of an llm/agentbudget naming one agent of
+// spendPackage, with props beside the reference.
+func agentBudgetInput(agent string, props map[string]any) substrate.PutInput {
+	props["agent"] = map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, spendPackage+"/"+agent)}
+	return substrate.PutInput{Kind: vocabulary.KindLLMAgentBudget, Properties: props}
+}
+
+// heldAtOwnersCap is the hold an agent of spendPackage reads at the cap the
+// owner's llm/agentbudget id sets.
+func heldAtOwnersCap(agent, id string, spent, capCents int) string {
+	return fmt.Sprintf("spend cap reached: agent %s/%s spent %d of its %d cents in the last 24 hours (%s %s)",
+		spendPackage, agent, spent, capCents, vocabulary.KindLLMAgentBudget, id)
+}
+
+// The owner's override of an agent's budgets replaces the cap the agent
+// declares: it raises a declared zero and lowers a declared 150, and deleting
+// it brings the declared cap back (decision 0314).
+func TestAnOwnersAgentBudgetReplacesTheDeclaredCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openSpendDataset(t)
+	fake.script("zero", fakeTurn{content: "one"})
+	fake.script("capped", fakeTurn{content: "one"})
+	held := func(agent, want string) {
+		t.Helper()
+		_, err := ds.CallAgent(ctx, spendPackage+"/"+agent, "go")
+		if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
+			t.Fatalf("%s: %v, want held with %q", agent, err, want)
+		}
+	}
+
+	raised := putAgentBudget(t, ds, "zero", 100)
+	if _, err := ds.CallAgent(ctx, spendPackage+"/zero", "go"); err != nil {
+		t.Fatalf("a call under the owner's cap of a declared zero: %v", err)
+	}
+	held("zero", heldAtOwnersCap("zero", raised, 100, 100))
+
+	lowered := putAgentBudget(t, ds, "capped", 50)
+	if _, err := ds.CallAgent(ctx, spendPackage+"/capped", "go"); err != nil {
+		t.Fatalf("a call under the owner's lowered cap: %v", err)
+	}
+	held("capped", heldAtOwnersCap("capped", lowered, 100, 50))
+
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindLLMAgentBudget, raised, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	held("zero", heldAt("zero", 100, 0))
+}
+
+// An agent has one live override of its budgets: a second is refused, the
+// first changes in place, one that sets no daily cap leaves the declared cap
+// holding, and a cap past what an int property holds exactly is refused.
+func TestAnAgentHasOneBudgetOverride(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openSpendDataset(t)
+
+	bare, err := ds.Put(ctx, substrate.ActorPerson, agentBudgetInput("zero", map[string]any{}))
+	if err != nil {
+		t.Fatalf("an override that sets no limit: %v", err)
+	}
+	if _, err := ds.CallAgent(ctx, spendPackage+"/zero", "go"); !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), heldAt("zero", 0, 0)) {
+		t.Fatalf("a declared zero under an override that sets no cap: %v", err)
+	}
+
+	_, err = ds.Put(ctx, substrate.ActorPerson, agentBudgetInput("zero", map[string]any{"spendCentsPerDay": 500}))
+	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), vocabulary.RecordPath(vocabulary.KindLLMAgentBudget, bare.ID)) {
+		t.Fatalf("a second override of one agent = %v, want a conflict naming the first", err)
+	}
+	mustPatchInternal(t, ds, vocabulary.KindLLMAgentBudget, bare.ID, map[string]any{"spendCentsPerDay": 0})
+	_, err = ds.CallAgent(ctx, spendPackage+"/zero", "go")
+	if want := heldAtOwnersCap("zero", bare.ID, 0, 0); !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
+		t.Fatalf("after the override changed in place: %v, want %q", err, want)
+	}
+
+	_, err = ds.Put(ctx, substrate.ActorPerson, agentBudgetInput("open", map[string]any{"spendCentsPerDay": int64(vocabulary.MaxAgentSpendCentsPerDay) + 1}))
+	if !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("a cap past 2^53-1 = %v, want a validation refusal", err)
+	}
+
+	// A patch that moves another agent's override onto this one is held as
+	// a second create is.
+	other := putAgentBudget(t, ds, "capped", 400)
+	_, err = ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMAgentBudget, other, substrate.PatchInput{Properties: map[string]any{
+		"agent": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, spendPackage+"/zero")},
+	}})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("moving an override onto an agent that has one = %v, want a conflict", err)
+	}
+
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindLLMAgentBudget, bare.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatal(err)
+	}
+	putAgentBudget(t, ds, "zero", 300)
+}
+
+// Two creates of an override of one agent at once: writes to a repository
+// take one lock, so one lands and the other meets the first.
+func TestTwoOverridesOfOneAgentAtOnceLandOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openSpendDataset(t)
+	errs := make(chan error, 2)
+	for _, cents := range []int{100, 200} {
+		go func() {
+			_, err := ds.Put(ctx, substrate.ActorPerson, agentBudgetInput("open", map[string]any{"spendCentsPerDay": cents}))
+			errs <- err
+		}()
+	}
+	landed, conflicts := 0, 0
+	for range 2 {
+		switch err := <-errs; {
+		case err == nil:
+			landed++
+		case errors.Is(err, substrate.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("a create racing another: %v", err)
+		}
+	}
+	if landed != 1 || conflicts != 1 {
+		t.Fatalf("landed %d and conflicted %d, want one of each", landed, conflicts)
+	}
+}
+
+// An agent of the repository's own namespace is named by the override in
+// either spelling of `~`, the repository's full name included, and the
+// override holds the agent the engine runs (decision 0259).
+func TestAnOwnersBudgetNamesALocalAgentByEitherSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openSpendDataset(t)
+	pkg := ds.name() + "/budgeted"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.AgentManifest(pkg, "penny", map[string]any{
+			"description": "penny under test", "prompt": "You are penny.",
+			"provider": "pricedllm", "model": "open",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: vocabulary.KindLLMAgentBudget,
+		Properties: map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, pkg+"/penny")},
+			"spendCentsPerDay": 0,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("spend cap reached: agent ~/budgeted/penny spent 0 of its 0 cents in the last 24 hours (%s %s)",
+		vocabulary.KindLLMAgentBudget, rec.ID)
+	_, err = ds.CallAgent(ctx, "~/budgeted/penny", "go")
+	if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
+		t.Fatalf("a local agent under an override written with the full name: %v, want %q", err, want)
+	}
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: vocabulary.KindLLMAgentBudget,
+		Properties: map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, "~/budgeted/penny")},
+			"spendCentsPerDay": 500,
+		},
+	})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a second override spelled ~ = %v, want a conflict with the full-name one", err)
+	}
+}
+
 // A capped agent stops after its cap: the trigger reads held with the cap's
 // reason, the cursor stays on the change still owed, nothing parks, no run
 // row is written, the hold is logged once, and raising the cap delivers the

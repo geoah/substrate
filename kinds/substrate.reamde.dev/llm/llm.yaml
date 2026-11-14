@@ -44,7 +44,10 @@ data:
   # record 0256).
   # version 7: `heldTo` on a thread, a message, an ask and an approval,
   # whose rules hold the work each stands for (decision record 0276).
-  version: 7
+  # version 8: the `agentbudget` kind, the owner's override of one agent's
+  # budgets, each limit it sets replacing the declared one (decision record
+  # 0314).
+  version: 8
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

@@ -286,7 +286,7 @@ export function operatorServesAny(
 
 // ── the allowance ───────────────────────────────────────────────────────────
 
-/** "$0.37". */
+/** "US$0.37". */
 export const centsWords = capWords
 
 /** When the allowance resets, in the reader's own time zone: "Resets at

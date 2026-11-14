@@ -118,3 +118,17 @@ func TestARetentionOverrideIsAControlKind(t *testing.T) {
 		t.Fatal("an editor writes the retention override, or an admin does not")
 	}
 }
+
+// An owner's override of an agent's budgets is a control kind of the
+// declarations class (decision 0314): raising it spends more, so an editor's
+// glob does not reach it and an admin does.
+func TestAnAgentBudgetIsAControlKind(t *testing.T) {
+	ref := vocabulary.KindLLMAgentBudget
+	if got := vocabulary.ControlClassOf(&vocabulary.Kind{Identity: ref}, false); got != vocabulary.ControlDeclarations {
+		t.Fatalf("the class of %s = %q, want %q", ref, got, vocabulary.ControlDeclarations)
+	}
+	k := Kind{Ref: ref, Internal: true, Control: true}
+	if shippedRoles(t, RoleEditor).Reaches(Write, k) || !shippedRoles(t, RoleAdmin).Reaches(Write, k) {
+		t.Fatal("an editor writes the agent budget override, or an admin does not")
+	}
+}

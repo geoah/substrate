@@ -76,6 +76,36 @@ func TestAGlobGrantReachesNoInternalKind(t *testing.T) {
 	}
 }
 
+// Moss's `*` cannot raise its own daily cap: the owner's override of an
+// agent's budgets is an internal kind, which only a grant that names it
+// reaches (decision 0314).
+func TestAnAgentCannotWriteItsOwnBudgetsThroughAGlob(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake, _ := openMossDataset(t)
+	fake.script(mossModel,
+		fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", vocabulary.KindLLMAgentBudget, "", map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, mossID)},
+			"spendCentsPerDay": 1_000_000,
+		})}}},
+		fakeTurn{content: "done"},
+	)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "spend more"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := toolRows(t, ds, res.Thread)
+	if len(rows) != 1 {
+		t.Fatalf("tool rows = %v, want the one write", rows)
+	}
+	if content, _ := rows[0]["content"].(string); rows[0]["ok"] != false || !strings.Contains(content, vocabulary.KindLLMAgentBudget+" is an internal kind") {
+		t.Fatalf("Moss's write of its own cap under *: ok %v, %s; want a refusal naming the kind as internal", rows[0]["ok"], content)
+	}
+	if caps, err := ds.ownerSpendCaps(ctx); err != nil || len(caps) != 0 {
+		t.Fatalf("the owner's caps after the refused write = %v, %v; want none", caps, err)
+	}
+}
+
 // A function an agent runs writes as the agent, and its effects are held to
 // the agent's named grants as the agent's own writes are: an instruction or
 // a provider row under Moss's `*` is refused, the owner's data is not.

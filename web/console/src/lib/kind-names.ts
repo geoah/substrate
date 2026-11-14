@@ -57,6 +57,7 @@ const WORDS = new Set([
   "book",
   "bot",
   "bridge",
+  "budget",
   "bundle",
   "calendar",
   "chat",

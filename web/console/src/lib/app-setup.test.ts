@@ -141,8 +141,8 @@ describe("providerInputName and spendWords", () => {
     )
   })
   it("says a cap in dollars, to the cent", () => {
-    expect(spendWords(100)).toBe("up to $1.00 a day")
-    expect(spendWords(5)).toBe("up to $0.05 a day")
+    expect(spendWords(100)).toBe("up to US$1.00 a day")
+    expect(spendWords(5)).toBe("up to US$0.05 a day")
   })
 })
 

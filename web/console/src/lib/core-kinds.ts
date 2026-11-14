@@ -85,6 +85,10 @@ export const INSTRUCTION_KIND = `${LLM_PACKAGE}/instruction`
  * agent's `runsOn` names these (decision record 0242). */
 export const LLM_MODEL_KIND = `${LLM_PACKAGE}/model`
 
+/** The owner's override of one agent's budgets: each limit it sets replaces
+ * the one the agent declares, one record per agent (decision record 0314). */
+export const AGENT_BUDGET_KIND = `${LLM_PACKAGE}/agentbudget`
+
 /** The kinds of a machinery package whose records are the owner's own data:
  * listed under the purpose they declare, in a group of their own, and theirs
  * in every origin. The server's `vocabulary.SeededOwnerData` is this list. */

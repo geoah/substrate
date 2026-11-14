@@ -181,7 +181,11 @@ func (ds *dataset) functionAllowanceHold(ctx context.Context, fn *vocabulary.Fun
 	if err != nil {
 		return "", err
 	}
-	limit := float64(ds.svc.operatorDefaults.Budget.CentsPerDay)
+	cents, err := ds.allowanceCents(ctx)
+	if err != nil {
+		return "", err
+	}
+	limit := float64(cents)
 	if used+price <= limit+allowanceEpsilon {
 		return "", nil
 	}

@@ -673,7 +673,7 @@ describe("threadTally", () => {
       "3 turns",
       "1 tool call",
       "1,234 tokens (1,200 in, 34 out)",
-      "$0.0123",
+      "US$0.0123",
     ])
     expect(tallyWords(threadTally(record({ properties: {} })))).toEqual([])
   })

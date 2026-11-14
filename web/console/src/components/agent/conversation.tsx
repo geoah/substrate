@@ -85,6 +85,7 @@ import {
 } from "@/lib/api/agents"
 import { pendingApprovalsQueryOptions } from "@/lib/api/approvals"
 import { LLM_PACKAGE } from "@/lib/api/http"
+import { USD } from "@/lib/money"
 import {
   EMPTY_OVERLAY,
   pushCompacted,
@@ -1105,7 +1106,7 @@ export function Conversation({
               {result.reason ? ` (${result.reason})` : ""} · {result.turns}{" "}
               turns · {result.toolCalls} tool calls ·{" "}
               {result.totalTokens.toLocaleString()} tokens
-              {result.costUSD ? ` · $${result.costUSD.toFixed(4)}` : ""}
+              {result.costUSD ? ` · ${USD}${result.costUSD.toFixed(4)}` : ""}
             </p>
           )}
         </div>

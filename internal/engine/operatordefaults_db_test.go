@@ -25,6 +25,7 @@ import (
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -446,6 +447,135 @@ func TestOperatorHoldsARunAtTheLimit(t *testing.T) {
 	}
 	if n := threadCountOf(t, ds, crewPackage+"/chatter"); n != 0 {
 		t.Fatalf("a refused chat opened %d threads", n)
+	}
+}
+
+// On the operator's key an agent's declared cap holds as on the owner's,
+// beside the allowance, and the owner's override of its budgets replaces it
+// there too: the operator bounds what it pays with the allowance alone
+// (decision 0314). The allowance the run is held to is this repository's
+// own line: the file's default is nothing.
+func TestOnTheOperatorsKeyTheOwnersBudgetReplacesTheDeclaredCap(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, rowFake, _, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config {
+		c := operatorChatConfig(u, "", 0)
+		c.Budget.Repositories = map[string]int64{testdb.Repository(t): 1000}
+		return c
+	})
+	emptyTheChatRow(t, ds, rowFake.srv.URL)
+	const frugal = "frugal.test.dev/frugal"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+		vocabulary.PackageManifest(frugal, 0),
+		vocabulary.AgentManifest(frugal, "penny", map[string]any{
+			"description": "penny under test", "prompt": "You are penny.",
+			"provider": "chatllm", "model": "chat",
+			"budgets": map[string]any{"spendCentsPerDay": 0},
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ag, err := ds.registry().ResolveAgent(frugal + "/penny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	holdOf := func() string {
+		t.Helper()
+		ds.spend.expireCap()
+		text, err := ds.spendHold(ctx, ag, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return text
+	}
+	wantDeclared := fmt.Sprintf("spend cap reached: agent %s/penny spent 0 of its 0 cents in the last 24 hours (budgets.spendCentsPerDay)", frugal)
+	if text := holdOf(); text != wantDeclared {
+		t.Fatalf("a declared zero on the operator's key = %q, want %q", text, wantDeclared)
+	}
+
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: vocabulary.KindLLMAgentBudget,
+		Properties: map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, frugal+"/penny")},
+			"spendCentsPerDay": 500,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if text := holdOf(); text != "" {
+		t.Fatalf("the owner's 500 on the operator's key, under the repository's own allowance, held the run: %q", text)
+	}
+}
+
+// The defaults file gives one repository an allowance of its own by name. A
+// repository it does not list takes budget.centsPerDay, a key that finds no
+// repository changes nothing, and a repository registered after the start
+// under a listed name takes its line at its first read (decision 0314).
+func TestTheFileSetsOneRepositorysAllowance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	later := testdb.RepositoryLabel(t) + "2.example.com"
+	cfg := &operatordefaults.Config{Budget: operatordefaults.Budget{CentsPerDay: 10, Repositories: map[string]int64{
+		testdb.Repository(t): 20, later: 30, "nobody.example.com": 0,
+	}}}
+	ds := openInternalDataset(t, WithOperatorDefaults(cfg, "Example"))
+	clock := &testClock{now: time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)}
+	ds.svc.operatorNow = clock.Now
+	allowanceOf := func(d *dataset) int64 {
+		t.Helper()
+		got, err := d.OperatorDefaults(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Operator == nil || got.Operator.Allowance == nil {
+			t.Fatalf("the operator defaults read carries no allowance: %+v", got.Operator)
+		}
+		return got.Operator.Allowance.CentsPerDay
+	}
+
+	if got := allowanceOf(ds); got != 20 {
+		t.Fatalf("the listed repository's allowance = %d, want 20", got)
+	}
+	if _, err := ds.reserveOperator(ctx, substrate.SlotLLM, 15); err != nil {
+		t.Fatalf("15 of the listed repository's 20 = %v", err)
+	}
+	if _, err := ds.reserveOperator(ctx, substrate.SlotLLM, 6); !errors.Is(err, substrate.ErrAllowance) {
+		t.Fatalf("21 of the listed repository's 20 = %v, want the allowance's refusal", err)
+	}
+
+	registered := secondRepository(t, ds)
+	if got := allowanceOf(registered); got != 30 {
+		t.Fatalf("a repository registered after the start under a listed name = %d, want 30", got)
+	}
+	unlisted := testdb.RepositoryLabel(t) + "3.example.com"
+	if _, err := ds.svc.CreateRepository(ctx, unlisted); err != nil {
+		t.Fatal(err)
+	}
+	d, err := ds.svc.Dataset(ctx, unlisted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := d.(*dataset)
+	if got := allowanceOf(other); got != 10 {
+		t.Fatalf("an unlisted repository's allowance = %d, want budget.centsPerDay, 10", got)
+	}
+	if _, err := other.reserveOperator(ctx, substrate.SlotLLM, 11); !errors.Is(err, substrate.ErrAllowance) {
+		t.Fatalf("11 of an unlisted repository's 10 = %v, want the allowance's refusal", err)
+	}
+
+	// Listed twice, by its id and by its name, a repository takes the lower.
+	twice := testdb.RepositoryLabel(t) + "4.example.com"
+	info, err := ds.svc.CreateRepository(ctx, twice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Budget.Repositories[info.ID], cfg.Budget.Repositories[twice] = 5, 7
+	d, err = ds.svc.Dataset(ctx, twice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := allowanceOf(d.(*dataset)); got != 5 {
+		t.Fatalf("a repository listed by its id at 5 and its name at 7 = %d, want the lower", got)
 	}
 }
 

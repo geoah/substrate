@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
-amended-by: 0217
+amended-by: 0217, 0314
 ---
 
 # 0149. A spend cap holds an agent trigger, a third state beside running and parked

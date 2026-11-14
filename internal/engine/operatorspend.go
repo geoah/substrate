@@ -5,15 +5,16 @@ package engine
 // request on the operator's embeddings entry, first RESERVES a conservative
 // ceiling in operator_spend_reservations, in one transaction that sums the
 // repository's reservations for the UTC calendar day under an advisory lock,
-// and is refused when the sum would pass the allowance, the defaults file's
-// budget.centsPerDay. The call then SETTLES to its reported cost, failed or
-// not. A call that reported no usage, or only part of it, keeps its ceiling
-// unless it reported nothing and failed in a way the endpoint cannot have
-// billed (egress.ErrUnprocessed), and a reservation still open an hour after
-// it opened (a crash, a lost settle) is settled at its ceiling, so the ledger
-// only ever overcounts. The ceiling covers one billable attempt, so an
-// operator-paid client never retries an attempt that may have been billed
-// (llm.Config.RetryOnlyUnbilled).
+// and is refused when the sum would pass the allowance: the repository's own
+// entry under the defaults file's budget.repositories, else its
+// budget.centsPerDay (operatorallowance.go). The call then SETTLES to its
+// reported cost, failed or not. A call that reported no usage, or only part
+// of it, keeps its ceiling unless it reported nothing and failed in a way the
+// endpoint cannot have billed (egress.ErrUnprocessed), and a reservation
+// still open an hour after it opened (a crash, a lost settle) is settled at
+// its ceiling, so the ledger only ever overcounts. The ceiling covers one
+// billable attempt, so an operator-paid client never retries an attempt that
+// may have been billed (llm.Config.RetryOnlyUnbilled).
 //
 // The gate sits beneath every caller because it wraps the clients
 // themselves: operatorLLMClient is the llm.Client every agent loop on an
@@ -93,7 +94,11 @@ func (ds *dataset) allowanceDetail(used, limit float64, resets time.Time) string
 // or refuses with ErrAllowance. Reservations of one repository serialize on
 // an advisory lock, so two calls cannot both find room for one.
 func (ds *dataset) reserveOperator(ctx context.Context, slot string, ceiling float64) (*operatorReservation, error) {
-	limit := float64(ds.svc.operatorDefaults.Budget.CentsPerDay)
+	cents, err := ds.allowanceCents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: reserve operator spend: %w", err)
+	}
+	limit := float64(cents)
 	now := ds.svc.operatorNow().UTC()
 	dayStart, dayEnd := allowanceDay(now)
 	tx, err := ds.db.BeginTx(ctx, nil)
@@ -367,7 +372,11 @@ func (ds *dataset) allowanceHold(ctx context.Context, ag *vocabulary.Agent, thre
 	if err != nil {
 		return "", err
 	}
-	limit := float64(ds.svc.operatorDefaults.Budget.CentsPerDay)
+	cents, err := ds.allowanceCents(ctx)
+	if err != nil {
+		return "", err
+	}
+	limit := float64(cents)
 	if used+floor <= limit+allowanceEpsilon {
 		return "", nil
 	}

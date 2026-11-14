@@ -456,3 +456,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
 | [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |
 | [0311](0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md) | A purge the engine writes for a hand is that hand's deletion of a shipped record | accepted |
+| [0314](0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md) | An owner overrides an agent's budgets, and the operator sets each repository's allowance | accepted |
+| [0316](0316-agent-spend-is-counted-in-us-dollars.md) | Agent spend is counted in US dollars | accepted |

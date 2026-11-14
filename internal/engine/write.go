@@ -975,6 +975,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.guardRetentionWrite(sp); err != nil {
 		return nil, err
 	}
+	// An `agentbudget` override is one live record per agent
+	// (agentbudget.go).
+	if err := t.guardAgentBudgetWrite(sp); err != nil {
+		return nil, err
+	}
 	// A packed observed record's `stats` is the engine's and its `unit` is
 	// stored as a table code (observed.go): both settle before the managed
 	// check reads the write.

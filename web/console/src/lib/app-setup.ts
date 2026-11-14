@@ -164,7 +164,7 @@ export function providerNeedWords(
 }
 
 /** What an agent may spend in a day, in the console's money words: "up to
- * $1.00 a day". */
+ * US$1.00 a day". */
 export function spendWords(cents: number): string {
   return `up to ${capWords(cents)} a day`
 }

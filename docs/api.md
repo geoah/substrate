@@ -2424,7 +2424,7 @@ package is not installed, or `install-failed`, with the error, when the
 operator's install of it failed. Where the deployment
 loaded an [operator defaults](operations.md#operator-defaults) file,
 `operator` carries the site's name from `site.yaml` and today's `allowance`:
-`centsPerDay`, `usedCents` (open reservations count at their ceiling),
+`centsPerDay` and `usedCents` in US cents (open reservations count at their ceiling),
 `resetsAt` (the next 00:00 UTC) and `bySlot`. A scoped app token is refused
 with `403`; a full-access one reads it as the owner does. The shape is
 `OperatorDefaults` in `internal/substrate/operatordefaults.go`.
