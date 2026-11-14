@@ -173,7 +173,10 @@ func (r *aggRun) convertWith(p *observed.Point, c *convFactor) {
 	if c.identity {
 		return
 	}
-	p.Value = p.Value*c.ff + c.fo
+	// The product is rounded on its own (float64) before the add: a fused
+	// multiply-add would answer another last bit on arm64 than on amd64
+	// (#1371).
+	p.Value = float64(p.Value*c.ff) + c.fo
 	digits, exact := c.digits(p.Exact)
 	if !exact {
 		r.meta.inexact = true

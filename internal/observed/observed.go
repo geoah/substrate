@@ -652,13 +652,16 @@ func PercentileContext(ctx context.Context, points []Point, w Window, q float64)
 	if err := SortStableFunc(ctx, vs, cmp.Compare[float64]); err != nil {
 		return 0, false, err
 	}
-	pos := q * float64(len(vs)-1)
+	// Each product is rounded on its own (float64) before its add or
+	// subtract: a fused multiply-add, which arm64 has and amd64 does not,
+	// rounds once and answers another last bit by architecture (#1371).
+	pos := float64(q * float64(len(vs)-1))
 	lo := int(math.Floor(pos))
 	if lo >= len(vs)-1 {
 		return vs[len(vs)-1], true, nil
 	}
 	frac := pos - float64(lo)
-	return vs[lo] + frac*(vs[lo+1]-vs[lo]), true, nil
+	return vs[lo] + float64(frac*(vs[lo+1]-vs[lo])), true, nil
 }
 
 // CircularMean is the mean direction of the circular points in the window,
@@ -808,5 +811,8 @@ func (m *moments) add(v float64) {
 	m.n++
 	d := v - m.mean
 	m.mean += d / float64(m.n)
-	m.m2 += d * (v - m.mean)
+	// The product is rounded on its own (float64) before its add: a fused
+	// multiply-add, which arm64 has and amd64 does not, rounds once and
+	// stores another last bit by architecture (#1371).
+	m.m2 += float64(d * (v - m.mean))
 }

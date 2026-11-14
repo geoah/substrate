@@ -270,7 +270,9 @@ func (b *BucketBuilder) closeHeld(next time.Time) {
 	d := end.Sub(start).Milliseconds()
 	s.HeldMs += d
 	if p.HasValue {
-		s.TWASum += p.Value * float64(d)
+		// Rounded on its own before the add (float64): a fused multiply-add
+		// would store another last bit on arm64 than on amd64 (#1371).
+		s.TWASum += float64(p.Value * float64(d))
 	}
 }
 

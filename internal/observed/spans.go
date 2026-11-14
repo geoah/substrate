@@ -286,7 +286,9 @@ func TWAOfContext(ctx context.Context, spans []Span) (float64, bool, error) {
 			continue
 		}
 		d := s.End.Sub(s.Start).Milliseconds()
-		sum += s.Point.Value * float64(d)
+		// Rounded on its own before the add (float64): a fused multiply-add
+		// would answer another last bit on arm64 than on amd64 (#1371).
+		sum += float64(s.Point.Value * float64(d))
 		held += d
 	}
 	if held == 0 {
