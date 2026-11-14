@@ -58,6 +58,13 @@ that commits the effects it acknowledges
 A paged-drain page names the drain's cursor by `cursorSha256` and
 `cursorBytes` instead of carrying it, and a park carries it whole
 ([0141](decisions/0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md)).
+A trigger's history keeps seven days, as other bookkeeping does
+([0320](decisions/0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md)): past
+that, its `delivery` entries are the compaction pass's to take, and a pass
+that reaches them replaces them with one `ledger` entry holding its cursor,
+its schedule's fire state, its parked failures and the resume rows of its
+unfinished drains
+([state entries](stored-format.md#state-entries)).
 Every read here skips those rows, and a resume cursor still moves past them.
 
 Beneath the wire row, the stored entry also carries the write's **values** as

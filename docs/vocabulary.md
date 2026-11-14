@@ -1110,7 +1110,10 @@ through the same loader. The shipped defaults follow three classes:
   header's `P30D`: every other provider kind.
 - **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
   writes about its own runs, core's `triggerrun` and `alert`
-  ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md)),
+  ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md))
+  and a `trigger`'s own history, its deliveries and the edits to it, whose
+  delivery state the compaction keeps in its ledger entry
+  ([record 0320](decisions/0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md)),
   a sync's progress through one item (`beeper/chatsync`,
   `google/calendarsync`, `notion/pagesync`, `slack/conversationsync`) and
   Apple Health's delivery receipt (`applehealth/export`).
@@ -1144,8 +1147,9 @@ its header's `P30D`. The release that brought `retention` removes, rewrites
 or compacts no history: an override that a kind move carries, or one it
 makes redundant, is an ordinary write. The
 release that brought `retention` moved `core/triggerrun` and `core/alert`
-from all of their history to seven days. An override keeps a kind's history
-whatever its declaration says, written before an upgrade or after it:
+from all of their history to seven days, and the release of record 0320
+moved `core/trigger`. An override keeps a kind's history whatever its
+declaration says, written before an upgrade or after it:
 
 ```yaml
 kind: substrate.reamde.dev/core/retention

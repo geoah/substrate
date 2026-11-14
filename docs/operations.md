@@ -838,11 +838,23 @@ about the erased record, including one that already finished, as long as
 that record's line is still in the history. It does not find a saved
 position once the record's own line has been compacted, nor one saved by a
 delivery about another record whose function happened to be listing the
-erased one. Such a position sits on the trigger's delivery lines, which keep
-all their history by default (`core/trigger` is kept `all`). It goes when
-the repository shortens that with a retention override for `core/trigger`,
-when the trigger is deleted and its deletion forgotten, or when the trigger
-is permanently deleted.
+erased one. Such a position sits on the trigger's delivery lines, which
+`core/trigger` keeps seven days ([decision
+0320](decisions/0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md)). A
+week is when a line becomes the compaction pass's to take, not when it
+goes. A pass that reaches it replaces it with the trigger's ledger entry,
+which holds where the trigger stands and no position a drain of it no
+longer needs. A pass works about a minute an hour at the default interval,
+a long history takes many passes, and a line a parked failure, a parked
+webhook fire or the webhook spool holds stays, with what is under it, until
+the hold ends, as does a record the pass passes by. A drain that has not finished, parked or
+not, keeps its position in the trigger's resume row and in that ledger
+entry until it ends, and the week starts then. `substratectl repository
+history` shows what the pass has done and what it holds back. A saved
+position goes at once when the trigger is permanently deleted, and stays as
+long as a retention override for `core/trigger` keeps the lines. Like every value a compaction removes, it
+stays in the archive until its next pass publishes, and in a backup or a
+database's dead tuples and WAL until those go.
 
 A record a package ships is erased too, and its `gc` line, which names who
 deleted it, is never forgotten, so neither the next open nor an upgrade
@@ -2638,6 +2650,9 @@ into an empty database, never a dump of the old one.
 every cursor advance, schedule fire, parked failure and paged-drain page is a
 `delivery` changelog entry
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
+and past a week one `ledger` entry holding where the trigger stood stands
+for them ([decision
+0320](decisions/0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md)),
 folded back into the trigger tables on restore with the rest of the changelog,
 and so is every webhook request the door answered `202` to whose fire had not
 settled: the server's first trigger dispatcher pass over the restored

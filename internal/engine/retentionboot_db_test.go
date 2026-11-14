@@ -17,17 +17,18 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// A repository that core seeded while trigger runs and alerts kept all of
-// their history is moved to seven days by the boot upgrade to this release's
-// core. An override of trigger runs written before the upgrade keeps them at
-// all through it, and one of alerts written after it keeps them at all from
-// then on.
+// A repository that core seeded while triggers, trigger runs and alerts
+// kept all of their history is moved to seven days by the boot upgrade to
+// this release's core. An override of trigger runs written before the
+// upgrade keeps them at all through it, and one of alerts written after it
+// keeps them at all from then on.
 func TestTheBootUpgradeShortensTriggerRunsAndAlertsAndAnOverrideKeepsThemAll(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	const (
 		alertKind      = corePackage + "/alert"
 		triggerRunKind = corePackage + "/triggerrun"
+		triggerKind    = corePackage + "/trigger"
 	)
 	retentions := func(t *testing.T, ds substrate.Dataset) map[string]substrate.KindRetention {
 		t.Helper()
@@ -49,10 +50,10 @@ func TestTheBootUpgradeShortensTriggerRunsAndAlertsAndAnOverrideKeepsThemAll(t *
 		}})
 	}
 
-	// The release before: neither kind states a retention, and core and
-	// triggerrun's own pin stand one version lower.
+	// The release before: none of the three states a retention, and core
+	// and the pins of triggerrun and trigger stand one version lower.
 	before := shippedTree(t)
-	for _, name := range []string{"alert.yaml", "triggerrun.yaml"} {
+	for _, name := range []string{"alert.yaml", "triggerrun.yaml", "trigger.yaml"} {
 		patchShipped(t, filepath.Join(before, corePackage, name), func(doc string) string {
 			if !strings.Contains(doc, "\n  retention: P7D\n") {
 				t.Fatalf("%s no longer ships seven days", name)
@@ -60,13 +61,15 @@ func TestTheBootUpgradeShortensTriggerRunsAndAlertsAndAnOverrideKeepsThemAll(t *
 			return strings.Replace(doc, "\n  retention: P7D\n", "\n", 1)
 		})
 	}
-	patchShipped(t, filepath.Join(before, corePackage, "triggerrun.yaml"), func(doc string) string {
-		pin, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(reDeclaredVersion.FindString(doc)), "version:")))
-		if err != nil {
-			t.Fatalf("triggerrun pins no version of its own: %v", err)
-		}
-		return pinVersion(t, doc, strconv.Itoa(pin-1))
-	})
+	for _, name := range []string{"triggerrun.yaml", "trigger.yaml"} {
+		patchShipped(t, filepath.Join(before, corePackage, name), func(doc string) string {
+			pin, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(reDeclaredVersion.FindString(doc)), "version:")))
+			if err != nil {
+				t.Fatalf("%s pins no version of its own: %v", name, err)
+			}
+			return pinVersion(t, doc, strconv.Itoa(pin-1))
+		})
+	}
 	shipped, err := strconv.Atoi(declaredVersion(t, before, corePackage))
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +85,7 @@ func TestTheBootUpgradeShortensTriggerRunsAndAlertsAndAnOverrideKeepsThemAll(t *
 		t.Fatal(err)
 	}
 	got := retentions(t, ds)
-	for _, kind := range []string{alertKind, triggerRunKind} {
+	for _, kind := range []string{alertKind, triggerRunKind, triggerKind} {
 		if r := got[kind]; r.Declared != "" || r.Effective != "all" {
 			t.Fatalf("before the upgrade %s reads %+v, want all of it kept and nothing declared", kind, r)
 		}
@@ -102,6 +105,9 @@ func TestTheBootUpgradeShortensTriggerRunsAndAlertsAndAnOverrideKeepsThemAll(t *
 	got = retentions(t, ds)
 	if r := got[alertKind]; r.Declared != "P7D" || r.Override != "" || r.Effective != "P7D" {
 		t.Errorf("after the upgrade alerts read %+v, want seven days declared and in effect", r)
+	}
+	if r := got[triggerKind]; r.Declared != "P7D" || r.Override != "" || r.Effective != "P7D" {
+		t.Errorf("after the upgrade triggers read %+v, want seven days declared and in effect (decision 0320)", r)
 	}
 	if r := got[triggerRunKind]; r.Declared != "P7D" || r.Override != "all" || r.OverrideID != "runs" || r.Effective != "all" {
 		t.Errorf("after the upgrade trigger runs read %+v, want seven days declared and all kept by the override written before", r)

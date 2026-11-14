@@ -96,6 +96,7 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 	// bookkeeping keeps seven days, what a person writes under a provider
 	// keeps all, and every other provider kind, a mirror, thirty.
 	bookkeeping := map[string]bool{
+		"substrate.reamde.dev/core/trigger":                     true,
 		"substrate.reamde.dev/core/triggerrun":                  true,
 		"substrate.reamde.dev/core/alert":                       true,
 		"providers.substrate.reamde.dev/applehealth/export":     true,
@@ -106,7 +107,7 @@ func TestEveryShippedKindsRetentionIsHeld(t *testing.T) {
 	}
 	for kind := range bookkeeping {
 		if got[kind] != "P7D" {
-			t.Errorf("%s is bookkeeping and keeps %s, want P7D (decision record 0283)", kind, got[kind])
+			t.Errorf("%s is bookkeeping and keeps %s, want P7D (decision records 0283 and 0320)", kind, got[kind])
 		}
 	}
 	providers := 0
