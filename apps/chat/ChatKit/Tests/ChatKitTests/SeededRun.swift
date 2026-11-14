@@ -444,7 +444,14 @@ struct SeededRun {
             }
             owed += composed.filter { text in !(typedAt[text].map { clock.now.timeIntervalSince($0) < 1 } ?? false) }
             let kept = Self.onDisk(rig)
-            if owed.allSatisfy({ text in kept.contains { $0.contains(text) } || server.userRows(saying: text) > 0 }) { break }
+            // And what the folder must let go: a sent text no composer
+            // holds any more is no draft, and its clearing is written at
+            // once too.
+            let drafts = Self.drafts(rig)
+            let stale = sent.keys.contains { text in
+                !composed.contains(text) && !state.drafts.values.contains { $0.contains(text) } && drafts.contains { $0.contains(text) }
+            }
+            if !stale, owed.allSatisfy({ text in kept.contains { $0.contains(text) } || server.userRows(saying: text) > 0 }) { break }
             try? await Task.sleep(nanoseconds: 2_000_000)
             await drain()
         }
@@ -479,14 +486,20 @@ struct SeededRun {
         await rig.harness.send(.sceneAppeared(scene: scene, restoring: restoring))
     }
 
+    /// Every draft the folder holds.
+    private static func drafts(_ rig: ChatRig) -> [String] {
+        let read = (try? Data(contentsOf: rig.root.appendingPathComponent("drafts.json"))).flatMap {
+            try? JSONDecoder().decode([String: String].self, from: $0)
+        }
+        return Array((read ?? [:]).values)
+    }
+
     /// Every text the folder holds as a draft or as an unsent message.
     private static func onDisk(_ rig: ChatRig) -> [String] {
-        let decoder = JSONDecoder()
-        let drafts = (try? Data(contentsOf: rig.root.appendingPathComponent("drafts.json"))).flatMap { try? decoder.decode([String: String].self, from: $0) }
         let unsent = (try? Data(contentsOf: rig.root.appendingPathComponent("unsent.json"))).flatMap {
-            try? decoder.decode([String: UnsentMessage].self, from: $0)
+            try? JSONDecoder().decode([String: UnsentMessage].self, from: $0)
         }
-        return Array((drafts ?? [:]).values) + (unsent ?? [:]).values.map(\.message)
+        return drafts(rig) + (unsent ?? [:]).values.map(\.message)
     }
 
     // MARK: The rules
