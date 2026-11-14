@@ -13,9 +13,12 @@ import SubstrateTesting
 /// server's turns moved and the clock advanced between them, and after
 /// every step the rules a chat must keep whatever the server does.
 ///
-/// The seed fixes the steps, the faults and the clock. The order the
-/// runtime's concurrent effects run in within one step is the scheduler's,
-/// so a run waits for the app to stand still before each next step.
+/// The seed fixes everything: the steps, the faults, the clock, and the
+/// order the app's concurrent work runs in, because a run is made on a
+/// thread of its own (`SeededThread`) that takes each job in the order it
+/// was enqueued. Between steps the run waits for that thread to have
+/// nothing left to run, which is exact and takes no time on any clock, so
+/// a seed replays the same way whatever else the host is doing.
 struct SeededRun {
     /// What went wrong, with what replays it.
     struct Violation: Error, CustomStringConvertible {
@@ -52,6 +55,9 @@ struct SeededRun {
         case resent = "without an id nothing is sent again on the app's own"
         case list = "the list holds each chat once"
         case settles = "every conversation settles once the server behaves"
+        /// The run's own: work that left its thread is ordered by the
+        /// scheduler again, and the seed no longer says what happens.
+        case strayed = "every job of the run stays on the run's thread"
         /// Broken today, in code another group is rebuilding (`known`).
         case overlay = "no run's overlay is left drawn once the run is over"
         /// Broken today, in the same code.
@@ -64,7 +70,9 @@ struct SeededRun {
     /// on, so the rest of the seed is still held to every other rule.
     static let known: [Rule: String] = [
         .overlay: """
-        A 401 on an attach (or on the read before it) ends the run through `stopRunning`, which leaves the overlay's turns in             place with the conversation idle and its thread handed back: the next read of the rows draws the partial reply under             the stored one. For the group that makes the two models of a turn one (A4).
+        A 401 on an attach (or on the read before it) ends the run through `stopRunning`, which leaves the overlay's turns in \
+        place with the conversation idle and its thread handed back: the next read of the rows draws the partial reply under \
+        the stored one. For the group that makes the two models of a turn one (A4).
         """,
         .kept: """
         After a handover's read fails the overlay is kept as the only view of that run. A send from there that ends with no \
@@ -83,6 +91,7 @@ struct SeededRun {
     let careless: Bool
     let rate: Double
     let with401: Bool
+    private let thread: SeededThread
     private var numbers: SeededNumbers
     private var rig: ChatRig
     private(set) var steps: [String] = []
@@ -123,8 +132,9 @@ struct SeededRun {
     ///   - careless: the person sends a text the app handed back without
     ///     looking for it first, which on a server without ids can send a
     ///     message twice: the run that shows the rules catch it.
-    init(seed: UInt64, revision: Int? = nil, careless: Bool = false) {
+    private init(seed: UInt64, revision: Int?, careless: Bool, on thread: SeededThread) {
         self.seed = seed
+        self.thread = thread
         self.careless = careless
         var numbers = SeededNumbers(seed: seed)
         let drawn = numbers.below(5) == 0 ? 2 : 3
@@ -148,10 +158,33 @@ struct SeededRun {
 
     // MARK: The run
 
-    /// Runs `count` steps and then lets everything settle; the first rule
-    /// broken ends it, and is kept in `broken`.
-    mutating func run(steps count: Int) async {
-        broken = await ran(steps: count)
+    /// One seed's run, made and run on a thread of its own: `count` steps,
+    /// and then everything is let settle. The first rule broken ends it,
+    /// and is kept in `broken`.
+    static func ran(seed: UInt64, revision: Int? = nil, careless: Bool = false, steps count: Int) async -> SeededRun {
+        await SeededThread.run {
+            // Made here and not before: the rig's first tasks are the
+            // thread's too.
+            var run = SeededRun(seed: seed, revision: revision, careless: careless, on: SeededThread.current!)
+            run.broken = await run.ran(steps: count)
+            return run
+        }
+    }
+
+    /// What the run came to, as one line that differs where two runs of a
+    /// seed did: its steps, what the server was asked and what it holds.
+    var fingerprint: String {
+        var hash = SeededNumbers.hash(steps.joined(separator: "\n"))
+        for thread in server.threadIDs {
+            hash =
+                hash &* 1_099_511_628_211
+                ^ SeededNumbers.hash(thread + server.rows(of: thread).map { "\($0.id)=\($0.role)=\($0.content)" }.joined(separator: "|"))
+        }
+        for (name, count) in server.tally.sorted(by: { $0.key < $1.key }) {
+            hash = hash &* 1_099_511_628_211 ^ SeededNumbers.hash("\(name)=\(count)")
+        }
+        hash = hash &* 1_099_511_628_211 ^ UInt64(server.requests) &* 31 ^ UInt64(server.faulted)
+        return String(hash, radix: 16)
     }
 
     private mutating func ran(steps count: Int) async -> Violation? {
@@ -212,35 +245,16 @@ struct SeededRun {
     var summary: String {
         let rows = server.threadIDs.reduce(0) { $0 + server.rows(of: $1).count }
         return "seed \(seed): \(steps.count) steps, revision \(server.revision), \(Int(rate * 100))% faulted, \(ever.count) messages sent, "
-            + "\(server.threadIDs.count) threads and \(rows) rows at the server, \(server.faulted) of \(server.requests) requests faulted"
+            + "\(server.threadIDs.count) threads and \(rows) rows at the server, \(server.faulted) of \(server.requests) requests faulted, "
+            + "ran as \(fingerprint)"
     }
 
-    /// Waits for the app to stand still: nothing started, delivered, sent or
-    /// received over a few turns of the scheduler. What still runs then
-    /// waits on the server or on the clock, which only the next step moves.
+    /// Waits for the app to stand still: the run's thread has no job left,
+    /// so what still runs waits on the server or on the clock, which only
+    /// the next step moves. No time passes on any clock.
     private mutating func drain() async {
-        var last = await snapshot()
-        var still = 0
-        var rounds = 0
-        while still < 3, rounds < 4000 {
-            // A turn of the scheduler as the app's own tasks get them: a
-            // task queued now runs after those already waiting, so on a
-            // loaded host the wait grows with the load and not by guesswork.
-            await Task.detached(priority: .low) {}.value
-            for _ in 0 ..< 4 { await Task.yield() }
-            try? await Task.sleep(nanoseconds: 200_000)
-            let now = await snapshot()
-            if now == last { still += 1 } else { still = 0 }
-            last = now
-            rounds += 1
-        }
+        await thread.idle()
         collect()
-    }
-
-    private func snapshot() async -> [Int] {
-        let activity = await rig.runtime.activity
-        let counters = await rig.runtime.counters
-        return [activity.started, activity.running.count, activity.waiting, counters.delivered, counters.dropped, server.activity, clock.sleeping]
     }
 
     private func shown() async -> (key: ChildKey, screen: ConversationScreen, live: ConversationState)? {
@@ -432,31 +446,13 @@ struct SeededRun {
     /// a message sent under an id.
     private mutating func kill() async {
         steps.append("the app is killed and launched again")
-        // The kill comes once the writes the app makes at once have been
-        // made: a message it has just been handed, or has just put back
-        // into a composer, is on its way to the folder, and a process
-        // cannot be held to what it had no time for. What the folder is
-        // owed is waited for, for a moment of real time; what is still
-        // missing then is lost, and the next check says so.
-        for _ in 0 ..< 150 {
-            let state = await rig.harness.state
-            var owed: [String] = []
-            for key in state.conversations.keys {
-                if let pending = await rig.live(key)?.pending, state.disk != nil { owed.append(pending.message) }
-            }
-            owed += composed.filter { text in !(typedAt[text].map { clock.now.timeIntervalSince($0) < 1 } ?? false) }
-            let kept = Self.onDisk(rig)
-            // And what the folder must let go: a sent text no composer
-            // holds any more is no draft, and its clearing is written at
-            // once too.
-            let drafts = Self.drafts(rig)
-            let stale = sent.keys.contains { text in
-                !composed.contains(text) && !state.drafts.values.contains { $0.contains(text) } && drafts.contains { $0.contains(text) }
-            }
-            if !stale, owed.allSatisfy({ text in kept.contains { $0.contains(text) } || server.userRows(saying: text) > 0 }) { break }
-            try? await Task.sleep(nanoseconds: 2_000_000)
-            await drain()
-        }
+        // The kill comes with the app standing still, so the writes it
+        // makes at once have been made: a message it has just been handed,
+        // or has just put back into a composer, is in the folder, and a
+        // sent text is no draft there any more. A process cannot be held
+        // to what it had no time for; what it had time for and is missing
+        // is lost, and the next check says so.
+        await drain()
         let state = await rig.harness.state
         let restoring = state.scenes[scene]?.current.flatMap { state.conversations[$0]?.thread }
         var pending: Set<String> = []
@@ -645,6 +641,12 @@ struct SeededRun {
     /// Every rule, on what the app holds and draws now. `settled` adds
     /// what must be so once the server has behaved for long enough.
     private mutating func check(settled: Bool) async -> Violation? {
+        if SeededThread.current !== thread || server.strayed > 0 {
+            return broke(
+                .strayed,
+                "\(server.strayed) requests reached the server from another thread: something in the run waits on real time, a dispatch queue or the main actor"
+            )
+        }
         let state = await rig.harness.state
         let presentation = await rig.harness.presentation
         // A wait's effect ends with its conversation, and a handover's
@@ -881,17 +883,10 @@ struct SeededRun {
         return await confirmed(settled: true)
     }
 
-    /// A broken rule, believed only once it is still broken after the app
-    /// was given real time to stand still: a host too loaded to run the
-    /// app's tasks promptly makes it look still while an effect is between
-    /// two of its steps.
+    /// A broken rule, with the app's state where `CHATKIT_VERBOSE` asks
+    /// for it. The app stands still when this looks, so what it finds is
+    /// what the seed gives and is not looked for twice.
     private mutating func confirmed(settled: Bool) async -> Violation? {
-        guard await check(settled: settled) != nil else { return nil }
-        for attempt in 0 ..< 6 {
-            try? await Task.sleep(nanoseconds: UInt64(20_000_000 * (attempt + 1)))
-            await drain()
-            if await check(settled: settled) == nil { return nil }
-        }
         var broken = await check(settled: settled)
         if ProcessInfo.processInfo.environment["CHATKIT_VERBOSE"] != nil, let found = broken {
             var states = ""

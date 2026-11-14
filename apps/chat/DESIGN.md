@@ -1138,10 +1138,18 @@ button and Details stack where the text size leaves no room side by side.
   replays it. Every `swift test` runs 24 seeds of 60 steps;
   `CHATKIT_SEEDS`, `CHATKIT_FIRST_SEED`, `CHATKIT_STEPS` and
   `CHATKIT_WIDTH` run more, and `CHATKIT_VERBOSE` says what each seed
-  reached. The seed fixes the steps, the faults and the clock; the order
-  the runtime's concurrent effects run in within a step is the
-  scheduler's, so a run waits for the app to stand still between steps
-  and believes a broken rule only once it is still broken after real time.
+  reached. The seed fixes everything, the order the app's concurrent
+  work runs in included: a run is made on a thread of its own
+  (`SeededThread.swift`), which takes every job the run enqueues, through
+  the Swift runtime's enqueue hook, and runs them one at a time in the
+  order they were enqueued, and between steps the run waits for that
+  thread to have no job left. That is exact and takes no time on any
+  clock, so a seed takes the same steps and ends on the same rows on a
+  Mac and on Linux, alone and on a starved host, and
+  `aSeedRunsTheSameWayWhateverRunsBesideIt` holds it. It holds for work
+  woken from the run's thread, so nothing in a seeded run may wait on real
+  time, a dispatch queue or the main actor: a request that reaches the
+  server from another thread breaks a rule of its own.
   Rules the app is known to break in code another group is rebuilding are
   listed in `SeededRun.known`: noted, not failed, and a conversation that
   breaks one is still held to every rule the leftover does not touch. A
