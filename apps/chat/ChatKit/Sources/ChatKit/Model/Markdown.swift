@@ -30,8 +30,6 @@ public extension MeterPoint {
     static let parse = MeterPoint("parse")
     /// One line of inline Markdown made into styled text.
     static let inline = MeterPoint("inline")
-    /// A reply still being written closed for display, before its parse.
-    static let close = MeterPoint("close")
 }
 
 /// A small CommonMark-shaped block parser: what a model writes, read the way
@@ -53,7 +51,7 @@ public enum Markdown {
         }
     }
 
-    private static func lines(_ text: String) -> [String] {
+    static func lines(_ text: String) -> [String] {
         text.replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\t", with: "    ")
             .components(separatedBy: "\n")

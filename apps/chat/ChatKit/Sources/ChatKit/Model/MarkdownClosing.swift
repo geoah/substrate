@@ -1,10 +1,16 @@
 import Foundation
 import SubstrateRuntime
 
-/// A reply still being written, closed for display. What its text so far
-/// would draw as raw markers is closed or held back until it is whole, so
-/// the page only ever grows: nothing is drawn that the next piece takes
-/// away or turns from a marker into styling.
+public extension MeterPoint {
+    /// A reply still being written made into the blocks it draws: its
+    /// parse, and what closes it for display around that.
+    static let write = MeterPoint("write")
+}
+
+/// A reply still being written, as the blocks it draws now. What its text
+/// so far would draw as raw markers is closed or held back until it is
+/// whole, so the page only ever grows: nothing is drawn that the next piece
+/// takes away or turns from a marker into styling.
 ///
 /// - An emphasis, a strikethrough or a code span left open is closed where
 ///   the text ends. One with nothing in it yet, and a marker at the very end
@@ -20,73 +26,143 @@ import SubstrateRuntime
 ///   two dashes of a rule, part of a fence's closing line) waits.
 /// - Inside code nothing is touched: an unclosed fence is code already.
 ///
+/// Whether the text ends inside code, a list item or a quote is the
+/// parser's to say and nobody else's, so the text is parsed as it stands
+/// first. Where it ends in code that is the answer. Otherwise its last line
+/// is put right as text where a block's start is at stake (a table, a box,
+/// a mark that waits) and parsed again only if that changed it, and what is
+/// open inline is closed in the one block still being written: its text is
+/// exactly what the inline renderer is given.
+///
 /// The text of a finished reply is never passed here: a marker its writer
 /// left open is drawn as the stored reply draws it.
 public extension Markdown {
-    static func closed(_ text: String) -> String {
-        Meter.shared.time(.close) { closing(text) }
+    static func parse(writing text: String) -> [MarkdownBlock] {
+        Meter.shared.time(.write) { written(text) }
     }
 
-    private static func closing(_ text: String) -> String {
-        guard text.count <= limit else { return text }
-        var lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
-
-        // Inside a fence the text is code to its end. The fence's own
-        // closing line arrives a backtick at a time: until it is whole it
-        // would draw as a line of the code.
-        var fenced: String?
-        for line in lines.dropLast() {
-            let stripped = unquoted(line)
-            if let marker = fenced {
-                if closes(stripped, marker) { fenced = nil }
-            } else if let opened = fence(stripped) {
-                fenced = opened.marker
+    private static func written(_ text: String) -> [MarkdownBlock] {
+        guard text.count <= limit else { return parse(text) }
+        var lines = lines(text)
+        var blocks = parse(lines: lines)
+        if case let .code(_, code, closed)? = innermost(blocks) {
+            // A fence's closing line arrives a mark at a time: until it is
+            // whole it would draw as a line of the code. So would the line
+            // that has only begun: a line's end is not a line more to draw
+            // until something is on it.
+            guard !closed, let last = code.split(separator: "\n", omittingEmptySubsequences: false).last else { return blocks }
+            let marks = last.trimmingCharacters(in: .whitespaces)
+            guard marks.isEmpty || marks == "`" || marks == "``" || marks == "~" || marks == "~~" else { return blocks }
+            return replacingLast(blocks) { block in
+                guard case let .code(language, code, closed) = block else { return block }
+                let kept = code.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+                return .code(language: language, text: kept.joined(separator: "\n"), closed: closed)
             }
         }
-        let last = lines[lines.count - 1]
-        if let marker = fenced {
-            let stripped = unquoted(last)
-            if closes(stripped, marker) { return text }
-            if !stripped.isEmpty, marker.hasPrefix(stripped) { lines.removeLast() }
-            return lines.joined(separator: "\n")
-        }
-        if fence(unquoted(last)) != nil { return lines.joined(separator: "\n") }
-        if isIndentedCode(lines) { return lines.joined(separator: "\n") }
 
-        // The open text: the last line, with the lines above it that it
-        // continues (a paragraph's, a list item's, a quote's).
-        var first = lines.count - 1
-        while first > 0 {
-            let current = lines[first]
-            let above = lines[first - 1]
-            if above.trimmingCharacters(in: .whitespaces).isEmpty { break }
-            if startsBlock(current), !(isQuote(current) && isQuote(above)) { break }
-            if isWhole(above) { break }
-            first -= 1
+        // The last line, where it is the start of a block.
+        let given = lines
+        var lineEnded = lines.count > 1 && lines[lines.count - 1].isEmpty
+        if !lineEnded, let last = lines.last {
+            let bare = unquoted(last)
+            if ["-", "--", "*", "+", "|", "_", "__"].contains(bare) {
+                // Nothing says what it starts yet: a bullet, a rule and a
+                // line of bold begin alike, and a table with one pipe.
+                lines.removeLast()
+                lineEnded = true
+            } else if let marker = listMarker(bare) {
+                let rest = String(bare.dropFirst(min(marker.content, bare.count))).trimmingCharacters(in: .whitespaces)
+                if ["[ ]", "[x]", "[X]"].contains(rest) {
+                    // The box is whole: the space the parser reads after it.
+                    lines[lines.count - 1] = last + " "
+                } else if ["[", "[x", "[X"].contains(rest) {
+                    lines.removeLast()
+                    lineEnded = true
+                }
+            }
         }
-        var tail = closedInline(lines[first...].joined(separator: "\n"), table: isRow(last))
-        if isPending(tail) { tail = "" }
-        lines.replaceSubrange(first..., with: tail.components(separatedBy: "\n"))
-
         // A table's first line, and the line under it.
         let ended = lines.count > 1 && lines[lines.count - 1].isEmpty
         let body = ended ? Array(lines.dropLast()) : lines
         let run = body.reversed().prefix(while: isRow).count
-        guard run == 1 || run == 2 else { return lines.joined(separator: "\n") }
-        let header = body.count - run
-        let columns = cells(body[header]).count
-        guard header == 0 || body[header - 1].trimmingCharacters(in: .whitespaces).isEmpty,
-            cells(body[header]).contains(where: { !$0.isEmpty })
-        else { return lines.joined(separator: "\n") }
-        let rule = "|" + String(repeating: " --- |", count: columns)
-        if run == 1 {
-            lines.insert(rule, at: header + 1)
-        } else if body[header + 1].allSatisfy({ "|:- ".contains($0) }), (delimiterRow(body[header + 1])?.count ?? 0) < columns {
-            // Part of it has arrived: not yet a line the parser takes for one,
-            // or one for fewer columns than the header names.
-            lines[header + 1] = rule
+        if run == 1 || run == 2 {
+            let header = body.count - run
+            let columns = cells(body[header]).count
+            if header == 0 || body[header - 1].trimmingCharacters(in: .whitespaces).isEmpty,
+                cells(body[header]).contains(where: { !$0.isEmpty })
+            {
+                let rule = "|" + String(repeating: " --- |", count: columns)
+                if run == 1 {
+                    lines.insert(rule, at: header + 1)
+                } else if body[header + 1].allSatisfy({ "|:- ".contains($0) }), (delimiterRow(body[header + 1])?.count ?? 0) < columns {
+                    // Part of it has arrived: not yet a line the parser
+                    // takes for one, or one for fewer columns than the
+                    // header names.
+                    lines[header + 1] = rule
+                    lineEnded = true
+                }
+            }
         }
-        return lines.joined(separator: "\n")
+        if lines != given { blocks = parse(lines: lines) }
+
+        // What is open inline, in the block still being written. A blank
+        // line ends a paragraph, and a line's end a heading or a table's row:
+        // what such a block left open is its writer's, and stays.
+        let blankEnded = given.count > 1 && given[given.count - 1].isEmpty && given[given.count - 2].trimmingCharacters(in: .whitespaces).isEmpty
+        return closingLast(blocks, paragraph: !blankEnded, line: !lineEnded)
+    }
+
+    // MARK: Blocks
+
+    /// The block the text ends in: the last, and the last inside it.
+    private static func innermost(_ blocks: [MarkdownBlock]) -> MarkdownBlock? {
+        guard let last = blocks.last else { return nil }
+        switch last {
+        case let .quote(inner): return innermost(inner) ?? last
+        case let .list(_, _, items): return items.last.flatMap { innermost($0.blocks) } ?? last
+        default: return last
+        }
+    }
+
+    /// The blocks with the one the text ends in replaced, or taken out
+    /// where `change` answers none.
+    private static func replacingLast(_ blocks: [MarkdownBlock], _ change: (MarkdownBlock) -> MarkdownBlock?) -> [MarkdownBlock] {
+        guard let last = blocks.last else { return blocks }
+        var out = blocks
+        switch last {
+        case let .quote(inner) where !inner.isEmpty:
+            out[out.count - 1] = .quote(replacingLast(inner, change))
+        case .list(let ordered, let start, var items) where items.last?.blocks.isEmpty == false:
+            items[items.count - 1].blocks = replacingLast(items[items.count - 1].blocks, change)
+            out[out.count - 1] = .list(ordered: ordered, start: start, items: items)
+        default:
+            if let changed = change(last) { out[out.count - 1] = changed } else { out.removeLast() }
+        }
+        return out
+    }
+
+    private static func closingLast(_ blocks: [MarkdownBlock], paragraph: Bool, line: Bool) -> [MarkdownBlock] {
+        replacingLast(blocks) { block in
+            switch block {
+            case let .paragraph(text) where paragraph:
+                // Nothing left to draw yet: a marker with nothing in it.
+                let closed = closedInline(text)
+                return closed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : .paragraph(closed)
+            case let .heading(level, text) where line:
+                return .heading(level: level, text: closedInline(text))
+            case .table(var header, let alignments, var rows) where line:
+                // Each cell is its own: only the last written can be open.
+                if var row = rows.last, let cell = row.lastIndex(where: { !$0.isEmpty }) {
+                    row[cell] = closedInline(row[cell])
+                    rows[rows.count - 1] = row
+                } else if rows.isEmpty, let cell = header.lastIndex(where: { !$0.isEmpty }) {
+                    header[cell] = closedInline(header[cell])
+                }
+                return .table(header: header, alignments: alignments, rows: rows)
+            default:
+                return block
+            }
+        }
     }
 
     // MARK: Lines
@@ -101,48 +177,7 @@ public extension Markdown {
         return String(rest)
     }
 
-    private static func closes(_ stripped: String, _ marker: String) -> Bool {
-        stripped.hasPrefix(marker) && stripped.allSatisfy { $0 == marker.first }
-    }
-
-    private static func isQuote(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).hasPrefix(">") }
-
     private static func isRow(_ line: String) -> Bool { line.trimmingCharacters(in: .whitespaces).hasPrefix("|") }
-
-    private static func isItem(_ line: String) -> Bool { listMarker(String(line.drop { $0 == " " })) != nil }
-
-    /// A line that begins a block of its own: no text above it runs on into
-    /// it.
-    private static func startsBlock(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        return isRow(line) || trimmed.hasPrefix(">") || heading(trimmed) != nil || isItem(line) || fence(trimmed) != nil
-    }
-
-    /// A line that is a block by itself: no text below it continues it.
-    private static func isWhole(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        return isRow(line) || heading(trimmed) != nil || isRule(trimmed) || fence(unquoted(line)) != nil
-    }
-
-    /// The last line is indented code: four spaces in, after a blank line,
-    /// and not under a list item, whose continuation is indented too.
-    private static func isIndentedCode(_ lines: [String]) -> Bool {
-        guard let last = lines.last, last.prefix(while: { $0 == " " }).count >= 4, !isItem(last) else { return false }
-        var above = lines.count - 2
-        guard above < 0 || lines[above].trimmingCharacters(in: .whitespaces).isEmpty || lines[above].hasPrefix("    ") else { return false }
-        while above >= 0, lines[above].trimmingCharacters(in: .whitespaces).isEmpty || lines[above].hasPrefix("    ") { above -= 1 }
-        return above < 0 || !(isItem(lines[above]) || lines[above].hasPrefix(" "))
-    }
-
-    /// The open text is only the start of a block, which nothing says the
-    /// kind of yet: a bullet's mark with nothing after it (a rule begins
-    /// the same way, and so does a line of bold), one or two dashes, or a
-    /// table's first pipe.
-    private static func isPending(_ tail: String) -> Bool {
-        guard !tail.contains("\n") else { return false }
-        let trimmed = unquoted(tail)
-        return ["-", "--", "*", "+", "|", "_", "__"].contains(trimmed)
-    }
 
     // MARK: Inline
 
@@ -152,8 +187,8 @@ public extension Markdown {
         var at: Int
     }
 
-    /// The open text with what is open in it closed or left out.
-    private static func closedInline(_ text: String, table: Bool) -> String {
+    /// A block's text with what is open in it closed or left out.
+    static func closedInline(_ text: String) -> String {
         let chars = Array(text)
         var open: [Open] = []
         var code: Open?
@@ -165,7 +200,6 @@ public extension Markdown {
         var angle: Int?
         var drop = Set<Int>()
         var cut = chars.count
-        var appended = ""
 
         func run(_ at: Int) -> Int {
             var n = 0
@@ -177,8 +211,8 @@ public extension Markdown {
         // not a link's label.
         func opensLabel(_ at: Int) -> Bool { at == 0 || !word(chars[at - 1]) }
 
-        var i = lineStart(chars, 0, &cut, &appended)
-        while i < cut {
+        var i = 0
+        while i < chars.count {
             let c = chars[i]
             if let span = code {
                 if c == "`" {
@@ -201,7 +235,7 @@ public extension Markdown {
                     address = nil
                     if !labels.isEmpty { labels.removeLast() }
                 }
-                if c == "\n" { i = lineStart(chars, i + 1, &cut, &appended) } else { i += 1 }
+                i += 1
                 continue
             }
             closedLabel = nil
@@ -219,7 +253,7 @@ public extension Markdown {
                 var left = c == "~" ? n - n % 2 : n
                 if c == "~", n % 2 == 1, last { drop.insert(i + n - 1) }
                 let canClose = before.map { !$0.isWhitespace } ?? false
-                let canOpen = after.map { !$0.isWhitespace && $0 != "\n" } ?? false
+                let canOpen = after.map { !$0.isWhitespace } ?? false
                 // An underscore inside a word is a letter of it.
                 if c == "_", word(before), word(after) { left = 0 }
                 while left > 0, canClose, let match = open.lastIndex(where: { $0.marker == c && $0.count <= left }) {
@@ -260,18 +294,9 @@ public extension Markdown {
             case "<":
                 angle = i
                 i += 1
-            case ">", " ":
+            case ">", " ", "\n":
                 angle = nil
                 i += 1
-            case "|" where table:
-                // Each cell is its own: nothing stays open past its end.
-                open = []
-                labels = []
-                angle = nil
-                i += 1
-            case "\n":
-                angle = nil
-                i = lineStart(chars, i + 1, &cut, &appended)
             default:
                 i += 1
             }
@@ -279,14 +304,14 @@ public extension Markdown {
 
         if let link = address {
             // The address is not whole: the label, without its brackets.
-            cut = min(cut, link.close)
+            cut = link.close
             drop.insert(link.label)
             if link.label > 0, chars[link.label - 1] == "!" { drop.insert(link.label - 1) }
         } else if let link = closedLabel, opensLabel(link.label), chars[(link.label + 1) ..< link.close].contains(where: \.isLetter) {
             // An address may follow: the label, until the next piece says.
             drop.insert(link.label)
             drop.insert(link.close)
-        } else if let label = labels.last, opensLabel(label), label + 1 < cut, chars[(label + 1) ..< cut].contains(where: \.isLetter) {
+        } else if let label = labels.last, opensLabel(label), label + 1 < chars.count, chars[(label + 1)...].contains(where: \.isLetter) {
             drop.insert(label)
         } else if let label = labels.last, opensLabel(label), label + 1 == chars.count {
             drop.insert(label)
@@ -308,7 +333,7 @@ public extension Markdown {
             // Backticks at the end, fewer than opened it: part of its close.
             var end = cut
             while end > span.at + span.count, chars[end - 1] == "`" { end -= 1 }
-            if chars[(span.at + span.count) ..< end].allSatisfy(\.isWhitespace) {
+            if chars[min(span.at + span.count, end) ..< end].allSatisfy(\.isWhitespace) {
                 cut = min(cut, span.at)
             } else {
                 cut = min(cut, end)
@@ -330,41 +355,6 @@ public extension Markdown {
             while end > 0, kept[end - 1].isWhitespace { end -= 1 }
         }
         kept.insert(contentsOf: closers, at: end)
-        return String(kept) + appended
-    }
-
-    /// Where a line's own text starts: past its indentation, the marks of
-    /// its quotes, a list item's marker and its box, a heading's hashes. A
-    /// box whose brackets are all there is drawn at once, so the space the
-    /// parser reads after it is written for it; one still arriving waits.
-    private static func lineStart(_ chars: [Character], _ from: Int, _ cut: inout Int, _ appended: inout String) -> Int {
-        var i = from
-        func spaces() { while i < chars.count, chars[i] == " " { i += 1 } }
-        spaces()
-        while i < chars.count, chars[i] == ">" {
-            i += 1
-            spaces()
-        }
-        var end = i
-        while end < chars.count, chars[end] != "\n" { end += 1 }
-        if let marker = listMarker(String(chars[i ..< end])) {
-            i = min(i + marker.content, end)
-            spaces()
-            let rest = String(chars[i ..< end])
-            if end == chars.count {
-                if ["[ ]", "[x]", "[X]"].contains(rest) {
-                    appended = " "
-                    return end
-                }
-                if ["[", "[ ", "[x", "[X"].contains(rest) {
-                    cut = i
-                    return end
-                }
-            }
-            for box in ["[ ] ", "[x] ", "[X] "] where rest.hasPrefix(box) { i += box.count }
-        } else if i < end, chars[i] == "#" {
-            while i < end, chars[i] == "#" { i += 1 }
-        }
-        return i
+        return String(kept)
     }
 }

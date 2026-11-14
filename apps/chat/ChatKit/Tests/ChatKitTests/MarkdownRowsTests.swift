@@ -197,7 +197,121 @@ struct MarkdownRowsTests {
         for (earlier, later) in zip(texts, texts.dropFirst()) { #expect(later.hasPrefix(earlier)) }
         // On screen while it is written: closed for display.
         guard case let .assistant(live)? = await rig.conversation(key)?.turns.last?.body else { return }
-        #expect(live.live && live.blocks.rows.map(\.block) == Markdown.parse(Markdown.closed(reply)))
+        #expect(live.live && live.blocks.rows.map(\.block) == Markdown.parse(writing: reply))
         rig.server.release()
+    }
+}
+
+/// A reply being written is parsed no more often than the limit, whatever
+/// else has the tree presented in between.
+@Suite("A reply's parses are paced", .timeLimit(.minutes(10)))
+struct ParsePaceTests {
+    @Test func aPartMadeTooRecentlyIsAnsweredAsItWasWithTheInstantItMayBeMadeAgain() {
+        let parts = PresenterParts()
+        let start = Date(timeIntervalSince1970: 1000)
+        func part(_ reads: Int, at offset: TimeInterval) -> (value: Int, due: Date?) {
+            parts.part("p", reading: reads, at: start.addingTimeInterval(offset), every: 0.1) { reads * 2 }
+        }
+        #expect(part(1, at: 0).value == 2 && part(1, at: 0).due == nil)
+        // Other reads, too soon: as it was, and when to ask again.
+        let early = part(2, at: 0.04)
+        #expect(early.value == 2 && early.due == start.addingTimeInterval(0.1))
+        #expect(parts.made("p") == 1)
+        // The same reads again cost nothing and wait for nothing.
+        #expect(part(1, at: 0.05).due == nil)
+        let due = part(2, at: 0.1)
+        #expect(due.value == 4 && due.due == nil && parts.made("p") == 2)
+        // A clock that went back is no reason to wait.
+        #expect(part(3, at: -5).value == 6)
+    }
+
+    /// The rig's streaming conversation, presented by hand at instants of
+    /// the test's choosing.
+    private func present(_ rig: ChatRig, _ key: ChildKey, _ conversation: ConversationState, at now: Date) async -> ChatPresentation {
+        let app = rig.runtime.controller
+        let state = await rig.harness.state
+        let child = app.children(in: state)[key]
+        let live = child.map { [key: $0.present(PresenterInput(state: conversation, now: now))] } ?? [:]
+        return app.present(
+            PresenterInput(state: state, children: live, now: now, locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!))
+    }
+
+    private func reply(_ tree: ChatPresentation, _ key: ChildKey) -> AssistantTurn? {
+        guard case let .assistant(turn)? = tree.conversations[key]?.turns.last?.body else { return nil }
+        return turn
+    }
+
+    @Test func piecesPresentedFasterThanTheLimitAreParsedAtTheLimitAndNoneIsLeftUndrawn() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hi"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.overlay.turns.contains { $0.role == .assistant } == true }
+        let app = rig.runtime.controller
+        let state = await rig.harness.state
+        let conversation = try #require(app.children(in: state)[key])
+        var live = try #require(await rig.live(key))
+        let window = 1 / Markdown.parsesPerSecond
+        let start = rig.clock.now.addingTimeInterval(10)
+        func piece(_ text: String, at now: Date) throws {
+            var delta = AgentEvent(kind: .delta)
+            delta.text = text
+            delta.turn = 1
+            live = try conversation.apply(.init(.streamed(delta, at: now)), to: live)
+        }
+
+        // A piece, drawn: parsed, and nothing waits.
+        try piece(" one", at: start)
+        var tree = await present(rig, key, live, at: start)
+        let parses = app.kept.made("chat/\(key.rawValue)/blocks/")
+        #expect(reply(tree, key)?.blocks.rows.map(\.block) == [.paragraph("Hel one")])
+        #expect(tree.redrawAt == nil && app.nextChange(of: tree) == nil)
+
+        // Pieces every 5 ms, each presented at once, as when something else
+        // keeps the tree moving: the text is theirs, the rows as they were.
+        for step in 1 ... 5 {
+            let now = start.addingTimeInterval(Double(step) * 0.005)
+            try piece(" \(step)", at: now)
+            tree = await present(rig, key, live, at: now)
+            #expect(reply(tree, key)?.text == "Hel one" + (1 ... step).map { " \($0)" }.joined())
+            #expect(reply(tree, key)?.blocks.rows.map(\.block) == [.paragraph("Hel one")])
+            // And the tree says when it must be presented again.
+            #expect(app.nextChange(of: tree) == start.addingTimeInterval(window))
+        }
+        #expect(app.kept.made("chat/\(key.rawValue)/blocks/") == parses)
+        // Presented again for something else meanwhile, it still says so.
+        tree = await present(rig, key, live, at: start.addingTimeInterval(0.03))
+        #expect(app.nextChange(of: tree) == start.addingTimeInterval(window))
+        // No view is drawn for the wait itself: it is in no part.
+        #expect((app.parts(of: tree).first?.value as? ChatPresentation)?.redrawAt == nil)
+
+        // At that instant, with no piece more: everything written is drawn.
+        tree = await present(rig, key, live, at: start.addingTimeInterval(window))
+        #expect(reply(tree, key)?.blocks.rows.map(\.block) == [.paragraph("Hel one 1 2 3 4 5")])
+        #expect(tree.redrawAt == nil && app.kept.made("chat/\(key.rawValue)/blocks/") == parses + 1)
+        rig.server.release()
+    }
+
+    @Test func aReplyThatEndsIsParsedAtOnceHoweverRecentItsLastParse() {
+        let parts = PresenterParts()
+        let now = Date(timeIntervalSince1970: 1000)
+        var turn = Turn(id: "live-a1", role: .assistant, content: "Almost **don")
+        func present(live: Bool, at instant: Date) -> (AssistantTurn?, Date?) {
+            let pace = TurnPresenter.Pace(now: instant)
+            guard
+                case let .assistant(reply) = TurnPresenter.present(
+                    turn, agent: nil, live: live, decided: [], titles: [:], kept: parts, scope: "chat/k", pace: pace
+                ).body
+            else { return (nil, nil) }
+            return (reply, pace.due)
+        }
+        #expect(present(live: true, at: now).0?.blocks.rows.map(\.block) == [.paragraph("Almost **don**")])
+        turn.content += "e**."
+        // A millisecond later the stream is over: its last text is drawn as
+        // the stored reply will draw it, with no wait.
+        let ended = present(live: false, at: now.addingTimeInterval(0.001))
+        #expect(ended.0?.blocks.rows.map(\.block) == [.paragraph("Almost **done**.")])
+        #expect(ended.1 == nil)
     }
 }

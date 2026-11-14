@@ -394,22 +394,36 @@ plain.
   another. A reply's rows are kept for its text: a piece of reasoning or a
   tool's event leaves them as they were. A stored turn's are made once per
   read.
-- **One parse at a time, at most 20 a second.** A reply's pieces share a
+- **One parse at a time, at most 30 a second.** A reply's pieces share a
   50 ms window (`Conversation.textWindow`), so its text is presented, and
-  so parsed, once in each however fast they arrive. The presenter runs one
-  at a time, so the pieces that arrive during a parse wait and are parsed
-  together, and no presentation follows one made of newer text.
-- **Unfinished Markdown is closed before it is parsed** (`Markdown.closed`),
-  while a reply is being written, so the page only ever grows: an open
+  so parsed, once in each however fast they arrive: 20 times a second. The
+  presenter runs one at a time, so the pieces that arrive during a parse
+  wait and are parsed together, and no presentation follows one made of
+  newer text. Something else can have the tree presented between two
+  windows (a tool's event, a search in another window), so the limit is
+  also held where the parse is: a reply being written is parsed no sooner
+  than a thirtieth of a second after its last parse
+  (`Markdown.parsesPerSecond`). Presented sooner, its rows stay as they
+  were, and the tree names the instant it must be presented again
+  (`ChatPresentation.redrawAt`, the runtime's tick), so nothing written is
+  left undrawn. A reply that ends is parsed at once.
+- **A reply being written is closed for display**
+  (`Markdown.parse(writing:)`), so the page only ever grows: an open
   emphasis, strikethrough or code span is closed where the text ends; a
   marker with nothing in it yet, or that may be half of a longer one, is
   left out until more arrives; a link reads as its label until its address
   is whole; a table is a header row from its first cell, the line under it
   written for it; a task item's box is drawn once its brackets are there;
   a line that is only the start of a block (a bullet's mark, one or two
-  dashes, part of a fence's closing line) waits. Inside code nothing is
-  touched. A finished reply is parsed as it stands, so what a stream drew
-  at its end is what its stored row draws.
+  dashes, part of a fence's closing line, a line of code that has only
+  begun) waits. Inside code nothing is touched, and whether the text ends
+  inside code, a list item or a quote is the parser's to say: the text is
+  parsed as it stands first; where it ends in code that is the answer;
+  otherwise its last line is put right as text where a block's start is at
+  stake and parsed again only if that changed it, and what is open inline
+  is closed in the one block still being written. A finished reply is
+  parsed as it stands, so what a stream drew at its end is what its stored
+  row draws.
 - **A long reply is several rows of the transcript.** Past about a screen
   and a half of text (`Markdown.pageWeight`) a reply's next block starts
   another row (`AssistantTurn.pages`), and what stands under its text
@@ -826,27 +840,16 @@ may do and for how long; the app never sees the password.
   and path encoding.
 - A reply as it is written (`MarkdownClosingTests`, `MarkdownRowsTests`):
   at every prefix of several replies, what is drawn is the start of what
-  the whole reply draws, with no marker in it the reply does not show, it
-  never shrinks, and a finished block never changes kind; the same prefixes
-  parsed as they stand fail that, which is how the test is known to see.
+  the whole reply draws, with no marker in it the reply does not show; it
+  never shrinks; its code is the whole's to the letter; and a finished
+  block never changes kind, nor anything inside it. The same prefixes
+  parsed as they stand fail that, which is how the test is known to see,
+  and the app's own tests hold the same through the renderer the app draws
+  with (`StreamedMarkdownTests`). Marks in any order never stop the parse.
   Only the last row changes between two flushes; the streamed path ends on
   the blocks of a one-shot parse; pages never move; a reply is parsed once
-  for its text and once a window.
-- The list's rules against a scripted server (`ChatServer`, a transport
-  that holds a stream part way), through the kit's `ControllerHarness`, each
-  of the seven by its number: a send streams and hands
-  over without doubling; no read publishes under a live overlay; a refusal
-  gives the text back and nothing runs; a gateway's answer is unknown
-  delivery, never a refusal, and nothing is sent again; older rows never
-  replace newer ones; a closed session publishes nothing; a window leaving
-  keeps a conversation another window shows; a transcript read that failed
-  is asked for again; the cache folder a build before ChatKit wrote reads
-  after the upgrade (`DiskTests.swift`, over a fixture of that format), and
-  its transcripts move only as a whole, the newer copy kept; a save still on
-  its way across a sign-out writes nothing, and a sign-in right after one
-  keeps its own folder; a refresh job from before a sign-out does nothing,
-  and one the system takes back or that outlives its budget lands nothing
-  (`BackgroundTests.swift`, over the kit's `ScriptedBackground`).
+  for its text, once a window, and never more than 30 times a second
+  whatever else presents the tree.
 - What draws what (`PartsTests`, `DraftTests`): a delta makes its own
   conversation's screen and live turn again and moves that conversation's
   part alone; a state that moved makes again only the parts that read what
@@ -890,7 +893,7 @@ flush of the stream, or a key typed:
 | presenter | each controller's presenter, by its type: time per step, the longest run, and runs per step |
 | flush, publish | the tree presented and sent, on the runtime's executor; the half of a publish the model does on the main thread |
 | body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a row of a reply's text and what stands under it, its Markdown, a Markdown block, the composer |
-| Markdown | parses per step and what one took, and what closing the text for display took, both on the runtime's executor; lines of inline Markdown made into styled text on the main thread |
+| Markdown | parses per step and what one took, and what making a reply being written into blocks took in all, both on the runtime's executor; lines of inline Markdown made into styled text on the main thread |
 | key to drawn | from the key to the end of the run loop's pass it was pressed in, which has drawn it |
 
 The numbers are a machine's: the table's first line says which, and a

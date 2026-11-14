@@ -51,18 +51,50 @@ final class PresenterParts: @unchecked Sendable {
     func part<Reads: Equatable & Sendable, Value: Equatable>(
         _ name: String, reading reads: Reads, at now: Date, make: () -> (value: Value, until: Date)
     ) -> Value {
+        timed(name, reading: reads, at: now, make: make).value
+    }
+
+    /// The same, with the instant the part answered stops being true, kept
+    /// or made: for a part inside another that must be made again then.
+    func timed<Reads: Equatable & Sendable, Value: Equatable>(
+        _ name: String, reading reads: Reads, at now: Date, make: () -> (value: Value, until: Date)
+    ) -> (value: Value, until: Date) {
         if let hit = lock.withLock({ held[name] }), hit.reads as? Reads == reads, let value = hit.value as? Value,
             let from = hit.from, let until = hit.until, from <= now, now < until
         {
             if verifies { verify(name, kept: value, fresh: make().value) }
-            return value
+            return (value, until)
         }
         let fresh = make()
         lock.withLock {
             held[name] = Held(reads: reads, value: fresh.value, from: now, until: fresh.until)
             made[name, default: 0] += 1
         }
-        return fresh.value
+        return fresh
+    }
+
+    /// The part `name`, made no sooner than `interval` after it was last
+    /// made: asked sooner with other reads, it answers the part as it was
+    /// and the instant it may be made again, when whoever draws it asks
+    /// again. A clock that went back makes it at once.
+    func part<Reads: Equatable & Sendable, Value: Equatable>(
+        _ name: String, reading reads: Reads, at now: Date, every interval: TimeInterval, make: () -> Value
+    ) -> (value: Value, due: Date?) {
+        if let hit = lock.withLock({ held[name] }), let value = hit.value as? Value {
+            if hit.reads as? Reads == reads {
+                if verifies { verify(name, kept: value, fresh: make()) }
+                return (value, nil)
+            }
+            if let made = hit.from, made <= now, now < made.addingTimeInterval(interval) {
+                return (value, made.addingTimeInterval(interval))
+            }
+        }
+        let value = make()
+        lock.withLock {
+            held[name] = Held(reads: reads, value: value, from: now)
+            self.made[name, default: 0] += 1
+        }
+        return (value, nil)
     }
 
     /// Forgets the parts named under `prefix` that `stays` does not keep: a
