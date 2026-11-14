@@ -110,6 +110,7 @@ const WORDS = new Set([
   "llm",
   "log",
   "mapping",
+  "mark",
   "markup",
   "medication",
   "memory",

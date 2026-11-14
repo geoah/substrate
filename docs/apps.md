@@ -764,6 +764,13 @@ records their chats are made of:
 - their messages (`…/llm/message`) and interactions (`…/llm/interaction`):
   list and read, and an interaction's `PATCH` of `state` (`answered` with
   `answers`, or `dismissed`) with `ifVersion`, as the console sends it;
+- the person's marks of those threads (`…/llm/threadmark`), which say how
+  far they have read each ([read state](agents.md#read-state)): list and
+  read, a create (`POST /api/v1/records` naming the `thread`, or a `PUT` at
+  the mark's id) and a `PATCH`, of `readThrough` and `markedUnread` alone.
+  The server fills in `readBy` with the person the token acts for and
+  refuses another person's mark, so an app needs no actor id to keep its
+  person's place;
 - `GET …/llm/thread/{id}/events` and `POST …/llm/thread/{id}/stop` for
   those threads.
 
@@ -780,10 +787,13 @@ but does not chat.
 
 A list of one of these kinds names that kind alone in `filter.kinds`. A
 thread list is narrowed to the matching agents' threads, and an `agent`
-condition must name only those: naming another agent answers `404`. A message, interaction or request list is
+condition must name only those: naming another agent answers `404`. A message, interaction, mark or request list is
 narrowed by `filter.properties.thread` (`eq` or `in`, bare thread ids or
 paths), and it must name its threads: without a thread condition it
-answers `403`, unless a `read:` scope reaches the whole kind. The engine
+answers `403`, unless a `read:` scope reaches the whole kind. A mark list
+that adds `"readBy": {"eq": "me"}` answers the marks of the token's own
+person alone; without it, everybody's marks of those threads come back, each
+naming its person in `readBy`. The engine
 then filters before it pages, so no page and no cursor passes over a row
 the token cannot read. Naming a thread the token cannot read answers `404`.
 Any other property in a patch, a label, a create or a delete answers `403`.
@@ -913,7 +923,7 @@ A scope is a verb and a pattern:
 | --- | --- | --- |
 | `read` | kind references | records of the matching kinds |
 | `write` | kind references | the same, and writes them |
-| `agents` | agent ids | chats with the matching agents and their threads ([talk to agents](#talk-to-agents)) |
+| `agents` | agent ids | chats with the matching agents, their threads and the person's marks of them ([talk to agents](#talk-to-agents)) |
 | `decide` | agent ids | the change requests the matching agents propose ([talk to agents](#talk-to-agents)) |
 | `call` | function ids | running the matching functions, where the token's reads and writes cover each one's reach ([run functions](#run-functions)) |
 | `webhook` | one trigger id, never a pattern | delivering to that webhook and its parked list ([deliver to a webhook](#deliver-to-a-webhook)) |

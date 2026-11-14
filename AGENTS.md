@@ -267,7 +267,10 @@ and `observations` (measured values,
 three keyless provider rows, and the shipped units.** The agent runtime's
 data kinds are the second seeded package, `substrate.reamde.dev/llm`
 (`provider`, `model`, one model a provider offers and what it costs,
-`thread`, `message`, `interaction`, `memory`, the owner's
+`thread`, `message`, `interaction`, `threadmark`, how far one person has read
+one thread
+([0311](docs/decisions/0311-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md)),
+`memory`, the owner's
 standing facts an agent pins, `instruction`, the owner's standing
 direction to one agent, and `agentbudget`, the owner's override of one
 agent's budgets), out of core so core is not
