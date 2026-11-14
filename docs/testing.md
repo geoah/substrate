@@ -339,9 +339,20 @@ half of validation item 10 of the 1.0 plan, and it runs only when
   every line and rewrites none, and the import-progress marker set, so it
   rebuilds the fold in two replays as a conversion that rewrote lines does),
   the import of the archive into a database that holds none of it, timed to
-  the restored repository's first open, and, last because it rewrites the
-  history every phase before it replays, a compaction of every record up to
-  the head through the operator's door (`substratectl repository compact`).
+  the restored repository's first open, the compaction pass over that
+  restored repository, and, last because it rewrites the history every phase
+  before it replays, a compaction of every record up to the head through the
+  operator's door (`substratectl repository compact`).
+- **The compaction pass:** run pass after pass until one finishes, with every
+  kind keeping nothing past a record's latest state, as the door does, and
+  the pass's clock past the deletion period. The restored history came in
+  without the write path's index, as an upgraded or restored deployment's
+  does, so its first passes derive the index before they compact. It records
+  each pass, how long the passes that were still deriving the index took and
+  how long the ones that compacted took, the entries removed a second, and
+  how long the passes take where a server runs one an hour
+  (`SUBSTRATE_COMPACTION_INTERVAL`'s default), since each pass works for at
+  most its budget.
 - **What it records for each:** the wall time, the database's WAL and temp
   bytes, the process's peak heap, and, while the server is up (every phase but
   the conversion and the import, which run at a start), a write every 100ms

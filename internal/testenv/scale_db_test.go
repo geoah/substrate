@@ -457,15 +457,80 @@ func TestScaleTimings(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Timed to the restored repository's first open; its server's stop, and
-	// the archive pass that stop runs, are not the import's.
+	// the archive pass that stop runs, are not the import's. Its compaction
+	// passes run when the harness says, below.
 	var restored *testenv.Env
 	measure("import", false, func() (int64, error) {
 		restored = testenv.Start(t, testenv.WithDSN(restoredDSN), testenv.WithDataRoot(t.TempDir()), testenv.WithCredentialKey(key),
 			testenv.WithoutRegistration(), testenv.WithRepository(scaleAuthority),
-			testenv.WithEngineOptions(engine.WithArchive(store), engine.WithArchiveInterval(24*time.Hour)))
+			testenv.WithEngineOptions(engine.WithArchive(store), engine.WithArchiveInterval(24*time.Hour),
+				engine.WithCompactionInterval(-1),
+				engine.WithTestCompactionRetention(func(string) (bool, time.Duration) { return false, 0 }),
+				engine.WithTestCompactionClock(func() time.Time { return time.Now().Add(engine.DefaultDeletionsKept + time.Hour) })))
 		_, err := restored.Service.Dataset(ctx, scaleAuthority)
 		return 0, err
 	})
+
+	// The compaction pass, on the restored repository: it came in from the
+	// archive without the write path's index, as an upgraded or restored
+	// deployment's history does, so its first passes derive the index before
+	// they compact. Every kind keeps nothing past a record's latest state, the
+	// operator's door's work below, so the two compare, and the pass's clock
+	// stands past the deletion period. A server runs one pass an interval,
+	// each bounded by its budget, so the passes this takes, at the default
+	// interval, are how long a server's own passes take to clear the history.
+	restored.Token = token
+	e = restored
+	rds, err := restored.Service.Dataset(ctx, scaleAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compactionPass := rds.(interface {
+		CompactionPass(context.Context) (engine.CompactionPassReport, error)
+	})
+	type passRun struct {
+		engine.CompactionPassReport
+		wall time.Duration
+	}
+	var passes []passRun
+	measure("compaction pass", true, func() (int64, error) {
+		for {
+			at := time.Now()
+			r, err := compactionPass.CompactionPass(ctx)
+			if err != nil {
+				return 0, err
+			}
+			passes = append(passes, passRun{r, time.Since(at)})
+			if r.Finished {
+				return 0, nil
+			}
+			if r.Indexed && r.Records == 0 && r.Removed == 0 && r.Forgotten == 0 && r.Erased == 0 {
+				return 0, fmt.Errorf("pass %d did nothing and did not finish", len(passes))
+			}
+		}
+	})
+	var indexing, compacting time.Duration
+	var removed int
+	for i, r := range passes {
+		if r.Indexed {
+			compacting += r.wall
+		} else {
+			indexing += r.wall
+		}
+		removed += r.Removed
+		note(scalePhase{Phase: fmt.Sprintf("compaction pass %d", i+1), Seconds: r.wall.Seconds(), Note: fmt.Sprintf(
+			"indexed %v, %d records compacted in %d kind(s), %d entries removed, %d deletions forgotten, finished %v",
+			r.Indexed, r.Records, len(r.Kinds), r.Removed, r.Forgotten, r.Finished)})
+	}
+	perSecond := 0.0
+	if compacting > 0 {
+		perSecond = float64(removed) / compacting.Seconds()
+	}
+	note(scalePhase{Phase: "compaction passes at the default interval", Note: fmt.Sprintf(
+		"%d pass(es), one each %s, so %s: %.1fs in passes that ended still deriving the index, %.1fs in passes that compacted, "+
+			"%d entries removed, %.0f a second of their time",
+		len(passes), engine.DefaultCompactionInterval, time.Duration(len(passes))*engine.DefaultCompactionInterval,
+		indexing.Seconds(), compacting.Seconds(), removed, perSecond)})
 	restored.Stop()
 
 	// The compaction, last, because it rewrites the history every phase
