@@ -569,10 +569,10 @@ export function LossyUpgradeDialog({
       ? `Updating rewrites ${upgrade?.work ?? 0} ${
           upgrade?.work === 1 ? "record" : "records"
         } and removes some values from them. ` +
-        `The removed values stay in History. `
+        `The removed values stay in History for as long as the collection keeps its history. `
       : "") +
     (shorter.length > 0 && !publisher
-      ? `Updating keeps the history of the collections below for less time. Each record’s latest state is always kept, and nothing is removed until a release that compacts history. An override of a collection’s retention keeps its history whatever the update says. `
+      ? `Updating keeps the history of the collections below for less time. Each record’s latest state is always kept, and history past the new retention is removed in the background. A collection’s own retention override stands, whatever the update says. `
       : "") +
     (publisher
       ? `Confirming updates to exactly the version reviewed here. If the publisher lists another version before it lands, the update is refused and this asks again.`
@@ -1098,7 +1098,7 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
             `and it is refused outright while your records still hold something the shipped package no longer has. ` +
             `Your records are untouched either way.` +
             (shorter.length > 0
-              ? ` It also keeps the history of the collections below for less time; nothing is removed until a release that compacts history.`
+              ? ` It also keeps the history of the collections below for less time, and history past the new retention is removed in the background.`
               : "")
           }
           confirm="Add again"

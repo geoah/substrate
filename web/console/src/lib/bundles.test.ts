@@ -768,12 +768,12 @@ describe("the upgrade preview helpers", () => {
       "Fills in size with its default on 1 record in Widgets (geoah.example.com/shop/widget)",
       "Sets attention to quiet on 2 records in Widgets (geoah.example.com/shop/widget)",
       "Changes status from active to open on 2 records in Widgets (geoah.example.com/shop/widget); afterwards the two can’t be told apart",
-      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History",
+      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History as long as the collection keeps its history",
     ])
     // The dialog lists the lossy steps alone: what the click consents to.
     expect(lossyStepLines(plan)).toEqual([
       "Changes status from active to open on 2 records in Widgets (geoah.example.com/shop/widget); afterwards the two can’t be told apart",
-      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History",
+      "Removes color from 1 record in Widgets (geoah.example.com/shop/widget); the old values stay in History as long as the collection keeps its history",
     ])
   })
 

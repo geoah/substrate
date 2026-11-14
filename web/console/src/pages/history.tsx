@@ -1,4 +1,4 @@
-/** History (`/history`): every change to the repository's data, newest
+/** History (`/history`): the changes the repository still holds, newest
  * first, as sentences grouped by day, with the live tail on top. Four views
  * narrow it by who made the change: everything, you, your agents, your
  * providers; each is an actor filter the change feed applies server-side.
@@ -93,7 +93,7 @@ export function HistoryPage() {
       <DocPage className={cn(table && "pb-2 md:pb-3")}>
         <PageHeader
           title="History"
-          description="Every change to your data, newest first: by you, your agents and your providers. Nothing is ever lost from here."
+          description="The changes your repository still holds, newest first: by you, your agents and your providers. How long a collection keeps its history is set by its retention."
           actions={
             <div className="flex items-center gap-3">
               {!table && ready && !nobody && (

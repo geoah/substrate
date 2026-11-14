@@ -245,7 +245,10 @@ export function RecordDocument({
               <MergedSection record={record} />
             </>
           )}
-          <SectionHead title="History" hint="every change, newest first" />
+          <SectionHead
+            title="History"
+            hint="the changes still held, newest first"
+          />
           <HistorySection record={record} kind={kind} />
           {technical && (
             <>

@@ -88,7 +88,7 @@ func (a *app) shorterHistory(ctx context.Context, cl *client, id, verb string, a
 		if len(lines) == 1 {
 			kinds = "kind"
 		}
-		return fmt.Errorf("%s: the upgrade keeps the history of %d %s for less time (%s); nothing is removed until a release that compacts history. "+
+		return fmt.Errorf("%s: the upgrade keeps the history of %d %s for less time (%s), and the compaction pass removes what is past it. "+
 			"To keep a kind's history, write its override first (`substratectl retention` shows them), or take it with `substratectl %s %s --allow-shorter-history`",
 			id, len(lines), kinds, strings.Join(lines, "; "), verb, id)
 	}
