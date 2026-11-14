@@ -14,7 +14,7 @@ func TestAWaitForASlotIsHandedBackByTheGiveThatFreesOne(t *testing.T) {
 	if !p.take("ada", 2) || !p.takeOrWait("ada", 2, deferredResume{thread: "t0", resolution: "r0"}) {
 		t.Fatal("two slots of two were not free")
 	}
-	for _, r := range []deferredResume{{"t1", "r1"}, {"t2", "r2"}, {"t1", "r3"}} {
+	for _, r := range []deferredResume{{thread: "t1", resolution: "r1"}, {thread: "t2", resolution: "r2"}, {thread: "t1", resolution: "r3"}} {
 		if p.takeOrWait("ada", 2, r) {
 			t.Fatalf("a third slot of two was taken for %+v", r)
 		}
@@ -28,7 +28,7 @@ func TestAWaitForASlotIsHandedBackByTheGiveThatFreesOne(t *testing.T) {
 	}
 	// One thread waits once, for its first resolution.
 	waited := p.give("ada")
-	if !slices.Equal(waited, []deferredResume{{"t1", "r1"}, {"t2", "r2"}}) {
+	if !slices.Equal(waited, []deferredResume{{thread: "t1", resolution: "r1"}, {thread: "t2", resolution: "r2"}}) {
 		t.Fatalf("ada's give handed back %+v", waited)
 	}
 	if again := p.give("ada"); len(again) != 0 {
@@ -38,7 +38,7 @@ func TestAWaitForASlotIsHandedBackByTheGiveThatFreesOne(t *testing.T) {
 	if !p.take("ada", 1) || p.takeOrWait("ada", 1, deferredResume{thread: "t3", resolution: "r4"}) {
 		t.Fatal("the one slot of one")
 	}
-	if all := p.drainWaiting(); !slices.Equal(all, []deferredResume{{"t3", "r4"}}) || len(p.drainWaiting()) != 0 {
+	if all := p.drainWaiting(); !slices.Equal(all, []deferredResume{{thread: "t3", resolution: "r4"}}) || len(p.drainWaiting()) != 0 {
 		t.Fatalf("the drain handed back %+v", all)
 	}
 }

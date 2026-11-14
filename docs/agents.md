@@ -1947,7 +1947,9 @@ assistant turns, each tool call with its stored result right after it, and a
 tally on the thread row; one active turn per thread is enforced by a lease, so
 a second concurrent turn is refused `409 conflict` with the reason
 `thread_busy`, leaving nothing on the thread, and a crashed turn's expired
-lease is taken over by the next continuation.
+lease is taken over by the next continuation. A message that names its id is
+no second turn: sent to a thread a chat turn runs on, it joins that turn
+([a message while a turn runs](#a-message-while-a-turn-runs)).
 
 ### A message with its own id
 
@@ -2001,6 +2003,68 @@ field as unknown (`400 bad_request`) and answers the route `404`, so a
 client that may meet one reads the revision first, sends without an id
 there, and does not repeat an unanswered send.
 
+### A message while a turn runs
+
+A chat message that names its `messageId`, sent to a thread a chat turn is
+running on, is admitted
+([decision 0318](decisions/0318-a-message-sent-while-a-chat-turn-runs-joins-it-and-one-the-run-never-read-starts-the-next-turn.md)).
+It arrives with revision 6 of the `agents` [feature](api.md#the-features);
+below it the same request is `409 conflict` with the reason `thread_busy`,
+so a client reads the revision before it offers this.
+
+The user `message` row is written at once, and the request is answered as an
+[attach](#calling-an-agent) to the running turn is: `200`, the `thread`
+event, what the turn emitted so far, then its live events to its `done` or
+`error`. Two events follow the message, on every stream of the turn:
+
+```json
+{"kind":"messageQueued","id":"0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03","turn":4,"text":"Only the open ones."}
+{"kind":"messageTaken","id":"0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03","turn":4}
+```
+
+- `messageQueued` says the row is written: `id` is the message record's id,
+  `turn` its ordinal, `text` what it says, so a second window attached to
+  the turn can show it.
+- `messageTaken` says a model call now reads it. The turn reads what was
+  sent before each model call, after the tool results of the call before. A
+  call in flight is not interrupted: the message is read at the next one.
+  Several messages are read together, in the order they were sent.
+- A message with no `messageTaken` before the stream ends was not read by
+  this run. Where the run ended on its own (`status: "ok"`, or
+  `"overbudget"`) the message starts the next turn at once, with nobody
+  asking: the thread is `running` again, and an attach streams that turn. A
+  message sent while the final answer streams always goes this way.
+- A run that was stopped, or that failed, starts nothing. The message stays
+  in the thread, and the person's next message or [continue](#continue)
+  reads it with the rest.
+
+A message is `messageTaken` when the event says so and at no other time: do
+not infer it from ordinals, because the result of a tool call that was
+already under way can carry a `turn` past the message's.
+
+A message adds no model call to the run it joins and moves none of its
+budgets: a steered run is one run under its turns, its tool calls and its
+deadline. It takes none of the person's chat turns, since it starts no run,
+and the turn a message starts itself waits for one like any other. The
+run's last turn under a deadline reads no message; they start the next
+turn. A repeat of the request is answered as [a repeat](#a-message-with-its-own-id)
+always is, and writes nothing.
+
+What refuses it, as before: a message with no `messageId`, and a message
+into a running thread that is not a chat turn's (a sub-agent's, a call's, a
+triggered run's), are `409 conflict` with the reason `thread_busy`. A thread
+that waits on the person (a question, an approval) is not running, so a
+message to it is an ordinary send: it starts a turn, and it neither answers
+nor dismisses what is waiting. A message cannot be withdrawn once sent; it
+is a record, and is deleted as one.
+
+The rows keep the order things happened in. A message's `turn` is past the
+reply that was streaming when it was sent and below the first reply that
+answers it, so a client that orders by `turn` shows it there. Its row is
+created at once, so a reader that orders by `createdAt` sees it early: a
+replay to the model moves a `user` row behind every row created after it
+under a smaller `turn`, which is where the model read it.
+
 ### Continue
 
 `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue`, with no body,
@@ -2017,6 +2081,7 @@ write. What it means depends on how the last turn ended:
 | `stopped` | Takes the turn up where the stop left it. It is the person's word, so it is the one continuation a stopped thread accepts. |
 | `overbudget` | Goes on with a fresh set of budgets (turns, tool calls, the deadline); the daily spend cap still holds. |
 | `ok`, and the last reply was [cut short](#a-reply-that-was-cut-short) | Goes on from where the reply stops: its row carries `cutBy`. |
+| `ok`, and a message has no reply after it | Answers it: a message [sent while the turn ran](#a-message-while-a-turn-runs), whose own turn did not start (a restart, a refusal). Since revision 6. |
 | `ok` otherwise | Refused, `409 conflict` with the reason `nothing_to_continue`: the turn finished, and the next message is what goes on. |
 | `running` | Refused, `409 conflict` with the reason `thread_busy`: attach to the turn, or stop it. A `running` thread whose lease has expired is taken over, as a message takes it over. |
 
@@ -2140,9 +2205,11 @@ reaches a sub-agent. A message write that fails settles the thread `error`.
 
 **A stopped thread holds until its owner writes again.** Nothing resumes it
 on its own: not a resolution that landed during the turn, not one that lands
-later, and not the resolution sweep. The owner's next message replays the
-resolution rows with the rest of the history, and so does the owner's
-[continue](#continue).
+later, and not the resolution sweep. The person's next message replays the
+resolution rows with the rest of the history, and so does their
+[continue](#continue). A message sent before the stop, which the turn had not
+read, is replayed the same way: the stop is the later word, so it starts no
+turn of its own.
 
 A person runs at most 4 chat turns at once, or the number the server sets
 (`SUBSTRATE_CHAT_TURNS_PER_PERSON`, [running a substrate](operations.md#configuration)).
@@ -2154,7 +2221,8 @@ written.
 `delta`, `reasoning`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
 matching `message` row carries or will carry. A thread's ordinals are unique:
 a row another writer puts on the thread while a turn runs (a resolution's
-`system` row) takes an ordinal past every one the turn has drawn, including
+`system` row, a [message sent meanwhile](#a-message-while-a-turn-runs))
+takes an ordinal past every one the turn has drawn, including
 the reply it is still streaming. A client that attaches after reading the
 rows drops a replayed event exactly when a stored row carries its `turn`,
 and keeps every other one. A highest-turn cutoff is wrong: the resolution

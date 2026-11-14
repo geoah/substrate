@@ -235,7 +235,7 @@
   {
     "name": "agents",
     "stability": "experimental",
-    "revision": 5,
+    "revision": 6,
     "routes": [
       "GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
       "POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",

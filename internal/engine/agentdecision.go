@@ -282,17 +282,7 @@ func (t *txn) requireThreadKinds() error {
 // creation; the ordinal is what a client pairs streamed events with rows by,
 // so it is unique within a thread.
 func (t *txn) nextThreadTurn(threadID string) (int64, error) {
-	b := &builder{}
-	kind := b.arg(typeMessage)
-	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
-	if err != nil {
-		return 0, err
-	}
-	var next int64
-	err = t.row(`
-		SELECT coalesce(max((e.props->>'turn')::bigint), -1) + 1 FROM records e
-		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
-		b.args...).Scan(&next)
+	next, err := t.storedNextTurn(threadID)
 	if err != nil {
 		return 0, err
 	}
@@ -305,6 +295,23 @@ func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 		}
 	}
 	return next, nil
+}
+
+// storedNextTurn is the ordinal after the highest one a stored row of the
+// thread carries.
+func (t *txn) storedNextTurn(threadID string) (int64, error) {
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
+	if err != nil {
+		return 0, err
+	}
+	var next int64
+	err = t.row(`
+		SELECT coalesce(max((e.props->>'turn')::bigint), -1) + 1 FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
+		b.args...).Scan(&next)
+	return next, err
 }
 
 // resumeNotifiedThread continues the thread a resolution just reported into,
@@ -398,7 +405,16 @@ func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (i
 // 0317, resumeChatTurn): it streams into a hub, so an attach shows it and a
 // stop stops it, and it holds one of its person's chat-turn slots.
 func (ds *dataset) continueThread(ctx context.Context, threadID, resolution string) {
-	ctx, err := ds.heldBy(ctx, typeMessage, resolution)
+	ds.continueThreadFrom(ctx, deferredResume{thread: threadID, resolution: resolution}, nil)
+}
+
+// continueThreadFrom is continueThread for the turn r names: one a
+// resolution row starts, or one a message sent while the last turn ran
+// starts (r.sent, agentqueue.go), which is held to that message's sender.
+// opened, when set, is called once the turn holds the thread.
+func (ds *dataset) continueThreadFrom(ctx context.Context, r deferredResume, opened func()) {
+	threadID := r.thread
+	ctx, err := ds.heldBy(ctx, typeMessage, r.resolution)
 	if err != nil {
 		ds.svc.log.Warn("substrate: resume: whom the turn acts for was not read", "thread", threadID, "error", err)
 		return
@@ -420,13 +436,17 @@ func (ds *dataset) continueThread(ctx context.Context, threadID, resolution stri
 	}
 	defer release()
 	mode, _ := row.Props["mode"].(string)
-	in := agentInvocation{mode: mode, threadID: threadID, resume: true}
+	in := agentInvocation{mode: mode, threadID: threadID, resume: true, unanswered: r.sent}
 	if mode == agentModeChat {
-		err = ds.resumeChatTurn(ctx, ag, in, resolution)
+		err = ds.resumeChatTurn(ctx, ag, in, r, opened)
 	} else {
 		_, err = ds.runAgent(ctx, ag, in)
 	}
-	if errors.Is(err, errResumeStopped) || errors.Is(err, errResumeWaits) {
+	if errors.Is(err, errResumeStopped) || errors.Is(err, errResumeWaits) || errors.Is(err, errNothingUnanswered) {
+		return
+	}
+	if r.sent && errors.Is(err, substrate.ErrThreadBusy) {
+		// Another turn took the thread first, and replays the message.
 		return
 	}
 	if err != nil && ctx.Err() == nil {
@@ -448,17 +468,17 @@ var errResumeWaits = errors.New("the person's chat turns are all running: the re
 // and settles past that cancellation, so a stop or a shutdown settles it
 // `stopped` with what it streamed kept, as a sent turn's does. It holds one
 // of its person's chat-turn slots from before the claim to after the settle;
-// with none free it runs nothing and waits for one (errResumeWaits):
-// resolution is the row the turn starts from, kept to start it again. It
-// returns when the turn has settled: the caller is already a background
-// task of the service.
+// with none free it runs nothing and waits for one (errResumeWaits): from
+// names the row the turn starts from, kept to start it again. opened, when
+// set, is called once the turn holds the thread. It returns when the turn
+// has settled: the caller is already a background task of the service.
 //
 // The wait is kept in memory, as the settle-time re-check is: a resume that
 // waits when the process stops is one the sweep finds again only where the
 // thread settled before its resolution landed.
-func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in agentInvocation, resolution string) error {
+func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in agentInvocation, from deferredResume, opened func()) error {
 	person, limit := ds.turnPerson(ctx), ds.svc.chatTurnsPerPerson
-	if !ds.chatTurns.takeOrWait(person, limit, deferredResume{thread: in.threadID, resolution: resolution}) {
+	if !ds.chatTurns.takeOrWait(person, limit, from) {
 		ds.svc.log.Info("substrate: resume: the person's chat turns are all running, the resume waits for one to settle",
 			"thread", in.threadID, "limit", limit)
 		return errResumeWaits
@@ -470,6 +490,9 @@ func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in 
 	if err != nil {
 		hub.finish(nil, err)
 		return err
+	}
+	if opened != nil {
+		opened()
 	}
 	// The run keeps the context's values (whom it is held to, the fence's
 	// lease, the spend admission) and drops its cancellation.
@@ -489,6 +512,11 @@ func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in 
 // running waits again.
 func (ds *dataset) resumeWaiting(waited []deferredResume) {
 	for _, w := range waited {
+		if w.sent {
+			// A person's message starts it: no resume bound applies.
+			ds.startQueuedTurn(w.thread, w.resolution)
+			continue
+		}
 		ds.resumeNotifiedThread(w.thread, "", w.resolution)
 	}
 }

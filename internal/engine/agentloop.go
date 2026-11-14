@@ -256,6 +256,11 @@ type agentInvocation struct {
 	// resume marks a continuation the engine started on its own (a
 	// resolution's resume): it never claims a thread its owner stopped.
 	resume bool
+	// unanswered marks the turn that messages sent while the last one ran
+	// start (agentqueue.go): it claims the thread only while its newest
+	// turn is still a person's message, so a turn that read them meanwhile
+	// is not followed by one with nothing to answer.
+	unanswered bool
 	// stopHub is the detached chat turn this run belongs to: the root's own
 	// hub, and the same hub on every sub-agent run under it. A run that has
 	// one is stopped with it, and writes and settles on bounded contexts its
@@ -728,6 +733,14 @@ type agentLoop struct {
 	// assistant row, -1 when none is reserved: its streamed deltas carry it
 	// before the row exists.
 	replyTurn int
+	// queued are the messages a person sent while this turn runs, oldest
+	// first, and queueClosed is set once the turn's settle stopped taking
+	// them (agentqueue.go). Both under turnMu, with the ordinals.
+	queued      []*queuedMessage
+	queueClosed bool
+	// unread are the queued messages the run never handed a model call, as
+	// its last settle found them.
+	unread []string
 	// openedAt marks when this invocation loaded (or minted) its thread: a
 	// resolution row landing AFTER it was not in the replayed history, so the
 	// settle-time re-check knows what this run could not have consumed.
@@ -1029,6 +1042,19 @@ loop:
 				break
 			}
 		}
+		// What a person sent while the run went is read here: before a call
+		// the run was making anyway, after the last call's tool results
+		// (decision 0318). The run's last turn is told to record its work,
+		// so it reads none: those start the next turn.
+		if !final {
+			for _, m := range l.takeQueued(lctx) {
+				messages = append(messages, m.message)
+				// The sender continued the run: the rest of it is held to
+				// them too (run.go).
+				ctx, lctx = withRunHolders(ctx, m.persons, m.tokens...), withRunHolders(lctx, m.persons, m.tokens...)
+				l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: m.id, Turn: m.turn})
+			}
+		}
 		l.turns++
 		res, err := l.complete(lctx, messages)
 		if res != nil {
@@ -1296,7 +1322,18 @@ loop:
 	// writes again: their next message replays the resolution rows. A settle
 	// that lost its lease leaves the thread to the run that claimed it.
 	if held && status != threadStopped && l.stopRequested() == "" {
-		l.recheckResolutions(sctx)
+		if len(l.unread) > 0 {
+			// Messages the run never read start the next turn, which replays
+			// every row, a resolution that landed meanwhile among them. It
+			// is given a moment to take the thread before this turn's
+			// clients are told it is done, so their next attach finds it.
+			select {
+			case <-l.ds.startQueuedTurn(l.threadID, l.unread[0]):
+			case <-time.After(queuedTurnOpenWait):
+			}
+		} else {
+			l.recheckResolutions(sctx)
+		}
 	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventDone, Result: res})
 	l.titleAfterFirstTurn(status, reply)
@@ -1646,6 +1683,11 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			// turn below and not history it replays.
 			rows = slices.DeleteFunc(rows, func(r threadRow) bool { return r.id == l.in.messageID })
 		}
+		// Nor is a message sent since the loop was registered: it is in the
+		// queue, and the first call reads it from there (agentqueue.go).
+		if queued := l.queuedIDs(); len(queued) > 0 {
+			rows = slices.DeleteFunc(rows, func(r threadRow) bool { return slices.Contains(queued, r.id) })
+		}
 		history, origin, maxTurn := replayView(rows, l.replaysTools(), l.ds.svc.log)
 		messages = append(messages, history...)
 		l.rows, l.origin, l.historyLen = rows, origin, len(history)
@@ -1838,13 +1880,24 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		// thread whose last turn finished has none, unless its reply was cut
 		// short (the model's limit, a filter), which settles `ok` all the
 		// same.
-		if l.in.continued && status == threadOK {
-			cut, err := t.lastReplyCut(l.in.threadID)
+		// Or one that holds a message nothing answered: one sent while the
+		// last turn ran, whose own turn never started (decision 0318).
+		if l.in.continued && status == threadOK || l.in.unanswered {
+			waiting, err := t.unansweredMessage(l.in.threadID)
 			if err != nil {
 				return err
 			}
-			if !cut {
-				return fmt.Errorf("%w: %w: thread %s: send a message to go on", substrate.ErrConflict, substrate.ErrNothingToContinue, l.in.threadID)
+			if l.in.unanswered && !waiting {
+				return errNothingUnanswered
+			}
+			if l.in.continued && !waiting {
+				cut, err := t.lastReplyCut(l.in.threadID)
+				if err != nil {
+					return err
+				}
+				if !cut {
+					return fmt.Errorf("%w: %w: thread %s: send a message to go on", substrate.ErrConflict, substrate.ErrNothingToContinue, l.in.threadID)
+				}
 			}
 		}
 		l.threadID = l.in.threadID
@@ -1859,6 +1912,32 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		}
 		return l.putSentMessage(t)
 	})
+}
+
+// errNothingUnanswered ends the turn that messages sent while the last one
+// ran would start, where another turn read them first.
+var errNothingUnanswered = errors.New("the thread holds no message waiting for an answer")
+
+// unansweredMessage reports whether the thread holds a person's message that
+// no reply came after: a user row whose ordinal is past every assistant
+// row's. By ordinal, never by creation: a message sent while a reply
+// streamed was created before the reply's row and is the later turn, and
+// the results of calls under way when it was sent come after it.
+func (t *txn) unansweredMessage(threadID string) (bool, error) {
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
+	if err != nil {
+		return false, err
+	}
+	var waiting bool
+	err = t.row(`
+		SELECT coalesce(max((e.props->>'turn')::bigint) FILTER (WHERE e.props->>'role' = 'user'), -1)
+		     > coalesce(max((e.props->>'turn')::bigint) FILTER (WHERE e.props->>'role' = 'assistant'), -1)
+		FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread,
+		b.args...).Scan(&waiting)
+	return waiting, err
 }
 
 // lastReplyCut reports whether the thread's newest turn is an assistant
@@ -1888,9 +1967,10 @@ func (t *txn) lastReplyCut(threadID string) (bool, error) {
 	return role == "assistant" && cut != "", nil
 }
 
-// loadThreadRows reads a continued thread's message rows in stored order,
-// every role included: replay (replayView) and compaction planning both work
-// from them.
+// loadThreadRows reads a continued thread's message rows in the order the
+// model read them (creation order, but for a message sent while a turn ran:
+// replayOrder), every role included: replay (replayView) and compaction
+// planning both work from them.
 func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
@@ -1920,7 +2000,11 @@ func (l *agentLoop) loadThreadRows(ctx context.Context) ([]threadRow, error) {
 		}
 		out = append(out, threadRow{id: id, props: props})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	replayOrder(out)
+	return out, nil
 }
 
 // threadMessagesWhere renders, into b, the predicate selecting one thread's
@@ -2044,6 +2128,9 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		if err := t.lockRecord(eref{Kind: typeThread, ID: l.threadID}); err != nil {
 			return err
 		}
+		// With the row held: a message sent to this turn is in its queue by
+		// now, or finds the thread settled (agentqueue.go).
+		l.unread = l.closeQueue(t.ctx)
 		row, err := t.loadRow(eref{Kind: typeThread, ID: l.threadID}, true)
 		if err != nil {
 			return err

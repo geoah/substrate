@@ -15,9 +15,13 @@ type personSlots struct {
 }
 
 // deferredResume is a chat thread's continuation that found its person's
-// slots all taken: the thread, and the resolution row the turn starts from.
+// slots all taken: the thread, and the row the turn starts from. sent says
+// that row is a message a person sent while the last turn ran, not a
+// resolution: the turn is then their word, and starts without the bounds of
+// a resume the engine makes on its own (agentqueue.go).
 type deferredResume struct {
 	thread, resolution string
+	sent               bool
 }
 
 // take holds one slot of person's, or reports that the person holds limit
@@ -49,10 +53,14 @@ func (p *personSlots) takeOrWait(person string, limit int, r deferredResume) boo
 	if p.takeLocked(person, limit) {
 		return true
 	}
-	for _, w := range p.waiting[person] {
+	for i, w := range p.waiting[person] {
 		if w.thread == r.thread {
 			// The continuation replays every row the thread holds, so one
-			// wait covers every resolution that lands meanwhile.
+			// wait covers every resolution that lands meanwhile. A person's
+			// message is the stronger reason to start it.
+			if r.sent && !w.sent {
+				p.waiting[person][i] = r
+			}
 			return false
 		}
 	}

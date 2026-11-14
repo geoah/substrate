@@ -290,7 +290,9 @@ func agentEntryError(err error) error {
 //
 // A message that names its own id (in.MessageID, decision 0312) is sent at
 // most once: a request that repeats the id writes nothing and runs nothing,
-// and is answered as an attach to the message's thread is.
+// and is answered as an attach to the message's thread is. Such a message
+// sent to a thread a chat turn runs on is not refused: it joins that turn
+// (decision 0318, agentqueue.go).
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
@@ -323,19 +325,46 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 			return ds.answerRepeatedSend(ctx, thread, emit)
 		}
 	}
-	hub, err := ds.startChatTurn(ctx, actor, ag, func(ctx context.Context) (agentInvocation, error) {
-		if in.Message == "" {
-			return agentInvocation{}, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
+	var hub *turnHub
+	for attempt := 1; ; attempt++ {
+		// A message that names its id joins the chat turn running on its
+		// thread (decision 0318, agentqueue.go): its row is written at once
+		// and this request is answered as an attach to that turn is.
+		if in.Thread != "" && in.MessageID != "" {
+			hub, err = ds.queueMessage(ctx, actor, ag, in)
+			if hub != nil {
+				return hub.attach(ctx, emit)
+			}
+			if err != nil && !errors.Is(err, errQueueClosed) {
+				break
+			}
 		}
-		turnCtx, err := ds.chatTurnContext(ctx, ag, in, nowUTC())
-		if err != nil {
-			return agentInvocation{}, err
+		hub, err = ds.startChatTurn(ctx, actor, ag, func(ctx context.Context) (agentInvocation, error) {
+			if in.Message == "" {
+				return agentInvocation{}, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
+			}
+			turnCtx, err := ds.chatTurnContext(ctx, ag, in, nowUTC())
+			if err != nil {
+				return agentInvocation{}, err
+			}
+			return agentInvocation{
+				user: in.Message, userActor: actor, messageID: in.MessageID,
+				turnContext: turnCtx, threadID: in.Thread,
+			}, nil
+		})
+		// A turn took the thread between the two steps (the one an earlier
+		// message started, or another send's): this message joins it. A
+		// message with no id, and a thread no chat turn of this process
+		// holds, are refused as busy.
+		if !errors.Is(err, substrate.ErrThreadBusy) || in.Thread == "" || in.MessageID == "" || attempt == queueAttempts {
+			break
 		}
-		return agentInvocation{
-			user: in.Message, userActor: actor, messageID: in.MessageID,
-			turnContext: turnCtx, threadID: in.Thread,
-		}, nil
-	})
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
 	if err != nil {
 		if in.MessageID != "" {
 			// A copy of this request may have landed the message since the
