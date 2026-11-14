@@ -153,6 +153,16 @@ var (
 	// The API answers it 503 `unavailable` with Retry-After, and the
 	// payload's reason is ReasonSetAside.
 	ErrSetAside = errors.New("substrate: the repository is set aside")
+	// ErrThreadBusy refuses a message or a continue on a thread a turn is
+	// running on: the turn is attached to by the thread's id, or stopped,
+	// and the request is made again once it settles. It follows ErrConflict,
+	// whose words lead; the payload's reason is ReasonThreadBusy.
+	ErrThreadBusy = errors.New("a turn is running on the thread")
+	// ErrNothingToContinue refuses a continue of a thread whose last turn
+	// finished: there is no unfinished work for a continuation to take up,
+	// and the person's next message is what goes on. It follows ErrConflict,
+	// whose words lead; the payload's reason is ReasonNothingToContinue.
+	ErrNothingToContinue = errors.New("the thread's last turn finished")
 	// ErrNotPermitted is a refusal by the one check (decision 0276): the
 	// rules of the hand that writes, or of the actor it acts for, do not
 	// allow the write. It follows ErrForbidden, whose words lead.
@@ -202,6 +212,13 @@ const (
 	ReasonFirstAttemptLanded  = "first_attempt_landed"
 )
 
+// ReasonThreadBusy and ReasonNothingToContinue are the ErrorPayload reasons
+// of ErrThreadBusy and ErrNothingToContinue, on `conflict`.
+const (
+	ReasonThreadBusy        = "thread_busy"
+	ReasonNothingToContinue = "nothing_to_continue"
+)
+
 // ErrorReasons is the closed set of reasons: every Reason constant above and
 // nothing else. A client switches on a reason, so one it was never told about
 // must not reach it: the API drops a reason outside the list
@@ -213,11 +230,13 @@ var ErrorReasons = []string{
 	ReasonInDoubt,
 	ReasonKeyRefused,
 	ReasonNotPermitted,
+	ReasonNothingToContinue,
 	ReasonObservedRederiving,
 	ReasonQuota,
 	ReasonRepositoryRequired,
 	ReasonSetAside,
 	ReasonStaleRevision,
+	ReasonThreadBusy,
 }
 
 // ErrorEnvelope is the one body every refused request answers with.
@@ -235,7 +254,8 @@ type ErrorEnvelope struct {
 // set: ReasonObservedRederiving, ReasonKeyRefused and ReasonSetAside on
 // `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
 // ReasonInDoubt on `internal` and `unavailable`, and
-// ReasonFirstAttemptRunning and ReasonFirstAttemptLanded on `conflict`.
+// ReasonFirstAttemptRunning, ReasonFirstAttemptLanded, ReasonThreadBusy and
+// ReasonNothingToContinue on `conflict`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

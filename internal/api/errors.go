@@ -208,6 +208,10 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 			p.Reason = substrate.ReasonFirstAttemptRunning
 		case errors.Is(err, substrate.ErrFirstAttemptLanded):
 			p.Reason = substrate.ReasonFirstAttemptLanded
+		case errors.Is(err, substrate.ErrThreadBusy):
+			p.Reason = substrate.ReasonThreadBusy
+		case errors.Is(err, substrate.ErrNothingToContinue):
+			p.Reason = substrate.ReasonNothingToContinue
 		}
 		return http.StatusConflict, p
 	case errors.Is(err, substrate.ErrLossyConversion):

@@ -771,8 +771,8 @@ records their chats are made of:
   The server fills in `readBy` with the person the token acts for and
   refuses another person's mark, so an app needs no actor id to keep its
   person's place;
-- `GET …/llm/thread/{id}/events` and `POST …/llm/thread/{id}/stop` for
-  those threads.
+- `GET …/llm/thread/{id}/events`, `POST …/llm/thread/{id}/stop` and
+  `POST …/llm/thread/{id}/continue` for those threads.
 
 A `decide:<pattern>` scope reaches the change requests
 (`substrate.reamde.dev/core/recordpatchrequest`) whose `thread` is a thread

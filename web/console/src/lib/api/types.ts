@@ -59,7 +59,10 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * sign-in: the person opens several repositories and named none, and the
  * refusal lists them in `repositories` (decision 0274). `not_permitted` rides
  * a `forbidden` (403): no rule of the roles the person holds allows it, where
- * an app's scope refusal carries no reason (decision 0276). */
+ * an app's scope refusal carries no reason (decision 0276). `thread_busy` and
+ * `nothing_to_continue` ride a `conflict` (409) on a chat message or a
+ * continue: a turn is running on the thread, or its last turn finished and
+ * there is nothing to take up (decision 0312). */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -71,6 +74,8 @@ export type ErrorReason =
   | "set_aside"
   | "repository_required"
   | "not_permitted"
+  | "thread_busy"
+  | "nothing_to_continue"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

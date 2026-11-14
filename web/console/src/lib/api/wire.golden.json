@@ -717,6 +717,7 @@
   "ChatRequest": {
     "context": false,
     "message": true,
+    "messageId": false,
     "thread": false,
     "timezone": false
   },

@@ -696,6 +696,10 @@ export interface ChatRequest {
   /** Continues an existing thread; empty or absent opens one. */
   thread?: string
   message: string
+  /** The id this client chose for the message (decision 0312): the server
+   * writes the user row under it, and a request that repeats it writes
+   * nothing and runs nothing. */
+  messageId?: string
   /** The client's IANA zone; absent falls back to the repository's
    * `substrate.reamde.dev/llm/timezone` setting, then UTC. */
   timezone?: string

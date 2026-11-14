@@ -517,6 +517,7 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/"+corePackage+"/agent/{name}/chat", h.postAgentChat)
 			r.Get("/"+llmPackage+"/thread/{id}/events", h.getThreadEvents)
 			r.Post("/"+llmPackage+"/thread/{id}/stop", h.postThreadStop)
+			r.Post("/"+llmPackage+"/thread/{id}/continue", h.postThreadContinue)
 			// A webhook's parked deliveries, for the trigger an app's
 			// `webhook:` scope names (docs/plans/app-setup.md); the rest
 			// of the trigger verbs are the owner's (mountTriggerVerbs).

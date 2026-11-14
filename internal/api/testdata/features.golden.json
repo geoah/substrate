@@ -27,7 +27,7 @@
   {
     "name": "errors",
     "stability": "stable",
-    "revision": 5,
+    "revision": 6,
     "routes": []
   },
   {
@@ -235,11 +235,12 @@
   {
     "name": "agents",
     "stability": "experimental",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
       "POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
       "POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
+      "POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue",
       "POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop"
     ]
   },

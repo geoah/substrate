@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The engine's agent plumbing around the loop (agentloop.go): the well-known
@@ -279,6 +280,10 @@ func agentEntryError(err error) error {
 // back before the first event, under ctx; after that the loop runs as a
 // background task of the service and ctx only carries this caller's attach,
 // so a client that leaves gets ctx.Err() and the turn runs on to its settle.
+//
+// A message that names its own id (in.MessageID, decision 0312) is sent at
+// most once: a request that repeats the id writes nothing and runs nothing,
+// and is answered as an attach to the message's thread is.
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
@@ -298,6 +303,96 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 			return nil, err
 		}
 	}
+	if in.MessageID != "" {
+		if !vocabulary.ValidID(in.MessageID) {
+			return nil, fmt.Errorf("%w: messageId %q is not a record id: letters, digits and . _ ~ : @ / -, starting with a letter or a digit, at most %d characters",
+				substrate.ErrValidation, in.MessageID, vocabulary.MaxIDLen)
+		}
+		thread, err := ds.sentMessage(ctx, actor, ag, in)
+		if err != nil {
+			return nil, err
+		}
+		if thread != "" {
+			return ds.answerRepeatedSend(ctx, thread, emit)
+		}
+	}
+	hub, err := ds.startChatTurn(ctx, actor, ag, func(ctx context.Context) (agentInvocation, error) {
+		if in.Message == "" {
+			return agentInvocation{}, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
+		}
+		turnCtx, err := ds.chatTurnContext(ctx, ag, in, nowUTC())
+		if err != nil {
+			return agentInvocation{}, err
+		}
+		return agentInvocation{
+			user: in.Message, userActor: actor, messageID: in.MessageID,
+			turnContext: turnCtx, threadID: in.Thread,
+		}, nil
+	})
+	if err != nil {
+		if in.MessageID != "" {
+			// A copy of this request may have landed the message since the
+			// read above: the row is written in the transaction that claims
+			// or opens the thread, so whichever copy lost that race is
+			// refused here (a running turn, the row's own id, a cap the
+			// first copy filled) and finds the row now.
+			thread, rerr := ds.sentMessage(ctx, actor, ag, in)
+			if rerr == nil && thread != "" {
+				return ds.answerRepeatedSend(ctx, thread, emit)
+			}
+			if errors.Is(rerr, errMessageIDTaken) {
+				return nil, rerr
+			}
+		}
+		return nil, err
+	}
+	return hub.attach(ctx, emit)
+}
+
+// ContinueAgentTurn runs a continuation of a thread with no user message
+// (decision 0312): the stored rows are the whole context, on the path a
+// resolution's resume takes. It is the person's word, so unlike that resume
+// it takes up a thread its owner stopped. A thread a turn runs on refuses it
+// (ErrThreadBusy), and so does one whose last turn finished
+// (ErrNothingToContinue, claimThread).
+func (ds *dataset) ContinueAgentTurn(ctx context.Context, actor substrate.Actor, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: threadID})
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.DeletedAt != nil || row.Kind != typeThread {
+		return nil, fmt.Errorf("%w: thread %s", substrate.ErrNotFound, threadID)
+	}
+	agentID := referenceID(row.Props["agent"])
+	ag, err := ds.registry().ResolveAgent(agentID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", callableRefusal(agentID), err)
+	}
+	if ag.HiddenFromChat {
+		return nil, fmt.Errorf("%w: agent %s is hidden from chat, and so is continuing its thread: call it from another agent",
+			substrate.ErrValidation, ag.Identity())
+	}
+	if err := ds.mayContinue(ctx, actor, threadID, false); err != nil {
+		return nil, err
+	}
+	hub, err := ds.startChatTurn(ctx, actor, ag, func(context.Context) (agentInvocation, error) {
+		return agentInvocation{threadID: threadID, continued: true}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return hub.attach(ctx, emit)
+}
+
+// startChatTurn starts one detached chat turn and answers its hub: admission
+// under the lifecycle fence, a slot among the person's running turns, the
+// thread claimed or opened, and the loop spawned as a background task of the
+// service. invocation builds what the turn runs, on the admitted context;
+// the mode and the hub are set here. Every refusal comes back as an error,
+// with nothing left held.
+func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag *vocabulary.Agent,
+	invocation func(context.Context) (agentInvocation, error),
+) (*turnHub, error) {
 	// Admission under the lifecycle fence, held through the whole chat turn's
 	// writes (thread claim/mint, every message, settlement): the detached
 	// task releases it, so a bundle disable waits for the turn as it did
@@ -312,10 +407,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 			release()
 		}
 	}()
-	if in.Message == "" {
-		return nil, fmt.Errorf("%w: a chat turn needs a message", substrate.ErrValidation)
-	}
-	turnCtx, err := ds.chatTurnContext(ctx, ag, in, nowUTC())
+	in, err := invocation(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -338,10 +430,8 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		}
 	}()
 	hub := newTurnHub()
-	runCtx, l, err := ds.prepareAgentRun(ctx, ag, agentInvocation{
-		mode: agentModeChat, user: in.Message, userActor: actor,
-		turnContext: turnCtx, threadID: in.Thread, hub: hub,
-	})
+	in.mode, in.hub = agentModeChat, hub
+	runCtx, l, err := ds.prepareAgentRun(ctx, ag, in)
 	if err != nil {
 		err = agentEntryError(err)
 		// A client may have attached while the thread was being opened.
@@ -377,7 +467,112 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		turn()
 		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
 	}
-	return hub.attach(ctx, emit)
+	return hub, nil
+}
+
+// errMessageIDTaken refuses a send whose messageId names a record that is
+// not this message: another thread's, another text's, or no user message at
+// all. It follows ErrConflict, as a reused Idempotency-Key does: the id
+// exists and this request is not the one that may use it.
+var errMessageIDTaken = errors.New("the messageId is taken")
+
+// sentMessage answers the thread a send's messageId already landed on, ""
+// when no record has the id. The stored row must be this request's own
+// message: a user row of the thread the request names (or, for a request
+// that opens a chat, the row that opened its thread), of the agent it
+// addresses, holding the text it sends. Anything else under the id is
+// refused, and the hand is held to the thread as a message into it is.
+func (ds *dataset) sentMessage(ctx context.Context, actor substrate.Actor, ag *vocabulary.Agent, in substrate.ChatInput) (string, error) {
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: in.MessageID})
+	if err != nil {
+		return "", err
+	}
+	if row == nil {
+		return "", nil
+	}
+	taken := func(why string) (string, error) {
+		return "", fmt.Errorf("%w: %w: messageId %q %s: send the message under a new id", substrate.ErrConflict, errMessageIDTaken, in.MessageID, why)
+	}
+	if row.DeletedAt != nil {
+		return taken("names a deleted message")
+	}
+	thread := referenceID(row.Props[msgRelThread])
+	if role, _ := row.Props["role"].(string); role != "user" || thread == "" {
+		return taken("names a record that is not a sent message")
+	}
+	switch {
+	case in.Thread != "" && in.Thread != thread:
+		return taken("is a message of another thread")
+	case in.Thread == "":
+		// A request that opens a chat repeats only the message its thread
+		// opened with: the same id later in some thread is another request.
+		if turn, ok := anyFloat(row.Props["turn"]); !ok || turn != 0 {
+			return taken("is a message of thread " + thread + ", which it did not open")
+		}
+	}
+	if content, _ := row.Props["content"].(string); content != in.Message {
+		return taken("was sent with another text")
+	}
+	trow, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: thread})
+	if err != nil {
+		return "", err
+	}
+	if trow == nil || trow.DeletedAt != nil {
+		return taken("is a message of a deleted thread")
+	}
+	if agent := referenceID(trow.Props["agent"]); agent != ag.Identity() {
+		return taken("was sent to agent " + agent)
+	}
+	if in.Thread == "" {
+		if err := ds.mayContinue(ctx, actor, thread, false); err != nil {
+			return "", err
+		}
+	}
+	return thread, nil
+}
+
+// repeatedSendWait bounds how long a repeated send waits for the turn its
+// first copy started to become attachable: the row commits a moment before
+// the loop is reachable through runningThreads.
+const repeatedSendWait = 2 * time.Second
+
+// answerRepeatedSend answers a send whose message already landed on thread:
+// the stream of the turn running there, which opens with the thread event,
+// or the thread event and the one idle line an attach answers. Nothing is
+// written and nothing runs.
+func (ds *dataset) answerRepeatedSend(ctx context.Context, thread string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	if emit == nil {
+		emit = func(substrate.AgentEvent) {}
+	}
+	deadline := time.Now().Add(repeatedSendWait)
+	for {
+		hub, err := ds.runningTurn(ctx, thread)
+		if err == nil {
+			return hub.attach(ctx, emit)
+		}
+		if !errors.Is(err, substrate.ErrNoRunningTurn) {
+			return nil, err
+		}
+		row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: thread})
+		if err != nil {
+			return nil, err
+		}
+		if row == nil || row.DeletedAt != nil {
+			return nil, fmt.Errorf("%w: thread %s", substrate.ErrNotFound, thread)
+		}
+		status, _ := row.Props["status"].(string)
+		if status == threadRunning && time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+			continue
+		}
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: thread})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventIdle, Thread: thread, Status: status})
+		return nil, nil
+	}
 }
 
 // maxRunningChatTurns is how many detached chat turns one person runs at once
