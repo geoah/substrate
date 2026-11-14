@@ -170,11 +170,11 @@ final class SeededServer: @unchecked Sendable {
     private var sleeping: [Int: Date] = [:]
     /// Every chat request that reached the server, by its message's text.
     private var chats: [String: Int] = [:]
-    /// The seeded thread the server was made on, nil when on none, and how
-    /// many requests reached it from anywhere else: work of a seeded run
-    /// that left the run's thread, which the seed no longer orders.
-    fileprivate let home = SeededThread.current
-    fileprivate var strays = 0
+    /// The seeded thread the server was made on, nil when on none, and
+    /// where the run was met on any other: work of a seeded run that left
+    /// the run's thread, which the seed no longer orders.
+    private let home = SeededThread.current
+    private var strays: [String] = []
 
     init(seed: UInt64, clock: TestClock, revision: Int = 3, agent: String = helper) {
         self.seed = seed
@@ -245,7 +245,15 @@ final class SeededServer: @unchecked Sendable {
     /// How many requests came, and how many of them drew a fault.
     var requests: Int { lock.withLock { seen } }
     var faulted: Int { lock.withLock { faults } }
-    var strayed: Int { lock.withLock { strays } }
+    var strayed: [String] { lock.withLock { strays } }
+
+    /// Says where the run is, at a place it passes: a request as it reaches
+    /// the server and as its answer goes back, a wait on the clock as it
+    /// begins and as it ends, an id as it is minted, a stream's cleanup, a
+    /// step of the driver. Off the run's thread there, the run strayed.
+    var watch: @Sendable (String) -> Void {
+        { [self] place in if SeededThread.current !== home { lock.withLock { strays.append(place) } } }
+    }
 
     /// How often a chat request with this text reached the server.
     func chatRequests(saying text: String) -> Int { lock.withLock { chats[text, default: 0] } }
@@ -405,7 +413,8 @@ final class SeededServer: @unchecked Sendable {
         }
 
         func lines(for request: URLRequest) async throws -> LineStream {
-            if SeededThread.current !== server.home { server.lock.withLock { server.strays += 1 } }
+            server.watch("a request reaching the server")
+            defer { server.watch("a request's answer going back") }
             return try await server.answer(request, port: number)
         }
     }
@@ -641,6 +650,7 @@ final class SeededServer: @unchecked Sendable {
                 // reader holds while it runs this and a line on its way to
                 // that reader waits for: the reader is let go a moment later.
                 Task.detached { [self] in
+                    watch("a stream's cleanup")
                     lock.withLock {
                         if let reader { threads[thread]?.turn?.readers.removeAll { $0.id == reader } }
                         if let tag { open[tag, default: 0] -= 1 }
