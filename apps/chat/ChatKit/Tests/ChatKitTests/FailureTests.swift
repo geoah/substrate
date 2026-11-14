@@ -511,6 +511,12 @@ struct FailureRetries {
         try await rig.harness.until { _ in await rig.live(key)?.settles == 2 }
         await rig.harness.send(.refresh)
         try await rig.harness.until { harness in await harness.state.continues }
+        // And nothing the conversation does later takes it away again: it
+        // told the list once, with the event that met the answer.
+        try await rig.send(.draft("still here"), to: key)
+        await rig.harness.settle()
+        #expect(await rig.harness.state.continues)
+        #expect(await rig.live(key)?.continueUnserved == false)
         // A new session knows nothing until it reads its own.
         await rig.signOut()
         let fresh = await rig.harness.state
@@ -542,6 +548,30 @@ struct FailureRetries {
         try await rig.send(.continueTurn, to: key)
         try await rig.harness.until { _ in rig.server.count("/events") == 1 }
         #expect(await rig.live(key)?.turnFailure == nil)
+    }
+
+    @Test func aContinueRefusedForTheRepositorysTurnsSaysSoInTheTurnsPlace() async throws {
+        let cap = #"{"error":{"code":"conflict","reason":"turn_cap","message":"4 chat turns are already running"}}"#
+        let rig = ChatRig(failedRoutes() + [.init(method: "POST", path: "/continue", answer: .json(409, cap))])
+        let key = try await open(rig)
+        try await rig.send(.continueTurn, to: key)
+        try await rig.harness.until { _ in await rig.card(key)?.sentence == "Too many replies are being written at once." }
+        let card = try #require(await rig.card(key))
+        #expect(card.note == "Try again when one finishes." && card.button == FailureButton(title: "Try Again", action: .resume))
+        #expect(card.details?.text == "4 chat turns are already running")
+        // Nothing was attached to, and nothing was sent in the person's name.
+        #expect(rig.server.count("/events") == 0 && rig.server.count("/chat") == 0)
+        // A reason this build does not know is said too, by its status.
+        let rig2 = ChatRig(
+            failedRoutes() + [
+                .init(
+                    method: "POST", path: "/continue",
+                    answer: .json(409, #"{"error":{"code":"conflict","reason":"a_new_reason","message":"not now"}}"#))
+            ])
+        let key2 = try await open(rig2)
+        try await rig2.send(.continueTurn, to: key2)
+        try await rig2.harness.until { _ in await rig2.card(key2)?.sentence == "Couldn't ask Helper to carry on." }
+        #expect(await rig2.card(key2)?.note == "It changed in the meantime.")
     }
 
     @Test func aThreadWithNothingToContinueIsReadForWhatItHolds() async throws {
@@ -709,6 +739,18 @@ struct FailureKeepsWhatWasTyped {
         try await rig.send(.dismissFailure, to: key)
         #expect(await rig.strip(key) == nil)
         #expect(await rig.conversation(key)?.composer.draft == "Water the basil\n\nand the mint")
+    }
+
+    @Test func theSameWordsTypedAgainSinceAreKeptBesideTheTextGivenBack() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .json(502, "<html>bad gateway</html>"))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        try await rig.send(.draft("Hello"), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.checking == true }
+        try await rig.send(.draft("Hello"), to: key)
+        try await rig.harness.until(advancing: 2) { _ in await rig.live(key)?.chatFailure?.unconfirmed == true }
+        #expect(await rig.conversation(key)?.composer.draft == "Hello\n\nHello")
     }
 
     @Test func aFailedReplysNotificationSaysWhatItsCardSays() {

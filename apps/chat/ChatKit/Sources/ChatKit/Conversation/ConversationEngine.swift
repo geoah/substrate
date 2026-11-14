@@ -8,6 +8,10 @@ extension Conversation {
         var next = state
         next.asks = []
         next.failure = nil
+        // Told to the list by the event that met it, and by no later one:
+        // the list believes it only until the server's document is read
+        // again.
+        next.continueUnserved = false
         switch event.step {
         case let .drafted(text):
             next.draft = text
@@ -224,8 +228,10 @@ extension Conversation {
             state.turnFailure = failure
             return
         }
-        let draft = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if draft != message { state.draft = draft.isEmpty ? message : message + "\n\n" + state.draft }
+        // The send emptied the composer, so whatever it holds now was typed
+        // since, the same words again included.
+        let typedSince = state.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n" + state.draft
+        state.draft = message + typedSince
         state.draftRevision += 1
         state.chatFailure = failure
     }
@@ -436,7 +442,7 @@ extension Conversation {
             if run.automatic { return }
             return send(&state, message: Self.continueMessage, agent: run.agent, at: run.sentAt, baseline: nil, fromDraft: false)
         }
-        if failure.status == 409 { return reattach(&state, attempt: 0) }
+        if failure.status == 409, reconciles(failure) { return reattach(&state, attempt: 0) }
         let resumed = failure.attempting(.resume)
         if failure.report == .accessEnded || failure.refusal() != nil || failure.neverSent {
             end(&state, run, unknown: nil, outcome: outcome)
@@ -445,6 +451,18 @@ extension Conversation {
         }
         state.lastFailure = resumed
         reattach(&state, attempt: 0)
+    }
+
+    /// Whether a 409 for a continue is one the thread's own state answers:
+    /// a turn already runs on it, or its reply is complete, or the server
+    /// gave no reason. Any other reason (the repository's turns are all
+    /// taken, one this build does not know) is a refusal to say.
+    private func reconciles(_ failure: Failure) -> Bool {
+        guard case let .http(_, _, reason) = failure.why, let reason else { return true }
+        switch RefusalReason(rawValue: reason) {
+        case .threadBusy?, .nothingToContinue?: return true
+        case .turnCap?, .spendCap?, .providerKeyMissing?, .quota?, .keyRefused?, nil: return false
+        }
     }
 
     /// A run that never named its thread wrote nothing: the optimistic turn
