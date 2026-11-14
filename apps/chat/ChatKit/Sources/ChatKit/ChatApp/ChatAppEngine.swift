@@ -118,7 +118,7 @@ extension ChatApp {
         case let .watchRelist(at):
             next.watching = false
             guard WatchFollower.recovers(at: at, after: state.recoveryStarted) else {
-                next.feedProblem = "the server could not resume the chats' history even after reading them again"
+                next.listFailure = Failure(.feed, .ended, seen: "the server could not resume the chats' history even after reading them again")
                 break
             }
             next.recoveryStarted = at

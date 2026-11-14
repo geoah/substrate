@@ -368,7 +368,7 @@ struct ListRules {
         }
         let state = await rig.harness.state
         #expect(state.agents.map(\.id) == [helper, otherAgent])
-        #expect(state.refreshError == nil && state.feedProblem == nil)
+        #expect(state.listFailure == nil)
         #expect(rig.server.count("/api/v1/changes", query: "from=5&generation=g") == 1)
         #expect(await rig.storage.records(try await rig.lease())?.cursor == WatchCursor(seq: 10, generation: "g"))
     }
@@ -387,10 +387,10 @@ struct ListRules {
             ] + baseRoutes())
         try await rig.signIn()
         try await rig.harness.until(timeout: .seconds(20)) { harness in
-            await harness.state.feedProblem != nil
+            await harness.state.listFailure != nil
         }
         let state = await rig.harness.state
-        #expect(state.feedProblem?.contains("could not resume") == true)
+        #expect(state.listFailure?.seen?.contains("could not resume") == true)
         #expect(!state.watching)
         #expect(rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1)
     }
@@ -414,12 +414,12 @@ struct ListRules {
         try await rig.signIn()
         let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
         try await rig.harness.until(timeout: .seconds(20)) { harness in
-            await harness.state.feedProblem != nil || lists() > 2
+            await harness.state.listFailure != nil || lists() > 2
         }
         let state = await rig.harness.state
         // The first read, and the one read again; never a third.
         #expect(lists() == 2)
-        #expect(state.feedProblem?.contains("could not resume") == true)
+        #expect(state.listFailure?.seen?.contains("could not resume") == true)
         #expect(!state.watching)
         #expect(rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1)
     }
@@ -452,11 +452,11 @@ struct ListRules {
         await rig.harness.advance(by: 3600)
         try await rig.harness.until(timeout: .seconds(20)) { harness in
             let state = await harness.state
-            return state.feedProblem != nil
+            return state.listFailure != nil
                 || (rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 3 && state.watching && !state.refreshing)
         }
         let state = await rig.harness.state
-        #expect(state.feedProblem == nil)
+        #expect(state.listFailure == nil)
         #expect(state.agents.map(\.id) == [helper, otherAgent])
         // The first read, the read again, and the one an hour later.
         #expect(rig.server.count("/api/v1/records", query: "core/agent") == 3)
@@ -472,10 +472,10 @@ struct ListRules {
         rig.clock.advance(to: started.addingTimeInterval(59.999))
         rig.server.release()
         try await rig.harness.until(timeout: .seconds(20)) { harness in
-            await harness.state.feedProblem != nil || lists() > 2
+            await harness.state.listFailure != nil || lists() > 2
         }
         let state = await rig.harness.state
-        #expect(state.feedProblem == "the server could not resume the chats' history even after reading them again")
+        #expect(state.listFailure?.seen == "the server could not resume the chats' history even after reading them again")
         #expect(!state.watching && !state.refreshing)
         #expect(lists() == 2)
         #expect(state.recoveryStarted == started)
@@ -491,12 +491,12 @@ struct ListRules {
         rig.server.release()
         try await rig.harness.until(timeout: .seconds(20)) { harness in
             let state = await harness.state
-            return state.feedProblem != nil
+            return state.listFailure != nil
                 || (lists() == 3 && rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 2 && state.watching
                     && !state.refreshing)
         }
         let state = await rig.harness.state
-        #expect(state.feedProblem == nil)
+        #expect(state.listFailure == nil)
         #expect(lists() == 3)
         #expect(state.recoveryStarted == started.addingTimeInterval(60))
         #expect(state.agents.map(\.id) == [helper, otherAgent])
@@ -516,10 +516,10 @@ struct ListRules {
         await rig.runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, online: true))
         try await rig.harness.until { harness in
             let state = await harness.state
-            return !state.refreshing && (state.loaded || state.refreshError != nil)
+            return !state.refreshing && (state.loaded || state.listFailure != nil)
         }
         let state = await rig.harness.state
-        #expect(state.refreshError == nil)
+        #expect(state.listFailure == nil)
         #expect(state.agents.map(\.id) == [helper, otherAgent])
         // The first page, the refused continuation, then the walk again.
         #expect(rig.server.count("/api/v1/records", query: "core/agent") == 4)
@@ -642,9 +642,9 @@ private func readAgainAndFollowing() async throws -> (ChatRig, Date) {
     let changed = ChatAppState.WatchKey(kind: Kinds.thread, id: "t1")
     try await rig.harness.until(timeout: .seconds(20)) { harness in
         let state = await harness.state
-        return state.feedProblem != nil || (state.watching && !state.refreshing && state.feedBatch.contains(changed))
+        return state.listFailure != nil || (state.watching && !state.refreshing && state.feedBatch.contains(changed))
     }
-    #expect(await rig.harness.state.feedProblem == nil)
+    #expect(await rig.harness.state.listFailure == nil)
     let threadLists = rig.server.count("/api/v1/records", query: "llm/thread")
     // The change is read again a moment after its row, on the app's clock.
     try await rig.harness.until(advancing: 0.3) { harness in
