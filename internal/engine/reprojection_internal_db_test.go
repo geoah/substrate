@@ -700,7 +700,7 @@ func TestTheByteOrderMigrationRefusesWhileAServerHoldsARepository(t *testing.T) 
 		t.Fatal(err)
 	}
 	raw := rawDBOf(t, dsn)
-	stageTheLocaleOrder(t, raw)
+	restoreViews := stageTheLocaleOrder(t, raw)
 
 	// The server before the migration: its reindex pauses before its second
 	// page of providers, its reprojection before its first.
@@ -829,6 +829,7 @@ func TestTheByteOrderMigrationRefusesWhileAServerHoldsARepository(t *testing.T) 
 	if err := apply(); err != nil {
 		t.Fatalf("0021 once the server is gone: %v", err)
 	}
+	restoreViews()
 	if got := ledger(); !strings.Contains(got, fmt.Sprintf("21:%s", byteOrder.SHA256)) {
 		t.Errorf("after the migration the ledger is %s, want 0021 recorded", got)
 	}

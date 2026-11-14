@@ -417,8 +417,8 @@ func seedState(t *testing.T, svc substrate.Service, repo string) string {
 		version, kind_version, deleted_at IS NULL, created_at = updated_at,
 		created_at = (SELECT ts FROM changelog c WHERE c.kind = r.kind AND c.record_id = r.id)
 		FROM records r WHERE kind = ANY($1::text[]) ORDER BY kind, id`)
-	dump("manager", `SELECT m.record_kind, m.record_id, m.property, m.actor, m.tier, m.principal, m.updated_at = r.created_at
-		FROM property_managers m JOIN records r ON r.kind = m.record_kind AND r.id = m.record_id
+	dump("mark", `SELECT m.record_kind, m.record_id, m.property, m.pinned, m.set_by, m.on_behalf_of, m.derived_from::text, m.set_at = r.created_at
+		FROM property_marks m JOIN records r ON r.kind = m.record_kind AND r.id = m.record_id
 		WHERE m.record_kind = ANY($1::text[]) ORDER BY 1, 2, 3`)
 	dump("ref", `SELECT src_kind, src, property, path, ord, dst_kind, dst, props::text FROM refs
 		WHERE src_kind = ANY($1::text[]) ORDER BY 1, 2, 3, 4, 5`)

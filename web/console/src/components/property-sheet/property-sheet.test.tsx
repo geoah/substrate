@@ -66,7 +66,10 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
   return {
     ...actual,
     request: vi.fn((method: string, path: string, body?: unknown) => {
-      if (method === "PATCH") {
+      if (
+        method === "PATCH" ||
+        (method === "POST" && /\/(pin|release)$/.test(path))
+      ) {
         wire.writes.push({ method, path, body })
         if (wire.refuse) {
           return Promise.reject(
@@ -88,6 +91,7 @@ import { PropertySheet } from "./property-sheet"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { ShippedUnits } from "@/components/units-provider.test-fixtures"
 import { expectNoTrace } from "@/hooks/use-secret-mutation.test-fixtures"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 beforeEach(() => seedActors())
 
@@ -101,7 +105,6 @@ const render = (
 const TASK = "ada.example.com/tasks/task"
 const PERSON = "ada.example.com/people/person"
 const CONTACT = "providers.substrate.reamde.dev/google/contact"
-const GOOGLE_SYNC = "act-fn-google-synccontacts"
 
 function kind(identity: string, definition: Record<string, unknown>): KindInfo {
   const [authority, pkg, name] = identity.split("/")
@@ -180,11 +183,11 @@ const record = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   version: 7,
   createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-10T00:00:00Z",
-  propertyMeta: {
+  marks: {
     location: {
-      manager: "act-person",
-      tier: "owner",
-      updatedAt: "2026-09-10T00:00:00Z",
+      pinned: true,
+      setBy: actorLink("act-person"),
+      setAt: "2026-09-10T00:00:00Z",
     },
   },
   ...over,
@@ -332,7 +335,7 @@ describe("PropertySheet on a kind binding observed", () => {
       hold: "PT1H51M31S",
       specimen: "capillary",
     },
-    propertyMeta: {},
+    marks: {},
   })
 
   it("reads a duration in words, the stored text on hover", () => {
@@ -1043,17 +1046,18 @@ describe("PropertySheet reference edit", () => {
 })
 
 describe("OwnershipChip", () => {
-  const held = (meta: SubstrateRecord["propertyMeta"]) =>
-    record({ propertyMeta: meta })
+  const held = (meta: SubstrateRecord["marks"]) => record({ marks: meta })
 
   it("stays quiet on the owner's own value, the page's default", () => {
-    renderSheet(held({ location: { manager: "act-person", tier: "owner" } }))
+    renderSheet(
+      held({ location: { pinned: true, setBy: actorLink("act-person") } })
+    )
     expect(row("location").querySelector("[data-slot=owner-chip]")).toBeNull()
   })
 
   it("says You on every row when asked who holds each value", () => {
     renderSheet(
-      held({ location: { manager: "act-person", tier: "owner" } }),
+      held({ location: { pinned: true, setBy: actorLink("act-person") } }),
       task,
       false,
       true
@@ -1076,9 +1080,7 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: GOOGLE_SYNC,
-          tier: "machine",
-          source: `${CONTACT}/c1`,
+          derivedFrom: [{ ref: `${CONTACT}/c1` }],
         },
       })
     )
@@ -1099,11 +1101,9 @@ describe("OwnershipChip", () => {
             mapping: "ada.example.com/people/googlecontactperson",
           },
         ],
-        propertyMeta: {
+        marks: {
           location: {
-            manager: GOOGLE_SYNC,
-            tier: "machine",
-            source: `${CONTACT}/c1`,
+            derivedFrom: [{ ref: `${CONTACT}/c1` }],
           },
         },
       })
@@ -1121,14 +1121,13 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: "act-person",
-          tier: "owner",
+          pinned: true,
+          setBy: actorLink("act-person"),
           alternatives: [
             {
-              actor: GOOGLE_SYNC,
+              derivedFrom: { ref: `${CONTACT}/c1` },
               value: "Lisboa",
               updatedAt: "2026-09-09T00:00:00Z",
-              source: `${CONTACT}/c1`,
             },
           ],
         },
@@ -1160,14 +1159,18 @@ describe("OwnershipChip", () => {
     })
   })
 
-  it("stops overriding by patching the property to null", async () => {
+  it("stops overriding by releasing the property to sync", async () => {
     renderSheet(
       held({
         location: {
-          manager: "act-person",
-          tier: "owner",
+          pinned: true,
+          setBy: actorLink("act-person"),
           alternatives: [
-            { actor: GOOGLE_SYNC, value: "Lisboa", updatedAt: "" },
+            {
+              derivedFrom: { ref: `${CONTACT}/c1` },
+              value: "Lisboa",
+              updatedAt: "",
+            },
           ],
         },
       })
@@ -1183,8 +1186,84 @@ describe("OwnershipChip", () => {
       within(dialog).getByRole("button", { name: "Follow Google" })
     )
     await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].method).toBe("POST")
+    expect(wire.writes[0].path).toMatch(/\/release$/)
     expect(wire.writes[0].body).toEqual({
-      properties: { location: null },
+      properties: ["location"],
+      ifVersion: 7,
+    })
+  })
+
+  it("releases a pinned value its source agrees with", async () => {
+    renderSheet(
+      held({
+        location: {
+          pinned: true,
+          setBy: actorLink("act-person"),
+          derivedFrom: [{ ref: `${CONTACT}/c1` }],
+        },
+      })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: /Stop keeping · follow Google/ })
+    )
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Follow Google" })
+    )
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].path).toMatch(/\/release$/)
+  })
+
+  it("releases a pinned value nothing offers", async () => {
+    renderSheet(
+      held({
+        location: { pinned: true, setBy: actorLink("act-pkg-google") },
+      })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Stop keeping this value" })
+    )
+    const dialog = await screen.findByRole("dialog")
+    expect(dialog.textContent).toContain("No source offers one now")
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Stop keeping" })
+    )
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].path).toMatch(/\/release$/)
+    expect(wire.writes[0].body).toEqual({
+      properties: ["location"],
+      ifVersion: 7,
+    })
+  })
+
+  it("keeps a value sync wrote by pinning it", async () => {
+    renderSheet(
+      held({
+        location: {
+          derivedFrom: [{ ref: `${CONTACT}/c1` }],
+          setAt: "2026-09-09T00:00:00Z",
+        },
+      })
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Where Location comes from" })
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Keep this value" }))
+    const dialog = await screen.findByRole("dialog")
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Keep this value" })
+    )
+    await waitFor(() => expect(wire.writes).toHaveLength(1))
+    expect(wire.writes[0].path).toMatch(/\/pin$/)
+    expect(wire.writes[0].body).toEqual({
+      properties: ["location"],
       ifVersion: 7,
     })
   })
@@ -1193,8 +1272,8 @@ describe("OwnershipChip", () => {
     renderSheet(
       held({
         location: {
-          manager: "act-pkg-google",
-          tier: "bundle",
+          pinned: true,
+          setBy: actorLink("act-pkg-google"),
         },
       })
     )
@@ -1302,12 +1381,16 @@ describe("PropertySheet under a live refresh", () => {
   it("keeps the version a source's value was offered at", async () => {
     const offered = (over: Partial<SubstrateRecord> = {}) =>
       record({
-        propertyMeta: {
+        marks: {
           location: {
-            manager: "act-person",
-            tier: "owner",
+            pinned: true,
+            setBy: actorLink("act-person"),
             alternatives: [
-              { actor: GOOGLE_SYNC, value: "Lisboa", updatedAt: "" },
+              {
+                derivedFrom: { ref: `${CONTACT}/c1` },
+                value: "Lisboa",
+                updatedAt: "",
+              },
             ],
           },
         },

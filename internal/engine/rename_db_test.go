@@ -4,7 +4,7 @@ package engine_test
 // naming its previous name with `renamedFrom` is admitted while live records
 // carry that name, and the apply moves each record's value inside the apply's
 // transaction, one changelog entry per record. These hold what travels with
-// the value (the manager row, the offer rows, the embed queue, a secret's
+// the value (the mark, the offer rows, the embed queue, a secret's
 // sealed ref), what refuses the rename (a reader of the old name, a rename that
 // also narrows), and that a fresh replay reproduces the renamed records.
 
@@ -109,8 +109,8 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 	}
 	// Three live gizmos: one the owner wrote with every renamed property, one
 	// without the renamed properties at all, and one a source record's
-	// mapping wrote, whose `size` a connector's actor manages at the machine
-	// tier and whose offer row names it.
+	// mapping wrote, whose `size` sync wrote and whose offer row names its
+	// source.
 	full := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: rnGizmo, Properties: map[string]any{
 			"size": "big", "blurb": "alpha prose", "token": "s3cret", "note": "kept",
@@ -137,9 +137,9 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 		t.Fatalf("offers for size before the rename = %d, %v", offers, err)
 	}
 	var libStamp time.Time
-	if err := db.QueryRow(`SELECT updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'size'`,
+	if err := db.QueryRow(`SELECT set_at FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'size'`,
 		rnGizmo, mappedID).Scan(&libStamp); err != nil {
-		t.Fatalf("read the connector's manager stamp: %v", err)
+		t.Fatalf("read the mark's time: %v", err)
 	}
 	// The blurb's vectors, as the worker would have stored them: one chunk of
 	// the text, hashed, under the repository's embeddings provider.
@@ -194,36 +194,33 @@ func TestRenameMovesTheValueOfEveryLiveRecord(t *testing.T) {
 		t.Fatalf("the mapped gizmo did not move: %v", got.Properties)
 	}
 
-	// The manager rows moved with their actor and tier: the owner's on the
-	// record it wrote, the connector's at the machine tier on the mapped one.
-	managerOf := func(id, property string) (actor, tier string) {
+	// The marks moved whole: the owner's pin on the record it wrote, and the
+	// mapped one's, which sync wrote and pinned nothing, on the mapped one.
+	markOf := func(id, property string) (setBy string, pinned, ok bool) {
 		t.Helper()
-		err := db.QueryRow(`SELECT actor, tier FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
-			rnGizmo, id, property).Scan(&actor, &tier)
-		if err != nil {
-			return "", ""
-		}
-		return actor, tier
+		err := db.QueryRow(`SELECT set_by, pinned FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
+			rnGizmo, id, property).Scan(&setBy, &pinned)
+		return setBy, pinned, err == nil
 	}
-	if actor, tier := managerOf(full.ID, "dimensions"); actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
-		t.Fatalf("the owner's manager row did not move: %q at %q", actor, tier)
+	if setBy, pinned, ok := markOf(full.ID, "dimensions"); !ok || setBy != vocabulary.ActorID(owner) || !pinned {
+		t.Fatalf("the owner's mark did not move: set by %q, pinned %v, found %v", setBy, pinned, ok)
 	}
-	if actor, tier := managerOf(mappedID, "dimensions"); actor != vocabulary.ActorID(lib) || tier != string(substrate.TierMachine) {
-		t.Fatalf("the connector's manager row did not move: %q at %q", actor, tier)
+	if _, pinned, ok := markOf(mappedID, "dimensions"); !ok || pinned {
+		t.Fatalf("the mapped value's mark did not move: pinned %v, found %v", pinned, ok)
 	}
-	// The row keeps the time its actor last had a change accepted: the rename
-	// moved the row, it did not write the value.
+	// The mark keeps the time the value was set: the rename moved it, it did
+	// not write the value.
 	var movedStamp time.Time
-	if err := db.QueryRow(`SELECT updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'dimensions'`,
+	if err := db.QueryRow(`SELECT set_at FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'dimensions'`,
 		rnGizmo, mappedID).Scan(&movedStamp); err != nil {
-		t.Fatalf("read the moved manager stamp: %v", err)
+		t.Fatalf("read the moved mark's time: %v", err)
 	}
 	if !movedStamp.Equal(libStamp) {
-		t.Fatalf("the moved manager row is stamped %s, want the original %s", movedStamp, libStamp)
+		t.Fatalf("the moved mark was set at %s, want the original %s", movedStamp, libStamp)
 	}
 	for _, id := range []string{full.ID, mappedID} {
-		if actor, _ := managerOf(id, "size"); actor != "" {
-			t.Fatalf("a manager row for the old name survives on %s: %q", id, actor)
+		if setBy, _, ok := markOf(id, "size"); ok {
+			t.Fatalf("a mark for the old name survives on %s: set by %q", id, setBy)
 		}
 	}
 

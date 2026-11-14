@@ -28,6 +28,10 @@ var identityColumns = [][2]string{
 	{"former_ids", "former_id"},
 	{"annotations", "record_kind"},
 	{"annotations", "record_id"},
+	{"property_marks", "record_kind"},
+	{"property_marks", "record_id"},
+	// The view that gives the landed repository migrations the old rows
+	// (migration 0026) keeps the marks' order.
 	{"property_managers", "record_kind"},
 	{"property_managers", "record_id"},
 	{"property_offers", "record_kind"},

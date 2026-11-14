@@ -61,7 +61,7 @@ type Filter struct {
 	Deleted *bool `json:"deleted,omitempty"`
 	// Orphaned narrows to the mapping targets the engine has MARKED: a record
 	// of a kind some recordmapping targets, with no live source of its own
-	// left and nothing above the machine tier holding a property — the husk a
+	// left and nothing on it pinned — the husk a
 	// deleted or re-seeded source leaves behind. nil is every record, true
 	// only the marked ones, false only the unmarked. It is a derived reading
 	// of the present, so a re-linked record leaves the set on its next write

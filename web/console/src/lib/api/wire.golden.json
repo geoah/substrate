@@ -821,6 +821,10 @@
     "repository": true,
     "totpCode": true
   },
+  "MarkInput": {
+    "ifVersion": false,
+    "properties": true
+  },
   "MintedToken": {
     "repository": false,
     "secret": true,
@@ -883,8 +887,7 @@
     "path": true
   },
   "PropertyAlternative": {
-    "actor": true,
-    "source": false,
+    "derivedFrom": false,
     "updatedAt": true,
     "value": true
   },
@@ -895,12 +898,13 @@
     "name": true,
     "renamedFrom": false
   },
-  "PropertyMeta": {
+  "PropertyMark": {
     "alternatives": false,
-    "manager": false,
-    "source": false,
-    "tier": false,
-    "updatedAt": false
+    "derivedFrom": false,
+    "onBehalfOf": false,
+    "pinned": false,
+    "setAt": false,
+    "setBy": false
   },
   "PutInput": {
     "annotations": false,
@@ -929,6 +933,9 @@
     "purposes": false,
     "referencing": false,
     "search": false
+  },
+  "RecordLink": {
+    "ref": true
   },
   "RecordPatch": {
     "addFinalizers": false,
@@ -1030,8 +1037,8 @@
     "kindVersion": false,
     "labels": true,
     "linkedFrom": false,
+    "marks": false,
     "properties": true,
-    "propertyMeta": false,
     "updatedAt": true,
     "version": true
   },

@@ -5,7 +5,7 @@ package engine_test
 // becomes required with a default beside it fills every live record lacking a
 // value, and an enum value naming its previous spelling with `renamedFrom`
 // rewrites every live record holding it. These hold what each step writes
-// (the value, the manager row, the embed queue), what refuses one (a remap
+// (the value, the mark, the embed queue), what refuses one (a remap
 // onto a value still admitted), that a record several steps touch appends one
 // entry, and that a fresh replay reproduces the converted records.
 
@@ -193,15 +193,16 @@ func TestBackfillWritesTheDefaultOntoEveryRecordLackingAValue(t *testing.T) {
 	}
 
 	// The backfilled value is a write by the hand that applied the
-	// declaration, at its tier, and the text is queued to embed.
+	// declaration, pinned as its write pins, and the text is queued to embed.
 	db := rawDB(t, dsn)
-	var actor, tier string
-	if err := db.QueryRow(`SELECT actor, tier FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
-		cvWidget, lacks.ID).Scan(&actor, &tier); err != nil {
-		t.Fatalf("read the manager row: %v", err)
+	var setBy string
+	var pinned bool
+	if err := db.QueryRow(`SELECT set_by, pinned FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
+		cvWidget, lacks.ID).Scan(&setBy, &pinned); err != nil {
+		t.Fatalf("read the mark: %v", err)
 	}
-	if actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
-		t.Fatalf("the backfilled value's manager = %q at %q", actor, tier)
+	if setBy != vocabulary.ActorID(owner) || !pinned {
+		t.Fatalf("the backfilled value's mark = set by %q, pinned %v", setBy, pinned)
 	}
 	var queued int
 	if err := db.QueryRow(`SELECT count(*) FROM embed_queue WHERE record_kind = $1 AND record_id IN ($2, $3) AND property = 'mood'`,
@@ -238,7 +239,7 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 		t.Fatalf("install the package: %v", err)
 	}
 	// One record holding the old spelling in all three shapes, one holding
-	// none of them, and one a connector wrote, whose manager row the remap
+	// none of them, and one a connector wrote, whose mark the remap
 	// must leave as it found it.
 	holds := mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{
 		"status": "active", "moods": []any{"calm", "tense", "calm"}, "ratings": map[string]any{"x": "bad", "y": "good"},
@@ -250,9 +251,9 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 	theirs := mustPut(t, ds, lib, substrate.PutInput{Kind: cvWidget, Properties: map[string]any{"status": "active"}})
 	db := rawDB(t, dsn)
 	var libStamp time.Time
-	if err := db.QueryRow(`SELECT updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'status'`,
+	if err := db.QueryRow(`SELECT set_at FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'status'`,
 		cvWidget, theirs.ID).Scan(&libStamp); err != nil {
-		t.Fatalf("read the connector's manager stamp: %v", err)
+		t.Fatalf("read the connector's mark: %v", err)
 	}
 	head := maxSeq(t, ds)
 
@@ -293,16 +294,17 @@ func TestRemapRewritesEveryRecordHoldingTheOldValue(t *testing.T) {
 	if got := mustGet(t, ds, cvWidget, clean.ID); got.Version != clean.Version {
 		t.Fatalf("a record holding none of the old spellings was rewritten: %+v", got)
 	}
-	// The spelling moved, not who wrote it: the connector's row stands, stamp
-	// included.
-	var actor, tier string
+	// The spelling moved, not who wrote it: the connector's mark stands, its
+	// time included.
+	var setBy string
+	var pinned bool
 	var stamp time.Time
-	if err := db.QueryRow(`SELECT actor, tier, updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'status'`,
-		cvWidget, theirs.ID).Scan(&actor, &tier, &stamp); err != nil {
-		t.Fatalf("read the manager row: %v", err)
+	if err := db.QueryRow(`SELECT set_by, pinned, set_at FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'status'`,
+		cvWidget, theirs.ID).Scan(&setBy, &pinned, &stamp); err != nil {
+		t.Fatalf("read the mark: %v", err)
 	}
-	if actor != vocabulary.ActorID(lib) || tier != string(substrate.TierMachine) || !stamp.Equal(libStamp) {
-		t.Fatalf("the remap touched the manager row: %q at %q, stamped %s (was %s)", actor, tier, stamp, libStamp)
+	if setBy != vocabulary.ActorID(lib) || pinned || !stamp.Equal(libStamp) {
+		t.Fatalf("the remap touched the mark: set by %q, pinned %v, set at %s (was %s)", setBy, pinned, stamp, libStamp)
 	}
 	if mustGet(t, ds, cvWidget, theirs.ID).Properties["status"] != "working" {
 		t.Fatal("the connector's record did not move")
@@ -841,7 +843,7 @@ func TestBackfillOfARenamedPropertyCountsUnderTheOldName(t *testing.T) {
 
 // Dropping a property live records carry is the null step: lossy, so it runs
 // only confirmed, and what it leaves is what a clearing patch leaves. The key
-// is gone from the fold, the manager row, the embedding queue row and the
+// is gone from the fold, the mark, the embedding queue row and the
 // sealed material behind a secret go with it, one patch entry per record says
 // `nulled`, the old value stays in the changelog, and a replay reproduces the
 // removal. A property nobody carries drops with no step and no confirmation.
@@ -906,10 +908,10 @@ func TestNullStepRemovesADroppedPropertyOnConfirmation(t *testing.T) {
 	if got := mustGet(t, ds, cvWidget, bare.ID); got.Version != bare.Version {
 		t.Fatalf("a record carrying neither property was rewritten: %+v", got)
 	}
-	var managers, queued, vectors int
-	if err := db.QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token')`,
-		cvWidget, full.ID).Scan(&managers); err != nil || managers != 0 {
-		t.Fatalf("manager rows left behind = %d, %v", managers, err)
+	var marks, queued, vectors int
+	if err := db.QueryRow(`SELECT count(*) FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token')`,
+		cvWidget, full.ID).Scan(&marks); err != nil || marks != 0 {
+		t.Fatalf("marks left behind = %d, %v", marks, err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM embed_queue WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
 		cvWidget, full.ID).Scan(&queued); err != nil || queued != 0 {
@@ -1243,14 +1245,14 @@ func TestStateEntryEntersEveryRecordThatPredatesTheMachine(t *testing.T) {
 		t.Fatalf("the entry moved another machine: %v", got.Properties)
 	}
 	// A state, not a value: nobody owns a machine's position, so the entry
-	// writes no manager row.
-	var managers int
-	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND property = 'attention'`,
-		cvWidget).Scan(&managers); err != nil {
+	// writes no mark.
+	var marks int
+	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM property_marks WHERE record_kind = $1 AND property = 'attention'`,
+		cvWidget).Scan(&marks); err != nil {
 		t.Fatal(err)
 	}
-	if managers != 0 {
-		t.Fatalf("the entry wrote %d manager rows, want none", managers)
+	if marks != 0 {
+		t.Fatalf("the entry wrote %d marks, want none", marks)
 	}
 	// One entry per entered record, a patch that says the apply filled it.
 	if n := cvEntries(t, dsn, head, "backfilled"); n != 3 {

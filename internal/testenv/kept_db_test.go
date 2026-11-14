@@ -233,6 +233,9 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	for _, d := range keptSeededVersions(t, e, "fresh.example.com") {
 		t.Errorf("%s: %s", fixture.Tag, d)
 	}
+	for _, p := range keptMarksWithoutValues(t, e.DSN, ds.Repository().ID) {
+		t.Error(p)
+	}
 	t.Logf("%s: %d records compared, %d of them rewritten by the %d entries the boot appended after head %d",
 		fixture.Tag, len(want.Records), len(upgraded), keptAppended(upgraded), want.Head)
 	return keptImport{e: e, fixture: fixture, got: got, upgraded: upgraded}
@@ -342,7 +345,7 @@ type keptEntry struct {
 	actor    string
 	affected substrate.AffectedRecord
 	// written is the properties the entry's payload says it wrote, each of
-	// which takes a manager row; a state moves without one.
+	// which takes a mark; a state moves without one.
 	written map[string]bool
 }
 
@@ -356,11 +359,20 @@ func keptAppended(m map[string]*keptTouch) int {
 	return len(seqs)
 }
 
-// The hands a shipped write may not take a value from: everything but the
-// system and the packages (decision 0191). A manager names its hand by its
-// actor record's id (decision 0270), so hands holds each record's type.
-func ownersHand(manager string, hands map[string]string) bool {
-	switch hands[manager] {
+// The values a shipped write may not take: a pinned one, and one set by any
+// hand but the system and the packages (decision 0191). A mark names its
+// hand by its actor record (decision 0270), so hands holds each record's
+// type.
+func ownersMark(m map[string]any, hands map[string]string) bool {
+	if m["pinned"] == true {
+		return true
+	}
+	setBy, _ := m["setBy"].(map[string]any)
+	ref, _ := setBy[vocabulary.ReferenceValueKey].(string)
+	if ref == "" {
+		return false
+	}
+	switch hands[ref[strings.LastIndex(ref, "/")+1:]] {
 	case "system", "package":
 		return false
 	}
@@ -384,9 +396,9 @@ func keptHands(got map[string]keptRecord) map[string]string {
 // check holds the record the current code serves to the release's (nil when
 // the release had none) with the entries applied, nothing taken from what the
 // current code serves: each moved property takes its `after`, and each one
-// the entry wrote (its payload's `properties`; a state moves without one) a
-// manager row of the entry's actor at the machine tier, stamped with the
-// entry's time; the version and the times follow the last entry that moved the
+// the entry wrote (its payload's `properties`; a state moves without one) the
+// mark the boot's direct write leaves, set by the system, not pinned and
+// derived from nothing, at the entry's time; the version and the times follow the last entry that moved the
 // version; the kind version is the one the boot's write validated against,
 // the kind's as the current code declares it (kindVersion); and everything
 // else is the release's.
@@ -399,7 +411,7 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 		first := k.entries[0].affected
 		want = map[string]any{
 			"id": first.ID, "kind": first.Kind,
-			"properties": map[string]any{}, "labels": map[string]any{}, "propertyMeta": map[string]any{},
+			"properties": map[string]any{}, "labels": map[string]any{}, "marks": map[string]any{},
 		}
 	}
 	props, _ := want["properties"].(map[string]any)
@@ -407,9 +419,9 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 		props = map[string]any{}
 		want["properties"] = props
 	}
-	meta, _ := want["propertyMeta"].(map[string]any)
-	if meta == nil {
-		meta = map[string]any{}
+	marks, _ := want["marks"].(map[string]any)
+	if marks == nil {
+		marks = map[string]any{}
 	}
 	wrote := false
 	for _, e := range k.entries {
@@ -421,17 +433,17 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 				if name == "" {
 					continue
 				}
-				if m, ok := meta[name].(map[string]any); ok && ownersHand(fmt.Sprint(m["manager"]), hands) {
-					out = append(out, fmt.Sprintf("seq %d moved %s, which %v set", e.seq, name, m["manager"]))
+				if m, ok := marks[name].(map[string]any); ok && ownersMark(m, hands) {
+					out = append(out, fmt.Sprintf("seq %d moved %s, which %v set", e.seq, name, m["setBy"]))
 				}
 			}
 			if p.RenamedFrom != "" {
 				delete(props, p.RenamedFrom)
-				delete(meta, p.RenamedFrom)
+				delete(marks, p.RenamedFrom)
 			}
 			if p.After == nil {
 				delete(props, p.Name)
-				delete(meta, p.Name)
+				delete(marks, p.Name)
 				continue
 			}
 			props[p.Name] = p.After
@@ -439,14 +451,14 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 			if !e.written[p.Name] {
 				continue
 			}
-			row, _ := meta[p.Name].(map[string]any)
-			if row == nil {
-				row = map[string]any{}
+			m := map[string]any{
+				"setBy": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), e.actor)},
+				"setAt": e.ts.UTC().Format(time.RFC3339Nano),
 			}
-			row["manager"] = e.actor
-			row["tier"] = string(substrate.TierMachine)
-			row["updatedAt"] = e.ts.UTC().Format(time.RFC3339Nano)
-			meta[p.Name] = row
+			if old, ok := marks[p.Name].(map[string]any); ok && old["alternatives"] != nil {
+				m["alternatives"] = old["alternatives"]
+			}
+			marks[p.Name] = m
 		}
 		if e.affected.Version > 0 {
 			want["version"] = json.Number(fmt.Sprint(e.affected.Version))
@@ -459,10 +471,10 @@ func (k *keptTouch) check(release, now map[string]any, kindVersion func(kind str
 			}
 		}
 	}
-	if len(meta) > 0 {
-		want["propertyMeta"] = meta
+	if len(marks) > 0 {
+		want["marks"] = marks
 	} else {
-		delete(want, "propertyMeta")
+		delete(want, "marks")
 	}
 	if len(k.annotations) > 0 {
 		ann, _ := want["annotations"].(map[string]any)
@@ -931,23 +943,25 @@ func copyKept(t *testing.T, src, dst string) {
 }
 
 // The comparison of a record the boot rewrote takes nothing from what the
-// current code serves: a manager row at another tier or time, another kind
-// version, a value or an annotation no entry wrote, a write that is not the
-// boot's, or one that moved a value an owner set, each fails. It needs no
-// database.
+// current code serves: a mark pinned or set at another time, another kind
+// version, a value no entry wrote, a write that is not the boot's, or one
+// that moved a value an owner set, each fails. It needs no database.
 func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 	t.Parallel()
 	const t0, t1 = "2026-11-13T00:00:00Z", "2026-11-13T01:00:00Z"
 	system, person := vocabulary.ActorID(substrate.ActorSystem), vocabulary.ActorID(substrate.ActorPerson)
 	hands := map[string]string{system: "system", person: "person"}
+	link := func(id string) string {
+		return `{"ref":"` + vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), id) + `"}`
+	}
 	ts, err := time.Parse(time.RFC3339, t1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	release := keptDecode(t, []byte(`{"id":"x","kind":"a.example.com/p/k","labels":{},"version":1,"kindVersion":1,
 		"createdAt":"`+t0+`","updatedAt":"`+t0+`","properties":{"shipped":"1","owned":"2"},
-		"propertyMeta":{"shipped":{"manager":"`+system+`","tier":"machine","updatedAt":"`+t0+`"},
-		                "owned":{"manager":"`+person+`","tier":"owner","updatedAt":"`+t0+`"}}}`))
+		"marks":{"shipped":{"setBy":`+link(system)+`,"setAt":"`+t0+`"},
+		         "owned":{"pinned":true,"setBy":`+link(person)+`,"setAt":"`+t0+`"}}}`))
 	touch := func(actor, property string) *keptTouch {
 		return &keptTouch{entries: []keptEntry{{seq: 10, ts: ts, actor: actor, written: map[string]bool{property: true}, affected: substrate.AffectedRecord{
 			Kind: "a.example.com/p/k", ID: "x", Version: 2,
@@ -959,7 +973,7 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		m := keptClone(release)
 		m["version"], m["updatedAt"], m["kindVersion"] = json.Number("2"), t1, json.Number("4")
 		m["properties"].(map[string]any)["shipped"] = "3"
-		m["propertyMeta"].(map[string]any)["shipped"] = map[string]any{"manager": system, "tier": "machine", "updatedAt": t1}
+		m["marks"].(map[string]any)["shipped"] = keptDecode(t, []byte(`{"setBy":`+link(system)+`,"setAt":"`+t1+`"}`))
 		if edit != nil {
 			edit(m)
 		}
@@ -980,15 +994,15 @@ func TestKeptCheckRefusesWhatTheEntriesDoNotSay(t *testing.T) {
 		t.Fatalf("the annotation the entry set was refused: %v", d)
 	}
 	meta := func(m map[string]any) map[string]any {
-		return m["propertyMeta"].(map[string]any)["shipped"].(map[string]any)
+		return m["marks"].(map[string]any)["shipped"].(map[string]any)
 	}
 	for name, c := range map[string]struct {
 		touch *keptTouch
 		now   map[string]any
 	}{
-		"a manager row at another tier":  {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["tier"] = "owner" })},
-		"a manager row stamped elsewhen": {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["updatedAt"] = t0 })},
-		"another manager":                {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["manager"] = person })},
+		"a mark pinned":                  {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["pinned"] = true })},
+		"a mark set elsewhen":            {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["setAt"] = t0 })},
+		"another hand":                   {touch(system, "shipped"), now(func(m map[string]any) { meta(m)["setBy"] = keptDecode(t, []byte(link(person))) })},
 		"another kind version":           {touch(system, "shipped"), now(func(m map[string]any) { m["kindVersion"] = json.Number("1") })},
 		"a value no entry wrote":         {touch(system, "shipped"), now(func(m map[string]any) { m["properties"].(map[string]any)["owned"] = "9" })},
 		"an annotation no entry wrote":   {touch(system, "shipped"), now(mark("2"))},

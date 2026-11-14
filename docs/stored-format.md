@@ -262,7 +262,7 @@ never through a float. One vector from the file, a person's put through a
 sign-in, its token beside it (`token` sorts between `sum` and `ts`):
 
 ```
-{"actor":"6nk6ekkczdgh399nt2pqpccjz0","kind":"substrate.reamde.dev/core/contact","op":"put","payload":{"created":true,"fold":[{"delta":{"created":true,"kindVersion":2E0,"set":{"name":"Grace"},"title":"Grace"},"id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"record","ref":"substrate.reamde.dev/core/contact","version":1E0},{"actor":"6nk6ekkczdgh399nt2pqpccjz0","id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"manager","property":"name","ref":"substrate.reamde.dev/core/contact","tier":"owner","token":"01jbx9k0token000000000000a"}],"properties":["name"]},"recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4812,"sum":"sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a","token":"01jbx9k0token000000000000a","ts":"2026-11-13T10:00:00.000000Z","txn":4812}
+{"actor":"6nk6ekkczdgh399nt2pqpccjz0","kind":"substrate.reamde.dev/core/contact","op":"put","payload":{"created":true,"fold":[{"delta":{"created":true,"kindVersion":2E0,"set":{"name":"Grace"},"title":"Grace"},"id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"record","ref":"substrate.reamde.dev/core/contact","version":1E0},{"id":"01jbx9m2qz7k4c5v8n3w6t1hrd","kind":"mark","pinned":true,"property":"name","ref":"substrate.reamde.dev/core/contact","setBy":"6nk6ekkczdgh399nt2pqpccjz0"}],"properties":["name"]},"recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4812,"sum":"sha256:5991f3903efac80c0bd1af38764a673f76ff0832b1919309297838fdb583fb31","token":"01jbx9k0token000000000000a","ts":"2026-11-13T10:00:00.000000Z","txn":4812}
 ```
 
 The file's first four vectors are dialect-1 lines, written before actors were
@@ -279,10 +279,14 @@ The keys beside `fold` are what [the change feed](changelog.md) serves:
 `created`, `restored`, `properties`, `states`, `finalizers`, `winner`,
 `loser`, `moved`, `renamed`, `remapped` and a `gc` entry's `reason`. Where
 the payload names a hand, it names the id of the hand's actor record: a
-recompute's entry carries `managers`, each property it wrote with the id of
-the actor that now manages it, and `triggeredBy`, the id of the actor whose
-write set the recompute off; a merge's `moved.managers` lists each manager
-row it carried, with its `actor` id and its `token`. `fold` is the list of
+recompute's entry carries `triggeredBy`, the id of the actor whose write set
+the recompute off, and `mechanism: mapping`; a merge moves no mark, and only
+a merge recorded before marks lists in `moved.marks` the holds it moved,
+which a split takes back where the winner still has them. A resync's marks
+are replayed only beside a value: a hold such a merge left on a winner with
+no value for the property is dropped. A pin's entry names the properties it
+`pinned`, a release's the ones it `released`, and a recompute that moved
+only marks the properties whose `marks` it moved. `fold` is the list of
 **effects** the write applied, in order: replaying them is what rebuilds the
 records from the history. No response carries `fold`.
 
@@ -293,15 +297,24 @@ record's kind) and `id`. A trigger's bookkeeping lands on the trigger's
 record. The keys are closed: an effect field a binary does not know refuses
 the entry, naming the field.
 
+Replaying a line ends with one rule of its own: a property a `record` effect
+took out of a row that held it (in `del`, or a cleared `title`, `at`,
+`endsAt` or `dueAt`), and that the row does not hold once the line's effects
+are replayed, loses its mark, whether or not the line says `unmark`
+([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)).
+A live write applies the same rule as its line ends, so a rebuild gives back
+the marks it left.
+
 | Effect | What replaying it does | Its other keys |
 | --- | --- | --- |
 | `record` | Applies a record's change, as values | `version`, the version the record reached; `delta`: `created`, `restored`, `force`, `set` (properties and their values), `del` (properties removed), `title`, `at`, `endsAt`, `dueAt` (`""` clears one), `states`, `labels`, `finalizers` (each whole, `{}` or `[]` clears), `kindVersion` |
 | `tombstone` | Deletes the record, keeping it as a tombstone | `version`, `finalizer` (the hold a merge adds) |
 | `purge` | Removes the record and everything on it | |
 | `annotation` | Sets one annotation, or clears it when `value` is absent | `key`, `value` |
-| `manager` | Sets who manages a property, or releases it when `actor` is empty | `property`, `actor` (an actor record's id), `tier`, `token` (present only where a token stood behind the write), `updatedAt` |
+| `mark` | Sets one property's whole mark ([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)) | `property`, `pinned` (present only when true), `setBy` and `onBehalfOf` (actor record ids, present only where set), `derivedFrom` (record paths of the source records behind the value), `setAt` (present only where it is not the entry's own time) |
+| `unmark` | Drops one property's mark | `property` |
 | `former` | Records an id the record was merged from | `formerId` |
-| `resync` | States again, whole, every side row of the records a merge or split moved | `scope` (`kind`, `id` each); `rows`: `annotations` (`kind`, `id`, `key`, `value`, `updatedAt`), `managers` (`kind`, `id`, `property`, `actor`, `tier`, `token`, `updatedAt`), `formerIds` (`kind`, `formerId`, `recordId`, `createdAt`) |
+| `resync` | States again, whole, every side row of the records a merge or split moved | `scope` (`kind`, `id` each); `rows`: `annotations` (`kind`, `id`, `key`, `value`, `updatedAt`), `marks` (`kind`, `id`, `property`, `pinned`, `setBy`, `onBehalfOf`, `derivedFrom`, `setAt`), `formerIds` (`kind`, `formerId`, `recordId`, `createdAt`) |
 | `cursor` | Sets a record trigger's acknowledged position | `seq` |
 | `schedule` | Sets a schedule trigger's last fired occurrence | `at` |
 | `park` | Writes a failed delivery, whole | `failure`: `id`, `seq`, `fireId`, `recordId`, `attempts`, `lastError`, `parkedAt`, `payload` |
@@ -317,11 +330,13 @@ it, because a piece holds the canonical one and Postgres prints its own.
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 4 today: dialect 4 is the line above, which carries a
-record's `body` among its properties; dialect 3 is the line before it, whose
-actor, `onBehalfOf` and `token` link records; and dialects 1 and 2 are the
-line before that, which named its actor by a spelling and its token as
-`principal`. A change to what a line may hold raises it, and
+manifest, and it is 5 today: dialect 5 is the line above, whose effects
+mark a property; dialect 4 is the line before it, which held a manager row
+and a tier for one and carries a record's `body` among its properties;
+dialect 3 is the line before that, whose actor, `onBehalfOf` and `token`
+link records; and dialects 1 and 2 are the lines before that, which named
+its actor by a spelling and its token as `principal`. A change to what a
+line may hold raises it, and
 a change to a shape history already holds also ships a
 [conversion step](#conversions) to the new number, so a server reads one
 dialect, its own. The line format (`LineFormat`) is 1 and the manifest's
@@ -340,6 +355,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | 2 | `drop_recovery_wrap` | Each line of kind `substrate.reamde.dev/core/recoverykey`: `sealedKey` is dropped from what its `record` effects' `delta` sets, and the rest of the line stays, the property's name in the payload's `properties` and its `manager` effect included. The value was the repository's DEK wrapped to the owner's recovery identity, which opened every secret of every copy of the directory ([decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md)). |
 | 3 | `link_actors` | Every line: its actor's spelling becomes the id of that hand's actor record, `principal` becomes `token`, an app's line gains `onBehalfOf`, and each spelling the engine stored in a value is linked or reworded, as the paragraph below says ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). |
 | 4 | `move_body_into_properties` | Each `record` effect whose `delta` carries `body`: a value moves into `set` and a `""` into `del`, and the rest of the line stays, the payload's `properties` included, which named `body` already. A `delta.body` that is not a string (`null` included, which no release wrote), a `set` that is not an object, a `del` that is not a list, and a delta that also carries `body` in `set` or `del` stop the conversion, naming the line's seq ([0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)). |
+| 5 | `marks` | Every line's marks: a `manager` effect becomes a `mark`, or an `unmark` where it named no actor; a resync's manager rows and a merge's moved managers become marks; a recompute's payload `managers` goes; and a manager row on a property an earlier step took out of the line becomes no mark, as the paragraph below says ([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)). |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A
@@ -384,7 +400,21 @@ included, is left byte for byte (the full list of positions heads
 record's id is derived from the hand alone, so the step
 needs nothing but the line; repository migration 9 writes the records those
 ids name at the first open after
-([upgrading the binary](operations.md#upgrading-the-binary)).
+([upgrading the binary](operations.md#upgrading-the-binary)). Step 5,
+`marks`, rewrites each property's manager row into its mark
+([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)):
+a `manager` effect becomes a `mark`, or an `unmark` where it named no actor;
+a resync's manager rows and a merge's moved managers, in a line or in a
+merge or split record's value, become marks; a recompute's payload
+`managers` goes; and a manager row on a property an earlier step took out of
+the line becomes no mark, since no value stands under it: a package's
+`actors` (step 3) and the recovery key's `sealedKey` (step 2). One on a
+property an earlier step moved follows the value: a trigger run's
+`principal`, which step 3 moves to `token`, becomes a mark on `token`. Each stored tier is resolved once: `owner` and `bundle`
+pin and keep their actor as `setBy`, and `machine` does not pin, keeping its
+actor only where the effect is the line's own write by that actor. Nothing
+is guessed: no converted mark names a `derivedFrom`, which the first
+recompute fills from the live sources.
 
 The history converted is the changelog table. At the boot check, before a
 repository is folded or served, the server runs the steps it lacks, in

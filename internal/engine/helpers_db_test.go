@@ -548,3 +548,29 @@ func refPathValue(e *substrate.Record, name string) string {
 // create a record under no other id (decision 0228). The same name is the
 // same id, so a test names a record by fid("t-1") everywhere it reads it.
 func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }
+
+// markSetBy is the id of the actor record a mark names as setBy, "" for none.
+func markSetBy(m substrate.PropertyMark) string {
+	if m.SetBy == nil {
+		return ""
+	}
+	_, id, _ := vocabulary.SplitRecordPath(m.SetBy.Ref)
+	return id
+}
+
+// markFrom is a mark's derivedFrom as record paths.
+func markFrom(m substrate.PropertyMark) []string {
+	var out []string
+	for _, l := range m.DerivedFrom {
+		out = append(out, l.Ref)
+	}
+	return out
+}
+
+// altFrom is the record path an alternative is read from, "" for none.
+func altFrom(a substrate.PropertyAlternative) string {
+	if a.DerivedFrom == nil {
+		return ""
+	}
+	return a.DerivedFrom.Ref
+}

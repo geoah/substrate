@@ -78,8 +78,12 @@ const (
 	foldPurge foldKind = "purge"
 
 	foldAnnotation foldKind = "annotation"
-	foldManager    foldKind = "manager"
 	foldFormerID   foldKind = "former"
+	// foldMark states one property's whole mark (decision 0284), and
+	// foldUnmark drops it: a deleted property, or a link a mapping fills,
+	// carries none.
+	foldMark   foldKind = "mark"
+	foldUnmark foldKind = "unmark"
 
 	// foldResync re-states every side-store row hanging off a named set of
 	// records: merge's and split's effect, the one snapshot among the deltas
@@ -220,19 +224,18 @@ type foldOp struct {
 	Key   string `json:"key,omitempty"`
 	Value *any   `json:"value,omitempty"`
 
-	// Property/Actor/Tier/Token carry a manager row; an empty Actor is the
-	// release. Actor is the id of the actor record that holds the property
-	// and Token the id of the token behind the write, empty where none stood
-	// behind it (decision 0270).
-	Property string `json:"property,omitempty"`
-	Actor    string `json:"actor,omitempty"`
-	Tier     string `json:"tier,omitempty"`
-	Token    string `json:"token,omitempty"`
-	// UpdatedAt is the manager row's stamp when the effect carries one: a
-	// property rename moves a row and keeps the time its actor last had a
-	// change accepted (rename.go), which is not the rename's time. Absent on
-	// every other manager effect, whose stamp is the transaction's clock.
-	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	// Property and the four after it carry a mark; an unmark names the
+	// property alone (decision 0284). SetBy and OnBehalfOf are actor record
+	// ids, DerivedFrom record paths ("<kind>/<id>").
+	Property    string   `json:"property,omitempty"`
+	Pinned      bool     `json:"pinned,omitempty"`
+	SetBy       string   `json:"setBy,omitempty"`
+	OnBehalfOf  string   `json:"onBehalfOf,omitempty"`
+	DerivedFrom []string `json:"derivedFrom,omitempty"`
+	// SetAt is when the value was set, where it is not the transaction's
+	// clock: a pin, a rename and a kind move keep the time the value was
+	// set, and a mark whose sources moved keeps it too.
+	SetAt *time.Time `json:"setAt,omitempty"`
 
 	FormerID string `json:"formerId,omitempty"`
 
@@ -369,6 +372,10 @@ func (t *txn) fold(op foldOp) (foldResult, error) {
 // there is nothing to attach them to — so they are reported rather than
 // swallowed: the fold and the changelog must not diverge quietly.
 func (t *txn) settleFold() error {
+	// Late effects end the last line again.
+	if err := t.settleTakenOut(); err != nil {
+		return err
+	}
 	if len(t.folded) == 0 {
 		return nil
 	}
@@ -479,12 +486,11 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		}
 		changed, err := t.applyAnnotation(op.ref(), op.Key, value)
 		return foldResult{changed: changed}, err
-	case foldManager:
-		at := t.now
-		if op.UpdatedAt != nil {
-			at = *op.UpdatedAt
-		}
-		changed, err := t.applyManager(op.ref(), op.Property, op.Actor, substrate.Tier(op.Tier), op.Token, at)
+	case foldMark:
+		changed, err := t.applyMark(op.ref(), op.Property, op.mark(t.now))
+		return foldResult{changed: changed}, err
+	case foldUnmark:
+		changed, err := t.applyUnmark(op.ref(), op.Property)
 		return foldResult{changed: changed}, err
 	case foldFormerID:
 		if err := t.applyFormerID(op.Ref, op.FormerID, op.ID); err != nil {
@@ -549,11 +555,13 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		return foldResult{}, err
 	}
 	keyBefore := row.Props["apiKey"]
+	gone := takenOutOf(row, op.Delta)
 	op.Delta.applyTo(row)
 	changed, created, version, err := t.upsertRecord(row, t.foldFTS(row), op.Delta.Force, op.Delta.Restored)
 	if err != nil {
 		return foldResult{}, err
 	}
+	t.noteTakenOut(ref, row, gone)
 	if changed {
 		t.noteProviderKey(ref, keyBefore, row.Props["apiKey"])
 	}
@@ -628,6 +636,88 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		}
 	}
 	return foldResult{changed: changed, created: created, row: row, version: version}, nil
+}
+
+// THE FOLD TAKES A MARK OUT WITH ITS VALUE. A line that takes a property out
+// of a row takes that property's mark with it, whether or not the line says
+// `unmark`: a pin left on no value would stop a sync filling the property
+// later. The rule is applied when the line ends, after its own mark effects,
+// so a mark the line moves or sets under another name stands, and only to a
+// property the row held before the line and does not hold after it: one that
+// was never there (a mapping's slot with no value yet) keeps whatever mark it
+// has. A live write ends a line at appendChange, or at settleFold for the
+// effects that join the last one, and a replay at the end of foldEntry, so a
+// rebuild applies the rule to every line, one written before it included.
+// The explicit unmark a write path adds stays: a line says what it does.
+
+// takenOutOf is what d takes out of row: each property row holds that d
+// deletes, or clears where a column keeps it.
+func takenOutOf(row *erow, d *rowDelta) []string {
+	var out []string
+	for _, name := range d.Del {
+		if _, held := row.Props[name]; held {
+			out = append(out, name)
+		}
+	}
+	if d.Title != nil && *d.Title == "" && row.Title != "" {
+		out = append(out, substrate.PropTitle)
+	}
+	for _, hot := range []struct {
+		name string
+		val  *string
+		was  *time.Time
+	}{
+		{substrate.PropAt, d.At, row.At},
+		{substrate.PropEndsAt, d.EndsAt, row.EndsAt},
+		{substrate.PropDueAt, d.DueAt, row.DueAt},
+	} {
+		if hot.val != nil && *hot.val == "" && hot.was != nil {
+			out = append(out, hot.name)
+		}
+	}
+	return out
+}
+
+// noteTakenOut records what one record effect of the line took out of ref,
+// and whether row, as the effect left it, holds each property the line took
+// out of it so far.
+func (t *txn) noteTakenOut(ref eref, row *erow, gone []string) {
+	pending := t.takenOut[ref]
+	if pending == nil {
+		if len(gone) == 0 {
+			return
+		}
+		if t.takenOut == nil {
+			t.takenOut = map[eref]map[string]bool{}
+		}
+		pending = map[string]bool{}
+		t.takenOut[ref] = pending
+	}
+	for _, name := range gone {
+		pending[name] = false
+	}
+	for name := range pending {
+		_, held := row.Props[name]
+		pending[name] = held || hotValue(row, name) != nil
+	}
+}
+
+// settleTakenOut ends a line: a property its record effects took out of a
+// row, and that the row does not hold again, loses its mark.
+func (t *txn) settleTakenOut() error {
+	pending := t.takenOut
+	t.takenOut = nil
+	for ref, names := range pending {
+		for name, held := range names {
+			if held {
+				continue
+			}
+			if _, err := t.applyUnmark(ref, name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // foldFTS computes the row's weighted search bands. `fts` is an INDEX over the
@@ -959,7 +1049,7 @@ func (t *txn) rederiveFTS(reg kindLookup, kind string, rows []*erow) error {
 // --- the resync effect (merge and split) ---
 //
 // Merge and split do not move one row at a time. They REWRITE the side stores
-// around the pair they join (every annotation, manager row and former-id
+// around the pair they join (every annotation, mark and former-id
 // trail hanging off either) with set-shaped statements. The moved SETS the
 // entry carries exist for split's undo and describe the operation in
 // reverse, and a fold cannot replay a reverse set.
@@ -995,7 +1085,7 @@ type foldRef struct {
 // every column, so a replay reproduces the rows and not merely their shape.
 type foldRows struct {
 	Annotations []foldAnnotationRow `json:"annotations,omitempty"`
-	Managers    []foldManagerRow    `json:"managers,omitempty"`
+	Marks       []foldMarkRow       `json:"marks,omitempty"`
 	FormerIDs   []foldFormerRow     `json:"formerIds,omitempty"`
 }
 
@@ -1010,16 +1100,15 @@ type foldAnnotationRow struct {
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
-type foldManagerRow struct {
-	Kind     string `json:"kind"`
-	ID       string `json:"id"`
-	Property string `json:"property"`
-	Actor    string `json:"actor"`
-	Tier     string `json:"tier"`
-	// Token is the id of the token the row's write stood behind, empty where
-	// none did. Actor is the actor record's id (decision 0270).
-	Token     string    `json:"token,omitempty"`
-	UpdatedAt time.Time `json:"updatedAt"`
+type foldMarkRow struct {
+	Kind        string    `json:"kind"`
+	ID          string    `json:"id"`
+	Property    string    `json:"property"`
+	Pinned      bool      `json:"pinned,omitempty"`
+	SetBy       string    `json:"setBy,omitempty"`
+	OnBehalfOf  string    `json:"onBehalfOf,omitempty"`
+	DerivedFrom []string  `json:"derivedFrom,omitempty"`
+	SetAt       time.Time `json:"setAt"`
 }
 
 type foldFormerRow struct {
@@ -1074,14 +1163,14 @@ func (t *txn) resyncOf(scope []eref) (foldOp, error) {
 			return foldOp{}, err
 		}
 		if err := t.scanInto(`
-			SELECT property, actor, tier, principal, updated_at FROM property_managers
+			SELECT property, pinned, set_by, on_behalf_of, derived_from, set_at FROM property_marks
 			WHERE record_kind = $1 AND record_id = $2 ORDER BY property`, ref, func(rows *sql.Rows) error {
-			m := foldManagerRow{Kind: ref.Kind, ID: ref.ID}
-			if err := rows.Scan(&m.Property, &m.Actor, &m.Tier, &m.Token, &m.UpdatedAt); err != nil {
+			m := foldMarkRow{Kind: ref.Kind, ID: ref.ID}
+			if err := rows.Scan(&m.Property, &m.Pinned, &m.SetBy, &m.OnBehalfOf, pathList{&m.DerivedFrom}, &m.SetAt); err != nil {
 				return err
 			}
-			m.UpdatedAt = m.UpdatedAt.UTC()
-			op.Rows.Managers = append(op.Rows.Managers, m)
+			m.SetAt = m.SetAt.UTC()
+			op.Rows.Marks = append(op.Rows.Marks, m)
 			return nil
 		}); err != nil {
 			return foldOp{}, err
@@ -1133,7 +1222,7 @@ func (t *txn) applyResync(op foldOp) error {
 	for _, ref := range op.Scope {
 		for _, q := range []string{
 			`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
-			`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
+			`DELETE FROM property_marks WHERE record_kind = $1 AND record_id = $2`,
 			`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		} {
 			if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {
@@ -1152,12 +1241,26 @@ func (t *txn) applyResync(op foldOp) error {
 			return fmt.Errorf("substrate/engine: resync annotation %s %s %s: %w", a.Kind, a.ID, a.Key, err)
 		}
 	}
-	for _, m := range op.Rows.Managers {
-		if _, err := t.exec(`
-			INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			m.Kind, m.ID, m.Property, m.Actor, m.Tier, m.Token, m.UpdatedAt); err != nil {
-			return fmt.Errorf("substrate/engine: resync manager %s %s %s: %w", m.Kind, m.ID, m.Property, err)
+	// A mark stands only beside the value it marks (decision 0284). A merge
+	// recorded before that restated the loser's holds onto a winner holding
+	// no value for the property; such a hold is no mark, and is dropped here,
+	// on every replay of it. A merge since restates only marks with values.
+	rows := map[eref]*erow{}
+	for _, m := range op.Rows.Marks {
+		ref := eref{Kind: m.Kind, ID: m.ID}
+		row, seen := rows[ref]
+		if !seen {
+			var err error
+			if row, err = t.loadRow(ref, false); err != nil {
+				return err
+			}
+			rows[ref] = row
+		}
+		if row == nil || currentValue(row, m.Property) == nil {
+			continue
+		}
+		if err := t.insertMark(ref, m.Property, m.mark()); err != nil {
+			return fmt.Errorf("substrate/engine: resync mark %s %s %s: %w", m.Kind, m.ID, m.Property, err)
 		}
 	}
 	for _, f := range op.Rows.FormerIDs {
@@ -1355,7 +1458,7 @@ func (t *txn) foldEntry(ch substrate.Change) error {
 			return fmt.Errorf("substrate/engine: fold seq %d (%s %s %s): %w", ch.Seq, ch.Op, ch.Kind, ch.RecordID, err)
 		}
 	}
-	return nil
+	return t.settleTakenOut()
 }
 
 // foldOpsOf reads an entry's effects back out of its payload.

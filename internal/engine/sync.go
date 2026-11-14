@@ -318,14 +318,13 @@ func (t *txn) writesAsPackage(pkg string) bool {
 // that half (the sync function's for the pair, the person's for the request)
 // is left out, so a kind that redeclares a writer differently skips that half
 // instead of writing a hand the kind gave to another.
-func syncOnReconnect(ty *vocabulary.Kind, row *erow, now time.Time, props map[string]any, tiers map[string]substrate.Tier) {
+func syncOnReconnect(ty *vocabulary.Kind, row *erow, now time.Time, props map[string]any) {
 	if !ty.Implements(vocabulary.TraitSyncCore) {
 		return
 	}
 	for _, name := range []string{propSyncError, propSyncErrorAt} {
 		if row.Props[name] != nil && writerAdmits(ty, name, substrate.ActorTypeFunction) {
 			props[name] = nil
-			tiers[name] = substrate.TierBundle
 		}
 	}
 	if row.Props[propLastSyncedAt] == nil || syncBool(row.Props, propSyncPaused) ||
@@ -333,7 +332,6 @@ func syncOnReconnect(ty *vocabulary.Kind, row *erow, now time.Time, props map[st
 		return
 	}
 	props[propSyncRequestedAt] = now.Format(time.RFC3339Nano)
-	tiers[propSyncRequestedAt] = substrate.TierOwner
 }
 
 // writerAdmits reports whether ty declares name for an actor of the given

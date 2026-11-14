@@ -223,16 +223,15 @@ func TestGetFiltersInboundLinksByTheAllowlist(t *testing.T) {
 					Ref: "g.test/mirrors/mirror/m9", Kind: "g.test/mirrors/mirror",
 					Title: "ungranted", Property: "widget", Mapping: "g.test/widgets/mirrorwidget",
 				},
-			}, PropertyMeta: map[string]substrate.PropertyMeta{
-				// The provenance sidecar names source records the same way
-				// (record 0094): the manager's from an ungranted kind, one
+			}, Marks: map[string]substrate.PropertyMark{
+				// The marks name source records the same way (records 0094,
+				// 0284): the value's from an ungranted kind, one
 				// alternative's from the granted one.
 				"name": {
-					Manager: "function:g.test:mirrors:sync", Tier: substrate.TierMachine,
-					Source: "g.test/mirrors/mirror/m9",
+					DerivedFrom: []substrate.RecordLink{{Ref: "g.test/mirrors/mirror/m9"}},
 					Alternatives: []substrate.PropertyAlternative{
-						{Actor: "function:g.test:widgets:sync", Value: "w", Source: "g.test/widgets/widget/w2"},
-						{Actor: "function:g.test:mirrors:sync2", Value: "m", Source: "g.test/mirrors/mirror/m8"},
+						{DerivedFrom: substrate.LinkTo("g.test/widgets/widget/w2"), Value: "w"},
+						{DerivedFrom: substrate.LinkTo("g.test/mirrors/mirror/m8"), Value: "m"},
 					},
 				},
 			}},
@@ -246,12 +245,12 @@ func TestGetFiltersInboundLinksByTheAllowlist(t *testing.T) {
 def main(input, host):
     got = host.get("g.test/widgets/widget", "w1")
     links = got.get("linkedFrom") or []
-    name = (got.get("propertyMeta") or {}).get("name") or {}
+    name = (got.get("marks") or {}).get("name") or {}
     return {"effects": [{"action": "put", "kind": "g.test/widgets/widget", "id": "out",
                          "properties": {"kinds": ",".join(l["kind"] for l in links),
                                         "titles": ",".join(l.get("title", "") for l in links),
-                                        "managerSource": name.get("source", ""),
-                                        "altSources": ",".join(a.get("source", "") for a in name.get("alternatives", []))}}]}
+                                        "valueSources": ",".join(l["ref"] for l in name.get("derivedFrom") or []),
+                                        "altSources": ",".join((a.get("derivedFrom") or {}).get("ref", "") for a in name.get("alternatives", []))}}]}
 `,
 		TimeoutMs: 5000,
 		ReadTypes: []string{"g.test/widgets/widget"},
@@ -264,10 +263,10 @@ def main(input, host):
 	if props["kinds"] != "g.test/widgets/widget" || props["titles"] != "granted" {
 		t.Fatalf("the body saw %v, want the granted link alone", props)
 	}
-	// The ungranted sources are blanked, the granted one stays, and the
-	// offers themselves (value, actor) are still there to read.
-	if props["managerSource"] != "" || props["altSources"] != "g.test/widgets/widget/w2," {
-		t.Fatalf("the body saw sources %q / %q, want the granted one alone", props["managerSource"], props["altSources"])
+	// The ungranted sources are left out, the granted one stays, and the
+	// offers themselves (value, stamp) are still there to read.
+	if props["valueSources"] != "" || props["altSources"] != "g.test/widgets/widget/w2," {
+		t.Fatalf("the body saw sources %q / %q, want the granted one alone", props["valueSources"], props["altSources"])
 	}
 }
 

@@ -2,7 +2,7 @@
  * page lists, in what order, which of them a person may edit in place, and
  * which fold away as empty. */
 
-import type { KindInfo, PropertyMeta, SubstrateRecord } from "@/lib/api/types"
+import type { KindInfo, PropertyMark, SubstrateRecord } from "@/lib/api/types"
 import {
   AUTHORITY_PROPERTY,
   PACKAGE_PROPERTY,
@@ -43,7 +43,7 @@ export interface SheetRow {
   value: unknown
   filled: boolean
   lock?: RowLock
-  meta?: PropertyMeta
+  meta?: PropertyMark
   /** A short note read beside the value (a draft's state: it moves once the
    * record exists). */
   hint?: string
@@ -155,7 +155,7 @@ export function sheetRows(
       value,
       filled: isFilled(value),
       lock,
-      meta: record.propertyMeta?.[spec.name],
+      meta: record.marks?.[spec.name],
       hint: fromId ? "from the record id" : undefined,
     })
   }
@@ -169,7 +169,7 @@ export function sheetRows(
       value,
       filled: true,
       lock: readOnly ? "provider" : "undeclared",
-      meta: record.propertyMeta?.[name],
+      meta: record.marks?.[name],
     })
   }
   rows.sort(

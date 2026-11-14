@@ -82,10 +82,11 @@ func TestInstallingAMappingLinksTheSourcesThatAlreadyExist(t *testing.T) {
 		t.Fatalf("%d live persons, want Grace and the one minted for Ada", n)
 	}
 
-	// The link is the mapping's, as on a source's own write (record 96).
+	// The link is the mapping's, as on a source's own write (record 96), so
+	// it carries no mark (decision 0284).
 	full := mustGet(t, ds, typeSlotlessCard, fid("card-ada"))
-	if want := vocabulary.ActorID(substrate.Actor("mapping:" + enginetest.SamplePackage("people") + "/cardperson")); full.PropertyMeta["person"].Manager != want {
-		t.Fatalf("person manager = %q, want %q", full.PropertyMeta["person"].Manager, want)
+	if m, marked := full.Marks["person"]; marked {
+		t.Fatalf("the link the mapping filled carries a mark: %+v", m)
 	}
 
 	// A second apply of the same closure finds nothing to link, mints

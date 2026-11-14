@@ -11,6 +11,7 @@ import {
   verdictNote,
   verdictPatch,
 } from "@/lib/mergerequests"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 // ── evidence extraction ─────────────────────────────────────────────────────
 
@@ -126,11 +127,15 @@ function person(
     version: 1,
     createdAt: "2026-08-05T00:00:00Z",
     updatedAt: "2026-08-05T00:00:00Z",
-    propertyMeta: meta
+    marks: meta
       ? Object.fromEntries(
           Object.entries(meta).map(([k, manager]) => [
             k,
-            { manager, updatedAt: "2026-08-05T00:00:00Z" },
+            {
+              ...(manager === "owner" ? { pinned: true } : {}),
+              setBy: actorLink(manager),
+              setAt: "2026-08-05T00:00:00Z",
+            },
           ])
         )
       : undefined,
@@ -172,7 +177,7 @@ describe("mergePair", () => {
 })
 
 describe("deriveDiff", () => {
-  it("classifies equal, machine-held differing, and owner-held differing", () => {
+  it("classifies equal, unpinned differing, and pinned differing", () => {
     const winner = person(
       "w",
       { name: "George", emails: ["a@x.gr"], prominence: "known" },
@@ -190,17 +195,24 @@ describe("deriveDiff", () => {
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]))
     // name differs and the winner holds it → the owner's choice.
     expect(byKey.name.posture).toBe("choice")
-    // emails differ, both machine-held → recompute settles it.
+    // emails differ, both unpinned → recompute settles it.
     expect(byKey.emails.posture).toBe("recompute")
     expect(byKey.prominence.posture).toBe("equal")
   })
 
-  it("flags owner-held when the LOSER side is the owner's", () => {
+  it("leaves a value pinned on the LOSER side alone with the loser", () => {
     const winner = person(
       "w",
       { name: "A" },
       { name: "github.connectors.substrate.reamde.dev" }
     )
+    const loser = person("l", { name: "B" }, { name: "owner" })
+    const rows = deriveDiff(winner, loser, personType)
+    expect(rows.find((r) => r.key === "name")?.posture).toBe("left")
+  })
+
+  it("keeps the winner's value where both sides are pinned", () => {
+    const winner = person("w", { name: "A" }, { name: "owner" })
     const loser = person("l", { name: "B" }, { name: "owner" })
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.find((r) => r.key === "name")?.posture).toBe("choice")
@@ -218,7 +230,7 @@ describe("deriveDiff", () => {
     const loser = person("l", { name: "A", phones: ["+30"] })
     const rows = deriveDiff(winner, loser, personType)
     const phones = rows.find((r) => r.key === "phones")
-    // present on one side only = a difference, machine-held by default.
+    // present on one side only = a difference, unpinned by default.
     expect(phones?.declared).toBe(false)
     expect(phones?.posture).toBe("recompute")
   })
@@ -233,7 +245,7 @@ describe("deriveDiff", () => {
     expect(rows.find((r) => r.key === "name")?.posture).toBe("recompute")
   })
 
-  it("diffs a reference property like any other, machine-held", () => {
+  it("diffs a reference property like any other, unpinned", () => {
     // A pointer is a property now, so a differing one is a `recompute` row —
     // there is nothing left that "moves to the survivor", because a reference
     // at the loser resolves through the former-id trail untouched.

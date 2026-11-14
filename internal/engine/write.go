@@ -789,11 +789,11 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 // apply is the single write path: machines, metadata, references, then one
 // no-op-suppressed row write and at most one changelog row.
 //
-// NOTHING RANKS WRITERS: any actor's direct write overwrites
-// anything, and the property-manager ledger records who last had a change
-// accepted. The one reader that defers to it is mapping RECOMPUTE (record
-// 51), which yields to any manager outside the machine tier — that is
-// recompute restraining itself, not this path guarding anyone.
+// NOTHING RANKS WRITERS: any actor's direct write overwrites anything, and
+// the property's mark records who wrote it and whether it is pinned. The one
+// reader that defers to it is mapping RECOMPUTE (record 51), which yields to
+// a pinned value — that is recompute restraining itself, not this path
+// guarding anyone (decision 0284).
 func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.refuseInstalledPolicyWrite(sp.ty.Identity, sp.op); err != nil {
 		return nil, err
@@ -882,7 +882,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	payload := map[string]any{}
 	var accepted []string
 	// deleted names the accepted properties this write removed: a delete
-	// clears the manager row rather than claiming it, and on a
+	// clears the mark rather than setting it, and on a
 	// mapped target it is the release trigger recompute refills from.
 	deleted := map[string]bool{}
 	// srcMappings is non-empty when this type is a source record: each
@@ -1377,41 +1377,25 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.settleRestoreShape(sp.ref(), sp, shape); err != nil {
 			return nil, err
 		}
-		// The manager ledger, per accepted property: a delete clears the row
-		// (release — record 51), a recompute credits the WINNING SOURCE's
-		// actor at the MACHINE tier (attribution never pins — the machine's
-		// own rows stay the machine's to overwrite), and every direct write
-		// claims its own actor at the write context's tier.
-		managers := map[string]any{}
+		// The marks, per accepted property (decision 0284): a delete drops
+		// the mark, so the next recompute may refill the property; a link a
+		// mapping fills carries none, because its declaration says which
+		// mapping fills it and only merge and split move it; recompute marks
+		// what it wrote with the sources behind it and pins nothing; and every
+		// direct write marks its own hand, pinned by the hand's type.
 		for _, name := range accepted {
+			p, declared := sp.ty.Prop(name)
 			switch {
-			case deleted[name]:
-				if err := t.deleteManager(sp.ref(), name); err != nil {
+			case deleted[name], declared && p.MappedBy != "":
+				if err := t.unmark(sp.ref(), name); err != nil {
 					return nil, err
 				}
 			case t.recomputing:
-				actor, ok := t.recomputeManagers[name]
-				if !ok {
-					actor = t.actor
-				}
-				if err := t.setManager(sp.ref(), name, actor, substrate.TierMachine); err != nil {
+				if err := t.setMark(sp.ref(), name, mark{DerivedFrom: t.recomputeSources[name], SetAt: t.now}); err != nil {
 					return nil, err
 				}
-				managers[name] = actorID(actor)
 			default:
-				actor, tier := t.actor, t.propTier(sp.ref(), name)
-				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
-				// (record 96). The value is not the writer's opinion — it is
-				// match-or-mint's answer, or the id the writer already had —
-				// and crediting the connector would let a `propertyMeta` read
-				// say a bundle holds the link when only merge and split can
-				// move it. The manager names the declaration instead, at the
-				// machine tier, so recompute and a later resolve are free to
-				// rewrite it.
-				if p, ok := sp.ty.Prop(name); ok && p.MappedBy != "" {
-					actor, tier = substrate.Actor("mapping:"+p.MappedBy), substrate.TierMachine
-				}
-				if err := t.setManager(sp.ref(), name, actor, tier); err != nil {
+				if err := t.setMark(sp.ref(), name, t.directMark(t.actor)); err != nil {
 					return nil, err
 				}
 			}
@@ -1428,9 +1412,6 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			payload["restored"] = true
 		}
 		shape.annotate(payload, accepted, undeclaredStates)
-		if len(managers) > 0 {
-			payload["managers"] = managers
-		}
 		if t.recomputing {
 			payload["mechanism"] = "mapping"
 			payload["triggeredBy"] = actorID(t.recomputeInitiator)
@@ -1516,8 +1497,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 
 	// The other half of the orphan mark (orphans.go). A write onto a mapped
 	// target does not recompute it — nothing about its sources changed — but
-	// it may have taken a property above the machine tier, or given the last
-	// one back, and the mark reads both. The recompute above already did it
+	// it may have pinned a property, or given the last pin back, and the
+	// mark reads both. The recompute above already did it
 	// where it ran.
 	if changed && !t.recomputing && !recomputed && mapped {
 		if err := t.syncOrphaned(sp.ref()); err != nil {
@@ -1883,25 +1864,6 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 			substrate.ErrValidation, sp.ty.Identity, name)
 	}
 	return nil
-}
-
-// propTiers is the tier each named property of one record's write stands
-// at, where it is not the transaction's own (txn.propTiers).
-type propTiers struct {
-	ref   eref
-	tiers map[string]substrate.Tier
-}
-
-// propTier answers the tier one property of a write to ref stands at: the
-// one propTiers names for it on that record, else the transaction's. A write
-// to any other record in the same transaction keeps the transaction's tier.
-func (t *txn) propTier(ref eref, name string) substrate.Tier {
-	if o := t.propTiers; o != nil && o.ref == ref {
-		if tier, ok := o.tiers[name]; ok {
-			return tier
-		}
-	}
-	return t.tier
 }
 
 // storeSecretProps moves every ACCEPTED secret-typed property value into the

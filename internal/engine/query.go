@@ -54,11 +54,11 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
-	// Single-record reads carry property provenance, and the inbound links a
+	// Single-record reads carry the property marks, and the inbound links a
 	// recordmapping owns (linkedfrom.go). The GENERAL reverse read stays a
 	// List under Filter.Referencing: any record can be pointed at from
 	// anywhere, by any property, and that fan-in has to be paged.
-	if e.PropertyMeta, err = ds.propertyMeta(ctx, e); err != nil {
+	if e.Marks, err = ds.propertyMarks(ctx, e); err != nil {
 		return nil, err
 	}
 	if e.LinkedFrom, err = ds.linkedFrom(ctx, ds.db, e); err != nil {
@@ -90,131 +90,6 @@ func (ds *dataset) idsOf(ctx context.Context, x dbx, canonical eref) ([]string, 
 		ids = append(ids, former)
 	}
 	return ids, rows.Err()
-}
-
-// propertyMeta assembles one record's per-property provenance: the manager
-// ledger — actor AND tier, so a read can tell a bundle pin from an
-// owner's or from a machine row recompute may replace — and the live
-// mapping-projection offers whose value differs (JSON equality) from the
-// stored one, the ALTERNATIVES the console shows beside a held value. Every
-// offer names the source record it was read from, and the manager names one
-// too where the read can stand behind it: the manager holds at the machine
-// tier and its own actor's offer BACKS the stored value (record 0094). The
-// offer row is derived, so nothing here is a second copy of the changelog.
-func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[string]substrate.PropertyMeta, error) {
-	out := map[string]substrate.PropertyMeta{}
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT property, actor, tier, updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
-		e.Kind, e.ID)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var m substrate.PropertyMeta
-		var property string
-		if err := rows.Scan(&property, &m.Manager, &m.Tier, &m.UpdatedAt); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		m.UpdatedAt = m.UpdatedAt.UTC()
-		out[property] = m
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	// Which mapped properties are unions, so a machine-held union whose
-	// manager's offer is a subset of the stored items still names its source.
-	union := map[string]bool{}
-	for _, m := range ds.registry().MappingsTo(e.Kind) {
-		for name, rule := range m.Map {
-			if rule.Merge == vocabulary.MergeUnion {
-				union[name] = true
-			}
-		}
-	}
-	rows, err = ds.db.QueryContext(ctx, `
-		SELECT property, actor, value, updated_at, source FROM property_offers
-		WHERE record_kind = $1 AND record_id = $2 ORDER BY property, actor`, e.Kind, e.ID)
-	if err != nil {
-		return nil, err
-	}
-	// The offers are read whole before any is compared: a reference offer
-	// is compared through further reads (comparableReference), which must not
-	// need a second pool connection while this cursor holds the first.
-	type offerRow struct {
-		property, actor, source string
-		raw                     []byte
-		at                      time.Time
-	}
-	var offers []offerRow
-	for rows.Next() {
-		var o offerRow
-		if err := rows.Scan(&o.property, &o.actor, &o.raw, &o.at, &o.source); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		offers = append(offers, o)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	for _, o := range offers {
-		property, actor, source, at := o.property, o.actor, o.source, o.at
-		var value any
-		if len(o.raw) > 0 {
-			_ = json.Unmarshal(o.raw, &value)
-		}
-		// An offer's stored value bypasses recordOf, so a property that is
-		// sensitive TODAY redacts here too: a stale offer minted before a
-		// re-type must not hand out what the main value hides. Unresolvable
-		// kinds fail closed the same way.
-		stored, compared := e.Properties[property], value
-		if ty, err := ds.resolveType(e.Kind); err != nil || ty == nil {
-			value, compared = Redacted, Redacted
-		} else if p, ok := ty.Prop(property); ok && p.Sensitive() {
-			value, compared = Redacted, Redacted
-		} else if ok && p.Datatype == vocabulary.DatatypeReference {
-			// An offer spells a reference as its source wrote it, a mirror
-			// included; the stored value holds what the pin resolved it to.
-			// Both sides are read through the mirror's subject and the
-			// former-id trail before they are compared (#580).
-			if compared, err = ds.comparableReference(ctx, p, value); err != nil {
-				return nil, err
-			}
-			if stored, err = ds.comparableReference(ctx, p, stored); err != nil {
-				return nil, err
-			}
-		}
-		m := out[property]
-		// The manager's own offer standing behind a machine-held value is
-		// the one case the read can say which mirror the value came from.
-		// On a union the stored value is the union across every actor, so
-		// the holding actor's offer backs it as a subset; it is not an
-		// alternative to itself.
-		mine := m.Manager == actor && m.Tier == substrate.TierMachine
-		if mine && offerBacks(stored, compared, union[property]) {
-			if source != "" {
-				m.Source = source
-				out[property] = m
-			}
-			continue
-		}
-		if jsonEqual(compared, stored) {
-			continue
-		}
-		m.Alternatives = append(m.Alternatives, substrate.PropertyAlternative{
-			Actor: actor, Value: value, UpdatedAt: at.UTC(), Source: source,
-		})
-		out[property] = m
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return out, nil
 }
 
 // comparableReference is a reference value as the read compares it: each item

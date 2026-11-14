@@ -104,15 +104,15 @@ func newRelationFixture(t *testing.T) relationFixture {
 	return relationFixture{svc: svc, ds: ds, ada: ada, grace: grace, sync: sync}
 }
 
-// assertTicketBacksCard: the card's owner and watchers name the ticket as
-// their source and list no alternative. An offer compared as the mirror it
-// spells would read as an alternative the ticket never offered.
+// assertTicketBacksCard: the card's owner and watchers are derived from the
+// ticket and list no alternative. An offer compared as the mirror it spells
+// would read as an alternative the ticket never offered.
 func assertTicketBacksCard(t *testing.T, card *substrate.Record) {
 	t.Helper()
 	for _, name := range []string{"owner", "watchers"} {
-		meta := card.PropertyMeta[name]
-		if meta.Source != typeTicket+"/"+fid("T1") || len(meta.Alternatives) != 0 {
-			t.Fatalf("%s meta = %+v, want the ticket as the source and no alternative", name, meta)
+		m := card.Marks[name]
+		if from := markFrom(m); len(from) != 1 || from[0] != typeTicket+"/"+fid("T1") || len(m.Alternatives) != 0 {
+			t.Fatalf("%s mark = %+v, want derived from the ticket and no alternative", name, m)
 		}
 	}
 }

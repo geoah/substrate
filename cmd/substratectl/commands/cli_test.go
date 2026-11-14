@@ -108,29 +108,28 @@ func seedTask(h *harness) {
 		CreatedAt: testNow.Add(-48 * time.Hour),
 		UpdatedAt: testNow.Add(-2 * time.Hour),
 	})
-	// The managed-property block a single-record read carries beside the
-	// record: `detail` is owner-held (with one live source offering a
-	// different value), `title` is a replaceable machine value, `lifecycle`
-	// a bundle pin — the three tiers, the shape `status.properties`
-	// renders and input ignores.
+	// The marks a single-record read carries beside the record: `detail` is
+	// pinned by the person (with one source record offering a different
+	// value), `title` is a value sync took from a source record, `lifecycle`
+	// a function's pin — the shape `status.properties` renders and input
+	// ignores.
 	h.fake.seedMeta("t9", map[string]statusProperty{
 		"detail": {
-			Manager:   "owner",
-			Tier:      substrate.TierOwner,
-			UpdatedAt: testNow.Add(-2 * time.Hour),
+			Pinned: true,
+			SetBy:  &statusLink{Ref: "substrate.reamde.dev/core/actor/person1"},
+			SetAt:  testNow.Add(-2 * time.Hour),
 			Alternatives: []statusAlternative{
-				{Actor: "google.connectors.substrate.reamde.dev/google/tasks", Value: "rack layout, cold aisle", UpdatedAt: testNow.Add(-time.Hour)},
+				{DerivedFrom: &statusLink{Ref: "providers.example.com/tasks/task/g1"}, Value: "rack layout, cold aisle", UpdatedAt: testNow.Add(-time.Hour)},
 			},
 		},
 		"title": {
-			Manager:   "google.connectors.substrate.reamde.dev/google/tasks",
-			Tier:      substrate.TierMachine,
-			UpdatedAt: testNow.Add(-3 * time.Hour),
+			DerivedFrom: []statusLink{{Ref: "providers.example.com/tasks/task/g1"}},
+			SetAt:       testNow.Add(-3 * time.Hour),
 		},
 		"lifecycle": {
-			Manager:   "function.closer.samples.substrate.reamde.dev/function/tasks",
-			Tier:      substrate.TierBundle,
-			UpdatedAt: testNow.Add(-4 * time.Hour),
+			Pinned: true,
+			SetBy:  &statusLink{Ref: "substrate.reamde.dev/core/actor/closer1"},
+			SetAt:  testNow.Add(-4 * time.Hour),
 		},
 	})
 }
@@ -1253,11 +1252,12 @@ func TestGetRendersFormerIDsInStatus(t *testing.T) {
 	}
 }
 
-// Managed properties read back in `status.properties`: per property its
-// manager, when it changed, and the alternatives — every live offer whose
-// value differs from the stored one. Server-set through and through, so it is
-// ignored on input like the rest of the block — and a LIST never carries it,
-// because the wire omits `propertyMeta` on lists.
+// The marks read back in `status.properties`: per property whether it is
+// pinned, who set it, the source records behind it, when it was set, and the
+// alternatives — every source record's offer that differs from the stored
+// value. Server-set through and through, so it is ignored on input like the
+// rest of the block — and a LIST never carries it, because the wire omits
+// `marks` on lists.
 func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -1275,30 +1275,29 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	if !ok {
 		t.Fatalf("status.properties missing detail: %+v", d.Status.Properties)
 	}
-	if prop.Manager != "owner" {
-		t.Errorf("manager = %q, want owner", prop.Manager)
+	if !prop.Pinned || prop.SetBy == nil || prop.SetBy.Ref != "substrate.reamde.dev/core/actor/person1" {
+		t.Errorf("detail mark = %+v, want pinned by the person", prop)
 	}
-	if len(prop.Alternatives) != 1 ||
-		prop.Alternatives[0].Actor != "google.connectors.substrate.reamde.dev/google/tasks" ||
+	if len(prop.Alternatives) != 1 || prop.Alternatives[0].DerivedFrom == nil ||
+		prop.Alternatives[0].DerivedFrom.Ref != "providers.example.com/tasks/task/g1" ||
 		prop.Alternatives[0].Value != "rack layout, cold aisle" {
 		t.Errorf("alternatives = %+v", prop.Alternatives)
 	}
-	// The tier survives the decode, all three values: an owner hold, an
-	// bundle pin and a replaceable machine value are distinguishable.
-	for property, want := range map[string]substrate.Tier{
-		"detail":    substrate.TierOwner,
-		"title":     substrate.TierMachine,
-		"lifecycle": substrate.TierBundle,
-	} {
-		if got := d.Status.Properties[property].Tier; got != want {
-			t.Errorf("%s tier = %q, want %q", property, got, want)
+	// Pinned survives the decode: a person's pin, a function's pin and a
+	// value sync wrote are distinguishable.
+	for property, want := range map[string]bool{"detail": true, "title": false, "lifecycle": true} {
+		if got := d.Status.Properties[property].Pinned; got != want {
+			t.Errorf("%s pinned = %v, want %v", property, got, want)
 		}
+	}
+	if from := d.Status.Properties["title"].DerivedFrom; len(from) != 1 || from[0].Ref != "providers.example.com/tasks/task/g1" {
+		t.Errorf("title derivedFrom = %+v", from)
 	}
 	// The document says it, under status, in the envelope's own words.
 	for _, want := range []string{
-		"  properties:", "      manager: owner", "      alternatives:",
-		"actor: google.connectors.substrate.reamde.dev/google/tasks",
-		"tier: owner", "tier: bundle", "tier: machine",
+		"  properties:", "      pinned: true", "      alternatives:",
+		"ref: substrate.reamde.dev/core/actor/person1", "derivedFrom:",
+		"ref: providers.example.com/tasks/task/g1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("document missing %q:\n%s", want, out)
@@ -1315,8 +1314,34 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	}
 
 	list, _ := h.mustRun("get", "samples.substrate.reamde.dev/tasks/task", "-o", "yaml")
-	if strings.Contains(list, "manager:") || strings.Contains(list, "alternatives:") {
+	if strings.Contains(list, "setBy:") || strings.Contains(list, "alternatives:") {
 		t.Fatalf("a list document must not carry status.properties:\n%s", list)
+	}
+}
+
+// pin and release post the named properties to the record's action and say
+// where each one stands after.
+func TestPinAndReleaseNameTheirProperties(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	seedTask(h)
+	out, _ := h.mustRun("pin", "samples.substrate.reamde.dev/tasks/task", "t9", "title", "detail")
+	if !strings.Contains(out, "title pinned, detail pinned") {
+		t.Fatalf("pin said %q", out)
+	}
+	if reqs := h.fake.doorRequests(); len(reqs) == 0 || reqs[len(reqs)-1] != "POST "+tasksPath+"/t9/pin" {
+		t.Fatalf("pin sent %v", reqs)
+	}
+	out, _ = h.mustRun("release", "samples.substrate.reamde.dev/tasks/task", "t9", "title")
+	if !strings.Contains(out, "title released") {
+		t.Fatalf("release said %q", out)
+	}
+	var in substrate.MarkInput
+	if err := json.Unmarshal(mustRaw(h.fake.lastBody), &in); err != nil || len(in.Properties) != 1 || in.Properties[0] != "title" {
+		t.Fatalf("release sent %+v, %v", in, err)
+	}
+	if _, _, err := h.run("pin", "samples.substrate.reamde.dev/tasks/task", "t9"); err == nil {
+		t.Fatal("a pin that names no property ran")
 	}
 }
 

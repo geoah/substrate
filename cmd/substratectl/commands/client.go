@@ -314,14 +314,14 @@ func editFilter(q url.Values, edit func(*substrate.Filter)) error {
 	return nil
 }
 
-// recordRead is one GET's flat JSON: the record plus `propertyMeta`, the
-// managed-property block a single-record read carries and a list never does.
-// Decoded here beside the record rather than through substrate.Record, because
-// the meta is a read-view fact the CLI renders into `status.properties` and
-// nothing the write path ever sends.
+// recordRead is one GET's flat JSON: the record plus `marks`, which a
+// single-record read carries and a list never does. Decoded here beside the
+// record rather than through substrate.Record, because the marks are a
+// read-view fact the CLI renders into `status.properties` and nothing the
+// write path ever sends.
 type recordRead struct {
 	substrate.Record
-	PropertyMeta map[string]statusProperty `json:"propertyMeta"`
+	Marks map[string]statusProperty `json:"marks"`
 }
 
 func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
@@ -329,7 +329,18 @@ func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Reco
 	if err := c.do(ctx, http.MethodGet, recordPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, nil, err
 	}
-	return &e.Record, e.PropertyMeta, nil
+	return &e.Record, e.Marks, nil
+}
+
+// mark pins or releases the named properties of one record (action is "pin"
+// or "release"), and answers the record with its marks.
+func (c *client) mark(ctx context.Context, action, pkg, kind, id string, properties []string) (*substrate.Record, map[string]statusProperty, error) {
+	var e recordRead
+	body := substrate.MarkInput{Properties: properties}
+	if err := c.do(ctx, http.MethodPost, recordPath(pkg, kind, id)+"/"+action, nil, body, &e); err != nil {
+		return nil, nil, err
+	}
+	return &e.Record, e.Marks, nil
 }
 
 // put writes one record. With an id it is a PUT at the record path, whose

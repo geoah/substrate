@@ -599,14 +599,10 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 				}
 			}
 		}
-		// A `sync`-trait account's half of the reconnect rides the same patch,
-		// each property at the tier its manager row holds: one changelog entry, so
-		// a record trigger sees the new status, the cleared error and the
-		// sync request together and fires once.
-		tiers := map[string]substrate.Tier{}
-		syncOnReconnect(ty, row, t.now, props, tiers)
-		t.propTiers = &propTiers{ref: account, tiers: tiers}
-		defer func() { t.propTiers = nil }()
+		// A `sync`-trait account's half of the reconnect rides the same patch:
+		// one changelog entry, so a record trigger sees the new status, the
+		// cleared error and the sync request together and fires once.
+		syncOnReconnect(ty, row, t.now, props)
 		_, err = t.patch(account, substrate.PatchInput{
 			Properties:    props,
 			AddFinalizers: []string{finalizerOAuth},

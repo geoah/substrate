@@ -34,7 +34,9 @@ var foldWriteSites = map[string]string{
 	"rows.go:applyTombstone":    "the tombstone effect's write",
 	"rows.go:applyPurge":        "the purge effect's write",
 	"rows.go:applyAnnotation":   "the annotation effect's write",
-	"rows.go:applyManager":      "the manager effect's write",
+	"marks.go:applyMark":        "the mark effect's write",
+	"marks.go:applyUnmark":      "the unmark effect's write",
+	"marks.go:insertMark":       "a mark row the resync effect restates, applied by applyResync or moved by merge before its resync is recorded",
 	"rows.go:applyFormerID":     "the former-id effect's write",
 	"fold.go:applyResync":       "the resync effect's write, which merge and split record and a replay applies",
 	"delivery.go:applyDelivery": "the delivery ledger effects' writes",
@@ -48,12 +50,12 @@ var foldWriteSites = map[string]string{
 	"unitgraph.go:replaceUnitUses":  "the unit spellings one row's values store, derived again by foldRecordOp on replay",
 	"unitgraph.go:moveUnitRevision": "the unit graph's revision, moved once per changed unit or conversion row, which a replay moves the same",
 	// A bulk run of creating puts (bulkwrite.go) folds every effect through
-	// foldRecordOp and applyManager, whose write leaves queue the statement
+	// foldRecordOp and applyMark, whose write leaves queue the statement
 	// they would send for a record the run creates; these send each queue as
 	// one statement (foldPrimitives says who may call them).
 	"bulkwrite.go:flushBulkRecords":  "upsertRecord's INSERTs of a bulk run's created rows",
 	"bulkwrite.go:flushBulkUses":     "replaceUnitUses' INSERTs for a bulk run's created rows",
-	"bulkwrite.go:flushBulkManagers": "applyManager's INSERTs for a bulk run's created rows",
+	"bulkwrite.go:flushBulkMarks":    "applyMark's INSERTs for a bulk run's created rows",
 	"orphans.go:syncOrphaned":        "the `orphaned_at` mark, derived again by rederiveOffers",
 	"orphans.go:clearOrphanMarks":    "the `orphaned_at` marks of a kind no mapping targets any more",
 	"mapping.go:afterTombstone":      "the `orphaned_at` mark of a tombstoned target",
@@ -74,7 +76,6 @@ var foldWriteSites = map[string]string{
 
 	// Merge and split rewrite the side stores with set-shaped statements and
 	// record a resync effect that restates the result (fold.go recordResync).
-	"merge.go:moveManagers":    "merge's manager rows, restated by the resync effect",
 	"merge.go:moveAnnotations": "merge's annotations, restated by the resync effect",
 	"merge.go:splitIf":         "split's side-store rows, restated by the resync effect",
 	"rows.go:moveFormerIDs":    "merge's former-id flattening, which no effect records, so a rebuild leaves chains where the live table is flat (#821)",
@@ -103,11 +104,20 @@ var foldPrimitives = map[string][]string{
 	"applyTombstone":  {"fold.go:foldOne"},
 	"applyPurge":      {"fold.go:foldOne"},
 	"applyAnnotation": {"fold.go:foldOne"},
-	"applyManager":    {"fold.go:foldOne"},
-	"applyFormerID":   {"fold.go:foldOne"},
-	"applyResync":     {"fold.go:foldOne"},
-	"applyDelivery":   {"fold.go:foldOne"},
-	"upsertPage":      {"delivery.go:applyDelivery"},
+	"applyMark":       {"fold.go:foldOne"},
+	"applyUnmark":     {"fold.go:foldOne", "fold.go:settleTakenOut"},
+	// The fold's own rule as a line ends (a mark goes with its value): a
+	// function of the line's record effects, which a replay applies at the
+	// same place, so the write it makes is reproduced though no effect says
+	// it. appendChange ends a live line, settleFold the last one again for
+	// the effects that join it, and foldEntry a replayed one.
+	"settleTakenOut": {"rows.go:appendChange", "fold.go:settleFold", "fold.go:foldEntry"},
+	"noteTakenOut":   {"fold.go:foldRecordOp"},
+	"insertMark":     {"fold.go:applyResync"},
+	"applyFormerID":  {"fold.go:foldOne"},
+	"applyResync":    {"fold.go:foldOne"},
+	"applyDelivery":  {"fold.go:foldOne"},
+	"upsertPage":     {"delivery.go:applyDelivery"},
 	// A bulk run batches the statements of the fold's own write leaves and
 	// nothing else (bulkwrite.go): each queue is filled by the leaf whose
 	// statement it defers, so a live bulk write and a replay decide every
@@ -116,7 +126,7 @@ var foldPrimitives = map[string][]string{
 	"queueUses":     {"unitgraph.go:replaceUnitUses"},
 	"queueRevision": {"unitgraph.go:afterUnitFold"},
 	"queueRefs":     {"refs.go:syncRefs"},
-	"queueManager":  {"rows.go:applyManager"},
+	"queueMark":     {"marks.go:applyMark"},
 	// A bulk run's flush sends what the fold's leaves queued, once, at the
 	// end of the run that queued it.
 	"flushBulk":         {"bulkwrite.go:putBulk"},
@@ -124,7 +134,7 @@ var foldPrimitives = map[string][]string{
 	"flushBulkUses":     {"bulkwrite.go:flushBulk"},
 	"flushBulkRevision": {"bulkwrite.go:flushBulk"},
 	"flushBulkRefs":     {"bulkwrite.go:flushBulk"},
-	"flushBulkManagers": {"bulkwrite.go:flushBulk"},
+	"flushBulkMarks":    {"bulkwrite.go:flushBulk"},
 	"moveUnitRevision":  {"unitgraph.go:afterUnitFold", "bulkwrite.go:flushBulkRevision"},
 }
 

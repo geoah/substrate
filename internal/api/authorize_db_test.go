@@ -626,7 +626,7 @@ func TestARecordPathReadOfAKindTheGrantCannotReadIsUnknown(t *testing.T) {
 }
 
 // Every record an app's token receives is cut to its grant: inbound links,
-// property provenance and expanded referents of kinds it cannot read are
+// the source records a mark names and expanded referents of kinds it cannot read are
 // left out, on a read, a list and a write's answer alike.
 func TestAnAppsRecordsAreCutToItsGrant(t *testing.T) {
 	t.Parallel()
@@ -645,22 +645,22 @@ func TestAnAppsRecordsAreCutToItsGrant(t *testing.T) {
 	// to it.
 	e.db.put(t, feed, "f1", map[string]any{"key": "k1", "content": "hi"})
 	owner := decodeJSON[substrate.Record](t, e.do(http.MethodGet, "/api/v1/"+message+"/"+m1, e.owner, nil, ""))
-	if owner.Properties["text"] != "hi" || len(owner.LinkedFrom) == 0 || owner.PropertyMeta["text"].Source != feed+"/f1" {
-		t.Fatalf("the owner's read = text %v linkedFrom %v provenance %v: the test proves nothing", owner.Properties["text"], owner.LinkedFrom, owner.PropertyMeta)
+	if owner.Properties["text"] != "hi" || len(owner.LinkedFrom) == 0 || !derivedFrom(owner, "text", feed+"/f1") {
+		t.Fatalf("the owner's read = text %v linkedFrom %v marks %v: the test proves nothing", owner.Properties["text"], owner.LinkedFrom, owner.Marks)
 	}
 	app := e.grant("write:"+message, []string{"write:" + message})
 
 	got := decodeJSON[substrate.Record](t, e.do(http.MethodGet, "/api/v1/"+message+"/"+m1, app, nil, ""))
-	if len(got.LinkedFrom) != 0 || got.PropertyMeta["text"].Source != "" {
-		t.Fatalf("a read carried linkedFrom %v and provenance %v of an unreadable kind", got.LinkedFrom, got.PropertyMeta)
+	if len(got.LinkedFrom) != 0 || len(got.Marks["text"].DerivedFrom) != 0 {
+		t.Fatalf("a read carried linkedFrom %v and marks %v of an unreadable kind", got.LinkedFrom, got.Marks)
 	}
 	filter := url.QueryEscape(`{"kinds":["` + message + `"]}`)
 	page := decodeJSON[substrate.Page](t, e.do(http.MethodGet, "/api/v1/records?expand=author&filter="+filter, app, nil, ""))
 	if len(page.Records) != 1 || len(page.Included) != 0 {
 		t.Fatalf("a list with expand answered %d records and included %v", len(page.Records), page.Included)
 	}
-	if r := page.Records[0]; len(r.LinkedFrom) != 0 || r.PropertyMeta["text"].Source != "" {
-		t.Fatalf("a listed record carried linkedFrom %v and provenance %v of an unreadable kind", r.LinkedFrom, r.PropertyMeta)
+	if r := page.Records[0]; len(r.LinkedFrom) != 0 || len(r.Marks["text"].DerivedFrom) != 0 {
+		t.Fatalf("a listed record carried linkedFrom %v and marks %v of an unreadable kind", r.LinkedFrom, r.Marks)
 	}
 	ownerPage := decodeJSON[substrate.Page](t, e.do(http.MethodGet, "/api/v1/records?expand=author&filter="+filter, e.owner, nil, ""))
 	if len(ownerPage.Included) == 0 {
@@ -669,9 +669,20 @@ func TestAnAppsRecordsAreCutToItsGrant(t *testing.T) {
 	// A write's answer is cut the same way.
 	wrote := e.do(http.MethodPatch, "/api/v1/"+message+"/"+m1, app, []byte(`{"properties":{"key":"k1"}}`), "application/json")
 	wantStatus(t, wrote, http.StatusOK)
-	if r := decodeJSON[substrate.Record](t, wrote); len(r.LinkedFrom) != 0 || r.PropertyMeta["text"].Source != "" {
-		t.Fatalf("a write's answer carried linkedFrom %v and provenance %v of an unreadable kind", r.LinkedFrom, r.PropertyMeta)
+	if r := decodeJSON[substrate.Record](t, wrote); len(r.LinkedFrom) != 0 || len(r.Marks["text"].DerivedFrom) != 0 {
+		t.Fatalf("a write's answer carried linkedFrom %v and marks %v of an unreadable kind", r.LinkedFrom, r.Marks)
 	}
+}
+
+// derivedFrom reports whether a record's mark on property names the source
+// record at path.
+func derivedFrom(r substrate.Record, property, path string) bool {
+	for _, l := range r.Marks[property].DerivedFrom {
+		if l.Ref == path {
+			return true
+		}
+	}
+	return false
 }
 
 // authorizeEmbedder answers the OpenAI embeddings wire with a bag-of-words

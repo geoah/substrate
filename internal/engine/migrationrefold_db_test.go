@@ -71,7 +71,7 @@ var refoldMarks = map[string][]string{"records": {"orphaned_at", "ambiguous_at"}
 // hold no row: a parked failure and a paged drain both need a function body
 // to run. A migration that edits either of them seeds a row first.
 var refoldSeeded = []string{
-	"records", "refs", "annotations", "property_managers", "former_ids", "property_offers",
+	"records", "refs", "annotations", "property_marks", "former_ids", "property_offers",
 	"trigger_cursors", "trigger_schedule", "observed_segments", "observed_rollups", "observed_latest",
 }
 
@@ -96,6 +96,18 @@ var refoldLags = []struct{ migration, table, column string }{
 // units. A stage behind it compares no unit_graph row: the counter it starts
 // at zero counts nothing a real store of that age held.
 const refoldUnitGraph = "0016_unit_graph"
+
+// refoldPropertyMarks is the migration that replaces each property's
+// manager and tier with its mark (decision 0284). A store behind it held the
+// managers' table and a history in the changelog dialect before the marks, and the marks
+// conversion rebuilds its fold at the boot after it, marks and offers
+// included; the source's history is in the marks' dialect already, which no
+// store of that age held, so nothing converts it there. A stage behind it
+// compares, and requires, none of refoldMarkTables.
+const refoldPropertyMarks = "0026_property_marks"
+
+// refoldMarkTables are the tables refoldPropertyMarks replaces empty.
+var refoldMarkTables = []string{"property_marks", "property_offers"}
 
 // refoldLedgerTable is the migration that creates the repository ledger.
 const refoldLedgerTable = "0005_repository_migrations"
@@ -153,6 +165,9 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 	if versions[refoldUnitGraph] == 0 {
 		t.Fatalf("the binary no longer embeds %s, whose unit_graph exemption is for that migration alone", refoldUnitGraph)
 	}
+	if versions[refoldPropertyMarks] == 0 {
+		t.Fatalf("the binary no longer embeds %s, whose marks exemption is for that migration alone", refoldPropertyMarks)
+	}
 	if versions[refoldRepositoryIDs] == 0 {
 		t.Fatalf("the binary no longer embeds %s, behind which a stage is keyed by the name", refoldRepositoryIDs)
 	}
@@ -184,6 +199,12 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 			if prior.Version < versions[refoldUnitGraph] {
 				delete(live, "unit_graph")
 				delete(rebuilt, "unit_graph")
+			}
+			if prior.Version < versions[refoldPropertyMarks] {
+				for _, table := range refoldMarkTables {
+					delete(live, table)
+					delete(rebuilt, table)
+				}
 			}
 			if tables, diff := refoldDifferences(live, rebuilt); len(tables) > 0 {
 				t.Fatalf("a store at %s, upgraded from %s on, holds a fold that differs in %s from what a rebuild "+
@@ -389,7 +410,18 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	<-engine.SearchReindexDone(ds)
 	engine.DrainIndexReprojection(t, ds)
 	live = refoldSnapshot(t, db, omit)
+	marksAt := 0
+	if migrations, err := engine.Migrations(); err == nil {
+		for _, m := range migrations {
+			if m.Name == refoldPropertyMarks {
+				marksAt = m.Version
+			}
+		}
+	}
 	for _, table := range refoldSeeded {
+		if behind < marksAt && slices.Contains(refoldMarkTables, table) {
+			continue
+		}
 		if live[table] == "[]" {
 			t.Fatalf("the staged fold holds no %s row: the comparison would hold nothing there", table)
 		}
@@ -420,10 +452,25 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 // refoldRepositoryIDs. It returns the records copied.
 func copyRefoldRows(t *testing.T, db *sql.DB, from, to, key string) int64 {
 	t.Helper()
+	// A table a later migration replaced takes none of the source's rows: one
+	// it turned into a view holds none of its own in the source, and one
+	// whose stage shape requires a column the source no longer has could
+	// not take them. 0026 is both: it drops the old manager and offer tables'
+	// rows, a fold table and a derived one, which the marks and the rebuild
+	// give again.
 	tables := refoldColumnQuery(t, db, `
-		SELECT table_name FROM information_schema.tables
-		WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-		ORDER BY table_name`, to)
+		SELECT s.table_name FROM information_schema.tables s
+		JOIN information_schema.tables f
+		  ON f.table_schema = $2 AND f.table_name = s.table_name AND f.table_type = 'BASE TABLE'
+		WHERE s.table_schema = $1 AND s.table_type = 'BASE TABLE'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM information_schema.columns c
+		      WHERE c.table_schema = $1 AND c.table_name = s.table_name
+		        AND c.is_nullable = 'NO' AND c.column_default IS NULL AND c.is_generated = 'NEVER'
+		        AND NOT EXISTS (
+		            SELECT 1 FROM information_schema.columns g
+		            WHERE g.table_schema = $2 AND g.table_name = s.table_name AND g.column_name = c.column_name))
+		ORDER BY s.table_name`, to, from)
 	var records int64
 	for _, table := range tables {
 		if table == "schema_migrations" || table == "repository_migrations" {

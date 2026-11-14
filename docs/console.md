@@ -507,20 +507,20 @@ under the sheet ("2 shown under During this workout"), which opens them for
 editing.
 
 **Who holds each value** is read off the record's
-[`propertyMeta`](projection.md#reading-provenance-propertymeta). Where every
+[marks](projection.md#where-a-value-came-from-the-marks). Where every
 value is yours the head says so once; otherwise a chip at the end of a row
 marks a value someone else holds (the provider's badge and name, or an
 agent), and an amber **_Provider_ differs** marks one a live source offers
 differently. **Who holds each value** in the ⋯ menu puts a chip on every row.
-Opening one says who holds the value
-at which [tier](terms.md#truth-and-derivation) and what that means for it
-(**Yours**, **Synced**, **Set by provider** or **Set by an agent**), the
-source record it came from, and every other version a live source offers, with
-who offers it and when. **Use _Provider_'s** writes that value, which makes you
-its holder at the owner tier; **Stop overriding** patches the property to
-null, so projection refills it from the live sources and it follows them
-again; **Use my own value** opens the editor. Both writes ask first and name
-the consequence.
+Opening one says who set the value, whether it is
+pinned and what that means for it (**Yours**, **Synced**, **Set by provider**
+or **Set by an agent**), the source records it came from, and every other
+version a source record offers, with which record offers it and when. **Use
+_Provider_'s** writes that value, which pins it as yours; **Stop overriding**
+releases the property, so sync picks its value again among the source
+records and it follows them; **Keep this value** pins a value sync wrote;
+**Use my own value** opens the editor. Each write asks first and names the
+consequence.
 
 Under the properties, in order:
 

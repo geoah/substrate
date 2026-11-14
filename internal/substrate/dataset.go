@@ -63,6 +63,13 @@ type Dataset interface {
 	// preconditions; a zero one is unconditional.
 	Merge(ctx context.Context, actor Actor, in MergeInput) (*Record, error)
 	Split(ctx context.Context, actor Actor, in SplitInput) (*Record, error)
+	// Pin keeps each named property's current value: sync leaves it alone
+	// until it is released. Release hands each named property back to sync,
+	// which picks its value among the live offers. Both are recorded in
+	// history, both work on a required property, and both answer the record
+	// with its marks (decision 0284).
+	Pin(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
+	Release(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
 
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,

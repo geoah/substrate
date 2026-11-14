@@ -105,7 +105,7 @@ type Config struct {
 
 	// OrphanGrace turns the GC sweep's ORPHAN COLLECTION on and sets its
 	// grace window: a mapping target whose live sources are all gone, whose
-	// properties are all machine-held, and that no live record points at is
+	// properties are all unpinned, and that no live record points at is
 	// tombstoned once it has carried the mark for this long. UNSET OR ZERO IS
 	// OFF, which is the default: the mark is derived either way and
 	// `filter.orphaned` lists it, so the destructive half is something a

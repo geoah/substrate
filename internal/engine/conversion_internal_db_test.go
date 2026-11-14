@@ -62,8 +62,8 @@ func respellAPIActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p[foldPayloadKey].([]any)
 	for _, raw := range effects {
-		if eff, ok := raw.(map[string]any); ok && eff["actor"] == personActor {
-			eff["actor"] = convertedActor
+		if eff, ok := raw.(map[string]any); ok && eff["setBy"] == personActor {
+			eff["setBy"] = convertedActor
 		}
 	}
 	out, err := json.Marshal(p)
@@ -177,7 +177,7 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 			if !bytes.Equal(sum[:], row.hash) {
 				t.Errorf("seq %d: the stamped checksum is not the line's", e.Seq)
 			}
-			if bytes.Contains(e.Payload, []byte(`"actor": "`+personActor+`"`)) || bytes.Contains(e.Payload, []byte(`"actor":"`+personActor+`"`)) || e.Actor == personActor {
+			if bytes.Contains(e.Payload, []byte(`"setBy": "`+personActor+`"`)) || bytes.Contains(e.Payload, []byte(`"setBy":"`+personActor+`"`)) || e.Actor == personActor {
 				t.Errorf("seq %d still spells the actor api: %s", e.Seq, e.Payload)
 			}
 			if e.Actor == convertedActor {
@@ -193,8 +193,8 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 	if err != nil {
 		t.Fatalf("read the contact: %v", err)
 	}
-	if got := rec.PropertyMeta["name"].Manager; got != convertedActor {
-		t.Fatalf("the contact's name is managed by %q after the conversion, want %q: the fold was not rebuilt from the converted lines", got, convertedActor)
+	if got := rec.Marks["name"].SetBy; got == nil || got.Ref != vocabulary.RecordPath(kindActor, convertedActor) {
+		t.Fatalf("the contact's name is set by %v after the conversion, want %q: the fold was not rebuilt from the converted lines", got, convertedActor)
 	}
 	if err := ds.ArchivePass(ctx); err != nil {
 		t.Fatalf("archive after the conversion: %v", err)
@@ -216,7 +216,7 @@ func holdConverted(t *testing.T, svc substrate.Service, repo string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(body, []byte(`"actor":"`+personActor+`"`)) {
+		if bytes.Contains(body, []byte(`"setBy":"`+personActor+`"`)) {
 			t.Errorf("the archive's %s still spells the actor api", o.Key)
 		}
 	}
@@ -380,8 +380,8 @@ func respellConvertedActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p[foldPayloadKey].([]any)
 	for _, raw := range effects {
-		if eff, ok := raw.(map[string]any); ok && eff["actor"] == convertedActor {
-			eff["actor"] = thirdActor
+		if eff, ok := raw.(map[string]any); ok && eff["setBy"] == convertedActor {
+			eff["setBy"] = thirdActor
 		}
 	}
 	out, err := json.Marshal(p)
@@ -542,8 +542,8 @@ func holdRestoredAt(t *testing.T, svc substrate.Service, repo string, dialect in
 	if err != nil {
 		t.Fatalf("read the contact: %v", err)
 	}
-	if got := rec.PropertyMeta["name"].Manager; got != actor {
-		t.Fatalf("the contact's name is managed by %q, want %q", got, actor)
+	if got := rec.Marks["name"].SetBy; got == nil || got.Ref != vocabulary.RecordPath(kindActor, actor) {
+		t.Fatalf("the contact's name is set by %v, want %q", got, actor)
 	}
 }
 

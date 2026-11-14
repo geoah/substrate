@@ -4,7 +4,7 @@ package engine_test
 // deliberately dropped, and the policies, the FORCE flag and the two roles are
 // asserted to exist, so the enforcement cannot quietly degrade into
 // discipline. The second half is the principal: which token a write names, on
-// the changelog entry and on every manager row it lands, through a split and
+// the changelog entry, through a split and
 // through a rebuild.
 
 import (
@@ -21,6 +21,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // pair is two registered users, each with one task written at the SAME
@@ -103,34 +104,29 @@ func TestARepositorySeesOnlyItsOwnDescription(t *testing.T) {
 
 const principalTask = "samples.substrate.reamde.dev/tasks/task"
 
-// managerPrincipals reads the distinct principals the record's manager rows
-// carry, so a test can say "every property this write landed names the token".
-// The PRINCIPAL: the token id the door resolved from the bearer secret,
-// stamped on every changelog entry a request appends and on every manager row
-// it lands. The actor beside it is what the caller ASSERTED, so two tokens
-// writing as `api` are one actor and two principals, and only the principal
-// says which token wrote.
-func managerPrincipals(t *testing.T, dsn, kind, id string) []string {
+// markOf reads one property's mark: the actor record that set it, and when.
+// The token behind the write is the history line's, not the mark's
+// (decision 0284).
+func markOf(t *testing.T, dsn, kind, id, property string) (setBy string, setAt time.Time) {
 	t.Helper()
-	rows, err := rawDB(t, dsn).Query(`
-		SELECT DISTINCT principal FROM property_managers
-		WHERE record_kind = $1 AND record_id = $2 ORDER BY principal`, kind, id)
-	if err != nil {
-		t.Fatalf("read manager principals: %v", err)
+	if err := rawDB(t, dsn).QueryRow(`
+		SELECT set_by, set_at FROM property_marks
+		WHERE record_kind = $1 AND record_id = $2 AND property = $3`, kind, id, property).Scan(&setBy, &setAt); err != nil {
+		t.Fatalf("read the %s mark: %v", property, err)
 	}
-	defer func() { _ = rows.Close() }()
-	var out []string
-	for rows.Next() {
-		var p string
-		if err := rows.Scan(&p); err != nil {
-			t.Fatalf("scan manager principal: %v", err)
-		}
-		out = append(out, p)
+	return setBy, setAt
+}
+
+// marked reports whether a record carries a mark for property.
+func marked(t *testing.T, dsn, kind, id, property string) bool {
+	t.Helper()
+	var n int
+	if err := rawDB(t, dsn).QueryRow(`
+		SELECT count(*) FROM property_marks
+		WHERE record_kind = $1 AND record_id = $2 AND property = $3`, kind, id, property).Scan(&n); err != nil {
+		t.Fatalf("count the %s marks: %v", property, err)
 	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("read manager principals: %v", err)
-	}
-	return out
+	return n > 0
 }
 
 func lastPrincipal(t *testing.T, dsn string) string {
@@ -142,7 +138,10 @@ func lastPrincipal(t *testing.T, dsn string) string {
 	return p
 }
 
-func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
+// The token behind a write is stamped on its entry, and the change reads carry
+// it; the mark names the hand and when it wrote, so a second token's write of
+// the same hand moves the mark's time and leaves its hand.
+func TestTheTokenStampsTheEntryAndTheMarkNamesTheHand(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newDatasetWithDSN(t)
 	first := substrate.WithPrincipal(context.Background(), "tok_first")
@@ -157,12 +156,13 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 	if got := lastPrincipal(t, dsn); got != "tok_first" {
 		t.Fatalf("the entry's principal is %q, want the writing token's id", got)
 	}
-	if got := managerPrincipals(t, dsn, task.Kind, task.ID); len(got) != 1 || got[0] != "tok_first" {
-		t.Fatalf("manager principals are %v, want every row on tok_first", got)
+	by, firstAt := markOf(t, dsn, task.Kind, task.ID, "name")
+	if by != vocabulary.ActorID(owner) {
+		t.Fatalf("the name mark is set by %q, want the person", by)
 	}
 
-	// A second token, the same asserted actor: the entry and the manager row
-	// both move, which is the whole point — the actor cannot tell them apart.
+	// A second token, the same hand: the entry names the token, and the mark
+	// the hand and the new time.
 	second := substrate.WithPrincipal(context.Background(), "tok_second")
 	if _, err := ds.Patch(second, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": "Ship it now"},
@@ -172,14 +172,8 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 	if got := lastPrincipal(t, dsn); got != "tok_second" {
 		t.Fatalf("the second entry's principal is %q, want tok_second", got)
 	}
-	var namePrincipal string
-	if err := rawDB(t, dsn).QueryRow(`
-		SELECT principal FROM property_managers
-		WHERE record_kind = $1 AND record_id = $2 AND property = 'name'`, task.Kind, task.ID).Scan(&namePrincipal); err != nil {
-		t.Fatalf("read the name manager: %v", err)
-	}
-	if namePrincipal != "tok_second" {
-		t.Fatalf("the name manager still names %q after tok_second wrote it", namePrincipal)
+	if by, at := markOf(t, dsn, task.Kind, task.ID, "name"); by != vocabulary.ActorID(owner) || !at.After(firstAt) {
+		t.Fatalf("the name mark = set by %q at %s, want the person after %s", by, at, firstAt)
 	}
 	// The change reads carry it, for History to name the token behind a run
 	// (decision 0230) and the owner to read which token wrote it.
@@ -210,8 +204,8 @@ func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 	if got := lastPrincipal(t, dsn); got != "" {
 		t.Fatalf("an unauthenticated write stamped principal %q, want empty", got)
 	}
-	if got := managerPrincipals(t, dsn, task.Kind, task.ID); len(got) != 1 || got[0] != "" {
-		t.Fatalf("manager principals are %v, want empty", got)
+	if by, _ := markOf(t, dsn, task.Kind, task.ID, "name"); by != vocabulary.ActorID(owner) {
+		t.Fatalf("the name mark is set by %q, want the person", by)
 	}
 	var placeholders int64
 	if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM changelog WHERE principal = 'invalid'`).Scan(&placeholders); err != nil {
@@ -222,10 +216,9 @@ func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 	}
 }
 
-// A split puts back exactly what its merge moved. A manager row another token
-// has written since names the same actor and tier and a DIFFERENT principal,
-// and that row records a write the split must not erase.
-func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
+// A merge moves no mark, so a split has none to take back: a mark written on
+// the winner since the merge records a write the split must not erase.
+func TestSplitKeepsAMarkWrittenSinceTheMerge(t *testing.T) {
 	t.Parallel()
 	_, ds, dsn := newDatasetWithDSN(t)
 	first := substrate.WithPrincipal(context.Background(), "tok_first")
@@ -246,9 +239,13 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
+	if marked(t, dsn, principalTask, winner.ID, "url") {
+		t.Fatal("the merge moved the loser's url mark onto the winner")
+	}
+	merged := time.Now()
 
-	// A third token rewrites the migrated property under the same actor: the
-	// manager row now stands on tok_third.
+	// A third token writes the property on the winner: the mark stands at the
+	// third write's time.
 	third := substrate.WithPrincipal(context.Background(), "tok_third")
 	if _, err := ds.Patch(third, owner, principalTask, winner.ID, substrate.PatchInput{
 		Properties: map[string]any{"url": "https://example.com/2"},
@@ -259,22 +256,22 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 	if _, err := ds.Split(first, owner, substrate.SplitInput{Merge: merge.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	var principal string
+	var setAt time.Time
 	err = rawDB(t, dsn).QueryRow(`
-		SELECT principal FROM property_managers
-		WHERE record_kind = $1 AND record_id = $2 AND property = 'url'`, winner.Kind, winner.ID).Scan(&principal)
+		SELECT set_at FROM property_marks
+		WHERE record_kind = $1 AND record_id = $2 AND property = 'url'`, winner.Kind, winner.ID).Scan(&setAt)
 	if err != nil {
-		t.Fatalf("the split erased a manager row tok_third wrote after the merge: %v", err)
+		t.Fatalf("the split erased a mark tok_third wrote after the merge: %v", err)
 	}
-	if principal != "tok_third" {
-		t.Fatalf("the url manager names %q, want tok_third", principal)
+	if !setAt.After(merged) {
+		t.Fatalf("the url mark was set at %s, want tok_third's write after the merge at %s", setAt, merged)
 	}
 }
 
-// The manager ledger is a fold of the changelog, principal included: replaying
-// the history has to put the same token back on every row, through the
-// per-property effect and through the merge's resync snapshot alike.
-func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
+// The marks are a fold of the changelog: replaying the history has to put the
+// same mark back on every property, through the per-property effect and
+// through the merge's resync snapshot alike.
+func TestRebuildReplaysTheMarks(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newDatasetWithDSN(t)
 	ctx := substrate.WithPrincipal(context.Background(), "tok_first")
@@ -293,13 +290,17 @@ func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put loser: %v", err)
 	}
-	// The merge migrates the loser's manager rows where the winner has none,
-	// and its resync snapshot is what a replay writes back.
+	// The merge moves no mark: the loser keeps its url mark beside its value
+	// on the tombstone, and the merge's resync snapshot is what a replay
+	// writes back.
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: principalTask, Winner: winner.ID, Loser: loser.ID}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if got := managerPrincipals(t, dsn, winner.Kind, winner.ID); len(got) != 2 {
-		t.Fatalf("the merged winner's manager principals are %v, want both tokens", got)
+	if marked(t, dsn, winner.Kind, winner.ID, "url") {
+		t.Fatal("the merge moved the loser's url mark onto the winner")
+	}
+	if by, _ := markOf(t, dsn, loser.Kind, loser.ID, "url"); by != vocabulary.ActorID(owner) {
+		t.Fatalf("the loser's url mark is set by %q, want the person's, kept on the tombstone", by)
 	}
 
 	before := foldOf(t, ds)
@@ -311,7 +312,7 @@ func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 		t.Fatalf("rebuild: %v", err)
 	}
 	if after := foldOf(t, ds); string(after) != string(before) {
-		t.Fatal("the rebuilt fold does not match the one the writes left; the manager principal did not replay")
+		t.Fatal("the rebuilt fold does not match the one the writes left; the marks did not replay")
 	}
 }
 

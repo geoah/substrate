@@ -43,12 +43,14 @@ func TestEveryEffectFieldReadsBack(t *testing.T) {
 		{"kind":"tombstone","ref":"a.example.com/tasks/task","id":"t1","finalizer":"substrate.merge"},
 		{"kind":"purge","ref":"a.example.com/tasks/task","id":"t1"},
 		{"kind":"annotation","ref":"a.example.com/tasks/task","id":"t1","key":"owner/note","value":false},
-		{"kind":"manager","ref":"a.example.com/tasks/task","id":"t1","property":"name","actor":"6nk6ekkczdgh399nt2pqpccjz0",
-		 "tier":"owner","token":"tok1","updatedAt":"2026-08-11T09:00:00Z"},
+		{"kind":"mark","ref":"a.example.com/tasks/task","id":"t1","property":"name","pinned":true,"setBy":"6nk6ekkczdgh399nt2pqpccjz0",
+		 "onBehalfOf":"6nk6ekkczdgh399nt2pqpccjz1","derivedFrom":["a.example.com/people/person/p1"],"setAt":"2026-08-11T09:00:00Z"},
+		{"kind":"unmark","ref":"a.example.com/tasks/task","id":"t1","property":"url"},
 		{"kind":"former","ref":"a.example.com/tasks/task","id":"t1","formerId":"t2"},
 		{"kind":"resync","scope":[{"kind":"a.example.com/tasks/task","id":"t1"}],
 		 "rows":{"annotations":[{"kind":"a.example.com/tasks/task","id":"t1","key":"k","value":1,"updatedAt":"2026-08-11T09:00:00Z"}],
-		         "managers":[{"kind":"a.example.com/tasks/task","id":"t1","property":"name","actor":"6nk6ekkczdgh399nt2pqpccjz0","tier":"owner","token":"tok1","updatedAt":"2026-08-11T09:00:00Z"}],
+		         "marks":[{"kind":"a.example.com/tasks/task","id":"t1","property":"name","pinned":true,"setBy":"6nk6ekkczdgh399nt2pqpccjz0",
+		                   "onBehalfOf":"6nk6ekkczdgh399nt2pqpccjz1","derivedFrom":["a.example.com/people/person/p1"],"setAt":"2026-08-11T09:00:00Z"}],
 		         "formerIds":[{"kind":"a.example.com/tasks/task","formerId":"t2","recordId":"t1","createdAt":"2026-08-11T09:00:00Z"}]}},
 		{"kind":"cursor","ref":"substrate.reamde.dev/core/trigger","id":"on-task","seq":1.8E1},
 		{"kind":"schedule","ref":"substrate.reamde.dev/core/trigger","id":"hourly","at":"2026-08-11T09:00:00Z"},
@@ -66,8 +68,8 @@ func TestEveryEffectFieldReadsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an entry spelling every effect field the structs carry was refused: %v", err)
 	}
-	if len(ops) != 14 {
-		t.Fatalf("read %d effects, want 14", len(ops))
+	if len(ops) != 15 {
+		t.Fatalf("read %d effects, want 15", len(ops))
 	}
 }
 
@@ -78,7 +80,11 @@ func TestAnUnknownEffectFieldIsRefused(t *testing.T) {
 	for _, c := range []struct{ name, effects, field string }{
 		{"on the effect", `[{"kind":"record","ref":"a.example.com/tasks/task","id":"t1","delta":{},"weight":3}]`, "weight"},
 		{"in a delta", `[{"kind":"record","ref":"a.example.com/tasks/task","id":"t1","delta":{"set":{},"pinned":true}}]`, "pinned"},
-		{"in a resync row", `[{"kind":"resync","scope":[],"rows":{"managers":[{"kind":"k","id":"i","property":"p","actor":"a","tier":"owner","updatedAt":"2026-08-11T09:00:00Z","setBy":"x"}]}}]`, "setBy"},
+		{"in a resync row", `[{"kind":"resync","scope":[],"rows":{"marks":[{"kind":"k","id":"i","property":"p","pinned":true,"setAt":"2026-08-11T09:00:00Z","tier":"owner"}]}}]`, "tier"},
+		// What a release before marks wrote, and this one reads only once the
+		// conversion has rewritten it (marklines.go).
+		{"a manager effect", `[{"kind":"mark","ref":"r","id":"i","property":"p","actor":"a"}]`, "actor"},
+		{"a resync's managers", `[{"kind":"resync","scope":[],"rows":{"managers":[]}}]`, "managers"},
 		{"in a scope", `[{"kind":"resync","scope":[{"kind":"k","id":"i","repository":"r"}],"rows":{}}]`, "repository"},
 		{"in a parked failure", `[{"kind":"park","ref":"r","id":"i","failure":{"id":1,"retryAt":"later"}}]`, "retryAt"},
 		{"in a page", `[{"kind":"page","ref":"r","id":"i","page":{"chain":"c","cursorUrl":"x"}}]`, "cursorUrl"},

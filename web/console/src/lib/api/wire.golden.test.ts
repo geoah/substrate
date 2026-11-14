@@ -156,12 +156,14 @@ import type {
   OperationalList,
   Page,
   ProblemDetail,
+  MarkInput,
   PropertyAlternative,
   PropertyChange,
-  PropertyMeta,
+  PropertyMark,
   PutInput,
   RankedPage,
   RecordFilter,
+  RecordLink,
   ReferenceSite,
   Referencing,
   SessionCredential,
@@ -232,7 +234,7 @@ const substrateRecord: Shape<SubstrateRecord> = {
   updatedAt: true,
   deletedAt: false,
   finalizers: false,
-  propertyMeta: false,
+  marks: false,
   linkedFrom: false,
   computed: false,
 }
@@ -258,19 +260,29 @@ const referenceSite: Shape<ReferenceSite> = {
   path: false,
 }
 
-const propertyMeta: Shape<PropertyMeta> = {
-  manager: false,
-  tier: false,
-  updatedAt: false,
-  source: false,
+const propertyMark: Shape<PropertyMark> = {
+  pinned: false,
+  setBy: false,
+  onBehalfOf: false,
+  derivedFrom: false,
+  setAt: false,
   alternatives: false,
 }
 
 const propertyAlternative: Shape<PropertyAlternative> = {
-  actor: true,
+  derivedFrom: false,
   value: true,
   updatedAt: true,
-  source: false,
+}
+
+const recordLink: Shape<RecordLink> = {
+  ref: true,
+}
+
+/** The pin and release body. */
+const markInput: Shape<MarkInput> = {
+  properties: true,
+  ifVersion: false,
 }
 
 /** PutInput carries `kind`: `POST /records` reads it to place the record, and
@@ -1444,8 +1456,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   LinkedRecord: linkedRecord,
   Referencing: referencing,
   ReferenceSite: referenceSite,
-  PropertyMeta: propertyMeta,
+  PropertyMark: propertyMark,
   PropertyAlternative: propertyAlternative,
+  RecordLink: recordLink,
+  MarkInput: markInput,
   PutInput: putInput,
   RecordPatch: recordPatch,
   Cond: cond,

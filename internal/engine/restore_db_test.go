@@ -173,13 +173,14 @@ func TestRestoreFillsTheDefaultARequiredPropertyGainedWhileTheRecordWasATombston
 	// The filled value is the restoring hand's, as a create falling back to
 	// the default would record it, and its text is queued to embed.
 	db := rawDB(t, dsn)
-	var actor, tier string
-	if err := db.QueryRow(`SELECT actor, tier FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
-		cvWidget, gone.ID).Scan(&actor, &tier); err != nil {
-		t.Fatalf("read the manager row: %v", err)
+	var setBy string
+	var pinned bool
+	if err := db.QueryRow(`SELECT set_by, pinned FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
+		cvWidget, gone.ID).Scan(&setBy, &pinned); err != nil {
+		t.Fatalf("read the mark: %v", err)
 	}
-	if actor != vocabulary.ActorID(owner) || tier != string(substrate.TierOwner) {
-		t.Fatalf("the filled value's manager = %q at %q", actor, tier)
+	if setBy != vocabulary.ActorID(owner) || !pinned {
+		t.Fatalf("the filled value's mark = set by %q, pinned %v", setBy, pinned)
 	}
 	var queued int
 	if err := db.QueryRow(`SELECT count(*) FROM embed_queue WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
@@ -268,12 +269,12 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: cvWidget, ID: gone.ID, Properties: restored.Properties})
 
-	// The dropped values leave with their manager rows, queue rows and sealed
-	// material; the renamed value keeps the manager its writer had.
-	var managers, queued int
-	if err := db.QueryRow(`SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token', 'size', 'weight', 'mass')`,
-		cvWidget, gone.ID).Scan(&managers); err != nil || managers != 0 {
-		t.Fatalf("manager rows left behind = %d, %v", managers, err)
+	// The dropped values leave with their marks, queue rows and sealed
+	// material; the renamed value keeps the mark its writer left.
+	var marks, queued int
+	if err := db.QueryRow(`SELECT count(*) FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property IN ('mood', 'token', 'size', 'weight', 'mass')`,
+		cvWidget, gone.ID).Scan(&marks); err != nil || marks != 0 {
+		t.Fatalf("marks left behind = %d, %v", marks, err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM embed_queue WHERE record_kind = $1 AND record_id = $2 AND property = 'mood'`,
 		cvWidget, gone.ID).Scan(&queued); err != nil || queued != 0 {
@@ -282,10 +283,10 @@ func TestRestoreRemovesADroppedPropertyAndMovesARenamedOne(t *testing.T) {
 	if sealedRows() != 0 {
 		t.Fatal("the sealed material outlived the property")
 	}
-	var actor string
-	if err := db.QueryRow(`SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'dimensions'`,
-		cvWidget, gone.ID).Scan(&actor); err != nil || actor != vocabulary.ActorID(lib) {
-		t.Fatalf("the renamed value's manager = %q, %v; want %q", actor, err, lib)
+	var setBy string
+	if err := db.QueryRow(`SELECT set_by FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'dimensions'`,
+		cvWidget, gone.ID).Scan(&setBy); err != nil || setBy != vocabulary.ActorID(lib) {
+		t.Fatalf("the renamed value's mark = set by %q, %v; want %q", setBy, err, lib)
 	}
 
 	payload := restorePayload(t, dsn, gone.ID)

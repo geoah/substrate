@@ -54,9 +54,12 @@ var wireTypes = map[string]any{
 	"Referencing":         Referencing{},
 	"RankedPage":          RankedPage{},
 	"Scores":              Scores{},
-	"PropertyMeta":        PropertyMeta{},
+	"PropertyMark":        PropertyMark{},
 	"PropertyAlternative": PropertyAlternative{},
-	"PutInput":            PutInput{},
+	"RecordLink":          RecordLink{},
+	// The pin and release body.
+	"MarkInput": MarkInput{},
+	"PutInput":  PutInput{},
 	// The patch body. The console calls it RecordPatch (records.ts).
 	"RecordPatch": PatchInput{},
 	// The filter grammar. The console calls the Filter `RecordFilter`.

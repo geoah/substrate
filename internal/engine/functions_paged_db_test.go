@@ -1113,7 +1113,7 @@ def main(input, host):
 	// Before the upgrade: the identity columns in the database's own
 	// collation, as every database stood before 0021, and no mark of
 	// migration 7 in the repository's history.
-	stageTheLocaleOrder(t, raw)
+	restoreViews := stageTheLocaleOrder(t, raw)
 	forgetCachedPlans(ds)
 	forgetContinuationOrder(t, ds)
 	if got := itemOrder(t, ds.db, itemType); got != "a,b,Zed,zz" {
@@ -1184,6 +1184,7 @@ def main(input, host):
 	if _, err := raw.ExecContext(ctx, string(upgrade)); err != nil {
 		t.Fatalf("0021: %v", err)
 	}
+	restoreViews()
 	ds = open()
 	if got := itemOrder(t, ds.db, itemType); got != "Zed,a,b,zz" {
 		t.Fatalf("after 0021 the items order %s, want byte order", got)
@@ -1338,8 +1339,12 @@ func forgetContinuationOrder(t *testing.T, ds *dataset) {
 // database's own collation, as a database stood before 0021: the
 // migration's statement that changes them, run the other way. Its refusal
 // beside a running server is the migration's, not the staging's, so it is
-// left out.
-func stageTheLocaleOrder(t *testing.T, raw *sql.DB) {
+// left out. The engine's own views over those columns are a later
+// migration's, which a database before 0021 did not have, and Postgres
+// alters no column a view reads, so they are set aside with the staging: it
+// answers what puts them back as they stood, which a test runs once its own
+// 0021 has run, as the later migration would in a real upgrade.
+func stageTheLocaleOrder(t *testing.T, raw *sql.DB) (restoreViews func()) {
 	t.Helper()
 	body, err := migrationsFS.ReadFile("migrations/0021_identity_columns_byte_order.up.sql")
 	if err != nil {
@@ -1355,10 +1360,81 @@ func stageTheLocaleOrder(t *testing.T, raw *sql.DB) {
 	if !ok || back == stmt {
 		t.Fatal("0021 no longer reads as this staging expects")
 	}
+	views := setViewsAside(t, raw)
 	if _, err := raw.ExecContext(context.Background(), back); err != nil {
 		t.Fatalf("stage the locale's order: %v", err)
 	}
+	return views
 }
+
+// setViewsAside drops every view of the schema and answers what creates
+// each again as it stood: its definition, its options and its grants.
+func setViewsAside(t *testing.T, raw *sql.DB) func() {
+	t.Helper()
+	ctx := context.Background()
+	type view struct{ name, def, options string }
+	var views []view
+	rows, err := raw.QueryContext(ctx, `
+		SELECT c.relname, pg_get_viewdef(c.oid), coalesce(array_to_string(c.reloptions, ', '), '')
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind = 'v' AND n.nspname = current_schema() ORDER BY c.relname`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var v view
+		if err := rows.Scan(&v.name, &v.def, &v.options); err != nil {
+			t.Fatal(err)
+		}
+		views = append(views, v)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		t.Fatal(err)
+	}
+	grants := map[string][]string{}
+	for _, v := range views {
+		rows, err := raw.QueryContext(ctx, `
+			SELECT format('GRANT %s ON %I TO %I', privilege_type, table_name, grantee)
+			FROM information_schema.role_table_grants
+			WHERE table_schema = current_schema() AND table_name = $1 AND grantee <> current_user`, v.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var g string
+			if err := rows.Scan(&g); err != nil {
+				t.Fatal(err)
+			}
+			grants[v.name] = append(grants[v.name], g)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(ctx, `DROP VIEW `+pq(v.name)); err != nil {
+			t.Fatalf("set the view %s aside: %v", v.name, err)
+		}
+	}
+	return func() {
+		t.Helper()
+		for _, v := range views {
+			with := ""
+			if v.options != "" {
+				with = " WITH (" + v.options + ")"
+			}
+			if _, err := raw.ExecContext(ctx, `CREATE VIEW `+pq(v.name)+with+` AS `+v.def); err != nil {
+				t.Fatalf("put the view %s back: %v", v.name, err)
+			}
+			for _, g := range grants[v.name] {
+				if _, err := raw.ExecContext(ctx, g); err != nil {
+					t.Fatalf("grant on the view %s again: %v", v.name, err)
+				}
+			}
+		}
+	}
+}
+
+// pq quotes an identifier for a statement a test builds.
+func pq(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
 
 // forgetCachedPlans closes the server's pooled connections: a statement a
 // connection prepared before a column's collation changed is refused after

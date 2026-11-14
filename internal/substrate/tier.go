@@ -1,15 +1,13 @@
 package substrate
 
-// Tier is a property manager's standing against mapping recompute — the
-// three explicit ordered tiers of the manager fix
-// : owner > bundle >
-// machine. Recompute overwrites only machine-held properties; a manager row
-// in either higher tier makes it yield. The tier is an EXPLICIT ATTRIBUTE of
-// the writing context — a declared actor document's `tier:`,
-// the bundle tier function/agent dispatch stamps on its own writes,
-// always machine for recompute's own rows — never an inference from the
-// actor's spelling, and STORED on the manager row, so the yield is legible
-// on every read.
+// Tier is a writing context's standing, owner > bundle > machine, which
+// decides what the owner's gates let its writes touch: a change request, a
+// policy, the version check. A property's `writer:` names types of actor,
+// never a tier (decision 0290). It is an EXPLICIT ATTRIBUTE of the writing context — the bundle
+// tier function and agent dispatch stamps on its own writes, always machine
+// for recompute's — never an inference from the actor's spelling. Whether
+// sync may replace a value is not the tier's: it is the value's mark, pinned
+// or not, stored when the value is written (decision 0284).
 type Tier string
 
 const (
@@ -19,13 +17,10 @@ const (
 	TierOwner Tier = "owner"
 	// TierBundle is installed code: the write context function and agent
 	// dispatch builds, and any declared actor carrying `tier: bundle`.
-	// A bundle's direct write pins like an owner edit — visibly,
-	// releasable by the same null-patch.
+	// Its direct writes pin, as the person's do (decision 0284).
 	TierBundle Tier = "bundle"
-	// TierMachine is the engine and the sync machinery: recompute's own
-	// rows (whatever actor they credit), ActorSystem, and every
-	// package-declared `bundle:<authority>:<package>` actor (the actor document's
-	// default tier). Machine-held properties are recompute's to overwrite.
+	// TierMachine is the engine and the sync machinery: recompute's writes,
+	// ActorSystem, and a package's own hand.
 	TierMachine Tier = "machine"
 )
 

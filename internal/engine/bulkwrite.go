@@ -10,13 +10,13 @@ package engine
 // ONLY THE STATEMENTS ARE BATCHED. Each put runs the ordinary put path
 // (putSpec, apply), and each effect it folds goes through fold, foldOne and
 // foldRecordOp or applyManager, the code a rebuild replays the entry through,
-// so what a record, its unit uses, its refs and its managers become is
+// so what a record, its unit uses, its refs and its marks become is
 // decided by the one fold. Under t.bulk the fold's write leaves (upsertRecord,
 // replaceUnitUses, afterUnitFold, syncRefs, applyManager) and appendChange
 // queue the statement they would send for a record the run creates, with the
 // answer that statement gives for an absent row, and flushBulk sends each
 // table's queue as one statement: the created rows, their unit uses, the unit
-// graph's revision, their refs (syncRefsOfRows), their managers, and the
+// graph's revision, their refs (syncRefsOfRows), their marks, and the
 // changelog entries with the seqs a per-record append would have taken. Every
 // other effect, and a leaf the run cannot batch, runs its statement at once.
 //
@@ -32,7 +32,6 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -52,7 +51,7 @@ type bulkWrite struct {
 	uses     struct{ kinds, ids, units []string }
 	revision int
 	refs     []bulkRefs
-	managers []bulkManager
+	marks    []bulkMark
 	entries  []bulkEntry
 }
 
@@ -69,11 +68,12 @@ type bulkRefs struct {
 	row *erow
 }
 
-// bulkManager is the INSERT applyManager would have sent for a property of
-// an absent record, which holds no manager row to conflict with.
-type bulkManager struct {
-	ref                        eref
-	property, actor, tier, who string
+// bulkMark is the INSERT applyMark would have sent for a property of an
+// absent record, which holds no mark to conflict with.
+type bulkMark struct {
+	ref      eref
+	property string
+	mark     mark
 }
 
 // bulkEntry is the INSERT appendChange would have sent.
@@ -93,13 +93,13 @@ const (
 	bulkAfterUses     = "uses"
 	bulkAfterRevision = "revision"
 	bulkAfterRefs     = "refs"
-	bulkAfterManagers = "managers"
+	bulkAfterMarks    = "marks"
 	bulkAfterEntries  = "entries"
 )
 
 // bulkEligible reports whether a kind's creating puts may run in bulk: a
 // kind whose write touches nothing beyond the record, its refs, its unit
-// uses, its managers and its changelog entry. A kind the observed index
+// uses, its marks and its changelog entry. A kind the observed index
 // derives from, a metric, a mapping's source or target, a kind with an
 // embedded or sealed property, and the kinds apply admits by reading other
 // rows are not.
@@ -260,13 +260,14 @@ func (t *txn) queueRefs(ref eref, ty *vocabulary.Kind, props map[string]any) boo
 	return true
 }
 
-// queueManager takes applyManager's INSERT for a record the run creates,
-// stamped with the transaction's clock, which is every live write's.
-func (t *txn) queueManager(ref eref, property, actor string, tier substrate.Tier, token string, at time.Time) bool {
-	if actor == "" || !at.Equal(t.now) || !t.bulkAbsent(ref) {
+// queueMark takes applyMark's INSERT for a record the run creates: a direct
+// write's mark, stamped with the transaction's clock, which is every live
+// write's, and derived from no source.
+func (t *txn) queueMark(ref eref, property string, m mark) bool {
+	if len(m.DerivedFrom) > 0 || !m.SetAt.Equal(t.now) || !t.bulkAbsent(ref) {
 		return false
 	}
-	t.bulk.managers = append(t.bulk.managers, bulkManager{ref: ref, property: property, actor: actor, tier: string(tier), who: token})
+	t.bulk.marks = append(t.bulk.marks, bulkMark{ref: ref, property: property, mark: m})
 	return true
 }
 
@@ -281,7 +282,7 @@ func (t *txn) flushBulk() error {
 		{bulkAfterUses, t.flushBulkUses},
 		{bulkAfterRevision, t.flushBulkRevision},
 		{bulkAfterRefs, t.flushBulkRefs},
-		{bulkAfterManagers, t.flushBulkManagers},
+		{bulkAfterMarks, t.flushBulkMarks},
 		{bulkAfterEntries, t.flushBulkEntries},
 	} {
 		if err := step.run(b); err != nil {
@@ -375,23 +376,24 @@ func (t *txn) flushBulkRefs(b *bulkWrite) error {
 	return nil
 }
 
-// flushBulkManagers is applyManager's INSERT for every queued manager.
-func (t *txn) flushBulkManagers(b *bulkWrite) error {
-	if len(b.managers) == 0 {
+// flushBulkMarks is applyMark's INSERT for every queued mark.
+func (t *txn) flushBulkMarks(b *bulkWrite) error {
+	if len(b.marks) == 0 {
 		return nil
 	}
-	var kinds, ids, props, actors, tiers, principals []string
-	for _, m := range b.managers {
+	var kinds, ids, props, setBy, behalf []string
+	var pinned []bool
+	for _, m := range b.marks {
 		kinds, ids, props = append(kinds, m.ref.Kind), append(ids, m.ref.ID), append(props, m.property)
-		actors, tiers, principals = append(actors, m.actor), append(tiers, m.tier), append(principals, m.who)
+		pinned, setBy, behalf = append(pinned, m.mark.Pinned), append(setBy, m.mark.SetBy), append(behalf, m.mark.OnBehalfOf)
 	}
 	if _, err := t.exec(`
-		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-		SELECT u.kind, u.id, u.property, u.actor, u.tier, u.principal, $1
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-			AS u(kind, id, property, actor, tier, principal)`,
-		t.now, kinds, ids, props, actors, tiers, principals); err != nil {
-		return fmt.Errorf("substrate/engine: managers of a bulk put: %w", err)
+		INSERT INTO property_marks (record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at)
+		SELECT u.kind, u.id, u.property, u.pinned, u.set_by, u.on_behalf_of, '[]'::jsonb, $1
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::boolean[], $6::text[], $7::text[])
+			AS u(kind, id, property, pinned, set_by, on_behalf_of)`,
+		t.now, kinds, ids, props, pinned, setBy, behalf); err != nil {
+		return fmt.Errorf("substrate/engine: marks of a bulk put: %w", err)
 	}
 	return nil
 }

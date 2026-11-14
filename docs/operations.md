@@ -1955,7 +1955,7 @@ each hand its history names whose code or approval is gone.
 table `repository rebuild` clears and fills again from the changelog
 (`internal/engine/rebuild.go`): `records` with its derived columns `fts`,
 `orphaned_at` and `ambiguous_at`, `refs`, `former_ids`, `annotations`,
-`property_managers`, `property_offers`, the three tables of the
+`property_marks`, `property_offers`, the three tables of the
 [observed index](observations.md#the-observed-index), and the delivery ledger
 (`trigger_cursors`, `trigger_schedule`, `trigger_failures`,
 `paged_cursors`; a rebuild brings a cursor back at its last acknowledged
@@ -2283,10 +2283,10 @@ answers `410 compacted` naming the head to re-list from ([the
 changelog](changelog.md#frames-and-the-horizon)). A dump keeps the row's
 generation, which is what `repository rotate-generation` above is for. A
 restart and a rebuild keep it too, and neither costs a client its cursor. The
-alternatives beside a property (`propertyMeta.alternatives`) are not in the
-archive either, and need not be: the import derives them again from the
-records it folded, values, actors and stamps alike
-([reading provenance](projection.md#reading-provenance-propertymeta)).
+alternatives beside a property (`marks.<property>.alternatives`) are not in
+the archive either, and need not be: the import derives them again from the
+records it folded, values, source records and stamps alike
+([reading provenance](projection.md#where-a-value-came-from-the-marks)).
 
 **The import queues the embeddable properties and the drain buys the vectors
 again.** In the transaction that completes it, the import compares the vectors

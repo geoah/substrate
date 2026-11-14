@@ -11,7 +11,7 @@ import (
 // and because a caller must not be able to name it: the only writer is
 // `withRequestAuth` (internal/api), from the TokenInfo `Authenticate`
 // returned, and the only reader is the engine's transaction, which stamps it
-// on the changelog entry and on every manager row the write lands.
+// on the changelog entry as its token.
 type principalKey struct{}
 
 // WithPrincipal binds the authenticated token id to ctx.

@@ -653,7 +653,7 @@ type searchAnswer struct {
 // and the operator seams: what stage 1 records and stage 4 compares.
 type state struct {
 	// records is every record the collections hold, keyed "<kind>/<id>", as
-	// a single-record GET returns it (propertyMeta included), decoded so the
+	// a single-record GET returns it (marks included), decoded so the
 	// comparison is structural.
 	records map[string]any
 	// deleted is each collection's tombstone list, keyed by kind.
@@ -982,8 +982,8 @@ func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
 	}
 	patchRecord(t, e, subjectKind, d.subjectID, map[string]any{"properties": map[string]any{"name": subjectHold, "note": "held by hand"}})
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != vocabulary.ActorID(substrate.ActorPerson) || len(alts) != 2 {
-		t.Errorf("subject name provenance = %v, want the person's actor as manager with two alternatives", meta)
+	if alts, _ := meta["alternatives"].([]any); !pinnedByThePerson(meta) || len(alts) != 2 {
+		t.Errorf("subject name mark = %v, want the person's pin with two alternatives", meta)
 	}
 }
 
@@ -1369,8 +1369,8 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("task tombstones after the restore = %v", tombs)
 	}
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != vocabulary.ActorID(substrate.ActorPerson) || len(alts) != 2 {
-		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
+	if alts, _ := meta["alternatives"].([]any); !pinnedByThePerson(meta) || len(alts) != 2 {
+		t.Errorf("subject name mark after the restore = %v, want the person's pin over two offers", meta)
 	}
 	file := getRecord(t, e, fileKind, idReport)
 	if data, _ := propOf(t, file, idReport, "data").(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
@@ -2015,15 +2015,23 @@ func labelsOf(t *testing.T, rec map[string]any, id string) map[string]any {
 
 func metaOf(t *testing.T, rec map[string]any, id, prop string) map[string]any {
 	t.Helper()
-	all, ok := rec["propertyMeta"].(map[string]any)
+	all, ok := rec["marks"].(map[string]any)
 	if !ok {
-		t.Fatalf("record %s carries no propertyMeta: %v", id, rec["propertyMeta"])
+		t.Fatalf("record %s carries no marks: %v", id, rec["marks"])
 	}
 	meta, ok := all[prop].(map[string]any)
 	if !ok {
-		t.Fatalf("record %s has no provenance for %s: %v", id, prop, all)
+		t.Fatalf("record %s has no mark for %s: %v", id, prop, all)
 	}
 	return meta
+}
+
+// pinnedByThePerson reports whether a mark, as the wire carries it, is the
+// person's pin.
+func pinnedByThePerson(mark map[string]any) bool {
+	by, _ := mark["setBy"].(map[string]any)
+	return mark["pinned"] == true &&
+		by["ref"] == vocabulary.RecordPath("substrate.reamde.dev/core/actor", vocabulary.ActorID(substrate.ActorPerson))
 }
 
 // listRecords is one kind's records, live or tombstoned, in the list's own

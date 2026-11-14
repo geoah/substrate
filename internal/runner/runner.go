@@ -1247,7 +1247,7 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 			// way it decided the record: a body granted `person` alone learns
 			// nothing about the mirrors that point at it.
 			e.LinkedFrom = s.allowedLinks(e.LinkedFrom)
-			e.PropertyMeta = substrate.MetaWithinKinds(e.PropertyMeta, func(path string) bool {
+			e.Marks = substrate.MarksWithinKinds(e.Marks, func(path string) bool {
 				kind, _, ok := vocabulary.SplitRecordPath(path)
 				return ok && s.allowed(kind)
 			})

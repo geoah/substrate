@@ -1,5 +1,5 @@
 /** Change-request reads and THE decision write. The read is the generic
- * single record read, with propertyMeta and annotations; the write is one
+ * single record read, with marks and annotations; the write is one
  * atomic PATCH at the request: the `decision` transition, CAS'd on the
  * request's own version, with the optional note riding the same write as the
  * `owner/note` annotation.
@@ -20,7 +20,7 @@ import { decisionPatch, type Verdict } from "@/lib/changerequests"
 export const CR_NAME = "recordpatchrequest"
 
 /** One request whole. The single read is the only surface carrying
- * `propertyMeta` (who proposed, who decided) and `annotations` (the note, and
+ * `marks` (who proposed, who decided) and `annotations` (the note, and
  * the server's conflict record after a refused apply). */
 export function changeRequestQueryOptions(id: string) {
   return recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, CR_NAME, id)

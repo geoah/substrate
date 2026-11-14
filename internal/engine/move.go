@@ -6,10 +6,10 @@ package engine
 //
 // A declaration carrying `movedFrom` whose named kind the repository still
 // declares carries that kind's live rows onto it: same id, same properties,
-// states, labels, annotations, temporal columns, property managers and
-// sealed material, with every reference at a moving kind repointed. The old
-// rows are tombstoned and the old kind is left declared and empty; nothing is
-// pruned and no name is retired (record 0055).
+// states, labels, annotations, temporal columns, marks and sealed material,
+// with every reference at a moving kind repointed. The old rows are
+// tombstoned and the old kind is left declared and empty; nothing is pruned
+// and no name is retired (record 0055).
 //
 // HONORED ON THE BOOT UPGRADE OF THE SEEDED PACKAGES, AND NOWHERE ELSE. The
 // key is reserved by name everywhere (record 0020) and stored wherever it is
@@ -600,7 +600,7 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return nil, err
 	}
-	managers, err := t.managersOf(from)
+	marks, err := t.marksOf(from)
 	if err != nil {
 		return nil, err
 	}
@@ -659,18 +659,17 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 	if err := t.putMovedRow(m, to, props, row.Labels, annotations); err != nil {
 		return nil, fmt.Errorf("write %s as %s: %w", vocabulary.RecordPath(m.from, r.id), m.to.Identity, err)
 	}
-	// The managers follow the values, deferred ones included: who last wrote a
-	// property, at which tier and behind which token, is a fact about the value
-	// and not about the hand that carried it, so a hand edit still outranks a
-	// later sync on the moved row.
-	for _, name := range sortedKeys(managers) {
-		mr := managers[name]
+	// The marks follow the values, deferred ones included: who wrote a
+	// property, whether it is pinned and what it came from are facts about the
+	// value and not about the hand that carried it, so a pinned value still
+	// holds against a later sync on the moved row.
+	for _, name := range sortedKeys(marks) {
 		if _, carried := props[name]; !carried {
 			if _, deferred := held[name]; !deferred {
 				continue
 			}
 		}
-		if err := t.setManagerAs(to, name, mr.actor, mr.stored, mr.principal); err != nil {
+		if err := t.setMark(to, name, marks[name]); err != nil {
 			return nil, err
 		}
 	}

@@ -138,7 +138,7 @@ func BenchmarkSelectValueUnion(b *testing.B) {
 		for i := range items {
 			items[i] = map[string]any{"address": fmt.Sprintf("user%d@example.com", i+c*20), "label": "work"}
 		}
-		cands[c] = contribution{actor: "source" + strconv.Itoa(c), value: items}
+		cands[c] = contribution{a: "source", b: strconv.Itoa(c), value: items}
 	}
 	b.ReportAllocs()
 	for b.Loop() {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The thread title tests (decision record 0170): a chat opens with its first
@@ -56,8 +57,14 @@ func anyFloat2(v any) float64 {
 	return f
 }
 
+// subjectManager is the id of the actor record that set the thread's subject.
 func subjectManager(rec *substrate.Record) string {
-	return rec.PropertyMeta[propThreadSubject].Manager
+	setBy := rec.Marks[propThreadSubject].SetBy
+	if setBy == nil {
+		return ""
+	}
+	_, id, _ := vocabulary.SplitRecordPath(setBy.Ref)
+	return id
 }
 
 func chatOnce(t *testing.T, ds *dataset, thread, message string) *substrate.AgentResult {

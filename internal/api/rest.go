@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -167,6 +168,42 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := idempotentContext(r)
 	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ent)
+}
+
+// postPin and postRelease are the two actions on a record's marks (decision
+// 0284): pin keeps the named properties' values against sync, release hands
+// them back to it. The body names the properties and may carry the version
+// read; the answer is the record with its marks.
+func (h *handler) postPin(w http.ResponseWriter, r *http.Request) {
+	h.markAction(w, r, substrate.Dataset.Pin)
+}
+
+func (h *handler) postRelease(w http.ResponseWriter, r *http.Request) {
+	h.markAction(w, r, substrate.Dataset.Release)
+}
+
+func (h *handler) markAction(w http.ResponseWriter, r *http.Request,
+	act func(substrate.Dataset, context.Context, substrate.Actor, string, string, substrate.MarkInput) (*substrate.Record, error),
+) {
+	ds, ti, addr, ok := h.record(w, r)
+	if !ok {
+		return
+	}
+	if bad := unsupportedParam(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
+	var in substrate.MarkInput
+	if !readRecordJSON(w, r, &in) {
+		return
+	}
+	ctx := r.Context()
+	ent, err := act(ds, ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return

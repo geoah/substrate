@@ -186,7 +186,7 @@ func printDocuments(w io.Writer, records []*substrate.Record) error {
 		if i > 0 {
 			fmt.Fprintln(w, "---")
 		}
-		// Lists never carry propertyMeta, so there is no status.properties here.
+		// Lists never carry marks, so there is no status.properties here.
 		b, err := marshalDocument(documentOf(e, nil))
 		if err != nil {
 			return err

@@ -21,7 +21,7 @@ import (
 // The engine writes each when the hand comes to be (the creation, an
 // approval, an install) and disables, never deletes, one whose code is gone,
 // so an old write still links to something. A history line, a change event,
-// a manager row and every stored value name the hand by the record's id
+// a property's mark and every stored value name the hand by the record's id
 // (vocabulary.ActorID); the substrate.Actor key the engine decides a tier, a
 // namespace or an echo on stays in memory.
 

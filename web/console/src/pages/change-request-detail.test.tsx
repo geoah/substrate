@@ -49,6 +49,7 @@ vi.mock("@/router", () => ({
 }))
 
 import { ChangeRequestDetailPage } from "./change-request-detail"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 beforeEach(() => seedActors())
 
@@ -106,8 +107,11 @@ function request(over: Partial<SubstrateRecord>): SubstrateRecord {
     version: 4,
     createdAt: "2026-08-14T00:00:00Z",
     updatedAt: "2026-08-14T00:00:00Z",
-    propertyMeta: {
-      diff: { manager: "learner.substrate", updatedAt: "2026-08-14T00:00:00Z" },
+    marks: {
+      diff: {
+        setBy: actorLink("learner.substrate"),
+        setAt: "2026-08-14T00:00:00Z",
+      },
     },
     ...over,
   }
@@ -132,8 +136,8 @@ const target: SubstrateRecord = {
   version: 3,
   createdAt: "2026-08-13T00:00:00Z",
   updatedAt: "2026-08-13T00:00:00Z",
-  propertyMeta: {
-    summary: { manager: "owner", updatedAt: "2026-08-13T00:00:00Z" },
+  marks: {
+    summary: { setBy: actorLink("owner"), setAt: "2026-08-13T00:00:00Z" },
   },
 }
 
@@ -626,14 +630,14 @@ describe("ChangeRequestDetailPage", () => {
           decision: "rejected",
           decidedAt: "2026-08-14T01:00:00Z",
         },
-        propertyMeta: {
+        marks: {
           diff: {
-            manager: "learner.substrate",
-            updatedAt: "2026-08-14T00:00:00Z",
+            setBy: actorLink("learner.substrate"),
+            setAt: "2026-08-14T00:00:00Z",
           },
           decidedAt: {
-            manager: "act-person",
-            updatedAt: "2026-08-14T01:00:00Z",
+            setBy: actorLink("act-person"),
+            setAt: "2026-08-14T01:00:00Z",
           },
         },
       }),
@@ -659,14 +663,14 @@ describe("ChangeRequestDetailPage", () => {
           decision: "rejected",
           decidedAt: "2026-08-14T01:00:00Z",
         },
-        propertyMeta: {
+        marks: {
           diff: {
-            manager: "learner.substrate",
-            updatedAt: "2026-08-14T00:00:00Z",
+            setBy: actorLink("learner.substrate"),
+            setAt: "2026-08-14T00:00:00Z",
           },
           decidedAt: {
-            manager: "act-person",
-            updatedAt: "2026-08-14T01:00:00Z",
+            setBy: actorLink("act-person"),
+            setAt: "2026-08-14T01:00:00Z",
           },
         },
       }),

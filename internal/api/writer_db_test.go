@@ -7,7 +7,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -165,6 +167,55 @@ func TestAWriteIsAdmittedByItsActorsType(t *testing.T) {
 			t.Errorf("a scoped token naming no app writing %s (no writer) = %d %s, want admitted", name, rec.Code, rec.Body)
 		case w != nil && (rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "a scoped token that names no app")):
 			t.Errorf("a scoped token naming no app writing %s (writer %v) = %d %s, want 403 naming it", name, w, rec.Code, rec.Body)
+		}
+	}
+}
+
+// A mark is held to a property's `writer:` as its value is: an app's patch of
+// a property only the person writes, its pin of it and its release of it are
+// refused alike, each with the same words, and the person's pin and release
+// land (decision 0284).
+func TestAPinAndAReleaseMeetTheWriterAPatchMeets(t *testing.T) {
+	t.Parallel()
+	env := newDBEnv(t)
+	pkg := env.repository + "/guarded"
+	kind := pkg + "/note"
+	if _, err := env.ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
+		vocabulary.PackageManifest(pkg, 1),
+		vocabulary.KindManifest(pkg, map[string]any{"singular": "note"}, map[string]any{"displayTemplate": "{name}", "properties": map[string]any{
+			"name":  map[string]any{"type": "string"},
+			"owned": map[string]any{"type": "string", "writer": "person"},
+		}}),
+	}); err != nil {
+		t.Fatalf("declare the kind: %v", err)
+	}
+	path := "/api/v1/" + vocabulary.RecordPath(kind, vocabulary.DerivedMintedID("guarded", "note"))
+	if rec := env.do(t, http.MethodPut, path, env.token, map[string]any{"properties": map[string]any{"name": "n", "owned": "the person's"}}); rec.Code/100 != 2 {
+		t.Fatalf("the person's write = %d %s", rec.Code, rec.Body)
+	}
+	app := env.mint(t, substrate.MintTokenInput{Label: "Notes", Scopes: []string{"read:" + kind, "write:" + kind}, ClientID: appClientID, ClientName: "Notes"})
+	message := func(rec *httptest.ResponseRecorder) string {
+		var body struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return body.Error.Message
+	}
+	patched := env.do(t, http.MethodPatch, path, app, map[string]any{"properties": map[string]any{"owned": "the app's"}})
+	if patched.Code != http.StatusForbidden || message(patched) == "" {
+		t.Fatalf("the app's patch = %d %s, want 403", patched.Code, patched.Body)
+	}
+	for _, action := range []string{"pin", "release"} {
+		rec := env.do(t, http.MethodPost, path+"/"+action, app, map[string]any{"properties": []string{"owned"}})
+		if rec.Code != http.StatusForbidden || message(rec) != message(patched) {
+			t.Errorf("the app's %s = %d %q, want the patch's 403 %q", action, rec.Code, message(rec), message(patched))
+		}
+	}
+	for _, action := range []string{"pin", "release"} {
+		if rec := env.do(t, http.MethodPost, path+"/"+action, env.token, map[string]any{"properties": []string{"owned"}}); rec.Code != http.StatusOK {
+			t.Errorf("the person's %s = %d %s, want 200", action, rec.Code, rec.Body)
 		}
 	}
 }

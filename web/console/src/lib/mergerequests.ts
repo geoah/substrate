@@ -19,6 +19,7 @@ import {
 } from "@/lib/api/types"
 import { declaredProperties } from "@/lib/definition"
 import { splitRecordPath, type RecordPathParts } from "@/lib/record-path"
+import { setByOf } from "@/lib/provenance"
 
 // ── decisions ───────────────────────────────────────────────────────────────
 
@@ -108,17 +109,20 @@ export function signalText(s: EvidenceSignal): string {
 
 /** What the merge does to one row (the recompute story, per §7.1 and
  * engine/merge.go):
- * - `choice`: differing and held by the owner on either side — recompute
- *   yields to the owner, so the winner's value simply stands; the owner must
- *   choose (edit after the merge if the other value was the right one).
- * - `recompute`: differing and machine-held — values never migrate; the
+ * - `choice`: differing and pinned on the winner — recompute yields to the
+ *   pin, so the winner's value stands; the owner must choose (edit after the
+ *   merge if the other value was the right one).
+ * - `left`: differing and pinned on the loser alone — a merge moves no value
+ *   and no pin (decision 0284), so the loser's stays with it and the winner
+ *   keeps its own; the owner sets it on the winner if they want it there.
+ * - `recompute`: differing and unpinned — values never migrate; the
  *   winner recomputes from the union of live sources after the merge.
  * - `equal`: both sides already agree; the merge changes nothing here.
  *
  * There is no row posture for a pointer moving: nothing re-points at a merge.
  * A reference at the loser resolves to the winner through the former-id trail,
  * so the value stays exactly as written. */
-export type DiffPosture = "choice" | "recompute" | "equal"
+export type DiffPosture = "choice" | "left" | "recompute" | "equal"
 
 export interface DiffRow {
   key: string
@@ -156,8 +160,9 @@ function canonical(v: unknown): string {
 
 const POSTURE_ORDER: Record<DiffPosture, number> = {
   choice: 0,
-  recompute: 1,
-  equal: 2,
+  left: 1,
+  recompute: 2,
+  equal: 3,
 }
 
 /** The field-by-field comparison the detail page renders: every declared
@@ -184,12 +189,13 @@ export function deriveDiff(
     const w = winner.properties[key]
     const l = loser.properties[key]
     if (w === undefined && l === undefined) continue
-    const winnerManager = winner.propertyMeta?.[key]?.manager
-    const loserManager = loser.propertyMeta?.[key]?.manager
+    const winnerManager = setByOf(winner.marks?.[key])
+    const loserManager = setByOf(loser.marks?.[key])
     const equal = sameValue(w, l)
-    // §7.1: recompute yields to the owner above all — a differing value held
-    // by the owner on either side is the owner's to settle.
-    const ownerHeld = winnerManager === "owner" || loserManager === "owner"
+    // Recompute yields to a pinned value, and a merge moves no value and no
+    // pin: a loser's pin stays with it (decision 0284).
+    const winnerPinned = Boolean(winner.marks?.[key]?.pinned)
+    const loserPinned = Boolean(loser.marks?.[key]?.pinned)
     rows.push({
       key,
       declared: declaredPropNames.has(key),
@@ -198,7 +204,13 @@ export function deriveDiff(
       loser: l,
       winnerManager,
       loserManager,
-      posture: equal ? "equal" : ownerHeld ? "choice" : "recompute",
+      posture: equal
+        ? "equal"
+        : winnerPinned
+          ? "choice"
+          : loserPinned
+            ? "left"
+            : "recompute",
     })
   }
 

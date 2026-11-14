@@ -576,7 +576,7 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 // same set 0001_init puts row level security on. A rollback that missed one
 // would leave rows nothing can ever reach again.
 var repositoryScopedTables = []string{
-	"records", "refs", "former_ids", "annotations", "property_managers",
+	"records", "refs", "former_ids", "annotations", "property_marks",
 	"property_offers", "changelog", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "vocabulary_dialect", "repository_migrations",

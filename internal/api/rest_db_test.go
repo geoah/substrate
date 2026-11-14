@@ -108,10 +108,11 @@ func restContacts(t *testing.T, env *dbEnv) string {
 	return contact
 }
 
-// GET one carries the property provenance; lists never do. The owner names
-// a person through the API, a connector's contact offers another name, and
-// the owner's name holds with the contact's beside it as an alternative.
-func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
+// GET one carries the marks; lists never do. The owner names a person
+// through the API, a connector's contact offers another name, and the
+// owner's name is pinned with the contact's beside it as an alternative,
+// keyed by the contact record.
+func TestRESTGetOneCarriesTheMarks(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withSamples("people"))
 	contact := restContacts(t, env)
@@ -130,25 +131,27 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	raw, ok := got["propertyMeta"]
+	raw, ok := got["marks"]
 	if !ok {
-		t.Fatalf("GET one lost propertyMeta: %s", rec.Body.String())
+		t.Fatalf("GET one lost its marks: %s", rec.Body.String())
 	}
-	var meta map[string]substrate.PropertyMeta
-	if err := json.Unmarshal(raw, &meta); err != nil {
+	var marks map[string]substrate.PropertyMark
+	if err := json.Unmarshal(raw, &marks); err != nil {
 		t.Fatal(err)
 	}
-	name := meta["name"]
-	if name.Manager == "" || name.Manager == vocabulary.ActorID(restContactActor) || len(name.Alternatives) != 1 ||
-		name.Alternatives[0].Actor != vocabulary.ActorID(restContactActor) || name.Alternatives[0].Value != "Samuel Jones" {
-		t.Fatalf("propertyMeta = %+v, want the owner's name held and the contact's offered beside it", meta)
+	name := marks["name"]
+	person := vocabulary.RecordPath(corePackage+"/actor", vocabulary.ActorID(substrate.ActorPerson))
+	if !name.Pinned || name.SetBy == nil || name.SetBy.Ref != person || len(name.Alternatives) != 1 ||
+		name.Alternatives[0].DerivedFrom == nil || name.Alternatives[0].DerivedFrom.Ref != contact+"/"+mintedID("c-sam") ||
+		name.Alternatives[0].Value != "Samuel Jones" {
+		t.Fatalf("marks = %+v, want the owner's name pinned and the contact's offered beside it", marks)
 	}
 
-	// The list projection stays lean: no provenance on a list read.
+	// The list projection stays lean: no marks on a list read.
 	rec = env.do(t, http.MethodGet, recordsOf(t, personKind), env.token, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if strings.Contains(rec.Body.String(), "propertyMeta") {
-		t.Fatalf("list carries propertyMeta: %s", rec.Body.String())
+	if strings.Contains(rec.Body.String(), `"marks"`) {
+		t.Fatalf("list carries marks: %s", rec.Body.String())
 	}
 }
 

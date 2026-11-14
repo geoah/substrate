@@ -12,7 +12,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useSheetDraft, type SheetDraft } from "./draft"
 import { splitKind } from "@/lib/api/http"
-import { patchRecord, recordWriteReaches } from "@/lib/api/records"
+import { markRecord, patchRecord, recordWriteReaches } from "@/lib/api/records"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { useSecretMutation } from "@/hooks/use-secret-mutation"
 
@@ -117,6 +117,29 @@ export function useRecordPatch(
     error: mutation.error,
     reset: mutation.reset,
   }
+}
+
+/** Pin or release one property of a stored record (decision 0284), under the
+ * record's patch key and asserting the version the reader chose it on. A
+ * draft has no marks: its record is not stored yet. */
+export function useMarkAction(record: SubstrateRecord, base?: number) {
+  const client = useQueryClient()
+  const { authority, pkg, name } = splitKind(record.kind)
+  return useMutation({
+    mutationKey: recordPatchKey(record),
+    mutationFn: ({
+      action,
+      property,
+    }: {
+      action: "pin" | "release"
+      property: string
+    }) =>
+      markRecord(action, authority, pkg, name, record.id, {
+        properties: [property],
+        ifVersion: base ?? record.version,
+      }),
+    onSuccess: (saved) => afterWrite(client, record, saved),
+  })
 }
 
 /** A write to a draft, with no mutation at all: the draft's record carries

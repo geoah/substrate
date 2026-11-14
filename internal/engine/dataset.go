@@ -541,8 +541,8 @@ type txn struct {
 	// once Postgres answered it: sent and not committed is a commit in doubt.
 	commitSent, committed bool
 	actor                 substrate.Actor
-	// tier is the transaction's manager tier — the WRITE CONTEXT's standing
-	// against mapping recompute. Resolved once at inTx from the
+	// tier is the transaction's writing tier — the WRITE CONTEXT's standing,
+	// which decides what its writes may touch. Resolved once at inTx from the
 	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
 	// function/agent dispatch (setEffectEmit) — never inferred from the
 	// actor's spelling.
@@ -567,7 +567,7 @@ type txn struct {
 	onBehalfOf substrate.Actor
 	// principal is the token id the door verified for the request this
 	// transaction serves (substrate.PrincipalFrom), stamped on every
-	// changelog entry it appends and every manager row it lands. Empty when
+	// changelog entry it appends as its token. Empty when
 	// no token stands behind the write — the seed, the boot upgrade, a
 	// background worker, registration and login — and never taken from the
 	// caller: the actor is asserted, the principal is resolved. It follows
@@ -653,6 +653,10 @@ type txn struct {
 	// written into an entry (fold.go). appendChange drains it, so every entry
 	// carries the delta — with values — that a rebuild replays.
 	folded []foldOp
+	// takenOut holds, for the line being folded, each property a record
+	// effect took out of a row that held it, and whether the row holds it
+	// again (fold.go settleTakenOut).
+	takenOut map[eref]map[string]bool
 	// seqLocked records that this transaction already holds the changelog's
 	// ordering lock (taken once, on the first append).
 	seqLocked bool
@@ -673,21 +677,13 @@ type txn struct {
 	// a replay reads the registry the rebuild holds, which is the declaration
 	// the row ended up under.
 	writeReg *vocabulary.Registry
-	// recomputing marks a mapping recompute's own write: recompute
-	// never triggers recompute, and the manager ledger records the winning
-	// contributor's actor — recomputeManagers, per accepted property —
-	// instead of the transaction's, always at the machine tier (attribution
-	// never pins).
+	// recomputing marks a mapping recompute's own write: recompute never
+	// triggers recompute, and each property it writes is marked with the
+	// source records behind the value — recomputeSources, per property —
+	// and pinned by nothing (decision 0284).
 	recomputeInitiator substrate.Actor
 	recomputing        bool
-	recomputeManagers  map[string]substrate.Actor
-	// propTiers names properties of one record's write that stand at a tier
-	// other than the transaction's (propTier), which its manager row records.
-	// The OAuth callback
-	// sets it for its one patch (oauth.go completeOAuth), so the facility's
-	// own fields, the connector's error pair it clears and the owner's sync
-	// request it stamps land in one changelog entry.
-	propTiers *propTiers
+	recomputeSources   map[string][]string
 	// causedBy is the changelog seq that caused this transaction's writes —
 	// set only when a function's effects apply, stamped onto every changelog
 	// row so the causal-depth walk can follow the chain.

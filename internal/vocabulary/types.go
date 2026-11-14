@@ -336,8 +336,8 @@ type Property struct {
 	// the engine alone: a mapping synthesizes its subject slot on its source
 	// kind (mappingsubject.go, record 96), or stamps the declaration that
 	// already stood there. Empty on every property a document declares for
-	// itself. It is what `propertyMeta.manager` reads as `mapping:<id>`, and
-	// what tells the reconcile which slots are its own to take back.
+	// itself. It is why the slot carries no mark (decision 0284), and what
+	// tells the reconcile which slots are its own to take back.
 	MappedBy string
 	// mappedOver is the declaration MappedBy stamped, nil when the property is
 	// purely synthesized. Unexported because it is the reconcile's undo and
@@ -1299,7 +1299,7 @@ func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
 	return nil, errors.New(bareNameProblem("", "trait", iface, names))
 }
 
-// ActorTier resolves an actor's manager tier from registry DATA: the bundle
+// ActorTier resolves the tier a hand writes at from registry DATA: the bundle
 // tier for every registered function's and agent's own actor. A package
 // declares no actor of its own (decision 0270), so its hand is the engine's
 // to resolve; an unknown actor is simply not the registry's to answer.

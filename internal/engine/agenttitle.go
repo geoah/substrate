@@ -12,8 +12,8 @@ import (
 // A chat thread's heading (decision record 0170). The thread opens with its
 // first message as its subject, the title model replaces that once after the
 // first turn, and an owner's rename is never overwritten: the generated title
-// is written only while the subject's manager row still names the agent's
-// own actor, which a rename by any other actor moves.
+// is written only while the subject's mark is still set by the agent's own
+// actor, which a rename by any other actor moves.
 
 const propThreadSubject = "subject"
 
@@ -209,11 +209,11 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usa
 			"costUSD":          num("costUSD") + cost,
 		}
 		if title != "" {
-			managers, err := t.managersOf(ref)
+			marks, err := t.marksOf(ref)
 			if err != nil {
 				return err
 			}
-			if m, ok := managers[propThreadSubject]; ok && m.actor == actorID(l.actor) {
+			if m, ok := marks[propThreadSubject]; ok && m.SetBy == actorID(l.actor) {
 				props[propThreadSubject] = title
 			}
 		}

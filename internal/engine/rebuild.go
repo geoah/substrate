@@ -28,7 +28,7 @@ import (
 //	refs               the reverse projection of the records' reference values,
 //	                   re-derived by the same record effect that produces them
 //	annotations        written by the same entries
-//	property_managers  ditto — who last had a write accepted, per property
+//	property_marks     ditto — each property's mark (decision 0284)
 //	former_ids         ditto — merge's trail
 //	trigger_cursors, trigger_schedule, trigger_failures, paged_cursors
 //	                   the delivery ledger (delivery.go): every motion is an
@@ -124,7 +124,7 @@ type RebuildReport struct {
 // the delivery ledger's four (delivery.go). Nothing here is referenced by
 // anything else.
 var foldTables = append([]string{
-	"refs", "former_ids", "annotations", "property_managers", "records",
+	"refs", "former_ids", "annotations", "property_marks", "records",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest",
 	"unit_graph", "unit_uses",
 }, deliveryTables...)
@@ -370,8 +370,8 @@ func (t *txn) rederiveOffers() error {
 // recomputeMappingTargets is the vocabulary apply's half of recompute. For
 // every target kind whose mapping set the batch changed: the properties the
 // LIVE mappings supplied and the candidate's no longer do are released on
-// every live record where the machine tier holds them (value and manager row,
-// a required property kept), the kind's offers go, and each record recomputes
+// every live record where nothing pinned them (value and mark, a required
+// property kept), the kind's offers go, and each record recomputes
 // against the candidate for whatever still maps. Offers AND values: the values
 // a removed or narrowed mapping's sources projected are changelog entries a
 // rebuild keeps, so only a recompute in this transaction leaves nothing for a
@@ -408,7 +408,7 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 		}
 		for _, id := range ids {
 			ref := eref{Kind: kind, ID: id}
-			if err := t.releaseMachineManaged(ref, sortedKeys(removed)); err != nil {
+			if err := t.releaseUnpinned(ref, sortedKeys(removed)); err != nil {
 				return fmt.Errorf("substrate/engine: release %s %s after its mappings changed: %w", kind, id, err)
 			}
 			if !mapped {
@@ -511,18 +511,17 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"annotations": `SELECT to_jsonb(a) FROM (
 				SELECT record_kind, record_id, key, value, updated_at
 				FROM annotations ORDER BY record_kind, record_id, key) a`,
-		"property_managers": `SELECT to_jsonb(m) FROM (
-				SELECT record_kind, record_id, property, actor, tier, principal, updated_at
-				FROM property_managers ORDER BY record_kind, record_id, property) m`,
+		"property_marks": `SELECT to_jsonb(m) FROM (
+				SELECT record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at
+				FROM property_marks ORDER BY record_kind, record_id, property) m`,
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
-		// Whole, updated_at and source included: a row's stamp and its
-		// source are its source record's (mapping.go syncOffers), so a
-		// rebuild derives them too.
+		// Whole, updated_at included: a row's stamp is its source record's
+		// (mapping.go syncOffers), so a rebuild derives it too.
 		"property_offers": `SELECT to_jsonb(o) FROM (
-				SELECT record_kind, record_id, property, actor, value, updated_at, source
-				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
+				SELECT record_kind, record_id, property, source, value, updated_at
+				FROM property_offers ORDER BY record_kind, record_id, property, source) o`,
 		// The delivery ledger's three replayable tables. trigger_cursors is
 		// left out: its scan position is written outside the ledger
 		// (functions.go advanceCursor), so a rebuild reproduces the

@@ -2270,14 +2270,14 @@ func (s queryScope) links(links []substrate.LinkedRecord) []substrate.LinkedReco
 	return out
 }
 
-// meta holds the provenance sidecar to the allowlist the same way: a source
-// path names a record of another kind (record 0094), so where that kind is
-// not granted the path is blanked and the offer's value and actor stay.
-func (s queryScope) meta(meta map[string]substrate.PropertyMeta) map[string]substrate.PropertyMeta {
+// marks holds the marks to the allowlist the same way: a source record
+// names a record of another kind (record 0094), so where that kind is not
+// granted the link is left out and the offer's value and stamp stay.
+func (s queryScope) marks(marks map[string]substrate.PropertyMark) map[string]substrate.PropertyMark {
 	if s.kinds == nil {
-		return meta
+		return marks
 	}
-	return substrate.MetaWithinKinds(meta, func(path string) bool {
+	return substrate.MarksWithinKinds(marks, func(path string) bool {
 		kind, _, ok := vocabulary.SplitRecordPath(path)
 		return ok && s.allows(kind)
 	})
@@ -2359,7 +2359,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
 		e.LinkedFrom = scope.links(e.LinkedFrom)
-		e.PropertyMeta = scope.meta(e.PropertyMeta)
+		e.Marks = scope.marks(e.Marks)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
 	q := call.q
