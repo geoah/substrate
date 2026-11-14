@@ -22,13 +22,121 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func shippedRecordRef(r vocabulary.ShippedRecord) eref { return eref{Kind: r.Kind, ID: r.ID} }
+
+// shippedRecordRefs is every record an open's seeds would consider writing,
+// read from the lists they write from and where each seed runs: the records
+// the seeded packages ship (here), the units and conversions (unitseed.go),
+// the vendor provider rows (seedproviders.go) and the roles (roles.go). It
+// is one half of what a compaction leaves whole (shippedAmong), so it is the
+// seeds' own enumeration and no second one: a record this binary no longer
+// ships is not in it.
+func (s *service) shippedRecordRefs() (map[eref]bool, error) {
+	out := map[eref]bool{}
+	if s.seedRecords {
+		for _, r := range s.shippedRecords {
+			out[shippedRecordRef(r)] = true
+		}
+	}
+	if s.seedUnits {
+		units, err := shippedUnitRecords()
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range units {
+			out[u.ref()] = true
+		}
+	}
+	if s.seedLLMProviders {
+		for _, p := range defaultLLMProviders {
+			out[eref{Kind: typeProvider, ID: p.id}] = true
+		}
+	}
+	for _, r := range scope.ShippedRoles {
+		out[eref{Kind: kindRole, ID: r.ID}] = true
+	}
+	return out, nil
+}
+
+// shippedAmong is which of refs a package ships, and the hand that ships
+// each: what a compaction leaves whole, for now (decision 0310), because a
+// seed or an install writes a shipped record again unless its history shows
+// a hand other than the shipping ones (anotherHandWrote). A record ships
+// where an open's seeds write it (shippedRecordRefs), under the seed's hand,
+// or where a package's own hand created it, at its install or an upgrade
+// (bundle:<authority>:<package>, catalog install), whoever wrote it since:
+// read from the line that created it, or from the creator a state entry
+// keeps of it (creatingLinks). A declaration and a trigger are neither: the
+// version decides an upgrade of a declaration, an install writes its
+// triggers again whatever their history says, and a trigger's delivery
+// history is most of what compaction takes.
+func (ds *dataset) shippedAmong(ctx context.Context, q dbx, refs []eref) (map[eref]substrate.Actor, error) {
+	listed, err := ds.svc.shippedRecordRefs()
+	if err != nil {
+		return nil, err
+	}
+	out := map[eref]substrate.Actor{}
+	var kinds, ids []string
+	for _, r := range refs {
+		switch {
+		case listed[r]:
+			out[r] = substrate.ActorSeed
+		case r.Kind != typeTrigger && !vocabulary.IsDeclarationRef(r.Kind):
+			kinds, ids = append(kinds, r.Kind), append(ids, r.ID)
+		}
+	}
+	if len(kinds) == 0 {
+		return out, nil
+	}
+	rows, err := q.QueryContext(ctx, shippedCreators, kinds, ids)
+	if err != nil {
+		return nil, err
+	}
+	created := map[eref]string{}
+	for rows.Next() {
+		var r eref
+		var actor string
+		if err := rows.Scan(&r.Kind, &r.ID, &actor); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		created[r] = actor
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
+	hands := map[string]substrate.Actor{}
+	for r, id := range created {
+		hand, ok := hands[id]
+		if !ok {
+			hand = actorKeyIn(ctx, q, id)
+			hands[id] = hand
+		}
+		if substrate.IsBundleActor(hand) && hand != substrate.ActorSeed {
+			out[r] = hand
+		}
+	}
+	return out, nil
+}
+
+// shippedCreators is creatingLinks' actor for every record the arrays $1 (its
+// kind) and $2 (its id) name.
+const shippedCreators = `
+	SELECT r.kind, r.id,
+	       CASE WHEN s.e IS NULL THEN c.actor ELSE coalesce(s.e #>> '{state,creator,actor}', '') END
+	FROM unnest($1::text[], $2::text[]) AS r(kind, id)
+	CROSS JOIN LATERAL (SELECT actor, payload FROM changelog
+	      WHERE kind = r.kind AND record_id = r.id ORDER BY seq LIMIT 1) c
+	LEFT JOIN LATERAL (SELECT e FROM jsonb_array_elements(c.payload -> 'fold') e
+	      WHERE e ->> 'kind' = 'state' AND e ->> 'ref' = r.kind AND e ->> 'id' = r.id LIMIT 1) s ON true`
 
 // seedShippedRecords writes every shipped record the transaction's
 // declarations name that is missing or stale and no other hand holds. It is

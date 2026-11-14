@@ -443,4 +443,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
 | [0294](0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md) | Every route is public, for an admin, or held to its rules | accepted |
 | [0295](0295-a-persons-token-is-held-to-that-persons-roles.md) | A person's token is held to that person's roles | accepted |
+| [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
+| [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |

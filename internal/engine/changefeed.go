@@ -215,6 +215,14 @@ func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]fo
 // (write.go patchWith). It names its addressed record, live and without a
 // version, because the annotation moved none, and the client fetches it.
 // Every delete and collection entry carries the tombstone or purge this reads.
+//
+// A state entry (compact.go) names its record with the version it holds,
+// deleted where its row is tombstoned or gone, and marked a state. A put or
+// a patch whose state on the addressed record stands for the record's
+// creation, live, presents as the creation (a put that created), which every
+// reader of the verb takes it as (runner.OpOf): a trigger that starts from
+// the beginning meets each record once, created in its latest state. A
+// merge, a split or a delete keeps its verb.
 func projectAffected(c *substrate.Change) {
 	effects, _ := c.Payload[foldPayloadKey].([]any)
 	if _, held := c.Payload[foldPayloadKey]; held {
@@ -232,7 +240,7 @@ func projectAffected(c *substrate.Change) {
 		}
 		kind, _ := op["kind"].(string)
 		switch foldKind(kind) {
-		case foldRecord, foldTombstone, foldPurge:
+		case foldRecord, foldTombstone, foldPurge, foldState:
 		default:
 			continue
 		}
@@ -253,6 +261,19 @@ func projectAffected(c *substrate.Change) {
 			out[i].Version, out[i].Deleted = versionOf(op["version"]), true
 		case foldPurge:
 			out[i].Version, out[i].Deleted = 0, true
+		case foldState:
+			state, _ := op["state"].(map[string]any)
+			row, _ := state["row"].(map[string]any)
+			out[i].Version, out[i].Deleted, out[i].State = versionOf(op["version"]), row == nil || row["deletedAt"] != nil, true
+			created, _ := state["created"].(bool)
+			if created && !out[i].Deleted && ref == (eref{Kind: c.Kind, ID: c.RecordID}) &&
+				(c.Op == substrate.OpPut || c.Op == substrate.OpPatch) {
+				c.Op = substrate.OpPut
+				if c.Payload == nil {
+					c.Payload = map[string]any{}
+				}
+				c.Payload["created"] = true
+			}
 		}
 	}
 	if len(out) == 0 {

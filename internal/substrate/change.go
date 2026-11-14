@@ -164,6 +164,10 @@ type AffectedRecord struct {
 	ID      string `json:"id"`
 	Version int64  `json:"version,omitempty"`
 	Deleted bool   `json:"deleted,omitempty"`
+	// State marks the record's state entry: the entry stands for the
+	// record's earlier entries, which a compaction replaced, and the values
+	// they held before it are not kept (decision 0296).
+	State bool `json:"state,omitempty"`
 	// Properties is what the entry did to each property of the record, in
 	// name order, as a read of the record renders the values: a sensitive
 	// property reads Redacted on both sides. Present only on a read that asked

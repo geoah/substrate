@@ -199,6 +199,16 @@ func (ds *dataset) readInventory(ctx context.Context) (metrics.Inventory, error)
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return out, err
 	}
+	// The repository's creation, which a compacted history may no longer
+	// hold the entry of (compact.go); the first entry for a row with no
+	// creation time.
+	repo, err := ds.svc.repositoryByID(ctx, ds.info.ID)
+	if err != nil {
+		return out, err
+	}
+	if out.Since = repo.CreatedAt; !out.Since.IsZero() {
+		return out, nil
+	}
 	err = ds.db.QueryRowContext(ctx, `SELECT ts FROM changelog ORDER BY seq LIMIT 1`).Scan(&out.Since)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return out, err

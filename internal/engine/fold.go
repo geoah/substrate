@@ -110,6 +110,19 @@ const (
 	// foldForget drops every delivery row a trigger owns: its cursor, fire
 	// state, parked failures and resume rows. A tombstoned trigger's.
 	foldForget foldKind = "forget"
+
+	// The two state entries (compact.go): what a compaction writes in place
+	// of a record's entries up to one of them, and the one effect besides
+	// resync that carries rows rather than a delta.
+	//
+	// foldState stands for a record's own rows as they stood at the effect:
+	// its records row, version and times included, its annotations and its
+	// property marks (State).
+	foldState foldKind = "state"
+	// foldLedger stands for a trigger's delivery rows as they stood at the
+	// effect: its cursor, fire state, parked failures and resume rows
+	// (Ledger).
+	foldLedger foldKind = "ledger"
 )
 
 // rowDelta is one record's change as VALUES: what its columns became, against
@@ -252,6 +265,9 @@ type foldOp struct {
 	Failure *foldFailure `json:"failure,omitempty"`
 	// Page carries a paged drain's resume row (page, unpage).
 	Page *foldPageRow `json:"page,omitempty"`
+	// State and Ledger carry a state entry (compact.go).
+	State  *recordState   `json:"state,omitempty"`
+	Ledger *triggerLedger `json:"ledger,omitempty"`
 }
 
 // foldInt is an integer the ledger carries: a cursor seq, a failure id, a
@@ -505,6 +521,13 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 	case foldCursor, foldSchedule, foldPark, foldUnpark, foldPage, foldUnpage, foldForget:
 		changed, err := t.applyDelivery(op)
 		return foldResult{changed: changed}, err
+	case foldState:
+		return t.applyState(op)
+	case foldLedger:
+		if err := t.applyLedger(op); err != nil {
+			return foldResult{}, err
+		}
+		return foldResult{changed: true}, nil
 	}
 	return foldResult{}, fmt.Errorf("substrate/engine: the fold does not know the effect %q", op.Kind)
 }
@@ -576,63 +599,8 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		if op.Delta.Restored {
 			row.DeletedAt = nil
 		}
-		// The refs index is a PROJECTION of the row that just landed, like
-		// `fts` and unlike everything else here: derived from the folded
-		// properties and the kind's declaration (refs.go), never from an effect
-		// of its own. Deriving it HERE is what makes a rebuild reproduce it
-		// byte for byte — every column is a function of those two inputs, and
-		// no column of it reads the clock.
-		//
-		// A KIND WITH NO REFERENCE SITE IS SKIPPED. It derives no rows from any
-		// value, so the delete-and-re-derive would be two statements per write
-		// that can only ever find nothing — paid on the hot sync paths (mail,
-		// calendar), whose kinds point at nothing. A kind this binary no longer
-		// DECLARES is not skipped: its stored rows project a declaration that is
-		// gone, and syncRefs is what removes them. A declaration that stops
-		// carrying a reference is covered by the apply's rederiveMovedRefs,
-		// which re-derives the records that carry a property whose reference
-		// shape moved, and by the pass behind the open for the boot upgrade
-		// (reprojection.go). A PARKED kind
-		// derives from its stored declaration (foldView), live and in a
-		// replay alike.
-		ty, _ := t.derivationView().ByIdentity(row.Kind)
-		// The unit uses are a projection of the row's values (unitgraph.go),
-		// derived for every kind, and a unit or conversion row moves the
-		// graph's revision.
-		if err := t.syncUnitUses(ref, usesBefore, rowUnitUses(ty, row.Props), created); err != nil {
+		if err := t.projectRow(ref, row, created, usesBefore, tiersBefore, isMetric, 1); err != nil {
 			return foldResult{}, err
-		}
-		if err := t.afterUnitFold(row.Kind); err != nil {
-			return foldResult{}, err
-		}
-		t.noteMetricRules(ty, ref, row)
-		// A repository migration folds before the stored vocabulary loads,
-		// so its registry need not hold the row's kind: the row's refs and
-		// observed points are left as they stand, not dropped as a kind's
-		// that is gone, and the pass behind the open re-derives every row of
-		// the kind under the loaded declarations (requestUnprojected).
-		if ty == nil && t.migrating {
-			if t.unprojected == nil {
-				t.unprojected = map[string]bool{}
-			}
-			t.unprojected[row.Kind] = true
-			return foldResult{changed: changed, created: created, row: row, version: version}, nil
-		}
-		if ty == nil || declaresReference(ty) {
-			if err := t.syncRefs(ref, ty, row.Props); err != nil {
-				return foldResult{}, err
-			}
-		}
-		// The observed index's points are the same kind of projection
-		// (observedindex.go), skipped the same way for a kind that cannot
-		// derive any.
-		if t.derivesObserved(ty) {
-			if err := t.syncObserved(ref, ty, row); err != nil {
-				return foldResult{}, err
-			}
-		}
-		if isMetric {
-			t.noteMetricTiers(ref, tiersBefore, row)
 		}
 	}
 	return foldResult{changed: changed, created: created, row: row, version: version}, nil
@@ -716,6 +684,73 @@ func (t *txn) settleTakenOut() error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// projectRow derives what a row that just landed projects into: its unit
+// uses and the unit graph's revision, which moves by moves, its refs rows
+// and its observed points. A record effect and a state entry (compact.go)
+// share it, so a state that lands a row derives exactly what the effects it
+// stands for derived.
+func (t *txn) projectRow(ref eref, row *erow, created bool, usesBefore []string, tiersBefore []time.Duration, isMetric bool, moves int) error {
+	// The refs index is a PROJECTION of the row that just landed, like
+	// `fts` and unlike everything else here: derived from the folded
+	// properties and the kind's declaration (refs.go), never from an effect
+	// of its own. Deriving it HERE is what makes a rebuild reproduce it
+	// byte for byte — every column is a function of those two inputs, and
+	// no column of it reads the clock.
+	//
+	// A KIND WITH NO REFERENCE SITE IS SKIPPED. It derives no rows from any
+	// value, so the delete-and-re-derive would be two statements per write
+	// that can only ever find nothing — paid on the hot sync paths (mail,
+	// calendar), whose kinds point at nothing. A kind this binary no longer
+	// DECLARES is not skipped: its stored rows project a declaration that is
+	// gone, and syncRefs is what removes them. A declaration that stops
+	// carrying a reference is covered by the apply's rederiveMovedRefs,
+	// which re-derives the records that carry a property whose reference
+	// shape moved, and by the pass behind the open for the boot upgrade
+	// (reprojection.go). A PARKED kind
+	// derives from its stored declaration (foldView), live and in a
+	// replay alike.
+	ty, _ := t.derivationView().ByIdentity(row.Kind)
+	// The unit uses are a projection of the row's values (unitgraph.go),
+	// derived for every kind, and a unit or conversion row moves the
+	// graph's revision.
+	if err := t.syncUnitUses(ref, usesBefore, rowUnitUses(ty, row.Props), created); err != nil {
+		return err
+	}
+	if err := t.afterUnitFoldBy(row.Kind, moves); err != nil {
+		return err
+	}
+	t.noteMetricRules(ty, ref, row)
+	// A repository migration folds before the stored vocabulary loads,
+	// so its registry need not hold the row's kind: the row's refs and
+	// observed points are left as they stand, not dropped as a kind's
+	// that is gone, and the pass behind the open re-derives every row of
+	// the kind under the loaded declarations (requestUnprojected).
+	if ty == nil && t.migrating {
+		if t.unprojected == nil {
+			t.unprojected = map[string]bool{}
+		}
+		t.unprojected[row.Kind] = true
+		return nil
+	}
+	if ty == nil || declaresReference(ty) {
+		if err := t.syncRefs(ref, ty, row.Props); err != nil {
+			return err
+		}
+	}
+	// The observed index's points are the same kind of projection
+	// (observedindex.go), skipped the same way for a kind that cannot
+	// derive any.
+	if t.derivesObserved(ty) {
+		if err := t.syncObserved(ref, ty, row); err != nil {
+			return err
+		}
+	}
+	if isMetric {
+		t.noteMetricTiers(ref, tiersBefore, row)
 	}
 	return nil
 }

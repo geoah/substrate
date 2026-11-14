@@ -51,29 +51,47 @@ func TestEncodeAndReadAPiece(t *testing.T) {
 		t.Fatalf("read %v", seen)
 	}
 
-	// A piece that would end inside a transaction, or skip a seq, is not
-	// written.
+	// A piece that would end inside a transaction, or hold a seq out of
+	// order, is not written.
 	if _, err := EncodePiece(pieceLines(t, 5, 6, map[int64]int64{6: 7})); !errors.Is(err, ErrTxnIncomplete) {
 		t.Fatalf("a piece ending inside a transaction: %v", err)
 	}
-	gap := append(pieceLines(t, 5, 5, nil), pieceLines(t, 7, 7, nil)...)
-	if _, err := EncodePiece(gap); err == nil {
-		t.Fatal("a piece with a gap was written")
+	backwards := append(pieceLines(t, 6, 6, nil), pieceLines(t, 5, 5, nil)...)
+	if _, err := EncodePiece(backwards); err == nil {
+		t.Fatal("a piece with its seqs out of order was written")
+	}
+
+	// A compacted history has gaps: a piece covers a range of seqs, and its
+	// first line may come after the range's first seq.
+	gap, err := EncodePiece(append(pieceLines(t, 5, 5, nil), pieceLines(t, 7, 7, nil)...))
+	if err != nil {
+		t.Fatalf("a piece with a gap: %v", err)
+	}
+	seen = nil
+	if err := ReadPiece(bytes.NewReader(gap), 3, 7, func(e Entry, _ []byte, _ [32]byte) error {
+		seen = append(seen, e.Seq)
+		return nil
+	}); err != nil || len(seen) != 2 || seen[0] != 5 || seen[1] != 7 {
+		t.Fatalf("a piece of seqs 3 to 7 holding 5 and 7 read %v: %v", seen, err)
 	}
 
 	nothing := func(Entry, []byte, [32]byte) error { return nil }
 	damaged := map[string][]byte{
-		"cut short":           data[:len(data)-1],
-		"a line missing":      data[:bytes.IndexByte(data, '\n')+1],
-		"another range":       data,
-		"an edited line":      bytes.Replace(data, []byte(`"r1"`), []byte(`"r2"`), 1),
-		"a line too many":     append(append([]byte{}, data...), data[:bytes.IndexByte(data, '\n')+1]...),
-		"a line out of place": append(append([]byte{}, data[bytes.IndexByte(data, '\n')+1:]...), data[:bytes.IndexByte(data, '\n')+1]...),
+		"cut short":              data[:len(data)-1],
+		"a line missing":         data[:bytes.IndexByte(data, '\n')+1],
+		"another range":          data,
+		"an edited line":         bytes.Replace(data, []byte(`"r1"`), []byte(`"r2"`), 1),
+		"a line too many":        append(append([]byte{}, data...), data[:bytes.IndexByte(data, '\n')+1]...),
+		"a line out of place":    append(append([]byte{}, data[bytes.IndexByte(data, '\n')+1:]...), data[:bytes.IndexByte(data, '\n')+1]...),
+		"a line below its range": data,
 	}
 	for name, b := range damaged {
 		first, last := int64(5), int64(8)
-		if name == "another range" {
+		switch name {
+		case "another range":
 			last = 9
+		case "a line below its range":
+			first = 6
 		}
 		if err := ReadPiece(bytes.NewReader(b), first, last, nothing); !errors.Is(err, ErrPieceDamaged) {
 			t.Errorf("%s: %v, want ErrPieceDamaged", name, err)
