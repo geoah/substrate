@@ -41,6 +41,16 @@ public struct ConversationState: Codable, Equatable, Sendable {
         /// Nobody pressed anything: a rate limit lifted. Such a run never
         /// writes a message in the person's name.
         var automatic = false
+        /// The id the message goes under (`messageId`), where the server
+        /// takes one: the run's bubble carries it, and so will its row. Nil
+        /// on a server that takes none, and for Continue's own words.
+        var id: String?
+        /// The request waits until the device keeps the message: it never
+        /// leaves before a kill could lose what it sent.
+        var unkept = false
+        /// A repeat's whole answer after `thread`: the message's turn is no
+        /// stream of this server process, and this is its thread's status.
+        var idle: String?
     }
 
     /// An attach's run.
@@ -60,7 +70,11 @@ public struct ConversationState: Codable, Equatable, Sendable {
 
     /// What an applied event asks the runtime to do, made fresh by each.
     enum Ask: Codable, Equatable, Sendable {
-        case chat(agent: String, thread: String?, message: String)
+        case chat(agent: String, thread: String?, message: String, id: String?)
+        /// Wakes the engine to send an unanswered message again.
+        case repeatWait(id: String, seconds: Double)
+        /// Reads for the message a send wrote under its id.
+        case find(id: String)
         case resume(thread: String)
         /// Wakes the engine when a rate limit lifts.
         case countdown(Date)
@@ -123,8 +137,40 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// that started no turn, a stop that failed, a stream that will not
     /// open. A second one replaces the first.
     var chatFailure: Failure?
-    /// A send whose delivery is being read for.
+    /// A send whose delivery is being read for: only on a server that
+    /// takes no `messageId`.
     var lost: Lost?
+    /// The message sent under an id of its own, from the press until the
+    /// server takes it: while a copy is out, while one waits to go again,
+    /// and while it stands unsent at its place in the chat.
+    var pending: UnsentMessage?
+    /// The copies sent under the pending message's id, as far as this run
+    /// of the app knows. One the device kept from a run before starts at
+    /// one: what that run sent is not known.
+    var copies = 0
+    /// The copies sent since the person last pressed Send or Send Again:
+    /// what bounds the repeats the app makes on its own.
+    var tries = 0
+    /// Why the pending message stands unsent, drawn at it with Send Again;
+    /// nil while a copy is out, waits to go, or is read for.
+    var unsentFailure: Failure?
+    /// The pending message came from the device's folder and has not been
+    /// read for yet.
+    var restored = false
+    /// The pending message is read for by its id: the app closed before
+    /// its send was answered.
+    var finding = false
+    /// The server refused `messageId` as a field it does not know, after
+    /// its document said it takes one: the list is told.
+    var idsUnserved = false
+    /// The last event put a message back into the composer (a refusal, a
+    /// lost send, Edit Message, a chat that is gone): the list is told, so
+    /// the folder holds the text at once and not after a draft's pause.
+    var gaveBack = false
+    /// The thread the last event found the pending message on, by a read
+    /// and not by a run's `thread` event: the list is told, and where
+    /// another conversation already has that thread, this one gives way.
+    var adopted: String?
     /// The handover read failed or outlasted its wait: the overlay stays.
     var reloadFailed: Failure?
     /// The reload failure whose Try Again is out: drawn working in its place.
@@ -167,8 +213,11 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// A stream dropped and is being opened again.
     var reconnecting: Bool { phase == .streaming && lastFailure != nil }
     /// What keeps the conversation after its window left: a failure above
-    /// the composer still to be read, or a check under way.
-    var held: Int { (chatFailure != nil ? 1 : 0) + (lost != nil ? 1 : 0) }
+    /// the composer still to be read, a check under way, or a message the
+    /// server has not taken.
+    var held: Int { (chatFailure != nil ? 1 : 0) + (lost != nil ? 1 : 0) + (pending != nil ? 1 : 0) }
+    /// The pending message stands unsent: no copy is out and none waits.
+    var standing: Bool { pending != nil && unsentFailure != nil }
 
     /// A send that ended with no answer either way, while it is read for.
     struct Lost: Codable, Equatable, Sendable {
@@ -177,4 +226,21 @@ public struct ConversationState: Codable, Equatable, Sendable {
         var typed: Bool
         var failure: Failure
     }
+}
+
+/// A message sent under an id of its own, as the conversation holds it
+/// until the server takes it and as the device keeps it meanwhile
+/// (`unsent.json`): what the same request is made from again. The id is
+/// minted once, when the person presses Send, and never changes: a request
+/// that repeats it writes nothing and runs nothing.
+struct UnsentMessage: Codable, Hashable, Sendable {
+    /// The `messageId`: the id of the message's own record.
+    var id: String
+    var message: String
+    var agent: String
+    /// The thread it goes to; nil for one that opens a chat.
+    var thread: String?
+    /// When the person pressed Send, or Send Again: no copy goes on its own
+    /// later than `Conversation.repeatWindow` after it.
+    var sentAt: Date
 }

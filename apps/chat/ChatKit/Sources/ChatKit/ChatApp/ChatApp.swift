@@ -196,13 +196,19 @@ public struct ChatApp: LinkedApp {
         default:
             break
         }
+        // A read found a new chat's pending message on a thread: the chat
+        // is bound to it, as its `thread` event would have bound it.
+        if let adopted = state.adopted { named = adopted }
+        // Whatever put a message back into the composer, the list keeps it.
+        if state.gaveBack { draft = state.draft }
         return Event(
             .conversation(
                 key,
                 ChatAppStep.Report(
                     thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
                     outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
-                    read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved)))
+                    read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved,
+                    unsent: state.pending, idsUnserved: state.idsUnserved, adopted: state.adopted != nil, gaveBack: state.gaveBack)))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -242,10 +248,14 @@ public struct ChatApp: LinkedApp {
             // A field tells its conversation what it holds as the app leaves
             // the front, in either order with the app's own word of it: so
             // the drafts are written at once on that word, and at once for
-            // whatever changes them until the app is in front again.
+            // whatever changes them until the app is in front again. The
+            // unsent messages go first, and at once: a message's first
+            // copy waits for this write, and it carries the drafts too.
             var left = false
             if case let .phase(phase) = event.step { left = phase != .active }
-            if left || state.drafts != previous.drafts {
+            if state.unsent != previous.unsent {
+                asks.append(.saveUnsent(disk, state.unsent, drafts: state.drafts))
+            } else if left || state.drafts != previous.drafts {
                 asks.append(.saveDrafts(disk, state.drafts, atOnce: state.leaving))
             }
             if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
@@ -267,6 +277,7 @@ public struct ChatApp: LinkedApp {
         case let .saveTranscript(_, thread, _): "save:\(thread)"
         case .saveState: "state"
         case .saveDrafts: "drafts"
+        case .saveUnsent: "unsent"
         case .savePreferences: "preferences"
         case .prefetch: "prefetch"
         case let .fetchThread(thread): "fetch:\(thread)"
@@ -302,12 +313,22 @@ public struct ChatApp: LinkedApp {
             let facts = row.map(ThreadFacts.init)
             let agent = facts?.agent ?? entry.agent ?? entry.seed.agent
             let held = entry.thread.flatMap { state.transcripts[$0] }
+            // With no folder there is nothing to keep it in, and nothing
+            // to wait for.
+            let kept = entry.unsent.flatMap { state.disk == nil || state.keptUnsent.contains($0) ? $0 : nil }
+            let landed = entry.unsent.map { id in held?.records.contains { $0.id == id } ?? false } ?? false
+            // A new chat's message, looked for in the rows of every thread
+            // read: its first copy may have opened one.
+            var landedOn: String?
+            if entry.thread == nil, let id = entry.unsent {
+                landedOn = state.transcripts.keys.sorted().first { thread in state.transcripts[thread]?.records.contains { $0.id == id } ?? false }
+            }
             out[key] = Conversation(
                 key: key, seed: entry.seed, facts: facts, online: state.online,
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
-                continues: state.continues)
+                continues: state.continues, sendsIDs: state.sendsIDs, kept: kept, landed: landed, landedOn: landedOn)
         }
         return out
     }

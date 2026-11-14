@@ -126,6 +126,7 @@ struct FailureSentences {
     /// button that does it again; nil where its place has its own controls.
     static let attempts: [Failure.Attempt: (sentence: String, button: String?, action: FailureAction?)] = [
         .send: ("You're offline.", "Send Again", .send),
+        .message: ("No answer came back for your message.", "Send Again", .sendAgain),
         .resume: ("Couldn't ask Moss to carry on.", "Try Again", .resume),
         .reply: ("Moss couldn't finish this reply.", "Try Again", .resume),
         .stop: ("Couldn't stop Moss. The reply is still being written.", "Try Again", .stop),
@@ -163,7 +164,8 @@ struct FailureSentences {
             (.timeout, "The server took too long to answer."), (.streamEnded, "The connection dropped."),
             (.notTheAPI(status: 502), "The server answered with something Substrate Chat can't read."),
             (.sessionEnded, "Your sign-in ended."), (.needsApproval, "Substrate Chat needs your approval for that."),
-            (.ended, "The server ended it."),
+            (.ended, "The server ended it."), (.closed, "Substrate Chat closed while it was being sent."),
+            (.interrupted, "It was stopped before the server answered."),
             (.http(status: 500, code: "internal", reason: nil), "The server ran into a problem."),
             (.http(status: 429, code: "rate_limited", reason: nil), "The server is busy. Try again in a moment."),
             (.http(status: 409, code: "conflict", reason: nil), "It changed in the meantime."),
@@ -266,7 +268,7 @@ struct FailureSentences {
 struct FailurePlaces {
     @Test func everyAttemptHasOnePlace() {
         let places: [Failure.Attempt: Failure.Place] = [
-            .send: .chat, .resume: .turn, .reply: .turn, .stop: .chat, .attach: .chat, .reload: .chat, .rows: .chat, .poll: .nowhere,
+            .send: .chat, .message: .turn, .resume: .turn, .reply: .turn, .stop: .chat, .attach: .chat, .reload: .chat, .rows: .chat, .poll: .nowhere,
             .rename: .chat, .card: .inline, .answer: .inline, .decide: .inline, .addKey: .inline, .refresh: .list, .feed: .list,
             .guidance: .inline, .guidanceChange: .inline,
         ]

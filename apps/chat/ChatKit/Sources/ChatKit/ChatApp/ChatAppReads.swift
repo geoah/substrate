@@ -11,9 +11,10 @@ import SubstrateRuntime
 /// what the presenters read.
 extension ChatAppState {
     /// Without what no part reads: the engine's own bookkeeping, the
-    /// drafts, which the tree carries from a conversation and never from
-    /// here, and the list's own failure and its feed's reconnecting, which
-    /// the tree's top reads at every presentation and no kept part does.
+    /// drafts and the unsent messages, which the tree carries from a
+    /// conversation and never from here, and the list's own failure and its
+    /// feed's reconnecting, which the tree's top reads at every
+    /// presentation and no kept part does.
     private var presented: ChatAppState {
         var state = self
         state.asks = []
@@ -39,6 +40,9 @@ extension ChatAppState {
         state.renaming = [:]
         state.agentsRevision = nil
         state.continueUnserved = false
+        state.idsUnserved = false
+        state.unsent = [:]
+        state.keptUnsent = []
         return state
     }
 

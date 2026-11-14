@@ -53,17 +53,21 @@ struct FailureView: View {
                 .accessibilityAddTraits(.isStaticText)
                 Spacer(minLength: 0)
                 if let dismiss = failure.dismiss {
+                    // An unsent message is not dismissed: it goes back into
+                    // the composer, and the mark says so.
+                    let edits = dismiss == .edit
                     Button {
                         act(dismiss)
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: edits ? "square.and.pencil" : "xmark")
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(Color(palette.soft))
                             .frame(minWidth: 28, minHeight: 28)
                             .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Dismiss")
+                    .accessibilityLabel(edits ? "Edit Message" : "Dismiss")
+                    .help(edits ? "Edit Message" : "Dismiss")
                 }
             }
             if failure.button != nil || failure.details != nil {
@@ -220,6 +224,14 @@ struct FailureActions {
             if let key {
                 draftField?()
                 host.send(.send, to: key)
+            }
+        case .sendAgain: if let key { host.send(.sendAgain, to: key) }
+        case .edit:
+            // Edit Message puts the message ahead of what the conversation
+            // holds: first what the field has typed and not said.
+            if let key {
+                draftField?()
+                host.send(.takeBack, to: key)
             }
         case .stop: if let key { host.send(.stop, to: key) }
         case .reload: if let key { host.send(.retryReload, to: key) }

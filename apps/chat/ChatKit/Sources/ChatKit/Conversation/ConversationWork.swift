@@ -12,12 +12,13 @@ extension Conversation {
         let ids = environment.ids
         let timeZone = environment.timeZone.identifier
         switch effect.ask {
-        case let .chat(agent, thread, message):
+        case let .chat(agent, thread, message, id):
             return .sequence {
                 Self.relay { yield in
                     guard let client = await source.current() else { return }
                     do {
-                        for try await event in ChatAPI.chat(client, agent: agent, thread: thread, message: message, timezone: timeZone) {
+                        let events = ChatAPI.chat(client, agent: agent, thread: thread, message: message, messageID: id, timezone: timeZone)
+                        for try await event in events {
                             if event.kind == .thread, let named = event.thread {
                                 yield(.named(named))
                             } else {
@@ -48,6 +49,21 @@ extension Conversation {
                         if Task.isCancelled { return }
                         yield(.streamEnded(Failure(.resume, error, server: client.server, at: clock.now), outcome: ids.next()))
                     }
+                }
+            }
+        case let .repeatWait(id, seconds):
+            return .once {
+                do { try await clock.sleep(until: clock.now.addingTimeInterval(seconds)) } catch { return nil }
+                return Event(.repeatDue(id: id, at: clock.now))
+            }
+        case let .find(id):
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    return Event(.found(id: id, thread: try await ChatAPI.sent(client, messageID: id)?.thread, at: clock.now))
+                } catch {
+                    if Task.isCancelled { return nil }
+                    return Event(.findFailed(id: id, Failure(.message, error, server: client.server), at: clock.now))
                 }
             }
         case let .countdown(date):

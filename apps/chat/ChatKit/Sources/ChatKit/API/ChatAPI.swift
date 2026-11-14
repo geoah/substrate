@@ -20,23 +20,40 @@ enum ChatAPI {
 
     /// The chat request's body: `substrate.ChatInput`. The device's zone and
     /// the records the message is about ride along, and the server renders
-    /// them into the turn's context (decision 0196).
-    static func chatBody(thread: String?, message: String, context: [RecordReference], timezone: String) -> JSONValue {
+    /// them into the turn's context (decision 0196). `messageID` is the id
+    /// the app chose for the message's record: a request that repeats it
+    /// writes nothing and runs nothing. It is left out where the server's
+    /// document does not say it takes one, since an older server refuses a
+    /// body field it does not know.
+    static func chatBody(thread: String?, message: String, messageID: String? = nil, context: [RecordReference], timezone: String) -> JSONValue {
         var body: JSONObject = ["thread": .string(thread ?? ""), "message": .string(message), "timezone": .string(timezone)]
+        if let messageID { body["messageId"] = .string(messageID) }
         if !context.isEmpty { body["context"] = .array(context.map { .string($0.path) }) }
         return .object(body)
     }
 
-    /// Opens or continues a thread with one user message, and streams the run.
-    static func chat(_ client: SubstrateClient, agent: String, thread: String?, message: String, timezone: String)
+    /// Opens or continues a thread with one user message, and streams the
+    /// run. Under a `messageID`, the same request again streams the turn
+    /// the first one started, or says how its thread stands.
+    static func chat(_ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, timezone: String)
         -> AsyncThrowingStream<AgentEvent, any Error>
     {
         stream(client) {
             try client.request(
                 "POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
-                body: .jsonValue(chatBody(thread: thread, message: message, context: [], timezone: timezone)),
+                body: .jsonValue(chatBody(thread: thread, message: message, messageID: messageID, context: [], timezone: timezone)),
                 accept: "application/x-ndjson", timeout: streamTimeout)
         }
+    }
+
+    /// The message a send wrote under the id it chose, as the server holds
+    /// it: nil where no record has the id, or the record is not a message
+    /// somebody sent.
+    static func sent(_ client: SubstrateClient, messageID: String) async throws -> (thread: String, record: Record)? {
+        guard let record = try await client.record(Kinds.message, messageID), record.deletedAt == nil,
+            record["role"]?.string == "user", let thread = record["thread"]?.referenceID
+        else { return nil }
+        return (thread, record)
     }
 
     /// Runs a thread again with no new message (`…/continue`): what Try

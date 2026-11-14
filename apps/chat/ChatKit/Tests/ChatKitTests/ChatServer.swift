@@ -31,6 +31,8 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
     private var routes: [Route] = []
     private var kept: [String] = []
     private var bodies: [String: String] = [:]
+    private var sent: [(request: String, body: String)] = []
+    private var watchers: [@Sendable (String) -> Void] = []
     private var released = false
     private var heldPaths: [String: Bool] = [:]
 
@@ -59,6 +61,16 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
 
     var requests: [String] { lock.withLock { kept } }
 
+    /// Every body sent with a request whose method and path end as given,
+    /// in the order they came.
+    func bodies(_ method: String, _ path: String) -> [String] {
+        lock.withLock { sent.filter { $0.request.hasPrefix(method + " ") && $0.request.hasSuffix(path) }.map(\.body) }
+    }
+
+    /// Runs `watcher` with each request as it reaches the server, before
+    /// it is answered: `METHOD path?query`.
+    func onRequest(_ watcher: @escaping @Sendable (String) -> Void) { lock.withLock { watchers.append(watcher) } }
+
     /// The body of the last request whose method and path end as given.
     func body(_ method: String, _ path: String) -> String? {
         lock.withLock { bodies.first { $0.key.hasPrefix(method + " ") && $0.key.hasSuffix(path) }?.value }
@@ -70,9 +82,13 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         let path = components?.percentEncodedPath ?? url.path
         let query = components?.query ?? ""
         let method = request.httpMethod ?? "GET"
+        for watcher in lock.withLock({ watchers }) { watcher("\(method) \(path)?\(query)") }
         let route = lock.withLock { () -> Route? in
             kept.append("\(method) \(path)?\(query)")
-            if let body = request.httpBody { bodies["\(method) \(path)"] = String(decoding: body, as: UTF8.self) }
+            if let body = request.httpBody {
+                bodies["\(method) \(path)"] = String(decoding: body, as: UTF8.self)
+                sent.append(("\(method) \(path)", String(decoding: body, as: UTF8.self)))
+            }
             guard let index = routes.firstIndex(where: { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) })
             else { return nil }
             return routes[index].once ? routes.remove(at: index) : routes[index]

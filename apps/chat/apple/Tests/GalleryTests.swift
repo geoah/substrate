@@ -191,7 +191,7 @@ import Testing
 
     @Test func everyPlaceHasAFailureToDraw() {
         let places = Set(FailureFixtures.places(now: Self.now).map(\.place))
-        #expect(places == [.turn, .olderTurn, .chat, .list])
+        #expect(places == [.turn, .olderTurn, .chat, .list, .unsent])
         #expect(FailureFixtures.table(now: Self.now).allSatisfy { !$0.sentence.isEmpty })
     }
 
@@ -262,13 +262,13 @@ private struct Scene: View {
             VStack(alignment: .leading, spacing: 22) {
                 bubble("How often should I water the balcony plants?")
                 reply("Twice a week in summer, and once a week from October. The tomatoes are the thirsty ones: check their soil every second day.")
-                bubble("And the tomatoes in August?")
+                bubble("And the tomatoes in August?").opacity(fixture.place == .unsent ? 0.7 : 1)
                 switch fixture.place {
                 case .olderTurn:
                     card
                     bubble("Thanks. And the basil?")
                     reply("Basil likes the morning sun and dislikes wet feet. Water it at the base, early in the day.")
-                case .turn:
+                case .turn, .unsent:
                     card
                 case .chat:
                     reply("Every second day in August, more when it is windy. Water at the")

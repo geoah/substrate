@@ -23,6 +23,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// `atOnce` writes with no wait for more: the app is leaving the front,
     /// and may not be running by the end of one.
     case saveDrafts(Lease, [String: String], atOnce: Bool)
+    /// The unsent messages and, after them, the drafts as they stand with
+    /// them: written at once, and answered with the ids the folder holds.
+    case saveUnsent(Lease, [String: UnsentMessage], drafts: [String: String])
     case savePreferences(Lease, ChatPreferences)
     case saveTranscript(Lease, thread: String, CachedTranscript)
     /// Rules 3 and 4 hold its answer as they hold a read's: it carries the

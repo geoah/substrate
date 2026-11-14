@@ -23,6 +23,11 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     var deleted: Bool
     var listenOnOpen: Bool
     var blocked: String?
+    /// The id of the message the server has not taken, where it stands
+    /// unsent or is read for: the last of `turns`.
+    var unsent: String?
+    /// Why it cannot be sent again now.
+    var resendBlocked: String?
     var keyless: String?
     var online: Bool
 }
@@ -33,14 +38,22 @@ extension Conversation {
     public func present(_ input: PresenterInput<Conversation>) -> ConversationLive {
         let state = input.state
         let streaming = state.phase == .streaming
+        // A pending message no run is sending stands after everything
+        // else, under the id its row will have.
+        var turns = state.overlay.turns
+        var unsent: String?
+        if let pending = state.pending, !turns.contains(where: { $0.id == pending.id }) {
+            turns.append(Turn(id: pending.id, role: .user, content: pending.message, pending: true))
+            unsent = pending.id
+        }
         return ConversationLive(
             thread: state.thread, agent: agent(state), name: name(state), draft: state.carried, draftRevision: state.draftRevision,
             draftReplaced: state.draftReplaced, draftBefore: state.draftBefore,
-            turns: state.overlay.turns, incomplete: state.overlay.incomplete,
+            turns: turns, incomplete: state.overlay.incomplete,
             liveKey: streaming ? state.overlay.turns.last(where: { $0.role == .assistant })?.id : nil,
             awaitingFirstEvent: streaming && state.overlay.turns.last?.role == .user,
             phase: state.phase, stopping: state.stopping, failures: failures(state),
             deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
-            keyless: keyless, online: online)
+            unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online)
     }
 }

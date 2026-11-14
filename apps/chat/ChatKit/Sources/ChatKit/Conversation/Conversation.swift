@@ -33,6 +33,12 @@ public struct Conversation: Controller, Equatable {
         case heard(String)
         case choose(agent: String)
         case send
+        /// Send Again on a message that stands unsent: the same request
+        /// once more, under the id it was first sent with.
+        case sendAgain
+        /// Edit on a message that stands unsent: its text goes back into
+        /// the composer, and what is sent from there is a new message.
+        case takeBack
         /// Try Again and Continue: runs the thread again with no new
         /// message, and leaves the draft alone. A server whose `agents`
         /// feature is older than the continue route gets `continueMessage`
@@ -62,7 +68,19 @@ public struct Conversation: Controller, Equatable {
         case chose(String)
         case listened
         case opened
-        case sent(message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool)
+        case sent(message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool, id: String?)
+        case sentAgain(at: Date)
+        case tookBack
+        /// The wait before an unanswered message goes again ended.
+        case repeatDue(id: String, at: Date)
+        /// The read for a message by its id answered: the thread it is on,
+        /// or nil where no record has the id.
+        case found(id: String, thread: String?, at: Date)
+        case findFailed(id: String, Failure, at: Date)
+        /// The device keeps the pending message.
+        case kept
+        /// The thread's rows hold the pending message.
+        case landed
         case continued(at: Date)
         /// A rate limit lifted.
         case countdownDue(Date)
@@ -136,17 +154,41 @@ public struct Conversation: Controller, Equatable {
     /// The server serves the continue route: its `agents` feature is at
     /// the revision that has it.
     let continues: Bool
+    /// The server takes a `messageId`: its `agents` feature is at the
+    /// revision that has it. Every message the person sends then goes under
+    /// an id of its own.
+    let sendsIDs: Bool
+    /// The id of the pending message the device's folder holds, as the
+    /// list last heard from the write: a send waits for it.
+    let kept: String?
+    /// The rows the list holds of the thread have the pending message.
+    let landed: Bool
+    /// The thread whose rows, as the list holds them, have a new chat's
+    /// pending message: its first copy opened that thread, and its answer
+    /// was lost.
+    let landedOn: String?
+
+    /// How long after each unanswered copy the next goes on its own: three
+    /// repeats, as the console makes them.
+    static let repeatDelays: [Double] = [1, 3, 8]
+    /// No copy goes on its own later than this after the person pressed:
+    /// past it the message stands unsent, with Send Again.
+    static let repeatWindow: TimeInterval = 120
 
     struct Seed: Codable, Hashable, Sendable {
         var thread: String?
         var agent: String?
         var draft: String
         var listen: Bool
+        /// A message the device kept from a run of the app that ended
+        /// before the server took it.
+        var unsent: UnsentMessage?
     }
 
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false
+        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, sendsIDs: Bool = false,
+        kept: String? = nil, landed: Bool = false, landedOn: String? = nil
     ) {
         self.key = key
         self.seed = seed
@@ -159,10 +201,21 @@ public struct Conversation: Controller, Equatable {
         self.resumeNudge = resumeNudge
         self.continuing = continuing
         self.continues = continues
+        self.sendsIDs = sendsIDs
+        self.kept = kept
+        self.landed = landed
+        self.landedOn = landedOn
     }
 
     public var initialState: State {
-        State(thread: seed.thread, agent: seed.agent, draft: seed.draft, carried: seed.draft, listenOnOpen: seed.listen)
+        var state = State(
+            thread: seed.thread, agent: seed.unsent?.agent ?? seed.agent, draft: seed.draft, carried: seed.draft, listenOnOpen: seed.listen)
+        if let unsent = seed.unsent {
+            state.pending = unsent
+            state.copies = 1
+            state.restored = true
+        }
+        return state
     }
 
     /// Who the chat is with: a bound chat's thread names it; a new chat
@@ -172,8 +225,15 @@ public struct Conversation: Controller, Equatable {
     func name(_ state: State) -> String { agent(state).map(agentName) ?? "the assistant" }
 
     /// Why a send cannot go now; the text stays in the composer while it
-    /// says so.
+    /// says so. One message at a time waits on the server: the next goes
+    /// once the one above is sent or taken back.
     func blockedReason(_ state: State) -> String? {
+        if let reason = resendBlocked(state) { return reason }
+        return state.pending == nil ? nil : "Send or edit the message above first"
+    }
+
+    /// Why the pending message cannot be sent again now.
+    func resendBlocked(_ state: State) -> String? {
         if state.deleted { return "This chat was deleted" }
         if agent(state) == nil { return "Choose an assistant" }
         if state.checking { return "Checking whether your last message arrived" }
@@ -204,23 +264,29 @@ public struct Conversation: Controller, Equatable {
         case .retryReload: return [Event(.retriedReload)]
         case .reopen: return [Event(.reopened)]
         case .dismissFailure: return [Event(.failureDismissed)]
+        case .sendAgain:
+            guard state.standing, resendBlocked(state) == nil else { return [] }
+            return [Event(.sentAgain(at: context.now))]
+        case .takeBack: return state.standing ? [Event(.tookBack)] : []
         case .send:
             let message = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !message.isEmpty else { return [] }
-            return sent(message, fromDraft: true, state, at: context.now)
+            guard !message.isEmpty, blockedReason(state) == nil else { return [] }
+            // The id is minted here, once, when the person presses Send:
+            // every copy of this message goes under it.
+            return sent(message, fromDraft: true, state, at: context.now, id: sendsIDs ? context.mint().uuidString.lowercased() : nil)
         case .continueTurn:
             guard state.thread != nil, blockedReason(state) == nil else { return [] }
             if continues { return [Event(.continued(at: context.now))] }
-            return sent(Self.continueMessage, fromDraft: false, state, at: context.now)
+            return sent(Self.continueMessage, fromDraft: false, state, at: context.now, id: nil)
         }
     }
 
-    private func sent(_ message: String, fromDraft: Bool, _ state: State, at now: Date) -> [Event] {
+    private func sent(_ message: String, fromDraft: Bool, _ state: State, at now: Date, id: String?) -> [Event] {
         guard blockedReason(state) == nil, let agent = agent(state) else { return [] }
         // Where the transcript stood, for a delivery check: unknown while its
         // rows are unread, or stale because their re-read failed.
         let baseline = state.thread != nil && state.reloadFailed == nil ? newestTurn : nil
-        return [Event(.sent(message: message, agent: agent, at: now, baseline: baseline, fromDraft: fromDraft))]
+        return [Event(.sent(message: message, agent: agent, at: now, baseline: baseline, fromDraft: fromDraft, id: id))]
     }
 
     /// Made while a scene shows it: as if it had just appeared there.
@@ -231,6 +297,12 @@ public struct Conversation: Controller, Equatable {
         if pollNudge != previous.pollNudge { return Event(.nudgedPoll) }
         if resumeNudge != previous.resumeNudge { return Event(.resumed) }
         if visible, !previous.visible { return Event(.opened) }
+        // Each of the two is also read from the value by whatever event is
+        // applied next, so one that loses its turn here to a change above
+        // is not missed.
+        if kept != nil, kept != previous.kept { return Event(.kept) }
+        if landed, !previous.landed { return Event(.landed) }
+        if landedOn != nil, landedOn != previous.landedOn { return Event(.landed) }
         return nil
     }
 
@@ -260,6 +332,8 @@ public struct Conversation: Controller, Equatable {
     public func key(of effect: Effect) -> String? {
         switch effect.ask {
         case .chat, .resume, .attach, .handover: "run"
+        case .repeatWait: "repeat"
+        case .find: "find"
         case .countdown: "countdown"
         case .wait: "retry"
         case .pollEvery: "pollTimer"

@@ -10,6 +10,9 @@ struct ConversationFailures: Codable, Equatable, Sendable {
     /// not open, a reload that did not land.
     var chat: Failure?
     var chatBusy = false
+    /// The message that stands unsent at its place in the chat, by the id
+    /// it was sent under, and why.
+    var message: Failure?
     /// A send of unknown delivery is being read for.
     var checking = false
     /// A stream dropped and is being opened again. A state for the
@@ -29,6 +32,7 @@ extension Conversation {
             out.chat = failure
             out.chatBusy = true
         }
+        out.message = state.unsentFailure
         out.checking = state.checking
         out.reconnecting = state.reconnecting
         return out

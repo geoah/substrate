@@ -10,6 +10,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     // The link and the device
     case linked(LinkSnapshot)
     case diskOpened(Disk)
+    /// The folder holds these unsent messages, by id, as of its last write.
+    case unsentSaved(Set<String>)
     case permissionRead(NotificationPermission)
     case usageRead([AreaUsage])
     case transcriptsCleared
@@ -109,6 +111,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var lease: ChatStorage.Lease
         var state: CachedState?
         var drafts: [String: String]
+        var unsent: [String: UnsentMessage] = [:]
         var preferences: ChatPreferences
         /// What the watch marked to read again that was not read before the
         /// app last stopped.
@@ -175,6 +178,15 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var failure: Failure?
         /// The server said it does not serve the continue route.
         var continueUnserved = false
+        /// The message the server has not taken, as the folder keeps it.
+        var unsent: UnsentMessage?
+        /// The server refused `messageId` as a field it does not know.
+        var idsUnserved = false
+        /// `named` came from a read that found the pending message on the
+        /// thread, not from a run.
+        var adopted = false
+        /// The draft holds a message the conversation put back.
+        var gaveBack = false
     }
 
     struct Read: Codable, Equatable, Sendable {

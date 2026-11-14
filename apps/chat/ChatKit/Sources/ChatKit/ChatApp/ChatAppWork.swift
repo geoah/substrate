@@ -66,7 +66,7 @@ extension ChatApp {
                 return Event(
                     .diskOpened(
                         .init(
-                            lease: lease, state: state, drafts: storage.drafts(lease),
+                            lease: lease, state: state, drafts: storage.drafts(lease), unsent: storage.unsent(lease),
                             preferences: preferences.load(identity), stale: stale)))
             }
         case let .closeDisk(identity, deleting):
@@ -104,6 +104,16 @@ extension ChatApp {
                 if !atOnce { guard await pause(0.6) else { return nil } }
                 storage.save(drafts: drafts, lease, ticket: ticket)
                 return nil
+            }
+        case let .saveUnsent(lease, unsent, drafts):
+            // At once, and answered: a message's first copy waits for it.
+            // Answered whether or not the folder took it: a folder that
+            // cannot be written (a full disk) does not hold a message
+            // back, and the message is then kept only while the app runs.
+            let ticket = storage.draftsTicket()
+            return .once {
+                storage.save(drafts: drafts, unsent: unsent, lease, ticket: ticket)
+                return Event(.unsentSaved(Set(unsent.values.map(\.id))))
             }
         case let .savePreferences(lease, chosen):
             return .once {
