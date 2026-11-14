@@ -1436,6 +1436,29 @@ func (s *scopedDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errScope("the export")
 }
 
+// Publishing is the owner's decision (decision record 0289): an app's token
+// neither plans nor runs it. What the repository publishes is public, so the
+// releases read through.
+func (s *scopedDataset) PlanPublish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errScope("publishing a package")
+}
+
+func (s *scopedDataset) Publish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errScope("publishing a package")
+}
+
+func (s *scopedDataset) ReleasePackage(context.Context, substrate.Actor, substrate.ReleaseInput) (substrate.ReleasePlan, error) {
+	return substrate.ReleasePlan{}, errScope("releasing a package")
+}
+
+func (s *scopedDataset) Releases(ctx context.Context, authority string) ([]substrate.Release, error) {
+	return s.inner.Releases(ctx, authority)
+}
+
+func (s *scopedDataset) ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error) {
+	return s.inner.ReleaseClosure(ctx, pkg, version)
+}
+
 func (s *scopedDataset) DomainState(context.Context) (substrate.DomainState, error) {
 	return substrate.DomainState{}, errScope("domain verification")
 }

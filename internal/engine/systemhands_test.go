@@ -37,6 +37,7 @@ var systemHands = map[string]string{
 	"agents.go:claimAgentDelivery":               "decides: an agent delivery's claim",
 	"agents.go:settleInterruptedClaims":          "decides: claims a stop left in flight",
 	"agents.go:markRerun":                        "decides: a failed agent delivery marked to run again",
+	"agentloop.go:settleAfterFailure":            "decides: the thread of a run whose hand's code was taken out of the repository (published or uninstalled) while it ran, settled error",
 	"agents.go:settleLostThreads":                "decides: threads whose run was lost",
 	"agents.go:settleInterruptedThreads":         "decides: threads a stop cut short",
 	"alerts.go:alertActorOf":                     "names: an alert with no callable behind it is the system's",

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1253,4 +1254,28 @@ func ArchiveCovered(ctx context.Context, store archive.Store, id string) (bool, 
 // answers an error for (identityboot.go).
 func WithTestPeopleFault(fn func(repository string) error) Option {
 	return func(o *options) { o.peopleFault = fn }
+}
+
+// PublishHistoryKinds are the kinds whose records a publish leaves whole, as
+// history (publishRecordPositions): a scan for the names a publish left
+// passes over them, and over nothing else.
+func PublishHistoryKinds() []string {
+	var out []string
+	for kind, positions := range publishRecordPositions {
+		if p, ok := positions[recordWhole]; ok && p.answer == vocabulary.PublishHistory {
+			out = append(out, kind)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// LandApproval lands an approval as the agent loop does (approvals.go), for
+// a test of what reads one.
+func LandApproval(ctx context.Context, ds substrate.Dataset, id string, props map[string]any) error {
+	return ds.(*dataset).inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		t.approvalLoop = true
+		_, err := t.put(substrate.PutInput{Kind: vocabulary.KindLLMApproval, ID: id, Properties: props})
+		return err
+	})
 }

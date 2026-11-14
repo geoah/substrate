@@ -112,6 +112,12 @@ import type {
   BlobInfo,
   DomainCheck,
   DomainProof,
+  PublishInput,
+  PublishPlan,
+  Release,
+  ReleaseInput,
+  ReleasePlan,
+  Releases,
   SiteInfo,
   OperatorDefaults,
   OperatorInfo,
@@ -390,6 +396,52 @@ const domainCheck: Shape<DomainCheck> = {
   verifiedAt: false,
   reason: false,
 }
+
+/** Publishing one of the repository's own packages (publish.ts). */
+const publishInput: Shape<PublishInput> = {
+  package: true,
+  authority: true,
+  confirm: false,
+}
+
+const publishPlan: Shape<PublishPlan> = {
+  package: true,
+  published: true,
+  kinds: true,
+  packages: true,
+  records: true,
+  references: true,
+  blockers: true,
+  texts: true,
+  name: true,
+  record: true,
+  documentURL: true,
+  proven: true,
+  reason: false,
+  release: false,
+}
+
+const releaseInput: Shape<ReleaseInput> = { package: true, confirm: false }
+
+const releasePlan: Shape<ReleasePlan> = {
+  package: true,
+  version: true,
+  previous: true,
+  sha256: true,
+  declarations: true,
+  blockers: true,
+  release: false,
+}
+
+const release: Shape<Release> = {
+  package: true,
+  version: true,
+  sha256: true,
+  dialect: false,
+  releasedAt: true,
+}
+
+const releases: Shape<Releases> = { items: true }
 
 const siteInfo: Shape<SiteInfo> = {
   name: true,
@@ -858,6 +910,7 @@ const authorizationPackagePublisher: Shape<AuthorizationPackagePublisher> = {
   documentUrl: true,
   fromFile: false,
   digest: false,
+  movedTo: false,
 }
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
@@ -1504,6 +1557,12 @@ const mirrors: Record<string, Record<string, boolean>> = {
   BlobInfo: blobInfo,
   DomainProof: domainProof,
   DomainCheck: domainCheck,
+  PublishInput: publishInput,
+  PublishPlan: publishPlan,
+  ReleaseInput: releaseInput,
+  ReleasePlan: releasePlan,
+  Release: release,
+  Releases: releases,
   SiteInfo: siteInfo,
   OperatorDefaults: operatorDefaults,
   OperatorInfo: operatorInfo,

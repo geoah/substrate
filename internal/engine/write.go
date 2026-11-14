@@ -346,6 +346,12 @@ func (t *txn) checkID(typ, id string) error {
 	if err := t.lockRecord(eref{Kind: typ, ID: id}); err != nil {
 		return err
 	}
+	// A kind move carries a merge's loser, a held tombstone, under its own
+	// id beside the record it was merged into, whose trail may already name
+	// it under the new kind, as both stood under the old one (move.go).
+	if t.movingRecords {
+		return nil
+	}
 	former, err := t.formerTarget(typ, id)
 	if err != nil {
 		return err
@@ -1434,7 +1440,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 					return nil, err
 				}
 			}
-			if p, ok := sp.ty.Prop(name); ok && p.Embed {
+			// A carried record brings its vectors and its queue with it
+			// (move.go carryVectors): its text is the text they were made of.
+			if p, ok := sp.ty.Prop(name); ok && p.Embed && !t.movingRecords {
 				if err := t.enqueueEmbed(sp.ref(), name); err != nil {
 					return nil, err
 				}
@@ -1442,6 +1450,18 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 		if created {
 			payload["created"] = true
+		}
+		// A carried record's line says where it came from, as its old row's
+		// tombstone says where it went: the same record arriving, which no
+		// trigger delivers (matchChanges, decision record 0078).
+		if t.movingRecords && t.movedFrom != "" {
+			payload["movedFrom"] = t.movedFrom
+		}
+		// A write that only moves the names a record holds to where they now
+		// point says so, as the move's own repoint lines do (move.go
+		// repointRecord): the record says the same thing as before.
+		if len(t.repointing) > 0 {
+			payload["repointed"] = t.repointing
 		}
 		if sp.resurrect {
 			payload["restored"] = true

@@ -294,6 +294,21 @@ type Dataset interface {
 	Export(ctx context.Context) (Export, error)
 
 	// --- domain verification (decision 0208) ---
+	// PlanPublish answers what publishing one of the repository's own
+	// packages under an authority would do, and what refuses it now,
+	// writing nothing; Publish does it, the caller having read the
+	// authority's proof (decision record 0289). ReleasePackage answers the
+	// next release of a package the repository publishes, and writes it
+	// when in.Confirm says so. Releases lists the
+	// releases under an authority, every one when it is empty, and
+	// ReleaseClosure is one release's closure, byte for byte (decision
+	// record 0291).
+	PlanPublish(ctx context.Context, actor Actor, in PublishInput) (PublishPlan, error)
+	Publish(ctx context.Context, actor Actor, in PublishInput) (PublishPlan, error)
+	ReleasePackage(ctx context.Context, actor Actor, in ReleaseInput) (ReleasePlan, error)
+	Releases(ctx context.Context, authority string) ([]Release, error)
+	ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error)
+
 	// DomainState reads the pending proof and the verified stamp off the
 	// repository record.
 	DomainState(ctx context.Context) (DomainState, error)

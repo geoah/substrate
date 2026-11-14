@@ -95,7 +95,12 @@ unique per kind, never per repository.
    names. A sample is copied into the repository's local namespace, `~`, so
    the kind you then write is `~/tasks/task` in every repository, not the
    catalog's id ([getting started](getting-started.md)). The owner's full
-   name is accepted in place of `~`, and every answer says `~`.
+   name is accepted in place of `~`, and every answer says `~`, except
+   where the owner has published one of their packages under that name:
+   then the name is the published package's, as `ada.example.com/recipes`
+   is once `~/recipes` is published there. Publishing and releasing are the
+   owner's to decide, in the console or with `substratectl`; an agent and an
+   app's scoped token are refused both ([publishing](publishing.md)).
 
 ## Reading
 

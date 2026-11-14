@@ -1307,6 +1307,16 @@ func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string
 		defer cancel()
 	}
 	_, err := l.settle(sctx, threadError, reason, reply, nil)
+	if errors.Is(err, errHandGone) {
+		// The run's own hand writes nothing once its code is gone (a
+		// publish or an uninstall while it ran), so the engine settles its
+		// thread, and the person reads why at once rather than at the
+		// reaper's sweep.
+		hand := l.actor
+		l.actor = substrate.ActorSystem
+		_, err = l.settle(sctx, threadError, reason, reply, nil)
+		l.actor = hand
+	}
 	if err != nil {
 		l.ds.noteLostRun(l, reason)
 	}

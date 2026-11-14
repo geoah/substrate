@@ -897,6 +897,82 @@ export interface DomainCheck {
   reason?: string
 }
 
+/** A publish: `POST /api/v1/packages/publish`. `package` is one of the
+ * repository's own, in `~`; `authority` is the domain it is published under.
+ * Without `confirm` the answer is the plan and nothing changes. */
+export interface PublishInput {
+  package: string
+  authority: string
+  confirm?: boolean
+}
+
+/** What a publish does, stated before it runs and answered after.
+ * `published` is the package's name for good; `kinds` the kinds that move
+ * under it; `packages` the repository's other packages whose declarations
+ * follow; `records` how many records move; `references` how many records
+ * elsewhere have a reference repointed. `blockers` refuse it now, empty
+ * where nothing does. `texts` are the declarations whose author's text (an
+ * agent's prompt) names the package in `~` and is left as written. The
+ * proof half: the TXT `record` to publish at `name`, the document it
+ * names, and whether DNS says so yet (`proven`, and the `reason` while it
+ * does not). `release` is the first release, once the publish ran. */
+export interface PublishPlan {
+  package: string
+  published: string
+  kinds: string[]
+  packages: string[]
+  records: number
+  references: number
+  blockers: string[]
+  texts: string[]
+  name: string
+  record: string
+  documentURL: string
+  proven: boolean
+  reason?: string
+  release?: Release
+}
+
+/** The next release of a package this repository publishes:
+ * `POST /api/v1/packages/release`. Without `confirm` the answer is what it
+ * would write. */
+export interface ReleaseInput {
+  package: string
+  confirm?: boolean
+}
+
+/** A package's next release, stated before it is written and answered
+ * after: the `version` it takes and the `previous` one, the SHA-256 of the
+ * closure it serves, the `declarations` the closure holds as record paths,
+ * and the `blockers` that refuse it now, empty where nothing does.
+ * `release` is the release, once written. */
+export interface ReleasePlan {
+  package: string
+  version: number
+  previous: number
+  sha256: string
+  declarations: string[]
+  blockers: string[]
+  release?: Release
+}
+
+/** One version of a package this repository publishes: the SHA-256 of its
+ * closure, the dialect its declarations need where they state one, and when
+ * it was released. */
+export interface Release {
+  package: string
+  version: number
+  sha256: string
+  dialect?: number
+  releasedAt: string
+}
+
+/** `GET /api/v1/packages/releases`: every release of every package the
+ * repository publishes, oldest version first within a package. */
+export interface Releases {
+  items: Release[]
+}
+
 /** The deployer's site, discovery's optional `site` object: absent where the
  * server has no `SUBSTRATE_SITE_DIR`. `logo`, `icon` and `landing` are
  * server-relative URLs under `/site/`; `icon` is the browser tab's icon, the
@@ -1362,6 +1438,9 @@ export interface AuthorizationPackagePublisher {
   fromFile?: boolean
   /** The SHA-256 of the closure the row would install. */
   digest?: string
+  /** The authority the publisher's document says it moved to (decision
+   * record 0293): shown, never followed. */
+  movedTo?: string
 }
 
 /** One package a requested one requires, with what it brings of its own.

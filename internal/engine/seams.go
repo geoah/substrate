@@ -276,6 +276,15 @@ const (
 // publishes (DefaultArchiveStepBytes).
 func WithArchiveStepBytes(n int64) Option { return func(o *options) { o.archiveStepBytes = n } }
 
+// WithTestEndOfTransactionCheck adds a check to every transaction's
+// end-of-transaction checks (dataset.go inTxOn), beside the declared units
+// and the metric rules: check is handed whether the declarations the
+// transaction leaves hold a package, and its error refuses the transaction,
+// as one of those checks would.
+func WithTestEndOfTransactionCheck(check func(declares func(pkg string) bool) error) Option {
+	return func(o *options) { o.endOfTxCheck = check }
+}
+
 // WithTestShippedUpgradeRefusal adds refusal lines to a repository's shipped
 // upgrade guards (seed.go), so an open refuses the upgrade as a binary did
 // before a guard was mended: the repository serves on the declarations it

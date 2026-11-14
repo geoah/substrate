@@ -19,6 +19,7 @@ import {
 import { KindGlyph } from "@/components/identity/kind-glyph"
 import { KindPath } from "@/components/identity/kind-ref"
 import { OriginMark } from "@/components/identity/origin-mark"
+import { PackagePublishActions } from "@/components/packages/publish-package"
 import { TablePage } from "@/components/identity/page-layout"
 import { PageHeader } from "@/components/identity/page-header"
 import { ProviderBadge } from "@/components/identity/provider-badge"
@@ -45,6 +46,14 @@ import { kindDescription } from "@/lib/kind-copy"
 import type { Origin } from "@/lib/origin"
 import { kindOrigin, packageAgent, packagesQueryOptions } from "@/lib/packages"
 import { cn } from "@/lib/utils"
+
+/** The one package a package group holds, for the actions on its head; a
+ * group of a seeded kind of the owner's (Contacts) holds part of one. */
+function soleOwnPackage(g: CollectionGroup) {
+  if (g.type !== "package" || g.authorities.length !== 1) return undefined
+  const [only] = g.authorities
+  return only.packages.length === 1 ? only.packages[0] : undefined
+}
 
 const HINT: Record<CollectionGroup["type"], (g: CollectionGroup) => string> = {
   package: () => "yours to change",
@@ -141,6 +150,7 @@ function GroupTable({
   const madeBy = shown.some((k) =>
     packageAgent(packages.data, `${k.authority}/${k.package}`)
   )
+  const own = soleOwnPackage(group)
   return (
     <section>
       <SectionHead
@@ -153,6 +163,14 @@ function GroupTable({
           </>
         }
         hint={HINT[group.type](group)}
+        actions={
+          own && (
+            <PackagePublishActions
+              authority={own.authority}
+              pkg={own.package}
+            />
+          )
+        }
       />
       <div className="overflow-x-auto rounded-[10px] border border-border">
         <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-sm">

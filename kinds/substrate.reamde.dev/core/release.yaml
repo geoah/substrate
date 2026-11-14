@@ -1,0 +1,43 @@
+# one version of a package this repository publishes (decision record 0291)
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/release
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    One version of a package this repository publishes under an authority
+    it proved: the closure another server installs, byte for byte, and the
+    digest the authority document lists for it. A release is never changed
+    or removed, so a version installed elsewhere stays what it was.
+  purpose: internal
+  names:
+    singular: release
+  # The publish and the release are the one writer, attributed to the hand
+  # that asked for them; the generic surface refuses every write (engine
+  # write.go forbidSystemKind). Reading and listing it is ordinary.
+  displayTemplate: "{package} {version}"
+  properties:
+    package:
+      type: string
+      required: true
+      description: the package released, under the authority it is published
+        as
+    version:
+      type: int
+      required: true
+      description: the version, the package header's in the closure
+    sha256:
+      type: string
+      required: true
+      description: the lowercase hex SHA-256 of the closure's bytes
+    dialect:
+      type: int
+      description: the vocabulary dialect the closure's declarations need
+    # The closure is the publisher's code and declarations, not the owner's
+    # words, so search leaves it out.
+    closure:
+      type: text
+      fts: false
+      required: true
+      description: the closure, a YAML stream of the package's declarations

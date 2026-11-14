@@ -396,6 +396,28 @@ func (a *assistantDataset) StartOAuth(context.Context, substrate.Actor, string) 
 	return "", errAssistant("a provider account's connect flow: the owner connects it in the console")
 }
 
+// PlanPublish is refused as Publish is: the preview is the publish's own
+// transaction, rolled back.
+func (a *assistantDataset) PlanPublish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errAssistant("publishing a package: the owner publishes it in the console")
+}
+
+func (a *assistantDataset) Publish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errAssistant("publishing a package: the owner publishes it in the console")
+}
+
+func (a *assistantDataset) ReleasePackage(context.Context, substrate.Actor, substrate.ReleaseInput) (substrate.ReleasePlan, error) {
+	return substrate.ReleasePlan{}, errAssistant("releasing a package: the owner writes its next release in the console")
+}
+
+func (a *assistantDataset) Releases(ctx context.Context, authority string) ([]substrate.Release, error) {
+	return a.inner.Releases(ctx, authority)
+}
+
+func (a *assistantDataset) ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error) {
+	return a.inner.ReleaseClosure(ctx, pkg, version)
+}
+
 func (a *assistantDataset) DomainState(ctx context.Context) (substrate.DomainState, error) {
 	return a.inner.DomainState(ctx)
 }

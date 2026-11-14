@@ -795,14 +795,15 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 // is by the CALLABLE's actor — a callable never sees its own writes,
 // whatever trigger delivers them, by the run type, since every delivery
 // writes a run row and a `*` subscription over runs would feed itself, and by
-// the delivery entry, which is the ledger's own bookkeeping (delivery.go).
+// the delivery entry, which is the ledger's own bookkeeping (delivery.go),
+// and by what a kind move writes (movedLine).
 // (An agent's thread/message rows carry the agent's actor, so the same
 // exclusion keeps an agent off its own transcript.) A function's self also
 // covers the agents it may run (trigger.selfActors).
 func matchChanges(tr *trigger, self map[string]bool, changes []substrate.Change) []substrate.Change {
 	var out []substrate.Change
 	for _, ch := range changes {
-		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
+		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery || movedLine(ch) {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -811,6 +812,17 @@ func matchChanges(tr *trigger, self map[string]bool, changes []substrate.Change)
 		out = append(out, ch)
 	}
 	return out
+}
+
+// movedLine reports whether ch is a line a kind move writes (move.go), which
+// no trigger delivers, whatever its source (decision record 0298): the put
+// of a record it carries under the kind it arrives at (`movedFrom`), the
+// tombstone under the kind it leaves (`movedTo`), and a line that only moves
+// the names a record holds to where they now point (`repointed`). Each is
+// the same record saying the same thing, so none is a creation, an update
+// or a deletion to anything that reacts to one.
+func movedLine(ch substrate.Change) bool {
+	return ch.Payload["movedFrom"] != nil || ch.Payload["movedTo"] != nil || ch.Payload["repointed"] != nil
 }
 
 // coalesceChanges keeps the LAST pending change per record, in seq order:

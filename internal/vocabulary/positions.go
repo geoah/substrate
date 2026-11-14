@@ -30,6 +30,17 @@ const (
 	// posNamed is a map keyed by names the author chose, each value an
 	// object of another key set.
 	posNamed
+	// posCode is code that may spell kinds in its text: a function's source
+	// and a bundle's shared modules. It is no reference position, so the
+	// repository's own documents keep it as written; a copy out of a sample
+	// and a publish move the kind references it spells by the kind-reference
+	// rule (LocalizeKindRefs, publishKindRefs).
+	posCode
+	// posPrompt is an agent's prompt, prose that may name kinds. A copy out
+	// of a sample moves the kinds it names, as it moves code's; a publish
+	// leaves it as its author wrote it, and its preview lists every prompt
+	// that still names the package (PublishTexts).
+	posPrompt
 )
 
 // keyClass is one key's position, and for an object or a named map the key
@@ -44,6 +55,8 @@ var (
 	atText      = keyClass{pos: posText}
 	atRef       = keyClass{pos: posRef}
 	atAuthority = keyClass{pos: posAuthority}
+	atCode      = keyClass{pos: posCode}
+	atPrompt    = keyClass{pos: posPrompt}
 )
 
 func atObject(keys string) keyClass { return keyClass{pos: posObject, keys: keys} }
@@ -86,7 +99,7 @@ var declarationPositions = map[string]map[string]keyClass{
 	"packageRetiredKeys": {"kinds": atWord},
 	"bundleDataKeys": {
 		"authority": atAuthority, "package": atWord, "description": atText,
-		"inputs": atNamed("bundleInputKeys"), "installs": atRef, "modules": atText, "oauth2": atText,
+		"inputs": atNamed("bundleInputKeys"), "installs": atRef, "modules": atCode, "oauth2": atText,
 		"requires": atRef, "requiresAtLeast": {pos: posPackages},
 	},
 	"bundleInputKeys": {"description": atText, "inject": atWord, "kind": atRef},
@@ -95,7 +108,7 @@ var declarationPositions = map[string]map[string]keyClass{
 		"arguments": atObject("functionArgKeys"), "confirmation": atText, "effect": atWord,
 		"execution": atWord, "offer": atObject("functionOfferKeys"),
 		"permissions": atObject("functionPermissionKeys"), "returns": atObject("functionArgKeys"),
-		"runtime": atWord, "source": atText, "stream": atWord, "timeout": atWord,
+		"runtime": atWord, "source": atCode, "stream": atWord, "timeout": atWord,
 	},
 	"functionArgKeys":   {"description": atText, "name": atWord, "repeated": atWord, "required": atWord, "type": atRef, "values": atText},
 	"functionOfferKeys": {"agents": atRef, "name": atWord},
@@ -111,7 +124,7 @@ var declarationPositions = map[string]map[string]keyClass{
 		"context": atObject("agentContextKeys"), "hiddenFromChat": atWord,
 		// A model is the provider's string, never a name of this substrate's.
 		"model": atWord, "models": atWord,
-		"params": atText, "permissions": atObject("agentPermissionKeys"), "prompt": atText,
+		"params": atText, "permissions": atObject("agentPermissionKeys"), "prompt": atPrompt,
 		"provider": atRef, "providerInput": atText, "purpose": atWord, "resume": atWord,
 		"runsOn": atRef, "subagents": atRef, "tools": atObject("agentToolKeys"),
 		"toolsFrom": atObject("agentToolsFromKeys"),

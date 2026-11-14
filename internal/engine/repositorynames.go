@@ -324,13 +324,19 @@ func (s *service) renameOn(ctx context.Context, id, newName string, by renameBy)
 // alone changes no meaning, and a rename leaves it as it is.
 
 // refuseHeldUnderName refuses name to repository id where id holds a live
-// package under name.
+// package under name. A package id publishes, one it has a release of, is
+// its own (decision record 0289): renaming back to a name it published
+// under is allowed, as publishing under its name is, and the name then
+// names its published packages rather than spelling `~`
+// (Registry.Spellings).
 func refuseHeldUnderName(ctx context.Context, tx dbx, id, name string) error {
 	var held string
 	err := tx.QueryRowContext(ctx, `
-		SELECT id FROM records
-		WHERE repository = $1 AND deleted_at IS NULL AND kind = $2 AND starts_with(id, $3 || '/')
-		ORDER BY id LIMIT 1`, id, kindPackage, name).Scan(&held)
+		SELECT x.id FROM records x
+		WHERE x.repository = $1 AND x.deleted_at IS NULL AND x.kind = $2 AND starts_with(x.id, $3 || '/')
+		  AND NOT EXISTS (SELECT 1 FROM records r
+		    WHERE r.repository = $1 AND r.kind = $4 AND r.deleted_at IS NULL AND r.props->>'package' = x.id)
+		ORDER BY x.id LIMIT 1`, id, kindPackage, name, kindRelease).Scan(&held)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

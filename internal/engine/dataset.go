@@ -63,7 +63,7 @@ var systemKinds = map[string]bool{
 	kindKind: true, kindPackage: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
-	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true,
+	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true, kindRelease: true,
 	// Declared, empty and written by nothing in a repository from before
 	// decision 0264 (repomigration_0008_purge_the_recovery_key.go).
 	kindRecoveryKey: true,
@@ -686,8 +686,22 @@ type txn struct {
 	// another (move.go, record 0078). The row was admitted once already, under
 	// the old kind, so the CREATION-only contracts (an interaction's batch, a
 	// change request's reviewed envelope) must not judge it a second time: it
-	// is the same record arriving, not a new one being authored.
+	// is the same record arriving, not a new one being authored. movedFrom
+	// is the kind it arrives from, which its line names (matchChanges).
 	movingRecords bool
+	movedFrom     string
+	// dryRun runs the transaction to where it would commit, and rolls it
+	// back there (vocabularyBatch.rollback).
+	dryRun bool
+	// fillingActors marks the open's fill of the actor records the history
+	// links (actorfill.go), which writes the record of a hand whose code is
+	// gone and disables it, where any other write is refused for that hand
+	// (ensureActor).
+	fillingActors bool
+	// repointing is set while a write only moves the names a record holds
+	// (old to new), which its line names as `repointed` (a publish's renames,
+	// a carried record's deferred references).
+	repointing map[string]string
 	// policyDecision marks the ENGINE's own judge-driven decision on a
 	// policy-gated request: the one bundle-tier hand the gated
 	// guard admits.
@@ -868,6 +882,14 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.checkMetricValues(); err != nil {
 		return err
 	}
+	if check := ds.svc.testEndOfTxCheck; check != nil {
+		if err := check(func(pkg string) bool {
+			_, ok := t.declarations().PackageByName(pkg)
+			return ok
+		}); err != nil {
+			return err
+		}
+	}
 	// The observed index's rollups and latest rows, from the points the
 	// transaction's folds left (observedindex.go).
 	if err := t.settleObserved(); err != nil {
@@ -881,6 +903,20 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	// the payload as stored.
 	if err := t.settleChecksums(); err != nil {
 		return err
+	}
+	// The commit's own refusals, the writer's lease lost and the dataset
+	// latched unsettled, read here too so a dry run meets them; commit
+	// reads them again immediately before its COMMIT.
+	if err := ds.svc.lease.err(); err != nil {
+		return err
+	}
+	if err := ds.unsettledErr(); err != nil {
+		return err
+	}
+	// A dry run ends here, where it would commit, every check and settling
+	// above run as the commit would have them (vocabularyBatch.rollback).
+	if t.dryRun {
+		return errBatchRolledBack
 	}
 	// A transaction that moved a token fences its repository's tokens in the
 	// cache before its COMMIT, and the fence stands until the outcome is

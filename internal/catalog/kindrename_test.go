@@ -27,3 +27,27 @@ func TestARenamingReleaseIsNeverAdditive(t *testing.T) {
 		t.Fatalf("KindRenames = %q", got)
 	}
 }
+
+// A closure a document serves names no package in `~`, which is the
+// installing repository's own namespace: the parse refuses it, naming each
+// name, and the admission a publishing repository runs on its releases
+// (AdmitClosure) refuses it and a renamed kind the same way.
+func TestAClosureThatNamesTheLocalNamespaceIsRefused(t *testing.T) {
+	note := "---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: example.com/notes/memo\ndata:\n  authority: example.com\n  package: notes\n  names:\n    singular: memo\n  properties:\n    task:\n      type: reference\n      kind: ~/tasks/task\n"
+	body := strings.Replace(publishedClosure("example.com/notes", 1), "installs: [example.com/notes/item]", "installs: [example.com/notes/item, example.com/notes/memo]", 1) + note
+	if _, err := ParseClosure([]byte(body), "example.com/notes", 1); err == nil || !strings.Contains(err.Error(), "~/tasks/task") {
+		t.Fatalf("ParseClosure = %v, want the closure refused naming ~/tasks/task", err)
+	}
+	if _, _, err := AdmitClosure([]byte(body), "example.com/notes", 1); err == nil || !strings.Contains(err.Error(), "local namespace") {
+		t.Fatalf("AdmitClosure = %v, want the local name refused", err)
+	}
+	memo := "---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: example.com/notes/memo\ndata:\n  authority: example.com\n  package: notes\n  movedFrom: example.com/notes/note\n  names:\n    singular: memo\n  properties:\n    name:\n      type: string\n"
+	renamed := strings.Replace(publishedClosure("example.com/notes", 1), "installs: [example.com/notes/item]", "installs: [example.com/notes/item, example.com/notes/memo]", 1) + memo
+	if _, _, err := AdmitClosure([]byte(renamed), "example.com/notes", 1); err == nil || !strings.Contains(err.Error(), "movedFrom") && !strings.Contains(err.Error(), "rename") {
+		t.Fatalf("AdmitClosure of a renaming closure = %v, want it refused", err)
+	}
+	vocab, data, err := AdmitClosure([]byte(publishedClosure("example.com/notes", 1)), "example.com/notes", 1)
+	if err != nil || len(vocab) == 0 || len(data) != 0 {
+		t.Fatalf("AdmitClosure of a plain closure = %d declarations, %d records, %v", len(vocab), len(data), err)
+	}
+}
