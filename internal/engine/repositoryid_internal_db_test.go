@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1292,6 +1293,198 @@ func TestARowWhoseDirectoryLostItsManifestStaysAsideWithIt(t *testing.T) {
 	wantKeyedRowAsideWithItsDirectory(t, k)
 	if _, err := os.Stat(filepath.Join(k.dir(), changelogfile.SpoolSubdir)); err != nil {
 		t.Fatalf("the directory under the name: %v", err)
+	}
+}
+
+// failOnceReadingTheRecord fails the first read of the row a keying's record
+// names, as a database read that fails at that moment does.
+func failOnceReadingTheRecord() Option {
+	failed := false
+	return WithTestImportFault(0, func(stage string) error {
+		if stage == keyingReadRecorded && !failed {
+			failed = true
+			return errors.New("the read failed")
+		}
+		return nil
+	})
+}
+
+// startStoppedByAFailedRead runs a start whose first read of the row a
+// keying's record names fails, and holds it to have stopped with that
+// failure and changed nothing: the directory under the name holds what it
+// held, file for file, its spool included; the keying's record names the
+// id it named; the repositories' rows are as they were; and nothing is
+// under the id.
+func (k keyedByName) startStoppedByAFailedRead(t *testing.T, id string) {
+	t.Helper()
+	db := rawDBOf(t, k.dsn)
+	rows := func() string {
+		t.Helper()
+		var out string
+		if err := db.QueryRow(`SELECT coalesce(string_agg(row_to_json(r)::text, E'\n' ORDER BY r.id), '') FROM repositories r`).Scan(&out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	before := filepath.Join(t.TempDir(), "before")
+	if err := copyTree(k.dir(), before); err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := changelogfile.ReadKeyingRecords(k.root)
+	if err != nil || recorded[k.name] == "" {
+		t.Fatalf("the keying's record of the directory before the start: %v, %v", recorded, err)
+	}
+	rowsBefore := rows()
+
+	svc, err := OpenForTest(t, context.Background(), k.dsn, WithDataRoot(k.root), failOnceReadingTheRecord())
+	if err == nil {
+		_ = svc.Close()
+		t.Fatal("the start whose read of the recorded row failed went on")
+	}
+	if !strings.Contains(err.Error(), "the read failed") {
+		t.Fatalf("the start stopped with %v, want the failed read", err)
+	}
+	if diff := treeDiff(before, k.dir()); diff != "" {
+		t.Fatalf("the directory under the name changed at %s", diff)
+	}
+	if _, err := os.Stat(filepath.Join(k.dir(), changelogfile.SpoolSubdir)); err != nil {
+		t.Fatalf("the directory's spool: %v", err)
+	}
+	if after, err := changelogfile.ReadKeyingRecords(k.root); err != nil || after[k.name] != recorded[k.name] {
+		t.Fatalf("the keying's record names %q (%v), want %q as before", after[k.name], err, recorded[k.name])
+	}
+	if after := rows(); after != rowsBefore {
+		t.Fatalf("the repositories' rows changed:\n%s\nwant\n%s", after, rowsBefore)
+	}
+	if _, err := os.Stat(filepath.Join(k.root, changelogfile.RepositoriesDir, id)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("a directory under the id: %v", err)
+	}
+}
+
+// A read of the row the keying's record names that fails is the server's
+// failure, not the directory's (#1375): the start stops with it, as a failed
+// listing stops it, having keyed and set aside nothing, and the next start,
+// whose read answers, ends as the tie says. A start cut short after the row
+// took its id: with the directory whole, the tied row is keyed with its
+// directory and serves; with the directory's manifest gone, its blobs and
+// spool still in it, the row is set aside with the directory.
+func TestAFailedReadOfTheRecordedRowStopsTheStartAndTheNextEndsAsTheTieSays(t *testing.T) {
+	t.Parallel()
+	for _, c := range []string{"its directory whole", "its directory's manifest gone"} {
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			k := writeKeyedByName(t, "bob.example.com")
+			if c == "its directory's manifest gone" {
+				if err := os.Remove(filepath.Join(k.dir(), changelogfile.ManifestName)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			id := k.crashAfterTheRow(t)
+			k.startStoppedByAFailedRead(t, id)
+			if c == "its directory's manifest gone" {
+				wantKeyedRowAsideWithItsDirectory(t, k)
+				return
+			}
+			svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root))
+			if err != nil {
+				t.Fatalf("the start whose read answers: %v", err)
+			}
+			t.Cleanup(func() { _ = svcI.Close() })
+			if _, err := svcI.Dataset(ctx, k.name); err != nil {
+				t.Fatalf("the tied row: %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(k.root, changelogfile.RepositoriesDir, id)); err != nil {
+				t.Fatalf("the directory under the tied row's id: %v", err)
+			}
+			if _, err := svcI.Dataset(ctx, "bob.example.com"); err != nil {
+				t.Fatalf("the repository beside it: %v", err)
+			}
+		})
+	}
+}
+
+// A keying's record that names a row holding another name now ties
+// nothing, with or without a read of it that failed at an earlier start: the
+// row it names is another repository's (a rename since, say). A start cut
+// short after the row took its id, its record then pointed at bob's row, and
+// the directory's manifest made unreadable: the directory claims its name
+// alone, and bob is set aside with nothing and serves.
+func TestARecordNamingARowUnderAnotherNameTiesNothing(t *testing.T) {
+	t.Parallel()
+	for _, c := range []string{"read at once", "after a read that failed"} {
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			const bob = "bob.example.com"
+			k := writeKeyedByName(t, bob)
+			id := k.crashAfterTheRow(t)
+			var bobID string
+			if err := rawDBOf(t, k.dsn).QueryRow(`SELECT id FROM repositories WHERE authority = $1`, bob).Scan(&bobID); err != nil {
+				t.Fatal(err)
+			}
+			if err := changelogfile.WriteKeyingRecord(k.root, k.name, bobID); err != nil {
+				t.Fatal(err)
+			}
+			k.undecodable(t)
+			if c == "after a read that failed" {
+				k.startStoppedByAFailedRead(t, id)
+			}
+			svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root))
+			if err != nil {
+				t.Fatalf("the start: %v", err)
+			}
+			t.Cleanup(func() { _ = svcI.Close() })
+			s := svcI.(*service)
+			if r := s.setAsideOf(k.name, ""); r == nil || !r.claim || !slices.Equal(r.keys, []string{k.name}) {
+				t.Fatalf("the directory is set aside as %+v, want a claim on its name alone", r)
+			}
+			if r := s.setAsideOf(bobID, ""); r != nil {
+				t.Fatalf("bob is set aside on a stale record's word: %+v", r)
+			}
+			if _, err := s.Dataset(ctx, bob); err != nil {
+				t.Fatalf("bob: %v", err)
+			}
+		})
+	}
+}
+
+// Every failure of a directory's keying names the row its record ties the
+// directory to, the first two included (#1375): a name whose lease another
+// writer holds is refused with the tied id, so the tie does not rest on the
+// start stopping for that writer, as it does. Once the writer lets go, the
+// same start keys the directory and the repository serves.
+func TestAKeyingRefusedTheNameStillNamesTheTiedRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	k := writeKeyedByName(t)
+	id := k.crashAfterTheRow(t)
+	maint, err := openMaint(k.dsn, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = maint.Close() })
+	other := newWriterLease(maint, slog.Default())
+	t.Cleanup(other.close)
+	var got string
+	var refused error
+	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root), withBeforeDirectories(func(s *service) {
+		if err := other.acquire(ctx, k.name); err != nil {
+			t.Error(err)
+			return
+		}
+		got, refused = s.keyDirectory(ctx, k.name, id)
+		other.release(k.name)
+	}))
+	if err != nil {
+		t.Fatalf("the start once the other writer let go: %v", err)
+	}
+	t.Cleanup(func() { _ = svcI.Close() })
+	if got != id || !errors.Is(refused, ErrRepositoryHasAnotherWriter) {
+		t.Fatalf("the keying refused the name with id %q (%v), want the tied %s and ErrRepositoryHasAnotherWriter", got, refused, id)
+	}
+	if _, err := svcI.Dataset(ctx, k.name); err != nil {
+		t.Fatalf("the repository once its directory took its id: %v", err)
 	}
 }
 
