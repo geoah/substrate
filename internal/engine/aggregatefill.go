@@ -376,7 +376,10 @@ func rollFloat(name string, vs []float64) float64 {
 		mean /= float64(len(vs))
 		var m2 float64
 		for _, v := range vs {
-			m2 += (v - mean) * (v - mean)
+			// Rounded on its own before the add (float64): a fused
+			// multiply-add would answer another last bit on arm64 than on
+			// amd64 (#1371).
+			m2 += float64((v - mean) * (v - mean))
 		}
 		return math.Sqrt(m2 / float64(len(vs)))
 	case substrate.ReducerMin:

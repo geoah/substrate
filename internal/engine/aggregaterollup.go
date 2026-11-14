@@ -134,12 +134,15 @@ func (r *aggRun) convertStats(s observed.Stats, g obsGroup, source string) (obse
 		return s, nil
 	}
 	f, o := c.ff, c.fo
-	s.Sum = f*s.Sum + o*float64(s.Values)
-	s.Min, s.Max, s.Mean = f*s.Min+o, f*s.Max+o, f*s.Mean+o
+	// Every product is rounded on its own (float64) before its add: a fused
+	// multiply-add, which arm64 has and amd64 does not, rounds once and
+	// answers another last bit by architecture (#1371).
+	s.Sum = float64(f*s.Sum) + float64(o*float64(s.Values))
+	s.Min, s.Max, s.Mean = float64(f*s.Min)+o, float64(f*s.Max)+o, float64(f*s.Mean)+o
 	// Two products, not f*f: a factor whose square overflows makes an M2 of
 	// 0 (one value) NaN, where the deviation is 0.
 	s.M2 = s.M2 * f * f
-	s.TWASum = f*s.TWASum + o*float64(s.HeldMs)
+	s.TWASum = float64(f*s.TWASum) + float64(o*float64(s.HeldMs))
 	if s.Increase != nil {
 		s.Increase = new(big.Rat).Mul(s.Increase, c.f)
 	}
@@ -493,7 +496,9 @@ func (r *aggRun) holdSlot(out aggCells, g *aggGroup, s *aggStream, si int, sl ag
 				if err != nil {
 					return err
 				}
-				valueMs = c.ff*valueMs + c.fo*float64(ms)
+				// Each product rounded on its own (float64), as in
+				// convertStats (#1371).
+				valueMs = float64(c.ff*valueMs) + float64(c.fo*float64(ms))
 			}
 			buckets, err := r.bucketsOf(pt.at, og.offset)
 			if err != nil {
