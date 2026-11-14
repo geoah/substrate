@@ -47,10 +47,10 @@ const syncErrorMax = 500
 // the record delivered, the actor whose writes the stamps are, and when the
 // delivery began. The stamps are written under the CALLABLE's own actor at
 // the bundle tier, exactly as the body's effects are, for two reasons: the
-// binding kind declares the trait's properties `writer: connector`, which is
-// that tier's role, and a record trigger never delivers a write carrying its
-// own callable's actor, so the stamp of a delivery cannot fire the trigger
-// that made it.
+// binding kind declares the trait's properties `writer: [function, agent]`,
+// which the callable's actor is, and a record trigger never delivers a write
+// carrying its own callable's actor, so the stamp of a delivery cannot fire
+// the trigger that made it.
 type syncStamp struct {
 	ref     eref
 	actor   substrate.Actor
@@ -299,8 +299,9 @@ func (t *txn) writesAsPackage(pkg string) bool {
 // each added property's tier in tiers.
 //
 // The error pair goes: a fresh grant replaces the one the last error was
-// about. The pair is `writer: connector`, which the facility's own actor may
-// not write, so it is cleared at the bundle tier.
+// about. The pair is the sync's own (`writer: [function, agent]`), which the
+// facility writes as the system, and it is cleared at the bundle tier, the
+// mark installed code's own writes hold.
 //
 // An account that has synced before and is not paused gets a sync request,
 // `syncRequestedAt` at the owner tier: the reconnect is the owner's own act,
@@ -313,32 +314,33 @@ func (t *txn) writesAsPackage(pkg string) bool {
 // that backfill twice. `syncState` is left alone: the run is what says
 // whether the account is healthy.
 //
-// A property whose declared writer the named tier cannot fill is left out,
-// so a kind that redeclares a role differently skips that half instead of
-// failing the connect.
+// A property whose declared writers leave out the type of actor that owns
+// that half (the sync function's for the pair, the person's for the request)
+// is left out, so a kind that redeclares a writer differently skips that half
+// instead of writing a hand the kind gave to another.
 func syncOnReconnect(ty *vocabulary.Kind, row *erow, now time.Time, props map[string]any, tiers map[string]substrate.Tier) {
 	if !ty.Implements(vocabulary.TraitSyncCore) {
 		return
 	}
 	for _, name := range []string{propSyncError, propSyncErrorAt} {
-		if row.Props[name] != nil && writerRoleIs(ty, name, vocabulary.WriterConnector) {
+		if row.Props[name] != nil && writerAdmits(ty, name, substrate.ActorTypeFunction) {
 			props[name] = nil
 			tiers[name] = substrate.TierBundle
 		}
 	}
 	if row.Props[propLastSyncedAt] == nil || syncBool(row.Props, propSyncPaused) ||
-		!writerRoleIs(ty, propSyncRequestedAt, vocabulary.WriterOwner) {
+		!writerAdmits(ty, propSyncRequestedAt, substrate.ActorTypePerson) {
 		return
 	}
 	props[propSyncRequestedAt] = now.Format(time.RFC3339Nano)
 	tiers[propSyncRequestedAt] = substrate.TierOwner
 }
 
-// writerRoleIs reports whether ty declares name with the writer role, or with
-// none, which any hand may fill.
-func writerRoleIs(ty *vocabulary.Kind, name, role string) bool {
+// writerAdmits reports whether ty declares name for an actor of the given
+// type to write, or for any.
+func writerAdmits(ty *vocabulary.Kind, name, actorType string) bool {
 	p, ok := ty.Prop(name)
-	return ok && (p.Writer == "" || p.Writer == role)
+	return ok && p.WrittenBy(actorType)
 }
 
 // syncPark rides the transaction that parks the delivery: `erroring`, the
@@ -389,8 +391,9 @@ func (t *txn) asSyncWriter(actor substrate.Actor, fn func() error) error {
 // was mid-delivery when this repository's writer stopped, and no delivery is
 // in flight at open (0083: one writer per repository), so the state is a
 // lie until something rewrites it. It becomes `erroring`, naming the stop,
-// under the kind's own package actor — the hand installed code writes with
-// when no callable is running.
+// under the system: the engine found the run cut short, and the state is the
+// sync function's own (`writer: [function, agent]`), which a package's hand
+// may not write and the system may (decision 0290).
 func (ds *dataset) settleInterruptedSyncs(ctx context.Context) error {
 	if ds.svc.readOnly {
 		return nil
@@ -419,8 +422,7 @@ func (ds *dataset) settleInterruptedSyncs(ctx context.Context) error {
 		if err := rows.Err(); err != nil {
 			return err
 		}
-		authority, pkg := vocabulary.SplitPackageRef(ty.Package)
-		actor := substrate.BundleActor(authority, pkg)
+		actor := substrate.ActorSystem
 		for _, id := range ids {
 			ref := eref{Kind: ty.Identity, ID: id}
 			err := ds.inTx(ctx, actor, false, func(t *txn) error {

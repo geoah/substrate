@@ -990,7 +990,7 @@ stability, its revision and the `surfaces` that serve it:
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
- "vocabulary": {"dialect": 4},
+ "vocabulary": {"dialect": 5},
  "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
               {"name": "auth", "stability": "beta", "revision": 2, "surfaces": ["rest"],
                "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
@@ -1113,6 +1113,12 @@ server. The revision is how it asks first:
   sends none, which meets no minimum.
 - **Ignore a response field you do not know.** A later release may add one
   to any answer.
+
+A definition's `writer:` is an example: from revision 4 of `records`,
+revision 2 of `vocabulary` and revision 3 of `mcp` it is a type of actor or
+a list of them ([who may write a property](vocabulary.md#who-may-write-a-property)),
+where it was one of three words before. A client that reads or sends one
+checks the revision of the feature it goes through.
 
 Read the `stability` beside it for how the feature may change, and the
 `notice` for a break that is coming. [Stability](stability.md) is the whole

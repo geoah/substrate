@@ -337,7 +337,7 @@ earn a column, and the last change closes the row. A duration reads in
 words (`8m 12s`), as on the record page, the stored text on hover. A column that holds nothing
 on the rows loaded opens hidden, and the **Columns** button says how many
 are. So does a property the kind marks `deprecated`, and on a provider's
-collection every property a writer role other than the owner keeps (sync
+collection every property whose declared `writer:` leaves out a person (sync
 cursors, statuses, tokens). The title is the row's one link to the record; a
 parent row's chip reads "1 / 3" beside a ring and says "1 of 3 subtasks
 done". **Columns**
@@ -496,7 +496,7 @@ removes it after asking. A new or duplicated item is a small form, written
 once it holds every field an item must. On a narrow screen a table reads as
 labelled rows.
 A row that is not yours to edit says why: the engine stamps it, the host keeps
-it (a declared `writer:` other than the owner), the whole record is a
+it (a declared `writer:` that leaves out a person), the whole record is a
 provider's copy, or the kind never declared it. The record's prose, where the
 kind has a body property, reads under the sheet and edits in place the same
 way.
@@ -865,7 +865,7 @@ over one document**, and the document is the apply-able envelope.
   admits, a `reference` picks a record of the kind it points at, a `secret` is
   write-only (a read serves `<redacted>`, and leaving the field blank keeps the
   sealed value), and a `json` property gets a JSON editor. Host-managed
-  properties (a declared `writer:` that is not the owner) are never offered.
+  properties (a declared `writer:` that leaves out a person) are never offered.
 - **YAML** is the expert lens: the whole envelope in a code editor that knows
   the kind. **Completion** offers what may be written where the cursor is (the
   envelope's keys, the declared properties with their datatype and one-liner

@@ -196,7 +196,7 @@ published providers listed in `oauthClients` qualify. An operator-registered
 client says nothing about who pays: it is a sign-in, not a billed key.
 
 Each account records the client its grant was issued to: a nonsecret
-`oauthClient` property (`writer: oauth`) on each provider's account kind,
+`oauthClient` property (`writer: system`) on each provider's account kind,
 with a provider version bump. Refresh compares it with the client resolving
 now; on a mismatch the account reads **Reconnect** and is not refreshed. An
 account connected before the property existed is treated as connected through

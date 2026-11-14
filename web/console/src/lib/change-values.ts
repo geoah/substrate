@@ -7,7 +7,7 @@
 import type { ChangeRow, KindInfo, PropertyChange } from "@/lib/api/types"
 import { changedProperties } from "@/lib/changelog"
 import {
-  ownerWritable,
+  personWritable,
   propSpecsByName,
   REDACTED,
   systemSpecs,
@@ -164,7 +164,7 @@ export function valueSpecs(kind: KindInfo | undefined): Map<string, PropSpec> {
  * the engine manages (a digest, a version) or one a connector or the OAuth
  * facility alone may set (a cursor, a sync status). */
 export function hostWritten(spec: PropSpec | undefined): boolean {
-  return spec !== undefined && (spec.managed || !ownerWritable(spec))
+  return spec !== undefined && (spec.managed || !personWritable(spec))
 }
 
 /** No value to show: absent, null, an empty string or an empty list. */

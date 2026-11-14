@@ -55,6 +55,7 @@ token record a write stood behind (decision 0270), **tenant** and
 | **split** | The undo of exactly one recorded merge. |
 | **tier** | A property manager's standing against recompute: `owner` > `bundle` > `machine`. Recompute overwrites only machine-held properties. |
 | **actor** | One hand that writes, as a record of `substrate.reamde.dev/core/actor` the engine writes: the repository's `person`, an `app` the person approved, an installed `function` or `agent`, a `package`'s own hand, or the `system`. A history line, a change event, a manager row and every stored attribution link it by its id, beside `onBehalfOf`, the actor it acted for, and `token`, the token it stood behind. No package declares one and no request names one. Attribution, never authorization. Decision record 0270. |
+| **writer** | A property's `writer:`: the types of **actor** that may write it, one or a list of `person`, `app`, `function`, `agent`, `package` and `system`; absent, any actor. The system may write any property. Not a class: the words `owner`, `connector` and `oauth` it took before are refused, each naming its replacement. Decision record 0290. |
 
 ## Declarations
 

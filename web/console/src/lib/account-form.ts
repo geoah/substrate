@@ -1,7 +1,7 @@
 /** What the Add account dialog asks, off the account kind's declaration and
  * nothing else. The fields are record-form's owner-writable set, so the OAuth
- * facility's hands (`writer: oauth`) and the connector's cursors, resume
- * state and identity references (`writer: connector`) never appear, because
+ * facility's hands (`writer: system`) and the sync's cursors, resume
+ * state and identity references (`writer: [function, agent]`) never appear, because
  * the declaration marks them; the one subtraction made here is the `sync`
  * trait's two owner hands, whose controls are the page's Sync now and Pause
  * buttons. The result is split into the TOGGLES, each bool a thing to sync

@@ -118,6 +118,7 @@ var refoldLedgerFloors = map[string]string{
 	"start_paged_drains_over":             "0021_identity_columns_byte_order",
 	"purge_the_recovery_key":              "0023_secrets_left_behind",
 	"link_actors":                         "0024_changelog_on_behalf_of",
+	"name_writers_by_actor_type":          "0024_changelog_on_behalf_of",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

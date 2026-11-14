@@ -36,22 +36,22 @@ function typeWith(
 }
 
 const accountType = typeWith({
-  // Owner-writable: an explicit `writer: owner` (email) AND unset (the toggles,
+  // Owner-writable: an explicit `writer: person` (email) AND unset (the toggles,
   // cadence) both stay in the form — an unrestricted property is the owner's.
-  email: { type: "email", writer: "owner" },
+  email: { type: "email", writer: "person" },
   enabledContacts: { type: "bool" },
   enabledGmail: { type: "bool" },
   enabledCalendar: { type: "bool" },
   syncFrequency: { type: "string" },
   backfillDepth: { type: "string" },
-  // host-managed (writer: oauth) / connector state (writer: connector) — never
-  // editable; excluded by the `writer:` role, not by name.
-  tokenRef: { type: "secret", writer: "oauth" },
-  tokenStatus: { type: "string", writer: "oauth" },
-  grantedScopes: { type: "string", repeated: true, writer: "oauth" },
-  syncToken: { type: "string", writer: "connector" },
-  lastSyncedAt: { type: "datetime", writer: "connector" },
-  syncStatus: { type: "string", writer: "connector" },
+  // host-managed (writer: system) / a sync's state (writer: [function, agent]) — never
+  // editable; excluded by the `writer:`, not by name.
+  tokenRef: { type: "secret", writer: "system" },
+  tokenStatus: { type: "string", writer: "system" },
+  grantedScopes: { type: "string", repeated: true, writer: "system" },
+  syncToken: { type: "string", writer: ["function", "agent"] },
+  lastSyncedAt: { type: "datetime", writer: ["function", "agent"] },
+  syncStatus: { type: "string", writer: ["function", "agent"] },
 })
 
 const configKind = typeWith({
@@ -69,7 +69,7 @@ const typedConfigKind = typeWith({
 })
 
 const typedAccountType = typeWith({
-  email: { type: "email", required: true, writer: "owner" },
+  email: { type: "email", required: true, writer: "person" },
   enabledContacts: { type: "bool", displayName: "Sync contacts" },
   syncFrequency: {
     type: "enum",
@@ -82,14 +82,14 @@ const typedAccountType = typeWith({
     default: "daily",
   },
   backfillDepth: { type: "string" },
-  tokenRef: { type: "secret", writer: "oauth" },
-  tokenStatus: { type: "string", writer: "oauth" },
+  tokenRef: { type: "secret", writer: "system" },
+  tokenStatus: { type: "string", writer: "system" },
 })
 
 describe("buildFormFields", () => {
-  it("keeps owner-writable, drops every writer!=owner property (by role, not name)", () => {
+  it("keeps owner-writable, drops every writer leaves out person property (by role, not name)", () => {
     const names = buildFormFields(SHIPPED_UNITS, accountType).map((f) => f.name)
-    // Owner fields only: explicit `writer: owner` (email) and unset (toggles,
+    // Owner fields only: explicit `writer: person` (email) and unset (toggles,
     // cadence) both survive; every host/connector-managed property is gone.
     expect(names).toEqual([
       "backfillDepth",
@@ -111,13 +111,13 @@ describe("buildFormFields", () => {
     }
   })
 
-  it("excludes email + grantedScopes once the schema marks them writer: oauth", () => {
+  it("excludes email + grantedScopes once the schema marks them writer: system", () => {
     // The OAuth facility owns the account address and the granted scope set
-    // (the substrate flips both to `writer: oauth`); the Add-account form must
+    // (the substrate flips both to `writer: system`); the Add-account form must
     // not offer them.
     const oauthOwnedAccount = typeWith({
-      email: { type: "email", writer: "oauth" },
-      grantedScopes: { type: "string", repeated: true, writer: "oauth" },
+      email: { type: "email", writer: "system" },
+      grantedScopes: { type: "string", repeated: true, writer: "system" },
       enabledContacts: { type: "bool" },
       syncFrequency: {
         type: "enum",

@@ -248,8 +248,11 @@ describe("readerMoves", () => {
   })
   const specs = new Map<string, PropSpec>([
     ["originDigest", spec("originDigest", { managed: true })],
-    ["gmailHistoryId", spec("gmailHistoryId", { writer: "connector" })],
-    ["name", spec("name", { writer: "owner" })],
+    [
+      "gmailHistoryId",
+      spec("gmailHistoryId", { writer: ["function", "agent"] }),
+    ],
+    ["name", spec("name", { writer: ["person"] })],
   ])
   const move = (m: Partial<ValueMove> & { name: string }): ValueMove => ({
     beforeUnknown: false,

@@ -34,14 +34,21 @@ const (
 // record triggers fire on delete alone, which nothing here does, so no
 // write of the test delivers anything. Each record is written with its
 // streams `ok` at lastAt, its last completed run at lastAt too.
+// streamSyncActor is the hand a stream's run writes as: the package's sync
+// function, since `writer: [function, agent]` admits no package's own hand.
+func streamSyncActor() substrate.Actor {
+	authority, name := vocabulary.SplitPackageRef(streamSyncPkg)
+	return substrate.FunctionActor(authority, name, "mailsync")
+}
+
 func installStreamSync(t *testing.T, ds *dataset, lastAt time.Time, records map[string][]string) {
 	t.Helper()
 	ctx := context.Background()
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	fn := func(name, stream string) map[string]any {
 		data := map[string]any{
@@ -108,7 +115,7 @@ func installStreamSync(t *testing.T, ds *dataset, lastAt time.Time, records map[
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
+	actor := streamSyncActor()
 	at := lastAt.Format(time.RFC3339Nano)
 	for id, names := range records {
 		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
@@ -230,7 +237,7 @@ func TestSyncStatusMarksOnlyTheParkedStream(t *testing.T) {
 
 	// The mail stream completes a run after both parks: its own word stands
 	// again, while the account still has no completed run since the parks.
-	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
+	actor := streamSyncActor()
 	setStreamSync(t, ds, actor, fid("inbox"), map[string]any{"syncStreams": map[string]any{
 		"mail":  map[string]any{"state": "ok", "message": "mail caught up", "lastAt": scheduled.Add(time.Minute).Format(time.RFC3339Nano)},
 		"files": map[string]any{"state": "ok", "message": "files is current", "lastAt": lastAt.Format(time.RFC3339Nano)},
@@ -311,7 +318,7 @@ func TestSyncStreamsWriteMergesPerStream(t *testing.T) {
 	ds := openInternalDataset(t)
 	lastAt := nowUTC().Add(-time.Hour).Truncate(time.Second)
 	installStreamSync(t, ds, lastAt, map[string][]string{fid("inbox"): {"mail", "files"}})
-	actor := substrate.Actor(vocabulary.PackageActor(streamSyncPkg))
+	actor := streamSyncActor()
 
 	// The files delivery commits its newer entry; the mail delivery, which
 	// read the record before that, then writes its own entry alone.

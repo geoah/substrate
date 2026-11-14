@@ -90,6 +90,7 @@ var repositoryMigrations = []repositoryMigration{
 	{Version: 7, Name: "start_paged_drains_over", Run: migrateStartPagedDrainsOver},
 	{Version: 8, Name: "purge_the_recovery_key", Run: migratePurgeTheRecoveryKey},
 	{Version: 9, Name: "link_actors", Run: migrateLinkActors},
+	{Version: 10, Name: "name_writers_by_actor_type", Run: migrateNameWritersByActorType},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside

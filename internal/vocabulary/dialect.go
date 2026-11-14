@@ -20,8 +20,10 @@ import (
 // 1 and 2 are the dialects before the number was held to the keys; 3 adds
 // a package header's `stability`, `interface` and `dialect`; 4 takes the actor
 // document out, because an actor is a record the substrate writes for
-// everything that acts (decision 0270).
-const Dialect = 4
+// everything that acts (decision 0270); 5 makes a property's `writer:` name
+// types of actor, one or a list, and refuses the three words it took before
+// (decision 0290).
+const Dialect = 5
 
 // keyIntroducedAt is the dialect each declaration key arrived in, by the
 // closed key set that holds it, for every key after dialect 2; a key it does
@@ -34,6 +36,12 @@ const Dialect = 4
 // whose number moved, and a line dropped while its key stays.
 var keyIntroducedAt = map[string]map[string]int64{
 	"packageDataKeys": {"stability": 3, "interface": 3, "dialect": 3},
+	// `writer:` was a key before the table, and dialect 5 changed what it
+	// takes: every word it took before is refused, so any `writer:` a
+	// package carries needs 5 (decision 0290).
+	"propKeys":          {"writer": 5},
+	"objectPropKeys":    {"writer": 5},
+	"referencePropKeys": {"writer": 5},
 }
 
 // closedKeySets are the closed key sets of the declaration documents, by the

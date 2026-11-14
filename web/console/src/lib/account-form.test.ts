@@ -27,32 +27,36 @@ function kind(traits: string[], props: Record<string, unknown>): KindInfo {
 }
 
 const GOOGLE_LIKE = {
-  tokenRef: { type: "secret", writer: "oauth" },
-  tokenStatus: { type: "string", writer: "oauth" },
-  email: { type: "email", writer: "oauth" },
-  address: { type: "reference", kind: "emailaddress", writer: "connector" },
-  enabledContacts: { type: "bool", writer: "owner", displayName: "Contacts" },
-  enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+  tokenRef: { type: "secret", writer: "system" },
+  tokenStatus: { type: "string", writer: "system" },
+  email: { type: "email", writer: "system" },
+  address: {
+    type: "reference",
+    kind: "emailaddress",
+    writer: ["function", "agent"],
+  },
+  enabledContacts: { type: "bool", writer: "person", displayName: "Contacts" },
+  enabledGmail: { type: "bool", writer: "person", displayName: "Gmail" },
   syncFrequency: {
     type: "enum",
     values: ["off", "hourly", "daily"],
     required: true,
     default: "daily",
-    writer: "owner",
+    writer: "person",
   },
   backfillDepth: {
     type: "enum",
     values: ["none", "last30d", "all"],
     required: true,
     default: "last30d",
-    writer: "owner",
+    writer: "person",
   },
-  syncRequestedAt: { type: "datetime", writer: "owner" },
-  syncPaused: { type: "bool", writer: "owner" },
-  syncState: { type: "string", writer: "connector" },
+  syncRequestedAt: { type: "datetime", writer: "person" },
+  syncPaused: { type: "bool", writer: "person" },
+  syncState: { type: "string", writer: ["function", "agent"] },
   contactsResume: {
     type: "object",
-    writer: "connector",
+    writer: ["function", "agent"],
     fields: { pageToken: { type: "string" } },
   },
 }
@@ -102,7 +106,7 @@ describe("the switches that let agents act", () => {
     ...GOOGLE_LIKE,
     enabledGmailWrite: {
       type: "bool",
-      writer: "owner",
+      writer: "person",
       displayName: "Gmail sending",
     },
   }

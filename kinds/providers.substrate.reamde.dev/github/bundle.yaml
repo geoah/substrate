@@ -77,6 +77,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: github
+  dialect: 5
   # 25, #644: the `submitreview` function, the bundle's first write to GitHub.
   # 26, #710: the `pullsReviewed` search, `type:pr reviewed-by:<login>`.
   #
@@ -109,7 +110,8 @@ data:
   # 35: every failure the owner reads opens with a sentence saying what
   # failed and what to do, with GitHub's own words on a second line; a
   # rate limit reads `throttled` from the exception, not the wording.
-  version: 35
+  # 36: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 36
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members. No mapping: this
@@ -219,7 +221,7 @@ data:
         never read back
     apiBase:
       type: url
-      writer: owner
+      writer: person
       # The body PINS the origin the access token may travel to: exactly
       # https://api.github.com, or a loopback host (127.0.0.1 / localhost /
       # ::1, any scheme) as the test seam. Anything else refuses BEFORE
@@ -234,7 +236,7 @@ data:
 # ---- the account type: one connected GitHub account ------------------------
 # accountconfig (its records ARE the bundle's connected accounts; the host
 # writes tokenRef + tokenStatus + grantedScopes over the OAuth facility).
-# Every property carries a `writer:` role so only its rightful hand may set it.
+# Every property carries a `writer:` so only its rightful hand may set it.
 #
 # THIS IS WHERE THE SYNC'S BOOKKEEPING LIVES, and nowhere else: `syncCursors`
 # is the per-stream watermark map, `lastSyncedAt` / `syncStatus` the run
@@ -268,20 +270,20 @@ data:
     # ---- identity and the grant (the OAuth facility's) --------------------
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: the credential-store reference the OAuth facility writes;
         never a raw token
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: "the connection state the facility last reported — a growing
         list, not an enum (pending | connected | erroring)"
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: the OAuth scopes the last consent was granted for; drives
         reconnect-on-new-feature
@@ -290,14 +292,14 @@ data:
     # refresh or reconnect.
     tokenError:
       type: string
-      writer: oauth
+      writer: system
       displayName: Sign-in error
       description: why the OAuth facility last failed to refresh this account's
         token, as a sentence saying what to do with the provider's answer
         on the next line; empty while it works
     tokenErrorAt:
       type: datetime
-      writer: oauth
+      writer: system
       displayName: Sign-in error at
       description: when the OAuth facility first recorded the current sign-in
         error
@@ -308,7 +310,7 @@ data:
     # secret.
     oauthClient:
       type: object
-      writer: oauth
+      writer: system
       displayName: Sign-in client
       description: the OAuth client this account's grant was issued to, written
         by the OAuth facility at connect; empty on an account connected before
@@ -327,7 +329,7 @@ data:
               label: Your own
     email:
       type: email
-      writer: oauth
+      writer: system
       displayName: Email
       description: the connected GitHub account's public email, set by the
         OAuth facility from the grant
@@ -338,31 +340,31 @@ data:
       type: reference
       kind: providers.substrate.reamde.dev/github/user
       mustExist: true
-      writer: connector
+      writer: [function, agent]
       displayName: User
       description: the GitHub user this account authenticates as, from GET
         /user — "me", and what every owner-relative question filters on
     # ---- what the owner asked for ----------------------------------------
     enabledUser:
       type: bool
-      writer: owner
+      writer: person
       displayName: Profile
       description: >-
         mirror the connected user's own profile, and hydrate a full profile
         (name, public email) for every other login the sync meets
     enabledRepos:
       type: bool
-      writer: owner
+      writer: person
       displayName: Repositories
       description: mirror the repositories this account can reach
     enabledIssues:
       type: bool
-      writer: owner
+      writer: person
       displayName: Issues
       description: mirror every issue the connected user is involved in
     enabledPullRequests:
       type: bool
-      writer: owner
+      writer: person
       displayName: Pull requests
       description: mirror every pull request the connected user is involved
         in, review-requested on or has reviewed, with its reviews
@@ -377,7 +379,7 @@ data:
           label: "Once a day"
       required: true
       default: daily
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: "the scheduled sync cadence for this account (default daily)"
     backfillDepth:
@@ -395,7 +397,7 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: "how far back the first issues / pull-requests sync reaches
         (none = from connect time forward; default 30 days)"
@@ -408,11 +410,11 @@ data:
     # cannot outrun its acknowledgement whatever the clocks say.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: stamp this to ask for a sync now, whatever the cadence
         says
-    # The owner's SECOND hand on a sync (the trait's other `writer: owner`
+    # The owner's SECOND hand on a sync (the trait's other `writer: person`
     # property): stop them. The dispatcher settles a paused record's
     # deliveries as skips, and the scheduled path passes over a paused
     # account in `_due` — so neither the console's Sync-now button nor the
@@ -421,14 +423,14 @@ data:
     # cadence instruction, not a lock.
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: "while true, the dispatcher skips this account's deliveries
         and the scheduled sync passes over it"
-    # ---- the sync's own bookkeeping (writer: connector) -------------------
+    # ---- the sync's own bookkeeping (writer: [function, agent]) -------------------
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request acknowledged
       description: the `syncRequestedAt` the last sync acted on — equal means
         the request is spent
@@ -436,7 +438,7 @@ data:
       type: datetime
       keyed: true
       keyPattern: camel
-      writer: connector
+      writer: [function, agent]
       displayName: Sync cursors
       description: >-
         the per-stream incremental floor, keyed by stage (issues, pulls, pullsReview,
@@ -444,7 +446,7 @@ data:
         tail
     syncPending:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Pending hydration
       # The hydration BACKLOG, durable across runs. A drain is bounded (512
       # invocations, two minutes) and a paged checkpoint dies with it, so work
@@ -457,7 +459,7 @@ data:
         a bounded drain leaves behind
     syncWalk:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Unfinished walk
       # Where a walk that ran out of drain time stopped: the stages it still
       # owes, the stage, page, `updated:>=` floor and repository partition it
@@ -469,7 +471,7 @@ data:
         at on the next run
     syncSkipped:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Skipped by GitHub
       # `{"restricted": {"<org>": {"items": n, "repo": "<org>/<name>", "at":
       # <when>}}}` — the organizations that answered a read with GitHub's
@@ -482,13 +484,13 @@ data:
         one repository the next run probes for the approval
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: when the last sync attempt finished (ok or erroring) —
         the cadence anchor and completion marker
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: "the last sync outcome (ok | ok (partial: …) | ok (capped:
         …) | erroring: <reason>) — the LEGACY rollup string, kept beside the
@@ -505,32 +507,32 @@ data:
     # would only ever refuse a sync.
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: "never | running | ok | erroring | throttled — the account-level
         state the Connections page renders as a chip"
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: "the one human line the last run left — the same sentence
         `syncStatus` carries, without its legacy `erroring:` prefix"
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: when the last run began — stamped by the dispatcher around
         a record-sourced delivery, and by the body itself on the schedule
         path
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: how long the last run took, from the same two hands as
         lastSyncStartedAt
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       # `{phase, done, total, pending}`, all four in HYDRATION ENTRIES:
       # `pending` is what `syncPending` still holds, `total` the high-water
@@ -542,18 +544,18 @@ data:
         this drain is working through, checkpointed as it shrinks"
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: the last error text, from the body or a parked delivery;
         a later run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       # Declared because the trait contracts it and a reader must find the
       # key; written by NOBODY here. This bundle has one function and one
@@ -4860,7 +4862,7 @@ data:
 
 
     def _stamp(host, acct, aid, cur, error, walk=None, throttled=False):
-        # The connector stamp — the writer: connector properties. EVERY path
+        # The connector stamp — the writer: [function, agent] properties. EVERY path
         # writes syncStatus, and lastSyncedAt marks the attempt finished either
         # way: it anchors the cadence AND drops the on-connect trigger's guard, so
         # an erroring stamp can never re-fire the first backfill in a loop.

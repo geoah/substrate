@@ -224,3 +224,42 @@ func TestARefreshLeavesAPackageTheBinaryNowShipsToTheCatalog(t *testing.T) {
 		t.Fatalf("the document upgraded a package the binary ships: %v, %v", row.Properties["shippedVersion"], err)
 	}
 }
+
+// The catalog loads a published closure through the one loader, so a
+// `writer:` from before actor types refuses the install, naming the type
+// that replaced it (decision 0290).
+func TestAnInstallRefusesARetiredWriterNamingItsReplacement(t *testing.T) {
+	for old, instead := range map[string]string{
+		"owner":     "write person",
+		"connector": "write [function, agent]",
+		"oauth":     "write system",
+	} {
+		t.Run(old, func(t *testing.T) {
+			ds := newDataset(t)
+			ctx := context.Background()
+			const id = "publisher.example/notes"
+			dir := t.TempDir()
+			body := fmt.Sprintf("kind: substrate.reamde.dev/core/package\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  version: 1\n---\nkind: substrate.reamde.dev/core/bundle\nmetadata:\n  id: %s\ndata:\n  authority: publisher.example\n  package: notes\n  description: Notes.\n  installs: [publisher.example/notes/note]\n---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: publisher.example/notes/note\ndata:\n  authority: publisher.example\n  package: notes\n  names:\n    singular: note\n  properties:\n    name:\n      type: string\n    cursor:\n      type: string\n      writer: %s\n", id, id, old)
+			if err := os.WriteFile(filepath.Join(dir, "v1.yaml"), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256([]byte(body))
+			raw, _ := json.Marshal(authority.AuthorityDocument{Authority: "publisher.example", Packages: []authority.AuthorityPackage{{Package: "notes", Versions: []authority.AuthorityPackageVersion{{Version: 1, Closure: "v1.yaml", SHA256: hex.EncodeToString(sum[:])}}}}})
+			docPath := filepath.Join(dir, "authority.json")
+			if err := os.WriteFile(docPath, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			c, err := catalog.LoadWithReader(authority.NewReader(authority.Options{LocalDocuments: map[string]string{"publisher.example": docPath}}), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = c.Install(ctx, substrate.ActorPerson, id, ds)
+			if err == nil {
+				t.Fatalf("the catalog installed writer: %s", old)
+			}
+			if want := `writer "` + old + `" is retired: ` + instead; !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not say %q: %v", want, err)
+			}
+		})
+	}
+}

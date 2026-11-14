@@ -415,7 +415,8 @@ already there, live or deleted, is never written.
 The kind implements `substrate.reamde.dev/core/accountconfig` and belongs to
 a package a `package` entry of the same request names. Each property is one
 the kind declares, and none is a `secret` (the owner types those), `managed`
-(the server's to write) or restricted to a `writer` other than `owner`.
+(the server's to write) or restricted by its `writer` to types of actor
+other than `person`.
 
 **`webhook`**: the trigger the app delivers to.
 

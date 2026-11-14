@@ -129,8 +129,8 @@ func TestGoogleToolsAdmit(t *testing.T) {
 			t.Fatalf("featureScopes[%s] access = %q, want write", toggle, b.OAuth2.FeatureAccess[toggle])
 		}
 		p, ok := mustKind(t, reg, googleAccountKind).Prop(toggle)
-		if !ok || p.Datatype != vocabulary.DatatypeBool || p.Writer != "owner" || p.DisplayName == "" {
-			t.Fatalf("account.%s = %+v, want a labeled owner bool", toggle, p)
+		if !ok || p.Datatype != vocabulary.DatatypeBool || !slices.Equal(p.Writers, []string{substrate.ActorTypePerson}) || p.DisplayName == "" {
+			t.Fatalf("account.%s = %+v, want a labeled bool a person writes", toggle, p)
 		}
 	}
 }

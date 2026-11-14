@@ -1111,8 +1111,8 @@ func installResyncHand(t *testing.T, ds substrate.Dataset) {
 // both resets the guard and fires the re-sync.
 //
 // Two constraints decide whose hand it is. `lastSyncedAt` is
-// `writer: connector`, so only a BUNDLE-tier actor may clear it, and a
-// declared function's actor is that tier. And a callable never sees its own
+// `writer: [function, agent]`, so only a function or an agent may clear it.
+// And a callable never sees its own
 // writes (the dispatcher's self-exclusion), so the clear cannot be stamped as
 // the sync itself. The hand is therefore a declared function of the TEST's
 // own: installResyncHand.

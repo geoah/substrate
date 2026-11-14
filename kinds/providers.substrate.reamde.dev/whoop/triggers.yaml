@@ -28,7 +28,7 @@ data:
         kinds: [providers.substrate.reamde.dev/whoop/account]
         ops: [create, update]
         # Every optional property is read through the `in` idiom: tokenStatus
-        # (writer: oauth) and the toggles are ABSENT on a freshly-created
+        # (writer: system) and the toggles are ABSENT on a freshly-created
         # account (pre-OAuth), and CEL map-indexing an absent key throws — an
         # unguarded read would park the delivery ("no such key: tokenStatus")
         # instead of skipping it. The short-circuit `&&` means the value read

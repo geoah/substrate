@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/scope"
@@ -821,24 +822,43 @@ func accountPropertyProblem(d substrate.AuthorizationDetail, def map[string]any)
 		if managed, _ := pd["managed"].(bool); managed {
 			return fmt.Sprintf("The %s property is the server's to write.", name)
 		}
-		// `owner` is the one restriction an approval meets: the set up
-		// writes as the owner.
-		if w, _ := pd["writer"].(string); w != "" && w != vocabulary.WriterOwner {
-			return fmt.Sprintf("The %s property is written by %s alone.", name, writerWords(w))
+		// A person is the one writer an approval meets: the set up writes as
+		// the person who approves it.
+		if writers := declaredWriters(pd["writer"]); writers != nil && !slices.Contains(writers, substrate.ActorTypePerson) {
+			return fmt.Sprintf("The %s property is written by %s alone.", name, writerWords(writers))
 		}
 	}
 	return ""
 }
 
-// writerWords names a property's writer role in the owner's words.
-func writerWords(writer string) string {
-	switch writer {
-	case vocabulary.WriterOAuth:
+// declaredWriters reads a stored declaration's `writer:`, one type of actor
+// or a list of them, as the list; nil where it declares none.
+func declaredWriters(raw any) []string {
+	switch v := raw.(type) {
+	case string:
+		return []string{v}
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, w := range v {
+			if s, ok := w.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// writerWords names the types of actor a property is written by in a
+// person's words.
+func writerWords(writers []string) string {
+	switch {
+	case slices.Equal(writers, []string{substrate.ActorTypeSystem}):
 		return "the provider's sign-in"
-	case vocabulary.WriterConnector:
+	case !slices.Contains(writers, substrate.ActorTypePerson) && (slices.Contains(writers, substrate.ActorTypeFunction) || slices.Contains(writers, substrate.ActorTypeAgent)):
 		return "the provider's sync"
 	}
-	return "the " + writer
+	return "the " + strings.Join(writers, " or ")
 }
 
 func (p *planner) webhookRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {

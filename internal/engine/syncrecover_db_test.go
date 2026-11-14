@@ -8,6 +8,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -43,7 +44,7 @@ func TestSyncScheduledRunClearsAnOlderError(t *testing.T) {
 					"def main(input, host):\n"+
 					"    return {\"effects\": [{\"action\": \"patch\", \"kind\": \""+jobKind+"\", \"id\": \""+fid("inbox")+"\",\n"+
 					"        \"properties\": {\"syncState\": \""+tc.state+"\", \"lastSyncedAt\": "+syncedAt+"}}]}\n")
-			seedSyncError(t, ds, pkg, jobKind, errAt)
+			seedSyncError(t, ds, jobKind, errAt)
 			fireScheduleOnce(t, ds)
 
 			got := mustReadJob(t, ds, jobKind)
@@ -60,9 +61,10 @@ func TestSyncScheduledRunClearsAnOlderError(t *testing.T) {
 	}
 }
 
-// TestSyncForeignWriteKeepsTheError: another package's hand moving
+// TestSyncForeignWriteKeepsTheError: another package's function moving
 // `lastSyncedAt` beside an `ok` is not a run of the account's sync, and the
-// error pair stays.
+// error pair stays. A package's own hand may not write either at all: the
+// sync state is written by a function or an agent (decision 0290).
 func TestSyncForeignWriteKeepsTheError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -71,7 +73,7 @@ func TestSyncForeignWriteKeepsTheError(t *testing.T) {
 	const jobKind = pkg + "/job"
 	installScheduledJobSync(t, ds, pkg, jobKind, "def main(input, host):\n    return {}\n")
 	errAt := nowUTC().Add(-2 * time.Hour).Truncate(time.Second)
-	seedSyncError(t, ds, pkg, jobKind, errAt)
+	seedSyncError(t, ds, jobKind, errAt)
 
 	for _, actor := range []substrate.Actor{
 		substrate.FunctionActor("mirror.test.dev", "mirror", "copy"),
@@ -86,7 +88,11 @@ func TestSyncForeignWriteKeepsTheError(t *testing.T) {
 				return err
 			})
 		})
-		if err != nil {
+		if substrate.ActorTypeOf(actor) == substrate.ActorTypePackage {
+			if !errors.Is(err, substrate.ErrForbidden) {
+				t.Fatalf("write as %s = %v, want forbidden", actor, err)
+			}
+		} else if err != nil {
 			t.Fatalf("write as %s: %v", actor, err)
 		}
 		got := mustReadJob(t, ds, jobKind)
@@ -103,10 +109,10 @@ func installScheduledJobSync(t *testing.T, ds *dataset, pkg, jobKind, source str
 	t.Helper()
 	ctx := context.Background()
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	// Half an hour back: exactly one occurrence lies between the anchor and
 	// now once the fire state is rewound to it.
@@ -166,12 +172,11 @@ func installScheduledJobSync(t *testing.T, ds *dataset, pkg, jobKind, source str
 	}
 }
 
-// seedSyncError writes the error pair a failed run leaves, under the
-// package's own hand, the way the open-time sweep writes it.
-func seedSyncError(t *testing.T, ds *dataset, pkg, jobKind string, at time.Time) {
+// seedSyncError writes the error pair a run cut short leaves, under the
+// system, the way the open-time sweep writes it.
+func seedSyncError(t *testing.T, ds *dataset, jobKind string, at time.Time) {
 	t.Helper()
-	authority, name := vocabulary.SplitPackageRef(pkg)
-	actor := substrate.BundleActor(authority, name)
+	actor := substrate.ActorSystem
 	err := ds.inTx(context.Background(), actor, false, func(t *txn) error {
 		return t.asSyncWriter(actor, func() error {
 			_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{

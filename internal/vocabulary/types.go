@@ -407,27 +407,37 @@ type Property struct {
 	// (checkDeclarationWrite, in internal/engine). This is the only statement of
 	// the stamped set; the engine keeps no hand-written list beside it.
 	Managed bool
-	// Writer restricts WHICH actor role may write this property, enforced
-	// server-side after the merged row is known. Empty is
-	// unrestricted — the ordinary "nothing ranks writers" rule. The declared
-	// roles are:
-	//   - "oauth"     — only the host OAuth facility's actor (tokenRef,
-	//     tokenStatus, grantedScopes: the facility's hands on an account).
-	//   - "connector" — only installed bundle code (function.*/agent.*):
-	//     the connector's own sync state (syncToken, lastSyncedAt, syncStatus).
-	//   - "owner"     — only an owner-tier actor.
-	// A host-written property a stranger could otherwise assign directly is the
-	// vulnerability this closes: the console blacklist is not a boundary.
-	Writer string
+	// Writers is the types of actor that may write this property, its
+	// `writer:` (decision 0290), enforced server-side after the merged row is
+	// known; nil leaves it unrestricted. The engine's own hand, `system`,
+	// writes any property. A host-written property a stranger could otherwise
+	// assign directly is what it closes: the console's form is not a
+	// boundary. The shipped packages declare three: `system` for an
+	// account's credential hands (tokenRef, tokenStatus, grantedScopes),
+	// `[function, agent]` for a sync's own state, and `person` for what a
+	// person asks of a sync.
+	Writers []string
 }
 
-// Property writer roles: the admitted values of a
-// property's `writer:` restriction.
-const (
-	WriterOAuth     = "oauth"
-	WriterConnector = "connector"
-	WriterOwner     = "owner"
-)
+// WrittenBy reports whether an actor of the given type may write the
+// property: any type where it declares no `writer:`, else the types it names.
+func (p *Property) WrittenBy(actorType string) bool {
+	return p.Writers == nil || slices.Contains(p.Writers, actorType)
+}
+
+// WrittenOnlyBy reports whether the property declares one type of actor as
+// its only writer.
+func (p *Property) WrittenOnlyBy(actorType string) bool {
+	return len(p.Writers) == 1 && p.Writers[0] == actorType
+}
+
+// retiredWriters are the `writer:` words before actor types (decision 0290),
+// each with what replaced it, which a refusal names.
+var retiredWriters = map[string]string{
+	"owner":     "person",
+	"connector": "[function, agent]",
+	"oauth":     "system",
+}
 
 // The admitted `keyPattern:` contracts of a keyed map's keys. Both reuse the
 // validator the rest of the loader holds the same spelling to, so a key and a

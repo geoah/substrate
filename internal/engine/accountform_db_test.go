@@ -4,7 +4,7 @@ package engine_test
 // carry a human `displayName` and a string `enum` of allowed `values`, both
 // survive the kind read the console consumes, an out-of-enum value
 // is refused on write, and an account's email is written by the OAuth facility
-// from the grant (writer: oauth) rather than typed by the owner.
+// from the grant (writer: system) rather than typed by the owner.
 
 import (
 	"context"
@@ -69,7 +69,7 @@ func TestDisplayNameAndEnumValuesSurviveTheKindRead(t *testing.T) {
 	wantErr(t, err, substrate.ErrValidation, "out-of-enum value")
 }
 
-// The account's email is host-managed (writer: oauth): the owner cannot type
+// The account's email is host-managed (writer: system): the owner cannot type
 // it, the account is created without it, and the OAuth facility fills it from
 // the connected Google account after the exchange.
 func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
@@ -88,16 +88,16 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 	}
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: p.configProps()})
 
-	// The owner cannot set the host-managed writer: oauth properties — not the
+	// The owner cannot set the host-managed writer: system properties — not the
 	// email (which comes from the grant) nor the granted scope set.
 	for _, prop := range []map[string]any{
 		{"email": "owner-typed@example.com", "enabledMail": true},
 		{"grantedScopes": []any{"forged"}, "enabledMail": true},
 	} {
 		if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: mbAccountType, Properties: prop}); err == nil {
-			t.Fatalf("owner set a writer: oauth property %v", prop)
+			t.Fatalf("owner set a writer: system property %v", prop)
 		} else {
-			wantErr(t, err, substrate.ErrForbidden, "owner writes a writer: oauth property")
+			wantErr(t, err, substrate.ErrForbidden, "owner writes a writer: system property")
 		}
 	}
 

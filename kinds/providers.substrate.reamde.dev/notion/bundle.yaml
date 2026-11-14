@@ -93,6 +93,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: notion
+  dialect: 5
   # 11 — the account binds substrate's core `sync` trait (decision 0085) and
   # the sync body writes its twelve properties beside the ad hoc ones, so the
   # Connections page, `GET /api/v1/sync/status` and `substratectl sync status`
@@ -130,7 +131,8 @@ data:
   #
   # 21: owner-facing errors are plain sentences with the fix; technical
   # detail on the following line.
-  version: 21
+  # 22: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 22
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -187,14 +189,14 @@ data:
   properties:
     integrationToken:
       type: secret
-      writer: owner
+      writer: person
       displayName: Integration token
       description: >-
         the pasted Notion integration token (ntn_…). It addresses exactly
         one workspace. Redacted on read, injected only into the sync body
     apiBase:
       type: url
-      writer: owner
+      writer: person
       # The body PINS the origin the token may travel to: https on
       # api.notion.com, or a loopback host as the test seam.
       displayName: API base URL
@@ -205,7 +207,7 @@ data:
 # ---- the account type: one connected workspace ----------------------------
 # accountconfig WITHOUT oauth2. The trait contracts tokenRef / tokenStatus /
 # grantedScopes onto every implementing kind, so they are declared below as
-# DORMANT: `writer: oauth` means only the OAuth facility may ever set them,
+# DORMANT: `writer: system` means only the OAuth facility may ever set them,
 # and no flow runs for this bundle.
 #
 # THIS IS NOT A MIRROR. It is the connection: the owner's toggles, who the
@@ -241,14 +243,14 @@ data:
     # ---- the accountconfig trait's contracted properties — DORMANT here ---
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: >-
         accountconfig trait contract — unused: the pasted token lives on the
         bundle config, and no OAuth flow runs
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: >-
         accountconfig trait contract — unused: no OAuth flow ever reports
@@ -256,7 +258,7 @@ data:
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: >-
         accountconfig trait contract — unused: no consent, no scopes. What
@@ -264,13 +266,13 @@ data:
     # ---- what the owner asked for ----------------------------------------
     displayName:
       type: string
-      writer: owner
+      writer: person
       displayName: Name
       description: a name for this connection, shown wherever the account
         is listed
     enabledPages:
       type: bool
-      writer: owner
+      writer: person
       displayName: Pages
       description: >-
         sync this workspace's people, pages, data sources and databases —
@@ -278,7 +280,7 @@ data:
         it and the data source it is a row of
     enabledBlocks:
       type: bool
-      writer: owner
+      writer: person
       displayName: Page content
       description: >-
         also walk each page's block tree. Off by default: it is at least one
@@ -294,7 +296,7 @@ data:
           label: Once a day
       required: true
       default: hourly
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
@@ -312,7 +314,7 @@ data:
           label: Everything
       required: true
       default: last90d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: >-
         how far back the search walk reaches, against each object's last_edited_time
@@ -320,7 +322,7 @@ data:
         set it forward; changing it re-anchors the stored floor
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: >-
         stamp this with the current time to ask for a sync now, whatever the
@@ -329,22 +331,22 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/notion/user
-      writer: connector
+      writer: [function, agent]
       displayName: You
       description: >-
         the integration user this token authenticates as, from GET /v1/users/me
         — "me", and what every owner-relative question filters on. The row
         lands in the same drain, so no mustExist
-    # ---- the connector's own bookkeeping (writer: connector) --------------
+    # ---- the connector's own bookkeeping (writer: [function, agent]) --------------
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request acknowledged
       description: the `syncRequestedAt` the last sync acted on — equal means
         the request is spent
     syncCursors:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync cursors
       description: >-
         where each walk stopped — the roster cursor, the search cursor, the
@@ -352,7 +354,7 @@ data:
         was computed from. Opaque, rewritten whole by every page
     syncPending:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Pending work
       description: >-
         the work still to do, per queue (databases, blocks) — the backlog
@@ -360,7 +362,7 @@ data:
         it
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last attempted
       description: >-
         when the sync last ATTEMPTED a walk — the cadence anchor. A bounded
@@ -368,7 +370,7 @@ data:
         evidence that anything finished; lastCompletedAt is
     lastCompletedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last completed
       description: >-
         when a walk last ran to the end with no work left. The cold test reads
@@ -376,7 +378,7 @@ data:
         still a first sync
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       description: >-
         the instant Notion's Retry-After named on the last 429, honoured by
@@ -384,7 +386,7 @@ data:
         back
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: >-
         the last sync outcome — ok, ok (deferred: blocks xN), erroring: <sentence>
@@ -402,7 +404,7 @@ data:
     # a property a live row holds is a narrowing the upgrade refuses.
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: >-
         while true the dispatcher skips this account's deliveries and the
@@ -410,7 +412,7 @@ data:
         the body having to know a delivery was refused
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: >-
         never | running | ok | erroring | throttled. `ok` means the drain
@@ -418,7 +420,7 @@ data:
         a 429 is `throttled` and stands until Notion's own instant passes
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: >-
         the one human line the last run left — the same sentence syncStatus
@@ -426,7 +428,7 @@ data:
         what to do, and a second line may carry the technical detail
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: >-
         when the last run began. The dispatcher stamps it around a record-sourced
@@ -434,13 +436,13 @@ data:
         its own
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: how long that run took, from the same two hands — one invocation
         of a bounded drain, not the whole walk
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: >-
         {phase, done, total, pending} off the drain's own bookkeeping — the
@@ -448,19 +450,19 @@ data:
         in syncPending
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: the last error text, from the body's own failure path or
         from a parked delivery the dispatcher stamped; a later run that ends
         ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: >-
         trait contract — unwritten here: one function walks one workspace
@@ -1922,7 +1924,7 @@ data:
 # version and fires every trigger watching it. `slack/conversationsync` is the
 # same kind for the same reason.
 #
-# `writer: connector` on every property the connector owns; the one property
+# `writer: [function, agent]` on every property the connector owns; the one property
 # that binds the row to its container takes none, because a reference property
 # admits no `writer:` key (guide §6, "still owed").
 kind: substrate.reamde.dev/core/kind
@@ -1958,7 +1960,7 @@ data:
         is unrestricted
     blocksCursor:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Blocks cursor
       description: >-
         Notion's `next_cursor` for this page's ROOT children, and the walk
@@ -1966,12 +1968,12 @@ data:
         when the walk finished
     blocksSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Blocks synced
       description: when this page's block tree was last walked to the end
     blocksEditedTime:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Walked against
       description: >-
         the page's `last_edited_time` when the walk finished. A page no newer
@@ -1979,7 +1981,7 @@ data:
         in the page, so nothing has changed to re-read
     blocksStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Blocks status
       description: >-
         the last outcome for THIS page — ok, or a sentence saying why Notion

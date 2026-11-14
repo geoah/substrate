@@ -115,11 +115,11 @@ const KINDS: KindInfo[] = [
       "substrate.reamde.dev/core/sync",
     ],
     {
-      email: { type: "email", writer: "oauth" },
-      enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+      email: { type: "email", writer: "system" },
+      enabledGmail: { type: "bool", writer: "person", displayName: "Gmail" },
       enabledContacts: {
         type: "bool",
-        writer: "owner",
+        writer: "person",
         displayName: "Contacts",
       },
       syncFrequency: {
@@ -129,11 +129,11 @@ const KINDS: KindInfo[] = [
           { value: "daily", label: "Every day" },
         ],
         default: "daily",
-        writer: "owner",
+        writer: "person",
       },
-      syncState: { type: "string", writer: "connector" },
-      syncPaused: { type: "bool", writer: "owner", displayName: "Paused" },
-      syncRequestedAt: { type: "datetime", writer: "owner" },
+      syncState: { type: "string", writer: ["function", "agent"] },
+      syncPaused: { type: "bool", writer: "person", displayName: "Paused" },
+      syncRequestedAt: { type: "datetime", writer: "person" },
     },
     "internal"
   ),

@@ -11,7 +11,7 @@
   {
     "name": "records",
     "stability": "stable",
-    "revision": 3,
+    "revision": 4,
     "routes": [
       "DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
       "GET /api/v1/records",
@@ -124,7 +124,7 @@
   {
     "name": "vocabulary",
     "stability": "beta",
-    "revision": 1,
+    "revision": 2,
     "routes": [
       "GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors",
       "GET /api/v1/vocabulary/upgrade",
@@ -233,7 +233,7 @@
   {
     "name": "mcp",
     "stability": "experimental",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "* /mcp",
       "GET /.well-known/oauth-protected-resource/mcp"

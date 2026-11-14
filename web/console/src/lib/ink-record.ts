@@ -11,7 +11,7 @@ import { recordTitle } from "@/lib/format"
 import { randomId, readInk, type InkDocument } from "@/lib/ink"
 import { declaredFormat, isInkBlob, isPdfBlob } from "@/lib/media-types"
 import {
-  ownerWritable,
+  personWritable,
   propSpecs,
   titleEditor,
   titleProperty,
@@ -75,7 +75,7 @@ export function inkCreation(
   if (inks.length !== 1 || files.some((s) => declaredFormat(s) === "pdf"))
     return undefined
   const [ink] = inks
-  if (ink.managed || !ownerWritable(ink)) return undefined
+  if (ink.managed || !personWritable(ink)) return undefined
   // The name is typed as free text: a heading narrowed to a list of values
   // is a choice, and the general form's to fill.
   const titled = titleEditor(kind)

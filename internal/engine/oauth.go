@@ -34,7 +34,7 @@ type oauthEndpoints = oauthflow.Endpoints
 const finalizerOAuth = "substrate.oauth"
 
 // actorOAuth is the host OAuth facility's writer identity: the ONLY actor
-// permitted to write an account's `writer: oauth` properties — tokenRef,
+// permitted to write an account's `writer: system` properties — tokenRef,
 // tokenStatus, grantedScopes. Its writes are the facility's
 // own, never a stranger's.
 const actorOAuth substrate.Actor = "substrate.oauth"
@@ -55,19 +55,19 @@ const (
 // are not part of the accountconfig trait: a trait property is a contract
 // every implementor must declare, and a repository's own account kind, or a
 // provider installed before these shipped, would stop loading. The facility
-// writes each one only where the account's kind declares it `writer: oauth`,
+// writes each one only where the account's kind declares it `writer: system`,
 // and stamps `erroring` either way.
 const (
 	propTokenError   = "tokenError"
 	propTokenErrorAt = "tokenErrorAt"
 )
 
-// oauthWrites reports whether a kind declares name as a `writer: oauth`
+// oauthWrites reports whether a kind declares name as a `writer: system`
 // property: the only slot the facility may fill, and a write to an undeclared
 // one is refused whole.
 func oauthWrites(ty *vocabulary.Kind, name string) bool {
 	p, ok := ty.Prop(name)
-	return ok && p.Writer == vocabulary.WriterOAuth
+	return ok && p.WrittenOnlyBy(substrate.ActorTypeSystem)
 }
 
 // noteTokenRefresh stamps one refresh's outcome onto the account: a failure
@@ -512,7 +512,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	// the user never types it — the facility reads it off the provider's
 	// account-info endpoint (People `people/me` / OIDC userinfo, from TRUSTED
 	// manifest metadata) with the fresh access token and writes it to the
-	// `writer: oauth` property the bundle names. Best-effort: a userinfo failure
+	// `writer: system` property the bundle names. Best-effort: a userinfo failure
 	// logs and leaves email unset rather than failing the whole connect. The
 	// network call stays OUTSIDE the write transaction below.
 	var derivedEmail string
@@ -530,7 +530,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	// #5). A reconnect overwrites in place: the record keeps its ref, the
 	// store keeps one row per account.
 	// The patch is attributed to the OAuth facility's own actor: tokenRef,
-	// tokenStatus and grantedScopes are `writer: oauth`, so ONLY this actor may
+	// tokenStatus and grantedScopes are `writer: system`, so ONLY this actor may
 	// set them. Still an internal write — it bypasses the
 	// system-type guard and the owner-gate the facility itself enforced above.
 	return ds.inTx(ctx, actorOAuth, true, func(t *txn) error {
@@ -589,18 +589,18 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 			}
 		}
 		// The derived email lands only when the bundle names a real `writer:
-		// oauth` property (Finalize enforces the pairing; this re-checks against
+		// system` property (Finalize enforces the pairing; this re-checks against
 		// the live type so a misconfigured bundle skips instead of failing the
 		// connect with an undeclared-property write).
 		if derivedEmail != "" && meta.EmailProperty != "" {
 			if ty, err := ds.resolveType(row.Kind); err == nil {
-				if p, ok := ty.Prop(meta.EmailProperty); ok && p.Writer == vocabulary.WriterOAuth {
+				if p, ok := ty.Prop(meta.EmailProperty); ok && p.WrittenOnlyBy(substrate.ActorTypeSystem) {
 					props[meta.EmailProperty] = derivedEmail
 				}
 			}
 		}
-		// A `sync`-trait account's half of the reconnect rides the same patch
-		// at the tiers its properties' writers need: one changelog entry, so
+		// A `sync`-trait account's half of the reconnect rides the same patch,
+		// each property at the tier its manager row holds: one changelog entry, so
 		// a record trigger sees the new status, the cleared error and the
 		// sync request together and fires once.
 		tiers := map[string]substrate.Tier{}
@@ -1227,7 +1227,7 @@ func (ds *dataset) storeRefreshedToken(ctx context.Context, ref string, account 
 // and the provider is not asked.
 // `want` is the account the ref was read off. A credential row records the
 // account it was issued for, and the two must agree: `tokenRef` is a
-// `writer: oauth` property, but the facility is not the only hand that can
+// `writer: system` property, but the facility is not the only hand that can
 // ever reach one, and a ref re-pointed at ANOTHER account's row would hand
 // this bundle a live grant issued for a different connection (and, across
 // bundles, for a different provider). Refuse rather than resolve.

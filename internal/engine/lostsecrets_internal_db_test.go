@@ -51,10 +51,10 @@ func declareLostAccountKind(t *testing.T, ds *dataset) {
 func lostAccountProps() map[string]any {
 	return map[string]any{
 		"label":        map[string]any{"type": "string"},
-		"tokenRef":     map[string]any{"type": "secret", "writer": "oauth"},
-		"tokenStatus":  map[string]any{"type": "string", "writer": "oauth"},
-		"tokenError":   map[string]any{"type": "string", "writer": "oauth"},
-		"tokenErrorAt": map[string]any{"type": "datetime", "writer": "oauth"},
+		"tokenRef":     map[string]any{"type": "secret", "writer": "system"},
+		"tokenStatus":  map[string]any{"type": "string", "writer": "system"},
+		"tokenError":   map[string]any{"type": "string", "writer": "system"},
+		"tokenErrorAt": map[string]any{"type": "datetime", "writer": "system"},
 	}
 }
 

@@ -141,10 +141,10 @@ describe("AccountDialog with switches that let agents act", () => {
     definition: {
       traits: ["substrate.reamde.dev/core/accountconfig"],
       properties: {
-        enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+        enabledGmail: { type: "bool", writer: "person", displayName: "Gmail" },
         enabledGmailWrite: {
           type: "bool",
-          writer: "owner",
+          writer: "person",
           displayName: "Gmail sending",
         },
       },

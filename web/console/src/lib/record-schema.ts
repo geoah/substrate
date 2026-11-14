@@ -9,7 +9,7 @@
  *   needs: datatype, the container (`repeated` or `keyed`, with the keys'
  *   `keyPattern`), an enum's admitted values, a reference's `to:` target, what
  *   whether the engine `managed:` it, a state machine's
- *   states, `min`/`max`/`pattern`, a declared `default`, the `writer:` role,
+ *   states, `min`/`max`/`pattern`, a declared `default`, the `writer:` types,
  *   an object's declared `fields` (which nest), and the one-liner.
  * - `checkValue(units, spec, value)` — the client's copy of the substrate's own
  *   coercion rules (`internal/engine/validate.go`), so a bad datetime, a
@@ -135,9 +135,10 @@ export interface PropSpec {
    * the file is shown and what an upload offers; the server checks their
    * spelling and nothing else. */
   mediaTypes?: string[]
-  /** The declared `writer:` role. Anything but the owner is host-managed and
-   * never offered for editing. */
-  writer?: string
+  /** The declared `writer:`: the types of actor that may write it
+   * (decision 0290). One that leaves out `person` is the host's or a sync's,
+   * and no editing surface offers it. */
+  writer?: string[]
   description?: string
 }
 
@@ -201,12 +202,21 @@ export function isObjectKind(kind: string): boolean {
   return OBJECT.has(kind)
 }
 
-/** Whether a declared `writer:` role leaves the property the owner's to set.
- * An unrestricted property is the owner's, an explicit `writer: owner` is too;
- * any other role (`oauth`, `connector`) is host- or connector-managed and no
- * editing surface offers it. */
-export function ownerWritable(spec: PropSpec): boolean {
-  return !spec.writer || spec.writer === "owner"
+/** Whether a declared `writer:` leaves the property a person's to set: an
+ * unrestricted property is, and one that names `person` is; one written by
+ * the system or a sync alone (`system`, `[function, agent]`) is the host's,
+ * and no editing surface offers it. */
+export function personWritable(spec: PropSpec): boolean {
+  return !spec.writer || spec.writer.includes("person")
+}
+
+/** A declaration's `writer:` as its list of actor types, one or a list as
+ * written; undefined where it declares none. */
+export function writersOf(raw: unknown): string[] | undefined {
+  if (typeof raw === "string") return [raw]
+  if (Array.isArray(raw))
+    return raw.filter((w): w is string => typeof w === "string")
+  return undefined
 }
 
 /** Words a lowercase id spells that a reader knows in capitals. */
@@ -334,7 +344,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     ...(def.type === "quantity" ? quantitySpecOf(def) : {}),
     pattern: typeof def.pattern === "string" ? def.pattern : undefined,
     mediaTypes: stringList(def.mediaTypes),
-    writer: typeof def.writer === "string" ? def.writer : undefined,
+    writer: writersOf(def.writer),
     description:
       typeof def.description === "string" ? def.description : undefined,
   }
@@ -449,7 +459,7 @@ export function titleEditor(kind: KindInfo | undefined): PropSpec | undefined {
   if (!name) return undefined
   const spec =
     name === "title" ? systemSpecs(kind)[0] : specOf(name, rawProps(kind)[name])
-  return !spec.managed && ownerWritable(spec) ? spec : undefined
+  return !spec.managed && personWritable(spec) ? spec : undefined
 }
 
 /** The names a kind's prose usually goes under, most body-like first. */

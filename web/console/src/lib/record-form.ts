@@ -8,10 +8,10 @@
  *
  * Invariants that live here, not in the components:
  * - HOST-MANAGED properties are never offered for editing, driven off the
- *   declaration's `writer:` role and NOT a name blacklist. A property whose
- *   `writer` is a non-owner role (the OAuth facility's `oauth`, the connector
- *   runtime's `connector`) is excluded; an owner-writable property (an explicit
- *   `writer: owner`, or none at all) is offered. So tokenRef/tokenStatus/
+ *   declaration's `writer:` and NOT a name blacklist. A property whose
+ *   `writer` leaves out `person` (the OAuth facility's `system`, the sync's
+ *   `[function, agent]`) is excluded; a property a person may write (one
+ *   naming `person`, or none at all) is offered. So tokenRef/tokenStatus/
  *   grantedScopes and the connector's sync state drop out because the schema
  *   marks them, not because the console knows their names.
  * - MANAGED properties (`managed: true`) are the ENGINE's stamp: it refuses a
@@ -48,7 +48,7 @@ import {
   exampleFor,
   formatValue,
   inputTypeFor,
-  ownerWritable,
+  personWritable,
   parseValue,
   propSpecsByName,
   type Control,
@@ -151,7 +151,7 @@ export function buildFormFields(
   kind: KindInfo
 ): FormField[] {
   return propSpecsByName(kind)
-    .filter(ownerWritable)
+    .filter(personWritable)
     .map((spec) => fieldOf(units, spec))
 }
 

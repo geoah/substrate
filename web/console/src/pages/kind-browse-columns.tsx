@@ -58,6 +58,7 @@ import { splitRecordPath } from "@/lib/record-path"
 import type { ReferenceTitles } from "@/lib/reference-titles"
 import { cn } from "@/lib/utils"
 import type { UnitReader } from "@/lib/unit-reader"
+import { writersOf } from "@/lib/record-schema"
 
 /** Wire names the engine reserves as hot/system columns (recordColumns in
  * engine/query.go). A DECLARED property sharing one of these names cannot be
@@ -117,10 +118,10 @@ const DEFAULT_HIDDEN: Record<string, string[]> = {
 }
 
 /** The properties a kind declares that are not a reader's values: anything
- * marked `deprecated`, and on a provider's collection every property a writer
- * role other than the owner keeps (a sync cursor, a status, a token). A
- * writer role on the repository's own kind stays shown: there it is somebody
- * the person asked to keep the value. */
+ * marked `deprecated`, and on a provider's collection every property a person
+ * may not write (a sync cursor, a status, a token). A `writer:` on the
+ * repository's own kind stays shown: there it is somebody the person asked to
+ * keep the value. */
 function bookkeeping(kind: KindInfo): string[] {
   const provider =
     kind.authority === PROVIDERS_AUTHORITY || kind.source === "published"
@@ -130,9 +131,8 @@ function bookkeeping(kind: KindInfo): string[] {
   >
   return Object.entries(props).flatMap(([name, def]) => {
     if (def?.deprecated === true) return [name]
-    const writer = def?.writer
-    if (provider && typeof writer === "string" && writer !== "owner")
-      return [name]
+    const writers = writersOf(def?.writer)
+    if (provider && writers && !writers.includes("person")) return [name]
     return []
   })
 }

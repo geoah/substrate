@@ -70,14 +70,14 @@ func mbAccountTypeDoc() map[string]any {
 		map[string]any{
 			"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 			"properties": map[string]any{
-				"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
-				"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
-				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
-				"address":       map[string]any{"type": "email", "writer": "owner"},
+				"tokenRef":      map[string]any{"type": "secret", "writer": "system"},
+				"tokenStatus":   map[string]any{"type": "string", "writer": "system"},
+				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system"},
+				"address":       map[string]any{"type": "email", "writer": "person"},
 				// A feature toggle the manifest maps to scopes.
-				"enabledMail": map[string]any{"type": "bool", "writer": "owner"},
+				"enabledMail": map[string]any{"type": "bool", "writer": "person"},
 				// Connector-owned sync state.
-				"syncToken": map[string]any{"type": "string", "writer": "connector"},
+				"syncToken": map[string]any{"type": "string", "writer": []any{"function", "agent"}},
 			},
 		})
 }
@@ -186,7 +186,7 @@ func mbPointOAuthAt(docs []map[string]any, baseURL string) {
 }
 
 // mbWireEmail turns on OAuth email derivation for the mail closure: it adds an
-// `email` (writer: oauth) property to the account type and points the bundle's
+// `email` (writer: system) property to the account type and points the bundle's
 // oauth2 block at that property. mbPointOAuthAt then rewrites the endpoint to
 // the fake provider's /userinfo. The user never types email; the facility sets
 // it from the grant.
@@ -196,7 +196,7 @@ func mbWireEmail(docs []map[string]any) {
 		if d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) {
 			if meta, _ := d["metadata"].(map[string]any); meta["id"] == mbAccountType {
 				props, _ := data["properties"].(map[string]any)
-				props["email"] = map[string]any{"type": "email", "writer": "oauth"}
+				props["email"] = map[string]any{"type": "email", "writer": "system"}
 			}
 		}
 		if d["kind"] == vocabulary.CoreKind(vocabulary.DocBundle) {

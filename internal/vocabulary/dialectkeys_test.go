@@ -142,6 +142,22 @@ func dialectProblems(earlier, now dialectGolden) []string {
 			}
 		}
 	}
+	// A line given to a key the earlier golden already held says the key's
+	// meaning changed (decision 0290's `writer:`), so it takes the number
+	// that change raises the dialect to, and only in a change that raises
+	// it; held from then on as every line is, below.
+	for _, name := range slices.Sorted(maps.Keys(now.IntroducedAt)) {
+		for _, k := range slices.Sorted(maps.Keys(now.IntroducedAt[name])) {
+			if _, recorded := earlier.IntroducedAt[name][k]; recorded || !slices.Contains(earlier.Keys[name], k) {
+				continue
+			}
+			if at := now.IntroducedAt[name][k]; at != now.Dialect || now.Dialect == earlier.Dialect {
+				problems = append(problems, fmt.Sprintf(
+					"keyIntroducedAt gives %s.%s, a key dialect %d already held, a line at %d: a key whose meaning changes takes its line at the number the change raises the dialect to, %d, in the change that raises it",
+					name, k, earlier.Dialect, at, earlier.Dialect+1))
+			}
+		}
+	}
 	for _, name := range slices.Sorted(maps.Keys(earlier.IntroducedAt)) {
 		for _, k := range slices.Sorted(maps.Keys(earlier.IntroducedAt[name])) {
 			was := earlier.IntroducedAt[name][k]
@@ -362,6 +378,26 @@ func TestAKeyAddedEntersKeyIntroducedAtAtTheNumberItRaises(t *testing.T) {
 	dropped.IntroducedAt = map[string]map[string]int64{"packageDataKeys": {"retention": 4}}
 	if problems := dialectProblems(earlier, dropped); len(problems) != 1 || !strings.Contains(problems[0], "keyIntroducedAt drops packageDataKeys.dialect") {
 		t.Fatalf("a key's line dropped while the key stays: %v", problems)
+	}
+	// A key the earlier golden held, whose meaning a raise changes, takes a
+	// line at the new number, and at no other, and never without a raise.
+	changed := now
+	changed.IntroducedAt = map[string]map[string]int64{"packageDataKeys": {"dialect": 3, "retention": 4, "version": 4}}
+	if problems := dialectProblems(earlier, changed); len(problems) != 0 {
+		t.Fatalf("an existing key's line at the number its change raises: %v", problems)
+	}
+	early := now
+	early.IntroducedAt = map[string]map[string]int64{"packageDataKeys": {"dialect": 3, "retention": 4, "version": 3}}
+	if problems := dialectProblems(earlier, early); len(problems) != 1 || !strings.Contains(problems[0], "a key dialect 3 already held, a line at 3") {
+		t.Fatalf("an existing key's line below the number its change raises: %v", problems)
+	}
+	unraised := dialectGolden{
+		Dialect:      3,
+		Keys:         earlier.Keys,
+		IntroducedAt: map[string]map[string]int64{"packageDataKeys": {"dialect": 3, "version": 3}},
+	}
+	if problems := dialectProblems(earlier, unraised); len(problems) != 1 || !strings.Contains(problems[0], "packageDataKeys.version, a key dialect 3 already held") {
+		t.Fatalf("an existing key's line with no raise: %v", problems)
 	}
 	// A key that left its set takes its line with it.
 	removed := dialectGolden{

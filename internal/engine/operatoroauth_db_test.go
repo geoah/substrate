@@ -129,17 +129,17 @@ func (f *opTokenFake) seen() (exchanges, refreshes []opClientPair) {
 // account kind; withProvenance declares the account's `oauthClient`.
 func opMailDocs(tokenURL string, withProvenance bool) []map[string]any {
 	accountProps := map[string]any{
-		"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
-		"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
-		"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
-		"tokenError":    map[string]any{"type": "string", "writer": "oauth"},
-		"tokenErrorAt":  map[string]any{"type": "datetime", "writer": "oauth"},
-		"address":       map[string]any{"type": "email", "writer": "owner"},
-		"enabledMail":   map[string]any{"type": "bool", "writer": "owner"},
+		"tokenRef":      map[string]any{"type": "secret", "writer": "system"},
+		"tokenStatus":   map[string]any{"type": "string", "writer": "system"},
+		"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system"},
+		"tokenError":    map[string]any{"type": "string", "writer": "system"},
+		"tokenErrorAt":  map[string]any{"type": "datetime", "writer": "system"},
+		"address":       map[string]any{"type": "email", "writer": "person"},
+		"enabledMail":   map[string]any{"type": "bool", "writer": "person"},
 	}
 	if withProvenance {
 		accountProps[propOAuthClient] = map[string]any{
-			"type": "object", "writer": "oauth",
+			"type": "object", "writer": "system",
 			"fields": map[string]any{
 				"clientId": map[string]any{"type": "string"},
 				"source": map[string]any{"type": "enum", "values": []any{

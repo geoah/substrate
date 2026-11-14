@@ -69,7 +69,7 @@
 #   * NO SYNC BOOKKEEPING ON A MIRROR (§1). Beeper's `oldestCursor` and
 #     `newestCursor` are the PAGINATION's, not the chat's, so they live in
 #     `chatsync` — a state kind with a cascading reference at the chat and
-#     `writer: connector` on every property it may carry one — and a page of
+#     `writer: [function, agent]` on every property it may carry one — and a page of
 #     history never bumps the chat's version. The chat-list walk, the queue a
 #     bounded drain left behind and the failure list stay on the account,
 #     where per-STREAM state belongs.
@@ -126,6 +126,7 @@ metadata:
 data:
   authority: providers.substrate.reamde.dev
   package: beeper
+  dialect: 5
   # 13 — T-084, the core `sync` trait: the account kind binds
   # `[accountconfig, sync]` and declares the trait's twelve properties with
   # their writers, and the sync body writes them beside the legacy
@@ -178,7 +179,8 @@ data:
   # token, the sandbox's refusal, a wrong API base), the technical detail
   # on the following line; per-chat statuses and the ok run's failure
   # note read as words. `sendmessage` says the same.
-  version: 24
+  # 25: `writer:` names actor types, and the header states the dialect that reads them (decision record 0290).
+  version: 25
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block: an oauth2 block demands a client input wearing the
@@ -237,7 +239,7 @@ data:
     # connector input resolves the sole record of this kind.
     accessToken:
       type: secret
-      writer: owner
+      writer: person
       displayName: Access token
       description: >-
         the bearer token Beeper Desktop hands out. Redacted on read, injected
@@ -245,7 +247,7 @@ data:
         sent to a public origin
     apiBase:
       type: url
-      writer: owner
+      writer: person
       displayName: API base
       # Unlike every other provider here, loopback IS production: Beeper
       # Desktop serves this API on the machine it runs on.
@@ -256,7 +258,7 @@ data:
 # ---- the account type: one connected Beeper Desktop ------------------------
 # accountconfig WITHOUT oauth2. The trait contracts tokenRef/tokenStatus/
 # grantedScopes onto every implementing type, so they are declared DORMANT:
-# `writer: oauth` means only the OAuth facility may ever set them, and no flow
+# `writer: system` means only the OAuth facility may ever set them, and no flow
 # runs for this bundle.
 #
 # THIS IS NOT A MIRROR. It is the connection: the owner's toggles, who the
@@ -290,14 +292,14 @@ data:
     # The accountconfig trait's contracted properties — DORMANT here.
     tokenRef:
       type: secret
-      writer: oauth
+      writer: system
       displayName: Token reference
       description: >-
         accountconfig trait contract — unused: the token lives on the bundle
         config, and no OAuth flow runs
     tokenStatus:
       type: string
-      writer: oauth
+      writer: system
       displayName: Connection status
       description: >-
         accountconfig trait contract — unused: no OAuth flow ever reports
@@ -305,7 +307,7 @@ data:
     grantedScopes:
       type: string
       repeated: true
-      writer: oauth
+      writer: system
       displayName: Granted scopes
       description: >-
         accountconfig trait contract, unused. Beeper Desktop mints `read write`
@@ -313,27 +315,27 @@ data:
     # The owner's hands.
     displayName:
       type: string
-      writer: owner
+      writer: person
       displayName: Name
       description: a name for this connection, shown wherever the account
         is listed
     enabledMessages:
       type: bool
-      writer: owner
+      writer: person
       displayName: Messages
       description: >-
         sync this Beeper's networks, people, chats and messages — one toggle,
         because one token opens all of them at once
     enabledContacts:
       type: bool
-      writer: owner
+      writer: person
       displayName: Address books
       description: >-
         also walk each bridge's address book, which is where a person with
         no open chat appears. One extra call per connected network
     chatFilter:
       type: string
-      writer: owner
+      writer: person
       description: >-
         optional case-insensitive substring a chat's title must contain for
         its MESSAGES to sync. Every chat is still mirrored
@@ -341,14 +343,14 @@ data:
     # predates the trait and keeps its meaning exactly; `syncPaused` is new.
     syncRequestedAt:
       type: datetime
-      writer: owner
+      writer: person
       displayName: Sync requested
       description: >-
         stamp this with the current time to ask for a sync now, whatever the
         cadence says. The next completed sync closes the request
     syncPaused:
       type: bool
-      writer: owner
+      writer: person
       displayName: Paused
       description: >-
         while true the dispatcher skips this account's deliveries and the
@@ -364,7 +366,7 @@ data:
           label: Once a day
       required: true
       default: hourly
-      writer: owner
+      writer: person
       displayName: Sync frequency
       description: the scheduled sync cadence for this account (default hourly)
     backfillDepth:
@@ -384,7 +386,7 @@ data:
           label: Everything
       required: true
       default: last30d
-      writer: owner
+      writer: person
       displayName: Backfill depth
       description: >-
         how far back the first walk of each chat pages before it stops (default
@@ -393,7 +395,7 @@ data:
     user:
       type: reference
       kind: providers.substrate.reamde.dev/beeper/user
-      writer: connector
+      writer: [function, agent]
       displayName: You
       description: >-
         the Beeper identity this token belongs to, from the connected account
@@ -402,28 +404,28 @@ data:
     # not here and not on the chat.
     serverVersion:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Beeper Desktop version
       description: >-
         `info.app.version` — which build of Beeper Desktop answered. Fields
         appear by version, so which one is answering is a fact worth keeping
     streamCursors:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Stream cursors
       description: >-
         where each stream stopped: the chat-list cursor, the queues a capped
         drain has not reached, and what failed. Opaque, rewritten whole
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last attempted
       description: >-
         when the sync last ATTEMPTED a walk — the cadence anchor. A bounded
         drain moves it too, so it is not evidence anything finished
     lastCompletedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last completed
       description: >-
         when a walk last ran to the end with no work left. The cold test reads
@@ -431,14 +433,14 @@ data:
         still a first sync
     retryNotBefore:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Retry not before
       description: >-
         the instant a 429's Retry-After named, honoured by the scheduler for
         every call. Absent when nothing is holding the account back
     unreachableSince:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Unreachable since
       description: >-
         when the current stretch of runs that could not reach Beeper Desktop
@@ -446,7 +448,7 @@ data:
         it
     syncStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync status
       description: >-
         the last sync outcome: ok, ok (N pending), erroring: <reason>, a duplicate's
@@ -468,7 +470,7 @@ data:
     # a pause with nothing for the owner to fix (decision 0183).
     syncState:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync state
       description: >-
         never | running | ok | erroring | throttled — the account-level state.
@@ -476,14 +478,14 @@ data:
         holds it or Beeper Desktop is not reachable
     syncMessage:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync message
       description: >-
         the one human line the last run left — the same sentence syncStatus
         carries, so the two never disagree
     lastSyncStartedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync started
       description: >-
         when the last run began. The dispatcher stamps it around a record-sourced
@@ -491,21 +493,21 @@ data:
         record
     lastSyncDurationMs:
       type: int
-      writer: connector
+      writer: [function, agent]
       displayName: Last sync duration (ms)
       description: >-
         how long the last run took, stamped by the dispatcher for a record-sourced
         delivery and by the body on the scheduled path
     syncRequestedAck:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync request served
       description: >-
         equals syncRequestedAt once every stream has answered that request
         — for this bundle, once a walk has run out of work
     syncProgress:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync progress
       description: >-
         "{phase, done, total, pending}" for the bounded drain: the phase it
@@ -513,19 +515,19 @@ data:
         hold
     syncError:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error
       description: >-
         the last error text, from the body or from a parked delivery. A later
         run that ends ok, or a reconnect, clears it and syncErrorAt
     syncErrorAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Sync error at
       description: when syncError was written; cleared with it
     syncStreams:
       type: json
-      writer: connector
+      writer: [function, agent]
       displayName: Sync streams
       description: >-
         chats and messages, each as "{state, message, lastAt, pending, requestedAck}".
@@ -1697,42 +1699,42 @@ data:
     # the connector's own state
     newestCursor:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Forward cursor
       description: >-
         the `newestCursor` of the newest page read here. The next run asks
         direction=after from it and gets only what arrived since
     oldestCursor:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Backfill cursor
       description: >-
         the `oldestCursor` of the oldest page read here. The backfill asks
         direction=before from it until it reaches the window floor
     backfilledThrough:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Backfilled through
       description: >-
         the oldest message instant this chat has been walked back to. The
         account's backfillDepth is the floor it stops at
     backfillComplete:
       type: bool
-      writer: connector
+      writer: [function, agent]
       displayName: Backfill done
       description: >-
         the backfill reached the window floor or the start of the chat, so
         later runs only page forward
     messagesStatus:
       type: string
-      writer: connector
+      writer: [function, agent]
       displayName: Status
       description: >-
         the last outcome for THIS chat — ok, or the error that stopped it.
         One unreadable chat never stops the rest
     wholeReadAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Whole read at
       description: >-
         when GET /v1/chats/{id}?maxParticipantCount=-1 last answered for this
@@ -1740,7 +1742,7 @@ data:
         the list says the roster is still truncated
     lastSyncedAt:
       type: datetime
-      writer: connector
+      writer: [function, agent]
       displayName: Last synced
       description: when this chat's messages were last walked
 ---
@@ -2923,7 +2925,7 @@ data:
 
 
     def _chatsync_put(host, aid, cid, props):
-        """Written ONLY here, and only with `writer: connector` properties — a page
+        """Written ONLY here, and only with `writer: [function, agent]` properties — a page
         of history must never bump the chat's own version."""
         eid = _chatsync_ref(host, aid, cid)
         base = {"chat": _chat_ref(host, aid, cid)}

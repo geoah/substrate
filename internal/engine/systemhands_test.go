@@ -1,0 +1,188 @@
+package engine
+
+// EVERY PLACE THE ENGINE TAKES THE SYSTEM'S HAND, LISTED (decision 0290). The
+// system writes any property, so a site that writes as it must be one where
+// the engine itself decides the value or replays one, or one that carries
+// another hand's value and says what that value is held to. Each function of
+// this package that names a hand of the system's type, substrate.ActorSystem,
+// the OAuth facility's actorOAuth, the webhook door's actorWebhook or a
+// change-request policy's `policy:` actor, is listed here with which:
+//
+//   - decides: the engine's own value (its bookkeeping, a replay, a
+//     migration's rewrite);
+//   - carries: a value another hand chose, and the check it is held to;
+//   - names: the system named without writing as it (an attribution, a
+//     comparison).
+//
+// A new site fails the test until it is listed, and a site that goes fails it
+// until its line does.
+
+import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+var systemHands = map[string]string{
+	"actors.go:ensureLinks":                   "decides: the actor records of a write's hands, the system's first",
+	"actors.go:ensureActor":                   "decides: one actor record the engine keeps",
+	"actors.go:disableActor":                  "decides: an app's actor record disabled when its last token goes",
+	"addonconsent.go:CompleteAppAddon":        "carries: the person's approval of an app's add-on onto the app's token record; held to the person's own unscoped hand, into a core kind that declares no writer:",
+	"agentjobs.go:settleInterruptedJobs":      "decides: an agent job cut short by a stop",
+	"agents.go:claimAgentDelivery":            "decides: an agent delivery's claim",
+	"agents.go:settleInterruptedClaims":       "decides: claims a stop left in flight",
+	"agents.go:markRerun":                     "decides: a failed agent delivery marked to run again",
+	"agents.go:settleLostThreads":             "decides: threads whose run was lost",
+	"agents.go:settleInterruptedThreads":      "decides: threads a stop cut short",
+	"alerts.go:alertActorOf":                  "names: an alert with no callable behind it is the system's",
+	"alerts.go:alertActorOfTrigger":           "names: the same, for a trigger's alerts",
+	"alerts.go:alertActorOfAbout":             "names: the same, for what an alert is about",
+	"appbuild.go:RecordAppBuild":              "carries: an app's reported build and package floors onto its own token record; held to the app's own live token, into a core kind that declares no writer:",
+	"auth.go:rewriteCredential":               "carries: the person's new sign-in material; held to its door's check of the current factors, into a core kind that declares no writer:",
+	"auth.go:MintToken":                       "carries: the minter's label, scopes and app facts onto a new token; held to the mint's own input checks, into a core kind that declares no writer:",
+	"auth.go:Login":                           "carries: a sign-in's label onto the token it mints; held to the factors standing in the same transaction (factorsStand), into a core kind that declares no writer:",
+	"blobs.go:blobGCPass":                     "decides: unreferenced blobs collected",
+	"bundles.go:DisableBundle":                "decides: the disabled mark a person's request sets",
+	"bundles.go:EnableBundle":                 "decides: the disabled mark a person's request clears",
+	"bundles.go:UninstallBundle":              "decides: a package's declarations removed",
+	"bundles.go:PurgeBundle":                  "decides: the purging mark and the purge a person's request runs",
+	"bundles.go:purgeTypes":                   "decides: a purge's record deletions",
+	"callrun.go:putFailedCallRun":             "decides: the run record of a call that failed",
+	"dataset.go:metaKeyAllowed":               "names: the system may write any label or annotation key",
+	"delivery.go:settleDelivery":              "decides: a delivery's ledger entry",
+	"domain.go:StartDomainVerification":       "decides: a domain proof to publish",
+	"domain.go:MarkDomainVerified":            "decides: a domain proven",
+	"engine.go:createSeededRepository":        "carries: the registration's own records beside the seed, the system and person actors and the default providers it decides; held to the registration door's checks, into core kinds that declare no writer:",
+	"functions.go:parkAndAdvance":             "decides: a failed delivery parked and its cursor moved",
+	"functions.go:recordSkipAndAdvance":       "decides: a skipped run and its cursor",
+	"functions.go:skipClaimed":                "decides: a claimed delivery skipped",
+	"functions.go:deliverFire":                "decides: a schedule fire's state",
+	"functions.go:ensureScheduleState":        "decides: a schedule's fire state",
+	"functions.go:putSystemRun":               "decides: a run record",
+	"functions.go:sweepPagedCursors":          "decides: paged chains a stop cut short",
+	"functions.go:ensureCursor":               "decides: a trigger's cursor",
+	"functions.go:ReplayTrigger":              "decides: a trigger's cursor rewound, at a person's request",
+	"functions.go:retryHeldFailure":           "decides: a held failure's settlement",
+	"functions.go:ForgetTriggerFailure":       "decides: a failure dropped, at a person's request",
+	"gc.go:sweepUnheldSealed":                 "decides: sealed values no record holds, erased",
+	"gc.go:gcPass":                            "decides: deleted records collected",
+	"gc.go:cascadeOwned":                      "decides: records a deleted owner held",
+	"health.go:raiseFailingAlerts":            "decides: a failing trigger's alert",
+	"health.go:resolveStaleFailing":           "decides: a stale alert resolved",
+	"health.go:resolveGoneTriggerAlerts":      "decides: the alerts of a trigger that is gone",
+	"inputs.go:BindBundleInput":               "carries: the person's choice of the record that fills a package's input onto the bundle row; held to the owner's door and the record's live kind, into a core kind that declares no writer:",
+	"judge.go:judgeRequest":                   "carries: the policy judge's verdict as an annotation on a change request; held to an annotation being no property",
+	"judge.go:decideAsPolicy":                 "carries: a request's diff that a person's policy rule accepts; held to the person's type, as a person's own acceptance is (writerOf)",
+	"oauth.go:(package)":                      "names: the OAuth facility's hand",
+	"oauth.go:noteTokenRefresh":               "decides: the OAuth facility's token state after a refresh",
+	"oauth.go:completeOAuth":                  "decides: the OAuth facility's slots of an account it connected",
+	"operatoroauth.go:settleOAuthClientStamp": "decides: the OAuth client an account's grant names",
+	"webhooks.go:(package)":                   "names: the webhook door's hand",
+	"webhooks.go:admitWebhook":                "carries: a sender's request bytes into blob records; held to the trigger's declared webhook and its verification, into a core kind that declares no writer:",
+	"webhooks.go:recordWebhook":               "carries: a sender's request as a pending delivery; held to the trigger's declared webhook, into the delivery ledger and core kinds that declare no writer:",
+	"webhooks.go:stage":                       "carries: one part of a sender's request as a blob; held to the trigger's declared webhook, into a core kind that declares no writer:",
+	"write.go:isPolicyActor":                  "names: a change-request policy's hand, which writerOf holds as the person",
+	"lostsecrets.go:clearSecretsLeftBehind":   "decides: the secret refs a restore without the data key left behind, cleared from the records that held them",
+	"lostsecrets.go:clearLeftBehind":          "decides: one ref taken out of the record that held it, and the alert that says so",
+	"lostsecrets.go:settleSecretsLeftBehind":  "decides: the alert of a secret its owner gave a value again, resolved",
+	"mapping.go:recomputeValues":              "carries: the winning source's value into the mapped target; held to no guarded property: a recompute writes none, whoever started it (checkPropertyOwnership)",
+	"mapping.go:sourceActor":                  "names: a source with no writer and no package is credited to the system",
+	"mapping.go:releaseMachineManaged":        "carries: the removal of values a mapping held; held to no guarded property, as a recompute is (checkPropertyOwnership)",
+	"oauth.go:ProcessOAuthFinalizers":         "decides: the OAuth finalizer lifted after a revoke",
+	"orphans.go:collectOrphan":                "decides: an orphan collected",
+	"rebuild.go:RebuildRepository":            "decides: the changelog replayed",
+	"repodir.go:refold":                       "decides: the table's history replayed into the fold",
+	"repomigrate.go:runRepositoryMigrations":  "decides: a repository migration's rewrite",
+	"repomigration_0002_qualify_bare_selector_kinds.go:migrateQualifyBareSelectorKinds":              "decides: a migration's rewrite",
+	"repomigration_0003_name_units_by_unit_records.go:migrateRow":                                    "decides: a migration's rewrite",
+	"repomigration_0003_name_units_by_unit_records.go:unitFor":                                       "decides: a migration's unit record",
+	"repomigration_0004_name_applet_runtimes.go:migrateNameAppletRuntimes":                           "decides: a migration's rewrite",
+	"repomigration_0005_remove_reply_relay_contacts.go:detachRelayEntries":                           "decides: a migration's rewrite",
+	"repomigration_0005_remove_reply_relay_contacts.go:migrateTombstone":                             "decides: a migration's tombstone",
+	"repomigration_0006_key_the_repository_record_by_its_id.go:migrateKeyTheRepositoryRecordByItsID": "decides: a migration's rewrite",
+	"repomigration_0007_start_paged_drains_over.go:migrateStartPagedDrainsOver":                      "decides: a migration's mark on the repository record",
+	"repomigration_0008_purge_the_recovery_key.go:migratePurgeTheRecoveryKey":                        "decides: a migration's purge of the recovery record",
+	"repomigration_0009_link_actors.go:writeHistoryActors":                                           "names: the system's actor is live in every repository",
+	"repomigration_0009_link_actors.go:repositoryHands":                                              "names: the system is one of every repository's hands",
+	"rows.go:actorTierIn":                     "names: the system's tier, for the manager mark",
+	"seed.go:isSubstratePath":                 "names: the system's writes are the substrate's own path",
+	"seed.go:upgradeShippedVocabulary":        "decides: the shipped upgrade",
+	"seedproviders.go:seedDefaultProviders":   "names: whether a hand other than the system's wrote a default provider",
+	"seedproviders.go:ensureDefaultProviders": "decides: the default provider rows",
+	"settings.go:purgeSettings":               "decides: a purged package's settings",
+	"signout.go:endTokens":                    "decides: every token ended, at a person's request",
+	"sync.go:settleInterruptedSyncs":          "decides: a sync's run cut short by a stop",
+	"temporaryretry.go:setAsideWaiting":       "decides: a waiting retry set aside",
+	"vocabularywrite.go:shippedHands":         "names: the hands a shipped record is the shipper's under",
+	"vocabularywrite.go:markGroupQuarantined": "decides: a package's quarantine mark",
+	"vocabularywrite.go:clearGroupQuarantine": "decides: a package's quarantine mark lifted",
+}
+
+func TestEveryPlaceTheEngineTakesTheSystemsHandIsListed(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	found := map[string]bool{}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, f, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", f, err)
+		}
+		for _, decl := range file.Decls {
+			where := f + ":(package)"
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				where = f + ":" + fn.Name.Name
+			}
+			ast.Inspect(decl, func(n ast.Node) bool {
+				switch x := n.(type) {
+				case *ast.SelectorExpr:
+					if pkg, ok := x.X.(*ast.Ident); ok && pkg.Name == "substrate" && x.Sel.Name == "ActorSystem" {
+						found[where] = true
+					}
+					return false
+				case *ast.Ident:
+					if x.Name == "actorOAuth" || x.Name == "actorWebhook" {
+						found[where] = true
+					}
+				case *ast.BasicLit:
+					if strings.HasPrefix(x.Value, `"policy:`) {
+						found[where] = true
+					}
+				}
+				return true
+			})
+		}
+	}
+	for _, site := range slices.Sorted(func(yield func(string) bool) {
+		for k := range found {
+			if !yield(k) {
+				return
+			}
+		}
+	}) {
+		if _, ok := systemHands[site]; !ok {
+			t.Errorf("%s takes or names the system's hand and is not in systemHands: list it with decides, carries (and what it is held to) or names", site)
+		}
+	}
+	for site, why := range systemHands {
+		if !found[site] {
+			t.Errorf("systemHands lists %s, which no longer names the system: take its line out", site)
+		}
+		word, _, _ := strings.Cut(why, ":")
+		switch {
+		case word != "decides" && word != "carries" && word != "names":
+			t.Errorf("systemHands says %q of %s: each line starts with decides, carries or names", why, site)
+		case word == "carries" && !strings.Contains(why, "held to"):
+			t.Errorf("systemHands says %s carries a value without saying what it is held to", site)
+		}
+	}
+}
