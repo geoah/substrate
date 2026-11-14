@@ -29,6 +29,14 @@ type AgentResult struct {
 	// Reason names the budget that ended an overbudget run, or who or what
 	// stopped a stopped one.
 	Reason string `json:"reason,omitempty"`
+	// Cause is which budget ended an overbudget run and what stopped a
+	// stopped one, from the closed set (AgentCauses, decision 0315): the
+	// thread row's settled `cause`. A client acts on it and shows Reason
+	// under details. Absent on an ok run.
+	Cause string `json:"cause,omitempty"`
+	// RetryAfter is the whole seconds a provider asked to wait, where the
+	// cause is one that names a wait.
+	RetryAfter int `json:"retryAfter,omitempty"`
 	// Effects counts the writes the run applied, tool calls included;
 	// EffectsByAction breaks the count down for the run ledger (root only).
 	Effects         int            `json:"effects"`
@@ -47,6 +55,82 @@ type AgentResult struct {
 	// stores them; absent when it links none.
 	Mentions []AgentMention `json:"mentions,omitempty"`
 }
+
+// The causes a run settles with, beside its status (decision 0315): which
+// failure ended an `error` run, which budget an `overbudget` one, what
+// stopped a `stopped` one. A thread row carries it as `cause`, a `done`
+// event's result and an `error` event carry the same value. The set is
+// closed, so a client switches on it, and one it does not know reads as its
+// status alone.
+const (
+	// An `error` run. The provider_* causes are the vendor's answer, sorted
+	// by the wire (internal/llm FailureOf).
+	CauseProviderKeyRefused  = "provider_key_refused"
+	CauseProviderRateLimited = "provider_rate_limited"
+	CauseProviderBilling     = "provider_billing"
+	CauseProviderOverloaded  = "provider_overloaded"
+	CauseProviderUnavailable = "provider_unavailable"
+	CauseProviderRejected    = "provider_rejected"
+	CauseModelUnavailable    = "model_unavailable"
+	CauseContextTooLong      = "context_too_long"
+	// CauseAllowanceSpent is the operator's daily allowance used up
+	// (ErrAllowance).
+	CauseAllowanceSpent = "allowance_spent"
+	// CauseInterrupted is a run the server stopped serving before it
+	// settled: a restart, or a lease that expired with no loop behind it.
+	CauseInterrupted = "interrupted"
+	// CauseWriteFailed is a write of the run's own rows that failed.
+	CauseWriteFailed = "write_failed"
+	// CauseInternal is every other failure.
+	CauseInternal = "internal"
+
+	// An `overbudget` run: the budget that ended it.
+	CauseTurnLimit     = "turn_limit"
+	CauseToolCallLimit = "tool_call_limit"
+	CauseDeadline      = "deadline"
+
+	// A `stopped` run: a hand asked (a person, an app, an agent or a
+	// function; Reason says which type), or the server shut down.
+	CauseRequested = "requested"
+	CauseShutdown  = "shutdown"
+)
+
+// AgentCauses is the closed set of causes: every Cause constant above and
+// nothing else. The thread kind's `cause` enum, the console's union and
+// docs/agents.md are held to it.
+var AgentCauses = []string{
+	CauseAllowanceSpent,
+	CauseContextTooLong,
+	CauseDeadline,
+	CauseInternal,
+	CauseInterrupted,
+	CauseModelUnavailable,
+	CauseProviderBilling,
+	CauseProviderKeyRefused,
+	CauseProviderOverloaded,
+	CauseProviderRateLimited,
+	CauseProviderRejected,
+	CauseProviderUnavailable,
+	CauseRequested,
+	CauseShutdown,
+	CauseToolCallLimit,
+	CauseTurnLimit,
+	CauseWriteFailed,
+}
+
+// AgentFailure is a run that failed after its thread opened: the error, with
+// the cause the thread settled with and the wait a provider named. The
+// sentinels the engine classified it under (ErrKeyRefused, ErrAllowance)
+// still match through it, and the API reads the cause off it for the stream's
+// error event and for the call route's refusal.
+type AgentFailure struct {
+	Cause      string
+	RetryAfter int
+	Err        error
+}
+
+func (e *AgentFailure) Error() string { return e.Err.Error() }
+func (e *AgentFailure) Unwrap() error { return e.Err }
 
 // AgentMention is one record a reply links as
 // `[text](substrate://<kind>/<id>)`, read by the engine when the run settles.
@@ -130,6 +214,14 @@ type AgentEvent struct {
 	// from the closed set, `auth` where the stream's token no longer stands,
 	// so a client signs in again rather than retrying.
 	Code string `json:"code,omitempty"`
+	// Cause rides the error event of a turn that failed: the cause its thread
+	// settled with (AgentCauses). An error event without one is the stream's
+	// own end (a token that no longer stands, a reader that fell behind, a
+	// fault of the server), and says nothing about the turn. RetryAfter is
+	// the whole seconds a provider asked to wait, beside a cause that names
+	// a wait.
+	Cause      string `json:"cause,omitempty"`
+	RetryAfter int    `json:"retryAfter,omitempty"`
 	// TokensBefore and Covered ride the compacted event: the context size in
 	// tokens that triggered the compaction, and the number of message rows
 	// the new summary row covers.

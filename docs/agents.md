@@ -1025,7 +1025,8 @@ The conversation state is the run: there is no separate run record. A `thread`
 is written as the loop runs under the agent's actor, carrying `agent`,
 `provider`, `model`, `mode`, `status` (`running` then
 `ok`/`overbudget`/`error`/`stopped`, where `stopped` is a chat turn a client
-stopped or a server shutdown ended), `agentDepth`, the tallies (`turns`, `toolCalls`,
+stopped or a server shutdown ended), the `reason` and the `cause` it settled
+with ([below](#what-ended-a-run)), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. `promptTokens` is the whole input the model saw;
 `cacheReadTokens` and `cacheWriteTokens` are the parts of it the provider
@@ -1057,6 +1058,65 @@ never reads it. The provider's signed thinking blocks are another matter:
 within one run, the loop passes them back unchanged on the assistant turn
 that called tools, as Anthropic requires, and then drops them; no row keeps
 them, so a later run replays its earlier tool calls without them.
+
+### What ended a run
+
+A thread that did not finish says why twice
+([decision 0315](decisions/0315-a-settled-run-says-its-cause-from-a-closed-set-and-a-refusal-says-its-reason.md)).
+`reason` is words: the engine's, or the provider's answer. `cause` is one
+value from a closed set, written beside it at every settle, and it is what a
+client acts on: it picks the sentence and the button, and shows `reason`
+under details and nowhere else. No client reads a provider's prose. A run
+that finishes clears both.
+
+| `status` | `cause` | When |
+| --- | --- | --- |
+| `error` | `provider_key_refused` | the vendor refused the row's key |
+| `error` | `provider_rate_limited` | the vendor is limiting requests or tokens; `retryAfter` holds the seconds it asked to wait, where it named them |
+| `error` | `provider_billing` | the vendor account is out of credit or over the quota it pays for |
+| `error` | `provider_overloaded` | the vendor is shedding load |
+| `error` | `provider_unavailable` | a fault on the vendor's side, a timeout, or a connection that failed or dropped |
+| `error` | `provider_rejected` | the vendor refused the request as it stands: a parameter the model does not take, a tool it cannot read, content it will not process |
+| `error` | `model_unavailable` | the vendor does not offer the model to this key |
+| `error` | `context_too_long` | the conversation is too long for the model, after the one compaction retry |
+| `error` | `allowance_spent` | the operator's allowance for the day is used up |
+| `error` | `interrupted` | the server stopped serving the run before it settled |
+| `error` | `write_failed` | a write of the run's own rows failed |
+| `error` | `internal` | anything else |
+| `overbudget` | `turn_limit`, `tool_call_limit`, `deadline` | the budget that ended the run |
+| `stopped` | `requested`, `shutdown` | a hand asked for the stop (`reason` says which type of actor), or the server shut down |
+
+The closed set of causes: `allowance_spent`, `context_too_long`, `deadline`,
+`internal`, `interrupted`, `model_unavailable`, `provider_billing`,
+`provider_key_refused`, `provider_overloaded`, `provider_rate_limited`,
+`provider_rejected`, `provider_unavailable`, `requested`, `shutdown`,
+`tool_call_limit`, `turn_limit`, `write_failed`.
+
+While a thread is `running` again, its `reason`, `cause` and `retryAfter`
+are still the last settle's, so read `status` first. `retryAfter` counts
+from the thread's `finishedAt`.
+
+A cause is added only with a new revision of the `agents`
+[feature](api.md#the-features), whose revision 4 is the first with causes, and a client that meets one it does not
+know falls back to what it shows for the `status`, which is also what a
+thread from before the property shows. `cause` is a string on the thread
+kind, not an enum: an enum value is one lowercase word, and these are spelled
+like the API's reasons, beside which a client reads them.
+
+Each wire sorts its vendor's answer in one place (`internal/llm`): the HTTP
+status, then the error's `type` and `code` as Anthropic and OpenAI document
+them, and for a call no answer came back from, what the connection said.
+A missing key is not a cause, because it is refused before any thread opens
+([below](#calling-an-agent)).
+
+**What `reason` may hold.** For a row with the repository's own key, the
+provider's answer as it came, with the key taken out: the request line, the
+status, the vendor's request id and the error body, which can quote the
+vendor's organization id and the parameter it objects to. For a row the
+operator pays for, none of that: the answer names the operator's endpoint,
+so the thread and the caller get the substrate's sentence for the cause
+(`Anthropic could not answer with Example's key: it is limiting requests.`)
+and the answer goes to the server's log.
 
 **A follow-up replays what the thread already read**
 ([decision 0201](decisions/0201-a-continued-thread-replays-its-tool-exchanges.md)).
@@ -1783,8 +1843,27 @@ naming every agent declared under the word
 and the chat route reads it the same way. The input becomes
 the first user message, and the answer carries
 `reply`, `thread`, `status`, `effects` with its `effectsByAction` breakdown,
-`turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function
+`turns`, `toolCalls`, and the token and `costUSD` tallies, and for a run a
+budget ended its `reason` and `cause`. Unlike a function
 call, something durable is minted — the thread is the trace.
+
+A call whose run failed answers by the [cause](#what-ended-a-run) its thread
+settled with, never as `422 validation` for a failure that is not the
+request's:
+
+| The cause | The answer |
+| --- | --- |
+| `provider_rate_limited`, `provider_billing`, `provider_overloaded`, `provider_unavailable`, `model_unavailable` | `503 unavailable` with the cause as its `reason`, and `Retry-After`: the vendor's wait where it named one, else 30 seconds |
+| `provider_key_refused` | `503 unavailable` with the reason `key_refused` |
+| `allowance_spent` | `403 guard` with the reason `quota` |
+| `context_too_long`, `provider_rejected` | `422 validation` with the cause as its `reason`: the same request meets the same answer |
+| `write_failed`, `internal` | `500 internal`, in the words the thread keeps as its `reason` |
+
+A run refused before it starts keeps its status and names itself in the
+envelope's `reason`: `thread_busy` and `turn_cap` on `409 conflict` (a turn
+runs on the thread; the person's chat turns are all running), `spend_cap` on
+`403 guard`, `quota` on `403 guard` (the operator's allowance), and
+`provider_key_missing` on `422 validation` (the provider row has no key).
 
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with
 `{"thread"?, "message", "messageId"?}`
@@ -1795,11 +1874,24 @@ model's thinking, ahead of that turn's `delta` events and only from a model
 that exposes it, `toolStarted` and `toolFinished` around each dispatch, in
 call order ([calls that run together](#calls-that-run-together)),
 `compacted` when the loop summarizes older turns, one `done` carrying the
-settled result under `result`). A loop that fails after the
+settled result under `result`, which carries the `cause` of a run a budget
+or a stop ended). A loop that fails after the
 `200` status line has already gone out terminates the stream with an `error`
 event instead, the same choice the
 [changelog](changelog.md#frames-and-the-horizon) makes, so a failure is never a
-`done` with no result. A continued thread replays its history (user and
+`done` with no result. That event carries the turn's
+[cause](#what-ended-a-run), the value the thread settled with:
+
+```json
+{"kind":"error","code":"unavailable","cause":"provider_rate_limited","retryAfter":20,"error":"agent …: llm: …"}
+```
+
+Three other things end a stream with an `error` event, and none of them
+carries a `cause`, because none is the turn failing: the stream's token no
+longer stands (`code: "auth"`, sign in again); this reader fell behind the
+turn, or the person's roles changed (`code: "unavailable"`, attach again);
+and a fault of the server's own while it wrote the stream
+(`code: "internal"`, attach again to learn what the turn did). A continued thread replays its history (user and
 assistant turns, each tool call with its stored result right after it, and a
 `summary` row standing in for the older turns it covers) and keeps one running
 tally on the thread row; one active turn per thread is enforced by a lease, so
@@ -2001,8 +2093,9 @@ resolution rows with the rest of the history, and so does the owner's
 A person runs at most 4 chat turns at once, or the number the server sets
 (`SUBSTRATE_CHAT_TURNS_PER_PERSON`, [running a substrate](operations.md#configuration)).
 A person is the repository's sign-in today. One more is refused `409
-conflict` (`4 chat turns are already running for this person: wait for one
-to finish, or stop one`) before anything is written.
+conflict` with the reason `turn_cap` (`4 chat turns are already running for
+this person: wait for one to finish, or stop one`) before anything is
+written.
 
 `delta`, `reasoning`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
 matching `message` row carries or will carry. A thread's ordinals are unique:
@@ -2016,7 +2109,8 @@ consecutive `reasoning` events as one, and at most 4 MiB of event text, counted
 over `text`, `args`, `output` and `error`; past that it sends what it kept,
 one `{"kind":"truncated"}` line, then live events, and the dropped part is in
 the `message` rows once `done` arrives. A client that reads slower than the
-turn writes is dropped with an `error` event saying to attach again. A server
+turn writes is dropped with an `error` event of code `unavailable` and no
+`cause`, saying to attach again. A server
 shutdown stops every running chat turn: each settles `stopped` with reason
 `stopped: the server shut down during the turn`, within the shutdown's
 10 second drain; a settle that misses the drain is a `running` thread the next

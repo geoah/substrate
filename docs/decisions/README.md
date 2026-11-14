@@ -459,6 +459,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0312](0312-a-chat-message-may-name-its-own-id-and-a-thread-is-continued-with-no-message.md) | A chat message may name its own id, and a thread is continued with no message | accepted |
 | [0313](0313-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md) | How far a person has read a thread is a record of their own, and its position only moves forward | accepted |
 | [0314](0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md) | An owner overrides an agent's budgets, and the operator sets each repository's allowance | accepted |
+| [0315](0315-a-settled-run-says-its-cause-from-a-closed-set-and-a-refusal-says-its-reason.md) | A settled run says its cause from a closed set, and a refusal says its reason | accepted |
 | [0316](0316-agent-spend-is-counted-in-us-dollars.md) | Agent spend is counted in US dollars | accepted |
 | [0319](0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md) | The hands that wrote a shipped record outlive its history | accepted |
 | [0320](0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md) | A trigger's own history is bookkeeping and keeps seven days | accepted |

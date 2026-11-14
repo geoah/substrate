@@ -230,8 +230,7 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 				// text, which a client cannot tell from a successful (if
 				// empty) settle.
 				frame()
-				_, p := problemFor(err)
-				if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Code: p.Code, Error: err.Error()}) == nil {
+				if enc.Encode(errorEvent(err)) == nil {
 					flusher.Flush()
 				}
 			}
@@ -261,6 +260,30 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 			return true, nil
 		}
 	}
+}
+
+// errorEvent is the event a stream that already sent its 200 ends with. Four
+// different things end a stream this way, and the event tells them apart:
+//
+//   - The turn failed: `cause` is the cause its thread settled with, from
+//     the closed set, with `retryAfter` where the provider named a wait. No
+//     other error event carries a cause.
+//   - The stream's token no longer stands: `code` is `auth` (leaseEnded).
+//   - This reader fell behind the turn, or the person's roles changed:
+//     `code` is `unavailable`, and the client attaches again.
+//   - The server faulted while producing the stream: `code` is `internal`
+//     and the words are masked.
+//
+// `error` keeps the server's words for the first: the reason the thread
+// stores, which a client shows under details and nowhere else.
+func errorEvent(err error) substrate.AgentEvent {
+	_, p := problemFor(err)
+	ev := substrate.AgentEvent{Kind: substrate.AgentEventError, Code: p.Code, Error: err.Error()}
+	var failure *substrate.AgentFailure
+	if errors.As(err, &failure) {
+		ev.Cause, ev.RetryAfter = failure.Cause, failure.RetryAfter
+	}
+	return ev
 }
 
 // leaseEnded ends an agent stream once its token no longer stands

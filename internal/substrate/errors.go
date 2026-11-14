@@ -229,25 +229,91 @@ const (
 	ReasonMessageIDTaken    = "message_id_taken"
 )
 
+// The reasons of an agent run refused before it started (decision 0315).
+// ReasonTurnCap, on `conflict`: the person's chat turns are all running.
+// ReasonSpendCap, on `guard`: the agent's or the repository's daily spend
+// cap is reached. ReasonProviderKeyMissing, on `validation`: the provider
+// row the agent runs on has no key.
+const (
+	ReasonTurnCap            = "turn_cap"
+	ReasonSpendCap           = "spend_cap"
+	ReasonProviderKeyMissing = "provider_key_missing"
+)
+
+// The reasons of an agent call a provider failed (decision 0315), each named
+// for the cause the run's thread settled with (agent.go AgentCauses). On
+// `unavailable`: ReasonProviderRateLimited, ReasonProviderBilling,
+// ReasonProviderOverloaded, ReasonProviderUnavailable and
+// ReasonModelUnavailable. On `validation`: ReasonContextTooLong and
+// ReasonProviderRejected, which the same request meets again.
+const (
+	ReasonProviderRateLimited = "provider_rate_limited"
+	ReasonProviderBilling     = "provider_billing"
+	ReasonProviderOverloaded  = "provider_overloaded"
+	ReasonProviderUnavailable = "provider_unavailable"
+	ReasonProviderRejected    = "provider_rejected"
+	ReasonModelUnavailable    = "model_unavailable"
+	ReasonContextTooLong      = "context_too_long"
+)
+
+// reasoned carries an ErrorPayload reason on an error whose words and
+// sentinels stay as they are.
+type reasoned struct {
+	reason string
+	err    error
+}
+
+func (e *reasoned) Error() string { return e.err.Error() }
+func (e *reasoned) Unwrap() error { return e.err }
+
+// WithReason marks err with the ErrorPayload reason a refusal of it answers
+// with. The code is still the error's own sentinel's; a reason outside
+// ErrorReasons is never sent.
+func WithReason(err error, reason string) error {
+	if err == nil {
+		return nil
+	}
+	return &reasoned{reason: reason, err: err}
+}
+
+// ReasonOf is the reason WithReason marked err with, "" for none.
+func ReasonOf(err error) string {
+	var r *reasoned
+	if errors.As(err, &r) {
+		return r.reason
+	}
+	return ""
+}
+
 // ErrorReasons is the closed set of reasons: every Reason constant above and
 // nothing else. A client switches on a reason, so one it was never told about
 // must not reach it: the API drops a reason outside the list
 // (internal/api problemFor), and the console's union and docs/api.md are held
 // to it (internal/api errorreasons_test.go).
 var ErrorReasons = []string{
+	ReasonContextTooLong,
 	ReasonFirstAttemptLanded,
 	ReasonFirstAttemptRunning,
 	ReasonInDoubt,
 	ReasonKeyRefused,
 	ReasonMessageIDTaken,
+	ReasonModelUnavailable,
 	ReasonNotPermitted,
 	ReasonNothingToContinue,
 	ReasonObservedRederiving,
+	ReasonProviderBilling,
+	ReasonProviderKeyMissing,
+	ReasonProviderOverloaded,
+	ReasonProviderRateLimited,
+	ReasonProviderRejected,
+	ReasonProviderUnavailable,
 	ReasonQuota,
 	ReasonRepositoryRequired,
 	ReasonSetAside,
+	ReasonSpendCap,
 	ReasonStaleRevision,
 	ReasonThreadBusy,
+	ReasonTurnCap,
 }
 
 // ErrorEnvelope is the one body every refused request answers with.
@@ -266,7 +332,10 @@ type ErrorEnvelope struct {
 // `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
 // ReasonInDoubt on `internal` and `unavailable`, and
 // ReasonFirstAttemptRunning, ReasonFirstAttemptLanded, ReasonThreadBusy,
-// ReasonNothingToContinue and ReasonMessageIDTaken on `conflict`.
+// ReasonNothingToContinue, ReasonMessageIDTaken and ReasonTurnCap on
+// `conflict`, ReasonSpendCap on `guard`, ReasonProviderKeyMissing on
+// `validation`, and the reasons of a provider's failure on `unavailable` and
+// `validation`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

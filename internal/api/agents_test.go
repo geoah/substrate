@@ -327,3 +327,119 @@ func TestAMessageIDThatNamesAnotherMessageIsRefusedAsTaken(t *testing.T) {
 		}
 	}
 }
+
+// callFake answers an agent call with err.
+type callFake struct {
+	stubSignals
+	err error
+}
+
+func (c *callFake) CallAgent(context.Context, string, any) (*substrate.AgentResult, error) {
+	return nil, c.err
+}
+
+func (c *callFake) ChatAgent(_ context.Context, _ substrate.Actor, _ string, _ substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
+	return nil, c.err
+}
+
+const helperCallPath = "/api/v1/substrate.reamde.dev/core/agent/helper/call"
+
+// failedRun is a run that failed with cause, as the engine returns it.
+func failedRun(cause string, retryAfter int, inner error) error {
+	return &substrate.AgentFailure{Cause: cause, RetryAfter: retryAfter, Err: fmt.Errorf("agent helper: llm: %w", inner)}
+}
+
+// A provider's failure on the call route is the provider's, never the
+// caller's input: `unavailable` with the cause as its reason and a
+// Retry-After, the vendor's own where it named one. A request the vendor
+// refuses as it stands, and one past the model's window, are `validation`
+// with the reason. A failure of the server's own is `internal`, in the words
+// the thread keeps (decision 0315).
+func TestAFailedAgentCallAnswersByItsCause(t *testing.T) {
+	vendor := errors.New("the vendor's words")
+	for _, tc := range []struct {
+		name       string
+		err        error
+		status     int
+		code       string
+		reason     string
+		retryAfter string
+	}{
+		{"a rate limit with the vendor's wait", failedRun(substrate.CauseProviderRateLimited, 20, vendor), 503, codeUnavailable, substrate.ReasonProviderRateLimited, "20"},
+		{"a rate limit with no wait named", failedRun(substrate.CauseProviderRateLimited, 0, vendor), 503, codeUnavailable, substrate.ReasonProviderRateLimited, "30"},
+		{"an account out of credit", failedRun(substrate.CauseProviderBilling, 0, vendor), 503, codeUnavailable, substrate.ReasonProviderBilling, "30"},
+		{"an overloaded vendor", failedRun(substrate.CauseProviderOverloaded, 0, vendor), 503, codeUnavailable, substrate.ReasonProviderOverloaded, "30"},
+		{"a vendor fault", failedRun(substrate.CauseProviderUnavailable, 0, vendor), 503, codeUnavailable, substrate.ReasonProviderUnavailable, "30"},
+		{"a model the key is not offered", failedRun(substrate.CauseModelUnavailable, 0, vendor), 503, codeUnavailable, substrate.ReasonModelUnavailable, "30"},
+		{"a conversation past the window", failedRun(substrate.CauseContextTooLong, 0, vendor), 422, codeValidation, substrate.ReasonContextTooLong, ""},
+		{"a request the vendor refuses", failedRun(substrate.CauseProviderRejected, 0, vendor), 422, codeValidation, substrate.ReasonProviderRejected, ""},
+		{"a key the vendor refuses", failedRun(substrate.CauseProviderKeyRefused, 0, substrate.ErrKeyRefused), 503, codeUnavailable, substrate.ReasonKeyRefused, "60"},
+		{"the operator's allowance", failedRun(substrate.CauseAllowanceSpent, 0, substrate.ErrAllowance), 403, codeGuard, substrate.ReasonQuota, ""},
+		{"a write of the run that failed", failedRun(substrate.CauseWriteFailed, 0, errors.New("the insert was refused")), 500, codeInternal, "", ""},
+		{"anything else", failedRun(substrate.CauseInternal, 0, errors.New("a fault")), 500, codeInternal, "", ""},
+		// Refusals before the run started keep their status and say which.
+		{"the person's running turns", substrate.WithReason(fmt.Errorf("%w: 4 chat turns are already running", substrate.ErrConflict), substrate.ReasonTurnCap), 409, codeConflict, substrate.ReasonTurnCap, ""},
+		{"a spend cap", substrate.WithReason(fmt.Errorf("%w: spend cap reached", substrate.ErrGuard), substrate.ReasonSpendCap), 403, codeGuard, substrate.ReasonSpendCap, ""},
+		{"a row with no key", substrate.WithReason(fmt.Errorf("%w: llm/provider row declares no apiKey", substrate.ErrValidation), substrate.ReasonProviderKeyMissing), 422, codeValidation, substrate.ReasonProviderKeyMissing, ""},
+		{"a reason outside the closed set", substrate.WithReason(fmt.Errorf("%w: no", substrate.ErrConflict), "made_up"), 409, codeConflict, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newStubEnv(t, &callFake{err: tc.err})
+			rec := env.do(t, http.MethodPost, helperCallPath, stubToken, map[string]any{"input": "go"})
+			wantErrorCode(t, rec, tc.status, tc.code)
+			var body substrate.ErrorEnvelope
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error.Reason != tc.reason {
+				t.Fatalf("reason = %q, want %q: %s", body.Error.Reason, tc.reason, rec.Body.String())
+			}
+			if got := rec.Header().Get("Retry-After"); got != tc.retryAfter {
+				t.Fatalf("Retry-After = %q, want %q", got, tc.retryAfter)
+			}
+			if tc.status >= 500 && tc.reason == "" && !strings.Contains(body.Error.Message, "agent helper: llm:") {
+				t.Fatalf("a failed run's words were masked: %q", body.Error.Message)
+			}
+		})
+	}
+}
+
+// What ends a stream after its 200 says which of four things it is: a turn
+// that failed carries the cause its thread settled with, and nothing else
+// carries one.
+func TestAStreamsErrorEventSaysWhatEnded(t *testing.T) {
+	last := func(t *testing.T, err error) substrate.AgentEvent {
+		t.Helper()
+		env := newStubEnv(t, &callFake{err: err})
+		rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi"})
+		wantStatus(t, rec, http.StatusOK)
+		lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+		var ev substrate.AgentEvent
+		if err := json.Unmarshal([]byte(lines[len(lines)-1]), &ev); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Kind != substrate.AgentEventError {
+			t.Fatalf("the stream ended with %s", rec.Body.String())
+		}
+		return ev
+	}
+	ev := last(t, failedRun(substrate.CauseProviderRateLimited, 20, errors.New("429 Too Many Requests")))
+	if ev.Cause != substrate.CauseProviderRateLimited || ev.RetryAfter != 20 || ev.Code != codeUnavailable || !strings.Contains(ev.Error, "429 Too Many Requests") {
+		t.Fatalf("a failed turn's error event = %+v", ev)
+	}
+	ev = last(t, failedRun(substrate.CauseWriteFailed, 0, errors.New("the insert was refused")))
+	if ev.Cause != substrate.CauseWriteFailed || ev.RetryAfter != 0 || ev.Code != codeInternal {
+		t.Fatalf("a failed write's error event = %+v", ev)
+	}
+	// A reader the hub dropped: attach again, and nothing about the turn.
+	ev = last(t, fmt.Errorf("%w: stream fell behind; attach again", substrate.ErrUnavailable))
+	if ev.Cause != "" || ev.Code != codeUnavailable {
+		t.Fatalf("a reader that fell behind = %+v, want unavailable and no cause", ev)
+	}
+	// A fault of the server's own while it produced the stream.
+	ev = last(t, errStreamPanicked)
+	if ev.Cause != "" || ev.Code != codeInternal {
+		t.Fatalf("a fault = %+v, want internal and no cause", ev)
+	}
+}

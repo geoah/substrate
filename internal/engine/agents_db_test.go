@@ -43,6 +43,8 @@ type fakeTurn struct {
 	// 401 that quotes the masked bearer, where the default scripted body does
 	// not. Empty means the default.
 	errBody string
+	// retryAfter, with status set, is the failure's Retry-After header.
+	retryAfter string
 	// arrived (closed on receipt) and release (blocks the response) build
 	// concurrency barriers.
 	arrived chan struct{}
@@ -160,6 +162,9 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if turn.status != 0 {
 		w.Header().Set("Content-Type", "application/json")
+		if turn.retryAfter != "" {
+			w.Header().Set("Retry-After", turn.retryAfter)
+		}
 		w.WriteHeader(turn.status)
 		if turn.errBody != "" {
 			_, _ = fmt.Fprint(w, turn.errBody)

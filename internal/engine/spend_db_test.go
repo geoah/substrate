@@ -470,7 +470,7 @@ func TestARepositorySpendCapHoldsEveryAgent(t *testing.T) {
 	want := "spend cap reached: the repository spent 100 of its 50 cents in the last 24 hours (setting substrate.reamde.dev/llm/spendCentsPerDay)"
 	for _, agent := range []string{"open", "capped"} {
 		_, err := ds.CallAgent(ctx, spendPackage+"/"+agent, "go")
-		if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
+		if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) || substrate.ReasonOf(err) != substrate.ReasonSpendCap {
 			t.Fatalf("%s at the repository cap: %v", agent, err)
 		}
 	}

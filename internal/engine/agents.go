@@ -257,11 +257,18 @@ type agentCallInput struct {
 	Input any    `json:"input"`
 }
 
-// agentEntryError shapes a loop error for the direct entries: a sentinel the
-// engine already classified (a lease conflict, a missing thread, a guard, a
-// key the vendor refused) passes through; anything else — the LLM transport,
-// mostly — reads as a validation failure of the invocation.
+// agentEntryError shapes a loop error for the direct entries: a run that
+// failed with a cause, and a sentinel the engine already classified (a lease
+// conflict, a missing thread, a guard, a key the vendor refused), pass
+// through; anything else, a refusal before the run began, reads as a
+// validation failure of the invocation.
 func agentEntryError(err error) error {
+	// A run that failed after its thread opened carries its cause, which the
+	// API answers by (substrate.AgentFailure).
+	var failure *substrate.AgentFailure
+	if errors.As(err, &failure) {
+		return err
+	}
 	for _, sentinel := range []error{substrate.ErrConflict, substrate.ErrNotFound, substrate.ErrGuard, substrate.ErrForbidden, substrate.ErrKeyRefused, substrate.ErrValidation} {
 		if errors.Is(err, sentinel) {
 			return err
@@ -420,8 +427,8 @@ func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag 
 	// how many a client can leave running.
 	person, limit := substrate.PersonOf(ctx, ds.scope.Repository), ds.svc.chatTurnsPerPerson
 	if !ds.chatTurns.take(person, limit) {
-		return nil, fmt.Errorf("%w: %d chat turns are already running for this person: wait for one to finish, or stop one",
-			substrate.ErrConflict, limit)
+		return nil, substrate.WithReason(fmt.Errorf("%w: %d chat turns are already running for this person: wait for one to finish, or stop one",
+			substrate.ErrConflict, limit), substrate.ReasonTurnCap)
 	}
 	slotHeld := true
 	defer func() {
@@ -1043,12 +1050,12 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 			if lost := ds.lostRunReason(id); lost != "" {
 				reason += "; the run failed with: " + lost
 			}
-			if _, err := t.patch(ref, substrate.PatchInput{Properties: map[string]any{
+			if _, err := t.patch(ref, substrate.PatchInput{Properties: ds.withCause(map[string]any{
 				"status":     threadError,
 				"reason":     reason,
 				"finishedAt": t.now.Format(time.RFC3339Nano),
 				"leaseUntil": nil,
-			}}); err != nil {
+			}, turnFailure{cause: substrate.CauseInterrupted})}); err != nil {
 				return err
 			}
 			settled = true
@@ -1150,12 +1157,12 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
 		}
 		err = ds.inTx(rctx, substrate.ActorSystem, true, func(t *txn) error {
-			_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: map[string]any{
+			_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: ds.withCause(map[string]any{
 				"status":     threadError,
 				"reason":     interruptedThreadReason,
 				"finishedAt": t.now.Format(time.RFC3339Nano),
 				"leaseUntil": nil,
-			}})
+			}, turnFailure{cause: substrate.CauseInterrupted})})
 			return err
 		})
 		if err != nil {

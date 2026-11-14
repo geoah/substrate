@@ -589,7 +589,7 @@ func spentCents(usd float64) int64 {
 // spendRefusal is the error a refused root run answers: ErrGuard, carrying
 // the hold's text.
 func spendRefusal(text string) error {
-	return fmt.Errorf("%w: %s", errSpendHeld, text)
+	return substrate.WithReason(fmt.Errorf("%w: %s", errSpendHeld, text), substrate.ReasonSpendCap)
 }
 
 // refuseAtSpendCap checks a root run of ag that no dispatcher walk admitted:

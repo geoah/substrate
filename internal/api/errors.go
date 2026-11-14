@@ -170,8 +170,54 @@ func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg str
 // watch terminal error frame, so a substrate error means the same thing
 // wherever it surfaces.
 func problemFor(err error) (int, substrate.ErrorPayload) {
+	status, p := sentinelProblem(err)
+	// A reason an error was marked with (substrate.WithReason) narrows the
+	// code its sentinel answers. One outside the closed set is not sent.
+	if reason := substrate.ReasonOf(err); p.Reason == "" && reason != "" {
+		if slices.Contains(substrate.ErrorReasons, reason) {
+			p.Reason = reason
+		} else {
+			slog.Error("a refusal carried a reason outside the closed set", "reason", reason)
+		}
+	}
+	return status, p
+}
+
+// providerFailureRetryAfter is the Retry-After on an agent call a provider
+// failed where the provider named no wait of its own: long enough that a
+// client retrying on its own does not hammer a vendor that is shedding load.
+const providerFailureRetryAfter = 30 * time.Second
+
+// failureProblem answers an agent run that failed after its thread opened
+// (substrate.AgentFailure) by the cause the thread settled with, for the
+// causes that are a provider's failure. It is never `validation` for a
+// failure that is not the request's: a vendor limiting, out of credit,
+// overloaded, unreachable or without the model is `unavailable`, which the
+// same call outlives once the vendor or its account recovers. A request the
+// vendor refused as it stands, or one past the model's window, is the
+// request's, and repeating it unchanged meets the same answer. ok is false
+// for every other cause, which the error's own sentinel answers.
+func failureProblem(f *substrate.AgentFailure) (int, substrate.ErrorPayload, bool) {
+	switch f.Cause {
+	case substrate.CauseProviderRateLimited, substrate.CauseProviderBilling, substrate.CauseProviderOverloaded,
+		substrate.CauseProviderUnavailable, substrate.CauseModelUnavailable:
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: f.Cause, Message: f.Error()}, true
+	case substrate.CauseContextTooLong, substrate.CauseProviderRejected:
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: f.Cause, Message: f.Error()}, true
+	}
+	return 0, substrate.ErrorPayload{}, false
+}
+
+// sentinelProblem is problemFor by the error's sentinels alone.
+func sentinelProblem(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
 	var pick *substrate.RepositoryRequiredError
+	var failure *substrate.AgentFailure
+	if errors.As(err, &failure) && !errors.Is(err, substrate.ErrWriteInDoubt) {
+		if status, p, ok := failureProblem(failure); ok {
+			return status, p
+		}
+	}
 	switch {
 	case errors.Is(err, substrate.ErrWriteInDoubt):
 		return inDoubtProblem(err)
@@ -243,6 +289,12 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
+		if failure != nil {
+			// A run that failed for a reason of the server's own. Its words
+			// are the reason its thread keeps, which the caller reads there
+			// too, so they are said back instead of masked.
+			return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: failure.Error()}
+		}
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}
 	}
 }
@@ -312,6 +364,7 @@ func writeProblem(w http.ResponseWriter, r *http.Request, err error, status int,
 // DEBUG.
 func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p substrate.ErrorPayload) {
 	retryAfter := time.Second
+	var failure *substrate.AgentFailure
 	attrs := append(requestLogAttrs(r), "error", err)
 	switch {
 	case errors.Is(err, substrate.ErrRestartRequired):
@@ -324,6 +377,13 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p 
 		// The start logged why, once; a line per refused request would bury it.
 		slog.Debug("request refused: the repository is set aside", attrs...)
 		retryAfter = setAsideRetryAfter
+	case errors.As(err, &failure):
+		// The vendor's own wait where it named one.
+		slog.Warn("request answered unavailable: the provider failed the call", append(attrs, "cause", failure.Cause)...)
+		retryAfter = providerFailureRetryAfter
+		if failure.RetryAfter > 0 {
+			retryAfter = time.Duration(failure.RetryAfter) * time.Second
+		}
 	case clientCanceled(r.Context(), err):
 		slog.Debug("request canceled by the client", attrs...)
 	default:

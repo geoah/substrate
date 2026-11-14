@@ -22,7 +22,9 @@ data:
   # record 0316).
   # version 20: `lastMessage` and `waitingOnPerson`, the two facts a chat
   # list reads beside a person's mark (decision record 0313).
-  version: 20
+  # version 21: `cause` and `retryAfter`, which failure, budget or stop
+  # settled the run, from a closed set (decision record 0315).
+  version: 21
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -154,6 +156,27 @@ data:
       description: >-
         which budget ended an overbudget run, the error, or who or what stopped
         a stopped one
+    # Written by the engine beside `status` and `reason` at every settle
+    # (decision record 0315): the one fact about how the run ended that a
+    # client acts on, so nothing reads a provider's words to choose a
+    # sentence or a button. The set is closed and the engine's
+    # (substrate.AgentCauses): allowance_spent, context_too_long, deadline,
+    # internal, interrupted, model_unavailable, provider_billing,
+    # provider_key_refused, provider_overloaded, provider_rate_limited,
+    # provider_rejected, provider_unavailable, requested, shutdown,
+    # tool_call_limit, turn_limit, write_failed. It is a string and not an
+    # enum because an enum value is one lowercase word, and these are the
+    # API's reason spelling, which a client reads on the wire beside them.
+    cause:
+      type: string
+      fts: false
+      description: which failure ended an error run, which budget an overbudget
+        one, and what stopped a stopped one, from the engine's closed set;
+        absent on a run that finished
+    retryAfter:
+      type: int
+      description: the seconds the provider asked to wait before the run is
+        tried again, where the cause is one that names a wait
     agentDepth:
       type: int
       required: true

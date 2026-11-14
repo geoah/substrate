@@ -594,7 +594,7 @@ func (l *agentLoop) dispatchWait(ctx context.Context, args map[string]any) (stri
 // canceled: the thread settles `stopped`, so no job's end resumes it until
 // its owner writes again.
 func (ds *dataset) stopIdleThread(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
-	res := &substrate.AgentResult{Thread: threadID, Status: threadStopped, Reason: reasonStoppedBy(actor)}
+	res := &substrate.AgentResult{Thread: threadID, Status: threadStopped, Reason: reasonStoppedBy(actor), Cause: substrate.CauseRequested}
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
 		if err := t.lockRegistryDepShared(); err != nil {
 			return err
@@ -612,12 +612,12 @@ func (ds *dataset) stopIdleThread(ctx context.Context, actor substrate.Actor, th
 		}
 		if status, _ := row.Props["status"].(string); status == threadRunning {
 			// A continuation holds it: the jobs are stopped, the run is its own.
-			res.Status, res.Reason = status, ""
+			res.Status, res.Reason, res.Cause = status, "", ""
 			return nil
 		}
-		_, err = t.patch(ref, substrate.PatchInput{Properties: map[string]any{
+		_, err = t.patch(ref, substrate.PatchInput{Properties: ds.withCause(map[string]any{
 			"status": threadStopped, "reason": res.Reason,
-		}})
+		}, turnFailure{cause: substrate.CauseRequested})})
 		return err
 	})
 	if err != nil {
