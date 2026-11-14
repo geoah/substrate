@@ -75,12 +75,31 @@ func onFirstReply(ds *dataset, fn func()) {
 // channel and event log.
 func chatInBackground(ds *dataset, agent, message string) (<-chan error, *eventLog) {
 	log := newEventLog()
+	return chatInto(ds, agent, message, log), log
+}
+
+// chatInto starts a detached chat turn whose events go to log and returns its
+// outcome channel.
+func chatInto(ds *dataset, agent, message string, log *eventLog) <-chan error {
 	turn := make(chan error, 1)
 	go func() {
 		_, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, crewPackage+"/"+agent, substrate.ChatInput{Message: message}, log.emit)
 		turn <- err
 	}()
-	return turn, log
+	return turn
+}
+
+// chatAnsweredOnThread starts a detached chat turn scripted to answer content
+// and returns once the model answered on the turn's thread event
+// (answerOnThread). A hook the turn must meet is set before it is called, and
+// reads the thread from log.
+func chatAnsweredOnThread(t *testing.T, ds *dataset, fake *fakeLLM, log *eventLog, content string) <-chan error {
+	t.Helper()
+	arrived, answer := make(chan struct{}), make(chan struct{})
+	fake.script("chat", fakeTurn{content: content, arrived: arrived, release: answer})
+	turn := chatInto(ds, "chatter", "hi", log)
+	log.answerOnThread(t, arrived, answer)
+	return turn
 }
 
 func waitTurn(t *testing.T, turn <-chan error) error {
@@ -158,13 +177,12 @@ func TestASettleAfterAFailedWriteLeavesANewerClaimAlone(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	var newer string
 	var claimErr error
-	fake.script("chat", fakeTurn{content: "never lands"})
-	turn, log := chatInBackground(ds, "chatter", "hi")
+	log := newEventLog()
 	ds.agentRowWrite = func(_ context.Context, props map[string]any) error {
 		if props["role"] != "assistant" {
 			return nil
 		}
-		thread := log.snapshot()[0].Thread
+		thread := log.thread()
 		claimErr = ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
 			newer = t.now.Add(time.Hour).Format(time.RFC3339Nano)
 			_, err := t.patch(eref{Kind: typeThread, ID: thread}, substrate.PatchInput{Properties: map[string]any{
@@ -174,13 +192,14 @@ func TestASettleAfterAFailedWriteLeavesANewerClaimAlone(t *testing.T) {
 		})
 		return errors.New("the disk is full")
 	}
+	turn := chatAnsweredOnThread(t, ds, fake, log, "never lands")
 	if err := waitTurn(t, turn); err == nil {
 		t.Fatal("a turn whose reply could not be written succeeded")
 	}
 	if claimErr != nil {
 		t.Fatalf("the newer claim: %v", claimErr)
 	}
-	props := threadProps(t, ds, log.snapshot()[0].Thread)
+	props := threadProps(t, ds, log.thread())
 	if props["status"] != threadRunning || props["leaseUntil"] != newer || props["reason"] != nil {
 		t.Fatalf("thread = %v (lease %v, reason %v), want the newer claim untouched", props["status"], props["leaseUntil"], props["reason"])
 	}
@@ -195,10 +214,9 @@ func TestATurnThatLostItsLeaseLeavesTheNewerClaimRunning(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	var newer string
 	var claimErr error
-	fake.script("chat", fakeTurn{content: "lands late"})
-	turn, log := chatInBackground(ds, "chatter", "hi")
+	log := newEventLog()
 	onFirstReply(ds, func() {
-		thread := log.snapshot()[0].Thread
+		thread := log.thread()
 		claimErr = ds.inTx(context.Background(), substrate.ActorSystem, true, func(t *txn) error {
 			newer = t.now.Add(time.Hour).Format(time.RFC3339Nano)
 			_, err := t.patch(eref{Kind: typeThread, ID: thread}, substrate.PatchInput{Properties: map[string]any{
@@ -207,13 +225,14 @@ func TestATurnThatLostItsLeaseLeavesTheNewerClaimRunning(t *testing.T) {
 			return err
 		})
 	})
+	turn := chatAnsweredOnThread(t, ds, fake, log, "lands late")
 	if err := waitTurn(t, turn); err != nil {
 		t.Fatalf("the late turn: %v", err)
 	}
 	if claimErr != nil {
 		t.Fatalf("the newer claim: %v", claimErr)
 	}
-	props := threadProps(t, ds, log.snapshot()[0].Thread)
+	props := threadProps(t, ds, log.thread())
 	if props["status"] != threadRunning || props["leaseUntil"] != newer {
 		t.Fatalf("thread = %v (lease %v), want the newer claim running under lease %v", props["status"], props["leaseUntil"], newer)
 	}
@@ -247,11 +266,10 @@ func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T
 	// gate; stood says whether they stood one admitted and the rest queued.
 	placed := make(chan struct{})
 	var stood bool
-	fake.script("chat", fakeTurn{content: "never lands"})
-	turn, log := chatInBackground(ds, "chatter", "hi")
+	log := newEventLog()
 	onFirstReply(ds, func() {
 		defer close(placed)
-		thread := log.snapshot()[0].Thread
+		thread := log.thread()
 		lock.hold()
 		for range writers {
 			wg.Add(1)
@@ -275,6 +293,7 @@ func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T
 			return admitted && queued == writers-1
 		})
 	})
+	turn := chatAnsweredOnThread(t, ds, fake, log, "never lands")
 	// The settle is waited for only once the hook holds the lock: the chat's
 	// own message is a person's write too, and taking it for the settle
 	// releases the lock before the hook takes it, so the writers run with
@@ -299,7 +318,7 @@ func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T
 	lock.release()
 	_ = waitTurn(t, turn)
 	wg.Wait()
-	if got := threadProps(t, ds, log.snapshot()[0].Thread)["status"]; got != threadError {
+	if got := threadProps(t, ds, log.thread())["status"]; got != threadError {
 		t.Fatalf("thread = %v, want error", got)
 	}
 	mu.Lock()

@@ -411,8 +411,9 @@ func TestStopCancelsBackgroundJobs(t *testing.T) {
 func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
 	ds, fake := provisionJobAgents(t)
 	ctx := context.Background()
+	arrived, answer := make(chan struct{}), make(chan struct{})
 	fake.script("jlead",
-		fakeTurn{calls: []fakeCall{{name: "digger", args: `{"input":"dig"}`}}},
+		fakeTurn{calls: []fakeCall{{name: "digger", args: `{"input":"dig"}`}}, arrived: arrived, release: answer},
 		fakeTurn{content: "never"},
 	)
 	fake.script("jdig", fakeTurn{content: "dug"})
@@ -423,7 +424,7 @@ func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
 			return nil
 		}
 		// The background call's tool row: its job is not registered yet.
-		thread := log.snapshot()[0].Thread
+		thread := log.thread()
 		hub, err := ds.runningTurn(ctx, thread)
 		if err != nil {
 			return err
@@ -444,10 +445,16 @@ func TestAgentStopJobAcceptedInTheStoppedTurn(t *testing.T) {
 		}
 		return nil
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, jobsPackage+"/lead", substrate.ChatInput{Message: "find the deed"}, log.emit); err != nil {
+	chatted := make(chan error, 1)
+	go func() {
+		_, err := ds.ChatAgent(ctx, substrate.ActorPerson, jobsPackage+"/lead", substrate.ChatInput{Message: "find the deed"}, log.emit)
+		chatted <- err
+	}()
+	log.answerOnThread(t, arrived, answer)
+	if err := <-chatted; err != nil {
 		t.Fatalf("chat: %v", err)
 	}
-	thread := log.snapshot()[0].Thread
+	thread := log.thread()
 	if res := <-stopped; res == nil || res.Status != threadStopped {
 		t.Fatalf("stop %+v", res)
 	}

@@ -340,7 +340,8 @@ func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
 		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Message: "change the widget"}, log.emit)
 	}()
 	waitArrived(t, writing, "the final reply write")
-	thread := log.snapshot()[0].Thread
+	// The write is the turn's; the log fills on the goroutine attached to it.
+	thread := log.waitFor(t, substrate.AgentEventThread).Thread
 	req := onlyPatchRequest(t, ds)
 	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
@@ -411,7 +412,8 @@ func TestAStopReachesAnAgentAFunctionToolRuns(t *testing.T) {
 		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, relayPackage+"/steward", substrate.ChatInput{Message: "make one"}, log.emit)
 	}()
 	waitArrived(t, editorArrived, "the editor's completion")
-	thread := log.snapshot()[0].Thread
+	// The completion is the turn's; the log fills on the goroutine attached to it.
+	thread := log.waitFor(t, substrate.AgentEventThread).Thread
 	stopped := make(chan *substrate.AgentResult, 1)
 	go func() {
 		res, _ := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)

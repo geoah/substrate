@@ -66,6 +66,29 @@ func (e *eventLog) waitFor(t *testing.T, kind string) substrate.AgentEvent {
 	}
 }
 
+// answerOnThread waits for the turn's model call and for the turn's thread
+// event, and only then lets the model answer. A row hook runs on the turn's
+// goroutine while the log fills on the goroutine attached to the turn, so
+// until then a hook may find the log empty; a hook that fires on a row
+// written after the answer reads the thread with thread.
+func (e *eventLog) answerOnThread(t *testing.T, arrived <-chan struct{}, answer chan<- struct{}) {
+	t.Helper()
+	waitArrived(t, arrived, "the turn")
+	e.waitFor(t, substrate.AgentEventThread)
+	close(answer)
+}
+
+// thread is the id the turn's thread event carries, empty while the log holds
+// none.
+func (e *eventLog) thread() string {
+	for _, ev := range e.snapshot() {
+		if ev.Kind == substrate.AgentEventThread {
+			return ev.Thread
+		}
+	}
+	return ""
+}
+
 func TestAChatTurnOutlivesTheClientThatStartedIt(t *testing.T) {
 	t.Parallel()
 	ds, fake := openAgentDataset(t)
@@ -327,8 +350,9 @@ func TestACallAStopCutOffSaysWhyItHasNoResult(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ds, fake, repo := openMossDataset(t)
+			arrived, answer := make(chan struct{}), make(chan struct{})
 			fake.script(mossModel,
-				fakeTurn{calls: []fakeCall{{name: "query", args: `{"op":"list","kind":"` + repo + `/scratch/pad"}`}}},
+				fakeTurn{calls: []fakeCall{{name: "query", args: `{"op":"list","kind":"` + repo + `/scratch/pad"}`}}, arrived: arrived, release: answer},
 				fakeTurn{content: "never"},
 			)
 			log := newEventLog()
@@ -339,7 +363,7 @@ func TestACallAStopCutOffSaysWhyItHasNoResult(t *testing.T) {
 				if props["toolCalls"] == nil {
 					return nil
 				}
-				thread := log.snapshot()[0].Thread
+				thread := log.thread()
 				hub, err := ds.runningTurn(context.Background(), thread)
 				if err != nil {
 					return err
@@ -362,6 +386,7 @@ func TestACallAStopCutOffSaysWhyItHasNoResult(t *testing.T) {
 				res, _ := ds.ChatAgent(context.Background(), substrate.ActorPerson, mossID, substrate.ChatInput{Message: "list my pads"}, log.emit)
 				chatted <- res
 			}()
+			log.answerOnThread(t, arrived, answer)
 			res := <-chatted
 			<-ended
 			if res == nil || res.Status != threadStopped || res.Reason != tc.reason {
