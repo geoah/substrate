@@ -229,9 +229,20 @@ struct PartsTests {
         let key = ChildKey(SequentialIDs.id(1).uuidString.lowercased())
         let reader = Reader()
         #expect(reader.read(model, [key], as: Clerk.State.self) == nil)
+        // The runtime's first word, which holds no such part, is no reason
+        // to draw the reader again.
+        try await until { model.part(at: [], as: Desk.Presentation.self) != nil }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!reader.fired)
         model.send(.open)
         try await until { reader.fired }
         #expect(model.part(at: [key], as: Clerk.State.self) == Clerk.State())
+        // Gone, and there again under the same key: the same reader hears
+        // of both.
+        #expect(reader.read(model, [key], as: Clerk.State.self) == Clerk.State())
+        model.send(.clear)
+        try await until { reader.fired }
+        #expect(reader.read(model, [key], as: Clerk.State.self) == nil)
         // A part of another type than the one asked for reads as none.
         #expect(model.part(at: [key], as: Int.self) == nil)
     }
