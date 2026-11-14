@@ -57,12 +57,14 @@ func TestBundleStatusesSayWhatEachPackageIsFor(t *testing.T) {
 	h := &handler{catalog: cat}
 	var reads int
 	ds := bundleplaceKindReads{Dataset: env.ds, reads: &reads}
+	// A status names the two packages as the engine answers them, under `~`
+	// (decision record 0259).
 	statuses := []substrate.BundleStatus{
 		{ID: "providers.substrate.reamde.dev/google"},
 		{ID: "providers.substrate.reamde.dev/slacklive"},
 		{ID: "substrate.reamde.dev/clinical"},
-		{ID: crm},
-		{ID: notes},
+		{ID: "~/crm"},
+		{ID: "~/notes"},
 	}
 	if err := h.placeBundles(t.Context(), ds, statuses); err != nil {
 		t.Fatal(err)

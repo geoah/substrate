@@ -25,6 +25,7 @@ func (s *scopedDataset) CallFunction(ctx context.Context, actor substrate.Actor,
 		return nil, 0, fmt.Errorf("%w: an app's token names a function in full, <authority>/<package>/<name>, not %q",
 			substrate.ErrValidation, name)
 	}
+	name = s.local(name)
 	if !s.grant.Calls(name) {
 		return nil, 0, fmt.Errorf("%w: unknown function %q", substrate.ErrNotFound, name)
 	}

@@ -15,7 +15,7 @@ either: who keeps the package decides where it lands
 | Word            | Means                                                                  |
 | --------------- | ---------------------------------------------------------------------- |
 | **published**   | a package its publisher keeps (a provider such as `providers.substrate.reamde.dev/google`, a catalogue such as `substrate.reamde.dev/labs`). Adding it lands it under the authority that publishes it, and the publisher ships each change with a version bump the upgrade preview offers |
-| **sample**      | a package the repository keeps (`samples/`). Adding it COPIES it under the repository's own authority (`samples.substrate.reamde.dev/tasks/task` lands as `ada.example.com/tasks/task`), and the copy is the repository's afterwards: writable, and offered an upgrade through the origin stamp adding it left |
+| **sample**      | a package the repository keeps (`samples/`). Adding it COPIES it into the repository's local namespace, `~` (`samples.substrate.reamde.dev/tasks/task` lands as `~/tasks/task`, the same in every repository), and the copy is the repository's afterwards: writable, and offered an upgrade through the origin stamp adding it left |
 | **account**     | one configured connection to a provider: a record of an `accountconfig`-trait kind. The console lists these under **Accounts** on each provider's page |
 
 `keptBy` says who keeps a package, never what it is for. Each catalog entry
@@ -139,8 +139,9 @@ enable and uninstall work as they do on any bundle, and the upgrade offer is
 the same preview and the same button
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 A token cannot apply the same closure by hand from the shipped files: it
-creates a package only under its own repository's authority
-([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)), so `substratectl add` is the one door. A
+creates a package only in its repository's local namespace, `~`
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+[decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), so `substratectl add` is the one door. A
 copy a repository already holds as `installed`, applied by hand before that
 rule, stays editable until adding it again promotes it. The four well-known
 catalogues under `substrate.reamde.dev` (`health`, `labs`, `environment` and `clinical`) take
@@ -174,8 +175,8 @@ it lands those records and moves the stamp. A package installed before the
 stamp existed is measured from its stored version until its next install,
 and so is one applied by hand after an uninstall, which clears the stamp;
 a sample installed verbatim is never stamped, because it stays editable
-and nothing would record its edits. A SAMPLE is previewed as adding it would land it, rehomed onto
-the repository's own authority, and only through the origin stamp adding it
+and nothing would record its edits. A SAMPLE is previewed as adding it would land it, copied into
+`~`, and only through the origin stamp adding it
 left on the copy
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md)):
 the shipped sample moved when its version is past the copy's `originVersion`,
@@ -584,8 +585,9 @@ declares a setting by writing an empty one.
 
 **The id is the ownership.** A setting's id is `<bundle id>/<name>`, and the
 bundle id is `<authority>/<package>`, so the Firecrawl provider ships
-`providers.substrate.reamde.dev/firecrawl/apiKey`, and a sample's settings are
-rehomed with the rest of its closure when it is added. Two bundles may each own an `apiKey`, and the prefix
+`providers.substrate.reamde.dev/firecrawl/apiKey`, and a sample's settings
+move into `~` with the rest of its closure when it is added
+(`~/readinglist/denyDomains`). Two bundles may each own an `apiKey`, and the prefix
 is the only thing that says whose a record is — a hand-written record under
 another bundle's prefix is that bundle's setting.
 
@@ -852,10 +854,9 @@ catalog as a provider does, but no seed writes it
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
 A repository takes a sample
 itself: registration seeds
-`substrate.reamde.dev/core`, `llm`, `console` and `observations`, copies
-the `llm` sample onto the repository's
-own authority with its three keyless `provider` rows (`openai`, `anthropic`,
-`gemini`), and nothing else.
+`substrate.reamde.dev/core`, `llm`, `console` and `observations` and the
+`llm` sample's three keyless `provider` rows (`openai`, `anthropic`,
+`gemini`), and adds no sample.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id` (the package it ships), `name`, `authority`,
@@ -905,7 +906,7 @@ copy taken before version 4 says to add `people` again first, and the
 console reads the floor against each held bundle's `version` before the button
 is pressed. The floor binds a COPY
 ([0100](decisions/0100-a-requires-floor-binds-a-copy-not-a-hand-declared-package.md)):
-against a `people` the repository declared by hand under its own authority,
+against a `people` the repository declared by hand in `~`,
 whose version line has nothing to do with the sample's, adding it drops the
 floor from the landing bundle and the requirement is met by name, with the
 closure's pins holding the package to the kinds it declares.
@@ -973,15 +974,15 @@ bin/substratectl apply -f kinds/substrate.reamde.dev/health/views.yaml
 The file holds one other view, the workout's, and the apply writes it back
 to the shipped view's properties, undoing any edit you made there. To take
 one view alone, copy the file, delete every other document from it, and
-apply the copy. A sample's record is different: adding the sample gave it the
-repository's authority, while the shipped file still names
+apply the copy. A sample's record is different: adding the sample moved it
+into `~`, while the shipped file still names
 `samples.substrate.reamde.dev` in its ids and references. Applied unchanged,
 that file writes records of a copy the repository may not hold and leaves
 the copied record alone, and `--as-mine` does not help, because it
 rehomes from the authority a declaration names and a data file holds none.
 Rewrite the authority with `sed` first (`sed
-'s/samples\.substrate\.reamde\.dev/alice.example.com/g'` for a repository
-named `alice.example.com`).
+'s|samples\.substrate\.reamde\.dev/|~/|g'`), the same in every
+repository.
 
 `POST …/catalog/{id}/add` takes either sort, and who keeps the package
 decides where it lands ([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)). Its body is optional:
@@ -992,21 +993,26 @@ publishes it, with the shipped version it
 took stamped as `shippedVersion` on the package row, and the version bump the
 publisher ships next is what the upgrade preview above offers.
 
-A **sample**'s closure is REHOMED
-first: every mention of `samples.substrate.reamde.dev` in the decoded documents
-(the ids, the declared `authority`, the reference pins, `installs` and
-`requires`, a function's `writes`, a trigger's selectors, a mapping's
-`from`/`to`, and the authority a function's source spells inside its own
-text) becomes this repository's own authority, and only then does the closure meet
-admission. A document that still mentions the placeholder afterwards is
-refused. So `samples.substrate.reamde.dev/tasks/task` lands as
-`ada.example.com/tasks/task`, `source: installed` and writable through the API,
-and the bundle record it lands as is `ada.example.com/tasks`, not the id the
-request named. What it landed belongs to the repository; the upgrade a later
+A **sample**'s closure is COPIED into the repository's local namespace, `~`,
+first ([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)):
+`samples.substrate.reamde.dev` is read where the closure names something, and
+there it becomes `~`: the ids, the declared `authority`, the reference pins,
+`installs` and `requires`, a function's `writes`, a mapping's `from`/`to`, a
+record the closure carries (its kind, its id, a trigger's selectors and
+callable), and a kind reference a function's source or an agent's prompt
+spells whole (`"samples.substrate.reamde.dev/tasks/task"`). Every other
+mention stays as written: a URL's host or path, a port, an email address, a
+word in prose. Only then does the closure meet admission, and a declaration
+that still mentions the placeholder is refused. So
+`samples.substrate.reamde.dev/tasks/task` lands as `~/tasks/task`,
+`source: installed` and writable through the API, and the bundle record it
+lands as is `~/tasks`, not the id the request named. It lands at
+`~/<package>` in every repository, so two people's copies of `tasks` are one
+kind, `~/tasks/task`, from one origin. What it landed belongs to the repository; the upgrade a later
 binary offers it is adding it again, previewed through the stamp below. `requires:`
-and `requiresAtLeast:` are rehomed with everything else, so adding `tasks`
+and `requiresAtLeast:` move into `~` with everything else, so adding `tasks`
 before `people` is refused by the ordinary admission naming
-`<your authority>/people`, the sample to add first.
+`~/people`, the sample to add first.
 
 The copy records where it came from. Adding a sample stamps three managed
 properties on the landed package row: `origin`, the shipped bundle id
@@ -1032,7 +1038,7 @@ from the start, or a copy taken before the stamp existed, which nothing
 reconstructs.
 
 **The stamp is the sample's upgrade path.** The catalog previews a stamped
-copy against the shipped sample, rehomed, exactly as the provider preview
+copy against the shipped sample, copied into `~`, exactly as the provider preview
 above: `upgrade.available` when the shipped version is past `originVersion`
 (or a declaration moved), the same `changes`, `blockers` and conversion plan,
 and `discardsEdits: true` when the copy was edited since its stamp, because
@@ -1098,7 +1104,7 @@ is conditional**: a suggested mapping (and its `installs:` entry) is admitted
 only where this repository can resolve it, and dropped otherwise. Adding
 `people` to a repository with no provider lands three kinds and no mapping,
 rather than being refused for vocabulary you never asked for. A hand apply of
-the same files, rehomed with `substratectl apply --as-mine`, takes only the `waiting` half of this rule, with `substratectl
+the same files, copied into `~` with `substratectl apply --as-mine`, takes only the `waiting` half of this rule, with `substratectl
 apply --hold-waiting-mappings` (`holdWaitingMappings` on `POST
 /api/v1/vocabulary/apply`): it holds back the mappings whose provider is absent
 and reports them as `waiting`, and a `blocked` mapping still refuses the whole
@@ -1157,7 +1163,7 @@ computed status. Uninstall, disable, enable, and purge are the lifecycle verbs
 above; the catalog does not duplicate them.
 
 The CLI faces are `substratectl add <package>` for the add route, and
-`substratectl apply -f <files> --as <authority>`, which runs the same rehoming
+`substratectl apply -f <files> --as-mine`, which runs the same copy into `~`
 client-side over files on disk.
 
 The shipped bundles, one by one (what each declares, its functions and its

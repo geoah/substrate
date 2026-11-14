@@ -65,7 +65,7 @@ func noteKind(t *testing.T, env *dbEnv) string {
 	}); err != nil {
 		t.Fatalf("declare the note kind: %v", err)
 	}
-	return pkg + "/note"
+	return "~/notes/note"
 }
 
 func TestAViewerReadsAndIsRefusedEveryWrite(t *testing.T) {
@@ -364,7 +364,7 @@ func TestAnAppAnEditorApprovedCallsAFunctionBothCover(t *testing.T) {
 	note := noteKind(t, env)
 	editor := addPerson(t, env, "e", scope.RoleEditor)
 	tools := env.repository + "/tools"
-	fn := tools + "/touch"
+	fn := "~/tools/touch"
 	appAgentsApply(t, env,
 		vocabulary.PackageManifest(tools, 1),
 		agentReachFunction(tools, "touch", map[string]any{

@@ -159,9 +159,9 @@ public struct AppManifest: Sendable {
     /// request added (`asking`), which a request sent again must carry, or
     /// approving it would take them back.
     public func beyond(_ session: Session) -> [String] {
-        let resolve = { ScopeWords.resolve($0, authority: session.repository) }
-        let own = Set(scopes.map(resolve))
-        return (session.scopes ?? []).filter { !own.contains(resolve($0)) }
+        let local = { ScopeWords.localize($0, authority: session.repository) }
+        let own = Set(scopes.map(local))
+        return (session.scopes ?? []).filter { !own.contains(local($0)) }
     }
 
     /// The `scope` parameter.
@@ -199,10 +199,10 @@ public struct AppManifest: Sendable {
     /// again; a review offers them back.
     public func leftOut(by session: Session) -> [String] {
         guard let held = session.scopes, let asked = session.requestedScopes else { return [] }
-        let resolve = { ScopeWords.resolve($0, authority: session.repository) }
-        let holds = Set(held.map(resolve))
-        let askedThen = Set(asked.map(resolve))
-        return scopes.filter { askedThen.contains(resolve($0)) && !holds.contains(resolve($0)) }
+        let local = { ScopeWords.localize($0, authority: session.repository) }
+        let holds = Set(held.map(local))
+        let askedThen = Set(asked.map(local))
+        return scopes.filter { askedThen.contains(local($0)) && !holds.contains(local($0)) }
     }
 
     /// The request the check asks about for `session`: every detail, every

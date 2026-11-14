@@ -79,6 +79,18 @@ id may exist under two kinds as two unrelated records, and a record read is
 always scoped to its kind. There is no cross-kind read by bare id anywhere on
 the surface; a list that spans kinds names each one in `filter.kinds`.
 
+**A repository's own kinds are under `~`.** The packages a repository
+declares and the samples it adds live in its local namespace, the authority
+`~`, so a record of its tasks kind is at `/api/v1/~/tasks/task/01jd8…`
+whatever the repository is called
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). The repository's
+full name is another spelling of `~` on every input: an address
+(`/api/v1/ada.example.com/tasks/task/01jd8…`), a body's `kind`,
+`filter.kinds`, a reference value, a [vocabulary apply](vocabulary.md)'s
+documents and an [app](apps.md)'s requested scopes all accept it and fold it
+into `~`. Every reply says `~`: a record's `kind`, a reference's `ref`, a
+declaration's id and a kind's `authority`.
+
 An id that holds a `/` needs care: a client percent-encodes each `/` in it,
 and the API decodes it exactly once. Unencoded, each `/` starts a path
 segment, so the path names no record. A [kind declaration](vocabulary.md)'s
@@ -121,14 +133,14 @@ so a list of a heavily annotated record stays small. `expand` follows
 references one hop:
 
 ```http
-GET /api/v1/records?filter={"kinds":["ada.example.com/tasks/task"],
+GET /api/v1/records?filter={"kinds":["~/tasks/task"],
                              "properties":{"status":{"eq":"open"}}}
                     &orderBy=dueAt&first=20&expand=project,assignee
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f",
-   "included": {"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd": {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
-                  "kind": "ada.example.com/tasks/project", "properties": {…}, …},
-                "ada.example.com/people/person/9f2k": {…}}}
+   "included": {"~/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd": {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+                  "kind": "~/tasks/project", "properties": {…}, …},
+                "~/people/person/9f2k": {…}}}
 ```
 
 `expand=a,b` names **reference properties declared by the kinds the filter
@@ -170,13 +182,13 @@ the list to the records holding a reference AT one record, optionally through
 one named property:
 
 ```http
-GET /api/v1/records?filter={"referencing":{"ref":"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd",
+GET /api/v1/records?filter={"referencing":{"ref":"~/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd",
                                             "property":"project"}}
 
 → {"records": [...], "head": 4207, "generation": "…",
-   "matches": {"ada.example.com/tasks/task/t9": [{"property": "project"}],
-               "ada.example.com/notes/note/n4": [{"property": "project"},
-                                                  {"property": "links", "path": "related.project"}]}}
+   "matches": {"~/tasks/task/t9": [{"property": "project"}],
+               "~/notes/note/n4": [{"property": "project"},
+                                   {"property": "links", "path": "related.project"}]}}
 ```
 
 The target is matched by its canonical id **and every former id**, so a pointer
@@ -227,10 +239,10 @@ input WITH `kind`, and the server assigns the id.
 
 ```http
 POST /api/v1/records
-{"kind": "ada.example.com/tasks/task",
+{"kind": "~/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "ada.example.com/tasks/task", …, "version": 1}
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "~/tasks/task", …, "version": 1}
 ```
 
 A body with no `kind` is `422`, an unknown kind `404`, and a body carrying an
@@ -631,9 +643,10 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
  "labels": {"owner/starred": {"eq": true}}}
 ```
 
-- `kinds` names kinds by reference, in full (`<authority>/<package>/<name>`);
-  a bare word is `422 validation` naming every kind the repository declares
-  under it ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
+- `kinds` names kinds by reference, in full (`<authority>/<package>/<name>`,
+  `~/<package>/<name>` for the repository's own); a bare word is
+  `422 validation` naming every kind the repository declares under it
+  ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
   Absent, the list spans every kind in the repository; a kind the repository
   never declared is `404`.
 - `properties` carries one condition per property. The operator set is one
@@ -1165,10 +1178,10 @@ orders them, and the two answer different questions.
 
 ```http
 GET /api/v1/records?q=quarterly+review&mode=hybrid
-                    &filter={"kinds":["ada.example.com/notes/note"]}&first=20
+                    &filter={"kinds":["~/notes/note"]}&first=20
 
-→ {"records": [{"id": "n4", "kind": "ada.example.com/notes/note", …}, …],
-   "scores": {"ada.example.com/notes/note/n4": {"lexical": 0.42, "semantic": 0.81}, …},
+→ {"records": [{"id": "n4", "kind": "~/notes/note", …}, …],
+   "scores": {"~/notes/note/n4": {"lexical": 0.42, "semantic": 0.81}, …},
    "pending": 0}
 ```
 
@@ -2005,7 +2018,7 @@ repository declares itself with a `money` property `amount` and a
 `datetime` property `paidAt` (no sample ships one):
 
 ```json
-{"filter": {"kinds": ["ada.example.com/finance/expense"]},
+{"filter": {"kinds": ["~/finance/expense"]},
  "aggregate": {"property": {"name": "amount", "anchor": "paidAt"},
                "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
                "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
@@ -2382,7 +2395,11 @@ them, so their old writes still link something, and an install of the
 package again enables each. The record API reads actor records and refuses
 to write one, and a package that ships a document of the actor kind is
 refused at load: an actor is a record the substrate writes for everything
-that acts.
+that acts. A package
+under `~`, and its functions and agents, act as `bundle:~:<package>`,
+`function:~:<package>:<name>` and `agent:~:<package>:<name>`, so the actor
+record of one of the repository's own hands has the same id whatever the
+repository is called ([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 
 **What a write records** is three links, on its
 [changelog entry](changelog.md) and on every change event: `actor`, the id of

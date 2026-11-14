@@ -1217,8 +1217,10 @@ export interface AuthorizationRedirectTo {
 }
 
 /** One requested scope, resolved against the repository: `scope` is the
- * canonical spelling an approval names, `requested` how the app wrote it
- * (they differ where it used `~`). */
+ * canonical spelling an approval names and a token stores, `requested` how
+ * the app wrote it (they differ where it named the repository's own kinds by
+ * the repository's full name, which `scope` folds into `~`, decision record
+ * 0259). */
 export interface AuthorizationScope {
   scope: string
   requested: string
@@ -1968,9 +1970,10 @@ export interface ShippedUpgrade {
 
 /** Who keeps a catalog package once it is added (decision record 0258): a
  * PUBLISHED package is kept by its `publisher` and lands under the authority
- * that publishes it; a SAMPLE is kept by the `repository`, copied under its
- * own authority and the repository's to edit afterwards. It says nothing about
- * what the package is for: `provider`, `brings` and `addonFor` say that. */
+ * that publishes it; a SAMPLE is kept by the `repository`, copied into its
+ * local namespace `~` and the repository's to edit afterwards. It says
+ * nothing about what the package is for: `provider`, `brings` and `addonFor`
+ * say that. */
 export type CatalogKeeper = "publisher" | "repository"
 
 /** What taking a closure gives a reader, read from its declarations
@@ -1988,7 +1991,7 @@ export interface CatalogBundle {
   oauthHosts?: string[]
   /** The bundle's id — the PACKAGE identity it owns
    * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
-   * installed. A SAMPLE lands under this repository's authority, so its
+   * installed. A SAMPLE lands in the local namespace (`~/<package>`), so its
    * stored bundle id is not this one. */
   id: string
   /** The owned package's own word ("google"). */
@@ -2052,13 +2055,13 @@ export interface CatalogBundle {
  * fit the version it does have, is refused by admission, so the door drops it
  * and reports the state below instead. */
 export interface SuggestedMapping {
-  /** The mapping declaration's id AS THIS REPOSITORY HOLDS IT: rehomed onto
-   * its own authority, because that is the record `state` is read from. */
+  /** The mapping declaration's id AS THIS REPOSITORY HOLDS IT: moved into
+   * `~`, because that is the record `state` is read from. */
   id: string
   /** The source kind: a provider mirror the declaring package does not own. */
   from: string
-  /** The subject kind, always one the declaring package owns, rehomed with
-   * the id. */
+  /** The subject kind, always one the declaring package owns, moved into `~`
+   * with the id. */
   to: string
   /** The PROVIDER package `from` lives in: what has to be installed. */
   package: string

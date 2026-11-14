@@ -223,8 +223,8 @@ export function TakeButton({
         title:
           plan.bundles.length === 1
             ? row.keptBy === "repository"
-              ? // A sample lands under THIS repository's authority, not the
-                // id the reader clicked (decision record 0048).
+              ? // A sample lands in the local namespace `~`, not at the id
+                // the reader clicked (decision records 0048 and 0259).
                 technical
                 ? `${called} added as ${landed.id}.`
                 : `${called} added.`
@@ -237,7 +237,7 @@ export function TakeButton({
       // package that landed with an empty required setting cannot run until
       // it is filled in, so it goes to its form. A standard collection and a
       // sample stay where they were added (decision record 0238). The id is
-      // the LANDED one: a sample's is rehomed.
+      // the LANDED one: a sample's is under `~`.
       const needsSettings = (landed.setup ?? []).some(
         (item) => item.code === "setting"
       )

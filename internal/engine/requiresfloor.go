@@ -31,10 +31,6 @@ import (
 // package of this repository would fail dropped. Documents are copied where
 // they change; the caller's slice and maps are left as they were.
 func (ds *dataset) relaxFloorsOnOwnPackages(ctx context.Context, docs []vocabulary.Document) ([]vocabulary.Document, error) {
-	home := ds.info.Authority
-	if home == "" {
-		return docs, nil
-	}
 	declared := map[string]bool{}
 	for _, d := range docs {
 		if d.Kind == vocabulary.DocPackage || d.Kind == vocabulary.DocBundle {
@@ -54,7 +50,7 @@ func (ds *dataset) relaxFloorsOnOwnPackages(ctx context.Context, docs []vocabula
 		var drop []string
 		for _, pkg := range sortedKeys(floors) {
 			authority, word := vocabulary.SplitPackageRef(pkg)
-			if authority != home || word == "" || declared[pkg] {
+			if authority != vocabulary.Local || word == "" || declared[pkg] {
 				continue
 			}
 			if _, held := reg.PackageByName(pkg); !held {

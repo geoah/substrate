@@ -17,7 +17,8 @@ there alone ([connecting an assistant](mcp.md)).
 
 **Discovery is unauthenticated.** `GET /.well-known/substrate/server.json`
 answers before you hold a token. Read three things from it: `grammar`, which
-spells the kind reference (`<authority>/<package>/<name>`), the record path
+spells the kind reference (`<authority>/<package>/<name>`, the owner's own
+under `~`), the record path
 and the records route this deployment expects; `features`, the list a client
 reads instead of probing a route, each with a `stability` (`stable`, `beta`
 or `experimental`), a `revision` and its `surfaces`; and `registration`,
@@ -91,9 +92,10 @@ unique per kind, never per repository.
    `POST /api/v1/catalog/<authority>%2F<package>/add`. A
    provider, or a catalogue such as `substrate.reamde.dev/health`, lands
    under the authority that publishes it, so its kinds keep their shipped
-   names. A sample is copied under the owner's own authority, so the
-   kind you then write is `<owner authority>/tasks/task`, not the catalog's
-   id ([getting started](getting-started.md)).
+   names. A sample is copied into the repository's local namespace, `~`, so
+   the kind you then write is `~/tasks/task` in every repository, not the
+   catalog's id ([getting started](getting-started.md)). The owner's full
+   name is accepted in place of `~`, and every answer says `~`.
 
 ## Reading
 
@@ -221,8 +223,9 @@ is a record write through `POST /api/v1/vocabulary/apply`, which is where
 kind ([vocabulary as records](vocabulary.md)):
 
 - Every kind names an `authority` and a `package`, and a package document
-  declares the package first. The owner's authority is the one you may
-  declare into.
+  declares the package first. `~`, the repository's local namespace, is the
+  one authority you may declare into
+  ([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 - The engine maintains `version` through the API: a changed definition lands
   at the stored version plus one. Do not hand-bump.
 - Additive changes upgrade cleanly: a new kind, a new optional property, a
@@ -260,7 +263,7 @@ was fixed. The same section is the body of the release on the
   never pass one as a command line argument.
 - Never invent an id, address a record without its kind, or address a
   collection by a plural, and never by a bare name
-  (`get <authority>/tasks/task`, not `get task` or `get tasks`).
+  (`get '~/tasks/task'`, not `get task` or `get tasks`).
 - Never retry a `422` unchanged, force a `403`, or loop on a `500`.
 - Never write `title` on a kind that declares its own heading property, and
   never declare a reserved property to make a write pass.

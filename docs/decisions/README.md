@@ -413,6 +413,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
 | [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
 | [0258](0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md) | One catalog route adds a package, and `keptBy` says who keeps it | accepted |
+| [0259](0259-a-repositorys-own-kinds-live-in-the-local-namespace.md) | A repository's own kinds live in the local namespace `~` | accepted |
 | [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |
 | [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
 | [0262](0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md) | Postgres alone confirms a write, and an archive is copied after the commit | accepted |

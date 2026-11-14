@@ -20,16 +20,20 @@ mise run build:cli
 bin/substratectl register --server http://localhost:8080
 ```
 
-The examples below are written for a repository named `geoah.me`. A
-repository declares new packages only under its own authority, which is the
-name you registered (a bare label is completed under the server's host), so
-register as `geoah.me` or replace every `geoah.me` below with yours.
+A repository declares new packages only in its local namespace, written `~`
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)): `~/chores` is
+your `chores` package whatever you named the repository, so the examples
+below work as they are. The name you registered is accepted in place of `~`
+(`geoah.me/chores/task` for a repository named `geoah.me`), and every answer
+says `~`. Quote `~` on a command line, where an unquoted `~/` at the start of
+a word is your home directory; inside YAML it needs no quotes, but a bare
+`~` alone is YAML's null, so `authority: "~"` is quoted.
 
 A fresh repository holds the core vocabulary, the `llm` package with three
 keyless provider rows, the `console` and `observations` packages, the
 `assistant` package (Moss) and the shipped units, and none of your own kinds.
-Teach it yours: kinds are declared in YAML in a package under your repository's
-authority,
+Teach it yours: kinds are declared in YAML in a package in your repository's
+local namespace,
 and a declaration is itself a record write. One file declares a package and,
 in it, a project and a task, with typed properties, a state machine, and a
 reference between them:
@@ -38,17 +42,17 @@ reference between them:
 # chores.yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: geoah.me/chores
+  id: ~/chores
 data:
-  authority: geoah.me
+  authority: "~"
   package: chores
   version: 1
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: geoah.me/chores/project
+  id: ~/chores/project
 data:
-  authority: geoah.me
+  authority: "~"
   package: chores
   description: A group of tasks with one goal.
   names:
@@ -61,9 +65,9 @@ data:
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: geoah.me/chores/task
+  id: ~/chores/task
 data:
-  authority: geoah.me
+  authority: "~"
   package: chores
   description: One thing to do, grouped under a project.
   names:
@@ -103,7 +107,7 @@ data:
       description: when it was done, stamped by the transition
     project:
       type: reference
-      kind: geoah.me/chores/project
+      kind: ~/chores/project
       mustExist: true
       description: the project this task groups under
 ```
@@ -119,37 +123,37 @@ can name the records:
 bin/substratectl apply -f chores.yaml
 
 cat <<'EOF' | bin/substratectl apply -f -
-kind: geoah.me/chores/project
+kind: ~/chores/project
 metadata:
   id: 01jcd8m0k3p7s2x9v4w6y1z5qa  # home
 data:
   properties:
     name: Home
 ---
-kind: geoah.me/chores/task
+kind: ~/chores/task
 metadata:
   id: 01jcd8m0k3p7s2x9v4w6y1z5qb  # milk
 data:
   properties:
     name: Buy milk
     dueAt: 2026-08-30T09:00:00Z
-    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
+    project: ~/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
 ---
-kind: geoah.me/chores/task
+kind: ~/chores/task
 metadata:
   id: 01jcd8m0k3p7s2x9v4w6y1z5qc  # plants
 data:
   properties:
     name: Water the plants
     dueAt: 2026-08-29T09:00:00Z
-    project: geoah.me/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
+    project: ~/chores/project/01jcd8m0k3p7s2x9v4w6y1z5qa
 EOF
 
-bin/substratectl get geoah.me/chores/task
-bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb -o yaml   # the full envelope, apply-able
-bin/substratectl get geoah.me/chores/task --filter '{"properties":{"status":{"eq":"open"}}}'
+bin/substratectl get '~/chores/task'
+bin/substratectl get '~/chores/task' 01jcd8m0k3p7s2x9v4w6y1z5qb -o yaml   # the full envelope, apply-able
+bin/substratectl get '~/chores/task' --filter '{"properties":{"status":{"eq":"open"}}}'
 
-bin/substratectl patch geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb --state status=done  # stamps completedAt
+bin/substratectl patch '~/chores/task' 01jcd8m0k3p7s2x9v4w6y1z5qb --state status=done  # stamps completedAt
 
 # Tail the changelog: from here on every write streams as one line, and the
 # opening line prints the sequence and generation a later run resumes from
@@ -157,7 +161,7 @@ bin/substratectl patch geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qb --state s
 bin/substratectl watch
 ```
 
-The same records answer on REST at `/api/v1/geoah.me/chores/task/{id}`, in a
+The same records answer on REST at `/api/v1/~/chores/task/{id}`, in a
 filtered list at `/api/v1/records`, and in full-text and semantic search on
 the same route: [api](api.md). [Getting started](getting-started.md)
 is the slower path.
@@ -172,40 +176,40 @@ with tools), each scoped to exactly the kinds it may touch:
 ---
 kind: substrate.reamde.dev/core/function
 metadata:
-  id: geoah.me/chores/triage
+  id: ~/chores/triage
 data:
-  authority: geoah.me
+  authority: "~"
   package: chores
   description: Raise every open task past its due date to urgent.
   runtime: python
   permissions:
     reads:
       kinds:
-        - geoah.me/chores/task
+        - ~/chores/task
     writes:
-      - geoah.me/chores/task
+      - ~/chores/task
   source: |
     from datetime import datetime, timezone
 
     def main(input, host):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        page = host.records.list(["geoah.me/chores/task"],
+        page = host.records.list(["~/chores/task"],
                                  where={"status": {"eq": "open"}})
         raised = 0
         for task in page.get("records") or []:
             props = task.get("properties") or {}
             due = props.get("dueAt")
             if due and due < now and props.get("priority") != "urgent":
-                host.effects.patch("geoah.me/chores/task", task["id"],
+                host.effects.patch("~/chores/task", task["id"],
                                    properties={"priority": "urgent"})
                 raised += 1
         return {"output": {"raised": raised}}
 ---
 kind: substrate.reamde.dev/core/agent
 metadata:
-  id: geoah.me/chores/assistant
+  id: ~/chores/assistant
 data:
-  authority: geoah.me
+  authority: "~"
   package: chores
   description: Reads and updates my projects and tasks on request.
   prompt: |
@@ -223,11 +227,11 @@ data:
   permissions:
     reads:
       kinds:
-        - geoah.me/chores/task
-        - geoah.me/chores/project
+        - ~/chores/task
+        - ~/chores/project
     writes:
-      - geoah.me/chores/task
-      - geoah.me/chores/project
+      - ~/chores/task
+      - ~/chores/project
 ```
 
 Apply the file again (re-applying a closure is how it evolves; the engine
@@ -236,8 +240,8 @@ open and past due, so it comes back urgent:
 
 ```bash
 bin/substratectl apply -f chores.yaml
-bin/substratectl function call geoah.me/chores/triage
-bin/substratectl get geoah.me/chores/task 01jcd8m0k3p7s2x9v4w6y1z5qc -o yaml
+bin/substratectl function call '~/chores/triage'
+bin/substratectl get '~/chores/task' 01jcd8m0k3p7s2x9v4w6y1z5qc -o yaml
 ```
 
 What usually runs it is a **trigger**, an ordinary record binding a source
@@ -256,7 +260,7 @@ data:
         recurrence: "FREQ=DAILY"
         timezone: Europe/London
         startsAt: "2026-01-01T07:00:00Z"
-    callable: substrate.reamde.dev/core/function/geoah.me/chores/triage
+    callable: substrate.reamde.dev/core/function/~/chores/triage
 EOF
 ```
 

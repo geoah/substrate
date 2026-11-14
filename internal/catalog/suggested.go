@@ -237,10 +237,10 @@ func (b *Bundle) spellings(shipped, home string, view suggestedView) []string {
 	}
 }
 
-// landedSpelling rewrites one of this closure's own identities onto the
-// authority it lands under: a SAMPLE's placeholder becomes the repository's
-// own authority, exactly as the import's rehome does. An identity outside this
-// closure's authority (a provider mirror in `from`) is returned untouched.
+// landedSpelling rewrites one of this closure's own identities into the
+// namespace it lands in: a SAMPLE's placeholder becomes `~`, exactly as the
+// copy does. An identity outside this closure's authority (a provider mirror
+// in `from`) is returned untouched.
 func (b *Bundle) landedSpelling(id, home string) string {
 	if b.KeptBy != substrate.KeptByRepository || home == "" || b.Authority == "" {
 		return id
@@ -249,7 +249,7 @@ func (b *Bundle) landedSpelling(id, home string) string {
 	if !ok {
 		return id
 	}
-	return home + "/" + rest
+	return vocabulary.Local + "/" + rest
 }
 
 // fitProblems reports why a suggested mapping would NOT resolve against the

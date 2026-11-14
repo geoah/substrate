@@ -75,6 +75,16 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat Catalog, details []subs
 	if len(details) == 0 {
 		return []substrate.AuthorizationSetup{}, "", nil
 	}
+	// A detail may name the owner's own package or kind by the repository's
+	// full name, which is another spelling of `~` (decision record 0259).
+	home := ds.Repository().Authority
+	local := make([]substrate.AuthorizationDetail, len(details))
+	for i, d := range details {
+		d.Package = vocabulary.LocalizeRef(d.Package, home)
+		d.Kind = vocabulary.LocalizeRef(d.Kind, home)
+		local[i] = d
+	}
+	details = local
 	p := &planner{
 		ds: ds, cat: cat, opts: opts, statuses: map[string]*substrate.BundleStatus{},
 		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{},

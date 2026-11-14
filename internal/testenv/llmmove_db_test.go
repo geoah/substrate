@@ -275,12 +275,14 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 		}
 		t.Errorf("%s holds no record %q", kind, id)
 	}
-	wantRef(corePkg+"/agent", "ada.example.com/crew/scribe", "provider", llmPkg+"/provider/openai")
+	// The repository's own agent is declared under its name and stored under
+	// `~`, its local namespace (decision record 0259).
+	wantRef(corePkg+"/agent", "~/crew/scribe", "provider", llmPkg+"/provider/openai")
 	wantRef(corePkg+"/recordpatchrequest", "r-1", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/message", "m-1", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/message", "m-2", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/interaction", "i-1", "thread", llmPkg+"/thread/th-1")
-	wantRef(llmPkg+"/thread", "th-1", "agent", corePkg+"/agent/ada.example.com/crew/scribe")
+	wantRef(llmPkg+"/thread", "th-1", "agent", corePkg+"/agent/~/crew/scribe")
 
 	// THE MOVED THREAD IS THE AGENT LOOP'S AGAIN: the transcript the loop reads
 	// is a filter on the message kind by the thread it points at, which is the
@@ -325,11 +327,13 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	// The stored ask agent's grant names the NEW kind: nothing else rewrites a
 	// kind reference spelled as a plain string, and the loader would quarantine
 	// the package at the next open if it still named the old one.
+	asker := false
 	for _, raw := range listRecords(t, after, corePkg+"/agent", false) {
 		rec, _ := raw.(map[string]any)
-		if rec["id"] != "ada.example.com/crew/asker" {
+		if rec["id"] != "~/crew/asker" {
 			continue
 		}
+		asker = true
 		perms, _ := propOf(t, rec, "asker", "permissions").(map[string]any)
 		writes, _ := perms["writes"].([]any)
 		// A grant is stored as a REFERENCE at the kind declaration record, so
@@ -341,6 +345,9 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 		if granted["ref"] != corePkg+"/kind/"+llmPkg+"/interaction" {
 			t.Errorf("the ask agent's grant is %v, want the moved interaction kind", granted["ref"])
 		}
+	}
+	if !asker {
+		t.Error("the ask agent ~/crew/asker is not among the agents after the move")
 	}
 
 	head := changelogHead(t, after)

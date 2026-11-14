@@ -63,7 +63,7 @@ func TestUpgradePreviewIsCountedOncePerChangelogHead(t *testing.T) {
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
 	importVocabulary(t, c, ds, whoopID)
 	b, _ := c.ByID(tasksSampleID)
-	landed := b.LandedID(homeAuthority)
+	landed := b.LandedID()
 	// An edited copy, so the preview takes the costly path: it stages the
 	// closure and counts a plan with a hash to confirm.
 	editKind(t, ds, homeAuthority+"/tasks/task", "mine")
@@ -184,8 +184,8 @@ func TestUpgradePreviewsAreHeldPerRepository(t *testing.T) {
 	}
 	b, _ := c.ByID(tasksSampleID)
 	editKind(t, geoah, homeAuthority+"/tasks/task", "mine")
-	geoahHeld := heldStatus(t, geoah, b.LandedID(homeAuthority))
-	adaHeld := heldStatus(t, ada, b.LandedID(other))
+	geoahHeld := heldStatus(t, geoah, b.LandedID())
+	adaHeld := heldStatus(t, ada, b.LandedID())
 
 	for range 2 {
 		if up := preview(t, c, geoah, tasksSampleID, &geoahHeld); !up.DiscardsEdits {

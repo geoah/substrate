@@ -12,14 +12,16 @@
  * never "every record of the kind kind". A glob is no record: `*` is outside
  * the record id alphabet. */
 
-import { splitKind } from "@/lib/api/http"
+import { LOCAL_AUTHORITY, splitKind } from "@/lib/api/http"
 import { AUTH_KINDS, KIND_KIND } from "@/lib/core-kinds"
 import { splitRecordPath } from "@/lib/record-path"
 import { listWords } from "@/lib/tools"
 
 /** The record id alphabet, `vocabulary.reID`. An id outside it names no
- * record, so nothing may read a title for it or link to it. */
-const RECORD_ID = /^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$/
+ * record, so nothing may read a title for it or link to it. A declaration of
+ * the repository's own is named under `~` (`~/<package>/<name>`), so an id
+ * may also open with `~/` (decision record 0259). */
+const RECORD_ID = /^(~\/)?[A-Za-z0-9][A-Za-z0-9._~:@/-]*$/
 
 /** Whether a string can be a record id at all. */
 export function isRecordId(id: string): boolean {
@@ -62,7 +64,9 @@ export function kindPatternGrant(pattern: string): string {
       ? "Every kind"
       : prefix.slice(0, -1).includes("/")
         ? `Every kind in the package ${prefix.slice(0, -1)}`
-        : `Every kind published by ${prefix.slice(0, -1)}`
+        : prefix.slice(0, -1) === LOCAL_AUTHORITY
+          ? `Every kind of your own, under ${LOCAL_AUTHORITY}`
+          : `Every kind published by ${prefix.slice(0, -1)}`
   if (!left.length) return scope
   return `${scope}, except the ${listWords(left)} kinds`
 }

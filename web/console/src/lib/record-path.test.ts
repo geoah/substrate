@@ -16,6 +16,19 @@ describe("splitRecordPath", () => {
 
   it("refuses a dotless first segment: every kind carries an authority", () => {
     expect(splitRecordPath("task/abc123")).toBeUndefined()
+    expect(splitRecordPath("~x/tasks/task/abc123")).toBeUndefined()
+  })
+
+  it("splits a path under ~, the repository's own authority", () => {
+    expect(splitRecordPath("~/tasks/task/01jbx")).toEqual({
+      kind: "~/tasks/task",
+      id: "01jbx",
+    })
+    expect(
+      splitRecordPath("substrate.reamde.dev/core/kind/~/tasks/task")
+    ).toEqual({ kind: "substrate.reamde.dev/core/kind", id: "~/tasks/task" })
+    // The declaration's own id is the short form, as under a DNS name.
+    expect(splitRecordPath("~/tasks/task")).toBeUndefined()
   })
 
   it("keeps the slashes inside an id: a declaration id IS a kind reference", () => {
@@ -51,6 +64,8 @@ describe("splitRecordPath", () => {
       "substrate.reamde.dev/llm/provider/claude",
       "substrate.reamde.dev/core/note/a/b/c",
       "substrate.reamde.dev/core/kind/samples.substrate.reamde.dev/tasks/task",
+      "substrate.reamde.dev/core/kind/~/tasks/task",
+      "~/tasks/task/01jbx",
     ]) {
       const parts = splitRecordPath(path)
       expect(parts && recordPath(parts.kind, parts.id)).toBe(path)

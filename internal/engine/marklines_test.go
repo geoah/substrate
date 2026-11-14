@@ -150,7 +150,9 @@ func TestABodyLineTakesTheBodyStepThenTheMarksStep(t *testing.T) {
 		}
 		e := linkedLine(person, "", note, string(canon))
 		for _, s := range conversionSteps {
-			if s.Dialect <= 3 {
+			// A repository's step reads its repository, which one line
+			// does not carry.
+			if s.Dialect <= 3 || s.Line == nil {
 				continue
 			}
 			if err := s.Line(&e); err != nil {
@@ -304,6 +306,9 @@ func TestTheKeptDirectoryConvertsItsMarks(t *testing.T) {
 			}
 			before := e.Payload
 			for _, step := range conversionSteps {
+				if step.Line == nil {
+					continue
+				}
 				if err := step.Line(&e); err != nil {
 					t.Fatalf("seq %d, step %d: %v", e.Seq, step.Dialect, err)
 				}

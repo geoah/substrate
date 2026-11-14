@@ -9,7 +9,8 @@
  * schema/API term. A catalog package has one of two KEEPERS (decision record
  * 0258): a PUBLISHED package is kept by its publisher and lands under the
  * authority that publishes it, a SAMPLE is kept by the repository, copied
- * under its own authority and the repository's to edit afterwards. What a package is FOR is the catalog's
+ * into its local namespace `~` (decision record 0259) and the repository's to
+ * edit afterwards. What a package is FOR is the catalog's
  * second answer (decision record 0238): a provider, an add-on for one, or a
  * standard collection that adds collections. Both are backend fields, never
  * derived from an authority's shape here. A bundle owns exactly one PACKAGE
@@ -48,12 +49,12 @@ export interface BundleRow {
   /** What tells this row from every other, for list keys and lookups: the
    * catalog entry's shipped id, which the catalog never repeats, or the id
    * of a held bundle no entry claims. `id` is not unique: two publishers'
-   * samples of one package word both land at `<home>/<package>`. */
+   * samples of one package word both land at `~/<package>`. */
   key: string
   /** The bundle's id IN THIS REPOSITORY: the package identity it owns once
-   * it lands. A provider keeps its published id; an added sample carries
-   * this repository's authority, so this is not always the catalog's id. The
-   * add route is addressed by `catalog.id`. */
+   * it lands. A provider keeps its published id; an added sample sits in the
+   * local namespace (`~/<package>`), so this is not always the catalog's id.
+   * The add route is addressed by `catalog.id`. */
   id: string
   name: string
   authority: string
@@ -67,8 +68,8 @@ export interface BundleRow {
    * from an authority's shape is the derivation the backend refuses to make. */
   keptBy?: CatalogKeeper
   /** The packages this closure declares against, named as they will be HERE:
-   * a sample's are rehomed onto this repository's authority, because that is
-   * what the server will look for. Admission refuses while one is missing
+   * a sample's own move into `~`, because that is what the server will look
+   * for. Admission refuses while one is missing
    * (catalog.Bundle.requires). */
   requires: string[]
   /** The floor under each required package (decision record 0070), keyed as
@@ -86,17 +87,14 @@ export interface BundleRow {
  * carrying the copy this repository holds of it when there is one (status
  * wins the count columns), and each held bundle no entry claims is a row of
  * its own. A copy is paired with its entry by its origin stamp, and by id
- * only when it has none (heldCopyOf). `home` is this repository's own
- * authority, which is where a sample lands: without it an unstamped imported
- * sample would never meet its catalog entry. */
+ * only when it has none (heldCopyOf). */
 export function mergeBundles(
   statuses: BundleStatus[],
-  catalog: CatalogItem[],
-  home = ""
+  catalog: CatalogItem[]
 ): BundleRow[] {
   const rows: BundleRow[] = []
   const matches = catalog.map(
-    (raw) => [raw, heldCopyOf(raw, statuses, home)] as const
+    (raw) => [raw, heldCopyOf(raw, statuses)] as const
   )
   // An unstamped copy at an id two entries land at could be either one's,
   // and nothing says which. The server reads both entries as installed, so
@@ -110,14 +108,14 @@ export function mergeBundles(
   for (const [raw, copy] of matches) {
     const status = copy && claims.get(copy.id) === 1 ? copy : undefined
     if (status) paired.add(status.id)
-    // A sample can be here under EITHER id: the import lands the rehomed
-    // one, and installing it verbatim (still a door until the providers stop
-    // requiring sample packages) lands the shipped one. The entry is REHOMED
-    // only when the row is: a closure held verbatim has its kinds under the
-    // authority the tree spells, and previewing them rehomed would link
-    // nowhere.
-    const id = copy?.id ?? landedId(raw, home)
-    const item = id === raw.id ? raw : landedCatalog(raw, home)
+    // A sample can be here under EITHER id: the import lands it under `~`,
+    // and installing it verbatim (still a door until the providers stop
+    // requiring sample packages) lands the shipped one. The entry is moved
+    // into `~` only when the row is: a closure held verbatim has its kinds
+    // under the authority the tree spells, and previewing them under `~`
+    // would link nowhere.
+    const id = copy?.id ?? landedId(raw)
+    const item = id === raw.id ? raw : landedCatalog(raw)
     rows.push({
       key: raw.id,
       id,
@@ -499,14 +497,14 @@ export interface RequirementNode extends Requirement {
 }
 
 /** The row that supplies requirement `req` to `requirer`, matched on the id
- * each row has HERE, which is what a requirement names (a sample's are
- * rehomed by landedCatalog before they get this far). One id can name two
+ * each row has HERE, which is what a requirement names (a sample's are moved
+ * into `~` by landedCatalog before they get this far). One id can name two
  * rows, since two publishers' samples of one package word both land at
- * `<home>/<package>`. A satisfied requirement is supplied by the copy this
+ * `~/<package>`. A satisfied requirement is supplied by the copy this
  * repository holds, which is what admission checked. A missing one, absent
  * or held below its floor, is supplied by the entry the requirement named as
- * shipped, before the requirer's own authority was rehomed onto this
- * repository's: taking another publisher's sample would not satisfy it. */
+ * shipped, before the requirer's own authority moved into `~`: taking
+ * another publisher's sample would not satisfy it. */
 function supplierOf(
   req: Requirement,
   requirer: BundleRow,

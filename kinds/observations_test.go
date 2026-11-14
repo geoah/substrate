@@ -130,7 +130,7 @@ func TestFirstPartyCataloguesArePublished(t *testing.T) {
 		if b.KeptBy != substrate.KeptByPublisher || b.Authority != kinds.SeedAuthority {
 			t.Errorf("%s is served as a %s under %s, want a published package under %s", c.id, b.KeptBy, b.Authority, kinds.SeedAuthority)
 		}
-		if landed := b.LandedID("ada.example.com"); landed != c.id {
+		if landed := b.LandedID(); landed != c.id {
 			t.Errorf("%s lands as %s in the repository ada.example.com, want the name it ships with", c.id, landed)
 		}
 		for _, k := range c.kinds {

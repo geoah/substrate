@@ -281,13 +281,14 @@ func TestBackgroundFunctionReachesTheRunningLoop(t *testing.T) {
 	}
 }
 
-// threadsOfAgent lists an agent's thread ids, oldest first.
+// threadsOfAgent lists an agent's thread ids, oldest first. identity may
+// spell the repository's own package by its name, as a door accepts it.
 func threadsOfAgent(t *testing.T, ds *dataset, identity string) []string {
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL
 		  AND `+referencePathSQL("props", "agent")+` = $2 ORDER BY created_at, id`,
-		typeThread, vocabulary.RecordPath(kindAgent, identity))
+		typeThread, vocabulary.RecordPath(kindAgent, vocabulary.LocalizeRef(identity, ds.Repository().Authority)))
 	if err != nil {
 		t.Fatal(err)
 	}

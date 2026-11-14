@@ -82,7 +82,7 @@ read apart by their names. Its token works at `/mcp` alone.
 
 | Tool | What it does |
 | --- | --- |
-| `overview` | start here: the owner's authority, each package with its source and kinds, the agents, applets and LLM providers, what waits on the owner, and the guide's topics |
+| `overview` | start here: the owner's authority (their own packages are under `~`), each package with its source and kinds, the agents, applets and LLM providers, what waits on the owner, and the guide's topics |
 | `guide` | the documentation, one topic at a time (below) |
 | `kinds` | the kinds the repository holds, grouped by package, each with its purpose and first sentence; narrowed by package, purpose or words |
 | `describe_kind` | one kind's declaration |

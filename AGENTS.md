@@ -19,8 +19,12 @@ repository; a person has one today, named after them unless the
 registration named another
 ([0274](docs/decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
 The repository's name IS its one **authority** (a bare label is
-completed under the server's host; the home of the kinds the user declares,
+completed under the server's host,
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+The kinds the user declares and the samples they add live in the
+repository's **local namespace**, written `~` (`~/tasks/task`), so the name
+never enters their data
+([0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 Its storage is keyed by an **id** minted at registration (`rnd-…`): the
 directory on disk and in the archive, the `repository` column of every table
 and the webhook address the server gives out, so no table or path holds the
@@ -232,8 +236,8 @@ bin/substratectl register                    # invite code, your name (--reposit
 bin/substratectl login --identity <yours>    # password, then a TOTP code if the account has one; mints a token record in your repository (--repository picks one of several)
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition
-bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
-bin/substratectl get <authority>/tasks/task <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
+bin/substratectl get '~/tasks/task'          # list one kind: GET /api/v1/records with the kind in filter.kinds; quote `~`, or the shell expands it
+bin/substratectl get '~/tasks/task' <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl validate -f record.yaml     # the server's declaration checks, offline; --partial accepts what needs the repository
 bin/substratectl watch                       # resumable change stream
@@ -296,14 +300,15 @@ missing is refused, so the order is `samples.substrate.reamde.dev/people`, then
 or `POST /api/v1/catalog/{id}/add` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`). The console's All
 data → Add a collection → Start from a sample is the third door to the same
-admission, and it adds the requirements first. Adding a sample REHOMES the closure onto the repository's own
-authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
-(record 0048). A PUBLISHED package (a provider such as
+admission, and it adds the requirements first. Adding a sample COPIES the closure into the repository's local
+namespace, so what lands is `~/tasks/task` in every repository, not the
+shipped spelling (records 0048 and
+[0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). A PUBLISHED package (a provider such as
 `providers.substrate.reamde.dev/google`, or a catalogue) takes the same route
 and lands under the authority that publishes it: who keeps a package decides
 where it lands
 ([0258](docs/decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)). A
-snippet that opens with `get <authority>/people/person` on a fresh substrate
+snippet that opens with `get '~/people/person'` on a fresh substrate
 is wrong, and one that names a kind by a bare word is refused everywhere
 ([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
 
@@ -316,7 +321,7 @@ authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
 metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
 `labs`, decision 0193). The catalog serves them as published packages, through
 the add route (`bin/substratectl add substrate.reamde.dev/labs`), they
-land published and never rehomed, and adding one first adds every
+land published under their publisher's authority and never in `~`, and adding one first adds every
 published package it requires, so adding
 `providers.substrate.reamde.dev/applehealth` or `…/whoop` (each shipping its
 own adapter) brings `health`. `keptBy` says only who keeps a package: each
@@ -369,18 +374,19 @@ words, and what each one replaced:
 | **record**    | the thing stored; `kind`/`id` in `records`, `record_kind`/`record_id` in the tables keyed by one record | entity       |
 | **kind**      | what a record is; `{authority}/{package}/{name}`           | type, schema |
 | **package**   | the kinds one authority versions, owns and quarantines together | namespace, module |
-| **authority** | who publishes a package; one DNS-style name                | group        |
+| **authority** | who publishes a package; one DNS-style name, or `~` for the repository's own | group        |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
 | **published** | a package its publisher keeps (`keptBy: publisher`), ADDED under the authority that publishes it; it says who keeps a package, never what it is for | provider, tier (as who keeps a package) |
 | **provider**  | a package that connects the substrate to an outside service, as the catalog says on its entry: every package under `providers.substrate.reamde.dev`, and any other published one with an account kind ([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)) | integration |
-| **sample**    | a package the repository keeps (`keptBy: repository`): a copy the user ADDS under the repository's own authority | example, vocabulary bundle |
+| **sample**    | a package the repository keeps (`keptBy: repository`): a copy the user ADDS into the local namespace, `~/<package>` | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
-| **repository**| everything one user has; its name IS its authority, and a registration names its person after it unless told otherwise; its id (`rnd-…`) keys its storage | username |
+| **repository**| everything one user has; its name IS its authority, and a registration names its person after it unless told otherwise; its id (`rnd-…`) keys its storage, and its own kinds live under `~` | username |
 | **identity**  | a person's sign-in, held by the server beside the repositories: the name a login presents, the password and the second factor, and the repositories it may open; it holds no data | login credential |
+| **local namespace** | `~`, the authority of the repository's own packages: `~/tasks/task` is this repository's tasks kind, whatever the repository is called; the full name is accepted for it on input and replies say `~` | the repository's name in a kind |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 
@@ -393,9 +399,11 @@ one. Anywhere else, each of them is a bug.
 
 A kind reference is `{authority}/{package}/{name}`
 ([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)): the authority is a
-dot-separated DNS-style name, the package and the name are single lowercase
-words, so the reference splits on its two slashes without a registry: the
-authority is the one segment carrying a dot. A stored reference value is that
+dot-separated DNS-style name or `~`, the package and the name are single
+lowercase words, so the reference splits on its two slashes without a
+registry: the authority is the one segment carrying a dot, or `~`, the
+repository's local namespace
+([0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). A stored reference value is that
 plus the id, and a record's REST path is the reference under `/api/v1/`: four
 segments, always. There is no per-kind list route: every list, ranked read and
 tail is `GET /api/v1/records` with the kind in `filter.kinds`, and a create
@@ -407,9 +415,10 @@ its package's; a stored closure the loader refuses parks its package; and
 `authorizeDeclarationWrite` reads the package row's `source`, so a
 repository's token may not write a `builtin` package (the seeded `core`,
 `llm`, `console` and `observations`) or a `published` one (an installed
-provider or catalogue), and creates a new package only under the
-repository's own authority
-([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
+provider or catalogue), and creates a new package only under `~`, the
+repository's full name folded into it first
+([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+[0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md));
 its own packages and the
 samples it added are `installed` and writable, whoever declared them: a
 package an app once declared under the retired `declare:` scope is the
@@ -437,13 +446,16 @@ actors are `bundle:<authority>:<package>`,
 `agent:<authority>:<package>:<name>` and an app's token's actor, from what
 its approval proved: `app:<authority>` for an app whose publisher was
 verified, `app:local` for one whose access went to a loopback address, and
-`app:<host>` of its client id otherwise. All of them are derived by the
-substrate and never declared
+`app:<host>` of its client id otherwise. A package under `~` writes as `~`
+(`bundle:~:tasks`), so its actor record is the same whatever the repository
+is called. All of them are derived
+by the substrate and never declared
 ([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md),
 [0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
 [0209](docs/decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)). There
 is no second spelling of a kind anywhere: no generated type name, no folded
-authority. The reference is the name on every surface, and nothing keys on a
+authority, but one: an input may spell `~` as the repository's full name,
+and the reply says `~`. The reference is the name on every surface, and nothing keys on a
 first label.
 
 ## House rules

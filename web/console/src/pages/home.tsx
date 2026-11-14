@@ -28,8 +28,6 @@ import { useEverydayChanges, useHistoryFeed } from "@/hooks/use-history-feed"
 import { useListedGroups } from "@/hooks/use-listed-groups"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { glanceCountQueryOptions } from "@/lib/api/records"
-import { repositoryQueryOptions } from "@/lib/api/repository"
-import { getRepository } from "@/lib/api/session"
 import { collectionGroups } from "@/lib/collections"
 import { homeSections } from "@/lib/home-summary"
 
@@ -60,16 +58,9 @@ function Section({
 
 export function HomePage() {
   const registry = useQuery(kindsQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
   const groups = useMemo(
-    () =>
-      registry.data
-        ? collectionGroups(
-            registry.data,
-            repository.data?.authority ?? getRepository() ?? ""
-          )
-        : undefined,
-    [registry.data, repository.data]
+    () => (registry.data ? collectionGroups(registry.data) : undefined),
+    [registry.data]
   )
   const listed = useListedGroups(groups)
   const yourKinds = (groups ?? [])

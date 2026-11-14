@@ -25,7 +25,6 @@ func TestADamagedGrantNeverReadsAsFullAccess(t *testing.T) {
 		"not a list": `"read:*"`,
 		"non-string": `[null]`,
 		"unparsed":   `["everything"]`,
-		"unresolved": `["read:~/tasks/*"]`,
 		"auth kind":  `["read:substrate.reamde.dev/core/token"]`,
 	} {
 		t.Run(name, func(t *testing.T) {

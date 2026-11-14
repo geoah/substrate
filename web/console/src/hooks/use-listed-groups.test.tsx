@@ -21,7 +21,6 @@ import { collectionGroups } from "@/lib/collections"
 
 import { useListedGroups } from "./use-listed-groups"
 
-const HOME = "ada.example.com"
 const GITHUB = "providers.substrate.reamde.dev/github"
 
 function kind(
@@ -42,7 +41,7 @@ function kind(
 }
 
 const KINDS = [
-  kind(`${HOME}/tasks/task`),
+  kind("~/tasks/task"),
   kind(`${GITHUB}/config`, {
     purpose: "internal",
     traits: ["substrate.reamde.dev/core/oauth2"],
@@ -142,7 +141,7 @@ afterEach(() => {
 })
 
 function Listed({ kinds }: { kinds: KindInfo[] }) {
-  const groups = useMemo(() => collectionGroups(kinds, HOME), [kinds])
+  const groups = useMemo(() => collectionGroups(kinds), [kinds])
   const listed = useListedGroups(groups)
   return (
     <p data-testid="listed">{(listed ?? []).map((g) => g.label).join(", ")}</p>

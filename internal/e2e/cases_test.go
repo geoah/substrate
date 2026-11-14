@@ -196,7 +196,7 @@ func caseAuth(c *C) {
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
 	c.requiref(regOut.Repository != "", "register echoed no repository authority")
 	r.authority = regOut.Repository
-	bindSamples(r.authority)
+	bindSamples()
 	r.rep.Repository, r.rep.Password = r.repository, r.password
 	c.stepf("registered `%s`: repository created, first token `%s` minted, and no key beside it", r.repository, regOut.Token.ID)
 
@@ -326,7 +326,7 @@ func caseRecords(c *C) {
 		c.requiref(status == http.StatusOK, "adding %s answered %d: %s", id, status, raw)
 		c.requiref(bundle.Installed, "adding %s did not end installed: %s", id, raw)
 	}
-	c.stepf("added `people`, `scheduling` and `%s` in requirement order, as copies under %s; the last admitted %d kinds", tasksBundleID, c.r.authority, bundle.Kinds)
+	c.stepf("added `people`, `scheduling` and `%s` in requirement order, as copies in the repository's own namespace, ~; the last admitted %d kinds", tasksBundleID, bundle.Kinds)
 
 	// Create: 201, version 1, the declared default and the initial state land.
 	var created record

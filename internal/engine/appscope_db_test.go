@@ -123,13 +123,21 @@ func TestAScopedTokenCarriesItsGrantAndItsApp(t *testing.T) {
 
 	for name, in := range map[string]substrate.MintTokenInput{
 		"empty":      {Label: "x", Scopes: []string{}},
-		"unresolved": {Label: "x", Scopes: []string{"read:~/tasks/*"}},
 		"auth kind":  {Label: "x", Scopes: []string{"read:substrate.reamde.dev/core/token"}},
 		"garbage":    {Label: "x", Scopes: []string{"everything"}},
 		"write core": {Label: "x", Scopes: []string{"write:substrate.reamde.dev/core/trigger"}},
 	} {
 		if _, _, err := ds.MintToken(ctx, in); !errors.Is(err, substrate.ErrValidation) {
 			t.Errorf("%s: mint = %v, want refused", name, err)
+		}
+	}
+
+	// A scope over the repository's own kinds is stored under `~`, whichever
+	// spelling it was minted in (decision record 0259).
+	for _, asked := range []string{"read:~/tasks/*", "read:" + ds.Repository().Authority + "/tasks/*"} {
+		minted, _, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "x", Scopes: []string{asked}})
+		if err != nil || len(minted.Scopes) != 1 || minted.Scopes[0] != "read:~/tasks/*" {
+			t.Errorf("minted %s as %v (%v), want it stored as read:~/tasks/*", asked, minted.Scopes, err)
 		}
 	}
 }

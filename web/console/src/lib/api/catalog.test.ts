@@ -10,6 +10,8 @@ import {
   heldCopyOf,
   addBundle,
   landedCatalog,
+  landedId,
+  localizeAuthority,
   oauthCallbackURL,
   OAUTH_CALLBACK_URL,
   rehomeAuthority,
@@ -120,11 +122,25 @@ describe("catalog reads and writes", () => {
   })
 })
 
+/** A sample lands in the local namespace, the same id in every repository;
+ * a provider keeps the id it publishes (decision record 0259). */
+describe("landedId", () => {
+  it("puts a sample's package under ~ and leaves a provider's id alone", () => {
+    expect(
+      landedId({
+        id: "samples.example.com/tasks",
+        keptBy: "repository",
+        package: "tasks",
+      })
+    ).toBe("~/tasks")
+    expect(landedId(item())).toBe("providers.substrate.reamde.dev/google")
+  })
+})
+
 /** A held copy meets its catalog entry by the origin its import stamped, and
  * by id only when it carries none: two publishers' samples of one package
- * word both land at `<home>/<package>`, so the id names both. */
+ * word both land at `~/<package>`, so the id names both. */
 describe("heldCopyOf", () => {
-  const HOME = "ada.example.com"
   const tasks = (authority: string) =>
     item({
       id: `${authority}/tasks`,
@@ -134,9 +150,9 @@ describe("heldCopyOf", () => {
       keptBy: "repository",
     })
   const copy = (over: Partial<BundleStatus> = {}): BundleStatus => ({
-    id: `${HOME}/tasks`,
+    id: "~/tasks",
     name: "tasks",
-    authority: HOME,
+    authority: "~",
     package: "tasks",
     installed: true,
     enabled: true,
@@ -149,31 +165,31 @@ describe("heldCopyOf", () => {
 
   it("hands a stamped copy to the entry it names and to no other", () => {
     const held = [copy({ origin: "z.example.com/tasks" })]
-    expect(heldCopyOf(tasks("z.example.com"), held, HOME)).toBe(held[0])
-    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBeUndefined()
+    expect(heldCopyOf(tasks("z.example.com"), held)).toBe(held[0])
+    expect(heldCopyOf(tasks("a.example.com"), held)).toBeUndefined()
   })
 
   it("finds a stamped copy wherever it sits", () => {
-    const held = [copy({ id: `${HOME}/todo`, origin: "a.example.com/tasks" })]
-    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+    const held = [copy({ id: "~/todo", origin: "a.example.com/tasks" })]
+    expect(heldCopyOf(tasks("a.example.com"), held)).toBe(held[0])
   })
 
   it("matches an unstamped copy by the id the entry lands at", () => {
     const held = [copy()]
-    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+    expect(heldCopyOf(tasks("a.example.com"), held)).toBe(held[0])
   })
 
   it("matches an unstamped copy held verbatim under the shipped id", () => {
     const held = [
       copy({ id: "a.example.com/tasks", authority: "a.example.com" }),
     ]
-    expect(heldCopyOf(tasks("a.example.com"), held, HOME)).toBe(held[0])
+    expect(heldCopyOf(tasks("a.example.com"), held)).toBe(held[0])
   })
 
   it("matches a provider by its published id", () => {
     const held = [copy({ id: "providers.substrate.reamde.dev/google" })]
-    expect(heldCopyOf(item(), held, HOME)).toBe(held[0])
-    expect(heldCopyOf(item(), [copy()], HOME)).toBeUndefined()
+    expect(heldCopyOf(item(), held)).toBe(held[0])
+    expect(heldCopyOf(item(), [copy()])).toBeUndefined()
   })
 })
 
@@ -191,11 +207,11 @@ describe("oauthCallbackURL", () => {
   })
 })
 
-/** A sample is authored under a placeholder authority and lands under this
- * repository's own, so the preview has to be read the way it will land:
- * anything less previews records this repository will never have. */
+/** A sample is authored under a placeholder authority and lands in the
+ * repository's local namespace `~`, so the preview has to be read the way it
+ * will land: anything less previews records this repository will never
+ * have. */
 describe("landedCatalog", () => {
-  const HOME = "ada.example.com"
   const sample = (): CatalogItem =>
     item({
       id: "samples.substrate.reamde.dev/pebble",
@@ -231,29 +247,61 @@ describe("landedCatalog", () => {
     })
 
   it("rewrites the authority wherever it appears, not only at the front", () => {
-    const landed = landedCatalog(sample(), HOME)
-    expect(landed.authority).toBe(HOME)
-    expect(landed.requires).toEqual([`${HOME}/tasks`])
-    expect(landed.closure.kinds).toEqual([`${HOME}/pebble/recording`])
+    const landed = landedCatalog(sample())
+    expect(landed.authority).toBe("~")
+    expect(landed.requires).toEqual(["~/tasks"])
+    expect(landed.closure.kinds).toEqual(["~/pebble/recording"])
+    expect(landed.closure.functions).toEqual(["~/pebble/ingest"])
     expect(landed.closure.kindDescriptions).toEqual({
-      [`${HOME}/pebble/recording`]: "one capture",
+      "~/pebble/recording": "one capture",
     })
     expect(landed.closure.kindPurposes).toEqual({
-      [`${HOME}/pebble/recording`]: "supporting",
+      "~/pebble/recording": "supporting",
     })
     // A callable is a core kind reference with the sample's identity INSIDE
     // it: a prefix rewrite left the shipped authority sitting in the middle.
     expect(landed.closure.triggerCallables).toEqual({
-      "pebble-webhook": `substrate.reamde.dev/core/function/${HOME}/pebble/ingest`,
+      "pebble-webhook": "substrate.reamde.dev/core/function/~/pebble/ingest",
     })
     // The id addresses the shipped closure, which is what the door is called
     // with, so it is the one thing left alone.
     expect(landed.id).toBe("samples.substrate.reamde.dev/pebble")
   })
 
-  it("leaves a provider and a repository with no authority alone", () => {
-    expect(landedCatalog(item(), HOME)).toEqual(item())
-    expect(landedCatalog(sample(), "")).toEqual(sample())
+  it("leaves a provider alone", () => {
+    expect(landedCatalog(item())).toEqual(item())
+  })
+})
+
+/** The copy's rule on one string (`vocabulary.LocalizeText`): a mention that
+ * names something under the authority moves into `~`; a URL's host and a
+ * mention that names nothing (an actor text) stay. */
+describe("localizeAuthority", () => {
+  it("moves a mention followed by a slash, and only a whole one", () => {
+    expect(
+      localizeAuthority("samples.example.com/tasks/task", "samples.example.com")
+    ).toBe("~/tasks/task")
+    expect(
+      localizeAuthority(
+        "notsamples.example.com/tasks/task",
+        "samples.example.com"
+      )
+    ).toBe("notsamples.example.com/tasks/task")
+  })
+
+  it("leaves a URL's host and an actor text as shipped", () => {
+    expect(
+      localizeAuthority(
+        "https://samples.example.com/feed",
+        "samples.example.com"
+      )
+    ).toBe("https://samples.example.com/feed")
+    expect(
+      localizeAuthority(
+        "bundle:samples.example.com:tasks",
+        "samples.example.com"
+      )
+    ).toBe("bundle:samples.example.com:tasks")
   })
 })
 

@@ -29,7 +29,7 @@ const otherAgent = "other.example.com/tools/helper"
 const appAgentsLLMProvider = "fakellm"
 
 // appAgentsEnv is the engine holding the agent machinery's rows for two
-// agents: talked, under the repository's own authority, which
+// agents: talked, in the repository's own namespace, which
 // `agents:~/chat/*` names, and otherAgent. Each has a chat thread (tA, tB)
 // with a user message (mA, mB), and a proposed change request (rA, rB)
 // patching a person (pa, pb); talked has a second thread, tA2, of another
@@ -62,7 +62,7 @@ func newAppAgentsEnv(t *testing.T, loops bool, opts ...dbOption) *appAgentsEnv {
 		withEngine(engine.WithInsecureForeignPackages(true)),
 	}, opts...)...)
 	e := &appAgentsEnv{
-		dbEnv: env, talked: env.repository + "/chat/assistant",
+		dbEnv: env, talked: "~/chat/assistant",
 		tA: "tA", tB: "tB", mA: "mA", mB: "mB", rA: "rA", rB: "rB",
 	}
 	env.put(t, llmPackage+"/provider", appAgentsLLMProvider, map[string]any{
@@ -735,7 +735,7 @@ func TestTheApprovalPageNamesTheAgentsAnAgentScopeMatches(t *testing.T) {
 		t.Fatalf("scopes = %+v", got.Scopes)
 	}
 	agents, decide, read := got.Scopes[0], got.Scopes[1], got.Scopes[2]
-	if agents.Verb != "agents" || agents.Scope != "agents:"+e.repository+"/chat/*" || agents.Requested != "agents:~/chat/*" ||
+	if agents.Verb != "agents" || agents.Scope != "agents:~/chat/*" || agents.Requested != "agents:~/chat/*" ||
 		!agents.Glob || agents.Write || len(agents.Kinds) != 0 || len(agents.Agents) != 1 || agents.Agents[0].ID != e.talked {
 		t.Fatalf("the agents scope = %+v", agents)
 	}

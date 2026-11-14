@@ -175,7 +175,7 @@ data:
   `<authority>/*` or `<authority>/<package>/*`
   ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
   A glob covers kinds the repository does not have yet, so an agent granted
-  `ada.example.com/*` keeps working as samples are added — which is the
+  `~/*` keeps working as samples are added — which is the
   point, and also the cost: adding one widens an existing grant, and a
   misspelled glob matches nothing where a misspelled kind would have been
   refused at load. **A glob never reaches
@@ -412,7 +412,7 @@ entry could name only a function.
   a `refuse` or a `gate` refuses the whole batch, because a declaration is
   admission and no request holds one. The batch then meets every rule the
   apply door's does: a shipped or published package refuses, a new package
-  lands only under the repository's own authority, which the tool's card
+  lands only in the repository's local namespace, `~`, which the tool's card
   names, and a lossy plan refuses, since its confirmation is the owner's.
   The apply's changelog entries are stamped on the tool row as `changes`.
 - **`substrate.reamde.dev/core/edit`** changes long text without rewriting
@@ -1554,16 +1554,16 @@ provider works is a throwaway package of your own:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
-metadata: {id: smoke.example.com/smoke}
+metadata: {id: ~/smoke}
 data:
-  authority: smoke.example.com
+  authority: "~"
   package: smoke
   version: 1
 ---
 kind: substrate.reamde.dev/core/agent
-metadata: {id: smoke.example.com/smoke/echo}
+metadata: {id: ~/smoke/echo}
 data:
-  authority: smoke.example.com
+  authority: "~"
   package: smoke
   description: Smoke-test one provider.
   prompt: Reply with exactly OK.
@@ -1583,7 +1583,7 @@ so a run is the call API or the console's chat:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"input": "ping"}' \
-  http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/smoke.example.com%2Fsmoke%2Fecho/call
+  http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/~%2Fsmoke%2Fecho/call
 ```
 
 The id carries two slashes, so the path segment spells each `%2F`. The answer
@@ -1626,7 +1626,7 @@ to the app's grant as it stands and to the person the app acts for
 
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/call` with `{"input": …}` runs the
 loop once. `{name}` is the agent's full id with each slash written `%2F`
-(`smoke.example.com%2Fsmoke%2Fecho`); a bare `echo` is `422 validation`
+(`~%2Fsmoke%2Fecho`); a bare `echo` is `422 validation`
 naming every agent declared under the word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)),
 and the chat route reads it the same way. The input becomes
@@ -1668,8 +1668,8 @@ second text part on the `openai` wire:
 ```text
 <turn_context>
 now: 2026-11-01T09:41:00+00:00 (Sunday), Europe/London
-about: substrate://ada.example.com/tasks/task/q4-budget
-  {"kind":"ada.example.com/tasks/task","properties":{…},"title":"Q4 budget"}
+about: substrate://~/tasks/task/q4-budget
+  {"kind":"~/tasks/task","properties":{…},"title":"Q4 budget"}
 </turn_context>
 ```
 

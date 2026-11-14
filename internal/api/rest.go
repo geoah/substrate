@@ -66,6 +66,9 @@ func (h *handler) record(w http.ResponseWriter, r *http.Request) (substrate.Data
 		writeSubstrateError(w, r, err)
 		return nil, substrate.KindInfo{}, address{}, false
 	}
+	// A declaration's id is its identity, so one under the repository's full
+	// name is the `~` one (decision record 0259).
+	addr.id = vocabulary.LocalizeID(ti.Identity, addr.id, ds.Repository().Authority)
 	return ds, ti, addr, true
 }
 

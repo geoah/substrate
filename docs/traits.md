@@ -104,22 +104,24 @@ A trait is a vocabulary declaration, so it enters through the same doors as a
 kind: `substratectl apply -f` over the manifest files, the batch
 `POST /api/v1/vocabulary/apply`, or a [bundle](bundles.md) that ships it.
 One batch, three documents, because every declaration lives in a package and
-the batch must open with that package's manifest:
+the batch must open with that package's manifest. A package of your own lives
+in the repository's local namespace, `~`
+([vocabulary](vocabulary.md#the-declarable-kinds)):
 
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: pantry.example/kitchen
+  id: ~/kitchen
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   version: 1
 ---
 kind: substrate.reamde.dev/core/trait
 metadata:
-  id: pantry.example/kitchen/perishable
+  id: ~/kitchen/perishable
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   description: a thing that stops being good at an instant
   properties:
@@ -128,16 +130,16 @@ data:
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: pantry.example/kitchen/ingredient
+  id: ~/kitchen/ingredient
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   description: one thing in the pantry
   names:
     singular: ingredient
   displayTemplate: "{name}"
   traits:
-    - perishable
+    - ~/kitchen/perishable
   properties:
     name:
       type: string
@@ -155,9 +157,9 @@ From the moment that batch commits, `ingredient` answers every
 bundle's, that binds the same trait:
 
 ```http
-GET /api/v1/records?filter={"implements":"perishable"}
+GET /api/v1/records?filter={"implements":"~/kitchen/perishable"}
 
-→ {"records": [{"id": "oat-milk", "kind": "pantry.example/kitchen/ingredient",
+→ {"records": [{"id": "oat-milk", "kind": "~/kitchen/ingredient",
                 "properties": {"name": "Oat milk", "title": "Oat milk",
                                "expiresAt": "2026-09-04T00:00:00Z", "opened": true}}, …],
    "head": 4207, "generation": "…"}
@@ -178,16 +180,16 @@ GET /api/v1/records?filter={"implements":"temporal",
                     &orderBy=at
 ```
 
-Run against a repository (authority `ada.example.com`) that added the
-`tasks` and `calendar` samples, that query answers all three kinds in one
-ordered page; each record is the flat wire shape, trimmed here:
+Run against a repository that added the `tasks` and `calendar` samples,
+which land in its local namespace, `~`, that query answers all three kinds in
+one ordered page; each record is the flat wire shape, trimmed here:
 
 ```json
-{"id": "t9", "kind": "ada.example.com/tasks/task",
+{"id": "t9", "kind": "~/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-17T06:00:00Z"}}
-{"id": "x-cal-standup-20260817", "kind": "ada.example.com/calendar/calendarevent",
+{"id": "x-cal-standup-20260817", "kind": "~/calendar/calendarevent",
  "properties": {"summary": "Standup", "at": "2026-08-17T09:30:00Z", "endsAt": "2026-08-17T09:45:00Z"}}
-{"id": "x-tasklog-tue", "kind": "ada.example.com/tasks/tasklog",
+{"id": "x-tasklog-tue", "kind": "~/tasks/tasklog",
  "properties": {"status": "done", "at": "2026-08-18T06:20:00Z"}}
 ```
 

@@ -3,11 +3,11 @@ package e2e
 import "strings"
 
 // samplesAuthority is the authority the shipped samples are written under.
-// Adding a sample copies it under the repository's own authority (decision
-// record 0258), so every kind, collection, function and package of one that
-// the suite names is rebound to the run's authority once the repository
-// exists. The catalog still names a sample by its shipped id: that is what
-// `…/add` and the catalog's entries take.
+// Adding a sample copies it into the repository's own namespace, `~`
+// (decision records 0258 and 0259), so every kind, collection, function and
+// package of one that the suite names is rebound to `~`. The catalog still
+// names a sample by its shipped id: that is what `…/add` and the catalog's
+// entries take.
 const samplesAuthority = "samples.substrate.reamde.dev"
 
 // sampleNames are the suite's names of the samples' copies.
@@ -22,15 +22,20 @@ var sampleNames = []*string{
 	&xvNotesHeld, &xvNoteCollection, &xvStatsFunction, &xvNoteKind,
 }
 
-// home is the authority the samples' copies land under: the run's, once
-// bindSamples has seen it.
+// localNamespace is the authority every repository's own packages live
+// under, the samples' copies among them.
+const localNamespace = "~"
+
+// home is the authority the samples' copies land under: `~`, once
+// bindSamples has run.
 var home = samplesAuthority
 
-// bindSamples rebinds sampleNames to the repository the run registered.
-func bindSamples(authority string) {
-	home = authority
+// bindSamples rebinds sampleNames to the repository's own namespace, once the
+// run's repository exists.
+func bindSamples() {
+	home = localNamespace
 	for _, name := range sampleNames {
-		*name = landed(*name, authority)
+		*name = landed(*name, localNamespace)
 	}
 }
 

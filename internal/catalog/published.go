@@ -69,8 +69,13 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 		return b, nil
 	}
 	a, p := vocabulary.SplitPackageRef(id)
-	if !vocabulary.ValidAuthority(a) || !vocabulary.ValidPackage(p) {
+	if !vocabulary.ValidKindAuthority(a) || !vocabulary.ValidPackage(p) {
 		return nil, fmt.Errorf("%w: %s is not a package id", ErrNotPublished, id)
+	}
+	// A package of the repository's own lives in its local namespace, which
+	// no publisher lists (decision record 0259).
+	if a == vocabulary.Local {
+		return nil, fmt.Errorf("%w: %s is not in this server's catalog", ErrNotPublished, id)
 	}
 	if a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id] {
 		return nil, fmt.Errorf("%w: %s must be shipped by this server", ErrNotPublished, id)

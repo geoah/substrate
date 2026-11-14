@@ -347,7 +347,7 @@ func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 	dir, _ := changelogfile.RepoDir(s.dataRoot, repo.ID)
 	return &dataset{
 		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
-		reg: vocabulary.NewRegistry(), watch: newBroadcaster(), info: repo.info(),
+		reg: repo.registry(vocabulary.NewRegistry()), watch: newBroadcaster(), info: repo.info(),
 	}
 }
 
@@ -553,8 +553,7 @@ func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, se
 	// this database holds is a copy of another repository, not this one. A
 	// take's own repository holds its name under the same id.
 	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil && other.ID != m.ID {
-		return adm, fmt.Errorf("%s is repository %s, and this database holds another repository of that name (id %s); move it out of the way or delete that repository",
-			where, m.Authority, other.ID)
+		return adm, &nameHeldError{where: where, name: m.Authority, other: other.ID}
 	} else if err != nil && !errors.Is(err, substrate.ErrNotFound) {
 		return adm, err
 	}
@@ -593,6 +592,19 @@ func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, se
 		adm.leftBehind = true
 	}
 	return adm, s.admitIdentities(m, &adm)
+}
+
+// nameHeldError is admitRestore's refusal of a copy whose name another
+// repository in this database holds. A door that has another way out says
+// so beside it: the start's restore names the import under another name
+// (reconcileArchive), and the import itself its --name.
+type nameHeldError struct {
+	where, name, other string
+}
+
+func (e *nameHeldError) Error() string {
+	return fmt.Sprintf("%s is repository %s, and this database holds another repository of that name (id %s); move it out of the way or delete that repository",
+		e.where, e.name, e.other)
 }
 
 // restoreRow checks a manifest a restore reads (a 0.x directory's, or an
@@ -767,7 +779,13 @@ func (s *service) reconcileArchive(ctx context.Context, byID map[string]Reposito
 		restored := false
 		if err := s.through(ctx, pass, func() error {
 			var err error
-			if out, skipped, err = s.restoreArchived(ctx, id, all[id], byID); err != nil {
+			var archiveID string
+			if out, archiveID, skipped, err = s.restoreArchived(ctx, id, all[id], byID); err != nil {
+				var held *nameHeldError
+				if errors.As(err, &held) {
+					return fmt.Errorf("substrate/engine: boot check: the archive of repository %s in %s is repository %s, and this database holds another repository of that name (id %s). Move %s out of the archive, delete that repository, or import it under another name with `substratectl archive import %s %s --name <name>`",
+						id, s.archive.String(), held.name, held.other, changelogfile.RepositoryPrefix(id), id, archiveID)
+				}
 				return fmt.Errorf("substrate/engine: boot check: the archive of repository %s in %s: %w. To start without it, move %s out of the archive",
 					id, s.archive.String(), err, changelogfile.RepositoryPrefix(id))
 			}
@@ -796,38 +814,39 @@ func (s *service) reconcileArchive(ctx context.Context, byID map[string]Reposito
 }
 
 // restoreArchived restores one repository the database does not hold from
-// the manifest rule 8 picks, into a new archive. skipped is an archive that
-// is not restored now (ended by a deletion, two manifests of one epoch, a
-// store that does not answer); err refuses the boot.
-func (s *service) restoreArchived(ctx context.Context, id string, listed archiveListing, byID map[string]Repository) (out reconcileOutcome, skipped, err error) {
+// the manifest rule 8 picks, into a new archive, and names the archive it
+// read. skipped is an archive that is not restored now (ended by a deletion,
+// two manifests of one epoch, a store that does not answer); err sets the
+// repository aside.
+func (s *service) restoreArchived(ctx context.Context, id string, listed archiveListing, byID map[string]Repository) (out reconcileOutcome, archiveID string, skipped, err error) {
 	out = reconcileOutcome{Repository: id, Action: reconcileOK}
 	archiveID, name, err := restorable(listed)
 	if errors.Is(err, archive.ErrNotFound) {
-		return out, nil, nil
+		return out, archiveID, nil, nil
 	}
 	if err != nil {
-		return out, err, nil
+		return out, archiveID, err, nil
 	}
 	src, err := openArchiveSource(ctx, s.archive, id, archiveID, name, s.admitManifest)
 	if errors.Is(err, errArchiveUnreadable) || errors.Is(err, errArchiveCovered) || errors.Is(err, errArchiveAmbiguous) {
-		return out, err, nil
+		return out, archiveID, err, nil
 	}
 	if err != nil {
-		return out, nil, err
+		return out, archiveID, nil, err
 	}
 	sealed, err := src.Sealed(ctx)
 	if errors.Is(err, errArchiveUnreadable) {
-		return out, err, nil
+		return out, archiveID, err, nil
 	}
 	if err != nil {
-		return out, nil, err
+		return out, archiveID, nil, err
 	}
 	next, err := changelogfile.NewArchiveID(nowUTC(), listed.ids()...)
 	if err != nil {
-		return out, nil, err
+		return out, archiveID, nil, err
 	}
 	out, err = s.restoreSource(ctx, src, sealed, next, byID)
-	return out, nil, err
+	return out, archiveID, nil, err
 }
 
 // restoreFrom restores repository id, which the database does not hold,

@@ -16,8 +16,6 @@ import { joinWords } from "@/lib/agent-chat"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { catalogQueryOptions } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { repositoryQueryOptions } from "@/lib/api/repository"
-import { getRepository } from "@/lib/api/session"
 import type { KindInfo } from "@/lib/api/types"
 import {
   heldVersions,
@@ -45,13 +43,11 @@ export function SampleList({
 }) {
   const statuses = useQuery(bundleStatusesQueryOptions)
   const catalog = useQuery(catalogQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
   const registry = useQuery(kindsQueryOptions)
-  const home = repository.data?.authority ?? getRepository() ?? ""
 
   const rows = useMemo(
-    () => mergeBundles(statuses.data ?? [], catalog.data ?? [], home),
-    [statuses.data, catalog.data, home]
+    () => mergeBundles(statuses.data ?? [], catalog.data ?? []),
+    [statuses.data, catalog.data]
   )
   const chains = useMemo(() => {
     const present = presentPackages(rows, registry.data ?? [])

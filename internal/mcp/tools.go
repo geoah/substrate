@@ -24,9 +24,9 @@ import (
 // keeps the first 512 characters and Claude Code the first 4096, so the first
 // line stands alone and the whole stays under the shorter cut; what a topic
 // teaches is the guide's, read when the work needs it.
-const Instructions = `Call overview first: it names the owner's authority, packages, agents and applets and lists the guide topics. Read a guide topic before your first work in its area, and describe_kind before writing a kind.
+const Instructions = `Call overview first: it names the owner's packages, agents and applets and lists the guide topics. Read a guide topic before your first work in its area, and describe_kind before writing a kind.
 This is the owner's substrate: their records, their vocabulary (packages of kinds), their agents, functions, triggers and applets. You act for them, and your changes are recorded as yours.
-- Every kind is named in full, <authority>/<package>/<name>, and a record holds only the properties its kind declares. Write the property its displayTemplate names (name, summary, subject), never title; a state moves only along a declared transition, by a patch.
+- Every kind is named in full, <authority>/<package>/<name>; the owner's own live under ~, as ~/<package>/<name>. A record holds only the properties its kind declares. Write the property its displayTemplate names (name, summary, subject), never title; a state moves only along a declared transition, by a patch.
 - Ids come from results. Never compose or guess one, and always carry the kind beside it.
 - Hold a write to what you read: pass the version you read as ifVersion, and on a conflict read again and decide again.
 - Give a write you may repeat an idempotencyKey.
@@ -213,7 +213,7 @@ func kindsTool() Tool {
 		Title: "List the kinds",
 		Description: "List the kinds this repository holds, grouped by package and ordered by reference: each one's name, its " +
 			"purpose (primary for the owner's data, supporting and internal for machinery) and the first sentence of its " +
-			"description. package narrows it to one package (<authority>/<package>) or one authority, purposes to some purposes, " +
+			"description. package narrows it to one package (<authority>/<package>, ~/<package> for the owner's own) or one authority, purposes to some purposes, " +
 			"q to kinds whose reference or description holds the words. Page with first and the cursor answered, passed back as " +
 			"after. describe_kind reads one in full.",
 		Input: object(map[string]any{

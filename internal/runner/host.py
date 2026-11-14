@@ -243,11 +243,14 @@ def _temporary(e):
 _MAX_ID_LEN = 128
 # reID: a record id is RFC 3986 unreserved plus ":" "@" and "/" (a
 # the two extra pchars ":" and "@" — schema.ValidID.
-_RE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
+# A declaration of the repository's own may open with "~/" (decision record
+# 0259).
+_RE_ID = re.compile(r"^(~/)?[A-Za-z0-9][A-Za-z0-9._~:@/-]*$")
 # A kind reference, in full: "<authority>/<package>/<name>". A bare name is
 # refused here, before the call leaves the body, exactly as the engine refuses
-# it at the door (decision record 0101).
-_RE_KIND = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/[a-z][a-z0-9]*/[a-z][a-z0-9]*$")
+# it at the door (decision record 0101). The authority is a DNS name, or "~"
+# for the repository's own kinds (decision record 0259).
+_RE_KIND = re.compile(r"^(~|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)/[a-z][a-z0-9]*/[a-z][a-z0-9]*$")
 # A relation / declared name: camelCase — schema.ValidCamel.
 _RE_IDENT = re.compile(r"^[a-z][a-zA-Z0-9]*$")
 

@@ -173,7 +173,7 @@ func (ds *dataset) aggregateProperty(ctx context.Context, tx *sql.Tx, p *aggPlan
 	const policyPath = "aggregate.property.sources"
 	var pol *recordPolicy
 	if p.propBySource {
-		if pol, err = newRecordPolicy(types, policyPath, prop.Sources); err != nil {
+		if pol, err = newRecordPolicy(types, policyPath, prop.Sources, ds.info.Authority); err != nil {
 			return nil, err
 		}
 	}

@@ -57,7 +57,7 @@ function primaryKinds(
 
 /** The samples that add a collection, by package display name. `rows` are
  * the merged catalog rows, so a sample's closure already names its kinds
- * under this repository's authority. */
+ * under `~`, where they land. */
 export function collectionSamples(
   rows: readonly BundleRow[],
   registry: readonly KindInfo[]

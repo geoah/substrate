@@ -2,7 +2,8 @@
 
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
-kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
+kind, addressed as `{authority}/{package}/{kind}/{id}` (`~/tasks/task/t9` for
+the repository's own), and the CLI mirrors that:
 kinds, get, apply, add, patch, delete, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
@@ -10,11 +11,11 @@ same repository as the substrate (`cmd/substratectl`) and builds with Go.
 substratectl register --server https://substrate.example --identity ada.example.com
 substratectl login --identity ada.example.com
 substratectl kinds                        # every declared kind
-substratectl get ada.example.com/tasks/task            # list a collection
-substratectl get ada.example.com/tasks/task t9 -o yaml  # one record, apply-able envelope
+substratectl get '~/tasks/task'           # list a collection
+substratectl get '~/tasks/task' t9 -o yaml  # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
 substratectl validate -f task.yaml        # the server's checks, offline
-substratectl patch ada.example.com/tasks/task t9 --state status=done
+substratectl patch '~/tasks/task' t9 --state status=done
 substratectl watch                        # resumable change stream
 substratectl export                       # the recovery export, the repository's archive as one tar
 ```
@@ -76,7 +77,8 @@ registration possible. `--skip-totp` registers without a second factor, which
 the owner can turn on later in the console's Settings. `--identity` is the
 name you sign in with, and the repository registration creates takes it too
 unless `--repository` names another; the repository's name BECOMES its
-authority: the home of every package you declare kinds in. A command that
+authority. The packages you declare kinds in live in the repository's local
+namespace, `~`, not under the name. A command that
 names only `--repository`, as one from before identities does, names you
 after it. A name carrying a dot is taken as it is; a bare label is completed
 under the substrate's own host, and `register` prints the result.
@@ -130,8 +132,13 @@ person's, with the token beside them.
 ## Reading
 
 `substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind is
-its full reference (`ada.example.com/tasks/task` for the tasks sample added
-to the repository registered above). A bare `task`
+its full reference: `~/tasks/task` for the tasks sample added to the
+repository, whatever the repository is called, because the repository's own
+kinds live in its local namespace, `~`
+([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Quote it: a shell
+expands an unquoted `~/` at the start of a word to your home directory. The
+repository's full name is accepted in its place (`ada.example.com/tasks/task`
+for the repository registered above), and what comes back says `~`. A bare `task`
 is refused, naming every kind the repository declares under that word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 `substratectl kinds` lists them all. Lists take `--filter` (the
@@ -303,12 +310,13 @@ the declared one. Nothing drops an entry by it yet.
   a function or a bundle, keys written under `data.properties` read the same.
   A document naming either key is sent as written, so a key dropped from the
   file is dropped from the declaration. `--as <authority>` rehomes the
-  input first: every mention of the one authority its declarations are
-  written under becomes the one named, which is `add` of a sample (below) run
-  client-side over files on disk. An input declaring under two authorities is
-  refused naming both. A document that would create a package under any
-  authority but the repository's own is `403`
-  ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)): rehome a sample with `--as-mine`, and take
+  input first: every whole mention of the one authority its declarations
+  are written under becomes the one named, as text, over files on disk
+  (`add` of a sample, below, moves only where the closure names something). An input declaring under two authorities is
+  refused naming both. A document that would create a package anywhere but
+  in `~` is `403`, the repository's full name being folded into `~` first
+  ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+  [decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)): copy a sample with `--as-mine`, and take
   a provider or a catalogue with `add`. `--hold-waiting-mappings` holds back each suggested
   mapping whose source kind this repository does not have, applies the rest,
   and prints one line per mapping held; apply the same files again once the
@@ -441,11 +449,11 @@ source on its manifest, so it installs with the ordinary `apply`.
 `substratectl add <package>` takes one of the catalog's packages, and who
 keeps it decides where it lands ([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md));
 `install` and `import` are its aliases. One of the shipped
-[samples](bundles.md#the-catalog) is copied: the server rewrites the closure's
-placeholder authority to the one this repository owns and admits it there, so
-`add samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
-which is your kind, writable. It prints `<landed id> added`, and a sample's id
-is not the one typed. The copy records where it came from, so `substratectl
+[samples](bundles.md#the-catalog) is copied: the server moves the closure's
+authority into this repository's local namespace and admits it there, so
+`add samples.substrate.reamde.dev/tasks` lands `~/tasks/task`, the same in
+every repository, which is your kind, writable. It prints `~/tasks added`:
+a sample's landed id is not the one typed. The copy records where it came from, so `substratectl
 catalog` offers the upgrade when a later binary ships the sample at a newer
 version, and adding it again is how it lands; over a copy you edited since,
 or where the new closure removes values from records, adding it again is
@@ -454,8 +462,9 @@ what goes and confirms exactly that plan
 ([bundles](bundles.md#adding-a-package)). A published package, a provider or
 a catalogue, lands under the authority that publishes it.
 
-`substratectl apply --as <authority>` (or `--as-mine`) rehomes a shipped
-sample's files by hand. When the input carries its package document the
+`substratectl apply --as-mine` copies a shipped sample's files into `~` by
+hand, and `--as <authority>` rehomes them onto another name, which the server
+folds into `~` when it is the repository's own. When the input carries its package document the
 request names the package it was authored as, and the server stamps the
 landed copy with it exactly as `add` would; a later `--as` apply over a
 copy you edited since is refused the same way, and `--allow-data-loss`
@@ -477,7 +486,7 @@ yours like any other
 ([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)):
 `apply`, `patch`, `delete`, `bundle uninstall` and `bundle purge` of it are
 refused by nothing. Its package row still names the app that declared it;
-`substratectl takeover <authority>/<package> --confirm <authority>/<package>`
+`substratectl takeover '~/<package>' --confirm '~/<package>'`
 rewrites that: `declaredBy` links your own actor record, `takenOverFrom`
 names the app by its client id or its publisher, and nothing else moves. It
 prints the app it took the package from and the actor record that now
@@ -539,6 +548,33 @@ reads (`SUBSTRATE_ARCHIVE`, by default `<SUBSTRATE_DATA_ROOT>/archive`) and
 booting with the same `SUBSTRATE_CREDENTIAL_KEY`. A host with another key
 refuses it, unless its operator accepts restoring it without its secrets
 ([restore without the credential key](operations.md#restore-without-the-credential-key)).
+
+## Importing under another name
+
+`substratectl archive import <repository id> <archive id> --name <name>` is
+the operator's import of a repository under another name than its archive's
+manifest gives: an export extracted into the archive, which a server set
+aside at start-up because another repository there holds its name. A
+repository's own kinds live under `~`, so no record of its own spells its
+name, and every record, reference, declaration and token scope reads the
+same under the new name. The id does not change, and the repository's own
+record and its first person's actor record take the new name at its first
+open. Its people come with it under their own sign-in names; one whose name
+another person on this server holds, or whose sign-in this host's key does
+not open, is left out until `substratectl user reset <repository id>
+--identity <another name>`, and their tokens are refused until then. A
+webhook address by the old name reaches whoever holds that name now
+([restore under another name](operations.md#restore-under-another-name)).
+
+```
+substratectl --dsn "$DATABASE_URL" archive import rnd-0vrkvsgbs6bnz2sjy4196kccck <archive id> --name bo.example.com
+```
+
+It opens as the writer, so stop the server first. It refuses what a restore
+refuses, under the new name, and also a name another set-aside repository
+claims and an archive a release before the local namespace wrote.
+[Running a substrate](operations.md#restore-under-another-name) has the
+whole procedure.
 
 ## Verifying the repository's name
 

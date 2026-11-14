@@ -2,13 +2,14 @@
 /** The old Registry, Connections, Services and bundle Settings addresses land
  * on the Providers pages that replaced them. */
 
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 
 import {
   bundleDetailRoute,
   bundleSettingsRoute,
   connectionDetailRoute,
   connectionsRoute,
+  localHref,
   registryRoute,
   servicesRoute,
 } from "@/router"
@@ -101,12 +102,59 @@ describe("the retired provider addresses", () => {
   })
 
   it("sends a bundle's settings to its provider page's settings", () => {
-    expect(
-      target(bundleSettingsRoute, { id: "ada.example.com/firecrawl" })
-    ).toMatchObject({
+    expect(target(bundleSettingsRoute, { id: "~/firecrawl" })).toMatchObject({
       to: "/providers/$authority/$pkg",
-      params: { authority: "ada.example.com", pkg: "firecrawl" },
+      params: { authority: "~", pkg: "firecrawl" },
       hash: "settings",
     })
+  })
+})
+
+/** The repository's own packages sit under `~`, and its full name is another
+ * spelling of it (decision record 0259): an address from before names the
+ * package by the name. */
+describe("an address under the repository's full name", () => {
+  afterEach(() => localStorage.clear())
+
+  it("lands a held package's old Registry and settings addresses under ~", () => {
+    localStorage.setItem("substrate.repository", "ada.example.com")
+    expect(
+      target(bundleDetailRoute, { id: "ada.example.com/tasks" })
+    ).toMatchObject({
+      to: "/providers/$authority/$pkg",
+      params: { authority: "~", pkg: "tasks" },
+    })
+    expect(
+      target(bundleSettingsRoute, { id: "ada.example.com/firecrawl" })
+    ).toMatchObject({ params: { authority: "~", pkg: "firecrawl" } })
+    // Another authority's package keeps its own.
+    expect(
+      target(bundleSettingsRoute, { id: "other.example.com/firecrawl" })
+    ).toMatchObject({
+      params: { authority: "other.example.com", pkg: "firecrawl" },
+    })
+  })
+
+  it("moves a data, tool or provider address to ~, search and hash kept", () => {
+    const name = "ada.example.com"
+    expect(localHref("/data/ada.example.com/tasks/task/01jbx", name)).toBe(
+      "/data/~/tasks/task/01jbx"
+    )
+    expect(localHref("/data/ada.example.com", name)).toBe("/data/~")
+    expect(localHref("/tools/ada.example.com/notes/save?x=1#a", name)).toBe(
+      "/tools/~/notes/save?x=1#a"
+    )
+    expect(localHref("/providers/ada.example.com/tasks", name)).toBe(
+      "/providers/~/tasks"
+    )
+  })
+
+  it("leaves every other address alone", () => {
+    const name = "ada.example.com"
+    expect(localHref("/data/~/tasks/task", name)).toBeUndefined()
+    expect(localHref("/data/ada.example.com.uk/tasks", name)).toBeUndefined()
+    expect(localHref("/data/other.example.com/tasks", name)).toBeUndefined()
+    expect(localHref("/agents/ada.example.com", name)).toBeUndefined()
+    expect(localHref("/data/ada.example.com/tasks", null)).toBeUndefined()
   })
 })

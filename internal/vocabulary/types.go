@@ -481,7 +481,7 @@ var keyPatternRE = map[string]*regexp.Regexp{
 // terms rather than the regexp's.
 var keyPatternRule = map[string]string{
 	KeyPatternCamel:   camelRule,
-	KeyPatternKindRef: "a kind reference (`task` or `example.com/tasks/task`)",
+	KeyPatternKindRef: "a kind reference (`task`, `example.com/work/task` or `~/work/task`)",
 }
 
 // CheckKey holds one key of a keyed map to the declared contract. The keys are
@@ -1002,7 +1002,29 @@ type Registry struct {
 	// the reason (seededmapping.go). Replaced whole at every build, never
 	// mutated, so a clone shares it.
 	held map[string]string
+	// home is the name of the repository this registry is, which every
+	// lookup by reference takes as another spelling of Local (LocalizeRef).
+	// Empty on the shipped registry, which belongs to no repository.
+	home string
 }
+
+// SetHome names the repository this registry is: its lookups then read the
+// repository's full name as `~`. A clone carries it.
+func (r *Registry) SetHome(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.home = name
+}
+
+// Home is the name SetHome gave this registry, or "".
+func (r *Registry) Home() string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.home
+}
+
+// Localize is ref with this registry's repository name folded into `~`.
+func (r *Registry) Localize(ref string) string { return LocalizeRef(ref, r.Home()) }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -1031,6 +1053,7 @@ func (r *Registry) Clone() *Registry {
 	}
 	c.version = r.version
 	c.held = r.held
+	c.home = r.home
 	return c
 }
 
@@ -1054,7 +1077,7 @@ func (r *Registry) Packages() []string {
 func (r *Registry) PackageByName(identity string) (*Package, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	g, ok := r.packages[identity]
+	g, ok := r.packages[LocalizeRef(identity, r.home)]
 	return g, ok
 }
 
@@ -1137,6 +1160,7 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 func (r *Registry) TraitByIdentity(identity string) (*Trait, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	identity = LocalizeRef(identity, r.home)
 	if g, ok := r.packages[KindPackage(identity)]; ok {
 		if c, ok := g.Traits[KindName(identity)]; ok {
 			return c, true
@@ -1213,7 +1237,7 @@ func (r *Registry) Kinds() []*Kind {
 func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	t, ok := r.byIdent[identity]
+	t, ok := r.byIdent[LocalizeRef(identity, r.home)]
 	return t, ok
 }
 
@@ -1227,6 +1251,7 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	nameOrIdentity = LocalizeRef(nameOrIdentity, r.home)
 	if t, ok := r.byIdent[nameOrIdentity]; ok {
 		return t, nil
 	}
@@ -1274,6 +1299,7 @@ func (r *Registry) Implementing(iface string) []*Kind {
 // different authorities into one answer. Machine selectors ("status"/"HasStatus")
 // stay bare by nature.
 func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
+	iface = r.Localize(iface)
 	if Qualified(iface) {
 		var out []*Kind
 		for _, t := range r.Kinds() {

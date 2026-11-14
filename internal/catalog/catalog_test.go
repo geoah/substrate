@@ -256,16 +256,17 @@ func TestPublishedPackageSaysWhatItIsFor(t *testing.T) {
 }
 
 // A sample's shipped id addresses the catalog entry; what LANDS is its package
-// under the repository's own authority, which is the id the bundle status
-// carries afterwards. A provider keeps the id it publishes.
-func TestLandedIDRehomesASampleAndLeavesAProvider(t *testing.T) {
+// in the repository's local namespace, the same in every repository, which is
+// the id the bundle status carries afterwards (decision record 0259). A
+// provider keeps the id it publishes.
+func TestLandedIDCopiesASampleIntoTheLocalNamespaceAndLeavesAProvider(t *testing.T) {
 	c := realCatalog(t)
 	sample, _ := c.ByID("samples.substrate.reamde.dev/tasks")
-	if got, want := sample.LandedID("ada.example.com"), "ada.example.com/tasks"; got != want {
+	if got, want := sample.LandedID(), "~/tasks"; got != want {
 		t.Errorf("sample lands as %q, want %q", got, want)
 	}
 	provider, _ := c.ByID("providers.substrate.reamde.dev/google")
-	if got, want := provider.LandedID("ada.example.com"), provider.ID; got != want {
+	if got, want := provider.LandedID(), provider.ID; got != want {
 		t.Errorf("provider lands as %q, want %q", got, want)
 	}
 }

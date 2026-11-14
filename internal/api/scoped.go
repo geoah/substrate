@@ -149,6 +149,13 @@ func scopeKind(kind string, registry map[string]substrate.KindInfo) scope.Kind {
 	return scopeKindOf(kind, k)
 }
 
+// local folds the repository's full name into `~` in a reference the app
+// sent, so the grant, which names the repository's own kinds under `~`, is
+// asked about the kind the engine would resolve (decision record 0259).
+func (s *scopedDataset) local(ref string) string {
+	return vocabulary.LocalizeRef(ref, s.inner.Repository().Authority)
+}
+
 // reads reports whether the grant reads kind; a kind the registry does not
 // hold is never readable.
 func (s *scopedDataset) reads(ctx context.Context, kind string) (bool, error) {
@@ -156,6 +163,7 @@ func (s *scopedDataset) reads(ctx context.Context, kind string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	kind = s.local(kind)
 	k, ok := reg[kind]
 	return ok && s.grant.Reads(scopeKindOf(kind, k)), nil
 }
@@ -165,6 +173,7 @@ func (s *scopedDataset) writes(ctx context.Context, kind string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	kind = s.local(kind)
 	k, ok := reg[kind]
 	return ok && s.grant.Writes(scopeKindOf(kind, k)), nil
 }
@@ -445,7 +454,9 @@ func (s *scopedDataset) requireWrite(ctx context.Context, kind string) error {
 // narrow holds a kind list to the grant: an empty list becomes every
 // readable kind, a named kind the grant cannot read is unknown. It answers
 // false when nothing is left, which the caller answers with an empty result
-// rather than passing on, because no kinds means every kind below here.
+// rather than passing on, because no kinds means every kind below here. The
+// kinds it answers are as the registry keys them, `~` for an own kind, so the
+// checks after it read the declarations they mean.
 func (s *scopedDataset) narrow(ctx context.Context, kinds []string) ([]string, bool, error) {
 	if len(kinds) == 0 {
 		all, err := s.readable(ctx)
@@ -454,12 +465,14 @@ func (s *scopedDataset) narrow(ctx context.Context, kinds []string) ([]string, b
 		}
 		return all, len(all) > 0, nil
 	}
+	out := make([]string, 0, len(kinds))
 	for _, k := range kinds {
 		if err := s.requireRead(ctx, k); err != nil {
 			return nil, false, err
 		}
+		out = append(out, s.local(k))
 	}
-	return kinds, true, nil
+	return out, true, nil
 }
 
 // --- the allowed surface ---
@@ -485,6 +498,7 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 }
 
 func (s *scopedDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
+	ref = s.local(ref)
 	// The package kind is known to a grant that could name a package, so the
 	// one row Get serves it resolves; Get decides which row.
 	if ref == kindPackageRow && s.grant.NamesAnyPackage() {
@@ -549,11 +563,12 @@ func (s *scopedDataset) requireUnitGraph(ctx context.Context) error {
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	typ = s.local(typ)
 	// The row of a package the grant's scopes reach into says which version
 	// the repository holds, which an app reads to know whether its build may
 	// write (scope.NamesPackage); every other declaration row stays the
 	// owner's.
-	if typ == kindPackageRow && s.grant.NamesPackage(id) {
+	if typ == kindPackageRow && s.grant.NamesPackage(s.local(id)) {
 		return s.inner.Get(ctx, typ, id)
 	}
 	// The declaration row of a kind the grant reads says what the token
@@ -777,7 +792,7 @@ func (s *scopedDataset) checkReferenceValues(ctx context.Context, kind string, p
 		var sites []referenceSite
 		collectReferences(decl, v, &sites)
 		for _, site := range sites {
-			k := targetKind(site.value, site.pin)
+			k := s.local(targetKind(site.value, site.pin))
 			read := false
 			if site.value != "" && k != "" {
 				if read, err = s.reads(ctx, k); err != nil {
@@ -1041,6 +1056,8 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 }
 
 func (s *scopedDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	// Every check below reads the registry, which keys an own kind by `~`.
+	in.Kind = s.local(in.Kind)
 	if err := s.requireWrite(ctx, in.Kind); err != nil {
 		return nil, err
 	}
@@ -1055,6 +1072,7 @@ func (s *scopedDataset) Put(ctx context.Context, actor substrate.Actor, in subst
 }
 
 func (s *scopedDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+	typ = s.local(typ)
 	// No scope writes a kind the agent verbs reach (they are core's and
 	// llm's), so an app's few writes of them are the agent verbs' even where
 	// a read scope reads the kind whole. A person's role may write one whole,
@@ -1082,6 +1100,7 @@ func (s *scopedDataset) Patch(ctx context.Context, actor substrate.Actor, typ, i
 }
 
 func (s *scopedDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
+	typ = s.local(typ)
 	// A person revokes their own sign-ins whatever their roles; the engine
 	// tells their own from another's (decision 0275).
 	if s.person && typ == vocabulary.CoreKind("token") {

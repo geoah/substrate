@@ -537,10 +537,10 @@ func (c *client) replaySamples(ctx context.Context, samples []string, stdout io.
 		return fmt.Errorf("trigger status: %w", err)
 	}
 	for _, s := range samples {
-		// An imported sample's callables live under the repository's own
-		// authority and the sample's package name.
+		// An added sample's callables live in the repository's own
+		// namespace, `~`, under the sample's package name.
 		pkg := s[strings.LastIndex(s, "/")+1:]
-		prefix := c.authority + "/" + pkg + "/"
+		prefix := "~/" + pkg + "/"
 		for _, t := range list.Items {
 			if t.Kind != "record" || !strings.HasPrefix(t.Callable, prefix) {
 				continue
@@ -887,8 +887,8 @@ func applyYAML(ctx context.Context, c *client, path string, stdout io.Writer) er
 			return fmt.Errorf("%s: %w", path, err)
 		}
 		kind, _ := doc["kind"].(string)
-		if authority, _, _ := strings.Cut(kind, "/"); authority != c.authority && authority != firstParty {
-			return fmt.Errorf("%s names a kind under %s, neither %s nor this repository's %s", path, authority, firstParty, c.authority)
+		if authority, _, _ := strings.Cut(kind, "/"); authority != c.authority && authority != "~" && authority != firstParty {
+			return fmt.Errorf("%s names a kind under %s, neither %s nor this repository's own (~, or %s)", path, authority, firstParty, c.authority)
 		}
 		docs = append(docs, doc)
 	}

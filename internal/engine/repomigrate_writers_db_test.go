@@ -126,9 +126,10 @@ func TestRepositoryMigrationNamesStoredWritersByActorType(t *testing.T) {
 		if _, _, err := c.Import(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/"+word, ds); err != nil {
 			t.Fatalf("import %s: %v", word, err)
 		}
-		pkg := repo + "/" + word
+		// A sample lands in the local namespace (decision record 0259).
+		pkg := vocabulary.Local + "/" + word
 		for _, r := range declarationRows(t, ds)[rmKind] {
-			if r.Properties["authority"] == repo && r.Properties["package"] == word {
+			if r.Properties["authority"] == vocabulary.Local && r.Properties["package"] == word {
 				sampleKind[word] = r.ID
 				break
 			}

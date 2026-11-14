@@ -106,15 +106,15 @@ type (
 	ShippedRecord = substrate.CatalogShippedRecord
 )
 
-// LandedID is the bundle id this closure lands under in a repository whose own
-// authority is home. A provider keeps the id it publishes; a SAMPLE is rehomed
-// on import, so what lands is its package under the repository's authority
-// (decision record 0048) and the shipped id addresses the catalog entry alone.
-func (b *Bundle) LandedID(homeAuthority string) string {
-	if b.KeptBy != substrate.KeptByRepository || homeAuthority == "" {
+// LandedID is the bundle id this closure lands under. A provider keeps the id
+// it publishes; a SAMPLE is copied into the repository's local namespace
+// (decision records 0048 and 0259), so what lands is `~/<package>`, the same
+// in every repository, and the shipped id addresses the catalog entry alone.
+func (b *Bundle) LandedID() string {
+	if b.KeptBy != substrate.KeptByRepository {
 		return b.ID
 	}
-	return homeAuthority + "/" + b.Package
+	return vocabulary.PackageRef(vocabulary.Local, b.Package)
 }
 
 // HeldID is the id this closure ALREADY has in a repository that holds it, or
@@ -123,8 +123,8 @@ func (b *Bundle) LandedID(homeAuthority string) string {
 // sanctioned door until the providers stop requiring sample packages) lands
 // the shipped one. A read that asked only for the rehomed id reported a
 // verbatim-installed sample as available, and offered it again.
-func (b *Bundle) HeldID(held map[string]bool, homeAuthority string) string {
-	if landed := b.LandedID(homeAuthority); held[landed] {
+func (b *Bundle) HeldID(held map[string]bool) string {
+	if landed := b.LandedID(); held[landed] {
 		return landed
 	}
 	if held[b.ID] {
@@ -847,15 +847,14 @@ func (c *Catalog) importSample(ctx context.Context, b *Bundle, ds substrate.Data
 	if err != nil {
 		return nil, nil, err
 	}
-	vocabularyDocs, err := vocabulary.RehomeAuthority(kept, b.Authority, home)
+	vocabularyDocs, err := vocabulary.LocalizeAuthority(kept, b.Authority, home)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
 	}
-	dataDocs, err := vocabulary.RehomeAuthority(b.dataDocs, b.Authority, home)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, b.ID, err)
-	}
-	if left := vocabulary.AuthorityMentions(append(append([]map[string]any{}, vocabularyDocs...), dataDocs...), b.Authority); len(left) > 0 {
+	// The records beside the declarations go as shipped: the install folds
+	// the sample's authority in them where the write reads a name (Origin).
+	dataDocs := b.dataDocs
+	if left := vocabulary.AuthorityMentions(vocabularyDocs, b.Authority); len(left) > 0 {
 		return nil, nil, &substrate.ValidationError{
 			Problems: []string{fmt.Sprintf("%s still mentions %s after the rehome, so it would declare under an authority this repository does not own",
 				strings.Join(left, ", "), b.Authority)},
@@ -1041,7 +1040,7 @@ func (c *Catalog) planUpgrade(ctx context.Context, b *Bundle, ds substrate.Datas
 		if err != nil {
 			return nil, err
 		}
-		if vocabularyDocs, err = vocabulary.RehomeAuthority(kept, b.Authority, home); err != nil {
+		if vocabularyDocs, err = vocabulary.LocalizeAuthority(kept, b.Authority, home); err != nil {
 			return &substrate.BundleUpgrade{Blockers: []string{err.Error()}}, nil
 		}
 		if left := vocabulary.AuthorityMentions(vocabularyDocs, b.Authority); len(left) > 0 {

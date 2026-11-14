@@ -25,7 +25,6 @@ import {
   shippedUpgradesQueryOptions,
 } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { repositoryQueryOptions } from "@/lib/api/repository"
 import { triggerStatusesQueryOptions } from "@/lib/api/sync"
 import type { KindInfo, TriggerStatus } from "@/lib/api/types"
 import { TRIGGER_RUN_KIND } from "@/lib/core-kinds"
@@ -225,9 +224,6 @@ export function useProviders() {
   // The boot upgrade's preview, for the one package no catalog entry carries:
   // core. Not waited on and not fatal.
   const shipped = useQuery(shippedUpgradesQueryOptions)
-  // The authority this repository owns, which is where an imported sample
-  // landed: without it a held sample would never meet its catalog entry.
-  const repository = useQuery(repositoryQueryOptions)
   const registry = useQuery(kindsQueryOptions)
   const accountsRead = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
   // Not waited on: a provider's parked and broken runs join its state once
@@ -238,11 +234,10 @@ export function useProviders() {
   const now = useNow(60_000)
 
   const kinds = useMemo(() => registry.data ?? [], [registry.data])
-  const home = repository.data?.authority ?? ""
 
   const rows = useMemo(
-    () => mergeBundles(statuses.data ?? [], catalog.data ?? [], home),
-    [statuses.data, catalog.data, home]
+    () => mergeBundles(statuses.data ?? [], catalog.data ?? []),
+    [statuses.data, catalog.data]
   )
   // Presence is computed over EVERY row: a sample held here still satisfies
   // a provider's requirement.
@@ -333,10 +328,8 @@ export function useProviders() {
     statuses,
     catalog,
     registry,
-    repository,
     accountsRead,
     kinds,
-    home,
     rows,
     chains,
     accounts,
@@ -345,14 +338,9 @@ export function useProviders() {
     addonsOf,
     others,
     pendingUpgrades,
-    // The kind registry and the repository are waited on too: without them a
-    // requirement reads as missing, and a held sample as not held, for a
-    // frame.
-    pending:
-      statuses.isPending ||
-      catalog.isPending ||
-      registry.isPending ||
-      repository.isPending,
+    // The kind registry is waited on too: without it a requirement reads as
+    // missing for a frame.
+    pending: statuses.isPending || catalog.isPending || registry.isPending,
     error: statuses.error ?? catalog.error ?? undefined,
     refetch: () => {
       void statuses.refetch()

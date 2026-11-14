@@ -32,8 +32,8 @@ export function originOfActor(actor: string): Origin {
 }
 
 /** Where a kind's records come from: a provider's copy, substrate's own
- * machinery (core, llm, console), or yours: samples are imported onto your
- * own authority, and the records of observations, the well-known catalogues
+ * machinery (core, llm, console), or yours: samples are imported into your
+ * own namespace `~`, and the records of observations, the well-known catalogues
  * and the owner-data kinds of the machinery packages (contacts) are yours
  * whoever wrote them. */
 export function originOfKind(kind: string): Origin {

@@ -277,16 +277,26 @@ public enum ScopeWords {
         return "Send data to your repository through the \(packageName) webhook, for any \(packageName) account, \(parked)"
     }
 
-    /// A scope with `~` in its authority, a trait scope's trait's included,
-    /// completed with the repository's, as the server stores it.
-    public static func resolve(_ scope: String, authority: String) -> String {
+    /// A scope naming the repository's own kinds by its full name,
+    /// `authority`, a trait scope's trait's included, with the name folded
+    /// into `~`, the one spelling a token stores (decision record 0259):
+    /// `read:ada.example.com/tasks/*` is `read:~/tasks/*` in the repository
+    /// named ada.example.com. A scope naming another authority, or `~`
+    /// already, comes back unchanged.
+    public static func localize(_ scope: String, authority: String) -> String {
         let (verb, pattern) = split(scope)
+        guard !verb.isEmpty, !pattern.isEmpty, !authority.isEmpty else { return scope }
         if verb == "read" || verb == "write", let trait = trait(of: pattern) {
-            guard trait.hasPrefix("~/") else { return scope }
-            return "\(verb):\(traitOpen)\(authority)\(trait.dropFirst())\(traitClose)"
+            return "\(verb):\(traitOpen)\(localize(reference: trait, authority: authority))\(traitClose)"
         }
-        guard !verb.isEmpty, pattern == "~" || pattern.hasPrefix("~/") else { return scope }
-        return "\(verb):\(authority)\(pattern.dropFirst())"
+        return "\(verb):\(localize(reference: pattern, authority: authority))"
+    }
+
+    /// A kind, package or glob reference under `authority` moved under `~`
+    /// (`vocabulary.LocalizeRef`).
+    static func localize(reference: String, authority: String) -> String {
+        guard reference.hasPrefix(authority + "/") else { return reference }
+        return KindReference.local + reference.dropFirst(authority.count)
     }
 
     /// How a read or write pattern names a trait rather than kinds, as the
@@ -394,6 +404,7 @@ public enum ScopeWords {
     static func patternPhrase(_ shape: Shape) -> String {
         switch shape {
         case .all: "records"
+        case .authority(KindReference.local): "records of the kinds you made or added"
         case .authority(let authority): "records from \(authority)"
         case .package(_, let package): "\(packageDisplayName(package)) records"
         case .exact(let authority, let package, let name):
@@ -410,6 +421,7 @@ public enum ScopeWords {
         if !functions.isEmpty { return joinWords(functions) }
         switch shape {
         case .all: return "any of your functions"
+        case .authority(KindReference.local): return "the functions you made or added"
         case .authority(let authority): return "the functions from \(authority)"
         case .package(_, let package): return "the functions in \(packageDisplayName(package))"
         case .exact: return agentWords(pattern)
@@ -421,6 +433,7 @@ public enum ScopeWords {
         if !agents.isEmpty { return joinWords(agents) }
         switch shape {
         case .all: return "your agents"
+        case .authority(KindReference.local): return "the agents you made or added"
         case .authority(let authority): return "the agents from \(authority)"
         case .package(_, let package): return "the agents in \(packageDisplayName(package))"
         case .exact: return agentWords(pattern)

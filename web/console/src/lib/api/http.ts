@@ -207,6 +207,15 @@ export async function request<T>(
  * record's id into `%2F`, which the API decodes exactly once (`pathParam`). */
 export const seg = encodeURIComponent
 
+/** The authority of the repository's own packages (decision record 0259):
+ * what it declares and the samples it copies sit under `~`, whatever the
+ * repository is called, and the server answers `~` for them everywhere. It
+ * is the one authority without a dot, and a record id may open with `~/`.
+ * The repository's full name is another spelling of it on input only; its
+ * actor texts still carry the name
+ * (`agent:<repository>:<package>:<agent>`). */
+export const LOCAL_AUTHORITY = "~"
+
 /** A kind reference split into its three parts. A stored kind is always
  * authority- and package-qualified (decisions 0042, 0047); the empty answer
  * only ever comes back for a bare shorthand name, which mirrors the server's

@@ -44,7 +44,7 @@ type Operator interface {
 	ArchiveReport(ctx context.Context, repository string) (ArchiveReport, error)
 	ResolveArchive(ctx context.Context, repository string, keepDatabase bool) (ArchiveResolution, error)
 	RemoveArchive(ctx context.Context, repository, archiveID string) (int, error)
-	ImportArchive(ctx context.Context, repository, archiveID string) (Repository, error)
+	ImportArchive(ctx context.Context, repository, archiveID, name string) (Repository, error)
 }
 
 var _ Operator = (*service)(nil)

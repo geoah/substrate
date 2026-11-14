@@ -47,9 +47,14 @@ type keptConversion struct {
 	// change as record says, or why they do not.
 	why string
 	// record is the record as the converted history folds it, given the
-	// release's (a copy it may change), or nil where the converted history
-	// holds no record. A nil record leaves every record as it was.
-	record func(rec map[string]any) map[string]any
+	// release's (a copy it may change) and the name the release served it
+	// under, or nil where the converted history holds no record. A nil
+	// record leaves every record as it was.
+	record func(rec map[string]any, repository string) map[string]any
+	// trigger is a trigger's status, or one of its parked rows, as the
+	// converted history serves it, given the release's (a copy it may
+	// change). A nil trigger leaves them as they were.
+	trigger func(row map[string]any, repository string) map[string]any
 }
 
 // keptConversions is every conversion step this binary carries, by the
@@ -76,6 +81,11 @@ var keptConversions = map[int]keptConversion{
 			"a split's kept result holds marks where it held manager rows, and a package's actors, which link_actors took out, keeps no mark",
 		record: keptMarks,
 	},
+	6: {
+		why:     "moves the repository's own kinds to the local namespace: a kind, a declaration's or a callable's id, a reference, the named positions of the substrate's own records, and a split's kept effects read `~/` where the release served the repository's name and a slash, the open renders again a title a template draws from a name that moved, and the actor record id of each of its own hands is the id of the same hand under `~`; nothing else moves",
+		record:  keptLocalNamespace,
+		trigger: keptLocalTrigger,
+	},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.
@@ -91,7 +101,7 @@ func keptDialect(t *testing.T, dir, repository string) int {
 // keptConvert takes the release's records through every step of
 // conversions above dialect, in order, and returns the paths a step left no
 // record at. A record's path follows what the step makes of it.
-func keptConvert(want *keptRecords, conversions map[int]keptConversion, dialect int) map[string]bool {
+func keptConvert(want *keptRecords, conversions map[int]keptConversion, dialect int, repository string) map[string]bool {
 	dropped := map[string]bool{}
 	for _, d := range slices.Sorted(maps.Keys(conversions)) {
 		c := conversions[d]
@@ -100,9 +110,9 @@ func keptConvert(want *keptRecords, conversions map[int]keptConversion, dialect 
 		}
 		kept := want.Records[:0]
 		for _, rec := range want.Records {
-			rec.Read = c.record(keptClone(rec.Read))
+			rec.Read = c.record(keptClone(rec.Read), repository)
 			if rec.Listed != nil {
-				rec.Listed = c.record(keptClone(rec.Listed))
+				rec.Listed = c.record(keptClone(rec.Listed), repository)
 			}
 			own := rec.Read
 			if rec.Listed != nil {
@@ -118,6 +128,291 @@ func keptConvert(want *keptRecords, conversions map[int]keptConversion, dialect 
 		want.Records = kept
 	}
 	return dropped
+}
+
+// keptConvertTriggers takes the release's trigger statuses and parked rows
+// through every step of conversions above dialect, in order.
+func keptConvertTriggers(want *keptTriggers, conversions map[int]keptConversion, dialect int, repository string) {
+	for _, d := range slices.Sorted(maps.Keys(conversions)) {
+		c := conversions[d]
+		if d <= dialect || c.trigger == nil {
+			continue
+		}
+		for i, s := range want.Statuses {
+			want.Statuses[i] = c.trigger(keptClone(s), repository)
+		}
+		for id, rows := range want.Parked {
+			for i, r := range rows {
+				rows[i] = c.trigger(keptClone(r), repository)
+			}
+			want.Parked[id] = rows
+		}
+	}
+}
+
+// keptLocalNamespace is step 3 on what a release served, written from what
+// the step moves (internal/engine/localnamespace.go's header), never read
+// from what the current code serves. A string the step moves reads `~/`
+// where it read the repository's name and a slash: a record's kind; an id
+// that is a name (the id alphabet holds no dot, so an id under the name is
+// a declaration's or a callable's); a reference, its kind and its id alike;
+// and the strings at the positions keptLocalPositions lists. Every other
+// string stays, the repository's name in a person's own text included.
+func keptLocalNamespace(rec map[string]any, repository string) map[string]any {
+	local := func(s string) string {
+		if rest, ok := strings.CutPrefix(s, repository+"/"); ok {
+			return "~/" + rest
+		}
+		return s
+	}
+	// moved is every name a reference or a named position of the record
+	// moved, by its old spelling: a title rendered from one moves with it.
+	moved := map[string]string{}
+	ref := func(s string) string {
+		parts := strings.SplitN(s, "/", 4)
+		if len(parts) < 4 {
+			to := local(s)
+			if to != s {
+				moved[s] = to
+			}
+			return to
+		}
+		to := local(strings.Join(parts[:3], "/")) + "/" + local(parts[3])
+		if to != s {
+			moved[s] = to
+			if id := local(parts[3]); id != parts[3] {
+				moved[parts[3]] = id
+			}
+		}
+		return to
+	}
+	kind, _ := rec["kind"].(string)
+	id, _ := rec["id"].(string)
+	for _, key := range []string{"kind", "id"} {
+		if v, ok := rec[key].(string); ok {
+			rec[key] = local(v)
+		}
+	}
+	// A declaration's own name moved with its id, and its title is drawn
+	// from it.
+	if to := local(id); to != id {
+		moved[id] = to
+	}
+	// A declaration of the repository's own: its authority, and every name
+	// in it under the repository's name, but the author's text.
+	if strings.HasPrefix(id, repository+"/") {
+		props, _ := rec["properties"].(map[string]any)
+		if props["authority"] == repository {
+			props["authority"] = "~"
+		}
+		if floors, ok := props["requiresAtLeast"].(map[string]any); ok {
+			moved := map[string]any{}
+			for pkg, v := range floors {
+				moved[local(pkg)] = v
+			}
+			props["requiresAtLeast"] = moved
+		}
+		var names func(k string, v any) any
+		names = func(k string, v any) any {
+			switch x := v.(type) {
+			case string:
+				if !keptAuthorText[k] {
+					return local(x)
+				}
+			case map[string]any:
+				for key, y := range x {
+					x[key] = names(key, y)
+				}
+			case []any:
+				for i, y := range x {
+					x[i] = names(k, y)
+				}
+			}
+			return v
+		}
+		names("", props)
+	}
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch x := v.(type) {
+		case map[string]any:
+			if r, ok := x["ref"].(string); ok && len(x) <= 2 {
+				x["ref"] = ref(r)
+			}
+			for k, y := range x {
+				x[k] = walk(y)
+			}
+		case []any:
+			for i, y := range x {
+				x[i] = walk(y)
+			}
+		}
+		return v
+	}
+	if props, ok := rec["properties"].(map[string]any); ok {
+		walk(props)
+		for _, path := range keptLocalPositions[kind] {
+			keptAt(props, path, func(s string) string {
+				to := local(s)
+				if to != s {
+					moved[s] = to
+				}
+				return to
+			})
+		}
+		// A split's kept effects move as a line's: the record each lands
+		// on, and the kinds its resync names.
+		result, _ := props["result"].(map[string]any)
+		effects, _ := result["fold"].([]any)
+		for _, raw := range effects {
+			eff, _ := raw.(map[string]any)
+			if r, ok := eff["ref"].(string); ok {
+				eff["ref"] = local(r)
+			}
+			for _, x := range append(keptList(eff["scope"]), keptList(keptMap(eff["rows"])["marks"])...) {
+				if a, ok := x.(map[string]any); ok {
+					if k, ok := a["kind"].(string); ok {
+						a["kind"] = local(k)
+					}
+				}
+			}
+		}
+		// The open renders again a title its kind's template draws from a
+		// name the record moved (localtitles.go): a function's from its
+		// authority, a trigger's and a run's from their callable. A title
+		// drawn from text, an alert's from its summary, stays, and so does a
+		// tombstone's, which is what it was when the record went.
+		if title, ok := props["title"].(string); ok && len(moved) > 0 && keptTitledFromNames[kind] && rec["deletedAt"] == nil {
+			olds := slices.Collect(maps.Keys(moved))
+			slices.SortFunc(olds, func(a, b string) int { return len(b) - len(a) })
+			for _, old := range olds {
+				title = strings.ReplaceAll(title, old, moved[old])
+			}
+			props["title"] = title
+		}
+	}
+	keptLocalActors(rec, repository)
+	return rec
+}
+
+// keptTitledFromNames are the shipped kinds whose template renders a name: an
+// authority, or a callable a record references.
+var keptTitledFromNames = map[string]bool{
+	vocabulary.CoreKind(vocabulary.DocFunction): true,
+	"substrate.reamde.dev/core/trigger":         true,
+	"substrate.reamde.dev/core/triggerrun":      true,
+}
+
+func keptList(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
+func keptMap(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}
+
+// keptLocalActors moves the actor record ids a record served for the
+// repository's own hands, spelled with its name, to the ids of the same hands
+// under `~`: a mark's hands, a split's kept marks, and a link to an actor
+// record. Each id is read back to its hand as step 3 derived it.
+func keptLocalActors(rec map[string]any, repository string) {
+	move := func(id string) string {
+		key, ok := vocabulary.ActorKeyOf(id)
+		if !ok {
+			return id
+		}
+		for _, prefix := range []string{substrate.BundleActorPrefix, substrate.FunctionActorPrefix, substrate.AgentActorPrefix} {
+			if rest, ok := strings.CutPrefix(string(key), prefix+repository+":"); ok {
+				return vocabulary.ActorID(substrate.Actor(prefix + "~:" + rest))
+			}
+		}
+		return id
+	}
+	actor := vocabulary.CoreKind(vocabulary.DocActor) + "/"
+	link := func(v any) {
+		ref, _ := v.(map[string]any)
+		path, _ := ref[vocabulary.ReferenceValueKey].(string)
+		if id, ok := strings.CutPrefix(path, actor); ok {
+			ref[vocabulary.ReferenceValueKey] = actor + move(id)
+		}
+	}
+	// A property's mark, as a record serves it: its hands are links.
+	marks, _ := rec["marks"].(map[string]any)
+	for _, raw := range marks {
+		if m, ok := raw.(map[string]any); ok {
+			link(m["setBy"])
+			link(m["onBehalfOf"])
+		}
+	}
+	props, _ := rec["properties"].(map[string]any)
+	for _, key := range []string{"declaredBy", "createdBy", "caller"} {
+		link(props[key])
+	}
+	// A split's kept result holds marks as a line does, its hands ids.
+	result, _ := props["result"].(map[string]any)
+	effects, _ := result["fold"].([]any)
+	for _, raw := range effects {
+		eff, _ := raw.(map[string]any)
+		if eff == nil || eff["kind"] != "mark" {
+			continue
+		}
+		for _, key := range []string{"setBy", "onBehalfOf"} {
+			if id, ok := eff[key].(string); ok {
+				eff[key] = move(id)
+			}
+		}
+	}
+}
+
+// keptLocalTrigger is step 3 on a trigger's status or parked row a release
+// served: the callable it names, and every reference in it, as
+// keptLocalNamespace moves them in a record.
+func keptLocalTrigger(row map[string]any, repository string) map[string]any {
+	callable, ok := row["callable"].(string)
+	row = keptLocalNamespace(map[string]any{"properties": row}, repository)["properties"].(map[string]any)
+	if ok {
+		row["callable"] = keptLocalNamespace(map[string]any{"kind": callable}, repository)["kind"]
+	}
+	return row
+}
+
+// keptLocalPositions are the name positions of the substrate's own records
+// a release served, by kind, as the step lists them (recordNamePositions,
+// and a declaration's name keys): each path walks into objects by key and
+// through lists, and the strings at its end move.
+var keptLocalPositions = map[string][][]string{
+	"substrate.reamde.dev/core/triggerrun": {{"callable"}},
+	"substrate.reamde.dev/core/trigger":    {{"source", "record", "kinds"}},
+}
+
+// keptAuthorText is the keys of a declaration whose strings are its
+// author's text, which nothing rewrites.
+var keptAuthorText = map[string]bool{"description": true, "source": true, "prompt": true, "displayTemplate": true}
+
+// keptAt applies fold to the strings at path in v.
+func keptAt(v any, path []string, fold func(string) string) any {
+	switch x := v.(type) {
+	case []any:
+		for i, y := range x {
+			x[i] = keptAt(y, path, fold)
+		}
+		return x
+	case map[string]any:
+		if len(path) == 0 {
+			return x
+		}
+		if y, ok := x[path[0]]; ok {
+			x[path[0]] = keptAt(y, path[1:], fold)
+		}
+		return x
+	case string:
+		if len(path) == 0 {
+			return fold(x)
+		}
+	}
+	return v
 }
 
 // keptBlobText is the bytes the release attached as a blob (cmd/keptdir).
@@ -263,7 +558,7 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 // keptRespelledMarks is what keptRespellAPIActor does to a record a release
 // served, written from the step: every property the person's actor id set is
 // set by keptConvertedActor, and nothing else moves.
-func keptRespelledMarks(rec map[string]any) map[string]any {
+func keptRespelledMarks(rec map[string]any, _ string) map[string]any {
 	marks, _ := rec["marks"].(map[string]any)
 	was := map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), keptPerson)}
 	for _, row := range marks {
@@ -289,7 +584,7 @@ func TestAKeptDirectoryComparesThroughAConversion(t *testing.T) {
 
 	var want keptRecords
 	readKept(t, filepath.Join(dir, "records.json"), &want)
-	keptConvert(&want, keptConversions, keptDialect(t, dir, k.fixture.Repository))
+	keptConvert(&want, keptConversions, keptDialect(t, dir, k.fixture.Repository), k.fixture.Repository)
 	differ := 0
 	for _, rel := range want.Records {
 		if k.upgraded[rel.Path] != nil || k.upgraded[keptPath(rel.Read)] != nil {
@@ -421,7 +716,7 @@ func TestKeptMaterialChecksFailOnAChangedCopy(t *testing.T) {
 // a server served is one of the engine's own forms, which the step reads by
 // substrate.CanonicalActor and turns into the id of the hand's actor record
 // (vocabulary.ActorID).
-func keptLinkActors(rec map[string]any) map[string]any {
+func keptLinkActors(rec map[string]any, _ string) map[string]any {
 	meta, _ := rec["propertyMeta"].(map[string]any)
 	for _, raw := range meta {
 		m, _ := raw.(map[string]any)
@@ -526,7 +821,7 @@ func keptActorLink(spelled any) any {
 // converted mark names a derivedFrom, and none names onBehalfOf but an app's
 // own direct write's, which a served record does not show: the kept
 // directories hold no write of an app.
-func keptMarks(rec map[string]any) map[string]any {
+func keptMarks(rec map[string]any, _ string) map[string]any {
 	meta, _ := rec["propertyMeta"].(map[string]any)
 	delete(rec, "propertyMeta")
 	marks := map[string]any{}

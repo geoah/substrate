@@ -6,13 +6,13 @@ How to read with query and history: one record, lists and the filter grammar, ra
 
 ## One record
 
-- `{"kind": "ada.example.com/tasks/task", "id": "<id>"}` answers the record: `id`, `kind`, `properties`, `labels`, `annotations`, `version`, `createdAt`, `updatedAt`. A reference reads as `{"ref": "<kind>/<id>"}`. Read by a merged-away id, it answers the winner with `canonicalId`.
+- `{"kind": "~/tasks/task", "id": "<id>"}` answers the record: `id`, `kind`, `properties`, `labels`, `annotations`, `version`, `createdAt`, `updatedAt`. A reference reads as `{"ref": "<kind>/<id>"}`. Read by a merged-away id, it answers the winner with `canonicalId`.
 - `property` reads one value; a text longer than 8,192 characters comes in chunks: `{"kind", "id", "property": "body", "offset": 0}` answers `{value, length, offset, next?}`; pass `next` back as `offset`.
 
 ## Lists
 
 ```json
-{"kind": "ada.example.com/tasks/task",
+{"kind": "~/tasks/task",
  "filter": {"properties": {"status": {"in": ["open"]},
                            "dueAt": {"lt": "2026-11-15T00:00:00Z"}}},
  "orderBy": [{"property": "dueAt"}], "first": 20}
@@ -55,7 +55,7 @@ The answer is `{records, cursor?, head, generation, included?, matches?, count?}
 ## Ranked search
 
 ```json
-{"q": "dentist", "kinds": ["ada.example.com/calendar/calendarevent"], "first": 10}
+{"q": "dentist", "kinds": ["~/calendar/calendarevent"], "first": 10}
 ```
 
 - Name the kinds that would hold the answer. A ranked read narrows by `kinds` and `purposes` alone: any other filter arm, `orderBy`, `expand`, `after` and `count` are refused.
@@ -97,7 +97,7 @@ Steps per day:
 - A property read sums a declared number of the filtered kinds instead:
 
 ```json
-{"kinds": ["ada.example.com/finance/expense"],
+{"kinds": ["~/finance/expense"],
  "aggregate": {"property": {"name": "amount", "anchor": "at"},
                "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
                "bucket": {"calendar": "month", "timezone": "UTC"}, "reducers": ["sum"]}}
@@ -117,7 +117,7 @@ The answer is `{metric?, property?, unit?, bucket?, exact, rows: [{start, end, g
 
 ## Recipes
 
-- The owner's authority: `{"kind": "substrate.reamde.dev/core/repository"}` and read `properties.authority` (`overview` answers it too). Their own kinds live under it.
+- The owner's own kinds live under `~` (`~/tasks/task`), whatever the repository's name: `overview` answers the name.
 - What waits on the owner: `{"kind": "substrate.reamde.dev/core/recordpatchrequest", "filter": {"properties": {"decision": {"eq": "proposed"}}}, "count": true}` and `{"kind": "substrate.reamde.dev/llm/interaction", "filter": {"properties": {"state": {"eq": "pending"}}}}`.
 - A kind's newest records: `{"kind": "<kind>", "first": 20}`; oldest first is `"orderBy": [{"property": "createdAt"}]`.
 - What points at a record: `{"filter": {"referencing": {"ref": "<kind>/<id>"}}}`, with `kinds` to narrow the pointing side.

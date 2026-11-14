@@ -20,8 +20,9 @@ const (
 	wordRE      = `[a-z][a-z0-9]*`
 	camelRE     = `[a-z][a-zA-Z0-9]*`
 	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or
-	// an authority, a package and a name split by the two slashes.
-	kindRefRE = `(` + authorityRE + `/` + wordRE + `/)?` + wordRE
+	// an authority (a DNS name, or `~` for the repository's own), a package
+	// and a name split by the two slashes.
+	kindRefRE = `((~|` + authorityRE + `)/` + wordRE + `/)?` + wordRE
 	// The two halves of a label/annotation key, kept apart so the validator
 	// and the diagnosis (MetaKeyProblem) read one grammar: a refusal that
 	// names a rule the checker does not enforce is worse than a vague one.
@@ -67,7 +68,11 @@ var (
 	// encoded, so a client writes `%2F` and the API decodes it once
 	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire
 	// is percent-decoded twice.
-	reID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
+	//
+	// A declaration of the repository's own is named under `~`
+	// (`~/tasks/task`), so an id may also open with `~/` (decision record
+	// 0259); the alphabet itself is unchanged.
+	reID = regexp.MustCompile(`^(~/)?[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 )
 
 // MaxIDLen caps a writer-supplied id: long enough for any encoded provider
@@ -76,6 +81,11 @@ const MaxIDLen = 128
 
 // ValidAuthority reports whether s is a legal DNS-style authority name.
 func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
+
+// ValidKindAuthority reports whether s may be the authority a package, a kind,
+// a trait, a function or an agent is named under: a DNS name, or Local for
+// the repository's own.
+func ValidKindAuthority(s string) bool { return s == Local || ValidAuthority(s) }
 
 // ValidName reports whether s is a legal kind name.
 func ValidName(s string) bool { return reWord.MatchString(s) }

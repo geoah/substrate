@@ -95,7 +95,7 @@ func retentionDocs(authority, form string) []map[string]any {
 func TestARepositoryOverridesAKindsRetention(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t)
-	own := func(name string) string { return env.repository + "/keep/" + name }
+	own := func(name string) string { return "~/keep/" + name }
 
 	// The three forms, each answered by its kind's definition; a kind that
 	// states none carries no key.

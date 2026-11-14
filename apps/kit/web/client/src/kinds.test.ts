@@ -51,5 +51,17 @@ describe("defineKind", () => {
       package: "tasks",
       name: "task",
     })
+    expect(parseKind("~x/tasks/task")).toBeUndefined()
+  })
+
+  it("takes a kind of the repository's own, under ~", () => {
+    expect(parseKind("~/tasks/task")).toEqual({
+      authority: "~",
+      package: "tasks",
+      name: "task",
+    })
+    expect(defineKind("~/tasks/task", { read: (r) => r.id }).kind).toBe(
+      "~/tasks/task"
+    )
   })
 })

@@ -431,10 +431,11 @@ type AuthorizationRedirectTo struct {
 	Loopback bool `json:"loopback,omitempty"`
 }
 
-// AuthorizationScope is one requested scope, resolved against the
-// repository. Scope is the canonical, resolved spelling the token would
-// store and the approval names; Requested is how the app wrote it, which
-// differs when it used `~` for the repository's authority.
+// AuthorizationScope is one requested scope, read against the repository.
+// Scope is the canonical spelling the token would store and the approval
+// names, the repository's own kinds under `~`; Requested is how the app
+// wrote it, which differs when it spelled them with the repository's full
+// name (decision record 0259).
 type AuthorizationScope struct {
 	Scope     string `json:"scope"`
 	Requested string `json:"requested"`

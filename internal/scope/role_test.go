@@ -27,7 +27,8 @@ func shippedRoles(t *testing.T, ids ...string) Roles {
 // `admin` reaches everything by being `admin`. No rule writes an actor or a
 // role, the one naming them included.
 func TestARoleReachesAControlKindOnlyByNamingIt(t *testing.T) {
-	note := Kind{Ref: "ada.example.com/notes/note", Traits: []string{"ada.example.com/notes/titled"}}
+	// The repository's own kinds are `~` (decision record 0259).
+	note := Kind{Ref: "~/notes/note", Traits: []string{"~/notes/titled"}}
 	thread := Kind{Ref: vocabulary.LLMKind("thread"), Internal: true}
 	trigger := Kind{Ref: vocabulary.CoreKind("trigger"), Control: true}
 	token := Kind{Ref: vocabulary.CoreKind("token"), Control: true}
@@ -39,6 +40,8 @@ func TestARoleReachesAControlKindOnlyByNamingIt(t *testing.T) {
 		{Verbs: []Verb{Write}, Kinds: []string{vocabulary.CoreKind("trigger"), vocabulary.CoreKind("actor"), vocabulary.CoreKind("role"), "~/notes/*"}},
 		{Verbs: []Verb{Read}, Kinds: []string{TraitPattern("~/notes/titled"), vocabulary.CoreKind("*")}},
 	}}}, "ada.example.com")
+	// The full name is another spelling of `~` in a rule as everywhere.
+	fullName := NewRoles([]Role{{ID: "notes", Rules: []Rule{{Verbs: []Verb{Write}, Kinds: []string{"ada.example.com/notes/*"}}}}}, "ada.example.com")
 
 	cases := []struct {
 		name  string
@@ -64,7 +67,9 @@ func TestARoleReachesAControlKindOnlyByNamingIt(t *testing.T) {
 		{"a rule naming a role writes none", named, Write, role, false},
 		{"a home glob writes a note", named, Write, note, true},
 		{"a glob over core reads no token", named, Read, token, false},
-		{"a trait reads a note", named, Read, Kind{Ref: "ada.example.com/other/memo", Traits: []string{"ada.example.com/notes/titled"}}, true},
+		{"a trait reads a note", named, Read, Kind{Ref: "~/other/memo", Traits: []string{"~/notes/titled"}}, true},
+		{"a rule naming the repository's full name writes its own kind", fullName, Write, note, true},
+		{"a rule naming another authority writes no own kind", NewRoles([]Role{{ID: "other", Rules: []Rule{{Verbs: []Verb{Write}, Kinds: []string{"ada.example.com.evil/notes/*"}}}}}, "ada.example.com"), Write, note, false},
 		{"no roles reach nothing", NewRoles(nil, "ada.example.com"), Read, note, false},
 	}
 	for _, c := range cases {

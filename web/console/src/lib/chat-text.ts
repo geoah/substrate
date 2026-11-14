@@ -23,14 +23,15 @@ export type Block =
   | { type: "list"; ordered: boolean; items: Inline[][] }
   | { type: "code"; text: string }
 
-/** A record path in prose: a dotted authority, a package, a kind name and an
- * id. The lookbehind keeps a URL's path from reading as one. */
+/** A record path in prose: a dotted authority or `~`, the repository's own
+ * (decision record 0259), a package, a kind name and an id. The lookbehind
+ * keeps a URL's path from reading as one. */
 const RECORD_PATH =
-  /(?<![\w/.:@-])([a-z0-9-]+(?:\.[a-z0-9-]+)+)\/([a-z][a-z0-9]*)\/([a-z][a-z0-9]*)\/([A-Za-z0-9][A-Za-z0-9_~.-]*)/g
+  /(?<![\w/.:@-])(~|[a-z0-9-]+(?:\.[a-z0-9-]+)+)\/([a-z][a-z0-9]*)\/([a-z][a-z0-9]*)\/([A-Za-z0-9][A-Za-z0-9_~.-]*)/g
 
 /** The same grammar, anchored: a whole string that is one record path. */
 const ONE_PATH =
-  /^([a-z0-9-]+(?:\.[a-z0-9-]+)+)\/([a-z][a-z0-9]*)\/([a-z][a-z0-9]*)\/([A-Za-z0-9][A-Za-z0-9_~.-]*?)\.*$/
+  /^(~|[a-z0-9-]+(?:\.[a-z0-9-]+)+)\/([a-z][a-z0-9]*)\/([a-z][a-z0-9]*)\/([A-Za-z0-9][A-Za-z0-9_~.-]*?)\.*$/
 
 /** The whole string as one record path, or undefined. */
 export function recordPathOf(

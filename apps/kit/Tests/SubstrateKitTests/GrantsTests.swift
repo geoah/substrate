@@ -193,12 +193,18 @@ import FoundationNetworking
         }
     }
 
-    @Test func aTraitScopeCompletesTheHomeAuthorityInsideItsTrait() {
+    /// A token stores `~` for the repository's own kinds (decision record
+    /// 0259), and the repository's full name is another spelling of it.
+    @Test func aScopeFoldsTheRepositorysNameIntoTheLocalNamespace() {
         #expect(
-            ScopeWords.resolve("read:implements(~/tasks/done)", authority: "ada.example.com")
-                == "read:implements(ada.example.com/tasks/done)")
-        #expect(ScopeWords.resolve("write:implements(\(Self.lifecycle))", authority: "ada.example.com") == "write:implements(\(Self.lifecycle))")
-        #expect(ScopeWords.resolve("read:~/tasks/*", authority: "ada.example.com") == "read:ada.example.com/tasks/*")
+            ScopeWords.localize("read:implements(ada.example.com/tasks/done)", authority: "ada.example.com")
+                == "read:implements(~/tasks/done)")
+        #expect(ScopeWords.localize("read:implements(~/tasks/done)", authority: "ada.example.com") == "read:implements(~/tasks/done)")
+        #expect(ScopeWords.localize("write:implements(\(Self.lifecycle))", authority: "ada.example.com") == "write:implements(\(Self.lifecycle))")
+        #expect(ScopeWords.localize("read:ada.example.com/tasks/*", authority: "ada.example.com") == "read:~/tasks/*")
+        #expect(ScopeWords.localize("read:~/tasks/*", authority: "ada.example.com") == "read:~/tasks/*")
+        #expect(ScopeWords.localize("read:ada.example.com.uk/tasks/*", authority: "ada.example.com") == "read:ada.example.com.uk/tasks/*")
+        #expect(ScopeWords.localize("agents:ada.example.com/llm/*", authority: "ada.example.com") == "agents:~/llm/*")
         #expect(ScopeWords.trait(of: "implements(~/tasks/done)") == "~/tasks/done")
         #expect(ScopeWords.trait(of: "ada.example.com/tasks/*") == nil && ScopeWords.trait(of: "implements()") == nil)
     }
@@ -219,7 +225,7 @@ import FoundationNetworking
     @Test func fullIsSaidAsTheConsoleSaysIt() {
         #expect(ScopeWords.sentence("full") == ScopeWords.fullSentence)
         #expect(ScopeWords.fullSentence.hasPrefix("Do everything you can do when you sign in"))
-        #expect(ScopeWords.resolve("full", authority: "ada.example.com") == "full")
+        #expect(ScopeWords.localize("full", authority: "ada.example.com") == "full")
     }
 
     @Test func aServerThatCannotGrantFullIsTooOld() throws {

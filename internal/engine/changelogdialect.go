@@ -66,7 +66,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 5
+const maxChangelogDialect = 6
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay.
 // No dialect is on the wire: it is exported for the tests outside this package

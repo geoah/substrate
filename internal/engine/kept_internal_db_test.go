@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // keptSecrets is, for each kept directory, the secrets its fixture driver
@@ -81,8 +83,10 @@ func checkKeptSecrets(t *testing.T, kept string, secrets map[string]map[string]s
 	}
 	ds := d.(*dataset)
 	for path, properties := range secrets {
+		// The release sealed them under its own name; the conversion moved
+		// its own kinds to `~` and sealed them again there (decision 0259).
 		i := strings.LastIndexByte(path, '/')
-		kind, id := path[:i], path[i+1:]
+		kind, id := vocabulary.LocalizeRef(path[:i], fixture.Repository), path[i+1:]
 		for property, want := range properties {
 			var stored string
 			if err := ds.db.QueryRowContext(ctx, `SELECT coalesce(props->>$1, '') FROM records WHERE kind = $2 AND id = $3`,

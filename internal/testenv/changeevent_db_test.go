@@ -22,7 +22,11 @@ import (
 const (
 	eventAuthority = "changeevent.example.com"
 	eventRef       = eventAuthority + "/feed"
-	itemsPath      = "/api/v1/" + eventRef + "/item"
+	// eventLocal is the same package as every surface answers it, in the
+	// repository's own namespace (decision record 0259): the test writes and
+	// filters under the full name, which is another spelling of it.
+	eventLocal = "~/feed"
+	itemsPath  = "/api/v1/" + eventRef + "/item"
 	// itemID is the one item the test writes: a minted-shape id, the one a
 	// client may create a record of an installed kind under (decision 0228).
 	itemID = "00000000000000000000000001"
@@ -97,7 +101,7 @@ func wantEvent(t *testing.T, surface string, row eventRow, wantID string, wantVe
 		t.Fatalf("%s: seq %d affected = %+v, want one record", surface, row.Seq, row.Affected)
 	}
 	a := row.Affected[0]
-	if a.Kind != eventRef+"/item" || a.ID != wantID || a.Version != wantVersion || a.Deleted != wantDeleted {
+	if a.Kind != eventLocal+"/item" || a.ID != wantID || a.Version != wantVersion || a.Deleted != wantDeleted {
 		t.Fatalf("%s: seq %d affected = %+v, want %s at version %d (deleted=%v)", surface, row.Seq, a, wantID, wantVersion, wantDeleted)
 	}
 }
@@ -143,7 +147,7 @@ func TestEveryChangeSurfaceServesTheEventAndNoEffects(t *testing.T) {
 		t.Helper()
 		var mine []eventRow
 		for _, r := range rows {
-			if strings.HasSuffix(r.RecordID, itemID) && len(r.Affected) > 0 && r.Affected[0].Kind == eventRef+"/item" {
+			if strings.HasSuffix(r.RecordID, itemID) && len(r.Affected) > 0 && r.Affected[0].Kind == eventLocal+"/item" {
 				mine = append(mine, r)
 			}
 		}

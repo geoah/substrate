@@ -18,6 +18,10 @@ func (unitsRepository) Kinds(context.Context) ([]substrate.KindInfo, error) {
 	}, nil
 }
 
+func (unitsRepository) Repository() substrate.RepositoryInfo {
+	return substrate.RepositoryInfo{Authority: "x.example.com"}
+}
+
 func (unitsRepository) Units(context.Context) (substrate.UnitTable, error) {
 	return substrate.UnitTable{}, nil
 }

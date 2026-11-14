@@ -112,19 +112,29 @@ func authorizeBySource(actor substrate.Actor, source string, authority bool, pkg
 // left to the source rules (authorizeBySource). held counts a stored row the
 // live registry does not hold because it is quarantined, so the owner can
 // still repair a package of another authority the repository already has.
-func authorizeNewPackage(actor substrate.Actor, held bool, own, pkg string) error {
+//
+// The repository's own authority is `~`, its local namespace (decision record
+// 0259): a document that spelled the repository's name was folded into it
+// before it got here (localizeDocuments), so a new package of a token's is
+// one under `~`. An authority row is a publisher's, and the one row a token
+// may write is the repository's own, by its name: a closure rehomed onto the
+// name by hand (`substratectl apply --as-mine`) carries it.
+func authorizeNewPackage(actor substrate.Actor, held bool, name, pkg string) error {
 	if held || isSubstratePath(actor) {
 		return nil
 	}
 	authority, _ := vocabulary.SplitPackageRef(pkg)
 	if authority == "" {
-		authority = pkg // an authority row declares itself
+		if pkg == name {
+			return nil
+		}
+		authority = pkg
 	}
-	if authority == own {
+	if authority == vocabulary.Local {
 		return nil
 	}
-	return fmt.Errorf("%w: %s is not this repository's authority, %s: a token declares new packages only under its own authority; a shipped provider or catalogue arrives through `substratectl add %s` (POST /api/v1/catalog/{id}/add), and your own kinds go under %s",
-		substrate.ErrForbidden, authority, own, pkg, own)
+	return fmt.Errorf("%w: %s is not this repository's: a token declares new packages only under %s, this repository's own namespace (%s is another spelling of it); a shipped provider or catalogue arrives through `substratectl add %s` (POST /api/v1/catalog/{id}/add)",
+		substrate.ErrForbidden, authority, vocabulary.Local, name, pkg)
 }
 
 // isSubstratePath reports whether an actor is one of the substrate's own
@@ -308,6 +318,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// hold the identical registry.
 	ds.mu.Lock()
 	ds.reg = vocabulary.NewRegistry()
+	ds.reg.SetHome(ds.info.Authority)
 	ds.mu.Unlock()
 	if err := ds.loadStoredVocabulary(ctx); err != nil {
 		return err

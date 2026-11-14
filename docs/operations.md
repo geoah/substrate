@@ -194,7 +194,7 @@ boot.
 | `SUBSTRATE_INSECURE_AUTHORITY_DOCS` | unset | **For testing an unpublished authority document.** A comma-separated list of `authority=path`: each named authority's document is read from the file in place of its `_substrate` TXT record when the server decides whether an app is verified (see [name your publisher](apps.md#name-your-publisher)). Nothing limits it to development: whoever writes the file decides which apps read as that authority's. The approval page says a file on this server verified the publisher, not DNS, and the token records `appAuthorityFromFile`. Boots with a warning naming each authority, and refuses to boot when a file cannot be read. |
 | `SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES` | `false`                | **Local development only.** Lets a token create a package under any authority, not only its repository's own ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). The provider end-to-end suite and `mise run test:e2e` set it, because they apply kinds under fixed authorities and shipped provider files rewired at a local mock. Boots with a warning. Never set it where the substrate is reachable: any token may then declare packages under names its repository does not own. |
 | `SUBSTRATE_METRICS`            | `false`                                | Serves the Prometheus exposition at `GET /metrics`, unauthenticated and DB-free like `/healthz`: `substrate_http_request_duration_seconds` (by chi route pattern, method and status class), `substrate_http_requests_in_flight`, the pools' `go_sql_*` stats (`db_name` is `admin`, `maint` or `repository:<authority>`; a repository's series count only the connections it has checked out of the shared pool and its waits at its own cap of half the pool, never the shared pool's state), the shared repository pool's own `substrate_db_pool_*` series under `pool="repositories"` (cap, open, acquired and idle connections, acquisitions, waits and wait time: acquired at the cap with waits climbing is an exhausted pool), `substrate_trigger_pass_seconds`, `substrate_trigger_deliveries_total{trigger}`, the webhook spool's `substrate_webhook_spool_entries`, `substrate_webhook_spool_bytes` and `substrate_webhook_spool_oldest_age_seconds` gauges and its `substrate_webhook_spool_drain_failures_total` and `substrate_webhook_spool_refusals_total` counters (all by `repository`: a growing age or a rising failure count is a drain that cannot record, and refusals are the door answering `503`), the archive's `substrate_archive_pending_entries`, `substrate_archive_delay_seconds`, `substrate_archive_last_pass_timestamp_seconds`, `substrate_archive_failed_passes`, `substrate_archive_missing_blobs`, `substrate_archive_pending_blobs` and `substrate_archive_stopped` gauges (by `repository`; see [the archive](#the-archive)), `substrate_repositories_set_aside` (the repositories the start [set aside](#a-repository-set-aside-at-start-up); above zero is one waiting on its operator), and the Go runtime. The usage series say what each repository does: `substrate_changes_total{repository,kind,op,actor}` (every committed changelog entry; `actor` is the type of the actor record that wrote it, `person`, `app`, `function`, `agent`, `package`, `system` or `other`), `substrate_function_invocations_total{repository,function,mode,outcome}` and `substrate_function_invocation_seconds{function}`, `substrate_agent_runs_total{repository,agent,mode,status}`, `substrate_llm_tokens_total{repository,agent,provider,model,type}`, `substrate_llm_cost_usd_total{repository,agent,provider,model,payer}` (`payer` is `operator` or `owner`), `substrate_auth_events_total{repository,event}` (`registered`, `login`, `login_failed`, `repository_deleted`), `substrate_mcp_tool_calls_total{repository,tool,outcome}`, and three gauges read from each open repository at most every five minutes, in the background and only while something scrapes: `substrate_repository_records{repository,kind}` (live records), `substrate_repository_package_kinds{repository,package,origin}` (kinds per declared package; `origin` is `builtin`, `published`, `sample`, named by the shipped sample it came from, or `own`) and `substrate_repository_first_change_timestamp_seconds{repository}`. `SUBSTRATE_METRICS_ANONYMIZE` decides how they name things. The instruments record either way; this only opens the door. **Keep the path off the ingress**: scrape the pod on its own network and have the proxy in front of it refuse `/metrics`. |
-| `SUBSTRATE_METRICS_ANONYMIZE`  | `true`                                 | Hashes the names the usage series carry: the repository becomes `repo:<hash>`, a kind, package, function or agent under the repository's own authority `own:<hash>` of what follows the authority (so one sample imported by two people reads as one name), any other authority's `ext:<hash>`, and a provider row or a model the owner named `own:<hash>`. What the substrate ships (`substrate.reamde.dev` and its subdomains, the seeded provider rows and the models their shipped `llm/model` records name) stays in clear, those names being the features, and so does a model an operator entry serves. The hash is keyed by `SUBSTRATE_CREDENTIAL_KEY`, so it is stable across restarts and unreadable to a dashboard viewer without the key. `false` labels everything with its name, for a box whose operator should read what each person does. Either way a repository puts at most 1000 distinct names of its own on the usage series, and every name past that reads `overflow`; deleting a repository drops its usage series but its account events. The operational series above keep the repository's name either way, since acting on them needs it. |
+| `SUBSTRATE_METRICS_ANONYMIZE`  | `true`                                 | Hashes the names the usage series carry: the repository becomes `repo:<hash>`, a kind, package, function or agent in the repository's local namespace `own:<hash>` of what follows `~/` (so one sample imported by two people reads as one name), any other authority's `ext:<hash>`, and a provider row or a model the owner named `own:<hash>`. What the substrate ships (`substrate.reamde.dev` and its subdomains, the seeded provider rows and the models their shipped `llm/model` records name) stays in clear, those names being the features, and so does a model an operator entry serves. The hash is keyed by `SUBSTRATE_CREDENTIAL_KEY`, so it is stable across restarts and unreadable to a dashboard viewer without the key. `false` labels everything with its name, for a box whose operator should read what each person does. Either way a repository puts at most 1000 distinct names of its own on the usage series, and every name past that reads `overflow`; deleting a repository drops its usage series but its account events. The operational series above keep the repository's name either way, since acting on them needs it. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. With a callback URL set and this unset, the server mints a random key per boot and warns: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers. Unset, the OAuth facility is off and no flow can start. |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
@@ -603,7 +603,9 @@ server stopped:
   command runs, and nothing changes. Run again, it records the later
   choice in place of the earlier; `--keep-database` after it ends the take.
 - `archive import <repository id> <archive id>` restores a repository the
-  database does not hold from one archive, past a deletion mark.
+  database does not hold from one archive, past a deletion mark. `--name`
+  restores it under another name than its manifest gives
+  ([restore under another name](#restore-under-another-name)).
 
 **The first copy of a long history, and a restart.** An object no manifest
 selected is only ever deleted after a restart (rule 1), so a process stopped
@@ -676,7 +678,7 @@ file the server behaves as the section above says. With it:
   `apiKey` secret for that package is empty, and none of the repository's
   settings beside it, so a `baseUrl` the person wrote never reaches a call the
   operator pays for. The key never becomes a record. A copy of the package
-  under the repository's own authority, such as an earlier copy of the
+  in the repository's local namespace, `~`, such as an earlier copy of the
   Firecrawl sample, never gets it
   ([decision 0234](decisions/0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md)).
 - Every operator-paid call first reserves its worst-case cost against the
@@ -1574,7 +1576,7 @@ names:
 | `take` | a take its operator recorded (`archive resolve --take-archive`) failed once it began to remove the repository's rows and files | repair what the error names, then restart: the choice is still recorded, and the next start carries the take on from the copy staged for it. A take whose staged copy the restore would refuse sets nothing aside: the repository stays whole and served, the choice recorded, and the log names what the copy failed |
 | `boot check` | its directory, which the start could not read, or its rows: a 0.x directory that disagrees with them at a seq, an import a start began whose archive cannot be read now or holds a line whose `sum` does not verify, a history conversion step that refuses a line | put the archive (or the 0.x directory) back, or restore it from a copy taken before the damage. A row the comparison or the conversion refuses is named by its seq, and the repository's 0.x directory, where it had one, is kept whole until its history converts: its `changelog/` segment files hold that seq's line, one JSON line with its `sum`. Write the row's columns in the `changelog` table back from that line, or restore the database from the copy taken before the upgrade, check the table with `substratectl --dsn … repository verify --recanonicalize`, and restart: the next start converts the history and only then removes the directory's |
 | `import` | a 0.x directory with no row: a data key this host's key does not open and the operator did not list, a manifest that does not read, a newer dialect, a sealed file the key does not open, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` ([restore without the credential key](#restore-without-the-credential-key)), restore it, or move it out of the data root. Like the keying's, it only claims its name |
-| `restore` | an archive with no row, or the copy staged for a take whose rows the take removed: a data key this host's key does not open and the operator did not list, a sealed value the key does not open, a newer dialect, a piece or a line that does not verify, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, restore `repositories/<id>/` in the archive from a copy, or move it out of the archive. It only claims its name, under the name its newest manifest gives |
+| `restore` | an archive with no row, or the copy staged for a take whose rows the take removed: a data key this host's key does not open and the operator did not list, a sealed value the key does not open, a newer dialect, a piece or a line that does not verify, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, restore `repositories/<id>/` in the archive from a copy, or move it out of the archive. For a name another repository holds, delete that repository, or import this one under another name with `substratectl archive import <id> <archive> --name <name>` ([restore under another name](#restore-under-another-name)), which the cause names. It only claims its name, under the name its newest manifest gives |
 | `archive store` | nothing of the repository: the archive's store did not answer (refused the connection, timed out, answered a service error) while the start read the repository's copy, after it had written part of it (a restore, or an import a start began) | nothing to repair in the repository: once the store answers, a restart finishes it from the same copy |
 | `people` | its people, after the boot check: the index of who may sign in to it, derived from its person actors, could not be written, or its sign-in record from before identities could not become an identity (a sign-in record that does not open is not this: that repository is served and refuses to open until `user reset` names it) | the error names what failed; a restart runs the pass again |
 
@@ -2365,6 +2367,63 @@ a restore; it is for a row re-pointed at another model.
 **Encrypt the copy.** The changelog and the blobs are plaintext in the
 archive, on the backup host and in the dump alike. The substrate does not
 encrypt the storage under it; do that yourself, or use a bucket that does.
+
+### Restore under another name
+
+A repository's own kinds live in its local namespace, `~`
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)),
+so no record of its own spells its name: the name is in its archive's
+manifest, beside the id the data key and the sealed store are bound to, and
+in the two records whose job is to record it, the repository's own and its
+first person's actor record. `substratectl archive import <id> <archive>
+--name <name>` restores a repository under another name than its manifest
+gives, and every record, reference, declaration and token scope reads as it
+did. The id does not change. At its first open the two records take the new
+name, the old name's domain verification is cleared, and a title a template
+rendered from the old name is rendered again. Its own hands are
+`bundle:~:<package>` and the like, so their actor records keep their ids,
+and the new archive's manifest carries the new name.
+
+**The people come with it under their own names.** A sign-in names a person,
+whose sign-in name is their identity's and not the repository's
+([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)),
+so each person the manifest carries is restored under the name they signed
+in with, signs in with it and the same password, and picks the repository by
+its new name. A person whose sign-in name another person on this server
+already holds, or whose sealed sign-in this host's key does not open, is left
+out, and the log says so; `substratectl user reset <repository id> --identity
+<another name>` gives them back. Until then every token that acts for them,
+an app's they approved included, is refused at the check that its person may
+open the repository. A webhook address the server gave out names the
+repository's id and keeps working. One that names the old name reaches
+whichever repository holds that name now, which is why the archive was set
+aside: never this one.
+
+It is the way in for an archive a server
+[set aside](#a-repository-set-aside-at-start-up) at the `restore` stage
+because another repository there holds its name: the warning the start logs
+names the command with both ids. Extract the export into the archive the
+server reads, start the server (it serves the others and sets this one
+aside), stop it, import, and start it again:
+
+```
+tar -x -C "${SUBSTRATE_ARCHIVE:-$SUBSTRATE_DATA_ROOT/archive}" -f ada.example.com-1234.tar
+substratectl --dsn "$DATABASE_URL" archive import rnd-0vrkvsgbs6bnz2sjy4196kccck <archive> --name bo.example.com
+```
+
+The archive's id is the directory under `repositories/<id>/` in the tar. The
+import refuses what a restore refuses, under the new name: a name a
+repository cannot take, a database that holds that name or this repository's
+id, an archive that does not read, a data key this host's key does not open
+unless `SUBSTRATE_IMPORT_WITHOUT_SECRETS` lists the new name or the id (not
+the old name, which is another repository's here;
+[restore without the credential key](#restore-without-the-credential-key)).
+It also refuses a name another set-aside repository claims, as a
+registration does, and an archive a release before the local namespace
+wrote, whose history spells the old name in its lines: import that one under
+its own name where the name is free, and the archive the server writes next
+under another. Like every command that opens as the writer, it refuses beside
+a running server.
 
 ### A rotated or deleted secret stays in older backups
 

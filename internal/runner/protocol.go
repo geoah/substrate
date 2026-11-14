@@ -187,7 +187,10 @@ type Continuation struct {
 // itself: the registry lives on the other side of this interface, and without
 // it a reads capability declared in one spelling would refuse a body that asks
 // in the other. An unknown name comes back unchanged, so it fails the
-// allowlist exactly as an undeclared kind does.
+// allowlist exactly as an undeclared kind does. ResolveCallable is the same
+// for a function or agent identity: the call allowlist is written in the
+// identity the registry keys, and a body may name a callable in any spelling
+// the registry accepts (the repository's full name for `~`).
 // Log takes one line of the body's log as the runner reads it, while the body
 // is still running, so whatever it records survives a body that never
 // returns.
@@ -199,6 +202,7 @@ type Backend interface {
 	Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
+	ResolveCallable(name string) string
 	Log(line string)
 	// Units is the repository's unit graph the unit host calls convert
 	// through (decision 0186).

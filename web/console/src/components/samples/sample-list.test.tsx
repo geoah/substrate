@@ -43,6 +43,9 @@ import { collectionSamples } from "./sample-picks"
 import { SampleList } from "./sample-list"
 
 const HOME = "ada.example.com"
+/** Where a sample lands: the repository's own namespace, whatever its name
+ * (decision record 0259). */
+const LOCAL = "~"
 const CATALOG_PATH = "/api/v1/catalog"
 
 function tasks(authority: string, installed: boolean) {
@@ -73,9 +76,9 @@ const OTHER = tasks("a.example.com", false)
 const MINE = tasks("z.example.com", true)
 
 const COPY: BundleStatus = {
-  id: `${HOME}/tasks`,
+  id: `${LOCAL}/tasks`,
   name: "tasks",
-  authority: HOME,
+  authority: LOCAL,
   package: "tasks",
   installed: true,
   enabled: true,
@@ -103,7 +106,7 @@ function serve(catalog: CatalogItem[]) {
     if (url.pathname.startsWith(`${CATALOG_PATH}/`)) {
       const id = decodeURIComponent(url.pathname.split("/")[4])
       if (method === "POST")
-        return json({ ...COPY, origin: id, id: `${HOME}/tasks` })
+        return json({ ...COPY, origin: id, id: `${LOCAL}/tasks` })
       return json(catalog.find((c) => c.id === id))
     }
     const filter = url.searchParams.get("filter") ?? ""
@@ -184,14 +187,14 @@ describe("SampleList", () => {
       expect(mine).not.toBe(other)
       expect(screen.getAllByText("Tasks")).toHaveLength(2)
       for (const row of [mine, other]) {
-        expect(within(row).getByText(`${HOME}/tasks/task`)).toBeTruthy()
+        expect(within(row).getByText(`${LOCAL}/tasks/task`)).toBeTruthy()
       }
       // Added links to the copy's package page, where it is updated and
       // removed (decision record 0238).
       const added = within(mine).getByText("Added").closest("a")!
       expect(added.dataset.to).toBe("/data/$authority/$pkg")
       expect(JSON.parse(added.dataset.params!)).toEqual({
-        authority: HOME,
+        authority: LOCAL,
         pkg: "tasks",
       })
       expect(within(mine).queryByRole("button")).toBeNull()

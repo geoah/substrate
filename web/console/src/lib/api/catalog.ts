@@ -7,7 +7,7 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { rootPath, request, seg } from "./http"
+import { LOCAL_AUTHORITY, rootPath, request, seg } from "./http"
 import type {
   BundleStatus,
   AddonInstallResult,
@@ -54,37 +54,35 @@ export const shippedUpgradesQueryOptions = queryOptions({
   staleTime: 60_000,
 })
 
-/** The id a catalog entry has in a repository whose own authority is `home`:
- * a provider keeps the id it publishes, a SAMPLE takes this repository's
- * authority with the sample's package (decision records 0047 and 0048). This
- * is the id the bundle STATUS carries once it lands. Two entries can share
- * it, so it finds a stored bundle's shipped closure only for a copy with no
- * origin stamp (heldCopyOf). */
+/** The id a catalog entry has once it lands: a provider keeps the id it
+ * publishes, a SAMPLE is copied into the repository's local namespace as
+ * `~/<package>`, the same in every repository (decision records 0048 and
+ * 0259). This is the id the bundle STATUS carries once it lands. Two entries
+ * can share it, so it finds a stored bundle's shipped closure only for a
+ * copy with no origin stamp (heldCopyOf). */
 export function landedId(
-  item: Pick<CatalogItem, "id" | "keptBy" | "package">,
-  home: string
+  item: Pick<CatalogItem, "id" | "keptBy" | "package">
 ): string {
-  if (item.keptBy !== "repository" || !home) return item.id
-  return `${home}/${item.package}`
+  if (item.keptBy !== "repository") return item.id
+  return `${LOCAL_AUTHORITY}/${item.package}`
 }
 
 /** The bundle this repository holds that IS catalog entry `item`, or
  * undefined: the server's rule (api `installedSet.copyOf`), so a row and the
  * entry's `installed` flag agree. A copy stamped with an origin belongs to the
  * entry it names and to no other, because two publishers' samples of one
- * package word both land at `<home>/<package>` and the id alone would hand
- * one copy to both. Only an unstamped copy (a provider, a sample installed
+ * package word both land at `~/<package>` and the id alone would hand one
+ * copy to both. Only an unstamped copy (a provider, a sample installed
  * verbatim, or one copied before the stamp existed) is matched by id: the
  * landed id first, then the shipped one. */
 export function heldCopyOf(
   item: Pick<CatalogItem, "id" | "keptBy" | "package">,
-  statuses: readonly BundleStatus[],
-  home: string
+  statuses: readonly BundleStatus[]
 ): BundleStatus | undefined {
   const stamped = statuses.find((s) => s.origin === item.id)
   if (stamped) return stamped
   const at = (id: string) => statuses.find((s) => s.id === id)
-  const copy = at(landedId(item, home)) ?? at(item.id)
+  const copy = at(landedId(item)) ?? at(item.id)
   return copy?.origin ? undefined : copy
 }
 
@@ -101,7 +99,30 @@ const NAME_CHARACTER = /[A-Za-z0-9._-]/
  * repository will not have. A mention inside a longer name
  * (`notsamples.example.com`) is left alone, which is the server's rule too. */
 export function rehomeAuthority(s: string, from: string, to: string): string {
-  if (!from || !to || !s.includes(from)) return s
+  if (!to) return s
+  return rewriteMentions(s, from, () => to)
+}
+
+/** A sample's mentions of its own authority `from` as the copy lands them
+ * (`vocabulary.LocalizeText`): a mention followed by "/" names a kind, a
+ * package or a record path and moves into `~`, except after "//", where it
+ * is a URL's host. Any other mention is an actor text or prose, which the
+ * copy spells with the repository's name; no identity a preview rewrites
+ * holds one, so it is left as shipped. */
+export function localizeAuthority(s: string, from: string): string {
+  return rewriteMentions(s, from, (at, end) =>
+    s[end] === "/" && !s.slice(0, at).endsWith("//") ? LOCAL_AUTHORITY : from
+  )
+}
+
+/** Every whole-name mention of `from` in `s`, replaced by what `to` answers
+ * for the mention at `at` up to `end`. */
+function rewriteMentions(
+  s: string,
+  from: string,
+  to: (at: number, end: number) => string
+): string {
+  if (!from || !s.includes(from)) return s
   let out = ""
   let i = 0
   for (;;) {
@@ -115,24 +136,24 @@ export function rehomeAuthority(s: string, from: string, to: string): string {
     const after = end < s.length ? s[end] : ""
     const whole =
       !NAME_CHARACTER.test(before || " ") && !NAME_CHARACTER.test(after || " ")
-    out += s.slice(i, at) + (whole ? to : from)
+    out += s.slice(i, at) + (whole ? to(at, end) : from)
     i = end
   }
 }
 
 /** One catalog entry as it lands HERE: a sample's authority, closure
- * identities, declared input kinds and `requires:` all carry this repository's
- * authority, because that is what adding it writes and what the registry will
- * hold. A preview naming the placeholder would link nowhere and gate on a
- * package the server never looks for. `id` is NOT rewritten: it addresses the
- * shipped closure, which is what the add route is called with. */
-export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
-  if (item.keptBy !== "repository" || !home) return item
-  const rehome = (s: string) => rehomeAuthority(s, item.authority, home)
+ * identities, declared input kinds and `requires:` all move into the local
+ * namespace `~`, because that is what adding it writes and what the registry
+ * will hold. A preview naming the placeholder would link nowhere and gate on
+ * a package the server never looks for. `id` is NOT rewritten: it addresses
+ * the shipped closure, which is what the add route is called with. */
+export function landedCatalog(item: CatalogItem): CatalogItem {
+  if (item.keptBy !== "repository") return item
+  const rehome = (s: string) => localizeAuthority(s, item.authority)
   const closure = item.closure
   return {
     ...item,
-    authority: home,
+    authority: LOCAL_AUTHORITY,
     requires: item.requires?.map(rehome),
     requiresAtLeast: item.requiresAtLeast
       ? Object.fromEntries(
@@ -143,8 +164,8 @@ export function landedCatalog(item: CatalogItem, home: string): CatalogItem {
         )
       : undefined,
     // A suggested mapping's id and TARGET are this package's, so both land
-    // under this repository's authority; `from` is the provider's own kind
-    // and is left exactly as published (decision record 0049).
+    // in the local namespace; `from` is the provider's own kind and is left
+    // exactly as published (decision record 0049).
     suggestedMappings: item.suggestedMappings?.map((m) => ({
       ...m,
       id: rehome(m.id),
@@ -215,13 +236,13 @@ export type BundleInstallResult = BundleStatus & {
 /** Add one catalog package to this repository: `POST /catalog/{id}/add`.
  * Who keeps it decides where it lands (decision record 0258): a package its
  * publisher keeps lands under the authority that publishes it, and a SAMPLE
- * is copied under this repository's own authority first, so the status
- * carries the LANDED id (`<your authority>/<package>`), not the one this call
- * names. Owner-gated and idempotent: adding again is the package's own
- * upgrade, and one over a copy this repository edited, or whose plan is
- * lossy, needs the confirmation its preview handed out (decision records
- * 0067 and 0070). The id is a package reference and carries a `/`, so it is
- * `%2F`-encoded as one path segment. */
+ * is copied into this repository's local namespace first, so the status
+ * carries the LANDED id (`~/<package>`), not the one this call names.
+ * Owner-gated and idempotent: adding again is the package's own upgrade, and
+ * one over a copy this repository edited, or whose plan is lossy, needs the
+ * confirmation its preview handed out (decision records 0067 and 0070). The
+ * id is a package reference and carries a `/`, so it is `%2F`-encoded as one
+ * path segment. */
 export function addBundle(
   id: string,
   body?: BundleInstallRequest

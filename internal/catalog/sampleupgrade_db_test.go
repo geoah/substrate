@@ -54,7 +54,7 @@ func TestSampleUpgradePreviewReadsTheOriginStamp(t *testing.T) {
 	ctx := context.Background()
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
 	b, _ := c.ByID(tasksSampleID)
-	landed := b.LandedID(homeAuthority)
+	landed := b.LandedID()
 	held := heldStatus(t, ds, landed)
 
 	// A pristine copy at the shipped version: the preview runs and has
@@ -102,8 +102,8 @@ func TestSampleUpgradePreviewReadsTheOriginStamp(t *testing.T) {
 			movedKinds[ch.ID] = true
 		}
 	}
-	if !movedKinds[homeAuthority+"/tasks/task"] {
-		t.Errorf("the moved kind is not named under this repository's authority: %+v", up.Changes)
+	if !movedKinds["~/tasks/task"] {
+		t.Errorf("the moved kind is not named in the local namespace: %+v", up.Changes)
 	}
 
 	// Taking it is the import door, unconfirmed, and afterwards the copy
@@ -128,7 +128,7 @@ func TestSampleReimportOverAnEditedCopyNeedsTheConfirmationItPreviewed(t *testin
 	ctx := context.Background()
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
 	b, _ := c.ByID(tasksSampleID)
-	landed := b.LandedID(homeAuthority)
+	landed := b.LandedID()
 	editKind(t, ds, homeAuthority+"/tasks/task", "mine")
 	held := heldStatus(t, ds, landed)
 	if !held.Modified {
@@ -233,7 +233,7 @@ func TestSampleUpgradeIsBlockedByARequiresFloorTheRepositoryDoesNotMeet(t *testi
 	ctx := context.Background()
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
 	b, _ := c.ByID(tasksSampleID)
-	held := heldStatus(t, ds, b.LandedID(homeAuthority))
+	held := heldStatus(t, ds, b.LandedID())
 
 	// Binary N+1's tasks declares against a people the repository does not
 	// hold yet.
@@ -260,7 +260,7 @@ func TestSampleUpgradeIsBlockedByARequiresFloorTheRepositoryDoesNotMeet(t *testi
 		t.Fatal("a floor the repository does not meet blocks nothing")
 	}
 	line := strings.Join(up.Blockers, "\n")
-	for _, want := range []string{"requiresAtLeast", homeAuthority + "/people", "version 99 or later", "holds version"} {
+	for _, want := range []string{"requiresAtLeast", "~/people", "version 99 or later", "holds version"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("the blocker does not say %q:\n%s", want, line)
 		}

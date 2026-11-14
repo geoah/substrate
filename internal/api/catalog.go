@@ -24,9 +24,8 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			writeSubstrateError(w, r, err)
 			return
 		}
-		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b, home)))
+			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b)))
 		}
 		var accounts map[string]bool
 		for _, id := range installed.ids {
@@ -60,17 +59,6 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
 }
 
-// homeAuthority is the authority this repository owns, which is where a SAMPLE lands
-// (decision records 0046 and 0048). A dataset that names none answers "", and
-// a sample then reads as its shipped id, which is never installed.
-func homeAuthority(ctx context.Context) string {
-	ds := DatasetFrom(ctx)
-	if ds == nil {
-		return ""
-	}
-	return ds.Repository().Authority
-}
-
 // getCatalogItem is one shipped bundle's detail — the closure it installs
 // (types/functions/agents/triggers) so the console can preview, plus the
 // installed flag and the upgrade preview.
@@ -89,7 +77,7 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r, b, installed.copyOf(b, homeAuthority(r.Context()))))
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r, b, installed.copyOf(b)))
 }
 
 // installedSet is every bundle installed in this repository, read once per
@@ -103,18 +91,18 @@ type installedSet struct {
 
 // copyOf is the installed bundle that IS catalog entry b in this repository,
 // or nil. A copy that carries an origin is matched on it: two authorities may
-// each publish a sample of one package word, and both land under the
-// repository's authority as `<home>/<package>`, so the landed id alone would
+// each publish a sample of one package word, and both land in the
+// repository's local namespace as `~/<package>`, so the landed id alone would
 // read both entries as installed after either import and hand both the one
 // copy's provenance. Only a copy stamped before the origin existed, and a
 // provider (which is never stamped), fall back to the id lookup HeldID does.
-func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleStatus {
+func (s installedSet) copyOf(b *catalog.Bundle) *substrate.BundleStatus {
 	for _, id := range s.ids {
 		if st := s.byID[id]; st.Origin == b.ID {
 			return st
 		}
 	}
-	st := s.byID[b.HeldID(s.held, home)]
+	st := s.byID[b.HeldID(s.held)]
 	if st == nil || st.Origin != "" {
 		return nil
 	}
@@ -245,7 +233,7 @@ func (h *handler) postCatalogAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	landed := b.ID
 	if copied {
-		landed = b.LandedID(homeAuthority(ctx))
+		landed = b.LandedID()
 	}
 	// The response is the landed bundle's computed status, the one schema
 	// this endpoint promises.

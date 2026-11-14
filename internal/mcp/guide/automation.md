@@ -4,7 +4,7 @@ Declaring a Python function, running it with `call`, binding it to records, a sc
 
 ## Functions
 
-- A function is a declaration record of `substrate.reamde.dev/core/function`, id `<authority>/<package>/<name>`, declared with `apply` under the owner's authority (the row IS the declaration: no `data.properties`). `runtime` is `python` (code in `source`) or `host` (built into the substrate, core's own; you cannot declare one).
+- A function is a declaration record of `substrate.reamde.dev/core/function`, id `<authority>/<package>/<name>`, declared with `apply` under `~` (the row IS the declaration: no `data.properties`). `runtime` is `python` (code in `source`) or `host` (built into the substrate, core's own; you cannot declare one).
 - Required: `authority`, `description` (the tool card an agent sees), `runtime`; `source` on python. Optional: `package`, `arguments [{name, type, required?, repeated?, description?, values?}]` (`type`: `string`, `int`, `float`, `bool`, `enum`, `json`), `returns` (same shape), `timeout` (ISO 8601, default `PT5S`, capped at 60 s), `execution` (`foreground` | `background`), `effect` (`read`, `write`, `external`, `irreversible`), `confirmation: always` (every write it returns is held as a change request), `offer {agents: true, name?}` (offers it to agents whose `toolsFrom` matches), `stream` (the sync stream it keeps).
 - `permissions`: `reads {kinds: [kind or glob], budgets {calls, rows}}`, `writes [kind or glob]`, `call [function refs]`, `agents [agent refs]`, `network [host, host:port or CIDR]` (no entry: no sockets; any entry: the public internet, never the deployment's own), `mutations [merge, split]`. A grant left out is refused at run time.
 - The body is `main(input, host)` returning `{"output": …}`. `input["mode"]` is `record`, `schedule`, `webhook`, `manual` or `call`. A delivery carries `input["envelope"]`: `change {seq, op, kind, id, actor, changed}`, `record` (current state, `null` after a delete), `repository {authority}`; a schedule or webhook fire carries `fire {id, at}` instead, a webhook adds `request`. A direct `call` and a schedule's `arguments` arrive as `input["args"]`; `input["config"]` holds the bundle's `settings` and `inputs`.
@@ -13,15 +13,15 @@ Declaring a Python function, running it with `call`, binding it to records, a sc
 
 ```json
 {"kind": "substrate.reamde.dev/core/function",
- "metadata": {"id": "ada.example.com/garden/markwatered"},
+ "metadata": {"id": "~/garden/markwatered"},
  "data": {
-  "authority": "ada.example.com", "package": "garden",
+  "authority": "~", "package": "garden",
   "description": "Stamp a plant as watered. Call with {plant, at}.",
   "runtime": "python",
   "arguments": [{"name": "plant", "type": "string", "required": true, "description": "the plant's id"},
                 {"name": "at", "type": "string", "required": true, "description": "when, RFC 3339"}],
-  "permissions": {"reads": {"kinds": ["ada.example.com/garden/plant"]}, "writes": ["ada.example.com/garden/plant"]},
-  "source": "def main(input, host):\n    args = input[\"args\"]\n    plant = host.records.get(\"ada.example.com/garden/plant\", args[\"plant\"])\n    if not plant:\n        return {\"output\": {\"found\": False}}\n    host.effects.patch(\"ada.example.com/garden/plant\", args[\"plant\"],\n        properties={\"lastWateredAt\": args[\"at\"]}, if_version=host.version(plant))\n    return {\"output\": {\"plant\": args[\"plant\"]}}\n"}}
+  "permissions": {"reads": {"kinds": ["~/garden/plant"]}, "writes": ["~/garden/plant"]},
+  "source": "def main(input, host):\n    args = input[\"args\"]\n    plant = host.records.get(\"~/garden/plant\", args[\"plant\"])\n    if not plant:\n        return {\"output\": {\"found\": False}}\n    host.effects.patch(\"~/garden/plant\", args[\"plant\"],\n        properties={\"lastWateredAt\": args[\"at\"]}, if_version=host.version(plant))\n    return {\"output\": {\"plant\": args[\"plant\"]}}\n"}}
 ```
 
 ## Running one: `call`
@@ -44,9 +44,9 @@ A `substrate.reamde.dev/core/trigger` is an ordinary data record (`write` it, or
 {"op": "put", "kind": "substrate.reamde.dev/core/trigger", "id": "garden-water-on-due",
  "properties": {
   "enabled": true,
-  "source": {"record": {"kinds": ["ada.example.com/garden/plant"], "ops": ["create", "update"],
+  "source": {"record": {"kinds": ["~/garden/plant"], "ops": ["create", "update"],
              "when": "record != null && record.properties.state == \"due\""}},
-  "callable": "substrate.reamde.dev/core/agent/ada.example.com/garden/waterer"}}
+  "callable": "substrate.reamde.dev/core/agent/~/garden/waterer"}}
 ```
 
 ### Driving them: the `triggers` tool

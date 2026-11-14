@@ -119,7 +119,9 @@ var featureTable = []feature{
 	// `pinned`, `setBy`, `onBehalfOf`, `derivedFrom` and `setAt`, its
 	// alternatives keyed by source record, and the `pin` and `release`
 	// actions (decision 0284).
-	{name: "records", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 6: the repository's own kinds read `~/…`, and its full name
+	// is another spelling of `~` on input (decision 0259).
+	{name: "records", stability: substrate.StabilityStable, revision: 6, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -143,8 +145,9 @@ var featureTable = []feature{
 	// change links the actor record that wrote it, the one it acted for
 	// (`onBehalfOf`) and the token behind it (`token`), a run its token
 	// (`token`, `tokenName`), and `actors=` takes actor record ids (decision
-	// 0270).
-	{name: "changefeed", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// 0270). Revision 3: a change names the repository's own kinds `~/…`
+	// (decision 0259).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/changes",
 	}},
 	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
@@ -174,7 +177,9 @@ var featureTable = []feature{
 	// path.
 	// Revision 3: the upgrade preview names each kind whose history it would
 	// keep for less time (retentionShortens, decision 0282).
-	{name: "bundles", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 4: a sample added lands at `~/<package>`, and a bundle's id
+	// and status say `~` (decision 0259).
+	{name: "bundles", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/substrate.reamde.dev/core/bundle/status",
 		"GET /api/v1/substrate.reamde.dev/core/bundle/{id}/status",
 		"POST /api/v1/substrate.reamde.dev/core/bundle/{id}/bind",
@@ -213,8 +218,10 @@ var featureTable = []feature{
 	// keeps (decision 0205). Revision 2: a package row says who keeps it
 	// (`keptBy`, decision 0258). Revision 3: the approval page's app says the
 	// name its changes appear as (`appearsAs`), in place of an actor spelling
-	// (decision 0270).
-	{name: "apps", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// (decision 0270). Revision 4: an app's scopes over the repository's own
+	// kinds read `~/…`, and the takeover names a package `~/<package>`
+	// (decision 0259).
+	{name: "apps", stability: substrate.StabilityBeta, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /oauth/authorize",
 		"POST /oauth/token",
 		"POST /oauth/revoke",
@@ -230,7 +237,9 @@ var featureTable = []feature{
 	// them, and the three words before refuse (decision 0290). Revision 3: a
 	// kind's info says whether it is a control kind (`control`, decision
 	// 0276).
-	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 4: a new package of the repository's own is declared under
+	// `~`, and the repository's full name is folded into it (decision 0259).
+	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/vocabulary/apply",
 		"POST /api/v1/vocabulary/plan",
 		"GET /api/v1/vocabulary/upgrade",
@@ -307,8 +316,10 @@ var featureTable = []feature{
 	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
 	// experimental while the protocol's stateless revision and the tool set
 	// settle. Revision 3: describe_kind's definition names its properties'
-	// writers as a type of actor or a list of them (decision 0290).
-	{name: "mcp", stability: substrate.StabilityExperimental, revision: 3, surfaces: []string{surfaceMCP}, routes: []string{
+	// writers as a type of actor or a list of them (decision 0290). Revision
+	// 4: the overview names the repository's own namespace, `ownNamespace`,
+	// and every own kind it lists is under it (decision 0259).
+	{name: "mcp", stability: substrate.StabilityExperimental, revision: 4, surfaces: []string{surfaceMCP}, routes: []string{
 		"* /mcp",
 		"GET /.well-known/oauth-protected-resource/mcp",
 	}},

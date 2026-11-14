@@ -5,7 +5,12 @@
  * went. The function reference stays the identity; every name here is a
  * label. */
 
-import { CORE_AUTHORITY, CORE_PACKAGE, splitKind } from "@/lib/api/http"
+import {
+  CORE_AUTHORITY,
+  CORE_PACKAGE,
+  LOCAL_AUTHORITY,
+  splitKind,
+} from "@/lib/api/http"
 import { FUNCTION_KIND } from "@/lib/core-kinds"
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
@@ -121,11 +126,7 @@ export interface Tool {
   returns: ToolArgument[]
 }
 
-export function originOf(
-  authority: string,
-  pkg: string,
-  repository?: string | null
-): ToolOrigin {
+export function originOf(authority: string, pkg: string): ToolOrigin {
   if (authority === CORE_AUTHORITY) return { kind: "core" }
   if (authority === PROVIDERS_AUTHORITY) {
     return {
@@ -134,7 +135,7 @@ export function originOf(
       bundle: `${authority}/${pkg}`,
     }
   }
-  if (repository && authority === repository) return { kind: "yours" }
+  if (authority === LOCAL_AUTHORITY) return { kind: "yours" }
   return { kind: "other", authority }
 }
 
@@ -199,8 +200,7 @@ export function writeKinds(record: SubstrateRecord): string[] {
 export function buildTools(
   functions: SubstrateRecord[],
   agents: SubstrateRecord[],
-  triggers: SubstrateRecord[],
-  repository?: string | null
+  triggers: SubstrateRecord[]
 ): Tool[] {
   const uses = new Map<string, ToolUse[]>()
   for (const agent of agents) {
@@ -243,7 +243,7 @@ export function buildTools(
       record,
       runtime: typeof p.runtime === "string" ? p.runtime : "",
       description: typeof p.description === "string" ? p.description : "",
-      origin: originOf(authority, pkg, repository),
+      origin: originOf(authority, pkg),
       uses: uses.get(record.id) ?? [],
       triggers: (bound.get(record.id) ?? []).sort((a, b) =>
         a.id.localeCompare(b.id)
@@ -532,6 +532,7 @@ export function kindPatternWords(pattern: string, label: KindLabeler): string {
       return `Everything from ${providerInfo(pkg).name}`
     if (authority === CORE_AUTHORITY)
       return pkg ? `Everything built into ${pkg}` : "Everything built in"
+    if (authority === LOCAL_AUTHORITY && !pkg) return "Everything of your own"
     return pkg
       ? `Everything in ${packageDisplayName(pkg)}`
       : `Everything from ${authority}`

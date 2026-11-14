@@ -1,0 +1,37 @@
+{
+  "format": 3,
+  "id": "rnd-4nyxmnrgega3ze7stpqnvschd0",
+  "authority": "kept.example.com",
+  "createdAt": "2026-11-13T00:41:34.518369Z",
+  "changelogDialect": 5,
+  "vocabularyDialect": 6,
+  "dek": "YUIfCkApVH5EuWOTWhp13v/crXo3bwf9yaWrSL5NbGyXcoTxkTUhbTsCp39K9BuqEwtYjqMyeAYjGrp3pA==",
+  "dekKeyId": "121268928c538641",
+  "archive": "a18e7e7532e29f338ab6fcad9",
+  "pass": "3005f4fbfa6e376d",
+  "head": 738,
+  "headSum": "sha256:7560a5eded7ea7142c6210cdc989e79dd1c1c4ba50aad816eb67e8785eb4259a",
+  "pieces": [
+    {
+      "name": "changelog/5/000000000000001-000000000000738-3005f4fbfa6e376d-7fdf5b78d24d5e6b.ndjson",
+      "sum": "sha256:7fdf5b78d24d5e6b135617c89f28e8b7d4547db8aef758428cd209a44cf7de4c",
+      "size": 1084611
+    }
+  ],
+  "sealed": {
+    "secret:14f02e3e576e909d954a51f0863d2609": "sealed/secret-14f02e3e576e909d954a51f0863d2609.7d65e14f294f07c0438afe9e1f33d22a79372b3c6e6eda913e44d5d6e82c27f5.3005f4fbfa6e376d.json",
+    "secret:3dd8c282808a8991bba0e58aaa1d153a": "sealed/secret-3dd8c282808a8991bba0e58aaa1d153a.c8e918e4825084e89be99e14b9aa72439578139fefcb8cf9564f6571046733c4.3005f4fbfa6e376d.json"
+  },
+  "epoch": 1,
+  "identities": [
+    {
+      "id": "idn-2zmecb4fk2wpfm3cpyyfbk3s1g",
+      "name": "kept.example.com",
+      "dek": "YRDHEUfYu+79WUgffIbYltLMZVyaowg3Vp0kocAhLnbpgDAcuQypBIThjoUv9r21ZLl9l0yy1Rc5KDnMlQ==",
+      "dekKeyId": "121268928c538641",
+      "hash": "YSd1I8AcvAFPp2fyufeDt+AmXCw5jj/pwFKBkif6HBT8CkaVldsAjSxeFzwUmDLa0R1ATUUVOIrh1tEUiKVIyK69Vk2p5yUH2WB+BYNv6CFlO8e/J1ohCLhzIg0kqbsvF4vJ0Leo0he0ah9gviuP7/iXkTp5iHuteeanP4XG",
+      "createdAt": "2026-11-14T11:55:22.160386Z",
+      "updatedAt": "2026-11-14T11:55:22.160386Z"
+    }
+  ]
+}

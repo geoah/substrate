@@ -38,29 +38,29 @@ const PATH = "/api/v1/authorizations/req-1"
 const TECHNICAL_KEY = "substrate.console.technicalDetails"
 
 const TASKS = {
-  scope: "read:ada.example.com/tasks/*",
-  requested: "read:~/tasks/*",
+  scope: "read:~/tasks/*",
+  requested: "read:ada.example.com/tasks/*",
   verb: "read",
   write: false,
-  pattern: "ada.example.com/tasks/*",
+  pattern: "~/tasks/*",
   glob: true,
   kinds: [
     {
-      identity: "ada.example.com/tasks/task",
+      identity: "~/tasks/task",
       label: { singular: "Task", plural: "Tasks" },
     },
-    { identity: "ada.example.com/tasks/project" },
+    { identity: "~/tasks/project" },
   ],
   agents: [],
 }
 const TASKS_WORDS =
   "See your tasks and projects, including kinds added later, and search them by meaning, which spends your embedding budget"
 const NOTES = {
-  scope: "write:ada.example.com/notes/note",
-  requested: "write:ada.example.com/notes/note",
+  scope: "write:~/notes/note",
+  requested: "write:~/notes/note",
   verb: "write",
   write: true,
-  pattern: "ada.example.com/notes/note",
+  pattern: "~/notes/note",
   glob: false,
   kinds: [],
   agents: [],
@@ -492,8 +492,8 @@ describe("AuthorizePage", () => {
         within(access).getByRole<HTMLInputElement>("checkbox", { name }).checked
       ).toBe(true)
     }
-    expect(within(access).queryByText("ada.example.com/tasks/*")).toBeNull()
-    expect(within(access).queryByText("ada.example.com/tasks/task")).toBeNull()
+    expect(within(access).queryByText("~/tasks/*")).toBeNull()
+    expect(within(access).queryByText("~/tasks/task")).toBeNull()
 
     // Nothing to set up, so nothing about a set up.
     expect(
@@ -576,10 +576,8 @@ describe("AuthorizePage", () => {
     // full reference, label where the kind has one.
     expect(within(access).getByText(TASKS.scope)).toBeTruthy()
     expect(within(access).getByText("Tasks")).toBeTruthy()
-    expect(within(access).getByText("ada.example.com/tasks/task")).toBeTruthy()
-    expect(
-      within(access).getByText("ada.example.com/tasks/project")
-    ).toBeTruthy()
+    expect(within(access).getByText("~/tasks/task")).toBeTruthy()
+    expect(within(access).getByText("~/tasks/project")).toBeTruthy()
     expect(
       within(access).getByText(/no kind in your repository matches/)
     ).toBeTruthy()
@@ -617,10 +615,10 @@ describe("AuthorizePage", () => {
 
   describe.each(MODES)("agents and decide, $name", ({ technical }) => {
     const agent = {
-      id: "ada.example.com/llm/substrateEditor",
+      id: "~/llm/substrateEditor",
       kind: "substrate.reamde.dev/core/agent",
       properties: {
-        permissions: { reads: { kinds: ["ada.example.com/tasks/task"] } },
+        permissions: { reads: { kinds: ["~/tasks/task"] } },
       },
       labels: {},
       version: 1,
@@ -628,21 +626,21 @@ describe("AuthorizePage", () => {
       updatedAt: "2026-10-01T00:00:00Z",
     }
     const agents = {
-      scope: "agents:ada.example.com/llm/*",
+      scope: "agents:~/llm/*",
       requested: "agents:~/llm/*",
       verb: "agents",
       write: false,
-      pattern: "ada.example.com/llm/*",
+      pattern: "~/llm/*",
       glob: true,
       kinds: [],
       agents: [agent],
     }
     const decide = {
       ...agents,
-      scope: "decide:ada.example.com/llm/substrateEditor",
-      requested: "decide:ada.example.com/llm/substrateEditor",
+      scope: "decide:~/llm/substrateEditor",
+      requested: "decide:~/llm/substrateEditor",
       verb: "decide",
-      pattern: "ada.example.com/llm/substrateEditor",
+      pattern: "~/llm/substrateEditor",
       glob: false,
     }
     const nobody = {
@@ -780,10 +778,7 @@ describe("AuthorizePage", () => {
       expect(calls("POST")).toHaveLength(1)
       // Nothing to set up, so no plan is named.
       expect(body("POST")).toEqual({
-        scopes: [
-          "read:ada.example.com/tasks/*",
-          "read:substrate.reamde.dev/core/unit",
-        ],
+        scopes: ["read:~/tasks/*", "read:substrate.reamde.dev/core/unit"],
         lifetimeDays: 90,
       })
       expect(calls("DELETE")).toHaveLength(0)
@@ -972,7 +967,7 @@ describe("AuthorizePage", () => {
       jsonResponse(400, {
         error: {
           code: "bad_request",
-          message: "scope write:ada.example.com/notes/note was not requested",
+          message: "scope write:~/notes/note was not requested",
         },
       })
     renderPage()
@@ -980,7 +975,7 @@ describe("AuthorizePage", () => {
     const alert = await screen.findByRole("alert")
     expect(alert.textContent).toContain("This request can’t be approved.")
     expect(alert.textContent).toContain(
-      "scope write:ada.example.com/notes/note was not requested"
+      "scope write:~/notes/note was not requested"
     )
     expect(assign).not.toHaveBeenCalled()
     // The request is still pending on the server, so the owner may try again.
@@ -2212,7 +2207,7 @@ describe("AuthorizePage", () => {
         jsonResponse(200, {
           ...REQUEST,
           scopes: [{ ...TASKS, allowed: true }],
-          previous: { ...previous, scopes: ["write:ada.example.com/*"] },
+          previous: { ...previous, scopes: ["write:~/*"] },
         })
       renderPage()
       await screen.findByRole("heading", {

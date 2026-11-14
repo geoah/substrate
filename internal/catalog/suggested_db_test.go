@@ -100,8 +100,9 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 		t.Fatalf("no %s in the shipped catalog", peopleSampleID)
 	}
 	// Every id the report names is the one this repository would HOLD:
-	// rehomed, because that is the record its state is read from.
-	landedMapping := homeAuthority + "/people/githubuserperson"
+	// rehomed into the local namespace, because that is the record its state
+	// is read from.
+	landedMapping := "~/people/githubuserperson"
 
 	// ROUND ONE: a fresh repository. The mapping is waiting, and says which
 	// provider package on.
@@ -110,12 +111,12 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	if sm.State != substrate.SuggestedMappingWaiting || sm.Package != githubProviderID {
 		t.Fatalf("state = %+v, want waiting for %s", sm, githubProviderID)
 	}
-	if sm.From != githubUser || sm.To != homeAuthority+"/people/person" {
+	if sm.From != githubUser || sm.To != "~/people/person" {
 		t.Errorf("the report does not name both ends as they land here: %+v", sm)
 	}
 	// The kinds landed and the mapping did not: an import onto an absent
 	// provider is not a refusal, it is a smaller closure.
-	if _, err := ds.KindByRef(ctx, homeAuthority+"/people/person"); err != nil {
+	if _, err := ds.KindByRef(ctx, "~/people/person"); err != nil {
 		t.Fatalf("the people kinds did not land: %v", err)
 	}
 	if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
@@ -187,7 +188,7 @@ func TestASuggestedMappingWaitsThenIsReadyThenLands(t *testing.T) {
 	if personID == "" {
 		t.Fatal("the user mirror landed with an empty person slot, so the mapping did not mint")
 	}
-	if personKind != homeAuthority+"/people/person" {
+	if personKind != "~/people/person" {
 		t.Fatalf("the mapping minted a %s, not this repository's person", personKind)
 	}
 	person, err := ds.Get(ctx, personKind, personID)
@@ -213,7 +214,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if !ok {
 		t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 	}
-	landedMapping := homeAuthority + "/tasks/linearissuetask"
+	landedMapping := "~/tasks/linearissuetask"
 
 	if _, _, err := c.Install(ctx, substrate.ActorPerson, linearProviderID, ds); err != nil {
 		t.Fatalf("install %s: %v", linearProviderID, err)
@@ -251,7 +252,7 @@ func TestImportingTasksWithLinearInstalledLandsTheIssueMapping(t *testing.T) {
 	if taskID == "" {
 		t.Fatal("the issue mirror landed with an empty task slot, so the mapping did not mint")
 	}
-	if taskKind != homeAuthority+"/tasks/task" {
+	if taskKind != "~/tasks/task" {
 		t.Fatalf("the mapping minted a %s, not this repository's task", taskKind)
 	}
 	task, err := ds.Get(ctx, taskKind, taskID)
@@ -355,7 +356,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 			if !ok {
 				t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 			}
-			landedMapping := homeAuthority + "/tasks/linearissuetask"
+			landedMapping := "~/tasks/linearissuetask"
 			if _, err := ds.ApplyVocabularyDocuments(ctx, heldHand(linearProviderID), olderLinear(tc.props)); err != nil {
 				t.Fatalf("apply the older linear package: %v", err)
 			}
@@ -377,7 +378,7 @@ func TestASuggestedMappingIsBlockedByAnOlderProvider(t *testing.T) {
 			// And the import goes THROUGH, without the mapping: a blocked
 			// mapping the reader never wrote must not cost them the sample.
 			importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
-			if _, err := ds.KindByRef(ctx, homeAuthority+"/tasks/task"); err != nil {
+			if _, err := ds.KindByRef(ctx, "~/tasks/task"); err != nil {
 				t.Fatalf("the tasks kinds did not land: %v", err)
 			}
 			if _, err := ds.Get(ctx, mappingKind, landedMapping); !errors.Is(err, substrate.ErrNotFound) {
@@ -400,7 +401,7 @@ func TestASuggestedMappingFitsASourceThatStillDeclaresTheSlot(t *testing.T) {
 	if !ok {
 		t.Fatalf("no %s in the shipped catalog", tasksSampleID)
 	}
-	landedMapping := homeAuthority + "/tasks/linearissuetask"
+	landedMapping := "~/tasks/linearissuetask"
 	older := olderLinear(map[string]any{
 		"url":           map[string]any{"type": "url"},
 		"issueTitle":    map[string]any{"type": "string"},
@@ -459,7 +460,7 @@ func TestTheVerbatimInstallReportsTheShippedSpelling(t *testing.T) {
 	if _, err := ds.Get(ctx, mappingKind, got.ID); err != nil {
 		t.Fatalf("the reported mapping %s is not a record here: %v", got.ID, err)
 	}
-	if _, err := ds.Get(ctx, mappingKind, homeAuthority+"/people/githubuserperson"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, mappingKind, "~/people/githubuserperson"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("a verbatim install wrote a rehomed mapping: %v", err)
 	}
 	// And a READ afterwards agrees, both fields: it prefers the rehomed

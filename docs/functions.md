@@ -442,9 +442,9 @@ A package names the version its code is written against in its header, under
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: ada.example.com/garden
+  id: ~/garden
 data:
-  authority: ada.example.com
+  authority: "~"
   package: garden
   interface: 1
   version: 3
@@ -1145,14 +1145,17 @@ It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
 on every output where given, and takes `stored=` where the body has
 already read the records.
 
-The example is an adapter in a sample, so `home` is the sample's placeholder
-authority. Adding the sample rewrites every mention of it to the repository's own
-authority, inside the function's code as everywhere else, so the body names
-the kinds of the copy the repository holds
-([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
+The example is an adapter in a sample, so its kinds are the copy's, in `~`,
+the repository's own namespace, in every repository that adds it. Adding the
+sample moves a kind reference its code spells whole under the sample's
+authority (`"samples.substrate.reamde.dev/observations/trace"`) to `~`, and
+nothing else in the code, so a body that builds a name from parts spells `~`
+itself
+([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md),
+[decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 
 ```python
-home = "samples.substrate.reamde.dev"  # adding the sample rewrites it
+home = "~"  # the copy's own namespace, in every repository
 device = "chest"
 docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],

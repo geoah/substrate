@@ -104,22 +104,25 @@ const (
 )
 
 // The drill's kinds: the rehomed samples, the installed provider and the
-// packages the drill declares itself.
+// packages the drill declares itself. A repository holds its own in its local
+// namespace, `~`, whatever its name (decision record 0259); the drill's
+// declarations spell them under the full name, which is another spelling of
+// it.
 var (
-	taskKind     = drillAuthority + "/tasks/task"
-	projectKind  = drillAuthority + "/tasks/project"
-	personKind   = drillAuthority + "/people/person"
-	widgetKind   = drillAuthority + "/auto/widget"
-	gadgetKind   = drillAuthority + "/auto/gadget"
-	flagKind     = drillAuthority + "/auto/flag"
-	echoKind     = drillAuthority + "/auto/echo"
-	subjectKind  = drillAuthority + "/crm/subject"
-	contactKind  = drillAuthority + "/dira/contact"
-	memberKind   = drillAuthority + "/dirb/member"
-	fileKind     = drillAuthority + "/attach/file"
-	oauthKind    = drillAuthority + "/creds/oauthclient"
+	taskKind     = "~/tasks/task"
+	projectKind  = "~/tasks/project"
+	personKind   = "~/people/person"
+	widgetKind   = "~/auto/widget"
+	gadgetKind   = "~/auto/gadget"
+	flagKind     = "~/auto/flag"
+	echoKind     = "~/auto/echo"
+	subjectKind  = "~/crm/subject"
+	contactKind  = "~/dira/contact"
+	memberKind   = "~/dirb/member"
+	fileKind     = "~/attach/file"
+	oauthKind    = "~/creds/oauthclient"
 	googleConfig = googlePkg + "/config"
-	secondTask   = secondAuthority + "/tasks/task"
+	secondTask   = "~/tasks/task"
 
 	// drillCollections is every collection the drill compares record by
 	// record.
@@ -860,8 +863,8 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	return e
 }
 
-// seedVocabulary imports the samples (rehomed onto the repository's
-// authority), installs the google provider under its publisher's authority,
+// seedVocabulary imports the samples (rehomed into the repository's own
+// namespace), installs the google provider under its publisher's authority,
 // and declares the drill's own packages, editing one kind afterwards.
 func (d *drill) seedVocabulary(t *testing.T, e *testenv.Env) {
 	for _, id := range sampleImports {

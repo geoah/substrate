@@ -1,6 +1,7 @@
 /** "Add tools" and "Add agents": the shipped samples that bring functions or
  * agents, each named by what it brings. Adding one imports the whole sample
- * under the repository's own authority, whatever collections come with it. */
+ * into the repository's own namespace `~`, whatever collections come with
+ * it. */
 
 import { useCallback } from "react"
 

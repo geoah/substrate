@@ -70,7 +70,11 @@ records it writes beside them) is previewable through
 `GET …/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<package>/<name>`;
-each section's first line gives the package, and its lists give the name. The
+each section's first line gives the package, and its lists give the name. A
+sample's package is given as the tree spells it, and adding the sample lands
+it at `~/<package>`, the repository's local namespace
+([bundles](bundles.md#adding-a-package)): `samples.substrate.reamde.dev/notes`
+lands as `~/notes`. The
 package carries the provider, so no name repeats it — GitHub's issue mirror
 is `providers.substrate.reamde.dev/github/issue`, Linear's is
 `providers.substrate.reamde.dev/linear/issue`, and one record of either is
@@ -199,12 +203,12 @@ which is the capability envelope in one closure.
 Both agents name `provider: openai`, so running them wants that
 `llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
 Calling an agent is an API call, not a CLI verb. The path segment is the
-agent's id, `<authority>/notes/notekeeper` once adding it has rehomed it, with
+agent's id, `~/notes/notekeeper` once adding it has copied it into `~`, with
 each slash written `%2F`; a bare `notekeeper` is refused
 ([calling an agent](agents.md#calling-an-agent)):
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/<authority>%2Fnotes%2Fnotekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/~%2Fnotes%2Fnotekeeper/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
@@ -2146,7 +2150,7 @@ intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
 **A copy of the old sample.** A repository that copied the Firecrawl sample
-keeps it under its own authority, with `scrapepage` and its own key, and the
+keeps it in its local namespace, `~`, with `scrapepage` and its own key, and the
 operator's key never reaches it. Its tools derive other names
 (`websearch` when an agent names it, `firecrawl_websearch` when its owner
 offers it), so the provider's two tools sit beside it rather than collide.

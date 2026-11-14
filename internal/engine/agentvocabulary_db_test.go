@@ -137,8 +137,8 @@ func TestMossShapesACollectionThroughItsArchitectAndFillsIt(t *testing.T) {
 	if got := toolNamesSent(t, reqs[1]); !slices.Equal(got, []string{"query", "vocabulary"}) {
 		t.Fatalf("architect's tools = %v, want [query vocabulary]", got)
 	}
-	if card := toolDescription(t, reqs[1], "vocabulary"); !strings.Contains(card, "The owner's authority is "+repo+".") {
-		t.Fatalf("the vocabulary card does not name the owner's authority: %s", card)
+	if card := toolDescription(t, reqs[1], "vocabulary"); !strings.Contains(card, "live under `~`") {
+		t.Fatalf("the vocabulary card does not name the owner's own namespace, ~: %s", card)
 	}
 
 	if _, err := ds.resolveType(plant); err != nil {

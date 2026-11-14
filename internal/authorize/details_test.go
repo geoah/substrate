@@ -69,10 +69,8 @@ func TestAuthorizationDetailsAreReadStrictly(t *testing.T) {
 		"version zero":         `[{"type":"package","package":"example.com/notes","version":0}]`,
 		"a bare package":       `[{"type":"package","package":"notes","version":1}]`,
 		"a kind as package":    `[{"type":"package","package":"example.com/notes/note","version":1}]`,
-		"home package":         `[{"type":"package","package":"~/notes","version":1}]`,
 		"duplicate package":    `[{"type":"package","package":"example.com/notes","version":1},{"type":"package","package":"example.com/notes","version":2}]`,
 		"a bare kind":          `[{"type":"account","kind":"account","id":"a"}]`,
-		"home kind":            `[{"type":"account","kind":"~/notes/account","id":"a"}]`,
 		"core kind":            `[{"type":"account","kind":"substrate.reamde.dev/core/token","id":"a"}]`,
 		"llm kind":             `[{"type":"account","kind":"substrate.reamde.dev/llm/provider","id":"openai"}]`,
 		"console kind":         `[{"type":"account","kind":"substrate.reamde.dev/console/recordview","id":"a"}]`,
@@ -95,6 +93,17 @@ func TestAuthorizationDetailsAreReadStrictly(t *testing.T) {
 	for name, param := range cases {
 		if d, err := ParseDetails(param); err == nil {
 			t.Errorf("%s: ParseDetails admitted %+v, want refused", name, d)
+		}
+	}
+	// The owner's own package and kind are named under `~`, as a scope names
+	// them, since an app cannot know the repository's name before the owner
+	// signs in (decision record 0259).
+	for name, param := range map[string]string{
+		"home package": `[{"type":"package","package":"~/notes","version":1}]`,
+		"home kind":    `[{"type":"account","kind":"~/notes/account","id":"a"}]`,
+	} {
+		if _, err := ParseDetails(param); err != nil {
+			t.Errorf("%s: ParseDetails refused it: %v", name, err)
 		}
 	}
 	if _, err := ParseDetails(cases["an agent detail"]); err == nil || !strings.Contains(err.Error(), "retired") || !strings.Contains(err.Error(), "package detail") {
