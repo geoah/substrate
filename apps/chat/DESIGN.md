@@ -72,8 +72,8 @@ app target's, and `apps:test:linux` runs ChatKit's on Linux.
 ```text
 ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
-  Conversation/  one chat, a child of the list: the run, the overlay, Stop, the message sent again under its id, the delivery check, the poll
-  Model/         the transcript fold and the live overlay, the notices, the agents and threads, the tool words, Markdown blocks
+  Conversation/  one chat, a child of the list: the run, what its stream has said, Stop, the message sent again under its id, the delivery check, the poll
+  Model/         the transcript fold, the stream's rows and the one fold of both, the notices, the agents and threads, the tool words, Markdown blocks
   API/           the agent streams over the kit's line stream; a failure as a value: what was attempted and why
   Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
   Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, Settings; the one presenter of failures
@@ -112,7 +112,8 @@ again, and nothing else; a key typed makes nothing.
 | What | Where it lives now |
 | ---- | ------------------ |
 | A turn's stream | `Conversation`'s `.sequence` effect under the key `run`: a send, an attach (its read, then the events), the handover read |
-| Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
+| A turn | one fold of the thread's stored rows and what the stream has said (`TurnFold` over `LiveRows`), keyed by the row's `turn` and a call's id |
+| Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once; the presenter then draws it at a steady rate (`TextReveal`) |
 | A draft | the composer's field while it is typed; the conversation after a pause, before a send and when the field stops editing (`DraftReports`), and from there `drafts.json`; the tree only as the engine wrote it |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
@@ -182,27 +183,60 @@ which is what tells them apart in History.
 | Event | On a send | On an attach |
 | ----- | --------- | ------------ |
 | `thread` | binds the conversation to the thread (below) | ignored |
-| `reasoning`, `delta`, `toolStarted`, `toolFinished`, `compacted` | fold into the overlay | dropped if a stored row carries its `turn`, else folded |
-| `truncated` | not sent | the replay lost events: the overlay is marked partial ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
+| `reasoning`, `delta`, `toolStarted`, `toolFinished`, `compacted` | fold into the stream's rows (`LiveRows`) | dropped if a row read with this attach carries its `turn`, else folded: what is held of the turn is written over, never emptied |
+| `truncated` | not sent | the replay lost events: what is held stays, and the chat says so ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
+| `lagged` | not sent | this reader fell behind and the server ends its stream: nothing failed, so the app attaches again at once and draws nothing for it |
 | `idle` | after `thread`, to a repeat of a message the server already holds: the thread's status is the whole answer, read as on an attach | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
 | `error` (after the 200) | a failed turn: settle, with the `cause` and `retryAfter` the event carries where the server sends them. With no `cause` and a `code`: `auth` is the sign-in ended (the signed-out screen), `internal` a failed turn, `unavailable` a reader cut off for reading too slowly (the turn runs on: attach again, nothing drawn) | same |
-| `{}` | heartbeat, every 30 s; ignored | same |
+| `{}` | heartbeat: every 10 s where `agents` is at revision 5 or more, every 30 s below it. It only says the stream is open | same |
 
 | Exit | What follows |
 | ---- | ------------ |
 | 4xx with the server's envelope before `thread` | refused: 409 a turn already running or the repository's 4 at once, 422 a hidden agent, 404 no such agent. Text back in the composer, and the strip above it says so (the envelope's `reason` is read where it has one) |
 | No connection, or a server that cannot be reached | the request never left: text back in the composer, Send Again, no check |
 | 5xx, 503 shutdown, a gateway's answer, a dropped connection, a timeout, a stream that ends before any event | the answer was lost (below): under its id the message is sent again; without one, unknown delivery |
-| Stream ends after `thread`, no `done` | the turn runs on: attach again, backing off 0, 1, 2, 4, 8, 15 s |
+| Stream ends after `thread`, no `done` | the turn runs on: attach again, backing off 0, 1, 2, 4, 8, 15 s; after `lagged`, at once |
+| Nothing arrives, not a heartbeat, for 25 s (75 s below revision 5) | the connection is gone: the request times out and the app attaches again; the composer says "Reconnecting…" until a stream opens |
 | Attach answers 4xx other than 409/429 | permanent (404 a deleted thread): settle, say so in the strip above the composer, release the composer |
 | 401 anywhere | the session ended: one screen, Sign In Again |
 
+**One turn, one fold.** A turn has one model from its first token to its
+stored row. A fold here is the function that makes the list of turns: the
+console's makes it from a thread's rows, and this one makes it from the
+rows and the stream together. The stream's events become provisional rows
+(`LiveRows`), each keyed as its stored row will be: an assistant row by the
+`turn` its `delta` and `reasoning` events carry, a tool row by its call's
+id, and the message you sent by its send. The transcript is one list made
+from the stored rows and the provisional ones (`TurnFold`): a stored row
+takes the place of the provisional row with its key and keeps the id that
+row was drawn by, so every view over it (an open Thinking section, an
+expanded tool row, a selection) is the same view before and after. What the stream said and the rows do not hold yet (a call
+settled past the row read, text past it) is drawn on the row until they do.
+Nothing is emptied to be filled again: not when the rows land, and not when
+the stream is joined again.
+
+**A stream joined again** (an attach: on a return to the front, after a
+drop, after `lagged`) replays the turn from its start. Where `agents` is at
+revision 5 or more, `delta` and `reasoning` carry `at`, the Unicode code
+points of that text before the piece, and each piece is written where it
+belongs (`TextRuns`): over the same text, so the reply stands as it was and
+goes on from its end. A replay that lost its middle leaves a gap, which a
+later replay fills. Below revision 5 there are no positions: a pass counts
+its own pieces from the turn's start, the longer text is kept and the chat
+never shows less than it did. A stored row carries the whole text, so a
+turn's row always wins over what was streamed of it.
+
 **Background runs.** `idle` with `running` means this server process has no
-stream for the turn (a trigger, a schedule, a turn another replica owns).
-The chat says "<Agent> is working in the background", Stop is not offered,
-and the thread is read every 5 s (and on every feed row for a thread or a
-message) until its status settles; then the rows are read.
+stream for the turn yet (a trigger, a schedule, a turn another replica
+owns). The chat says "<Agent> is working in the background" and Stop is not
+offered. Below revision 5, and for an automated run at any revision, the
+thread is read every 5 s (and on every feed row for a thread or a message)
+until its status settles; then the rows are read. From revision 5 a chat's
+run that was resumed streams like any other, so there the 5 s timer asks
+for the stream again instead of reading the thread (an attach, with the
+row read every attach makes), and the chat streams from the first event
+one brings. A feed row still reads the thread.
 
 **Stop** posts `stop`. A `409` means nothing streamable runs: the thread is
 read again, and what it says is shown. Any other failure is the stop's, not
@@ -221,7 +255,7 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
 | ---- | -------------- | -------- |
 | 1 | `ChatApp.Command.show`/`newChat` mint the child's key; the conversation's `named` event reaches the list through `event(fromChild:_:after:)`, which binds the thread and drops any other conversation on it (`ChatAppEngine.reported`) | `rule1_aConversationIsKeyedByItsClientIDAndTheThreadEventBindsIt` |
 | 2 | the stream runs under the key `run`; `Conversation`'s `opened` step starts nothing while a run is active | `rule2_oneStreamPerConversation` |
-| 3 | the conversation's ownership reaches the list with each of its events; `load` refuses an owned thread, and `rowsRead`, `prefetched` and `cachedLoaded` drop one, while a conversation's own reads publish | `rule3_noRowsPublishUnderALiveOverlay`, `rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped` |
+| 3 | `TurnFold.fold` in the presenter and `TurnFold.settle` at each of the conversation's own reads: a stored row takes its provisional row's place under the same id. The conversation's ownership still reaches the list with each of its events, and `load` starts no second read of an owned thread | `rule3_rowsReadUnderAStreamTakeTheirTurnsPlaceAndDoubleNothing`, `rule3_rowsThatLandUnderAStreamAreDrawnOnceWithWhatItHasSaid`, and `FoldTests` |
 | 4 | `ChatAppState.readEpochs`, carried by every read, cached read and prefetch, and moved in `ChatAppEngine.reported` by a binding, a send or an attach (the conversation takes the thread) and a settle (it hands it back), each of which also cancels the read under `read:<thread>`; a read that fails clears what is outstanding, so the next asks again | `rule4_aReadIsDroppedWhenItsThreadsEpochMoved`, `rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved` |
 | 5 | the runtime's key epochs: a new run restarts `run` and cancels `retry`, `poll`, `pollTimer`, `stop`, `stopWait`, `check` and `repeat`, so a late result is dropped | `rule5_aNewRunDropsWhatAnOlderRunStillDelivers` |
 | 6 | the runtime's controller generation: `ChatApp.resetting(of:on:)` starts the list over when the link's repository changes or is gone, closing every conversation; the folder's lease is retired, so nothing still on its way reaches the folder, the link generation in it moves, the rest of it is deleted on Sign Out, and the notifications are removed; the next sign-in's open runs after all of it | `rule6_aSignOutDropsEverythingStillOnItsWay`, `aSaveStillOnItsWayAcrossASignOutWritesNothing` |
@@ -229,15 +263,19 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
 
 1. **A conversation is keyed by a client UUID**, never by an agent. A new
    chat has a UUID and no thread; the `thread` event binds it, atomically
-   moving its draft, overlay and selection, and from then the store finds it
+   moving its draft, its stream's rows and selection, and from then the store finds it
    by thread id. There is exactly one `Conversation` per thread in the
    process: two windows on one chat share it, its stream and its composer
    state; two New Chat windows have two UUIDs.
 2. **One stream per conversation.** The app's own send is never attached to;
    opening a chat the store already streams opens nothing.
-3. **No rows under a live overlay.** While a conversation sends, streams or
-   hands over, no read for its thread publishes: not the open-time read,
-   not the feed's, not a prefetch. Only its own handover read does.
+3. **A turn is drawn once, whoever read its rows.** Rows may land under a
+   stream from any read (the open-time read, the feed's, a prefetch, the
+   conversation's own): the fold pairs each with what the stream said of
+   the same turn, so nothing is doubled and nothing is lost. This replaces
+   "no rows under a live overlay", which kept reads out because rows and a
+   stream had no key in common. A conversation that sends or streams still
+   owns its thread, so the list starts no second read of it.
 4. **Read epochs.** Every thread has an epoch. A transcript read records the
    epoch it started under, and its result is dropped if the epoch moved.
    Send, attach and settle move it, and cancel reads in flight.
@@ -253,12 +291,13 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
    incomplete by definition and are re-read on open. A message write does not
    move its thread, so the thread's `updatedAt` is never the test.
 
-**The handover** (as the console): on `done`, the rows are read under a new
-epoch; when they land, they replace the overlay in the same update, so the
-transcript never blinks: the conversation's `handedOver` step clears the
-overlay and the list publishes the rows inside the same step of one tree
-(`aSendStreamsThenHandsOverInOneStepWithoutDoubling`). A read that fails or outlasts 15 s keeps the
-overlay, releases the composer and offers Try Again.
+**The handover.** On `done`, the rows are read under a new epoch. When they
+land, each takes its provisional row's place in the fold, in the same step
+of one tree, and the conversation lets go of what the rows now hold
+(`aSendStreamsThenHandsOverInOneStepWithoutDoubling`). It is no swap of one
+model for another, so no height changes and no row is made again
+(`HandoverTests`, frame by frame). A read that fails or outlasts 15 s keeps
+what the stream drew, releases the composer and offers Try Again.
 
 **A message under its own id** (`agents` at revision 3 or more, decision
 0312). The id is minted once, when Send is pressed, and every copy of the
@@ -655,8 +694,23 @@ bubble is a tinted fill. The transcript softens under the composer with
 - **User turns**: right-aligned tinted bubbles; Copy in the context menu.
 - **Assistant turns**: full width, Markdown, no bubble; Copy and Share (Copy
   alone while the reply is being written).
-- **Thinking**: "Thinking…" with a shimmer while the model reasons, then
-  "Thought for 6 s", collapsed; tap to read.
+- **Thinking**: while the model reasons, "Thinking…" with a shimmer over a
+  window of a fixed height (about three lines, scaled with the text size)
+  that shows the newest of the thinking, from the start of a word
+  (`ReasoningPresentation.tail`). When the answer begins it becomes "Thought
+  for 6 s", collapsed; tap to read. The window gives its height to the
+  answer: while the answer is the last thing in its turn, its row keeps at
+  least the height it had with the window in it, so the transcript does
+  not shrink at the moment the answer starts. With "expand thinking" on in
+  Settings, and once you have opened the section, it is the whole text and
+  no window.
+- **Text is drawn at a steady rate** (`TextReveal`, in the presenter): a
+  piece of a reply is not drawn the instant it arrives but over the steps
+  that follow, 30 a second, so a model that sends in bursts reads evenly.
+  What is drawn is never more than 0.4 s behind what arrived and never
+  moves back, so a reply is whole on screen at most 0.4 s after its end.
+  With Reduce Motion on, each piece is drawn as it arrives
+  (`ChatApp.Command.pace`).
 - **Tool calls**: one line per call in the console's words ("Searched for
   “dentist”, found 3", "Changed the description of “Dune”", "Added “Dune”
   to your books", "Asked Researcher", "Edited the body of “Garden” in 2
@@ -745,9 +799,39 @@ bubble is a tinted fill. The transcript softens under the composer with
   record in the console). The key lives only in the field until it is sent;
   it is never cached or logged.
 - **More than 500 rows**: "Older messages aren't shown here" at the top.
-- The view follows the bottom while turns arrive (`defaultScrollAnchor(.bottom)`),
-  stops when the reader scrolls up, and offers Jump to Latest;
-  `scrollDismissesKeyboard(.interactively)`.
+- **The transcript follows its end while you let it** (`TranscriptFollow`,
+  ChatKit's rule; `TranscriptScroll`, the view that keeps it). Following
+  is your intent, and only you change it:
+  - A chat opens at its end and follows it. A new chat lies from the top
+    and has nothing to follow until it outgrows the screen.
+  - A touch, a wheel, a scroll bar or a key that takes the transcript up
+    lets go. Coming to rest within 80 points of the end takes it up again.
+  - A send and Jump to Latest go to the end from anywhere.
+  - While it follows, every change of the content's height and of the room
+    for it takes it to the end: a piece of a reply, rows landing, the
+    keyboard, a turn of the device, a split view or a window resized,
+    another text size. The view reacts to the height the scroll view
+    reports, not to a hash of what the screen holds, so nothing that grows
+    is missed.
+  - A chat that was at its end before the app left the front is at its end
+    when it is back, whatever arrived meanwhile; one you had scrolled up
+    stays where it was. Following is never worked out from where the
+    scroll view stands after its content moved: a reply that grew by a
+    screen while the app was away would read as "not at the end", which is
+    how a chat used to be left behind.
+  - Away from the end, Jump to Latest says how many messages are below
+    what is on screen (`ConversationScreen.messages(below:)`), and
+    VoiceOver hears "Jump to Latest, 3 messages below".
+  - `ConversationScreen.opens` says where a chat is first shown: its end,
+    or the turn its "New" line stands above (below), where it then stays
+    until you come down.
+
+  What moves at each of those is the scroll view's own state, and the rows
+  are handed to it made, so the transcript's body runs once for a flush.
+  On iOS the move is to the content's own end (`scrollTo(y:)`): the
+  system's move to the bottom edge overshoots by the composer's inset when
+  the insets change. On a Mac the bottom edge is exact and is what is
+  used. `scrollDismissesKeyboard(.interactively)`.
 - **Where it opens**: a chat with more than the person had read opens at
   the first turn they had not, under a "New" line; where all of that fits
   on one screen the scroll stops at the end, as a chat with nothing new
@@ -770,6 +854,15 @@ bubble is a tinted fill. The transcript softens under the composer with
 A floating glass bar (`safeAreaBar`) holding a field that grows 1 to 8 lines,
 the microphone, and Send, which morphs into Stop while a turn runs
 (`glassEffectID`); on a new chat, the agent chip.
+
+- **It says what is happening** (`ComposerStatus`, one line above the
+  field, from the send to the end): "Connecting…" until the stream opens,
+  "Thinking…", "Writing…", the running tool in its own words ("Looking
+  through your records…", "Asking Librarian…"), "Reconnecting…" while a
+  stream that dropped is opened again, and "Stopping…". It stands where
+  "Waiting for the answer" stood, which would say it twice. Stop is there
+  the whole time, and you can type the next message throughout: only Send
+  waits.
 
 - **Keys**: Return makes a new line and ⌘Return sends, on a Mac and on an
   iPad's or an iPhone's hardware keyboard alike; Shift-Return and
@@ -1206,7 +1299,7 @@ button and Details stack where the text size leaves no room side by side.
 5. Attach to running chats, re-attach on drops and on returning to the foreground; background runs.
 6. Stop.
 7. Every message under an id of its own, sent again when its answer is lost and kept across a kill; refused sends; unknown-delivery sends with the reconcile reads on a server without ids; for existing and new chats.
-8. The handover with no blink; reload failure with Try Again.
+8. One model of a turn from its first token to its stored row: no blink at the handover or on a return to the front; reload failure with Try Again.
 9. Markdown replies with code blocks and Copy.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
 11. Voice typing with live transcription.
@@ -1217,14 +1310,14 @@ button and Details stack where the text size leaves no room side by side.
 16. Drafts per chat across launches.
 17. Offline banner and blocked-send reasons.
 18. Mac menus and shortcuts, Settings window, ⌘Return to send.
-19. Glass composer, toolbar and Jump to Latest.
+19. Glass composer that says what is happening, toolbar, and Jump to Latest with how many messages are below.
 20. Action Button / App Shortcuts: New Chat with an assistant, optionally listening.
 21. Scene restoration of the open chat.
 
 **Polish (v1)**
 
 22. Delta coalescing; Markdown parsed in the presenter, closed while it is written, a long reply in several rows; equatable turn views; a presenter made of kept parts, and a tree published in parts.
-23. Haptics; the send/stop morph; the thinking shimmer.
+23. Haptics; the send/stop morph; the thinking shimmer and its window; text drawn at a steady rate.
 24. Search over titles, previews and cached transcripts.
 25. Technical details.
 26. Unread dot and badge.
@@ -1242,11 +1335,37 @@ button and Details stack where the text size leaves no room side by side.
 
 - Unit tests (`mise run apple:test:chat`, on the Mac; ChatKit's also on
   Linux, `mise run apps:test:linux`): the transcript fold
-  and the live overlay against the console's cases (pairing by id, orphans,
+  and the stream's rows against the console's cases (pairing by id, orphans,
   compaction, reasoning), ndjson and watch lines (heartbeats, garbage,
   terminal frames), replay dropping by set membership, the Markdown parser on
   every prefix of a document, previews, titles and day groups, the tool words
   and path encoding.
+- The list's rules against a scripted server (`RuleTests`, by the rule's
+  number), and one turn's fold (`FoldTests`): text placed by position in
+  any order and twice; a stream joined again at every point, with positions
+  and without, which never shows less; events then rows and rows then late
+  events; and, at every point of a run's stream and every prefix of its
+  rows, a transcript with nothing doubled, nothing lost and every id as the
+  stream first gave it. Each `cutBy` says so at the turn the stream drew.
+- The stream (`StreamTests`): a return to the front at revision 5 and
+  below it empties nothing and the reply goes on where it was; a turn that
+  settles between an attach's read and its stream; `lagged`; the quiet a
+  stream may keep (25 s and 75 s); a resumed run asked for its stream at
+  revision 5 and read below it; what the composer says from the send to the
+  end; and every piece of a reply keeping its identity to its stored row.
+- Pacing and following (`RevealTests`): what is drawn is never further
+  behind than the lag and never moves back; the presenter asks for each
+  step and ends on the whole text; Reduce Motion draws each piece as it
+  arrives; the follow rule's every move; Jump to Latest's count.
+- The handover as it is drawn (`apple/Tests/HandoverTests.swift`, the
+  app's own rows in a window against the fixture's server, one event at a
+  time, paced and not): from the first piece to the stored rows the
+  transcript's height never shrinks, no row is torn down, each turn's text
+  is never taken back, an attach empties nothing, and an opened Thinking
+  section and tool row stay open. `FollowTests` holds the real
+  conversation view: at its end before the app was away and after, with a
+  reply grown meanwhile; scrolled up, it stays, and Jump to Latest says how
+  many messages are below and goes there.
 - A reply as it is written (`MarkdownClosingTests`, `MarkdownRowsTests`):
   at every prefix of several replies, what is drawn is the start of what
   the whole reply draws, with no marker in it the reply does not show; it
@@ -1440,12 +1559,32 @@ The numbers are a machine's: the table's first line says which, and a
 simulator is not a device. The counts (runs, evaluations, parses per step)
 are the same on any machine.
 
+### Looking at a state
+
+A debug build started with `SUBSTRATE_CHAT_DEMO=<state>` signs in to
+nothing, as a measured one does, and shows one chat of the fixture's server
+held at that state: `connecting`, `thinking`, `writing`, `tool`,
+`answering`, `reconnecting`, `done`, `long` (the fixture's chat of 200
+turns, to scroll up in for Jump to Latest) or `play` (the whole run, at
+the fixture's pace). It is how the screenshots of a state that lasts a
+moment are taken; a release carries none of it. The run is
+`ChatFixtures.run(thread:)`, the lines a server at `agents` revision 5
+sends and the rows it holds after each, which `FixtureServer.script` serves
+one step at a time for the tests above.
+
+A debug build started with `SUBSTRATE_CHAT_SESSION` set to a server's
+address, a repository's name and a token, with spaces between, is signed in
+to that server from memory, with a scratch folder. It is for a run against
+a dev substrate on a simulator, where the browser's sign-in cannot be
+driven; a release carries none of it either.
+
 ## What the reviews changed
 
 - The full event and exit tables (`truncated`, `error` after the 200, a
   settled `idle`, refusal statuses, permanent attach failures, drains).
 - The store's rules: UUID-keyed conversations bound by `thread`, one per
-  thread, read, run and session epochs, no rows under an overlay.
+  thread, read, run and session epochs, no rows under an overlay (which
+  one fold of a turn has since replaced, rule 3).
 - Freshness by thread `version`, never `updatedAt`; message rows on the feed.
 - The feed's handoff from the list's `head` and `generation`, and its
   terminal frames.
@@ -1466,9 +1605,8 @@ are the same on any machine.
 Both reviewers read the first implementation against this design, the
 console and the server.
 
-- A conversation owns its rows while a handover read it is waiting on has
-  failed, and the next move of the thread retries it, so no other read lands
-  under its overlay.
+- A conversation owns its thread while a handover read it is waiting on has
+  failed, and the next move of the thread retries it.
 - The feed's batches apply one at a time; a new row restarts only the wait,
   what failed to re-read is kept, and the saved cursor moves only past rows
   whose re-reads landed.
