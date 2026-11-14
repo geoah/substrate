@@ -339,6 +339,7 @@ extension ChatApp {
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, draftReplaced: live.draftReplaced, draftBefore: live.draftBefore,
+                draftGiven: live.draftGiven,
                 placeholder: agent.map { "Message \($0.name)" } ?? "Message",
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
                 keyless: hero?.keyless == nil ? callout : nil,

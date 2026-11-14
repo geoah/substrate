@@ -56,8 +56,8 @@ public final class ChatStorage: @unchecked Sendable {
     /// a lease's check and its step are one: opening, retiring, clearing,
     /// pruning, touching, every write.
     private let files = NSLock()
-    /// The drafts' writes asked for, under `lock`, and the last to land,
-    /// under `files`.
+    /// The drafts' writes asked for, under `lock`, and the last of the
+    /// drafts and of the unsent messages to land, under `files`.
     private var draftsAsked = 0
     private var draftsWritten = 0
     private var unsentWritten = 0
@@ -373,7 +373,15 @@ public final class ChatStorage: @unchecked Sendable {
     /// a write of the drafts alone that was asked for later and landed
     /// first must not keep a message out of the folder. Then the drafts on
     /// disk are the newer ones and stay, and the unsent messages are
-    /// written as this write has them.
+    /// written as this write has them. Each order's mark moves only once
+    /// its file is written: a later write that failed put nothing in the
+    /// folder, and an earlier one that runs after it must not take the
+    /// newer drafts for being there and take a message out of the unsent
+    /// ones on their account.
+    ///
+    /// A folder that could not be opened keeps nothing (`open`), and a
+    /// write to it is one that failed. With no base there is no folder to
+    /// open: a preview, whose writes are kept in memory and count as made.
     @discardableResult
     func save(
         drafts: [String: String], unsent: [String: UnsentMessage]? = nil, _ lease: Lease, ticket: Int? = nil,
@@ -381,17 +389,15 @@ public final class ChatStorage: @unchecked Sendable {
     ) -> Saved {
         let ticket = ticket ?? draftsTicket()
         return whileHeld(lease) { holding -> Saved? in
+            if holding.folder == nil, base != nil { return .failed("\(ChatManifest.appName) could not open its folder on this device.") }
             do {
                 let data = try JSONEncoder().encode(drafts)
-                if unsent != nil {
-                    guard ticket > unsentWritten else { return .passed }
-                    unsentWritten = ticket
-                }
+                if unsent != nil, ticket <= unsentWritten { return .passed }
                 let newest = ticket > draftsWritten
-                if newest { draftsWritten = ticket }
                 guard let unsent else {
                     guard newest else { return .passed }
                     try holding.folder?.write(data, to: "drafts.json", in: .root)
+                    draftsWritten = ticket
                     return .written
                 }
                 let before = Self.unsent(in: holding)
@@ -400,6 +406,7 @@ public final class ChatStorage: @unchecked Sendable {
                         try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
                         holding.unsent = unsent
                     }
+                    unsentWritten = ticket
                     return .written
                 }
                 let both = before.merging(unsent) { _, new in new }
@@ -409,11 +416,13 @@ public final class ChatStorage: @unchecked Sendable {
                     between?()
                 }
                 try holding.folder?.write(data, to: "drafts.json", in: .root)
+                draftsWritten = ticket
                 if both != unsent {
                     between?()
                     try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
                     holding.unsent = unsent
                 }
+                unsentWritten = ticket
                 return .written
             } catch {
                 return .failed(error.localizedDescription)

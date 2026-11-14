@@ -116,7 +116,9 @@ public struct DraftReports: Equatable, Sendable {
     /// names: the draft before the one rewrite the field missed, or before
     /// the first of several. Text that does not begin with the replaced one
     /// is the field's own, typed over it or never the conversation's (told
-    /// or not), and stands as it is.
+    /// or not), and stands as it is. A text the rewrite put into the draft
+    /// that is in no other place goes beside it all the same
+    /// (`ComposerPresentation.draftGiven`).
     ///
     /// `say()` after it tells the conversation what the field then holds.
     /// A field that had spoken always has something to say, since what it
@@ -132,8 +134,15 @@ public struct DraftReports: Equatable, Sendable {
             base = composer.draftReplaced
         }
         var next = composer.draft
-        if revision != nil, text != base {
+        if let revision, text != base {
             next = text.hasPrefix(base) ? composer.draft + text.dropFirst(base.count) : text
+            // A text a rewrite since the field last looked put into the
+            // draft, that is in no other place (a message given back, a
+            // thread's kept draft), is taken whatever the field keeps of
+            // its own: beside it, and never in its place.
+            for given in composer.draftGiven where given.revision > revision && !next.contains(given.text) {
+                next = given.below ? Conversation.above(next, given.text) : Conversation.above(given.text, next)
+            }
         }
         let resay = spoken || next != composer.draft
         revision = composer.draftRevision

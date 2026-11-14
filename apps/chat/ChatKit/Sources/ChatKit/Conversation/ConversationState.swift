@@ -170,6 +170,12 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// The thread's kept draft this conversation has taken into its
     /// composer (`Conversation.draftFound`), so it is taken once.
     var draftTaken: String?
+    /// The texts the engine put into the composer by its own act since the
+    /// draft was last sent: a message given back, a thread's kept draft.
+    /// Each is in no other place, so a field that keeps its own text over
+    /// the rewrite that carried one takes that text all the same
+    /// (`DraftReports.take`).
+    var given: [DraftGiven] = []
     /// The thread the last event found the pending message on, by a read
     /// and not by a run's `thread` event: the list is told, and where
     /// another conversation already has that thread, this one gives way.

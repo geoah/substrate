@@ -87,6 +87,11 @@ public struct ComposerPresentation: Codable, Equatable, Sendable {
     /// The text the last rewrite alone stands in place of, for a field that
     /// took the one before it.
     public var draftBefore: String
+    /// The texts the rewrites put into the draft that are in no other
+    /// place (a message given back, a thread's kept draft), each with the
+    /// revision that carried it: a field that keeps its own text over a
+    /// rewrite takes these all the same.
+    public var draftGiven: [DraftGiven] = []
     public var placeholder: String
     /// Why a send cannot go now.
     public var blocked: String?
@@ -98,6 +103,17 @@ public struct ComposerPresentation: Codable, Equatable, Sendable {
     public var agentLabel: String
     public var listenOnOpen: Bool
     public var canSend: Bool
+}
+
+/// A text a rewrite put into the composer that must not be lost with the
+/// rewrite: where it goes beside what the field holds, and the draft
+/// revision that carried it.
+public struct DraftGiven: Codable, Equatable, Sendable {
+    public var text: String
+    /// Under what the field holds (a kept draft, the older text) or above
+    /// it (a message, ahead of what was typed since).
+    public var below: Bool
+    public var revision: Int
 }
 
 /// An agent whose provider has no key cannot answer: said before anybody

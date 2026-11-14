@@ -30,6 +30,40 @@ private func refusal(_ status: Int, code: String, reason: String? = nil, _ messa
     return .json(status, #"{"error":{"code":"\#(code)",\#(reason)"message":"\#(message)"}}"#)
 }
 
+/// A composer's field as the app's view keeps it: its own text, and what it
+/// tells its conversation of it. The view does these same steps.
+private struct TypedField {
+    var text = ""
+    var reports = DraftReports()
+
+    /// The person makes the field hold `text`, and nothing is told.
+    mutating func hold(_ text: String) {
+        self.text = text
+        reports.typed(text, at: Date(timeIntervalSince1970: 0))
+    }
+
+    /// The tree's composer arrived or changed: the field takes what moved,
+    /// and answers what it then has to say.
+    mutating func look(_ composer: ComposerPresentation?) -> Conversation.Command? {
+        guard let composer else { return nil }
+        if let next = reports.take(composer, holding: text) { text = next }
+        let said = reports.say()
+        reports.typed(text, at: Date(timeIntervalSince1970: 0))
+        return said
+    }
+}
+
+extension ChatRig {
+    /// The field looks at the tree and says what it has to, until it has
+    /// nothing more to say.
+    fileprivate func settle(_ field: inout TypedField, _ key: ChildKey) async throws {
+        for _ in 0 ..< 6 {
+            guard let command = field.look(await conversation(key)?.composer) else { return }
+            try await send(command, to: key)
+        }
+    }
+}
+
 /// The one chat in the list, as its read answers.
 private let oneThread = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
 
@@ -549,6 +583,52 @@ struct RefusedSends {
         #expect(ids.count == 2 && ids[0] != nil && ids[1] != nil && ids[0] != ids[1])
     }
 
+    @Test func aTextGivenBackIsNotLostToAFieldThatHoldsOtherThanWasHeard() async throws {
+        let busy = refusal(409, code: "conflict", reason: "thread_busy", "a turn is running on the thread")
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: busy)])
+        rig.server.hold("/chat")
+        try await rig.signIn(agents: 3)
+        let key = try await rig.newChat()
+        var field = TypedField()
+        try await rig.settle(&field, key)
+        field.hold("Water the basil")
+        try await rig.send(field.reports.tell(field.text), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.settle(&field, key)
+        #expect(field.text.isEmpty)
+        // While it is out: the conversation hears "abc", and then the
+        // person types other text over it, which it has not heard yet.
+        field.hold("abc")
+        try await rig.send(#require(field.reports.say()), to: key)
+        field.hold("xyz")
+        // The only copy is refused: the message goes back into the
+        // composer, above the "abc" the conversation holds.
+        rig.server.letGo("/chat")
+        try await rig.harness.until { _ in await rig.live(key)?.draft == "Water the basil\n\nabc" }
+        // The field holds "xyz", which does not begin with "abc": it keeps
+        // its own text over the rewrite. The message is in no other place,
+        // so the field takes it all the same, above what it holds.
+        let said = try #require(field.look(await rig.conversation(key)?.composer))
+        #expect(field.text == "Water the basil\n\nxyz" && said == .draft("Water the basil\n\nxyz"))
+        try await rig.send(said, to: key)
+        #expect(await rig.live(key)?.draft == "Water the basil\n\nxyz")
+        #expect(await rig.harness.state.drafts.values.contains("Water the basil\n\nxyz"))
+        // From here it is the person's: taken out, it stays out, whatever
+        // is typed after.
+        field.hold("xyz")
+        try await rig.send(#require(field.reports.say()), to: key)
+        try await rig.settle(&field, key)
+        field.hold("xyz!")
+        try await rig.send(#require(field.reports.say()), to: key)
+        try await rig.settle(&field, key)
+        #expect(field.text == "xyz!")
+        #expect(await rig.live(key)?.draft == "xyz!")
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.server.count("/chat") == 2 }
+        #expect(rig.server.bodies("POST", "/chat").last?.contains(#""message":"xyz!""#) == true)
+        rig.server.letGo("/chat")
+    }
+
     @Test func aRepeatRefusedKeepsItsIdAndStandsWithSendAgain() async throws {
         let reasons: [(String, Int, String, String)] = [
             ("thread_busy", 409, "conflict", "Helper is still answering in this chat."),
@@ -892,6 +972,45 @@ struct KilledMidSend {
         try await rig.harness.until(advancing: 1) { _ in await rig.harness.state.drafts == ["t1": both + " and more"] }
     }
 
+    @Test func aKeptDraftIsNotLostToAFieldThatHoldsOtherThanWasHeard() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .fail(.timedOut))])
+        try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
+        try Data(#"{"t1":"an older thought"}"#.utf8).write(to: rig.root.appendingPathComponent("drafts.json"))
+        try await rig.signIn(agents: 3)
+        let key = try await rig.sendHi()
+        try await rig.harness.until { _ in await rig.live(key)?.reconnecting == true }
+        let id = try #require(rig.sentIDs.first ?? nil)
+        try await rig.harness.until(advancing: 10) { _ in await rig.live(key)?.standing == true }
+        // The conversation heard "first", and the field holds "second",
+        // typed over it and not said yet.
+        var field = TypedField()
+        try await rig.settle(&field, key)
+        field.hold("first")
+        try await rig.send(#require(field.reports.say()), to: key)
+        field.hold("second")
+        rig.server.route("GET", "/api/v1/records", query: "llm/thread", .json(200, oneThread))
+        rig.server.route("GET", "/api/v1/records", query: "llm/message", .json(200, rows(user: id)))
+        await rig.harness.send(.refresh)
+        try await rig.harness.until(advancing: 1) { _ in await rig.live(key)?.thread == "t1" }
+        try await rig.harness.until { _ in await rig.live(key)?.draft == "first\n\nan older thought" }
+        // The field keeps "second" over the rewrite, and takes the older
+        // text under it: neither is dropped.
+        try await rig.settle(&field, key)
+        #expect(field.text == "second\n\nan older thought")
+        #expect(await rig.live(key)?.draft == "second\n\nan older thought")
+        try await rig.harness.until { _ in await rig.harness.state.drafts == ["t1": "second\n\nan older thought"] }
+        try await rig.harness.until(advancing: 1) { _ in rig.draftsFile.contains("second") && rig.draftsFile.contains("an older thought") }
+        // Taken out by the person, the older text stays out.
+        field.hold("second")
+        try await rig.send(#require(field.reports.say()), to: key)
+        try await rig.settle(&field, key)
+        field.hold("second thoughts")
+        try await rig.send(#require(field.reports.say()), to: key)
+        try await rig.settle(&field, key)
+        #expect(field.text == "second thoughts")
+        try await rig.harness.until(advancing: 1) { _ in await rig.harness.state.drafts == ["t1": "second thoughts"] }
+    }
+
     @Test func aNewChatWithNothingTypedTakesTheThreadsKeptDraftIntoItsComposer() throws {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
         var state = signedInState()
@@ -978,6 +1097,47 @@ struct KilledMidSend {
         try FileManager.default.removeItem(at: blocked)
         #expect(storage.save(drafts: [:], unsent: ["t1": message], lease) == .written)
         #expect(storage.unsent(lease) == ["t1": message] && storage.drafts(lease).isEmpty)
+    }
+
+    @Test func aLaterWriteThatFailedDoesNotLetAnEarlierOneTakeAMessageOutOfBothFiles() async throws {
+        let base = temporaryFolder("chat")
+        let storage = ChatStorage(base: base)
+        let lease = await storage.open(identity).value
+        let folder = base.appendingPathComponent(ChatStorage.hash(identity), isDirectory: true)
+        let message = UnsentMessage(id: "a", message: "Water the basil", agent: helper, thread: "t1", sentAt: Date())
+        #expect(storage.save(drafts: [:], unsent: ["t1": message], lease) == .written)
+        // Edit Message's write (the text into the drafts, out of the unsent
+        // messages) is asked for, then a write of the drafts alone for
+        // what was typed after it. The later one runs first, and fails.
+        let edit = storage.draftsTicket()
+        let typed = storage.draftsTicket()
+        let blocked = folder.appendingPathComponent("drafts.json")
+        try? FileManager.default.removeItem(at: blocked)
+        try FileManager.default.createDirectory(at: blocked.appendingPathComponent("x"), withIntermediateDirectories: true)
+        guard case .failed = storage.save(drafts: ["t1": "Water the basil and the mint"], lease, ticket: typed) else {
+            Issue.record("a write the folder refused was not reported")
+            return
+        }
+        try FileManager.default.removeItem(at: blocked)
+        // The earlier one then writes its own drafts before it takes the
+        // message out: the text is in the folder either way.
+        #expect(storage.save(drafts: ["t1": "Water the basil"], unsent: [:], lease, ticket: edit) == .written)
+        #expect(storage.drafts(lease) == ["t1": "Water the basil"] && storage.unsent(lease).isEmpty)
+    }
+
+    @Test func aFolderThatNeverOpenedIsAWriteThatFailedAndAPreviewsIsNot() async throws {
+        // A file stands where the repository's folder goes.
+        let base = temporaryFolder("chat")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: base.appendingPathComponent(ChatStorage.hash(identity)))
+        let storage = ChatStorage(base: base)
+        let lease = await storage.open(identity).value
+        let message = UnsentMessage(id: "a", message: "Water the basil", agent: helper, thread: "t1", sentAt: Date())
+        #expect(storage.save(drafts: [:], unsent: ["t1": message], lease) == .failed("Substrate Chat could not open its folder on this device."))
+        // With no base there is no folder to open, and nothing to say.
+        let preview = ChatStorage(base: nil)
+        let none = await preview.open(identity).value
+        #expect(preview.save(drafts: [:], unsent: ["t1": message], none) == .written)
     }
 
     @Test func aLaterWriteOfTheDraftsAloneDoesNotKeepAMessageOutOfTheFolder() async throws {
