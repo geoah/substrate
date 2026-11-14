@@ -261,6 +261,28 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		_, err := r.ds.ChatAgent(r.person(r.boID, bo), bo, r.pkg+"/scribe", substrate.ChatInput{Message: "mine now", Thread: thread}, nil)
 		return errRefused(err)
 	},
+	"agents.go:ContinueAgentTurn": func(t *testing.T, r *runsRepository) (bool, string) {
+		thread := r.staged(t, "scribe", fakeTurn{content: "first."})
+		r.fail("holders")
+		defer r.heal()
+		bo := substrate.PersonActor(r.boID)
+		_, err := r.ds.ContinueAgentTurn(r.person(r.boID, bo), bo, thread, nil)
+		return errRefused(err)
+	},
+	// A repeated opening send names no thread: the thread its message is on
+	// is held to the hand all the same.
+	"agents.go:sentMessage": func(t *testing.T, r *runsRepository) (bool, string) {
+		opening := substrate.ChatInput{Message: "go", MessageID: "rules-fault-1"}
+		r.fake.script("scribe", fakeTurn{content: "first."})
+		if _, err := r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/scribe", opening, nil); err != nil {
+			return false, err.Error()
+		}
+		r.fail("holders")
+		defer r.heal()
+		bo := substrate.PersonActor(r.boID)
+		_, err := r.ds.ChatAgent(r.person(r.boID, bo), bo, r.pkg+"/scribe", opening, nil)
+		return errRefused(err)
+	},
 	"agents.go:StopAgentTurn": func(t *testing.T, r *runsRepository) (bool, string) {
 		thread := r.staged(t, "scribe", fakeTurn{content: "first."})
 		r.fail("holders")
