@@ -147,9 +147,78 @@ var errAnswerLost = errors.New("the connection broke before the COMMIT answered"
 // to roll back. The wait outlasts a cancel, as a backend whose client went
 // away goes on with its COMMIT: the write's own context ends once the write
 // has answered, and the COMMIT lands after.
+//
+// NOT ALWAYS. The driver cancels the COMMIT once the write's context ends,
+// and in a rare run the trigger does not catch that cancel: Postgres logs
+// "canceling statement due to user request" at the trigger's wait, and the
+// COMMIT rolls back before the test lets it go (#1412). Its transaction has
+// ended, so the proof is granted the lock and the fence lifts, rightly. A
+// check that finds a fence down tells the two apart by the held COMMIT's
+// transaction (ended), and a case whose COMMIT ended early runs again on a
+// fresh hold (errHoldEnded).
 type commitHold struct {
 	db  *sql.DB
 	key int32
+}
+
+// errHoldEnded is a held COMMIT that ended before the test let it go: the
+// case's premise is gone, and it runs again.
+var errHoldEnded = errors.New("the held COMMIT ended before the test let it go")
+
+// heldTx is the COMMIT a hold keeps waiting: its backend and its
+// transaction.
+type heldTx struct {
+	pid int
+	xid string
+}
+
+// waiting reads the COMMIT that waits on the hold's lock.
+func (c *commitHold) waiting(t *testing.T) heldTx {
+	t.Helper()
+	var h heldTx
+	if err := c.db.QueryRow(`SELECT a.pid, a.backend_xid::text FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND NOT l.granted AND l.classid = 0 AND l.objid = $1`, c.key).Scan(&h.pid, &h.xid); err != nil {
+		t.Fatalf("read the held COMMIT: %v", err)
+	}
+	return h
+}
+
+// ended answers whether the held COMMIT's transaction is over.
+func (c *commitHold) ended(t *testing.T, h heldTx) bool {
+	t.Helper()
+	var n int
+	if err := c.db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE pid = $1 AND backend_xid::text = $2`, h.pid, h.xid).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n == 0
+}
+
+// revoked answers whether the token's deletion is in the table: a held
+// COMMIT let go without rollback lands, so one that is not there rolled
+// back before the test let it go.
+func (c *commitHold) revoked(t *testing.T, id string) bool {
+	t.Helper()
+	var gone bool
+	if err := c.db.QueryRow(`SELECT deleted_at IS NOT NULL FROM records WHERE kind = $1 AND id = $2`, kindToken, id).Scan(&gone); err != nil {
+		t.Fatalf("read the token's row: %v", err)
+	}
+	return gone
+}
+
+// heldAgain runs a case whose COMMIT a hold keeps, again on a fresh hold
+// while it ends with errHoldEnded, a few times at most.
+func heldAgain(t *testing.T, what string, run func() error) {
+	t.Helper()
+	for attempt := 1; ; attempt++ {
+		err := run()
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, errHoldEnded) || attempt == 5 {
+			t.Fatalf("%s, attempt %d: %v", what, attempt, err)
+		}
+		t.Logf("%s, attempt %d: %v; again on a fresh hold", what, attempt, err)
+	}
 }
 
 func newCommitHold(t *testing.T, ds *dataset) *commitHold {
@@ -222,19 +291,29 @@ func (c *commitHold) blocked(t *testing.T) func() bool {
 
 // proofWaitsOnTheLock waits until the database shows a proof's request for a
 // repository's changelog lock waiting, read through the owner's connection,
-// which sees every session's.
-func proofWaitsOnTheLock(t *testing.T, ds *dataset) {
+// which sees every session's. It answers errHoldEnded once the held COMMIT
+// ended without one: its proof had nothing to wait for.
+func proofWaitsOnTheLock(t *testing.T, ds *dataset, held *commitHold, holding heldTx) error {
 	t.Helper()
 	owner := rawDB(t, ds)
-	eventually(t, "the proof waits on the changelog lock", func() bool {
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
 		var n int
 		if err := owner.QueryRow(`SELECT count(*) FROM pg_stat_activity
 			WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = 'advisory'
 			  AND query LIKE '%pg_advisory_xact_lock(hashtext(current_schema()%'`).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
-		return n > 0
-	})
+		switch {
+		case n > 0:
+			return nil
+		case held.ended(t, holding):
+			return fmt.Errorf("waiting for the proof to wait: %w", errHoldEnded)
+		case time.Now().After(deadline):
+			t.Fatal("never: the proof waits on the changelog lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // eventually waits for cond, failing the test after two minutes: a deadline
@@ -263,7 +342,6 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 	repo := ds.scope.Repository
 	held := newCommitHold(t, ds)
 	blocked := held.blocked(t)
-	release := held.hold(t)
 	mint := func(label string) (substrate.TokenInfo, string) {
 		t.Helper()
 		info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: label})
@@ -277,75 +355,125 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 		return err
 	}
 	cached := func(secret string) bool { return ds.svc.tokens.cached(hashToken(secret)) }
+	// holding is the COMMIT the case's hold keeps, zero outside one.
+	var holding heldTx
 	// standing holds a lookup of a live token read from the table and
-	// nothing kept: what the fence is for.
-	standing := func(when, secret string) {
+	// nothing kept: what the fence is for. A fence found down is the
+	// server's fault only while the held COMMIT's transaction still exists;
+	// one that ended first was proved, and the case's premise is gone.
+	standing := func(when, secret string) error {
 		t.Helper()
 		if err := authenticates(secret); err != nil {
-			t.Fatalf("%s: a live token = %v, want it read from the table", when, err)
+			return fmt.Errorf("%s: a live token = %w, want it read from the table", when, err)
 		}
-		if !ds.svc.tokens.fenced(repo) || cached(secret) {
-			t.Fatalf("%s: fenced %v, cached %v; want the repository fenced and nothing kept", when, ds.svc.tokens.fenced(repo), cached(secret))
+		if ds.svc.tokens.fenced(repo) && !cached(secret) {
+			return nil
+		}
+		if holding.pid != 0 && held.ended(t, holding) {
+			return fmt.Errorf("%s: %w", when, errHoldEnded)
+		}
+		p := &ds.svc.proofs
+		p.mu.Lock()
+		pending, running := p.pending[repo], p.running[repo]
+		p.mu.Unlock()
+		return fmt.Errorf("%s: fenced %v, cached %v; want the repository fenced and nothing kept "+
+			"(the held COMMIT still waiting; fences awaiting proof %d, waiter running %v)",
+			when, ds.svc.tokens.fenced(repo), cached(secret), pending, running)
+	}
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
 	other, otherSecret := mint("another of the repository")
 	_ = other
+	landed := make(chan error, 1)
+	// hold is the answer of a COMMIT the case holds in Postgres: it waits
+	// there, and its write is answered in doubt.
+	hold := func(commit func() error) error {
+		go func() { landed <- commit() }()
+		eventually(t, "the COMMIT waits in Postgres", blocked)
+		holding = held.waiting(t)
+		return errAnswerLost
+	}
 
 	// A COMMIT that lands late: Postgres holds it, its write is answered in
 	// doubt, and it lands after.
-	late, lateSecret := mint("revoked late")
-	if err := authenticates(lateSecret); err != nil || !cached(lateSecret) {
-		t.Fatalf("a token before its revoke: %v, cached %v", err, cached(lateSecret))
-	}
-	landed := make(chan error, 1)
-	h.arm(func() { standing("before the COMMIT", lateSecret) }, func(commit func() error) error {
-		go func() { landed <- commit() }()
-		eventually(t, "the COMMIT waits in Postgres", blocked)
-		return errAnswerLost
+	heldAgain(t, "a late COMMIT", func() error {
+		release := held.hold(t)
+		late, lateSecret := mint("revoked late")
+		if err := authenticates(lateSecret); err != nil || !cached(lateSecret) {
+			t.Fatalf("a token before its revoke: %v, cached %v", err, cached(lateSecret))
+		}
+		h.arm(func() { must(standing("before the COMMIT", lateSecret)) }, hold)
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, late.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+			t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
+		}
+		h.wasReached(t)
+		err := standing("in doubt, the COMMIT still waiting", lateSecret)
+		if err == nil {
+			err = standing("in doubt, another token of the repository", otherSecret)
+		}
+		// The waiter has asked the database for the lock, and waits on it,
+		// before the COMMIT is let go: a proof that did not wait would lift
+		// the fence here.
+		if err == nil {
+			err = proofWaitsOnTheLock(t, ds, held, holding)
+		}
+		if err == nil {
+			err = standing("in doubt, the proof waiting on the lock", lateSecret)
+		}
+		release(false)
+		<-landed
+		holding = heldTx{}
+		eventually(t, "the fence lifts once the late COMMIT is proved", func() bool { return !ds.svc.tokens.fenced(repo) })
+		if err != nil {
+			return err
+		}
+		if !held.revoked(t, late.ID) {
+			return fmt.Errorf("the late COMMIT let go is not in the table: %w", errHoldEnded)
+		}
+		if err := authenticates(lateSecret); !errors.Is(err, substrate.ErrAuth) || cached(lateSecret) {
+			t.Fatalf("after the late COMMIT: %v, cached %v; want ErrAuth and nothing kept", err, cached(lateSecret))
+		}
+		return nil
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, late.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
-		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
-	}
-	h.wasReached(t)
-	standing("in doubt, the COMMIT still waiting", lateSecret)
-	standing("in doubt, another token of the repository", otherSecret)
-	// The waiter has asked the database for the lock, and waits on it,
-	// before the COMMIT is let go: a proof that did not wait would lift the
-	// fence here.
-	proofWaitsOnTheLock(t, ds)
-	standing("in doubt, the proof waiting on the lock", lateSecret)
-	release(false)
-	<-landed
-	eventually(t, "the fence lifts once the late COMMIT is proved", func() bool { return !ds.svc.tokens.fenced(repo) })
-	if err := authenticates(lateSecret); !errors.Is(err, substrate.ErrAuth) || cached(lateSecret) {
-		t.Fatalf("after the late COMMIT: %v, cached %v; want ErrAuth and nothing kept", err, cached(lateSecret))
-	}
 
 	// A COMMIT answered in doubt that rolls back: once proved, the token
 	// stands and is cached again.
-	release = held.hold(t)
-	kept, keptSecret := mint("revoked, rolled back")
-	h.arm(func() {}, func(commit func() error) error {
-		go func() { landed <- commit() }()
-		eventually(t, "the COMMIT waits in Postgres", blocked)
-		return errAnswerLost
+	heldAgain(t, "a COMMIT that rolls back", func() error {
+		release := held.hold(t)
+		kept, keptSecret := mint("revoked, rolled back")
+		h.arm(func() {}, hold)
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, kept.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+			t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
+		}
+		h.wasReached(t)
+		err := standing("in doubt, before the rollback", keptSecret)
+		if err == nil {
+			err = proofWaitsOnTheLock(t, ds, held, holding)
+		}
+		if err == nil {
+			err = standing("in doubt, the proof waiting on the lock before the rollback", keptSecret)
+		}
+		release(true)
+		<-landed
+		holding = heldTx{}
+		eventually(t, "the fence lifts once the rollback is proved", func() bool { return !ds.svc.tokens.fenced(repo) })
+		// Only now has the held COMMIT read the flag: its client's answer
+		// came back long before.
+		if _, err := held.db.Exec(`UPDATE test_token_commit SET rollback = false`); err != nil {
+			t.Fatal(err)
+		}
+		if err != nil {
+			return err
+		}
+		if err := authenticates(keptSecret); err != nil || !cached(keptSecret) {
+			t.Fatalf("after the rollback: %v, cached %v; want the token standing and cached", err, cached(keptSecret))
+		}
+		return nil
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, kept.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
-		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
-	}
-	h.wasReached(t)
-	standing("in doubt, before the rollback", keptSecret)
-	release(true)
-	<-landed
-	eventually(t, "the fence lifts once the rollback is proved", func() bool { return !ds.svc.tokens.fenced(repo) })
-	// Only now has the held COMMIT read the flag: its client's answer came
-	// back long before.
-	if _, err := held.db.Exec(`UPDATE test_token_commit SET rollback = false`); err != nil {
-		t.Fatal(err)
-	}
-	if err := authenticates(keptSecret); err != nil || !cached(keptSecret) {
-		t.Fatalf("after the rollback: %v, cached %v; want the token standing and cached", err, cached(keptSecret))
-	}
 
 	// The waiter that cannot get its proof keeps the fence, however long.
 	h.failing.Store(true)
@@ -383,7 +511,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 	if pending != 3 || waiters != 1 {
 		t.Fatalf("three commits in doubt hold %d fences under %d waiters, want 3 under 1", pending, waiters)
 	}
-	standing("after the proof failed", otherSecret)
+	must(standing("after the proof failed", otherSecret))
 	h.failing.Store(false)
 	eventually(t, "the fence lifts once the proof comes", func() bool { return !ds.svc.tokens.fenced(repo) })
 	if err := authenticates(otherSecret); err != nil || !cached(otherSecret) {
@@ -392,7 +520,7 @@ func TestATokenCommitFencesTheCacheUntilItsOutcomeIsProved(t *testing.T) {
 
 	// A COMMIT answered: no doubt, and the fence lifts as it answers.
 	answered, answeredSecret := mint("revoked")
-	h.arm(func() { standing("before an answered COMMIT", answeredSecret) }, func(commit func() error) error { return commit() })
+	h.arm(func() { must(standing("before an answered COMMIT", answeredSecret)) }, func(commit func() error) error { return commit() })
 	if err := ds.svc.RevokeToken(ctx, answeredSecret, ""); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -464,38 +592,54 @@ func TestATokenProofThatTimesOutKeepsTheFence(t *testing.T) {
 	ds := newRaceDataset(t, append(h.options(), WithTestTokenProofAttempt(150*time.Millisecond))...)
 	repo := ds.scope.Repository
 	held := newCommitHold(t, ds)
-	release := held.hold(t)
-	info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "revoked late"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, otherSecret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "another"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = other
-	landed := make(chan error, 1)
-	h.arm(func() {}, func(commit func() error) error {
-		go func() { landed <- commit() }()
-		eventually(t, "the COMMIT waits in Postgres", held.blocked(t))
-		return errAnswerLost
+	heldAgain(t, "a proof that times out", func() error {
+		release := held.hold(t)
+		info, secret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "revoked late"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, otherSecret, err := ds.MintToken(ctx, substrate.MintTokenInput{Label: "another"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = other
+		landed := make(chan error, 1)
+		var holding heldTx
+		h.arm(func() {}, func(commit func() error) error {
+			go func() { landed <- commit() }()
+			eventually(t, "the COMMIT waits in Postgres", held.blocked(t))
+			holding = held.waiting(t)
+			return errAnswerLost
+		})
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, info.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
+			t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
+		}
+		h.wasReached(t)
+		start := h.attempts.Load()
+		// The attempts run out while the COMMIT is held; one granted because
+		// the COMMIT ended early proves its end, rightly.
+		eventually(t, "three attempts run out while the COMMIT is held, or the COMMIT ends", func() bool {
+			return h.attempts.Load() >= start+3 || held.ended(t, holding)
+		})
+		fenced := ds.svc.tokens.fenced(repo)
+		ended := held.ended(t, holding)
+		if !fenced && !ended {
+			t.Fatal("the fence lifted on attempts that ran out")
+		}
+		if !ended {
+			if _, _, err := ds.svc.Authenticate(ctx, otherSecret); err != nil || ds.svc.tokens.cached(hashToken(otherSecret)) {
+				t.Fatalf("a live token while the proof runs out: %v, cached %v; want it read and not kept", err, ds.svc.tokens.cached(hashToken(otherSecret)))
+			}
+		}
+		release(false)
+		<-landed
+		eventually(t, "the fence lifts once an attempt is granted the lock", func() bool { return !ds.svc.tokens.fenced(repo) })
+		if ended || !held.revoked(t, info.ID) {
+			return errHoldEnded
+		}
+		if _, _, err := ds.svc.Authenticate(ctx, secret); !errors.Is(err, substrate.ErrAuth) {
+			t.Fatalf("the late revoke = %v, want ErrAuth", err)
+		}
+		return nil
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, info.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrWriteInDoubt) {
-		t.Fatalf("a revoke whose answer was lost = %v, want ErrWriteInDoubt", err)
-	}
-	h.wasReached(t)
-	start := h.attempts.Load()
-	eventually(t, "three attempts run out while the COMMIT is held", func() bool { return h.attempts.Load() >= start+3 })
-	if !ds.svc.tokens.fenced(repo) {
-		t.Fatal("the fence lifted on attempts that ran out")
-	}
-	if _, _, err := ds.svc.Authenticate(ctx, otherSecret); err != nil || ds.svc.tokens.cached(hashToken(otherSecret)) {
-		t.Fatalf("a live token while the proof runs out: %v, cached %v; want it read and not kept", err, ds.svc.tokens.cached(hashToken(otherSecret)))
-	}
-	release(false)
-	<-landed
-	eventually(t, "the fence lifts once an attempt is granted the lock", func() bool { return !ds.svc.tokens.fenced(repo) })
-	if _, _, err := ds.svc.Authenticate(ctx, secret); !errors.Is(err, substrate.ErrAuth) {
-		t.Fatalf("the late revoke = %v, want ErrAuth", err)
-	}
 }
