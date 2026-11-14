@@ -1,0 +1,755 @@
+import Foundation
+import SubstrateAPI
+import SubstrateCore
+import SubstrateRuntime
+import SubstrateTesting
+
+@testable import ChatKit
+
+/// One seed's run of the app against a server that misbehaves by it: a
+/// person's steps chosen from the seed (sends, stops, Try Again and
+/// Continue, Send Again and Edit Message, opening and closing chats,
+/// leaving and coming back to the front, kills and relaunches), the
+/// server's turns moved and the clock advanced between them, and after
+/// every step the rules a chat must keep whatever the server does.
+///
+/// The seed fixes the steps, the faults and the clock. The order the
+/// runtime's concurrent effects run in within one step is the scheduler's,
+/// so a run waits for the app to stand still before each next step.
+struct SeededRun {
+    /// What went wrong, with what replays it.
+    struct Violation: Error, CustomStringConvertible {
+        var seed: UInt64
+        var rule: String
+        var what: String
+        var steps: [String]
+        var revision: Int
+        var rate: Double
+
+        var description: String {
+            let listed = steps.enumerated().map { "  \($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+            return """
+                seed \(seed) broke a rule at step \(steps.count): \(rule)
+                \(what)
+                server: agents revision \(revision), \(Int(rate * 100))% of requests faulted
+                steps:
+                \(listed)
+                replay: CHATKIT_SEED=\(seed) CHATKIT_STEPS=\(steps.count) swift test --filter SeededChat
+                """
+        }
+    }
+
+    /// The rules, by the name a failure prints and a known failure is
+    /// listed under.
+    enum Rule: String, CaseIterable {
+        case fold = "the transcript drawn equals the fold of the server's rows"
+        case streaming = "no conversation is left waiting with no stream open"
+        case doubled = "no message is written twice"
+        case drawnTwice = "no row is drawn twice"
+        case lost = "nothing the person sent is lost"
+        case places = "no failure is drawn in two places"
+        case pending = "a pending message has its card or its send"
+        case resent = "without an id nothing is sent again on the app's own"
+        case list = "the list holds each chat once"
+        case settles = "every conversation settles once the server behaves"
+        /// Broken today, in code another group is rebuilding (`known`).
+        case overlay = "no run's overlay is left drawn once the run is over"
+        /// Broken today, in the same code.
+        case kept = "an overlay kept for a failed reload is not drawn beside rows that hold its turns"
+    }
+
+    /// Rules the app is known to break today, each in code another group
+    /// is rebuilding, with what breaks it. A run notes one where it meets
+    /// it, sets that conversation aside until it is whole again, and goes
+    /// on, so the rest of the seed is still held to every other rule.
+    static let known: [Rule: String] = [
+        .overlay: """
+        A 401 on an attach (or on the read before it) ends the run through `stopRunning`, which leaves the overlay's turns in             place with the conversation idle and its thread handed back: the next read of the rows draws the partial reply under             the stored one. For the group that makes the two models of a turn one (A4).
+        """,
+        .kept: """
+        After a handover's read fails the overlay is kept as the only view of that run. A send from there that ends with no \
+        answer is read for by the delivery check (a server without message ids), and what the check finds is published as \
+        the thread's rows while the kept overlay still stands: the run is drawn twice until Try Again on the reload. Also \
+        the two models of a turn (A4).
+        """,
+    ]
+
+    let seed: UInt64
+    let scene = "s"
+    let clock: TestClock
+    let ids: SequentialIDs
+    let base: URL
+    let server: SeededServer
+    let careless: Bool
+    let rate: Double
+    let with401: Bool
+    private var numbers: SeededNumbers
+    private var rig: ChatRig
+    private(set) var steps: [String] = []
+    private var typed = 0
+    /// Every text the person pressed Send on and did not take back: how
+    /// often they pressed, whether an id ever went with it, and how many
+    /// requests the server had seen for it before the first press.
+    private var sent: [String: (presses: Int, ids: Bool, before: Int)] = [:]
+    /// Every text ever sent, taken back or not, with how many messages the
+    /// person meant by it: one, and one more each time they took it back
+    /// with Edit Message, after which sending the same words is their own
+    /// new message.
+    private var ever: [String: Int] = [:]
+    /// Texts the app handed back without knowing whether they arrived: the
+    /// person looks before sending one again.
+    private var suspect: Set<String> = []
+    private var inFront = true
+    private var signedOut = false
+    /// The first rule the run broke that it is not known to break.
+    private(set) var broken: Violation?
+    /// The known rules this run broke, each once, with where.
+    private(set) var noted: [Rule: Violation] = [:]
+
+    /// - Parameters:
+    ///   - revision: the server's `agents` revision; nil draws it from the
+    ///     seed, mostly the one that takes a message's id.
+    ///   - careless: the person sends a text the app handed back without
+    ///     looking for it first, which on a server without ids can send a
+    ///     message twice: the run that shows the rules catch it.
+    init(seed: UInt64, revision: Int? = nil, careless: Bool = false) {
+        self.seed = seed
+        self.careless = careless
+        var numbers = SeededNumbers(seed: seed)
+        let drawn = numbers.below(5) == 0 ? 2 : 3
+        rate = numbers.pick([0.08, 0.2, 0.35, 0.5])
+        with401 = numbers.below(3) == 0
+        let clock = TestClock()
+        let ids = SequentialIDs()
+        let base = temporaryFolder("seeded")
+        let server = SeededServer(seed: seed, clock: clock, revision: revision ?? drawn)
+        self.clock = clock
+        self.ids = ids
+        self.base = base
+        self.server = server
+        rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
+        self.numbers = numbers
+    }
+
+    private var link: LinkSnapshot {
+        LinkSnapshot(phase: signedOut ? .accessEnded : .signedIn, server: origin, repository: repository, scopes: nil, online: true)
+    }
+
+    // MARK: The run
+
+    /// Runs `count` steps and then lets everything settle; the first rule
+    /// broken ends it, and is kept in `broken`.
+    mutating func run(steps count: Int) async {
+        broken = await ran(steps: count)
+    }
+
+    private mutating func ran(steps count: Int) async -> Violation? {
+        await rig.runtime.linkChanged(link)
+        await rig.harness.send(.sceneAppeared(scene: scene, restoring: nil))
+        // Signed in against a server that behaves, as a person is before
+        // anything goes wrong.
+        for _ in 0 ..< 200 {
+            await drain()
+            let state = await rig.harness.state
+            if state.loaded, !state.refreshing, state.agentsRevision != nil { break }
+        }
+        server.misbehave(rate, with401: with401)
+        for _ in 0 ..< count {
+            await step()
+            await drain()
+            if server.took401() {
+                // What the kit's link does with a refused token.
+                signedOut = true
+                await rig.runtime.linkChanged(link)
+                await drain()
+            }
+            if let broken = await confirmed(settled: false) { return broken }
+        }
+        steps.append("the server behaves, and everything is given time to settle")
+        return await settle()
+    }
+
+    /// What the run did, by name: the server's tally and the person's.
+    var tally: [String: Int] {
+        var out = server.tally
+        for step in steps {
+            let name: String? =
+                step.hasPrefix("sends ")
+                ? "person: sends"
+                : step.hasPrefix("presses Send Again")
+                    ? "person: Send Again on an unsent message"
+                    : step.hasPrefix("takes ")
+                        ? "person: Edit Message"
+                        : step.hasPrefix("the app is killed")
+                            ? "person: kill and relaunch"
+                            : step.hasPrefix("presses Try Again or Continue")
+                                ? "person: Try Again or Continue"
+                                : step.hasPrefix("presses Stop")
+                                    ? "person: Stop"
+                                    : step.hasPrefix("comes back")
+                                        ? "person: back to the front"
+                                        : step.hasPrefix("finds ")
+                                            ? "person: finds a text in the chat and does not resend"
+                                            : nil
+            if let name { out[name, default: 0] += 1 }
+        }
+        return out
+    }
+
+    /// What a run did, in a line: how much of the app a seed reached.
+    var summary: String {
+        let rows = server.threadIDs.reduce(0) { $0 + server.rows(of: $1).count }
+        return "seed \(seed): \(steps.count) steps, revision \(server.revision), \(Int(rate * 100))% faulted, \(ever.count) messages sent, "
+            + "\(server.threadIDs.count) threads and \(rows) rows at the server, \(server.faulted) of \(server.requests) requests faulted"
+    }
+
+    /// Waits for the app to stand still: nothing started, delivered, sent or
+    /// received over a few turns of the scheduler. What still runs then
+    /// waits on the server or on the clock, which only the next step moves.
+    private func drain(keepingTrace: Bool = false) async {
+        // The trace is kept for one step, for a failure to print.
+        if !keepingTrace, ProcessInfo.processInfo.environment["CHATKIT_TRACE"] == nil { rig.harness.clearTrace() }
+        var last = await snapshot()
+        var still = 0
+        var rounds = 0
+        while still < 3, rounds < 4000 {
+            // A turn of the scheduler as the app's own tasks get them: a
+            // task queued now runs after those already waiting, so on a
+            // loaded host the wait grows with the load and not by guesswork.
+            await Task.detached(priority: .low) {}.value
+            for _ in 0 ..< 4 { await Task.yield() }
+            try? await Task.sleep(nanoseconds: 200_000)
+            let now = await snapshot()
+            if now == last { still += 1 } else { still = 0 }
+            last = now
+            rounds += 1
+        }
+    }
+
+    private func snapshot() async -> [Int] {
+        let activity = await rig.runtime.activity
+        let counters = await rig.runtime.counters
+        return [activity.started, activity.running.count, activity.waiting, counters.delivered, counters.dropped, server.activity, clock.sleeping]
+    }
+
+    private func shown() async -> (key: ChildKey, screen: ConversationScreen, live: ConversationState)? {
+        guard let key = await rig.harness.state.scenes[scene]?.current, let screen = await rig.conversation(key), let live = await rig.live(key)
+        else { return nil }
+        return (key, screen, live)
+    }
+
+    private func tell(_ command: Conversation.Command, _ key: ChildKey) async {
+        try? await rig.runtime.send(command, to: [key])
+    }
+
+    // MARK: Steps
+
+    private mutating func step() async {
+        var choices: [(weight: Int, name: String)] = [(12, "time"), (16, "work"), (3, "kill")]
+        let current = await shown()
+        if signedOut {
+            choices.append((10, "signIn"))
+        } else if !inFront {
+            choices.append((12, "return"))
+        } else {
+            // A person with no chat open opens one; with one open, mostly
+            // talks in it.
+            let idle = current == nil
+            choices += [(idle ? 24 : 4, "newChat"), (2, "refresh"), (4, "leave")]
+            if !(await rig.harness.state.chats.isEmpty) { choices.append((idle ? 16 : 5, "show")) }
+            if let current {
+                choices.append((2, "back"))
+                if current.screen.composer.canSend { choices.append((30, "send")) }
+                if current.screen.streaming { choices.append((5, "stop")) }
+                if !buttons(current.screen).isEmpty { choices.append((14, "button")) }
+            }
+        }
+        var draw = numbers.below(choices.reduce(0) { $0 + $1.weight })
+        let choice = choices.first { choice in
+            draw -= choice.weight
+            return draw < 0
+        }!.name
+        switch choice {
+        case "time":
+            let seconds = numbers.pick([0.05, 0.3, 0.7, 1, 2, 3, 5, 9, 16, 40, 130])
+            steps.append("the clock moves \(seconds) s")
+            clock.advance(by: seconds)
+        case "work":
+            let events = 1 + numbers.below(4)
+            steps.append("the server's turns emit \(events) more")
+            server.work(events: events)
+        case "kill":
+            await kill()
+        case "signIn":
+            steps.append("signs in again")
+            signedOut = false
+            await rig.runtime.linkChanged(link)
+        case "return":
+            steps.append("comes back to the front")
+            inFront = true
+            await rig.harness.send(.phase(.active))
+        case "leave":
+            steps.append("leaves the app")
+            inFront = false
+            await rig.harness.send(.phase(.inactive))
+            await rig.harness.send(.phase(.background))
+        case "newChat":
+            steps.append("opens a new chat")
+            await rig.harness.send(.newChat(agent: helper, listen: false, scene: scene))
+        case "show":
+            let thread = numbers.pick(await rig.harness.state.chats.map(\.id))
+            steps.append("opens chat \(thread)")
+            await rig.harness.send(.show(thread: thread, scene: scene))
+        case "back":
+            steps.append("goes back to the list")
+            await rig.harness.send(.back(scene: scene))
+        case "refresh":
+            steps.append("pulls to refresh")
+            await rig.harness.send(.refresh)
+        case "stop":
+            steps.append("presses Stop")
+            if let current { await tell(.stop, current.key) }
+        case "send":
+            if let current { await send(current.key, current.screen) }
+        default:
+            if let current { await press(numbers.pick(buttons(current.screen)), current.key, current.screen) }
+        }
+    }
+
+    /// The next message's text: no other message's is a part of it, so a
+    /// text is found by looking for it.
+    private mutating func word() -> String {
+        typed += 1
+        return "say \(typed)."
+    }
+
+    /// Send, from the composer: a new message, or the text the app handed
+    /// back. Where the app could not say whether that text arrived, the
+    /// person looks first, as its strip asks, and clears the box when the
+    /// chat holds it.
+    private mutating func send(_ key: ChildKey, _ screen: ConversationScreen) async {
+        var text = screen.composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            text = word()
+            await tell(.draft(text), key)
+        } else if !careless, suspect.contains(text), server.userRows(saying: text) > 0 {
+            // And remembers it: a kill before the cleared box is saved
+            // brings the text back, and the person knows it was sent.
+            steps.append("finds \"\(text)\" in the chat and clears the box")
+            await tell(.draft(""), key)
+            await tell(.dismissFailure, key)
+            return
+        }
+        steps.append("sends \"\(text)\"")
+        let ids = await rig.harness.state.sendsIDs
+        let held = sent[text]
+        sent[text] = ((held?.presses ?? 0) + 1, ids || held?.ids == true, held?.before ?? server.chatRequests(saying: text))
+        ever[text, default: 1] += 0
+        await tell(.send, key)
+    }
+
+    /// Every button on the screen that can be pressed now.
+    private func buttons(_ screen: ConversationScreen) -> [FailureAction] {
+        var out: [FailureAction] = []
+        for failure in Array(screen.failures.turns.values) + [screen.failures.strip].compactMap({ $0 }) {
+            if let button = failure.button, button.enabled(at: clock.now) { out.append(button.action) }
+            if let dismiss = failure.dismiss { out.append(dismiss) }
+        }
+        // In a fixed order: a dictionary's is not the seed's.
+        return out.sorted { "\($0)" < "\($1)" }
+    }
+
+    private mutating func press(_ action: FailureAction, _ key: ChildKey, _ screen: ConversationScreen) async {
+        switch action {
+        case .resume:
+            steps.append("presses Try Again or Continue")
+            await tell(.continueTurn, key)
+        case .send:
+            await send(key, screen)
+        case .sendAgain:
+            steps.append("presses Send Again on the unsent message")
+            if let text = await rig.live(key)?.pending?.message { sent[text]?.presses += 1 }
+            await tell(.sendAgain, key)
+        case .edit:
+            // Edit Message, then other words: what goes from the composer
+            // now is a new message, by the person's own hand.
+            guard let text = await rig.live(key)?.pending?.message else { return }
+            let other = word()
+            steps.append("takes \"\(text)\" back and rewrites it as \"\(other)\"")
+            sent[text] = nil
+            ever[text, default: 1] += 1
+            await tell(.takeBack, key)
+            // Only its own words are rewritten: what else the composer
+            // held stays.
+            let draft = await rig.live(key)?.draft ?? text
+            await tell(.draft(draft.replacingOccurrences(of: text, with: other)), key)
+        case .stop:
+            steps.append("presses Try Again on a stop")
+            await tell(.stop, key)
+        case .reload:
+            steps.append("presses Try Again on a reload")
+            await tell(.retryReload, key)
+        case .reopen:
+            steps.append("presses Try Again on a stream")
+            await tell(.reopen, key)
+        case .dismiss:
+            steps.append("dismisses the strip")
+            await tell(.dismissFailure, key)
+        case let .reloadRows(thread):
+            steps.append("presses Try Again on a chat's rows")
+            await rig.harness.send(.reloadRows(thread: thread))
+        case .refresh:
+            steps.append("presses Try Again on the list")
+            await rig.harness.send(.refresh)
+        case let .newChat(agent):
+            steps.append("presses New Chat on a card")
+            await rig.harness.send(.newChat(agent: agent, listen: false, scene: scene))
+        case .dismissRename:
+            await rig.harness.send(.dismissRename)
+        case .rename, .addKey, .open:
+            steps.append("presses a button that leaves the chat")
+        }
+    }
+
+    /// The process dies and the app is launched again over the same folder.
+    /// What a kill may take: a draft younger than its coalesced save, and a
+    /// send without an id still on its way, as before ids. What it may not:
+    /// a message sent under an id.
+    private mutating func kill() async {
+        steps.append("the app is killed and launched again")
+        // The kill comes once the writes the app makes at once have been
+        // made: a message it has just been handed is on its way to the
+        // folder, and a process cannot be held to what it had no time for.
+        for _ in 0 ..< 200 {
+            let state = await rig.harness.state
+            var unkept = false
+            for key in state.conversations.keys {
+                if let pending = await rig.live(key)?.pending, state.disk != nil, !state.keptUnsent.contains(pending.id) { unkept = true }
+            }
+            if !unkept { break }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+            await drain()
+        }
+        let state = await rig.harness.state
+        let restoring = state.scenes[scene]?.current.flatMap { state.conversations[$0]?.thread }
+        var pending: Set<String> = []
+        for key in state.conversations.keys {
+            if let message = await rig.live(key)?.pending?.message { pending.insert(message) }
+        }
+        await rig.runtime.close()
+        let kept = Self.onDisk(rig)
+        for text in Array(sent.keys) where server.userRows(saying: text) == 0 && !kept.contains(where: { $0.contains(text) }) {
+            // Left tracked, a pending message the folder lost is caught by
+            // the next check.
+            if !pending.contains(text) { sent[text] = nil }
+        }
+        rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
+        inFront = true
+        signedOut = false
+        await rig.runtime.linkChanged(link)
+        await rig.harness.send(.sceneAppeared(scene: scene, restoring: restoring))
+    }
+
+    /// Every text the folder holds as a draft or as an unsent message.
+    private static func onDisk(_ rig: ChatRig) -> [String] {
+        let decoder = JSONDecoder()
+        let drafts = (try? Data(contentsOf: rig.root.appendingPathComponent("drafts.json"))).flatMap { try? decoder.decode([String: String].self, from: $0) }
+        let unsent = (try? Data(contentsOf: rig.root.appendingPathComponent("unsent.json"))).flatMap {
+            try? decoder.decode([String: UnsentMessage].self, from: $0)
+        }
+        return Array((drafts ?? [:]).values) + (unsent ?? [:]).values.map(\.message)
+    }
+
+    // MARK: The rules
+
+    private func broke(_ rule: Rule, _ what: String) -> Violation {
+        Violation(seed: seed, rule: rule.rawValue, what: what, steps: steps, revision: server.revision, rate: rate)
+    }
+
+    /// The transcript as a screen draws it: who said what, in order.
+    private static func said(_ screen: ConversationScreen) -> [(id: String, role: String, text: String)] {
+        screen.turns.compactMap { turn in
+            switch turn.body {
+            case let .user(user): (turn.id, "user", user.text)
+            case let .assistant(assistant): (turn.id, "assistant", assistant.text ?? "")
+            default: nil
+            }
+        }
+    }
+
+    /// What a conversation waits on, in words.
+    private static func waiting(_ live: ConversationState) -> String {
+        var parts = [live.phase.rawValue]
+        if live.finding { parts.append("reading for its message by id") }
+        if live.checking { parts.append("checking a delivery") }
+        switch live.run {
+        case let .send(run)?:
+            parts.append(run.resumes ? "a continue" : run.named ? "a send the server took" : run.unkept ? "a send not yet kept" : "a send not yet answered")
+        case .attach?: parts.append("an attach")
+        case nil: break
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Whether something still moves a conversation that waits: a request
+    /// at the server about it, or a wait on the clock.
+    private func moves(_ live: ConversationState) -> Bool {
+        var tags = [live.thread].compactMap { $0 }
+        if let pending = live.pending { tags += ["new:\(pending.message)", "message:\(pending.id)"] }
+        if case let .send(run)? = live.run { tags.append("new:\(run.message)") }
+        if let lost = live.lost { tags.append("new:\(lost.message)") }
+        if tags.contains(where: { server.exchanges(about: $0) > 0 }) { return true }
+        // A delivery check for a new chat reads other threads to find its
+        // own, so any request still at the server may be its.
+        if live.checking, live.thread == nil, !server.openExchanges.isEmpty { return true }
+        // An attach's, a repeat's or a handover's wait is 15 s at most, the
+        // client's own before it asks a busy server again 10 s, and a
+        // request that hangs waits out its timeout, 75 s for a stream.
+        return clock.deadlines.contains { $0.timeIntervalSince(clock.now) <= 80 }
+    }
+
+    /// Every rule, on what the app holds and draws now. `settled` adds
+    /// what must be so once the server has behaved for long enough.
+    private mutating func check(settled: Bool) async -> Violation? {
+        let state = await rig.harness.state
+        let presentation = await rig.harness.presentation
+        var homes: Set<String> = []
+        func home(_ text: String) { for known in sent.keys where text.contains(known) { homes.insert(known) } }
+        state.drafts.values.forEach(home)
+        state.unsent.values.forEach { home($0.message) }
+
+        for key in state.conversations.keys.sorted() {
+            guard let live = await rig.live(key), let screen = presentation.conversations[key] else { continue }
+            // What the app handed back saying it may have arrived: the
+            // person reads that, and looks before sending it again.
+            if live.chatFailure?.unconfirmed == true {
+                for text in sent.keys where live.draft.contains(text) { suspect.insert(text) }
+            }
+            let said = Self.said(screen)
+            let name = live.thread ?? "a new chat"
+            home(screen.composer.draft)
+            said.filter { $0.role == "user" }.forEach { home($0.text) }
+            if let pending = live.pending { home(pending.message) }
+            if let lost = live.lost { home(lost.message) }
+
+            // Known: a run that is over left its overlay behind, or kept it
+            // for a reload and then let the rows that hold the same turns
+            // be drawn above it. Noted once each, and this conversation is
+            // not held to what the leftover breaks.
+            if live.phase == .idle, !live.ownsTranscript, !live.overlay.turns.isEmpty {
+                if noted[.overlay] == nil {
+                    noted[.overlay] = broke(.overlay, "\(name) is idle and still draws \(live.overlay.turns.map(\.content)) from a run that ended")
+                }
+                continue
+            }
+            var keeps = live.reloadFailed != nil || live.reloading != nil
+            if case let .send(run)? = live.run, !run.kept.isEmpty { keeps = true }
+            if keeps {
+                let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
+                let again = live.overlay.turns.filter { $0.role == .user && !$0.pending && stored.contains($0.content) }.map(\.content)
+                if !again.isEmpty {
+                    if noted[.kept] == nil {
+                        noted[.kept] = broke(.kept, "\(name) keeps \(again) from a run whose reload failed, and draws it under the rows that hold it")
+                    }
+                    continue
+                }
+            }
+
+            // No row is drawn twice: not by its id, and no message of the
+            // person's as a bubble and a stored row both.
+            let turnIDs = screen.turns.map(\.id)
+            if Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
+            for (text, meant) in ever where said.filter({ $0.role == "user" && $0.text == text }).count > meant {
+                return broke(.drawnTwice, "\(name) draws \"\(text)\" twice: \(said.map(\.text))")
+            }
+
+            // No failure is drawn in two places.
+            let cards = screen.failures.turns
+            for turn in cards.keys where !turnIDs.contains(turn) {
+                return broke(.places, "\(name) draws a card under a turn that is not there: \(turn)")
+            }
+            if let strip = screen.failures.strip, !strip.working {
+                if let twin = cards.values.first(where: { $0.id == strip.id || ($0.sentence == strip.sentence && $0.note == strip.note) }) {
+                    return broke(.places, "\(name) says \"\(twin.sentence)\" at a turn and above the composer")
+                }
+            }
+            let draft = screen.composer.draft
+            for text in sent.keys where draft.contains(text) {
+                // The app's own words for "it may be in both": only then.
+                let unsure = live.chatFailure?.unconfirmed == true || suspect.contains(text)
+                if said.contains(where: { $0.role == "user" && $0.text == text }), !unsure, sent[text]?.ids == true {
+                    return broke(.places, "\(name) holds \"\(text)\" in the composer and as a message in the chat")
+                }
+            }
+
+            // A pending message has its send or its card.
+            if let pending = live.pending {
+                var carried = false
+                if case let .send(run)? = live.run, run.id == pending.id { carried = true }
+                if !carried, !live.finding, !live.restored, cards[pending.id] == nil {
+                    return broke(.pending, "\(name) holds \"\(pending.message)\" pending with no send out and no card to press")
+                }
+                if live.standing, cards[pending.id]?.button == nil {
+                    return broke(.pending, "\(name) draws \"\(pending.message)\" unsent with no button")
+                }
+            }
+
+            // No conversation is left waiting with no stream open.
+            let waits = live.phase != .idle || live.finding || live.checking
+            if waits, !moves(live) {
+                return broke(.streaming, "\(name) is \(Self.waiting(live)) with no request at the server and no wait on the clock")
+            }
+            if settled, waits || live.ownsTranscript || state.reading[live.thread ?? ""] != nil {
+                let reload = live.reloadFailed == nil ? "" : ", its reload failed"
+                return broke(.settles, "\(name) is still \(Self.waiting(live))\(reload) after the server behaved for minutes")
+            }
+
+            // The transcript equals the fold of the server's rows, once the
+            // app holds the thread as the server does.
+            guard let thread = live.thread, !waits, !live.ownsTranscript, state.reading[thread] == nil, !server.running(thread) else { continue }
+            guard let held = state.transcripts[thread], held.version == server.version(of: thread) else {
+                if settled, server.version(of: thread) != nil {
+                    return broke(
+                        .settles,
+                        "\(name) holds its rows at version \(state.transcripts[thread]?.version ?? -1), the server at \(server.version(of: thread) ?? -1)")
+                }
+                continue
+            }
+            var drawn = said
+            if let unsent = live.pending, drawn.last?.id == unsent.id {
+                drawn.removeLast()
+                if server.rows(of: thread).contains(where: { $0.id == unsent.id }) {
+                    return broke(.fold, "\(name) draws \"\(unsent.message)\" as unsent while its rows hold it")
+                }
+            }
+            let want = server.rows(of: thread).map { "\($0.role): \($0.content)" }
+            let got = drawn.map { "\($0.role): \($0.text)" }
+            if got != want { return broke(.fold, "\(name) draws \(got), and the server holds \(want)") }
+            let rowIDs = server.rows(of: thread).map(\.id)
+            if drawn.map(\.id) != rowIDs { return broke(.fold, "\(name) draws its rows under \(drawn.map(\.id)), and the server holds \(rowIDs)") }
+        }
+
+        if let watched = ProcessInfo.processInfo.environment["CHATKIT_WATCH"] {
+            var places: [String] = []
+            if server.userRows(saying: watched) > 0 { places.append("server") }
+            for (name, draft) in state.drafts where draft.contains(watched) { places.append("drafts[\(name)]") }
+            for (name, message) in state.unsent where message.message.contains(watched) { places.append("unsent[\(name)]") }
+            for key in state.conversations.keys.sorted() {
+                guard let live = await rig.live(key) else { continue }
+                if live.draft.contains(watched) { places.append("composer of \(key.rawValue.suffix(2))/\(live.thread ?? "new")") }
+                if live.pending?.message == watched {
+                    places.append("pending in \(key.rawValue.suffix(2))/\(live.thread ?? "new") standing=\(live.standing) finding=\(live.finding)")
+                }
+                if live.overlay.turns.contains(where: { $0.content == watched }) { places.append("overlay of \(key.rawValue.suffix(2))") }
+            }
+            print("WATCH step \(steps.count) [\(steps.last ?? "")]: \(places)")
+        }
+        // No message is written twice.
+        for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where server.userRows(saying: text) > meant {
+            return broke(.doubled, "the server holds \"\(text)\" \(server.userRows(saying: text)) times, and the person sent it \(meant)")
+        }
+        // Without an id the app sends what the person pressed and no more.
+        for (text, record) in sent.sorted(by: { $0.key < $1.key }) where !record.ids {
+            let requests = server.chatRequests(saying: text) - record.before
+            if requests > record.presses {
+                return broke(.resent, "\"\(text)\" was pressed \(record.presses) times and sent \(requests) times with no id")
+            }
+        }
+        // Nothing the person sent is lost: it is in a stored row, in a
+        // composer, or on a message with its card.
+        for text in sent.keys.sorted() where server.userRows(saying: text) == 0 && !homes.contains(text) {
+            return broke(.lost, "\"\(text)\" is in no stored row, no composer and on no message")
+        }
+        // The list holds each chat once, and once settled every chat.
+        let listed = state.chats.map(\.id)
+        if Set(listed).count != listed.count { return broke(.list, "the list holds a chat twice: \(listed)") }
+        if settled, Set(listed) != Set(server.threadIDs) {
+            return broke(.list, "the list holds \(listed.sorted()), and the server \(server.threadIDs.sorted())")
+        }
+        return nil
+    }
+
+    /// The server behaves, the person is signed in and in front, every
+    /// turn runs to its end and time passes: then everything must have
+    /// settled, and every transcript must be the server's.
+    private mutating func settle() async -> Violation? {
+        server.misbehave(0)
+        if signedOut {
+            signedOut = false
+            await rig.runtime.linkChanged(link)
+        }
+        if !inFront {
+            inFront = true
+            await rig.harness.send(.phase(.active))
+        }
+        await drain()
+        for round in 0 ..< 60 {
+            server.finishTurns()
+            await drain()
+            clock.advance(by: 4)
+            await drain()
+            if round % 6 == 5 {
+                // The list reads again, as it does whenever the app comes
+                // to the front: what moved while it could not hear is read.
+                await rig.harness.send(.refresh)
+                await drain()
+                // And the person presses Try Again where a read of a chat
+                // failed: the app said so, and offers nothing else.
+                let state = await rig.harness.state
+                for thread in state.rowsFailed.keys.sorted() { await rig.harness.send(.reloadRows(thread: thread)) }
+                for key in state.conversations.keys.sorted() {
+                    guard let live = await rig.live(key) else { continue }
+                    if live.reloadFailed != nil { await tell(.retryReload, key) }
+                    if live.chatFailure?.attempt == .attach { await tell(.reopen, key) }
+                }
+                await drain()
+            }
+            if round >= 24, await quiet() { break }
+        }
+        await rig.harness.send(.refresh)
+        await drain()
+        clock.advance(by: 1)
+        await drain()
+        if let broken = await confirmed(settled: false) { return broken }
+        return await confirmed(settled: true)
+    }
+
+    /// A broken rule, believed only once it is still broken after the app
+    /// was given real time to stand still: a host too loaded to run the
+    /// app's tasks promptly makes it look still while an effect is between
+    /// two of its steps.
+    private mutating func confirmed(settled: Bool) async -> Violation? {
+        guard await check(settled: settled) != nil else { return nil }
+        for attempt in 0 ..< 6 {
+            try? await Task.sleep(nanoseconds: UInt64(20_000_000 * (attempt + 1)))
+            await drain(keepingTrace: true)
+            if await check(settled: settled) == nil { return nil }
+        }
+        var broken = await check(settled: settled)
+        if ProcessInfo.processInfo.environment["CHATKIT_VERBOSE"] != nil, let found = broken {
+            var states = ""
+            for key in await rig.harness.state.conversations.keys.sorted() {
+                if let live = await rig.live(key) { states += "\n  \(key.rawValue): \(live)" }
+            }
+            let trace = rig.harness.trace.suffix(ProcessInfo.processInfo.environment["CHATKIT_TRACE"] == nil ? 40 : 4000).map {
+                "\n  > " + String(describing: $0).prefix(400)
+            }.joined()
+            let activity = await rig.runtime.activity
+            let waits = clock.deadlines.map { String(format: "%.2f", $0.timeIntervalSince(clock.now)) }
+            broken?.what =
+                found.what + states + trace
+                + "\n  running effects: \(activity.running.sorted()) of \(activity.started), sleeps end in \(waits) s, open at the server: \(server.openExchanges)"
+        }
+        return broken
+    }
+
+    private func quiet() async -> Bool {
+        let state = await rig.harness.state
+        guard !state.refreshing, state.reading.isEmpty, !server.anyRunning else { return false }
+        for key in state.conversations.keys {
+            guard let live = await rig.live(key) else { continue }
+            if live.phase != .idle || live.finding || live.checking { return false }
+        }
+        return true
+    }
+}
