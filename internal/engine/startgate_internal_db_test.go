@@ -327,6 +327,9 @@ func TestADeletionOfARepositorySetAsideWaits(t *testing.T) {
 	if r := s.setAsideOf(w.a.ID, ""); r == nil || r.stage != setAsideAtKey {
 		t.Fatalf("the repository is set aside as %+v, want at the credential check", r)
 	}
+	if _, err := s.Dataset(ctx, w.b.Authority); err != nil {
+		t.Fatalf("the healthy neighbor, at the start that set the other aside: %v", err)
+	}
 	if after := repositoryState(t, w.dsn, w.a.ID); after != before {
 		t.Fatalf("the set-aside repository's deletion went on: %s before, %s after", before, after)
 	}
@@ -598,7 +601,7 @@ func TestAPeoplePassTheDatabaseRefusesIsSetAsideAtItsPeople(t *testing.T) {
 	ctx := context.Background()
 	dsn, root := MigratedDSN(t), t.TempDir()
 	s := openForPeople(t, dsn, root)
-	whole, _, _, _ := preIdentityRepository(t, s, dsn, testdb.RepositoryLabel(t)+"w.example.com")
+	whole, wholeInfo, _, _ := preIdentityRepository(t, s, dsn, testdb.RepositoryLabel(t)+"w.example.com")
 	refused, info, _, _ := preIdentityRepository(t, s, dsn, testdb.RepositoryLabel(t)+"r.example.com")
 	_ = s.Close()
 	db := rawDBOf(t, dsn)
@@ -620,6 +623,9 @@ func TestAPeoplePassTheDatabaseRefusesIsSetAsideAtItsPeople(t *testing.T) {
 	}
 	if !heldIdentityNamed(t, s, whole) {
 		t.Error("the repository beside it got no person")
+	}
+	if _, err := s.Dataset(ctx, wholeInfo.Authority); err != nil {
+		t.Errorf("the repository beside it, at the start that set the other aside: %v", err)
 	}
 	if heldIdentityNamed(t, s, refused) {
 		t.Error("the refused repository's identity stands with no repository to open")
