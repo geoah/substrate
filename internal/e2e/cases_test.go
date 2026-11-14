@@ -55,7 +55,7 @@ func TestE2E(t *testing.T) {
 	r.runCase("LOG-01", "The changelog is the truth",
 		"Every write is a hashed changelog row; a live watch delivers a write as it lands; a resume from a "+
 			"seq replays exactly the rows after it; the operator's verify walks every line's checksum and "+
-			"every segment sidecar.",
+			"holds the archive's lines to the table.",
 		caseChangelog)
 	r.runCase("STORY-01", "The graph exists",
 		"The owner describes their world once (organizations, teams, people, projects, tasks, a calendar) "+
@@ -92,7 +92,7 @@ func TestE2E(t *testing.T) {
 		caseStory05)
 	r.runCase("STORY-06", "The world holds together",
 		"Every changelog row is attributed to the owner, a bundle, or one of the four story callables; the "+
-			"checksums and sidecars verify; a rebuild against the live server is refused by the writer lock and leaves the graph as it was.",
+			"checksums and the archive verify; a rebuild against the live server is refused by the writer lock and leaves the graph as it was.",
 		caseStory06)
 
 	// Everything beyond the slice and the stories registers itself into the

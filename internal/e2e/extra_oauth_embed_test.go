@@ -165,9 +165,6 @@ func xhOAuthDocs(base string) []map[string]any {
 		xfDoc("substrate.reamde.dev/core/package", xhOAuthPkg, map[string]any{
 			"authority": xhOAuthAuthority, "package": xhOAuthPackage, "version": 1,
 		}),
-		xfDoc("substrate.reamde.dev/core/actor", "bundle:"+xhOAuthAuthority+":"+xhOAuthPackage, map[string]any{
-			"authority": xhOAuthAuthority, "package": xhOAuthPackage,
-		}),
 		xfDoc("substrate.reamde.dev/core/bundle", xhOAuthPkg, map[string]any{
 			"authority":   xhOAuthAuthority,
 			"package":     xhOAuthPackage,
