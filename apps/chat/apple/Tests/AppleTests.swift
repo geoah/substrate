@@ -120,4 +120,23 @@ private struct LegacySession: Codable {
         return children.flatMap { child in [child as AnyObject] + elements(under: child as AnyObject) }
     }
 }
+
+/// What a screen reader is told of the Send button's keys, read the same
+/// way: Command-Return where a hardware keyboard is expected, nothing on a
+/// phone.
+@MainActor @Suite struct SendButtonKeys {
+    @Test func theSendButtonSaysCommandReturnOnAMacAndAnIPadAndNothingOnAPhone() throws {
+        #expect(try Self.help(on: .mac) == "Command-Return sends too.")
+        #expect(try Self.help(on: .pad) == "Command-Return sends too.")
+        #expect((try Self.help(on: .phone) ?? "").isEmpty)
+    }
+
+    private static func help(on device: ComposerKeys.Device) throws -> String? {
+        let hosting = NSHostingView(rootView: Button("Send") {}.sendShortcut(on: device))
+        hosting.frame = CGRect(x: 0, y: 0, width: 120, height: 60)
+        hosting.layoutSubtreeIfNeeded()
+        let button = try #require(LeavingTheApp.elements(under: hosting).first { $0.accessibilityRole?() == .button })
+        return button.accessibilityHelp?()
+    }
+}
 #endif

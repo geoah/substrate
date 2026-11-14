@@ -109,23 +109,21 @@ struct ComposerBar: View {
                     .lineLimit(1 ... 8)
                     .focused($focused)
                     .padding(.vertical, 11)
-                    #if os(macOS)
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.option) { return .ignored }
-                    if press.modifiers.contains(.shift) {
-                        insertNewline()
-                        return .handled
+                    // What the press does is ChatKit's rule (`ComposerKeys`):
+                    // Command-Return sends, any other Return is a new line.
+                    // A held key repeats the new line and never the send.
+                    .onKeyPress(.return, phases: [.down, .repeat]) { press in
+                        switch ComposerKeys.onReturn(.init(press.modifiers), on: .current, composing: composingMarkedText()) {
+                        case .send:
+                            if press.phase == .down { send() }
+                            return .handled
+                        case .newline:
+                            insertNewline()
+                            return .handled
+                        case .fieldsOwn:
+                            return .ignored
+                        }
                     }
-                    send()
-                    return .handled
-                }
-                    #else
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.command) else { return .ignored }
-                    send()
-                    return .handled
-                }
-                    #endif
                 if !empty {
                     micButton
                         .padding(.bottom, 8)
@@ -188,10 +186,10 @@ struct ComposerBar: View {
             round("mic.fill", tint: nil, label: "Dictate") { Task { await toggleListening() } }
                 .disabled(screen.agent == nil)
         } else {
-            // Return on the Mac and ⌘Return on an iPad keyboard are the
-            // field's own key handling.
+            // ⌘Return is the field's own key handling; the button says so.
             round("arrow.up", tint: .accentColor, label: "Send") { send() }
                 .disabled(!composer.canSend)
+                .sendShortcut(on: .current)
         }
     }
 
@@ -211,7 +209,7 @@ struct ComposerBar: View {
 
     // MARK: Actions
 
-    /// Shift-Return: a new line where the cursor is, over any selection.
+    /// Return on a Mac: a new line where the cursor is, over any selection.
     private func insertNewline() {
         var text = text
         var lower = text.count
