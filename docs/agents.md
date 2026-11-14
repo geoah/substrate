@@ -1106,6 +1106,10 @@ like the API's reasons, beside which a client reads them.
 Each wire sorts its vendor's answer in one place (`internal/llm`): the HTTP
 status, then the error's `type` and `code` as Anthropic and OpenAI document
 them, and for a call no answer came back from, what the connection said.
+An account out of credit or at a spend limit it set itself is
+`provider_billing` though the vendor answers it `429` or `400`, because
+waiting does not lift it, and a refusal of the key that arrives inside a
+stream is `provider_key_refused` like one that arrives as a `401`.
 A missing key is not a cause, because it is refused before any thread opens
 ([below](#calling-an-agent)).
 
@@ -1116,7 +1120,10 @@ vendor's organization id and the parameter it objects to. For a row the
 operator pays for, none of that: the answer names the operator's endpoint,
 so the thread and the caller get the substrate's sentence for the cause
 (`Anthropic could not answer with Example's key: it is limiting requests.`)
-and the answer goes to the server's log.
+and the answer goes to the server's log. A failure of the run's own reads
+and writes keeps the engine's words, except a failure to reach the database,
+whose text names where the database is: the thread and the caller read "the
+database could not be reached", and the error is in the log.
 
 **A follow-up replays what the thread already read**
 ([decision 0201](decisions/0201-a-continued-thread-replays-its-tool-exchanges.md)).

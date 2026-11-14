@@ -171,7 +171,15 @@ func (c *anthropicClient) scrubbed(err error) error {
 	if class == "" {
 		class = transportFailure(err)
 	}
-	out := providersecret.MarkKeyRefused(providersecret.KeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
+	// A refusal of the key inside a stream that answered 200 (an error event
+	// of type authentication_error) carries the class and no status: it is
+	// marked as the 401 it would have been, so the engine's table of refused
+	// keys hears it as it hears any other.
+	refused := providersecret.KeyRefusal(err)
+	if refused == 0 && class == FailureKeyRefused {
+		refused = http.StatusUnauthorized
+	}
+	out := providersecret.MarkKeyRefused(refused, providerError(providersecret.Scrub(c.apiKey, err.Error())))
 	if class != FailureKeyRefused {
 		out = classified(class, retryAfter, out)
 	}
@@ -734,7 +742,8 @@ func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 		refused = res.StatusCode
 	}
 	// The class is read from the whole body too, before the cut.
-	class := anthropicFailure(res.StatusCode, errType, anthropicErrorMessage(body))
+	detail, message := anthropicErrorDetail(body)
+	class := anthropicFailure(res.StatusCode, errType, detail, message)
 	retryAfter, _ := retryAfterOf(res.Header)
 	body = providersecret.Truncate(c.apiKey, body, anthropicMaxErrorBody)
 	var msg strings.Builder
@@ -755,16 +764,19 @@ func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 	return classified(class, retryAfter, errors.New(msg.String()))
 }
 
-// anthropicErrorMessage is the `error.message` of an error body, "" where it
-// has none.
-func anthropicErrorMessage(body []byte) string {
+// anthropicErrorDetail is the `error.details.error_code` and the
+// `error.message` of an error body, "" where it has none.
+func anthropicErrorDetail(body []byte) (detail, message string) {
 	var answer struct {
 		Error struct {
 			Message string `json:"message"`
+			Details struct {
+				ErrorCode string `json:"error_code"`
+			} `json:"details"`
 		} `json:"error"`
 	}
 	_ = json.Unmarshal(body, &answer)
-	return answer.Error.Message
+	return answer.Error.Details.ErrorCode, answer.Error.Message
 }
 
 // anthropicMessage is the Messages response, one-shot or folded from a

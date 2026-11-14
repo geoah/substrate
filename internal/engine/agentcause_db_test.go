@@ -9,9 +9,14 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
@@ -213,5 +218,63 @@ func TestARowWithNoKeyRefusesWithItsReason(t *testing.T) {
 	}
 	if n := len(agentThreadsOf(t, ds, "chatter")); n != 0 {
 		t.Fatalf("%d threads opened for a run that never started", n)
+	}
+}
+
+// A failure to reach the database names its host, its address, its name and
+// its user: those words never become a thread's reason or a caller's answer,
+// and every other failure of a run's own writes keeps its words.
+func TestAFailureToReachTheDatabaseIsNotSaidInItsOwnWords(t *testing.T) {
+	t.Parallel()
+	connect := &pgconn.ConnectError{Config: &pgconn.Config{Host: "db.internal.example.com", Port: 5432, Database: "substrate", User: "substrate_rw"}}
+	dial := &net.OpError{Op: "dial", Net: "tcp", Addr: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 5432}, Err: errors.New("connection refused")}
+	for _, err := range []error{connect, dial, &net.DNSError{Err: "no such host", Name: "db.internal.example.com"}} {
+		wrapped := fmt.Errorf("%w: put message: %w", substrate.ErrUnavailable, err)
+		if !namesTheDatabase(wrapped) {
+			t.Fatalf("%T is not read as a failure to reach the database: %v", err, wrapped)
+		}
+		l := &agentLoop{ds: &dataset{svc: &service{log: slog.New(slog.DiscardHandler)}}}
+		said := l.sayable("a message write", wrapped)
+		if strings.Contains(said.Error(), "example.com") || strings.Contains(said.Error(), "10.0.0.7") || strings.Contains(said.Error(), "substrate_rw") {
+			t.Fatalf("the words a thread keeps name the database: %q", said)
+		}
+		// The sentinel the engine classified it under still matches.
+		if !errors.Is(said, substrate.ErrUnavailable) {
+			t.Fatalf("the sayable error lost its sentinel: %v", said)
+		}
+	}
+	for _, err := range []error{
+		errors.New("the insert was refused"),
+		context.DeadlineExceeded,
+		fmt.Errorf("%w: llm/message: turn: required", substrate.ErrValidation),
+		&pgconn.PgError{Code: "23505", Message: "duplicate key value violates unique constraint"},
+	} {
+		if namesTheDatabase(err) {
+			t.Fatalf("%v is read as a failure to reach the database", err)
+		}
+	}
+}
+
+// The outcome a direct call stores under its Idempotency-Key is the one its
+// thread settled with, cause included: a repeat answers what the first did.
+func TestAnIdempotentCallsRepeatAnswersTheSettledCause(t *testing.T) {
+	t.Parallel()
+	ds, fake := openAgentDataset(t)
+	call := fakeTurn{calls: []fakeCall{{"annotate", `{"id":"01h2xcejqtf2nbrexx3vqjhp43"}`}}}
+	fake.script("budget", call, call)
+	ctx := substrate.WithIdempotencyKey(context.Background(), "cause-key-1")
+	first, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "annotate twice")
+	if err != nil || first.Status != threadOverBudget || first.Cause != substrate.CauseTurnLimit {
+		t.Fatalf("the first call = %+v, %v, want overbudget with turn_limit", first, err)
+	}
+	again, err := ds.CallAgent(ctx, crewPackage+"/budgeter", "annotate twice")
+	if err != nil {
+		t.Fatalf("the repeat: %v", err)
+	}
+	if again.Thread != first.Thread || again.Status != first.Status || again.Reason != first.Reason || again.Cause != first.Cause {
+		t.Fatalf("the repeat answered %+v, and the first %+v", again, first)
+	}
+	if n := len(fake.requestsOf("budget")); n != 2 {
+		t.Fatalf("%d model calls, want the first call's 2", n)
 	}
 }

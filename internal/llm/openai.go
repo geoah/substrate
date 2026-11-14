@@ -77,8 +77,15 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // (openaiClass), from the error as the SDK read it, and marked on the rebuilt
 // error with the wait the endpoint's answer named (bodyDoer).
 func (c *openaiClient) scrubbed(ctx context.Context, err error) error {
-	out := providersecret.MarkKeyRefused(openaiKeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
-	if class := openaiClass(err); class != FailureKeyRefused {
+	// A refusal of the key inside a stream that answered 200 (an error event
+	// with the code invalid_api_key) carries no status: it is marked as the
+	// 401 it would have been, so the engine's table of refused keys hears it.
+	class, refused := openaiClass(err), openaiKeyRefusal(err)
+	if refused == 0 && class == FailureKeyRefused {
+		refused = http.StatusUnauthorized
+	}
+	out := providersecret.MarkKeyRefused(refused, providerError(providersecret.Scrub(c.apiKey, err.Error())))
+	if class != FailureKeyRefused {
 		var retryAfter time.Duration
 		if patch, _ := ctx.Value(bodyPatchKey{}).(*bodyPatch); patch != nil {
 			retryAfter = patch.retryAfter

@@ -13,6 +13,7 @@ import { kindPatternWords } from "@/lib/tools"
 import { allowVerbs, policyIdOf, type PolicyOp } from "@/lib/agent-rules"
 import {
   turnOutcome,
+  waitLeft,
   type SettledRun,
   type TurnOutcome,
 } from "@/lib/turn-outcome"
@@ -47,6 +48,7 @@ function settledRun(thread: SubstrateRecord): SettledRun {
     ...(typeof p.cause === "string" && { cause: p.cause }),
     ...(typeof p.reason === "string" && { reason: p.reason }),
     ...(typeof p.retryAfter === "number" && { retryAfter: p.retryAfter }),
+    ...(typeof p.finishedAt === "string" && { finishedAt: p.finishedAt }),
     ...(typeof p.provider === "string" && { provider: p.provider }),
   }
 }
@@ -84,9 +86,19 @@ const SHUTDOWN_REASON = "stopped: the server shut down during the turn"
  * finished. */
 export function unfinishedTurn(
   thread: SubstrateRecord,
-  name: string
+  name: string,
+  now: number = Date.now()
 ): UnfinishedTurn | undefined {
-  return turnOutcome(settledRun(thread), name)
+  return turnOutcome(settledRun(thread), name, now)
+}
+
+/** The seconds of a provider's wait a thread's last turn still has to go at
+ * `now`; undefined once it is over, or where there is none. */
+export function threadWaitLeft(
+  thread: SubstrateRecord,
+  now: number
+): number | undefined {
+  return waitLeft(settledRun(thread), now)
 }
 
 const MODE_WORDS: Record<string, string> = {

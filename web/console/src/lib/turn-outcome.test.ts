@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest"
 
 import golden from "@/lib/api/agentcauses.golden.json"
-import { turnOutcome, type SettledRun } from "./turn-outcome"
+import { turnOutcome, waitLeft, type SettledRun } from "./turn-outcome"
 
 const failed = (cause: string, more: Partial<SettledRun> = {}): SettledRun => ({
   status: "error",
@@ -52,6 +52,34 @@ describe("turnOutcome", () => {
     expect(
       turnOutcome(failed("provider_rate_limited"), "Moss")?.detail
     ).toBeUndefined()
+  })
+
+  it("counts the provider's wait from when the run settled, and drops it once it is over", () => {
+    const settled = Date.parse("2026-11-14T10:00:00Z")
+    const run = failed("provider_rate_limited", {
+      retryAfter: 20,
+      finishedAt: "2026-11-14T10:00:00Z",
+    })
+    expect(turnOutcome(run, "Moss", settled)?.detail).toBe(
+      "Try again in 20 seconds."
+    )
+    expect(turnOutcome(run, "Moss", settled + 5_000)?.detail).toBe(
+      "Try again in 15 seconds."
+    )
+    expect(turnOutcome(run, "Moss", settled + 19_500)?.detail).toBe(
+      "Try again in 1 second."
+    )
+    // Reopened an hour later, the chat no longer says to wait.
+    expect(
+      turnOutcome(run, "Moss", settled + 3_600_000)?.detail
+    ).toBeUndefined()
+    expect(turnOutcome(run, "Moss", settled + 3_600_000)?.action).toEqual({
+      kind: "continue",
+      label: "Try again",
+    })
+    // A clock behind the server's never shows more than was asked.
+    expect(waitLeft(run, settled - 60_000)).toBe(20)
+    expect(waitLeft({ status: "error" }, settled)).toBeUndefined()
   })
 
   it("sends a key problem and a model problem to the provider's card", () => {

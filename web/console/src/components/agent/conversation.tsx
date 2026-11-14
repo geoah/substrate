@@ -76,8 +76,12 @@ import {
   threadSubject,
   threadTally,
 } from "@/lib/agent-chat"
-import { unfinishedTurn, type UnfinishedTurn } from "@/lib/agent-runs"
-import { turnOutcome } from "@/lib/turn-outcome"
+import {
+  threadWaitLeft,
+  unfinishedTurn,
+  type UnfinishedTurn,
+} from "@/lib/agent-runs"
+import { turnOutcome, waitLeft } from "@/lib/turn-outcome"
 import {
   attachThread,
   continueThread,
@@ -180,6 +184,9 @@ interface TurnFailure {
   message: string
   cause?: string
   retryAfter?: number
+  /** When the stream reported it: what the provider's wait counts from
+   * until the thread's record says when the run settled. */
+  at: number
 }
 
 function failureOf(err: Error): TurnFailure {
@@ -188,8 +195,9 @@ function failureOf(err: Error): TurnFailure {
         message: err.message,
         cause: err.turnCause,
         ...(err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+        at: Date.now(),
       }
-    : { message: err.message }
+    : { message: err.message, at: Date.now() }
 }
 
 /** A chat whose last turn ended before it finished: one sentence, at most
@@ -428,6 +436,8 @@ export function Conversation({
   const ownIds =
     !discovery.data ||
     hasFeature(discovery.data, "agents", OWN_MESSAGE_ID_REVISION)
+  // The clock a provider's wait is shown against.
+  const [now, setNow] = useState(() => Date.now())
   // A continue the server refused, in the server's words.
   const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
@@ -1119,11 +1129,23 @@ export function Conversation({
       ? agent.properties.description
       : ""
   const name = agentId ? agentName(agentId) : "an agent"
+  // A provider's wait counts down while its note shows, and is gone once it
+  // is over: the clock ticks only while there is a wait left to show.
+  const waiting =
+    (threadRecord ? threadWaitLeft(threadRecord, now) : undefined) ??
+    (error?.retryAfter
+      ? waitLeft({ status: "error", ...error, finishedAt: error.at }, now)
+      : undefined)
+  useEffect(() => {
+    if (waiting === undefined) return
+    const timer = setTimeout(() => setNow(Date.now()), 1000)
+    return () => clearTimeout(timer)
+  }, [waiting, now])
   // The thread's last turn, when it ended before it finished. Read off the
   // stored thread, so a reload says it too, and only once nothing runs.
   const unfinished =
     current && threadRecord && !busy && !threadRunning && !background
-      ? unfinishedTurn(threadRecord, name)
+      ? unfinishedTurn(threadRecord, name, now)
       : undefined
 
   // A failure the stream reported with its cause reads the same way before
@@ -1136,12 +1158,14 @@ export function Conversation({
             cause: error.cause,
             reason: error.message,
             retryAfter: error.retryAfter,
+            finishedAt: error.at,
             provider:
               typeof threadRecord?.properties.provider === "string"
                 ? threadRecord.properties.provider
                 : undefined,
           },
-          name
+          name,
+          now
         )
       : undefined
   const outcome = unfinished ?? reported

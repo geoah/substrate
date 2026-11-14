@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/geoah/substrate/internal/providersecret"
 )
 
 // vendorAnswer is one failure answer a vendor documents, and the class its
@@ -38,6 +40,14 @@ var anthropicAnswers = []vendorAnswer{
 	{
 		name: "400 an account out of credit", status: 400, want: FailureBilling,
 		body: `{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}`,
+	},
+	{
+		name: "429 at the spend limit the organization set", status: 429, want: FailureBilling,
+		body: `{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your organization's spend limit.","details":{"error_code":"enforced_spend_limit_reached"}}}`,
+	},
+	{
+		name: "400 at the usage limit the workspace set", status: 400, want: FailureBilling,
+		body: `{"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."}}`,
 	},
 	{
 		name: "401 authentication_error", status: 401, want: FailureKeyRefused,
@@ -119,6 +129,14 @@ var openaiAnswers = []vendorAnswer{
 		body: `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`,
 	},
 	{
+		name: "429 credit_balance_exhausted", status: 429, want: FailureBilling,
+		body: `{"error":{"message":"Your credit balance is exhausted.","type":"billing_error","param":null,"code":"credit_balance_exhausted"}}`,
+	},
+	{
+		name: "429 project_spend_limit_exceeded", status: 429, want: FailureBilling,
+		body: `{"error":{"message":"The project has reached its monthly spend limit.","type":"rate_limit_error","param":null,"code":"project_spend_limit_exceeded"}}`,
+	},
+	{
 		name: "500 server_error", status: 500, want: FailureUnavailable,
 		body: `{"error":{"message":"The server had an error while processing your request.","type":"server_error","param":null,"code":null}}`,
 	},
@@ -139,31 +157,37 @@ var openaiAnswers = []vendorAnswer{
 func TestTheWiresSortAVendorsErrorTypesAndCodes(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		status          int
-		errType, errMsg string
-		want            FailureClass
+		status                  int
+		errType, detail, errMsg string
+		want                    FailureClass
 	}{
-		{400, "invalid_request_error", "tools.0: unknown field", FailureRejected},
-		{400, "invalid_request_error", "Your credit balance is too low", FailureBilling},
-		{401, "authentication_error", "", FailureKeyRefused},
-		{402, "billing_error", "", FailureBilling},
-		{403, "permission_error", "", FailureModelUnavailable},
-		{404, "not_found_error", "", FailureModelUnavailable},
-		{413, "request_too_large", "", FailureContextTooLong},
-		{429, "rate_limit_error", "", FailureRateLimited},
-		{500, "api_error", "", FailureUnavailable},
-		{504, "timeout_error", "", FailureUnavailable},
-		{529, "overloaded_error", "", FailureOverloaded},
+		{400, "invalid_request_error", "", "tools.0: unknown field", FailureRejected},
+		{400, "invalid_request_error", "", "Your credit balance is too low", FailureBilling},
+		{400, "invalid_request_error", "", "You have reached your specified API usage limits.", FailureBilling},
+		{429, "rate_limit_error", "enforced_spend_limit_reached", "", FailureBilling},
+		{401, "authentication_error", "", "", FailureKeyRefused},
+		{402, "billing_error", "", "", FailureBilling},
+		{403, "permission_error", "", "", FailureModelUnavailable},
+		{404, "not_found_error", "", "", FailureModelUnavailable},
+		{413, "request_too_large", "", "", FailureContextTooLong},
+		{429, "rate_limit_error", "", "", FailureRateLimited},
+		{500, "api_error", "", "", FailureUnavailable},
+		{504, "timeout_error", "", "", FailureUnavailable},
+		{529, "overloaded_error", "", "", FailureOverloaded},
 		// A stream's error event: the stream itself answered 200.
-		{200, "overloaded_error", "", FailureOverloaded},
-		{200, "api_error", "", FailureUnavailable},
-		{200, "a_type_from_next_year", "", FailureUnavailable},
+		{200, "overloaded_error", "", "", FailureOverloaded},
+		{200, "authentication_error", "", "", FailureKeyRefused},
+		{403, "authentication_error", "", "", FailureKeyRefused},
+		// The type on a status that refuses one request, not the key.
+		{400, "authentication_error", "", "", FailureRejected},
+		{200, "api_error", "", "", FailureUnavailable},
+		{200, "a_type_from_next_year", "", "", FailureUnavailable},
 		// A type this does not know falls to the status.
-		{429, "a_type_from_next_year", "", FailureRateLimited},
-		{418, "", "", FailureRejected},
+		{429, "a_type_from_next_year", "", "", FailureRateLimited},
+		{418, "", "", "", FailureRejected},
 	} {
-		if got := anthropicFailure(tc.status, tc.errType, tc.errMsg); got != tc.want {
-			t.Errorf("anthropicFailure(%d, %q, %q) = %q, want %q", tc.status, tc.errType, tc.errMsg, got, tc.want)
+		if got := anthropicFailure(tc.status, tc.errType, tc.detail, tc.errMsg); got != tc.want {
+			t.Errorf("anthropicFailure(%d, %q, %q, %q) = %q, want %q", tc.status, tc.errType, tc.detail, tc.errMsg, got, tc.want)
 		}
 	}
 	for _, tc := range []struct {
@@ -177,6 +201,10 @@ func TestTheWiresSortAVendorsErrorTypesAndCodes(t *testing.T) {
 		{429, "tokens", "rate_limit_exceeded", FailureRateLimited},
 		{429, "insufficient_quota", "insufficient_quota", FailureBilling},
 		{400, "invalid_request_error", "billing_hard_limit_reached", FailureBilling},
+		{429, "", "credit_balance_exhausted", FailureBilling},
+		{429, "", "organization_spend_limit_exceeded", FailureBilling},
+		{429, "", "project_spend_limit_exceeded", FailureBilling},
+		{429, "", "organization_usage_limit_exceeded", FailureBilling},
 		{404, "invalid_request_error", "model_not_found", FailureModelUnavailable},
 		{400, "invalid_request_error", "context_length_exceeded", FailureContextTooLong},
 		{400, "invalid_request_error", "unsupported_value", FailureRejected},
@@ -272,6 +300,47 @@ func TestAStreamsErrorEventCarriesItsClass(t *testing.T) {
 	}, func(Delta) {})
 	if class, _ := FailureOf(err); class != FailureOverloaded {
 		t.Fatalf("FailureOf = %q, want overloaded: %v", class, err)
+	}
+}
+
+// A refusal of the key that arrives as an error event inside a stream that
+// answered 200 is a refused key like any other: the class, and the mark the
+// engine's table of refused keys reads, both survive the scrubbed rebuild.
+func TestAKeyRefusedInsideAStreamIsStillARefusedKey(t *testing.T) {
+	t.Parallel()
+	const key = "zq-stream-key-fixture"
+	for wire, events := range map[Wire]string{
+		WireAnthropic: "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":3}}}\n\n" +
+			"event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key " + key + "\"}}\n\n",
+		WireOpenAI: "data: {\"error\":{\"message\":\"Incorrect API key provided: " + key + "\",\"type\":\"invalid_request_error\",\"param\":null,\"code\":\"invalid_api_key\"}}\n\n",
+	} {
+		t.Run(string(wire), func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprint(w, events)
+			}))
+			t.Cleanup(srv.Close)
+			c, err := New(wire, Config{BaseURL: srv.URL + "/", APIKey: key})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}}, Params: Params{MaxTokens: 16},
+			}, func(Delta) {})
+			if err == nil {
+				t.Fatal("no error")
+			}
+			if class, _ := FailureOf(err); class != FailureKeyRefused {
+				t.Fatalf("FailureOf = %q, want key_refused: %v", class, err)
+			}
+			if got := providersecret.KeyRefusal(err); got != http.StatusUnauthorized {
+				t.Fatalf("KeyRefusal = %d, want the 401 the refusal would have been: %v", got, err)
+			}
+			if strings.Contains(err.Error(), key) {
+				t.Fatalf("the error carries the key: %v", err)
+			}
+		})
 	}
 }
 

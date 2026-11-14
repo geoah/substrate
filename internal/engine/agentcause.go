@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
@@ -138,6 +141,42 @@ func (ds *dataset) stampCause(props map[string]any, c turnFailure) {
 	if c.retryAfter > 0 {
 		props[propThreadRetryAfter] = c.retryAfter
 	}
+}
+
+// sayableError is an error under words that may be stored on a thread and
+// said to a caller. Its chain is still the original's, so every sentinel
+// matches through it; only its text is replaced.
+type sayableError struct {
+	words string
+	err   error
+}
+
+func (e *sayableError) Error() string { return e.words }
+func (e *sayableError) Unwrap() error { return e.err }
+
+// sayable is err as a thread's reason, an API answer and a stream's error
+// event may carry it. A failure of the run's own reads and writes is said in
+// its own words, which are the engine's, unless it is a failure to reach
+// the database: a connection error names the database's host, its address,
+// its name and its user, which are the deployment's and no caller's to read.
+// That one is said plainly, and the error itself goes to the log with what
+// the run was doing.
+func (l *agentLoop) sayable(doing string, err error) error {
+	if !namesTheDatabase(err) {
+		return err
+	}
+	l.ds.svc.log.Error("substrate: an agent run could not reach the database",
+		"repository", l.ds.info.ID, "thread", l.threadID, "during", doing, "error", err.Error())
+	return &sayableError{words: "the database could not be reached", err: err}
+}
+
+// namesTheDatabase reports whether err is a failure to reach the database,
+// whose text names where the database is.
+func namesTheDatabase(err error) bool {
+	var connect *pgconn.ConnectError
+	var op *net.OpError
+	var dns *net.DNSError
+	return errors.As(err, &connect) || errors.As(err, &op) || errors.As(err, &dns)
 }
 
 // withCause is props with a settle's cause stamped in (stampCause).

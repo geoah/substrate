@@ -153,18 +153,36 @@ func statusFailure(status int) FailureClass {
 
 // anthropicFailure sorts an Anthropic error, from an HTTP failure or from a
 // stream's error event (whose status was the stream's 200), by the error
-// type the Messages API documents, then by status. message is the error's
-// own message, read for the one case the type does not say: an account out
-// of credit answers `invalid_request_error`.
+// type the Messages API documents, then by status. detail is the error's
+// `details.error_code` and message its own message, read for what the type
+// does not say: an account out of credit, and one at the spend limit it set
+// itself, answer `invalid_request_error` or `rate_limit_error`, and neither
+// is lifted by waiting.
 //
 //	400 invalid_request_error   413 request_too_large    500 api_error
 //	401 authentication_error    429 rate_limit_error     504 timeout_error
 //	402 billing_error           403 permission_error     529 overloaded_error
 //	404 not_found_error
-func anthropicFailure(status int, errType, message string) FailureClass {
+func anthropicFailure(status int, errType, detail, message string) FailureClass {
+	if detail == "enforced_spend_limit_reached" {
+		return FailureBilling
+	}
+	lower := strings.ToLower(message)
+	switch errType {
+	case "invalid_request_error", "rate_limit_error":
+		if strings.Contains(lower, "credit balance") || strings.Contains(lower, "api usage limits") {
+			return FailureBilling
+		}
+	}
 	switch errType {
 	case "authentication_error":
-		return FailureKeyRefused
+		// The key is refused where the answer's status says so, or inside a
+		// stream that had already answered 200. The type on any other status
+		// (a 400) refuses one request, as providersecret.RefusesKey holds.
+		if status == http.StatusOK || providersecret.RefusesKey(status, errType, "") {
+			return FailureKeyRefused
+		}
+		return statusFailure(status)
 	case "billing_error":
 		return FailureBilling
 	case "rate_limit_error":
@@ -180,9 +198,6 @@ func anthropicFailure(status int, errType, message string) FailureClass {
 		// use is the model it named.
 		return FailureModelUnavailable
 	case "invalid_request_error":
-		if strings.Contains(strings.ToLower(message), "credit balance") {
-			return FailureBilling
-		}
 		return FailureRejected
 	}
 	if status == http.StatusOK {
@@ -202,8 +217,16 @@ func anthropicFailure(status int, errType, message string) FailureClass {
 func openaiFailure(status int, errType, errCode string) FailureClass {
 	switch errCode {
 	case "invalid_api_key":
-		return FailureKeyRefused
-	case "insufficient_quota", "billing_hard_limit_reached", "billing_not_active":
+		// As for Anthropic's type: by the status, or inside a stream.
+		if status == 0 || status == http.StatusOK || providersecret.RefusesKey(status, errType, errCode) {
+			return FailureKeyRefused
+		}
+		return statusFailure(status)
+	case "insufficient_quota", "billing_hard_limit_reached", "billing_not_active",
+		"credit_balance_exhausted", "organization_spend_limit_exceeded",
+		"project_spend_limit_exceeded", "organization_usage_limit_exceeded":
+		// An account out of credit or at a limit it pays for: a 429 like a
+		// rate limit, and one that waiting does not lift.
 		return FailureBilling
 	case "rate_limit_exceeded":
 		return FailureRateLimited
