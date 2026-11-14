@@ -217,7 +217,8 @@ func sameRoute(route string) string { return routeVariable.ReplaceAllString(rout
 // a route that left it is in its feature's removed, neither list shrinks, an
 // address on either is never served again, a removed feature's name is never
 // used again, and a `stable` label stays. A route that moved to another
-// feature has not gone.
+// feature has not gone, and one a stable feature held is served by a stable
+// feature.
 func revisionProblems(before, after []featureGolden) []string {
 	var problems []string
 	problem := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }
@@ -307,7 +308,15 @@ func revisionProblems(before, after []featureGolden) []string {
 		}
 		for _, r := range was.Routes {
 			id := sameRoute(r)
-			if _, moved := served[id]; moved || declared[id] {
+			if by, moved := served[id]; moved {
+				// A stable feature's promise goes with its route: the
+				// feature that serves it now is stable too, until 2.0.
+				if was.Stability == substrate.StabilityStable && now[by].Stability != substrate.StabilityStable {
+					problem("%s is stable and %q is served now by %s, which is not: a route a stable feature held is served by a stable feature until 2.0", was.Name, r, by)
+				}
+				continue
+			}
+			if declared[id] {
 				continue
 			}
 			if f.Gone {
@@ -356,10 +365,18 @@ func TestRevisionProblems(t *testing.T) {
 			want:  "only in 2.0",
 		},
 		"a route gone and not declared": {after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}}}, want: "listed in the feature's `removed`"},
-		"a route moved to another feature": {after: []featureGolden{
+		"a route moved to another stable feature": {after: []featureGolden{
+			{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}},
+			{Name: "y", Stability: substrate.StabilityStable, Revision: 1, Routes: one},
+		}},
+		"a route moved from a stable feature to one that is not": {after: []featureGolden{
 			{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}},
 			{Name: "y", Revision: 1, Routes: one},
-		}},
+		}, want: "served by a stable feature until 2.0"},
+		"a route moved from a stable feature to a beta one": {after: []featureGolden{
+			{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}},
+			{Name: "y", Stability: substrate.StabilityBeta, Revision: 1, Routes: one},
+		}, want: "served by a stable feature until 2.0"},
 		"a path variable renamed": {
 			before: []featureGolden{{Name: "x", Revision: 2, Routes: []string{"GET /a/{id}"}}},
 			after:  []featureGolden{{Name: "x", Revision: 3, Routes: []string{"GET /a/{name}"}}},

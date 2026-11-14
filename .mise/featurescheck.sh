@@ -6,8 +6,9 @@
 # uses what a revision added, so a number that stood still under a new route,
 # or went down, answers that client wrongly. The same rule refuses a route or
 # a feature that left the table without being declared as removed, a
-# `stable` label that went down, and a route or a feature a `stable` one gives
-# up even when it is declared: a stable feature only gains things within 1.x
+# `stable` label that went down, a route or a feature a `stable` one gives up
+# even when it is declared, and a route a `stable` one held that moved to a
+# feature that is not: a stable feature only gains things within 1.x
 # (docs/stability.md).
 #
 # NOT in `lint`, for the same reason `kinds:check` is not: it reads the DIFF.
