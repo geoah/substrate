@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -50,9 +49,13 @@ type queuedMessage struct {
 	persons []substrate.Actor
 	tokens  []string
 	// settled is closed once the transaction that writes the row has ended,
-	// and committed says how. The loop reads neither field before settled.
+	// and committed says how. doubted is a write whose commit was sent and
+	// whose answer never came, and whose row could not be read afterwards
+	// either: whoever next needs to know reads the row (landed). The loop
+	// reads none of the three before settled.
 	settled   chan struct{}
 	committed bool
+	doubted   bool
 	// taken is set, under turnMu, once a model call was handed the message.
 	taken bool
 }
@@ -156,12 +159,15 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 			return err
 		})
 	})
-	committed := err == nil
-	if err != nil && queued {
-		// An error can follow a commit (decision 0271): the row says which.
-		// A row the loop were not told of would be read by nobody, and
-		// start no turn.
-		committed = ds.queuedRowLanded(ctx, l, m)
+	committed, doubted := err == nil, false
+	if queued && errors.Is(err, substrate.ErrWriteInDoubt) {
+		// The commit was sent and its answer never came (decision 0271):
+		// only the row says which way it went. A row the loop were not told
+		// of would be read by nobody, and start no turn.
+		rctx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		row, rerr := ds.loadRowDB(rctx, eref{Kind: typeMessage, ID: m.id})
+		done()
+		committed, doubted = rerr == nil && m.landedAs(row, in.Thread), rerr != nil
 	}
 	if committed {
 		// Before the loop may read it, so no client hears of a message taken
@@ -171,7 +177,7 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 		})
 	}
 	if queued {
-		l.settleQueued(m, committed)
+		l.settleQueued(m, committed, doubted)
 	}
 	if errors.Is(err, errQueueClosed) {
 		// The turn is past reading it. Its settle is short: wait it out, and
@@ -221,48 +227,77 @@ func (l *agentLoop) queuedIDs() []string {
 	return ids
 }
 
-// queuedRowLanded reports whether m's row is stored after all, where the
-// transaction writing it returned an error: the row under m's id, at the
-// ordinal m drew, which no other write could have given it. Where the read
-// fails too the message is left in doubt, for the turn's settle to read
-// again inside its own transaction (closeQueue).
-func (ds *dataset) queuedRowLanded(ctx context.Context, l *agentLoop, m *queuedMessage) bool {
-	rctx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer done()
-	row, err := ds.loadRowDB(rctx, eref{Kind: typeMessage, ID: m.id})
-	if err != nil {
-		l.turnMu.Lock()
-		l.doubted = append(l.doubted, m)
-		l.turnMu.Unlock()
+// landedAs reports whether row is the row m's transaction wrote: a live
+// user row of this thread under m's id, at the ordinal m drew, saying what
+// m says. Another message under the same id (a copy sent elsewhere that won
+// the id) is not it.
+func (m *queuedMessage) landedAs(row *erow, thread string) bool {
+	if row == nil || row.DeletedAt != nil || referenceID(row.Props[msgRelThread]) != thread {
 		return false
 	}
-	return landedAs(row, m)
-}
-
-// landedAs reports whether row is the row m's transaction wrote.
-func landedAs(row *erow, m *queuedMessage) bool {
-	if row == nil || row.DeletedAt != nil {
-		return false
-	}
+	role, _ := row.Props["role"].(string)
+	content, _ := row.Props["content"].(string)
 	turn, ok := anyFloat(row.Props["turn"])
-	return ok && int(turn) == m.turn
+	return ok && int(turn) == m.turn && role == "user" && content == m.message.Content
 }
 
 // settleQueued records how the transaction writing m's row ended. A row that
-// was not written leaves the queue: its ordinal names no row.
-func (l *agentLoop) settleQueued(m *queuedMessage, committed bool) {
+// was not written leaves the queue: its ordinal names no row. One in doubt
+// stays, for the next reader of the queue to settle.
+func (l *agentLoop) settleQueued(m *queuedMessage, committed, doubted bool) {
 	l.turnMu.Lock()
-	m.committed = committed
-	if !committed {
-		for i, q := range l.queued {
-			if q == m {
-				l.queued = append(l.queued[:i:i], l.queued[i+1:]...)
-				break
-			}
-		}
+	m.committed, m.doubted = committed, doubted
+	if !committed && !doubted {
+		l.dropQueuedLocked(m)
 	}
 	l.turnMu.Unlock()
 	close(m.settled)
+}
+
+func (l *agentLoop) dropQueuedLocked(m *queuedMessage) {
+	for i, q := range l.queued {
+		if q == m {
+			l.queued = append(l.queued[:i:i], l.queued[i+1:]...)
+			return
+		}
+	}
+}
+
+// resolveQueued waits for the transaction writing m's row to end and
+// answers whether the row is stored. A write left in doubt is settled here
+// by reading the row through load: stored, it is a message like any other;
+// absent, it leaves the queue. A read that fails is an error, because a
+// call that went on without knowing would write a reply past a message it
+// may not have read.
+func (l *agentLoop) resolveQueued(ctx context.Context, m *queuedMessage, load func() (*erow, error)) (bool, error) {
+	select {
+	case <-m.settled:
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+	l.turnMu.Lock()
+	committed, doubted := m.committed, m.doubted
+	l.turnMu.Unlock()
+	if !doubted {
+		return committed, nil
+	}
+	row, err := load()
+	if err != nil {
+		return false, fmt.Errorf("read a message whose write was left in doubt: %w", err)
+	}
+	landed := m.landedAs(row, l.threadID)
+	l.turnMu.Lock()
+	m.committed, m.doubted = landed, false
+	if !landed {
+		l.dropQueuedLocked(m)
+	}
+	l.turnMu.Unlock()
+	if landed {
+		l.hub.publish(substrate.AgentEvent{
+			Kind: substrate.AgentEventMessageQueued, ID: m.id, Turn: m.turn, Text: m.message.Content,
+		})
+	}
+	return landed, nil
 }
 
 // takeQueued answers the messages the next model call reads: every one
@@ -274,10 +309,12 @@ func (l *agentLoop) settleQueued(m *queuedMessage, committed bool) {
 //
 // A message whose row is still being written is waited for: its transaction
 // holds the thread's row and is a moment from its end. A run that is stopped
-// meanwhile reads none of what it waited on.
-func (l *agentLoop) takeQueued(ctx context.Context) []*queuedMessage {
+// meanwhile reads none of what it waited on, and its call does not start. An
+// error is a message in doubt that could not be read: the call must not be
+// made.
+func (l *agentLoop) takeQueued(ctx context.Context) ([]*queuedMessage, error) {
 	if l.hub == nil {
-		return nil
+		return nil, nil
 	}
 	l.turnMu.Lock()
 	var waiting []*queuedMessage
@@ -293,12 +330,17 @@ func (l *agentLoop) takeQueued(ctx context.Context) []*queuedMessage {
 	l.turnMu.Unlock()
 	var taken []*queuedMessage
 	for _, m := range waiting {
-		select {
-		case <-m.settled:
-		case <-ctx.Done():
-			return taken
+		landed, err := l.resolveQueued(ctx, m, func() (*erow, error) {
+			return l.ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: m.id})
+		})
+		if ctx.Err() != nil {
+			// The stop is what ends the call: nothing more is read.
+			return taken, nil
 		}
-		if !m.committed {
+		if err != nil {
+			return nil, err
+		}
+		if !landed {
 			continue
 		}
 		l.turnMu.Lock()
@@ -306,14 +348,14 @@ func (l *agentLoop) takeQueued(ctx context.Context) []*queuedMessage {
 		l.turnMu.Unlock()
 		taken = append(taken, m)
 	}
-	return taken
+	return taken, nil
 }
 
 // closeQueue ends admission into the turn and answers the ids of the
 // messages it never handed a model call, oldest first. The settle calls it
 // in its transaction, with the thread's row held, which every admission
 // holds too: a message is either in the queue by now or finds the thread
-// settled. A message whose write ended in doubt is read here, where no
+// settled. A message whose write was left in doubt is read here, where no
 // write is in flight.
 func (l *agentLoop) closeQueue(t *txn) ([]string, error) {
 	l.turnMu.Lock()
@@ -324,34 +366,20 @@ func (l *agentLoop) closeQueue(t *txn) ([]string, error) {
 			waiting = append(waiting, m)
 		}
 	}
-	doubted := l.doubted
 	l.turnMu.Unlock()
-	var unread []*queuedMessage
+	var unread []string
 	for _, m := range waiting {
-		select {
-		case <-m.settled:
-		case <-t.ctx.Done():
-			return nil, t.ctx.Err()
-		}
-		if m.committed {
-			unread = append(unread, m)
-		}
-	}
-	for _, m := range doubted {
-		row, err := t.loadRow(eref{Kind: typeMessage, ID: m.id}, false)
+		landed, err := l.resolveQueued(t.ctx, m, func() (*erow, error) {
+			return t.loadRow(eref{Kind: typeMessage, ID: m.id}, false)
+		})
 		if err != nil {
 			return nil, err
 		}
-		if landedAs(row, m) {
-			unread = append(unread, m)
+		if landed {
+			unread = append(unread, m.id)
 		}
 	}
-	slices.SortFunc(unread, func(a, b *queuedMessage) int { return a.turn - b.turn })
-	ids := make([]string, len(unread))
-	for i, m := range unread {
-		ids[i] = m.id
-	}
-	return ids, nil
+	return unread, nil
 }
 
 // startQueuedTurn starts the turn a settled run's unread messages ask for,
@@ -378,6 +406,27 @@ func (ds *dataset) startQueuedTurn(threadID, message string) <-chan struct{} {
 		signal()
 	}
 	return opened
+}
+
+// heldToUnanswered is ctx with the senders of the thread's unanswered
+// messages added to whom the turn it starts is held to (run.go): the persons
+// and the tokens each row's `heldTo` names. The thread is settled, so the
+// set cannot grow before the turn claims it, and a claim that finds it
+// answered runs nothing.
+func (ds *dataset) heldToUnanswered(ctx context.Context, threadID string) (context.Context, error) {
+	rows, err := ds.threadRows(ctx, threadID)
+	if err != nil {
+		return ctx, err
+	}
+	ctx, joiners := withRunJoiners(ctx)
+	for _, r := range unansweredRows(rows) {
+		persons, tokens, err := ds.storedHolders(ctx, r.props[propHeldTo])
+		if err != nil {
+			return ctx, err
+		}
+		joiners.add(persons, tokens...)
+	}
+	return ctx, nil
 }
 
 // unansweredRows are the user rows no reply came after: those whose ordinal

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // queueRow is one stored message row of a thread, for the replay tests.
@@ -161,5 +162,40 @@ func TestReplayReadsAQueuedMessageWhereTheModelDid(t *testing.T) {
 				t.Fatalf("replayed\n  %s\nwant\n  %s", got, tc.want)
 			}
 		})
+	}
+}
+
+// A write left in doubt is settled by its row, and only by its own: the row
+// under the message's id, in its thread, at the ordinal it drew, saying what
+// it says. Another message that won the same id elsewhere is not it, so the
+// loop is never handed text no row of its thread holds.
+func TestAQueuedMessageLandedOnlyAsItsOwnRow(t *testing.T) {
+	t.Parallel()
+	m := &queuedMessage{id: "q1", turn: 4, message: llm.Message{Role: llm.RoleUser, Content: "only the open ones"}}
+	row := func(change func(props map[string]any)) *erow {
+		props := map[string]any{
+			"role": "user", "content": "only the open ones", "turn": float64(4),
+			msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, "th1")),
+		}
+		change(props)
+		return &erow{Kind: typeMessage, ID: "q1", Props: props}
+	}
+	if !m.landedAs(row(func(map[string]any) {}), "th1") {
+		t.Fatal("the message's own row was not taken as landed")
+	}
+	deleted := row(func(map[string]any) {})
+	now := nowUTC()
+	deleted.DeletedAt = &now
+	for name, other := range map[string]*erow{
+		"no row":             nil,
+		"a deleted row":      deleted,
+		"another thread's":   row(func(p map[string]any) { p[msgRelThread] = referenceValueOf(vocabulary.RecordPath(typeThread, "th2")) }),
+		"another ordinal":    row(func(p map[string]any) { p["turn"] = float64(5) }),
+		"another text":       row(func(p map[string]any) { p["content"] = "something else" }),
+		"not a user message": row(func(p map[string]any) { p["role"] = "assistant" }),
+	} {
+		if m.landedAs(other, "th1") {
+			t.Errorf("%s was taken as the message's own row", name)
+		}
 	}
 }
