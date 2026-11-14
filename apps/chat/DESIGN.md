@@ -1122,7 +1122,9 @@ button and Details stack where the text size leaves no room side by side.
   rig's clock moved between. After every step it holds the app to: the
   transcript drawn equals the fold of the server's rows wherever the app
   holds the thread at the server's version; no conversation waits with no
-  request at the server and no wait on the clock; no message is written
+  request at the server about it and no wait on the clock of its own (read
+  from the effects it asked for, and counted, so another conversation's
+  retry does not keep a dead one alive); no message is written
   twice; no row is drawn twice; nothing the person sent is lost (it is in
   a stored row, in a composer or on a message with its card); no failure
   is drawn in two places; a pending message has its send or its card;
@@ -1139,7 +1141,10 @@ button and Details stack where the text size leaves no room side by side.
   scheduler's, so a run waits for the app to stand still between steps
   and believes a broken rule only once it is still broken after real time.
   Rules the app is known to break in code another group is rebuilding are
-  listed in `SeededRun.known`: noted, not failed.
+  listed in `SeededRun.known`: noted, not failed, and a conversation that
+  breaks one is still held to every rule the leftover does not touch. A
+  kill may take a draft typed inside its save's pause and a send without
+  an id still on its way, and nothing else.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in
