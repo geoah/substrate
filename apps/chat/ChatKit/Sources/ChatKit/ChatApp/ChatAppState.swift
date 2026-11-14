@@ -38,6 +38,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// The id of the message the conversation last said the server has
         /// not taken.
         var unsent: String?
+        /// The draft the folder kept for the thread a new chat turned out
+        /// to be, until the conversation has it in its composer under what
+        /// was typed there.
+        var draftFound: String?
     }
 
     /// One window: the conversation it shows, whether it is in front, and
@@ -200,6 +204,17 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// The ids the folder held when it was last written, or read: a
     /// message's first copy leaves only once its id is among them.
     var keptUnsent: Set<String> = []
+    /// The last write of the unsent messages failed: the ids the folder
+    /// does not hold, the device's words for why, and how often the write
+    /// has failed in a row. Their messages go all the same, kept only
+    /// while the app runs, and the write is made again.
+    var unsaved: Unsaved?
+
+    struct Unsaved: Codable, Equatable, Sendable {
+        var ids: Set<String>
+        var seen: String
+        var failures: Int
+    }
 
     var transcripts: [String: Held] = [:]
     /// Rule 4: every thread's read epoch. A read records the one it started

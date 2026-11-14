@@ -276,10 +276,21 @@ row has the same id, so the handover replaces nothing.
   next launch gives it one owner: a draft that is the message and no more
   was on its way out, and is the unsent message; a draft that is the
   message with what was typed since behind it was on its way back, and is
-  the draft, with nothing left standing beside it. A
-  folder that cannot be written (a full disk) does not hold a message
-  back: it goes, the drafts file is left as it was, and the message is
-  kept only while the app runs.
+  the draft, with nothing left standing beside it. The unsent messages
+  keep an order of their own beside the drafts': a write of the drafts
+  alone that was asked for later and landed first does not keep a message
+  out of the folder.
+- **A folder that cannot be written** (a full disk) does not hold a
+  message back: it goes, the drafts file is left as it was, and the
+  message is kept only while the app runs. The person is told, in the
+  strip above the composer: "Your message is on its way, but it isn't
+  saved on this device yet." with "Keep Substrate Chat open until it shows
+  as sent." under it and the device's own words under Details (for a
+  message that stands unsent: "Your message isn't saved on this device
+  yet."). There is nothing to press: the list writes again after 2, 5 and
+  15 seconds and then every half minute, and with every change to the
+  unsent messages. The strip goes when a write lands or the server has
+  the message.
 - **An answer that never came** (a 5xx, a gateway's page, a dropped
   connection, a timeout, a stream that ended before `thread`, the app
   suspended mid-request) leaves it unknown whether the message arrived, and
@@ -307,11 +318,13 @@ row has the same id, so the handover replaces nothing.
   written after another was refused), so the message keeps its id and
   stands with the refusal's sentence and Send Again. A busy thread is also
   attached to: the turn on it may be this message's own.
-- **An id that names another record** (`409` with no reason, the server's
-  words naming `messageId`) cannot happen for an id the app minted. It is
-  said as the app's own fault, with the server's words under Details and
-  Edit Message as its button. No id is ever minted and sent on the app's
-  own.
+- **An id that names another record** (`409` with the reason
+  `message_id_taken`) cannot happen for an id the app minted. It is said
+  as the app's own fault, with the server's words under Details and Edit
+  Message as its button. No id is ever minted and sent on the app's own.
+  A server that names no reason for it is read by its words, for the
+  field's name, in `FailurePresenter.takenID` alone, to delete with the
+  last such server.
 - **The rows decide.** Whenever the thread's rows hold a record with the
   pending id, the message is that row and is pending no more. A run that
   left a message standing reads no rows of its own, so the list reads the
@@ -325,7 +338,11 @@ row has the same id, so the handover replaces nothing.
   thread is in the middle of something (a send out, a message standing, a
   failure unread, a draft the folder keeps for the thread), it stays and
   the new chat gives way; only one that holds nothing is closed for the
-  new chat, as rule 1 has it.
+  new chat, as rule 1 has it. Where no conversation is on that thread and
+  the folder keeps a draft for it, written there before, the new chat's
+  composer takes that draft under what was typed in it, as Edit Message
+  puts a message above what was typed since: both texts stay, in the
+  composer and in the folder, and neither is dropped.
 - **After a kill.** At the next launch the message is back at its place
   (a new chat's with the next New Chat) and is read for by its id. Found,
   it is the stored row: the chat is bound to its thread and read, and
@@ -923,7 +940,8 @@ none: only then is its text read for one (`FailureFallback`, the whole of
 that matching, to delete when no such server is left). A reply whose row
 says `cutBy` reads "The reply stopped at the model's limit." with Continue.
 A refusal before the stream opens reads by the envelope's `reason`:
-`thread_busy`, `nothing_to_continue`, `turn_cap`, `spend_cap` ("Today's
+`thread_busy`, `nothing_to_continue`, `turn_cap`, `message_id_taken`
+(a standing message's own card, with Edit Message), `spend_cap` ("Today's
 spending limit is reached.", Open in Console), `provider_key_missing`
 ("Anthropic has no API key yet.", Add Key: a missing key is refused before
 any thread opens, so it is never a run's cause), and today's `quota` and
@@ -1072,8 +1090,12 @@ button and Details stack where the text size leaves no room side by side.
   drop an unanswered message; a write asked for earlier never lands over
   a later one, and a stop between the two files leaves a text in one of
   them whichever way it moves; a new chat is the thread its lost first
-  copy opened once that thread is read, and gives way to a conversation
-  on it that holds something.
+  copy opened once that thread is read, gives way to a conversation
+  on it that holds something, and keeps both texts where the folder holds
+  a draft for that thread; a write the folder refuses is said in the
+  strip, tried again on the list's waits and unsaid once one lands or the
+  server has the message; an id taken is read from the server's reason,
+  and from its words only where it names none.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

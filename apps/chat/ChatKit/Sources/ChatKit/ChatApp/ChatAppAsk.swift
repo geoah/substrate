@@ -26,6 +26,8 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// The unsent messages and, after them, the drafts as they stand with
     /// them: written at once, and answered with the ids the folder holds.
     case saveUnsent(Lease, [String: UnsentMessage], drafts: [String: String])
+    /// The unsent messages' write failed: after this long, again.
+    case retryUnsent(after: Double)
     case savePreferences(Lease, ChatPreferences)
     case saveTranscript(Lease, thread: String, CachedTranscript)
     /// Rules 3 and 4 hold its answer as they hold a read's: it carries the

@@ -21,6 +21,9 @@ struct Failure: Codable, Hashable, Sendable {
         /// A message sent under an id of its own that the server has not
         /// taken: it stands at its place in the chat, to send again.
         case message
+        /// Writing a message sent under its id into this device's folder,
+        /// where it is kept until the server has it.
+        case keep
         /// Try Again or Continue: the thread run again with no new message.
         case resume
         /// The reply itself, once the server took the turn.
@@ -101,6 +104,8 @@ struct Failure: Codable, Hashable, Sendable {
         /// Something else took the answer's place before it came: a stop,
         /// or the reply already being written in the chat.
         case interrupted
+        /// This device could not write it to its folder.
+        case disk
     }
 
     var attempt: Attempt
@@ -178,7 +183,7 @@ struct Failure: Codable, Hashable, Sendable {
     var place: Place {
         switch attempt {
         case .reply, .resume, .message: .turn
-        case .send, .stop, .attach, .reload, .rows, .rename: .chat
+        case .send, .keep, .stop, .attach, .reload, .rows, .rename: .chat
         case .refresh, .feed: .list
         case .card, .answer, .decide, .addKey, .guidance, .guidanceChange: .inline
         case .poll: .nowhere

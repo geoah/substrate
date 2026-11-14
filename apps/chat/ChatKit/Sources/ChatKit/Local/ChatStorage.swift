@@ -60,6 +60,7 @@ public final class ChatStorage: @unchecked Sendable {
     /// under `files`.
     private var draftsAsked = 0
     private var draftsWritten = 0
+    private var unsentWritten = 0
     private var held: [String: Holding] = [:]
     private var tail: Task<Void, Never>?
     private var opens = 0
@@ -364,36 +365,70 @@ public final class ChatStorage: @unchecked Sendable {
     ///
     /// A write that fails leaves the files after it as they were: where
     /// `unsent.json` cannot be written the drafts are not touched, so a
-    /// text that was a saved draft is still one. `between` runs after each
-    /// file but the last, for a test that stops there.
+    /// text that was a saved draft is still one, and the caller is told
+    /// (`Saved.failed`) so it can say so and write again. `between` runs
+    /// after each file but the last, for a test that stops there.
+    ///
+    /// The unsent messages keep an order of their own beside the drafts':
+    /// a write of the drafts alone that was asked for later and landed
+    /// first must not keep a message out of the folder. Then the drafts on
+    /// disk are the newer ones and stay, and the unsent messages are
+    /// written as this write has them.
+    @discardableResult
     func save(
         drafts: [String: String], unsent: [String: UnsentMessage]? = nil, _ lease: Lease, ticket: Int? = nil,
         between: (() -> Void)? = nil
-    ) {
+    ) -> Saved {
         let ticket = ticket ?? draftsTicket()
-        guard let data = try? JSONEncoder().encode(drafts) else { return }
-        _ = whileHeld(lease) { holding -> Bool? in
-            guard ticket > draftsWritten else { return false }
-            draftsWritten = ticket
-            guard let unsent else {
+        return whileHeld(lease) { holding -> Saved? in
+            do {
+                let data = try JSONEncoder().encode(drafts)
+                if unsent != nil {
+                    guard ticket > unsentWritten else { return .passed }
+                    unsentWritten = ticket
+                }
+                let newest = ticket > draftsWritten
+                if newest { draftsWritten = ticket }
+                guard let unsent else {
+                    guard newest else { return .passed }
+                    try holding.folder?.write(data, to: "drafts.json", in: .root)
+                    return .written
+                }
+                let before = Self.unsent(in: holding)
+                guard newest else {
+                    if unsent != before {
+                        try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
+                        holding.unsent = unsent
+                    }
+                    return .written
+                }
+                let both = before.merging(unsent) { _, new in new }
+                if both != before {
+                    try holding.folder?.write(try JSONEncoder().encode(both), to: "unsent.json", in: .root)
+                    holding.unsent = both
+                    between?()
+                }
                 try holding.folder?.write(data, to: "drafts.json", in: .root)
-                return true
+                if both != unsent {
+                    between?()
+                    try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
+                    holding.unsent = unsent
+                }
+                return .written
+            } catch {
+                return .failed(error.localizedDescription)
             }
-            let before = Self.unsent(in: holding)
-            let both = before.merging(unsent) { _, new in new }
-            if both != before {
-                try holding.folder?.write(try JSONEncoder().encode(both), to: "unsent.json", in: .root)
-                holding.unsent = both
-                between?()
-            }
-            try holding.folder?.write(data, to: "drafts.json", in: .root)
-            if both != unsent {
-                between?()
-                try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
-                holding.unsent = unsent
-            }
-            return true
-        }
+        } ?? .passed
+    }
+
+    /// What became of a write of the drafts and the unsent messages.
+    enum Saved: Equatable, Sendable {
+        case written
+        /// Not this write's to make: a newer one was made first, or the
+        /// folder is no longer the one open.
+        case passed
+        /// The device refused it, in its own words.
+        case failed(String)
     }
 
     /// A place in the order the drafts are written in.

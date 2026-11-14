@@ -107,14 +107,20 @@ extension ChatApp {
             }
         case let .saveUnsent(lease, unsent, drafts):
             // At once, and answered: a message's first copy waits for it.
-            // Answered whether or not the folder took it: a folder that
-            // cannot be written (a full disk) does not hold a message
-            // back, and the message is then kept only while the app runs.
+            // Answered whether or not the folder took it, with the
+            // device's words where it did not: a folder that cannot be
+            // written (a full disk) does not hold a message back, and the
+            // list says so and writes again.
             let ticket = storage.draftsTicket()
             return .once {
-                storage.save(drafts: drafts, unsent: unsent, lease, ticket: ticket)
-                return Event(.unsentSaved(Set(unsent.values.map(\.id))))
+                switch storage.save(drafts: drafts, unsent: unsent, lease, ticket: ticket) {
+                case .written: return Event(.unsentSaved(Set(unsent.values.map(\.id)), failed: nil))
+                case let .failed(seen): return Event(.unsentSaved(Set(unsent.values.map(\.id)), failed: seen))
+                case .passed: return nil
+                }
             }
+        case let .retryUnsent(seconds):
+            return .once { await pause(seconds) ? Event(.unsentRetryDue) : nil }
         case let .savePreferences(lease, chosen):
             return .once {
                 storage.whileOpen(lease) { preferences.save(chosen, lease.identity) }
