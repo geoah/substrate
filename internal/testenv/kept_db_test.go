@@ -114,6 +114,14 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 // holds what an earlier start left of the kept directory's copy; an empty
 // root is a fresh copy.
 func checkKeptDirectoryIn(t *testing.T, dir, root string, conversions map[int]keptConversion, opts ...testenv.Option) keptImport {
+	return checkKeptDirectoryAfter(t, dir, root, conversions, nil, opts...)
+}
+
+// checkKeptDirectoryAfter is checkKeptDirectoryIn after the caller wrote the
+// entries wrote names, past the release's head: one of them that moved no
+// property and deleted nothing is the caller's to explain, and the check
+// leaves it out. Any other is held as the boot's would be.
+func checkKeptDirectoryAfter(t *testing.T, dir, root string, conversions map[int]keptConversion, wrote map[int64]bool, opts ...testenv.Option) keptImport {
 	var fixture keptFixture
 	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
 	var want keptRecords
@@ -144,6 +152,14 @@ func checkKeptDirectoryIn(t *testing.T, dir, root string, conversions map[int]ke
 	e.Token = fixture.Token
 
 	upgraded := keptUpgrade(t, e, want.Head)
+	for path, touch := range upgraded {
+		touch.entries = slices.DeleteFunc(touch.entries, func(entry keptEntry) bool {
+			return wrote[entry.seq] && len(entry.affected.Properties) == 0 && !entry.affected.Deleted
+		})
+		if len(touch.entries) == 0 && !touch.purged {
+			delete(upgraded, path)
+		}
+	}
 	keptAnnotations(t, e, fixture.Repository, want.Head, upgraded)
 	got := keptRead(t, e)
 	kindVersion := keptKindVersions(got)
@@ -241,7 +257,13 @@ func checkKeptDirectoryIn(t *testing.T, dir, root string, conversions map[int]ke
 	if lines := refusals.lines(); len(lines) > 0 {
 		t.Errorf("%s: the boot refused the shipped upgrade:\n  %s", fixture.Tag, strings.Join(lines, "\n  "))
 	}
-	for _, d := range keptSeededVersions(t, e, "fresh.example.com") {
+	// A start after the caller's writes is a second over the same database,
+	// where the first registered the fresh repository's name.
+	fresh := "fresh.example.com"
+	if wrote != nil {
+		fresh = "fresh-again.example.com"
+	}
+	for _, d := range keptSeededVersions(t, e, fresh) {
 		t.Errorf("%s: %s", fixture.Tag, d)
 	}
 	for _, p := range keptMarksWithoutValues(t, e.DSN, ds.Repository().ID) {
