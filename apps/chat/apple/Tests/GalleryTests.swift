@@ -18,10 +18,18 @@ import Testing
 /// and a reply caught as it is written, part way through an emphasis, a
 /// table and a fenced block; and a reply that links records, each a pill
 /// inside its line, in a paragraph, a list and a table.
+///
+/// And the places a failure is drawn, from ChatKit's fixtures, by the view
+/// the app draws them with: each at an iPhone's size and at an iPad's, in
+/// light and in dark. What surrounds a failure there (a bubble, a reply, a
+/// row, the composer) stands in for the app's own: the failure itself is
+/// the app's view over the presenter's words.
 @MainActor
 @Suite struct GalleryTests {
     static let scene = "gallery"
     static let question = "Where does the week stand?"
+    static let now = Date(timeIntervalSince1970: 1_793_696_400)
+    static let pad = CGSize(width: 834, height: 1112)
 
     /// The reply up to and including the first `marker`, and then `more`.
     static func cut(after marker: String, more: Int = 0) -> Int {
@@ -181,6 +189,33 @@ import Testing
         }
     }
 
+    @Test func everyPlaceHasAFailureToDraw() {
+        let places = Set(FailureFixtures.places(now: Self.now).map(\.place))
+        #expect(places == [.turn, .olderTurn, .chat, .list])
+        #expect(FailureFixtures.table(now: Self.now).allSatisfy { !$0.sentence.isEmpty })
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil))
+    func everyFailureDraws() async throws {
+        for fixture in FailureFixtures.places(now: Date()) {
+            for (device, size) in [("iphone", OffscreenDrawing.phone), ("ipad", Self.pad)] {
+                for scheme in [ColorScheme.light, .dark] {
+                    let view = Scene(fixture: fixture, wide: device == "ipad").environment(\.colorScheme, scheme)
+                    Attachment.record(
+                        try await OffscreenDrawing.png(view, size: size),
+                        named: "failure-\(fixture.name)-\(device)-\(scheme == .dark ? "dark" : "light").png")
+                }
+            }
+        }
+        for scheme in [ColorScheme.light, .dark] {
+            let table = FailureFixtures.table(now: Date())
+            let view = Table(failures: table).environment(\.colorScheme, scheme)
+            Attachment.record(
+                try await OffscreenDrawing.png(view, size: CGSize(width: 800, height: 1150)),
+                named: "failure-table-\(scheme == .dark ? "dark" : "light").png")
+        }
+    }
+
     /// The first answer `read` gives; fails after a minute without one.
     @discardableResult
     func until<T>(_ read: () -> T?) async throws -> T {
@@ -192,5 +227,151 @@ import Testing
     }
 
     struct NotReached: Error {}
+}
+
+/// One failure in its place, with a stand-in for what surrounds it.
+private struct Scene: View {
+    @Environment(\.colorScheme) private var scheme
+    let fixture: FailureFixtures.Fixture
+    let wide: Bool
+
+    var body: some View {
+        Group {
+            if wide {
+                HStack(spacing: 0) {
+                    list.frame(width: 320)
+                    Divider()
+                    chat
+                }
+            } else if fixture.place == .list {
+                list
+            } else {
+                chat
+            }
+        }
+        .background(scheme == .dark ? Color.black : Color.white)
+    }
+
+    private var card: some View {
+        FailureView(failure: fixture.failure, opened: fixture.detailsOpen) { _ in }
+    }
+
+    private var chat: some View {
+        VStack(spacing: 0) {
+            header("Balcony plants", "with Moss")
+            VStack(alignment: .leading, spacing: 22) {
+                bubble("How often should I water the balcony plants?")
+                reply("Twice a week in summer, and once a week from October. The tomatoes are the thirsty ones: check their soil every second day.")
+                bubble("And the tomatoes in August?")
+                switch fixture.place {
+                case .olderTurn:
+                    card
+                    bubble("Thanks. And the basil?")
+                    reply("Basil likes the morning sun and dislikes wet feet. Water it at the base, early in the day.")
+                case .turn:
+                    card
+                case .chat:
+                    reply("Every second day in August, more when it is windy. Water at the")
+                case .list:
+                    reply("Every second day in August, more when it is windy.")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .frame(maxWidth: 780)
+            .frame(maxWidth: .infinity)
+            VStack(spacing: 8) {
+                if fixture.place == .chat { card.padding(.horizontal, 12) }
+                composer
+            }
+            .frame(maxWidth: 820)
+            .padding(.bottom, 16)
+        }
+    }
+
+    private var list: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header("Chats", nil)
+            VStack(alignment: .leading, spacing: 14) {
+                if fixture.place == .list { card }
+                Text("Today").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                row("Balcony plants", "Moss  Every second day in August, more when it is windy.")
+                row("Lunch with Sam on Friday", "Moss  Sent: Sam has your reply that Friday at 12:30 works.")
+                Text("Yesterday").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                row("Reading list", "Moss  Added “Dune” to your books.")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func header(_ title: String, _ subtitle: String?) -> some View {
+        VStack(spacing: 2) {
+            Text(title).font(.headline)
+            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 54)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func bubble(_ text: String) -> some View {
+        Text(text)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Color.accentColor.opacity(0.16), in: .rect(cornerRadius: 18))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func reply(_ text: String) -> some View {
+        Text(text).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ title: String, _ preview: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.body.weight(.medium)).lineLimit(1)
+            Text(preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+        }
+    }
+
+    private var composer: some View {
+        HStack(spacing: 10) {
+            Text("Message Moss")
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+                .padding(.horizontal, 16)
+                .background(.fill.tertiary, in: .rect(cornerRadius: 24))
+            Image(systemName: "mic.fill")
+                .frame(width: 46, height: 46)
+                .background(.fill.tertiary, in: .circle)
+        }
+        .padding(.horizontal, 12)
+    }
+}
+
+/// Every row of the table of causes, in two columns.
+private struct Table: View {
+    @Environment(\.colorScheme) private var scheme
+    let failures: [FailurePresentation]
+
+    var body: some View {
+        let half = (failures.count + 1) / 2
+        HStack(alignment: .top, spacing: 12) {
+            column(Array(failures.prefix(half)))
+            column(Array(failures.dropFirst(half)))
+        }
+        .padding(16)
+        .background(scheme == .dark ? Color.black : Color.white)
+    }
+
+    private func column(_ failures: [FailurePresentation]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(failures) { FailureView(failure: $0) { _ in } }
+            Spacer(minLength: 0)
+        }
+    }
 }
 #endif

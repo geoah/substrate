@@ -71,9 +71,9 @@ ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
   Conversation/  one chat, a child of the list: the run, the overlay, Stop, the delivery check, the poll
   Model/         the transcript fold and the live overlay, the notices, the agents and threads, the tool words, Markdown blocks
-  API/           the agent streams over the kit's line stream, errors as values
+  API/           the agent streams over the kit's line stream; a failure as a value: what was attempted and why
   Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
-  Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, Settings
+  Presentation/  every value the app draws: the list, a conversation's screen, its turns and cards, Settings; the one presenter of failures
 apple/Sources/
   App/       ChatHost (the one PresentationModel; the browser sign-in, Change Access, the password door), the device services, App Intents
   Views/     the split view, the list, the conversation, the composer, cards, settings, sign-in: presentations drawn, commands sent
@@ -147,6 +147,7 @@ one segment, encoded exactly once: an agent's id
 | Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message}` → ndjson |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
+| Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message. A server older than the route answers `404` (`no such API path: …`) or `405`, and the app then sends "Continue where you left off." through Send, remembering the answer until it signs out |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
@@ -176,15 +177,16 @@ which is what tells them apart in History.
 | `truncated` | not sent | the replay lost events: the overlay is marked partial ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
 | `idle` | not sent | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
-| `error` (after the 200) | settle; a card saying what happened, the server's words beneath it | same |
+| `error` (after the 200) | settle; the turn's failure, with the `cause` and `retryAfter` the event carries where the server sends them | same |
 | `{}` | heartbeat, every 30 s; ignored | same |
 
 | Exit | What follows |
 | ---- | ------------ |
-| 4xx with the server's envelope before `thread` | refused: 409 a turn already running or the repository's 4 at once, 422 a hidden agent, 404 no such agent. Text back in the composer, the server's words on a card |
+| 4xx with the server's envelope before `thread` | refused: 409 a turn already running or the repository's 4 at once, 422 a hidden agent, 404 no such agent. Text back in the composer, and the strip above it says so (the envelope's `reason` is read where it has one) |
+| No connection, or a server that cannot be reached | the request never left: text back in the composer, Send Again, no check |
 | 5xx, 503 shutdown, a gateway's answer, a dropped connection, a stream that ends before any event | unknown delivery (below) |
 | Stream ends after `thread`, no `done` | the turn runs on: attach again, backing off 0, 1, 2, 4, 8, 15 s |
-| Attach answers 4xx other than 409/429 | permanent (404 a deleted thread): settle, say so, release the composer |
+| Attach answers 4xx other than 409/429 | permanent (404 a deleted thread): settle, say so in the strip above the composer, release the composer |
 | 401 anywhere | the session ended: one screen, Sign In Again |
 
 **Background runs.** `idle` with `running` means this server process has no
@@ -194,7 +196,9 @@ and the thread is read every 5 s (and on every feed row for a thread or a
 message) until its status settles; then the rows are read.
 
 **Stop** posts `stop`. A `409` means nothing streamable runs: the thread is
-read again, and what it says is shown.
+read again, and what it says is shown. Any other failure is the stop's, not
+the reply's: the strip above the composer says the stop failed and that the
+reply is still being written, with Try Again for the stop.
 
 ### The store and its concurrency rules
 
@@ -251,13 +255,15 @@ overlay, releases the composer and offers Try Again.
 
 - On an existing chat: the thread fresh, and a user row past the newest turn
   held before the send (unknown if the last reload failed) with the same
-  text. Found: the card clears and a running turn is attached to. Not found:
-  "It may not have arrived", with the text to copy. Same text is evidence,
-  not proof, and the card says "looks like it arrived".
+  text. Found: a running turn is attached to. Not found: the text goes back
+  into the composer and the strip above it says "Your message may not have
+  arrived", with Send Again. Same text is evidence, not proof.
 - On a new chat: the agent's newest `chat` threads (`startedAt:desc`,
   first 5); one started after the send whose first user row is the text is
-  adopted. Otherwise the same card, and the text stays.
-- Nothing is ever sent again on its own.
+  adopted. Otherwise the same strip, and the text is back in the composer.
+- While it reads, the strip says "Checking whether your message arrived…"
+  and the composer waits.
+- No message is ever sent again on its own.
 
 Deltas are coalesced and flushed every 50 ms, so a fast model does not
 redraw the transcript hundreds of times a second.
@@ -326,7 +332,8 @@ The server has no push channel, so the app promises what it can observe:
   it, or the app is in the background): a notification with the agent's
   name, the chat's title and the start of the reply, grouped by thread.
   Tapping opens the chat. Keyed by thread and `finishedAt`, so a rename never
-  notifies.
+  notifies. A reply that failed says the sentence its card in the chat says,
+  never the server's own text.
 - **Attention**: a new pending interaction ("Assistant has 2 questions"),
   a proposed request ("Assistant suggested a change") or a pending approval
   ("Secretary wants your approval to run gmail_send") notifies once per
@@ -581,25 +588,10 @@ bubble is a tinted fill. The transcript softens under the composer with
   them) or Dismissed (the values struck through). It is the transcript's:
   no read, so nothing to fail.
 - **Triggered openings**: "When <record> changed", not JSON.
-- **A last turn that didn't finish**: once nothing runs (no stream, no
-  attach, no handover waiting), a chat whose thread is `stopped`,
-  `overbudget` or `error` says so under the transcript in the console's
-  words, from the thread's stored status and the first line of its reason:
-  "Moss didn’t finish" with why ("The server restarted while it was
-  working.", "It ran out of time.", "It used all 8 of its turns."), "Moss
-  was stopped before it finished", or "Moss ran into a problem and didn’t
-  finish" with "What failed: …". Continue sends "Continue where you left
-  off." as the owner's own message, since the server resumes a stopped
-  thread only when its owner writes, and leaves a half-typed draft in the
-  composer; while a send cannot go it waits, with the composer's reason.
-- **Errors**: a failed run's card says what happened ("OpenAI refused the
-  API key", "OpenAI is turning requests down", else "<Agent> couldn't
-  answer"), with the server's words beneath it under "The server said".
-  Once the thread says the turn ended in an error, its notice (above) says
-  what failed, and the card stays beside it only where it names a refused
-  key or a rate limit, which the notice cannot. Refused and
-  unknown-delivery cards; a reload failure with Try Again; "This chat was
-  deleted".
+- **Failures**: [their own section](#failures) below. A turn that failed,
+  was stopped or ran out of a limit is a card at that turn; a failure of
+  the chat as a whole is one strip above the composer.
+- **A deleted chat**: "This chat was deleted", and the draft stays to copy.
 - **A provider without a key**: when no key resolves for it, its own or one
   the operator supplies (the operator read's `llm/<row>` item; before that
   read answers, no row is said to lack one), a callout, "Add an API key for OpenAI",
@@ -752,7 +744,7 @@ may do and for how long; the app never sees the password.
 
 ### Feel and access
 
-- Haptics on send, on a reply settling on screen, on an error.
+- Haptics on send, on a reply settling on screen, on a failure appearing.
 - Springs for the send/stop morph and the growing field; rows move to the top
   animated.
 - The live turn carries `.updatesFrequently`; a settled reply is announced
@@ -775,19 +767,121 @@ may do and for how long; the app never sees the password.
   bar's subtitle (the secondary label), and a prominent button in the
   kit's screens (white on the accent's text tone).
 
-## Errors, by where they happen
+## Failures
+
+A failure is a value until it is drawn. Where a request, a stream or a run
+fails, the app keeps a `Failure` (`ChatKit/Sources/ChatKit/API/Failure.swift`):
+what was attempted (a send, a continue, the reply itself, a stop, opening a
+reply's stream, a reload, a chat's rows, a rename, a card read, an answer, a
+decision, a key, the list's refresh, the change feed, the memories and
+instructions) and why (a run's `status` and `cause`, a reply's `cutBy`, an
+HTTP status with the envelope's `code` and `reason`, no connection, a server
+that cannot be reached, a timeout, a stream that ended early, a sign-in that
+ended, an approval that does not reach, an answer that was not the API's).
+It holds no sentence. `FailurePresenter` is the one place it becomes words:
+a sentence, at most one note, one button and the details, in switches with
+no default, so a new cause or attempt does not compile without its sentence
+and its button.
+
+**One place, by what it is about, never an alert**, and one component
+(`FailureView`) draws all three:
+
+| About | Where | Which attempts |
+| ----- | ----- | -------------- |
+| A turn | a card at that turn in the transcript | the reply, Try Again, Continue |
+| The chat as a whole | one strip directly above the composer | a send that started no turn, a stop, a stream that will not open, a reload, a chat's rows, a rename |
+| The list | one strip at its top | a refresh, the change feed, a rename of a chat no window shows |
+
+A second failure in a place replaces the first. A question's, a
+suggestion's and an approval's card, the key sheet and a row of Settings say
+their own failure in a line, from the same presenter. A 401 is the kit's
+signed-out screen. A stream that dropped and is being opened again, and a
+change feed that dropped, are states (`ScreenFailures.reconnecting`,
+`ChatListPresentation.reconnecting`), never drawn as failures.
+
+**The sentences.** A run that did not finish reads by the server's `cause`,
+which the thread, the `error` event and the `done` result carry:
+
+| `cause` | Sentence | Button |
+| ------- | -------- | ------ |
+| `provider_key_missing` | Anthropic has no API key yet. | Add Key |
+| `provider_key_refused` | Anthropic refused the API key. | Replace Key |
+| `provider_rate_limited` | Anthropic is limiting requests. Try again in 20 seconds. | Try Again, counting down |
+| `provider_billing` | The Anthropic account is out of credit. | Try Again |
+| `provider_overloaded`, `provider_unavailable` | Anthropic is having trouble. (What Moss wrote so far is kept., where the transcript holds it) | Try Again |
+| `model_unavailable` | Anthropic does not offer this model to your key. | Open in Console |
+| `context_too_long` | This chat is too long for the model. | New Chat |
+| `allowance_spent` | Today's allowance is used up. It resets at midnight UTC. | Add Your Own Key |
+| `interrupted`, `shutdown` | The server restarted while Moss was working. | Try Again |
+| `write_failed` | The server couldn't save what Moss was doing. | Try Again |
+| `internal` | Moss ran into a problem and didn't finish. | Try Again |
+| `turn_limit`, `tool_call_limit`, `deadline` | Moss ran out of room before finishing. | Continue |
+| `owner` | Moss was stopped before it finished. | Continue |
+
+A cause this build does not know gets the sentence for its status ("Moss
+couldn't finish this reply.", "Moss ran out of room before finishing.",
+"Moss was stopped before it finished."). A server older than `cause` sends
+none: only then is its text read for one (`FailureFallback`, the whole of
+that matching, to delete when no such server is left). A reply whose row
+says `cutBy` reads "The reply stopped at the model's limit." with Continue.
+A refusal before the stream opens reads by the envelope's `reason`:
+`thread_busy`, `turn_cap`, `spend_cap` ("Today's spending limit is reached.",
+Open in Console), `provider_key_missing`, and today's `quota` and
+`key_refused`. Anything else says what did not happen, with why as its note:
+"You're offline. Your message is in the box below." (Send Again), "Couldn't
+stop Moss. The reply is still being written." (Try Again), "Couldn't load
+the end of this chat." (Try Again), "Couldn't refresh your chats." (Try
+Again), "Live updates stopped." (Try Again).
+
+**The details.** The server's own words (a thread's `reason`, an envelope's
+message) are behind a Details disclosure, under "The server said". What the
+device saw of a connection that failed is under "This device reported",
+never under the server's name.
+
+**The buttons.**
+
+- Try Again and Continue run the thread again through the continue route,
+  which writes no message. While the request is out the card stays, its
+  button working and not pressable; when the server answers the card goes,
+  and when it does not the new failure stands in the same place.
+- A rate limit that says how long (`retryAfter`) counts down on its button,
+  which cannot be pressed before the end. At zero the app tries again by
+  itself, once, and only while the chat is on screen; it never does on a
+  server without the continue route, where going on needs a message of the
+  person's.
+- Send Again is the composer's Send. A refused or lost send always puts its
+  text back into the composer, ahead of anything typed since, so nothing
+  typed is lost.
+- Add Key opens the app's own key sheet where the provider has no key, and
+  otherwise the provider's record in the console (`data/…/llm/provider/<id>`),
+  as Replace Key and Add Your Own Key do. Open in Console opens the agent's
+  page (`agents/<id>`): the nearest page to a model or a spending limit.
+  Each opens in the browser, and carries the external-link mark.
+- New Chat starts one with the same assistant.
+
+**Older turns.** A stored reply that says `cutBy`, and a message no reply
+follows, say so at that turn in a card with no button: only the newest turn
+can be tried again.
+
+**Access.** The card's words are one element, labelled with the sentence
+and the note, and its button is the next. VoiceOver hears a failure when it
+appears in the chat on screen, with the error haptic. The colours are
+numbers (`FailurePalette`) and a test holds every pair that carries text to
+4.5:1 in light and in dark. Nothing in the card has a fixed height, and the
+button and Details stack where the text size leaves no room side by side.
 
 | Where | What the person sees |
 | ----- | -------------------- |
-| Offline | A banner on the list; the composer keeps the text and says "Offline" |
-| A read fails | The cached content stays; "Couldn't refresh: …" under the title |
-| Send refused | A card with the server's words; the text back in the composer |
-| Send unknown | "Checking whether your message arrived…", then the outcome |
+| Offline | A line on the list; the composer keeps the text and says "Offline" |
+| The list's read fails | The cached content stays; the strip at the top of the list, Try Again |
+| The change feed ends | The strip at the top of the list, Try Again |
+| Send refused, or it never left | The strip above the composer; the text back in the composer; Send Again |
+| Send unknown | "Checking whether your message arrived…", then nothing, or the strip and the text back |
 | The stream drops | Nothing; the app attaches again with backoff |
-| The turn errors | A card in the transcript: what happened, then "The server said" and its words |
-| The last turn didn't finish | A notice under the transcript: what happened, why, and Continue; the list marks the chat |
-| Reload after a turn fails | The run stays shown; "The conversation didn't reload", Try Again |
-| A card's write fails | "That didn't go through: …"; a 409 re-reads and asks again |
+| The turn fails, is stopped or runs out of a limit | A card at that turn: the sentence, Try Again or Continue, Details; the list marks the chat |
+| Stop fails | The strip above the composer says the stop failed; the reply goes on |
+| Reload after a turn fails | The run stays shown; the strip above the composer, Try Again |
+| A card's write fails | A line in the card; a 409 re-reads and asks again |
 | The chat was deleted | "This chat was deleted"; the draft stays to copy |
 | 401 | The signed-out screen |
 
@@ -861,6 +955,15 @@ may do and for how long; the app never sees the password.
   moved; the list is kept until the instant a row stops being true; a
   tool's row is made once; and no key is lost by a send, a refusal, leaving
   the front or switching chats.
+- Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
+  cause, refusal reason, cut and attempt has its sentence and its button
+  asserted against a table that must name every case; each attempt lands in
+  its place; a failed stop never reads as a failed reply; Continue falls
+  back on a 404 and remembers it; the countdown, and one automatic retry at
+  zero only while the chat is on screen; nothing typed is lost; the colours
+  meet 4.5:1. `apple/Tests/GalleryTests.swift` draws each place over
+  `FailureFixtures` at an iPhone's and an iPad's size, in light and in
+  dark, for `mise run apps:gallery`.
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.

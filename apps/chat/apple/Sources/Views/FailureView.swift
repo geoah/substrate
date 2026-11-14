@@ -13,7 +13,14 @@ struct FailureView: View {
     @ScaledMetric(relativeTo: .subheadline) private var pad = 14.0
     let failure: FailurePresentation
     let act: (FailureAction) -> Void
-    @State private var open = false
+    @State private var open: Bool
+
+    /// `opened` draws it with its Details showing from the start.
+    init(failure: FailurePresentation, opened: Bool = false, act: @escaping (FailureAction) -> Void) {
+        self.failure = failure
+        self.act = act
+        _open = State(initialValue: opened)
+    }
 
     private var palette: FailurePalette { .of(failure.tone, dark: scheme == .dark) }
 

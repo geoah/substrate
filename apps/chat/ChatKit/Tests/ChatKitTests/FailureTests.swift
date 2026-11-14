@@ -156,16 +156,16 @@ struct FailureSentences {
     @Test func everyReasonIsSaidInWordsAPersonUses() {
         let reasons: [(Failure.Why, String)] = [
             (.offline, "You're offline."), (.unreachable, "Couldn't reach s.example.com."),
-            (.timeout, "S.example.com took too long to answer."), (.streamEnded, "The connection dropped."),
-            (.notTheAPI(status: 502), "S.example.com answered with something Substrate Chat can't read."),
+            (.timeout, "The server took too long to answer."), (.streamEnded, "The connection dropped."),
+            (.notTheAPI(status: 502), "The server answered with something Substrate Chat can't read."),
             (.sessionEnded, "Your sign-in ended."), (.needsApproval, "Substrate Chat needs your approval for that."),
-            (.ended, "S.example.com ended it."),
-            (.http(status: 500, code: "internal", reason: nil), "S.example.com ran into a problem."),
-            (.http(status: 429, code: "rate_limited", reason: nil), "S.example.com is busy. Try again in a moment."),
+            (.ended, "The server ended it."),
+            (.http(status: 500, code: "internal", reason: nil), "The server ran into a problem."),
+            (.http(status: 429, code: "rate_limited", reason: nil), "The server is busy. Try again in a moment."),
             (.http(status: 409, code: "conflict", reason: nil), "It changed in the meantime."),
             (.http(status: 404, code: "not_found", reason: nil), "It is no longer there."),
             (.http(status: 403, code: "forbidden", reason: nil), "You're not allowed to do that."),
-            (.http(status: 422, code: "validation", reason: nil), "S.example.com refused it."),
+            (.http(status: 422, code: "validation", reason: nil), "The server refused it."),
         ]
         for (why, words) in reasons {
             #expect(FailurePresenter.present(Failure(.reload, why), context()).note == words, "\(why)")
@@ -260,7 +260,7 @@ struct FailurePlaces {
         try await rig.harness.until { _ in await rig.strip(key) != nil }
         let strip = try #require(await rig.strip(key))
         #expect(strip.sentence == "Couldn't stop Helper. The reply is still being written.")
-        #expect(strip.note == "S.example.com ran into a problem.")
+        #expect(strip.note == "The server ran into a problem.")
         #expect(strip.button == FailureButton(title: "Try Again", action: .stop))
         #expect(strip.details == FailureDetails(title: "Details", label: "The server said", text: "the stop could not be written"))
         // The reply is still being written, and nothing says it failed.
@@ -294,7 +294,7 @@ struct FailurePlaces {
         try await rig.harness.until { _ in await rig.live(key)?.reloadFailed != nil }
         let strip = try #require(await rig.strip(key))
         #expect(strip.sentence == "Couldn't load the end of this chat.")
-        #expect(strip.note == "S.example.com answered with something Substrate Chat can't read.")
+        #expect(strip.note == "The server answered with something Substrate Chat can't read.")
         #expect(strip.button == FailureButton(title: "Try Again", action: .reload))
         #expect(strip.details?.label == "This device reported")
         #expect(await rig.conversation(key)?.failures.turns.isEmpty == true)
@@ -315,7 +315,7 @@ struct FailurePlaces {
         await rig.harness.send(.refresh)
         try await rig.harness.until { harness in await harness.presentation.list.failure != nil }
         let strip = try #require(await rig.harness.presentation.list.failure)
-        #expect(strip.sentence == "Couldn't refresh your chats." && strip.note == "S.example.com ran into a problem.")
+        #expect(strip.sentence == "Couldn't refresh your chats." && strip.note == "The server ran into a problem.")
         #expect(strip.button == FailureButton(title: "Try Again", action: .refresh))
         #expect(strip.details?.text == "the list could not be read")
         rig.server.unroute()
@@ -328,7 +328,7 @@ struct FailurePlaces {
         try await rig.signIn()
         await rig.harness.deliver(ChatApp.Event(.watchEnded("the feed is closed to this token", nil)))
         let strip = try #require(await rig.harness.presentation.list.failure)
-        #expect(strip.sentence == "Live updates stopped." && strip.note == "S.example.com ended it.")
+        #expect(strip.sentence == "Live updates stopped." && strip.note == "The server ended it.")
         #expect(strip.button == FailureButton(title: "Try Again", action: .refresh))
         #expect(strip.details == FailureDetails(title: "Details", label: "The server said", text: "the feed is closed to this token"))
         // A feed that only dropped is a state, never a failure.
@@ -351,7 +351,7 @@ struct FailurePlaces {
         try await rig.harness.until { harness in await harness.state.renameFailure != nil }
         // No window shows the chat: the list says it.
         let listed = try #require(await rig.harness.presentation.list.failure)
-        #expect(listed.sentence == "Couldn't rename this chat." && listed.note == "S.example.com took too long to answer.")
+        #expect(listed.sentence == "Couldn't rename this chat." && listed.note == "The server took too long to answer.")
         #expect(listed.button == FailureButton(title: "Try Again", action: .rename(thread: "t1", subject: "Plants")))
         #expect(listed.dismiss == .dismissRename)
 

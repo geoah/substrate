@@ -27,7 +27,8 @@ private func routes(_ status: String, _ reason: String? = nil) -> [ChatServer.Ro
 struct UnfinishedTurns {
     @Test func itSaysWhyInWordsAndNothingForOneThatFinished() {
         func card(_ status: String, _ reason: String?) -> FailurePresentation? {
-            let thread = ChatThread(record: Record(id: "t1", kind: Kinds.thread, properties: ["status": .string(status), "reason": reason.map(JSONValue.string) ?? .null]))
+            let thread = ChatThread(
+                record: Record(id: "t1", kind: Kinds.thread, properties: ["status": .string(status), "reason": reason.map(JSONValue.string) ?? .null]))
             var context = FailurePresenter.Context()
             context.agent = "Moss"
             return thread.runFailure.map { FailurePresenter.present($0, context) }

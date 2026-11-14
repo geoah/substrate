@@ -150,6 +150,7 @@ struct ConversationView: View {
         h.combine(screen.turns.last)
         h.combine(screen.approvals)
         h.combine(screen.failures.turns)
+        h.combine(screen.failures.strip?.id)
         h.combine(screen.typing)
         return h.finalize()
     }
