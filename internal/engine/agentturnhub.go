@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 
@@ -31,8 +31,9 @@ const agentTurnReplayBytes = 4 << 20
 const agentTurnSubscriberBuffer = 256
 
 // errAttachFellBehind ends an attach whose client read slower than the turn
-// wrote: the hub dropped it rather than hold the loop.
-var errAttachFellBehind = errors.New("stream fell behind; attach again")
+// wrote: the hub dropped it rather than hold the loop. It is not the turn's
+// failure, and the same attach made again succeeds, so it is ErrUnavailable.
+var errAttachFellBehind = fmt.Errorf("%w: stream fell behind; attach again", substrate.ErrUnavailable)
 
 type turnSubscriber struct {
 	ch      chan substrate.AgentEvent

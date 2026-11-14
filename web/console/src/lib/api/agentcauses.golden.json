@@ -1,0 +1,19 @@
+[
+  "allowance_spent",
+  "context_too_long",
+  "deadline",
+  "internal",
+  "interrupted",
+  "model_unavailable",
+  "provider_billing",
+  "provider_key_refused",
+  "provider_overloaded",
+  "provider_rate_limited",
+  "provider_rejected",
+  "provider_unavailable",
+  "requested",
+  "shutdown",
+  "tool_call_limit",
+  "turn_limit",
+  "write_failed"
+]

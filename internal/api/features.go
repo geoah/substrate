@@ -146,7 +146,10 @@ var featureTable = []feature{
 	// `not_permitted`, a refusal by a rule of the person's roles (decision
 	// 0276). Revision 6: the reasons `thread_busy` and `nothing_to_continue`,
 	// a message or a continue a thread's state refuses (decision 0312).
-	{name: "errors", stability: substrate.StabilityStable, revision: 6, surfaces: []string{surfaceREST}},
+	// Revision 7: the reasons of an agent run refused before it started
+	// (`turn_cap`, `spend_cap`, `provider_key_missing`) and of an agent call
+	// a provider failed (decision 0315).
+	{name: "errors", stability: substrate.StabilityStable, revision: 7, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
 	// change links the actor record that wrote it, the one it acted for
@@ -321,7 +324,10 @@ var featureTable = []feature{
 	// turn. Experimental with the agent kind and the llm package they run on
 	// (substrate/agent.go). Revision 3: a chat message may name its own id,
 	// `messageId`, and a thread is continued with no message (decision 0312).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 4: a settled run says its `cause`, with `retryAfter`, on the
+	// result and on the stream's error event, and a provider's failure on
+	// the call route is no longer `validation` (decision 0315).
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",

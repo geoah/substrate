@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/sashabaranov/go-openai"
 
@@ -71,8 +72,19 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 // followed, or a mark an inner step already set. An answer that refuses the
 // row's key (providersecret.RefusesKey) is marked
 // providersecret.KeyRefusedError.
-func (c *openaiClient) scrubbed(err error) error {
+//
+// The failure's class is sorted here, the wire's one place for it
+// (openaiClass), from the error as the SDK read it, and marked on the rebuilt
+// error with the wait the endpoint's answer named (bodyDoer).
+func (c *openaiClient) scrubbed(ctx context.Context, err error) error {
 	out := providersecret.MarkKeyRefused(openaiKeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
+	if class := openaiClass(err); class != FailureKeyRefused {
+		var retryAfter time.Duration
+		if patch, _ := ctx.Value(bodyPatchKey{}).(*bodyPatch); patch != nil {
+			retryAfter = patch.retryAfter
+		}
+		out = classified(class, retryAfter, out)
+	}
 	if errors.Is(err, egress.ErrUnprocessed) || egress.IsRedirect(err) || egress.RefusedStatus(openaiStatus(err)) {
 		return egress.Unprocessed(out)
 	}
@@ -102,6 +114,23 @@ func openaiKeyRefusal(err error) int {
 		return status
 	}
 	return 0
+}
+
+// openaiClass sorts a failed call: an error the endpoint answered by its
+// status, type and code (openaiFailure), and one no answer came with by what
+// the transport said (transportFailure).
+func openaiClass(err error) FailureClass {
+	var apiErr *openai.APIError
+	var reqErr *openai.RequestError
+	switch {
+	case errors.As(err, &apiErr):
+		code, _ := apiErr.Code.(string)
+		return openaiFailure(apiErr.HTTPStatusCode, apiErr.Type, code)
+	case errors.As(err, &reqErr) && reqErr.HTTPStatusCode != 0:
+		errType, errCode := providersecret.ErrorFields(reqErr.Body)
+		return openaiFailure(reqErr.HTTPStatusCode, errType, errCode)
+	}
+	return transportFailure(err)
 }
 
 func openaiStatus(err error) int {
@@ -183,6 +212,9 @@ type bodyPatch struct {
 	// response, when non-nil, receives a one-shot reply's body, read whole
 	// up to maxResponseBytes; a stream's body is left to the SDK.
 	response *[]byte
+	// retryAfter receives the wait a failure answer asked for in its
+	// headers, which the SDK's error does not keep.
+	retryAfter time.Duration
 }
 
 type bodyPatchKey struct{}
@@ -205,6 +237,9 @@ func (d *bodyDoer) Do(req *http.Request) (*http.Response, error) {
 	res, err := d.inner.Do(req)
 	if err != nil {
 		return res, err
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		patch.retryAfter, _ = retryAfterOf(res.Header)
 	}
 	if strings.HasPrefix(res.Header.Get("Content-Type"), "text/event-stream") {
 		// The SDK reads each event line whole before anything here can
@@ -437,11 +472,13 @@ func (c *openaiClient) patchCache(patch *bodyPatch, req Request, messages, tools
 func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest, body *[]byte) (*Result, error) {
 	resp, err := c.client.CreateChatCompletion(ctx, oreq)
 	if err != nil {
-		return nil, c.scrubbed(err)
+		return nil, c.scrubbed(ctx, err)
 	}
 	usage := openaiUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens, *body)
 	if len(resp.Choices) == 0 {
-		return &Result{Usage: usage}, errors.New("empty response: no choices")
+		// An answer with nothing in it is the endpoint's fault, not the
+		// request's.
+		return &Result{Usage: usage}, classified(FailureUnavailable, 0, errors.New("empty response: no choices"))
 	}
 	msg := resp.Choices[0].Message
 	return &Result{
@@ -456,7 +493,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	oreq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 	stream, err := c.client.CreateChatCompletionStream(ctx, oreq)
 	if err != nil {
-		return nil, c.scrubbed(err)
+		return nil, c.scrubbed(ctx, err)
 	}
 	defer func() { _ = stream.Close() }()
 	var content, reasoning strings.Builder
@@ -488,11 +525,11 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			break
 		}
 		if err != nil {
-			return fail(c.scrubbed(err))
+			return fail(c.scrubbed(ctx, err))
 		}
 		var chunk openai.ChatCompletionStreamResponse
 		if err := json.Unmarshal(raw, &chunk); err != nil {
-			return fail(c.scrubbed(err))
+			return fail(c.scrubbed(ctx, err))
 		}
 		var tb thinkingBlocks
 		if json.Unmarshal(raw, &tb) == nil && len(tb.Choices) > 0 {

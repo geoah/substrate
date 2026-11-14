@@ -155,7 +155,8 @@ func TestARestartSettlesTheAgentRunItInterrupted(t *testing.T) {
 	ds = restart()
 
 	threads = agentThreadsOf(t, ds, "keeper")
-	if len(threads) != 1 || threads[0]["status"] != threadError || threads[0]["reason"] != interruptedThreadReason {
+	if len(threads) != 1 || threads[0]["status"] != threadError || threads[0]["reason"] != interruptedThreadReason ||
+		threads[0][propThreadCause] != substrate.CauseInterrupted {
 		t.Fatalf("keeper threads after the restart = %+v, want one settled to error naming the stop", threads)
 	}
 	if fin, _ := threads[0]["finishedAt"].(string); fin == "" {

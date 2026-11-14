@@ -2829,6 +2829,16 @@ take up and the next message is what goes on
 whose `messageId` names a record that is not this message: the same request
 meets the same answer, so the client sends the message under a new id
 ([a message with its own id](agents.md#a-message-with-its-own-id)).
+Since revision 7 of the `errors` feature an agent run names why it was
+refused or failed ([calling an agent](agents.md#calling-an-agent)):
+`turn_cap` on `conflict`, the person's chat turns are all running;
+`spend_cap` on `guard`, a daily spend cap is reached; `provider_key_missing`
+on `validation`, the provider row has no key; `provider_rate_limited`,
+`provider_billing`, `provider_overloaded`, `provider_unavailable` and
+`model_unavailable` on `unavailable`, the provider failed an agent call, with
+a `Retry-After`; and `context_too_long` and `provider_rejected` on
+`validation`, the provider refused the request as it stands. The last seven
+are the [cause](agents.md#what-ended-a-run) the run's thread settled with.
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2837,10 +2847,13 @@ them is stale, and dropping that call drops the others too. A write that
 removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
-The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `message_id_taken`, `not_permitted`,
-`nothing_to_continue`, `observed_rederiving`, `quota`, `repository_required`,
-`set_aside`, `stale_revision`, `thread_busy`.
+The closed set of reasons: `context_too_long`, `first_attempt_landed`,
+`first_attempt_running`, `in_doubt`, `key_refused`, `message_id_taken`,
+`model_unavailable`, `not_permitted`, `nothing_to_continue`,
+`observed_rederiving`, `provider_billing`, `provider_key_missing`,
+`provider_overloaded`, `provider_rate_limited`, `provider_rejected`,
+`provider_unavailable`, `quota`, `repository_required`, `set_aside`,
+`spend_cap`, `stale_revision`, `thread_busy`, `turn_cap`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

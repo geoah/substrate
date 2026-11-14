@@ -163,9 +163,18 @@ func anthropicEndpoint(base string) (string, error) {
 // rebuilt rather than %w-wrapped so no unwrap can recover the key. A context
 // overflow is classified on the scrubbed text (providerError), and an
 // egress.ErrUnprocessed mark and a providersecret.KeyRefusedError mark
-// (statusError) survive the rebuild.
+// (statusError) survive the rebuild, and so does the failure's class.
 func (c *anthropicClient) scrubbed(err error) error {
+	// The class is read off the error as it came (statusError's mark, else
+	// the transport's own failure) before the text is rebuilt.
+	class, retryAfter := FailureOf(err)
+	if class == "" {
+		class = transportFailure(err)
+	}
 	out := providersecret.MarkKeyRefused(providersecret.KeyRefusal(err), providerError(providersecret.Scrub(c.apiKey, err.Error())))
+	if class != FailureKeyRefused {
+		out = classified(class, retryAfter, out)
+	}
 	if errors.Is(err, egress.ErrUnprocessed) {
 		return egress.Unprocessed(out)
 	}
@@ -700,7 +709,7 @@ func anthropicShouldRetry(res *http.Response) bool {
 // the first), given the headers of the response retried; none after a failed
 // dial.
 func anthropicRetryDelay(header http.Header, retry int) time.Duration {
-	if d, ok := anthropicRetryAfter(header); ok {
+	if d, ok := retryAfterOf(header); ok {
 		return max(0, d)
 	}
 	delay := anthropicBaseBackoff
@@ -708,25 +717,6 @@ func anthropicRetryDelay(header http.Header, retry int) time.Duration {
 		delay = min(2*delay, anthropicMaxBackoff)
 	}
 	return delay - time.Duration(rand.Int64N(int64(delay/4))) //nolint:gosec // G404: retry jitter, not a secret
-}
-
-// anthropicRetryAfter reads the wait a response asks for: retry-after-ms,
-// else retry-after in seconds or as an HTTP date.
-func anthropicRetryAfter(header http.Header) (time.Duration, bool) {
-	if v := header.Get("Retry-After-Ms"); v != "" {
-		if ms, err := strconv.ParseFloat(v, 64); err == nil {
-			return time.Duration(ms * float64(time.Millisecond)), true
-		}
-	}
-	if v := header.Get("Retry-After"); v != "" {
-		if s, err := strconv.ParseFloat(v, 64); err == nil {
-			return time.Duration(s * float64(time.Second)), true
-		}
-		if t, err := time.Parse(time.RFC1123, v); err == nil {
-			return time.Until(t), true
-		}
-	}
-	return 0, false
 }
 
 // statusError is the error for a refused request or a stream's error event:
@@ -739,9 +729,13 @@ func anthropicRetryAfter(header http.Header) (time.Duration, bool) {
 // scrubbed keeps only the mark.
 func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 	refused := 0
-	if errType, errCode := providersecret.ErrorFields(body); providersecret.RefusesKey(res.StatusCode, errType, errCode) {
+	errType, errCode := providersecret.ErrorFields(body)
+	if providersecret.RefusesKey(res.StatusCode, errType, errCode) {
 		refused = res.StatusCode
 	}
+	// The class is read from the whole body too, before the cut.
+	class := anthropicFailure(res.StatusCode, errType, anthropicErrorMessage(body))
+	retryAfter, _ := retryAfterOf(res.Header)
 	body = providersecret.Truncate(c.apiKey, body, anthropicMaxErrorBody)
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "%s %q: %d %s", http.MethodPost, c.endpoint, res.StatusCode, http.StatusText(res.StatusCode))
@@ -755,7 +749,22 @@ func (c *anthropicClient) statusError(res *http.Response, body []byte) error {
 		msg.WriteByte(' ')
 		msg.Write(body)
 	}
-	return providersecret.MarkKeyRefused(refused, errors.New(msg.String()))
+	if refused != 0 {
+		return providersecret.MarkKeyRefused(refused, errors.New(msg.String()))
+	}
+	return classified(class, retryAfter, errors.New(msg.String()))
+}
+
+// anthropicErrorMessage is the `error.message` of an error body, "" where it
+// has none.
+func anthropicErrorMessage(body []byte) string {
+	var answer struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &answer)
+	return answer.Error.Message
 }
 
 // anthropicMessage is the Messages response, one-shot or folded from a

@@ -292,7 +292,8 @@ func TestRunningChatTurnsAreCapped(t *testing.T) {
 		waitArrived(t, a, "a running chat turn")
 	}
 	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "one more"}, nil)
-	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "chat turns are already running") {
+	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "chat turns are already running") ||
+		substrate.ReasonOf(err) != substrate.ReasonTurnCap {
 		t.Fatalf("a turn past the cap = %v, want a conflict naming the cap", err)
 	}
 	release()

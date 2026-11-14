@@ -121,6 +121,10 @@ const (
 	reasonDeadlineLastTurn = "deadline exceeded after a last turn"
 )
 
+// reasonMaxToolCalls opens the reason of a run its tool-call budget ended,
+// which settledCause reads the cause from.
+const reasonMaxToolCalls = "max tool calls reached"
+
 // continueNudge is the user message a continued turn's request ends with
 // when the stored rows end on the assistant's own text (a reply a stop or a
 // limit cut short). It is never stored, as finalTurnNudge is not: a provider
@@ -582,8 +586,8 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
-		return nil, fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and %s supplies no key for a row of this id",
-			substrate.ErrValidation, id, ds.siteName())
+		return nil, substrate.WithReason(fmt.Errorf("%w: llm/provider row %q declares no apiKey: a row carries the key for the endpoint it names, and %s supplies no key for a row of this id",
+			substrate.ErrValidation, id, ds.siteName()), substrate.ReasonProviderKeyMissing)
 	}
 	return pc, nil
 }
@@ -823,8 +827,13 @@ type agentLoop struct {
 	// under the id its client chose (putSentMessage).
 	sent bool
 	// settledStatus and settledReason are what the last settle committed,
-	// which a stop arriving during it may have turned into `stopped`.
+	// which a stop arriving during it may have turned into `stopped`, and
+	// settledCause the cause it wrote beside them.
 	settledStatus, settledReason string
+	settledCause                 turnFailure
+	// failure is why the run is settling `error`, set by settleAfterFailure
+	// before its settle.
+	failure turnFailure
 }
 
 // runAgent is the loop's one entry. Everything the loop writes lands
@@ -1072,13 +1081,26 @@ loop:
 				l.ds.svc.log.Warn("substrate: the vendor refused an llm/provider row's key",
 					"repository", l.ds.info.ID, "provider", l.provider.id, "status", status, "error", err.Error())
 				refusal := l.ds.keyRefusal(l.provider, status)
-				if serr := l.settleAfterFailure(ctx, refusal.Error(), reply); serr != nil {
-					return nil, errors.Join(refusal, serr)
+				fail := turnFailure{cause: substrate.CauseProviderKeyRefused}
+				if serr := l.settleAfterFailure(ctx, fail, refusal.Error(), reply); serr != nil {
+					return nil, failed(fail, errors.Join(refusal, serr))
 				}
-				return nil, refusal
+				return nil, failed(fail, refusal)
 			}
-			serr := l.settleAfterFailure(ctx, err.Error(), reply)
-			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
+			// The cause is the wire's own sorting of the failure, and the
+			// reason the words the thread may keep (agentcause.go).
+			fail, words := l.modelFailure(err)
+			serr := l.settleAfterFailure(ctx, fail, words, reply)
+			if isAllowance(err) {
+				// The allowance's own refusal, whose sentinel the entries
+				// answer by.
+				return nil, failed(fail, errors.Join(err, serr))
+			}
+			if l.provider.operator != nil {
+				// The endpoint's answer stays out of the error too.
+				return nil, failed(fail, errors.Join(fmt.Errorf("agent %s: llm: %s", l.ag.Identity(), words), serr))
+			}
+			return nil, failed(fail, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr))
 		}
 		content, calls, usage := res.Content, res.ToolCalls, res.Usage
 		if !l.measured {
@@ -1143,7 +1165,7 @@ loop:
 					c.out, c.ok = toolError(fmt.Sprintf("tool-call budget exhausted (max %d) — stop calling tools and write your final reply", l.ag.Budgets.MaxToolCalls)), false
 					c.refused = true
 					if reason == "" {
-						reason = fmt.Sprintf("max tool calls reached (%d)", l.ag.Budgets.MaxToolCalls)
+						reason = fmt.Sprintf("%s (%d)", reasonMaxToolCalls, l.ag.Budgets.MaxToolCalls)
 					}
 					continue
 				}
@@ -1249,12 +1271,14 @@ loop:
 		// thread as an error in a transaction of its own, on a budget of its
 		// own (the first may have spent it), so it does not stay `running`
 		// under its lease.
-		if serr := l.settleAfterFailure(ctx, err.Error(), reply); serr != nil {
+		fail := turnFailure{cause: substrate.CauseWriteFailed}
+		if serr := l.settleAfterFailure(ctx, fail, err.Error(), reply); serr != nil {
 			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
 		}
-		return nil, err
+		return nil, failed(fail, err)
 	}
 	status, res.Status, res.Reason = l.settledStatus, l.settledStatus, l.settledReason
+	res.Cause, res.RetryAfter = l.settledCause.cause, l.settledCause.retryAfter
 	// The settle-time re-check: a resolution that landed MID-turn lost the
 	// lease to this very run, so its resume was dropped. The rows are right
 	// there — pick them up with a fresh continuation instead of waiting for
@@ -1301,14 +1325,15 @@ func (l *agentLoop) stopRequested() string {
 // writes failed, so the thread does not stay `running` under its lease and a
 // stop does not answer that nothing runs.
 func (l *agentLoop) failWrite(ctx context.Context, err error) error {
-	if serr := l.settleAfterFailure(ctx, "message write failed: "+err.Error(), ""); serr != nil {
+	fail := turnFailure{cause: substrate.CauseWriteFailed}
+	if serr := l.settleAfterFailure(ctx, fail, "message write failed: "+err.Error(), ""); serr != nil {
 		l.ds.svc.log.Warn("substrate: settling a thread after a failed message write", "thread", l.threadID, "error", serr)
 	}
-	return err
+	return failed(fail, err)
 }
 
-// settleAfterFailure settles the thread `error` with reason after a write,
-// a read or a model call of the run failed. Like every settle, it leaves the
+// settleAfterFailure settles the thread `error` with reason, and with fail's
+// cause, after a write, a read or a model call of the run failed. Like every settle, it leaves the
 // status of a thread another run claimed since alone (settle). A settle that
 // fails anyway leaves reason for settleLostThreads, which otherwise could
 // only say that the run was lost.
@@ -1319,7 +1344,8 @@ func (l *agentLoop) failWrite(ctx context.Context, err error) error {
 // because the usual cause is a burst of background writes on the changelog
 // lock. A call or a triggered run keeps its settle on its caller's context
 // (decision 0169; 0151 owns what a shutdown leaves of those).
-func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string) error {
+func (l *agentLoop) settleAfterFailure(ctx context.Context, fail turnFailure, reason, reply string) error {
+	l.failure = fail
 	sctx := ctx
 	if l.in.stopHub != nil {
 		timeout := l.ds.failedSettleTimeout
@@ -1530,10 +1556,11 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
-			if serr := l.settleAfterFailure(ctx, "reading the thread failed: "+err.Error(), ""); serr != nil {
+			fail := turnFailure{cause: substrate.CauseInternal}
+			if serr := l.settleAfterFailure(ctx, fail, "reading the thread failed: "+err.Error(), ""); serr != nil {
 				l.ds.svc.log.Warn("substrate: settling a thread whose rows could not be read", "thread", l.threadID, "error", serr)
 			}
-			return nil, err
+			return nil, failed(fail, err)
 		}
 		if l.sent {
 			// The claim wrote this turn's user row, which is the run's own
@@ -1878,6 +1905,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	// patch that committed puts the chain's cost on a row (spend.go).
 	var patched bool
 	var lifetime float64
+	var cause turnFailure
 	err = l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		patched, held = false, false
 		t.causedBy = l.in.causedBy
@@ -1943,6 +1971,8 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			if reason != "" {
 				props["reason"] = reason
 			}
+			cause = settledCause(status, reason, l.failure)
+			l.ds.stampCause(props, cause)
 			if preview := lastReplyOf(reply); preview != "" {
 				props[propThreadLastReply] = preview
 			}
@@ -1969,7 +1999,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		l.ds.spend.commit(l.spend, lifetime, held)
 	}
 	if err == nil {
-		l.settledStatus, l.settledReason = status, reason
+		l.settledStatus, l.settledReason, l.settledCause = status, reason, cause
 	}
 	return held, err
 }
