@@ -376,7 +376,13 @@ not move the line's `seq` or `txn`, and the server recomputes the `sum`. A
 step whose rewrite depends on the repository (a kind is the repository's own
 only under its own authority) is handed the repository's id and name and
 returns that repository's rewrite, and may carry rows outside history with
-it, such as a sealed row bound to the kind its lines now name.
+it, such as a sealed row bound to the kind its lines now name. A step whose
+carry changes a row the fold is derived from, or which comes with a fold
+table whose content the lines already held, says `Refolds`, and the fold is
+rebuilt after it even where it changed no line
+([decision 0309](decisions/0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md)).
+Of the steps above only 5 does: SQL migration 0026 created `property_marks`
+empty beside lines that held `manager` effects.
 
 Step 3, `link_actors`, links a dialect-1 history's
 actors
@@ -444,12 +450,25 @@ the frame its line was written in (a line from before dialect 3 carries
 `principal`): one that no frame reproduces stops the conversion, naming its
 seq, nothing of the repository is converted, and the boot check sets the
 repository aside. So a conversion never stamps a line it could not verify,
-and a line a step leaves as it found it keeps its `sum`. Then each step's carry runs, the stamp is raised to the last
-step's dialect and the repository is marked for rebuilding. The records are
-then rebuilt from the table, which clears the mark. A server stopped before
-that transaction commits leaves the history and every carried row as they
-were, and the next boot converts them again; one stopped after it leaves the
-mark, and the next boot rebuilds the records before anything is served.
+and a line a step leaves as it found it keeps its `sum`. Then each step's
+carry runs and the stamp is raised to the last step's dialect. Where a step
+changed a line of the repository, or a step that ran says `Refolds`, the
+same transaction marks the repository for rebuilding, and the records are
+then rebuilt from the table, which clears the mark. Otherwise the fold
+stands: the lines it was folded from are the lines the table holds. A mark an
+import, a restore or an earlier start set stays set either way. A server
+stopped before that transaction commits leaves the history and every carried
+row as they were, and the next boot converts them again; one stopped after
+it leaves the mark where one was set, and the next boot rebuilds the records
+before anything is served, and finds nothing to finish where none was.
+
+So a start costs one walk of the history for each step a repository lacks,
+and, only where a line changed or a step says `Refolds`, the rebuild, which
+replays the history twice before the repository serves (once under an empty
+registry, then under the real one). As measured on a test machine, not as a
+promise, over a history of 502,979 lines: a step's walk ran at about 5,900
+lines a second, and one replay, as `repository rebuild` makes it, at about
+1,300. A repository an earlier build converted and rebuilt replays nothing.
 
 A history from an archive or a 0.x directory is converted the same way,
 between its lines going into the table and their fold. The archive follows on
