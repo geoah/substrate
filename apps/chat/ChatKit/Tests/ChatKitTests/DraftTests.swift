@@ -1,4 +1,5 @@
 import Foundation
+import SubstrateCore
 import SubstrateRuntime
 import SubstrateTesting
 import Testing
@@ -165,6 +166,36 @@ struct DraftTests {
         try await tell(rig, key, field.look(await composer(rig, key)))
         #expect(field.text == "Hello!")
         #expect(await rig.live(key)?.draft == "Hello!")
+    }
+
+    @Test func aNewLineFromReturnIsTheFieldsAndCommandReturnSendsItWithTheRest() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("Water the basil", at: start)
+        // Return on a Mac (`ComposerKeys`): the new line goes into the
+        // field's own text, where the cursor is, and the conversation hears
+        // nothing of it.
+        #expect(ComposerKeys.onReturn([], on: .mac, composing: false) == .newline)
+        let (text, cursor) = ComposerKeys.newline(in: field.text, replacing: nil)
+        field.text = text
+        field.reports.typed(text, at: start)
+        #expect(cursor == text.count && text == "Water the basil\n")
+        field.type("and the mint", at: start)
+        #expect(await rig.live(key)?.draft == "")
+        // Command-Return: what the field holds is said, then sent.
+        #expect(ComposerKeys.onReturn([.command], on: .mac, composing: false) == .send)
+        try await rig.send(field.reports.tell(field.text), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
+        let body = try #require(JSONValue.parse(rig.server.body("POST", "/chat")))
+        #expect(body["message"]?.string == "Water the basil\nand the mint")
+        // The field is cleared of what was sent, the new line with it.
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        #expect(field.text == "")
+        rig.server.release()
     }
 
     @Test func aFieldThatSawItsTextClearedKeepsWhatItTypedBeforeARefusal() async throws {
