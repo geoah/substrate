@@ -35,7 +35,9 @@ struct ConversationView: View {
             .padding(.top, 12)
             .padding(.bottom, 16)
             .environment(\.recordTitles, screen.titles)
-            .environment(\.openThread, OpenThreadAction { host.send(.show(thread: $0, scene: scene)) })
+            .environment(\.openThread, OpenThreadAction(host: host, scene: scene))
+            .environment(\.conversationKey, key)
+            .replyLinks()
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
         }
@@ -158,9 +160,8 @@ struct TranscriptRows: View {
                 .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
         }
-        ForEach(screen.turns) { turn in
-            TurnView(turn: turn, cards: screen.cards, expandThinking: screen.expandThinking)
-                .equatable()
+        ForEach(TranscriptPiece.pieces(of: screen.turns)) { piece in
+            TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking)
         }
         if screen.typing {
             TypingDots()

@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateCore
+import SubstrateRuntime
 
 /// Turns as a transcript draws them, in the console's words.
 enum TurnPresenter {
@@ -88,6 +89,23 @@ enum TurnPresenter {
         return words.isEmpty ? "A tool" : words.capitalizedFirst
     }
 
+    /// What a reply's rows are made from.
+    struct BlockReads: Equatable, Sendable {
+        var text: String
+        var open: Bool
+    }
+
+    /// A reply's rows, and where each row of the transcript starts in them.
+    struct Blocks: Equatable {
+        var rows: [MarkdownRow]
+        var pages: [Int]
+
+        init(_ text: String, open: Bool) {
+            rows = Markdown.rows(text, open: open)
+            pages = Markdown.pages(rows)
+        }
+    }
+
     /// What a tool's row is made from.
     struct ToolReads: Equatable, Sendable {
         var call: ToolCall
@@ -108,8 +126,16 @@ enum TurnPresenter {
         // A reply cites its pages once it is finished: a streaming one is
         // still choosing them.
         let cited = live || turn.content.isEmpty ? [] : replyLinks(turn.content)
+        // Parsed here, on the runtime's executor, and once for a text: a
+        // piece of reasoning or a tool's event leaves the reply's rows as
+        // they were.
+        let reads = BlockReads(text: turn.content, open: live)
+        let blocks =
+            kept?.part("\(scope)/blocks/\(turn.id)", reading: reads) { Blocks(reads.text, open: reads.open) }
+            ?? Blocks(reads.text, open: reads.open)
         return AssistantTurn(
             live: live, reasoning: reasoning, text: turn.content.isEmpty ? nil : turn.content,
+            blocks: KeyedList(blocks.rows), pages: blocks.pages,
             missing: (turn.mentions ?? []).filter(\.missing).map(\.path),
             typing: live && turn.content.isEmpty && turn.tools.isEmpty && turn.reasoning == nil,
             linked: linked, linkedLabel: "Linked records",

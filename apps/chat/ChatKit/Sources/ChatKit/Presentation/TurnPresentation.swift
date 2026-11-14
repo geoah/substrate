@@ -1,4 +1,5 @@
 import SubstrateCore
+import SubstrateRuntime
 
 /// One turn of the transcript, by what it shows. Stable ids across the
 /// live-to-stored handover, so a view redraws only what moved.
@@ -38,8 +39,15 @@ public struct AssistantTurn: Codable, Hashable, Sendable {
     /// The stream is writing it.
     public var live: Bool
     public var reasoning: ReasoningPresentation?
-    /// Markdown.
+    /// The reply as it was written, Markdown: what Copy and Share take.
     public var text: String?
+    /// The reply as it is drawn: its blocks, parsed where the presentation
+    /// is made, each a row whose id is its position and a hash of what it
+    /// holds. A reply still being written is closed for display first.
+    public var blocks: KeyedList<MarkdownRow>
+    /// Where each row of the transcript starts in `blocks`: one row for a
+    /// short reply, another for about every screen and a half of a long one.
+    public var pages: [Int]
     /// The `kind/id` paths the reply links that name no record: their links
     /// read as their text alone.
     public var missing: [String]

@@ -219,12 +219,19 @@ public struct Conversation: Controller, Equatable {
         return nil
     }
 
+    /// The window a reply's pieces share: however fast they arrive, its
+    /// text is presented, and so parsed, once in each, 20 times a second at
+    /// most. The presenter runs one at a time on the runtime's executor, so
+    /// one parse runs, the pieces that arrive meanwhile wait and are parsed
+    /// together, and a presentation never follows one made of newer text.
+    static let textWindow = Duration.milliseconds(50)
+
     /// Structure (a turn started, a tool card, a compaction) shows at once;
     /// text waits for the window, so a fast model does not redraw on every
     /// token.
     public func coalescing(of event: Event) -> Coalescing {
         if case let .streamed(streamed, _) = event.step, streamed.kind == .delta || streamed.kind == .reasoning {
-            return .within(.milliseconds(50))
+            return .within(Self.textWindow)
         }
         return .now
     }

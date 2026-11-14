@@ -33,7 +33,16 @@ struct TurnView: View, Equatable {
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
-        case let .assistant(assistant): AssistantTurnView(turn: assistant, cards: cards, expandThinking: expandThinking)
+        case .assistant:
+            // A reply is laid out as its pieces, which the transcript makes
+            // lazy rows of; here they stand in one.
+            VStack(alignment: .leading, spacing: 0) {
+                let pieces = TranscriptPiece.pieces(of: [turn])
+                ForEach(pieces) { piece in
+                    TranscriptPieceView(piece: piece, cards: cards, expandThinking: expandThinking)
+                        .padding(.top, piece.id == pieces.first?.id ? 0 : TranscriptPiece.spacing)
+                }
+            }
         case let .summary(summary): SummaryLine(turn: summary)
         case let .decision(line, suggestion):
             VStack(alignment: .leading, spacing: 10) {
@@ -92,27 +101,89 @@ private struct UserTurnView: View {
     }
 }
 
-private struct AssistantTurnView: View {
-    let turn: AssistantTurn
-    let cards: [String: CardPresentation]
+/// One row of a reply's text: its blocks from one page's start to the next,
+/// under the model's thinking where it is the first. A long reply is
+/// several of these, so the lazy stack measures rows of about a screen and
+/// a flush lays out the last of them alone. Drawn again only when its own
+/// blocks change.
+struct ReplyPageView: View, Equatable {
+    @Environment(ChatHost.self) private var host
+    @Environment(\.conversationKey) private var conversation
+    /// The turn's id.
+    let id: String
+    let reply: AssistantTurn
+    let page: Int
     let expandThinking: Bool
 
+    private var rows: ArraySlice<MarkdownRow> {
+        let all = reply.blocks.rows
+        guard page < reply.pages.count else { return [] }
+        let start = min(reply.pages[page], all.count)
+        let end = page + 1 < reply.pages.count ? min(reply.pages[page + 1], all.count) : all.count
+        return all[start ..< max(start, end)]
+    }
+
+    static func == (lhs: ReplyPageView, rhs: ReplyPageView) -> Bool {
+        guard lhs.id == rhs.id, lhs.page == rhs.page, lhs.reply.live == rhs.reply.live, lhs.rows == rhs.rows,
+            lhs.reply.missing == rhs.reply.missing
+        else { return false }
+        // A finished reply's menu shares its whole text; one being written
+        // reads the text when the menu is used.
+        if !lhs.reply.live, lhs.reply.text != rhs.reply.text { return false }
+        guard lhs.page == 0 else { return true }
+        return lhs.reply.reasoning == rhs.reply.reasoning && lhs.reply.typing == rhs.reply.typing
+            && (lhs.reply.text == nil) == (rhs.reply.text == nil) && lhs.expandThinking == rhs.expandThinking
+    }
+
     var body: some View {
+        let _ = Meter.shared.count(.body, "ReplyPage")
         VStack(alignment: .leading, spacing: 10) {
-            if let reasoning = turn.reasoning {
+            if page == 0, let reasoning = reply.reasoning {
                 ReasoningView(reasoning: reasoning, expandByDefault: expandThinking)
             }
-            if let text = turn.text {
-                MarkdownView(text: text, live: turn.live, missing: Set(turn.missing))
+            if reply.text != nil {
+                MarkdownView(rows: rows, missing: Set(reply.missing))
                     .textSelection(.enabled)
-                    .accessibilityAddTraits(turn.live ? .updatesFrequently : [])
+                    .accessibilityAddTraits(reply.live ? .updatesFrequently : [])
                     .contextMenu {
-                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(text) }
-                        ShareLink(item: text)
+                        Button("Copy", systemImage: "doc.on.doc") { copyToPasteboard(written()) }
+                        if !reply.live, let text = reply.text { ShareLink(item: text) }
                     }
-            } else if turn.typing {
+            } else if page == 0, reply.typing {
                 TypingDots()
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The reply's text as it stands now: this row may have been drawn
+    /// many pieces ago.
+    private func written() -> String {
+        if reply.live, let conversation, let turns = host.conversation(conversation)?.turns,
+            case let .assistant(now)? = turns.last(where: { $0.id == id })?.body
+        {
+            return now.text ?? ""
+        }
+        return reply.text ?? ""
+    }
+}
+
+/// What stands under a reply's text: the pages it cites, the records it
+/// links, and its tool calls with what each left.
+struct ReplyTailView: View, Equatable {
+    let reply: AssistantTurn
+    let cards: [String: CardPresentation]
+
+    static func == (lhs: ReplyTailView, rhs: ReplyTailView) -> Bool {
+        lhs.reply.sources == rhs.reply.sources && lhs.reply.linked == rhs.reply.linked
+            && lhs.reply.linkedLabel == rhs.reply.linkedLabel && lhs.reply.tools == rhs.reply.tools
+            && lhs.reply.tools.compactMap(\.cardID).map { lhs.cards[$0] } == rhs.reply.tools.compactMap(\.cardID).map { rhs.cards[$0] }
+    }
+
+    var body: some View {
+        let _ = Meter.shared.count(.body, "ReplyTail")
+        let turn = reply
+        VStack(alignment: .leading, spacing: 10) {
             if let sources = turn.sources {
                 SourceListView(list: sources)
             }
@@ -147,6 +218,83 @@ private struct AssistantTurnView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+/// One lazy row of the transcript: a turn, or one of the rows a reply is
+/// laid out in (each page of its text, then what stands under it). The
+/// stack spaces its rows 22 points apart; a reply's rows stand as close as
+/// its blocks and its parts did inside one row, so `closer` is taken back.
+struct TranscriptPiece: Identifiable {
+    enum Part {
+        case turn
+        case page(Int)
+        case tail
+    }
+
+    /// The transcript's spacing, the Markdown blocks' and a turn's parts'.
+    static let spacing: CGFloat = 22
+    static let blockSpacing: CGFloat = 12
+    static let partSpacing: CGFloat = 10
+
+    let id: String
+    let turn: TurnPresentation
+    let part: Part
+    let closer: CGFloat
+
+    static func pieces(of turns: [TurnPresentation]) -> [TranscriptPiece] {
+        var out: [TranscriptPiece] = []
+        out.reserveCapacity(turns.count)
+        for turn in turns {
+            guard case let .assistant(reply) = turn.body else {
+                out.append(TranscriptPiece(id: turn.id, turn: turn, part: .turn, closer: 0))
+                continue
+            }
+            let tailed = reply.sources != nil || !reply.linked.isEmpty || !reply.tools.isEmpty
+            let headed = reply.reasoning != nil || reply.text != nil || reply.typing || !tailed
+            if headed {
+                // The first keeps the turn's id: the row it was before it
+                // grew another.
+                out.append(TranscriptPiece(id: turn.id, turn: turn, part: .page(0), closer: 0))
+                if reply.text != nil {
+                    for page in reply.pages.indices.dropFirst() {
+                        out.append(TranscriptPiece(id: "\(turn.id)/\(page)", turn: turn, part: .page(page), closer: spacing - blockSpacing))
+                    }
+                }
+            }
+            if tailed {
+                out.append(TranscriptPiece(id: "\(turn.id)/tail", turn: turn, part: .tail, closer: headed ? spacing - partSpacing : 0))
+            }
+        }
+        return out
+    }
+}
+
+/// A piece as its view.
+struct TranscriptPieceView: View {
+    let piece: TranscriptPiece
+    let cards: [String: CardPresentation]
+    let expandThinking: Bool
+
+    var body: some View {
+        switch (piece.part, piece.turn.body) {
+        case let (.page(page), .assistant(reply)):
+            ReplyPageView(id: piece.turn.id, reply: reply, page: page, expandThinking: expandThinking)
+                .equatable()
+                .padding(.top, -piece.closer)
+        case let (.tail, .assistant(reply)):
+            ReplyTailView(reply: reply, cards: cards)
+                .equatable()
+                .padding(.top, -piece.closer)
+        default:
+            TurnView(turn: piece.turn, cards: cards, expandThinking: expandThinking)
+                .equatable()
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// The conversation the view is in.
+    @Entry var conversationKey: ChildKey?
 }
 
 /// "Thinking…" while the model reasons, then "Thought for 6 s", folded.
@@ -194,10 +342,17 @@ struct ReasoningView: View {
 
 /// Opens a thread in the window the action came from: a sub-agent's own
 /// conversation, from the call that ran it.
-struct OpenThreadAction {
-    let handler: @MainActor (String) -> Void
+///
+/// A value that compares, never a closure: the transcript sets it at each of
+/// its draws, and one that could not be compared read as changed each time,
+/// to every view under it.
+struct OpenThreadAction: Equatable {
+    let host: ChatHost
+    let scene: String
 
-    @MainActor func callAsFunction(_ thread: String) { handler(thread) }
+    static func == (lhs: OpenThreadAction, rhs: OpenThreadAction) -> Bool { lhs.host === rhs.host && lhs.scene == rhs.scene }
+
+    @MainActor func callAsFunction(_ thread: String) { host.send(.show(thread: thread, scene: scene)) }
 }
 
 extension EnvironmentValues {
