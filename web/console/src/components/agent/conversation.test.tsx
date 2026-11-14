@@ -685,6 +685,27 @@ describe("Conversation", () => {
     expect(continues.map((c) => c.thread)).toEqual(["t-17"])
   })
 
+  it("counts a provider's wait down while its note shows, and drops it once it is over", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const limited = runningThread("t-28")
+    limited.properties = {
+      status: "error",
+      cause: "provider_rate_limited",
+      retryAfter: 3,
+      finishedAt: new Date(Date.now() - 1_000).toISOString(),
+      provider: "anthropic",
+    }
+    mount("t-28", { threadRecord: limited })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    expect(screen.getByText(/Try again in [12] seconds?\./)).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText(/Try again in/)).toBeNull(), {
+      timeout: 4000,
+    })
+    // The sentence and its button stay.
+    expect(screen.getByText("Anthropic is limiting requests.")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+  })
+
   it("offers the provider's card for a refused key, a new chat for one too long, and no retry for either", async () => {
     stubRows([message("m0", 0, "user", "question")])
     const refused = runningThread("t-18")

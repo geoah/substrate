@@ -1259,9 +1259,15 @@ loop:
 	}
 	res.TotalTokens = res.PromptTokens + res.CompletionTokens
 	// The delivery's completion rides the thread's settling transaction.
-	var complete func(t *txn) error
+	// It is handed what the settle writes: a stop that lands during the
+	// settle changes the status, and the outcome the completion stores (a
+	// direct call's idempotent answer) is the one the thread settled with.
+	var complete func(t *txn, status, reason string, cause turnFailure) error
 	if l.in.complete != nil {
-		complete = func(t *txn) error { return l.in.complete(t, res) }
+		complete = func(t *txn, status, reason string, cause turnFailure) error {
+			res.Status, res.Reason, res.Cause, res.RetryAfter = status, reason, cause.cause, cause.retryAfter
+			return l.in.complete(t, res)
+		}
 	}
 	sctx, cancelSettle := l.settleContext(ctx)
 	defer cancelSettle()
@@ -1272,10 +1278,11 @@ loop:
 		// own (the first may have spent it), so it does not stay `running`
 		// under its lease.
 		fail := turnFailure{cause: substrate.CauseWriteFailed}
-		if serr := l.settleAfterFailure(ctx, fail, err.Error(), reply); serr != nil {
+		said := l.sayable("the settle", err)
+		if serr := l.settleAfterFailure(ctx, fail, said.Error(), reply); serr != nil {
 			l.ds.svc.log.Warn("substrate: settling a thread whose completion failed", "thread", l.threadID, "error", serr)
 		}
-		return nil, failed(fail, err)
+		return nil, failed(fail, said)
 	}
 	status, res.Status, res.Reason = l.settledStatus, l.settledStatus, l.settledReason
 	res.Cause, res.RetryAfter = l.settledCause.cause, l.settledCause.retryAfter
@@ -1326,10 +1333,11 @@ func (l *agentLoop) stopRequested() string {
 // stop does not answer that nothing runs.
 func (l *agentLoop) failWrite(ctx context.Context, err error) error {
 	fail := turnFailure{cause: substrate.CauseWriteFailed}
-	if serr := l.settleAfterFailure(ctx, fail, "message write failed: "+err.Error(), ""); serr != nil {
+	said := l.sayable("a message write", err)
+	if serr := l.settleAfterFailure(ctx, fail, "message write failed: "+said.Error(), ""); serr != nil {
 		l.ds.svc.log.Warn("substrate: settling a thread after a failed message write", "thread", l.threadID, "error", serr)
 	}
-	return failed(fail, err)
+	return failed(fail, said)
 }
 
 // settleAfterFailure settles the thread `error` with reason, and with fail's
@@ -1557,10 +1565,11 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		rows, err := l.loadThreadRows(ctx)
 		if err != nil {
 			fail := turnFailure{cause: substrate.CauseInternal}
-			if serr := l.settleAfterFailure(ctx, fail, "reading the thread failed: "+err.Error(), ""); serr != nil {
+			said := l.sayable("reading the thread", err)
+			if serr := l.settleAfterFailure(ctx, fail, "reading the thread failed: "+said.Error(), ""); serr != nil {
 				l.ds.svc.log.Warn("substrate: settling a thread whose rows could not be read", "thread", l.threadID, "error", serr)
 			}
-			return nil, failed(fail, err)
+			return nil, failed(fail, said)
 		}
 		if l.sent {
 			// The claim wrote this turn's user row, which is the run's own
@@ -1895,7 +1904,7 @@ func lastReplyOf(reply string) string {
 // status, lease, reason and reply are that run's. The spend still lands, so
 // the thread's cost counts every run that paid for it. held reports whether
 // the row was this run's and took the terminal shape.
-func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn) error) (held bool, err error) {
+func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, then func(t *txn, status, reason string, cause turnFailure) error) (held bool, err error) {
 	prompt, completion, cost := l.prompt, l.completion, l.cost
 	cacheRead, cacheWrite := l.cacheRead, l.cacheWrite
 	if l.in.parent == "" && l.in.mode != agentModeSubagent {
@@ -1945,6 +1954,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 		if row != nil {
 			baseCost, _ = anyFloat(row.Props["costUSD"])
 		}
+		cause = settledCause(status, reason, l.failure)
 		props := map[string]any{
 			"turns":        base("turns") + l.turns,
 			"toolCalls":    base("toolCalls") + l.toolCalls,
@@ -1971,7 +1981,6 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			if reason != "" {
 				props["reason"] = reason
 			}
-			cause = settledCause(status, reason, l.failure)
 			l.ds.stampCause(props, cause)
 			if preview := lastReplyOf(reply); preview != "" {
 				props[propThreadLastReply] = preview
@@ -1987,7 +1996,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 			patched, lifetime = true, baseCost+cost
 		}
 		if then != nil {
-			return then(t)
+			return then(t, status, reason, cause)
 		}
 		return nil
 	})

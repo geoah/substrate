@@ -43,13 +43,18 @@ export interface SettledRun {
   cause?: string
   /** The server's words, whole. */
   reason?: string
-  /** Seconds the provider asked to wait. */
+  /** Seconds the provider asked to wait, counted from `finishedAt`. */
   retryAfter?: number
+  /** When the run settled: the thread's `finishedAt`, or for a failure a
+   * stream just reported, when it arrived. */
+  finishedAt?: string | number
   /** The llm/provider row the run was on. */
   provider?: string
 }
 
 interface Words {
+  /** The clock the provider's wait is read against. */
+  now: number
   /** The agent's name. */
   name: string
   /** The provider's name, or "The provider" where the run names none. */
@@ -65,6 +70,24 @@ function card(run: SettledRun, label: string): TurnAction {
   return run.provider
     ? { kind: "provider", label, provider: run.provider }
     : TRY_AGAIN
+}
+
+/** The seconds of the provider's wait still to go at `now`, or undefined
+ * once it is over or where the provider named none. The wait counts from
+ * when the run settled; a run that does not say when is taken to have
+ * settled just now. */
+export function waitLeft(run: SettledRun, now: number): number | undefined {
+  if (!run.retryAfter || run.retryAfter <= 0) return undefined
+  const settled =
+    typeof run.finishedAt === "number"
+      ? run.finishedAt
+      : run.finishedAt
+        ? Date.parse(run.finishedAt)
+        : now
+  if (!Number.isFinite(settled)) return run.retryAfter
+  const left = Math.ceil(run.retryAfter - (now - settled) / 1000)
+  // A clock a little behind the server's must not show more than was asked.
+  return left > 0 ? Math.min(left, run.retryAfter) : undefined
 }
 
 function waitWords(seconds: number | undefined): string | undefined {
@@ -94,10 +117,10 @@ const BY_CAUSE: Record<TurnCause, Entry> = {
     title: `${vendor} refused the API key.`,
     action: card(run, "Replace the key"),
   }),
-  provider_rate_limited: ({ vendor, run }) => ({
+  provider_rate_limited: ({ vendor, run, now }) => ({
     tone: "warn",
     title: `${vendor} is limiting requests.`,
-    detail: waitWords(run.retryAfter),
+    detail: waitWords(waitLeft(run, now)),
     action: TRY_AGAIN,
   }),
   provider_billing: ({ vendor }) => ({
@@ -194,13 +217,17 @@ const SHUTDOWN_REASON = "stopped: the server shut down during the turn"
 
 /** What a thread from before causes, or one with a cause this build does
  * not know, says by its status alone. */
-function byStatus({ name, run }: Words): Omit<TurnOutcome, "said"> | undefined {
+function byStatus({
+  name,
+  run,
+  now,
+}: Words): Omit<TurnOutcome, "said"> | undefined {
   const reason = (run.reason ?? "").split("\n")[0].trim()
   switch (run.status) {
     case "stopped":
       return reason === SHUTDOWN_REASON
-        ? BY_CAUSE.shutdown({ name, vendor: "", run })
-        : BY_CAUSE.requested({ name, vendor: "", run })
+        ? BY_CAUSE.shutdown({ name, vendor: "", run, now })
+        : BY_CAUSE.requested({ name, vendor: "", run, now })
     case "overbudget":
       return {
         tone: "warn",
@@ -211,7 +238,7 @@ function byStatus({ name, run }: Words): Omit<TurnOutcome, "said"> | undefined {
         action: CONTINUE,
       }
     case "error":
-      return BY_CAUSE.internal({ name, vendor: "", run })
+      return BY_CAUSE.internal({ name, vendor: "", run, now })
     default:
       return undefined
   }
@@ -225,7 +252,8 @@ function isCause(cause: string | undefined): cause is TurnCause {
  * finished or is still running. */
 export function turnOutcome(
   run: SettledRun,
-  name: string
+  name: string,
+  now: number = Date.now()
 ): TurnOutcome | undefined {
   const unfinished =
     run.status === "error" ||
@@ -233,6 +261,7 @@ export function turnOutcome(
     run.status === "stopped"
   if (!unfinished) return undefined
   const words: Words = {
+    now,
     name,
     vendor: run.provider ? providerName(run.provider) : "The provider",
     run,
