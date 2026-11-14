@@ -64,7 +64,14 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * continue: a turn is running on the thread, or its last turn finished and
  * there is nothing to take up (decision 0312). `message_id_taken` rides a
  * `conflict` (409) on a chat message: its `messageId` names a record that is
- * not this message, so it goes again under a new id. */
+ * not this message, so it goes again under a new id. An agent run names why
+ * it was refused or failed (decision 0315): `turn_cap` on a `conflict`,
+ * `spend_cap` on a `guard`, `provider_key_missing` on a `validation`, and a
+ * provider's failure of an agent call, named for the cause its thread
+ * settled with (`provider_rate_limited`, `provider_billing`,
+ * `provider_overloaded`, `provider_unavailable` and `model_unavailable` on
+ * `unavailable`; `context_too_long` and `provider_rejected` on
+ * `validation`). */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -79,6 +86,16 @@ export type ErrorReason =
   | "thread_busy"
   | "nothing_to_continue"
   | "message_id_taken"
+  | "turn_cap"
+  | "spend_cap"
+  | "provider_key_missing"
+  | "provider_rate_limited"
+  | "provider_billing"
+  | "provider_overloaded"
+  | "provider_unavailable"
+  | "provider_rejected"
+  | "model_unavailable"
+  | "context_too_long"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

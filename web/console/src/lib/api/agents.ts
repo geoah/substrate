@@ -404,12 +404,44 @@ export function transcriptOrder(records: SubstrateRecord[]): SubstrateRecord[] {
 
 // ── the chat stream ─────────────────────────────────────────────────────────
 
+/** What ended a run that did not finish: which failure ended an `error`
+ * run, which budget an `overbudget` one, what stopped a `stopped` one
+ * (substrate.AgentCauses, decision 0315). The set is closed and
+ * `agentcauses.golden.test.ts` holds this union to the server's. A thread
+ * carries it as `cause`; the console's words for each are in
+ * `lib/turn-outcome.ts` and nowhere else. */
+export type TurnCause =
+  | "allowance_spent"
+  | "context_too_long"
+  | "deadline"
+  | "internal"
+  | "interrupted"
+  | "model_unavailable"
+  | "provider_billing"
+  | "provider_key_refused"
+  | "provider_overloaded"
+  | "provider_rate_limited"
+  | "provider_rejected"
+  | "provider_unavailable"
+  | "requested"
+  | "shutdown"
+  | "tool_call_limit"
+  | "turn_limit"
+  | "write_failed"
+
 /** One settled agent invocation (substrate.AgentResult). */
 export interface AgentResult {
   reply: string
   thread: string
   status: string
   reason?: string
+  /** What ended a run a budget or a stop ended; absent on an `ok` run. A
+   * string and not `TurnCause`: a newer server may send one this build does
+   * not know, which reads as its `status` alone. */
+  cause?: string
+  /** Whole seconds the provider asked to wait, beside a cause that names a
+   * wait. */
+  retryAfter?: number
   effects: number
   effectsByAction?: Record<string, number>
   turns: number
@@ -479,6 +511,11 @@ export interface AgentEvent {
   /** Rides an error event the stream itself ends with: the error's code,
    * `auth` where the stream's token no longer stands. */
   code?: ServerErrorCode
+  /** Ride the error event of a turn that failed: the cause its thread
+   * settled with, and the seconds the provider asked to wait. An error event
+   * with no cause is the stream's own end, not the turn's. */
+  cause?: string
+  retryAfter?: number
   /** Rides delta, toolStarted and toolFinished: the `turn` ordinal the
    * matching `llm/message` row carries or will carry. An attach after reading
    * the rows drops every replayed event at or below the highest turn held. */
@@ -506,7 +543,7 @@ export function parseAgentEvent(line: string): AgentEvent | null {
   if (typeof obj.kind !== "string") return null
   // The counts are read as numbers or not at all: a line that spells one
   // some other way must not reach a sentence that formats it.
-  for (const key of ["tokensBefore", "covered", "turn"]) {
+  for (const key of ["tokensBefore", "covered", "turn", "retryAfter"]) {
     if (key in obj && typeof obj[key] !== "number") delete obj[key]
   }
   return obj as unknown as AgentEvent
@@ -527,6 +564,20 @@ interface StreamHandlers {
 /** The path of a verb on one `llm/thread` record. */
 function threadVerbPath(thread: string, verb: string): string {
   return `${collectionPath(CORE_AUTHORITY, LLM_PACKAGE_NAME, "thread")}/${encodeURIComponent(thread)}/${verb}`
+}
+
+/** The turn failed after its stream opened: the server's words, with the
+ * cause its thread settled with. */
+export class TurnFailedError extends Error {
+  turnCause: string
+  retryAfter?: number
+
+  constructor(message: string, turnCause: string, retryAfter?: number) {
+    super(message)
+    this.name = "TurnFailedError"
+    this.turnCause = turnCause
+    this.retryAfter = retryAfter
+  }
 }
 
 /** The connection failed, before or after the server answered: whether the
@@ -635,8 +686,11 @@ export async function readAgentStream(
         handlers.onError?.(new ApiError("auth", "session expired", 401))
         return
       }
+      const words = event.error || event.text || "the agent run failed"
       handlers.onError?.(
-        new Error(event.error || event.text || "the agent run failed")
+        event.kind === "error" && event.cause
+          ? new TurnFailedError(words, event.cause, event.retryAfter)
+          : new Error(words)
       )
       return
     }

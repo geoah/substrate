@@ -1011,13 +1011,31 @@ panel on the right.
   run finishes.
 - **A reply that didn't finish says so.** When a chat's last turn was
   stopped, ran out of time or turns, or failed, a note under the chat says
-  which, in plain words ("Moss didn't finish: the server restarted while it
-  was working", "What failed: …"), with **Continue**, or **Try again** on a
-  turn that failed. Both go on from the chat as it stands and send no
-  message, so nothing you did not write appears in it
-  ([continue](agents.md#continue)), and both leave anything you were typing
-  in the box. The chats column marks such a chat **Didn't finish**,
-  **Stopped** or **Failed**.
+  which in one sentence, with one button for what to do next. The sentence
+  and the button follow the run's [cause](agents.md#what-ended-a-run), never
+  the provider's wording:
+
+  | What happened | The note says | The button |
+  | --- | --- | --- |
+  | The provider refused the key | Anthropic refused the API key. | **Replace the key**, to the provider's card |
+  | The provider is limiting requests | Anthropic is limiting requests. Try again in 20 seconds. | **Try again** |
+  | The provider's account is out of credit | The Anthropic account is out of credit. | **Try again** |
+  | The provider is overloaded, unreachable or failed | Anthropic is having trouble. | **Try again** |
+  | The provider refused the request | Anthropic refused the request. | **Open the agent** |
+  | The provider does not offer the model to the key | Anthropic does not offer this model to your key. | **Open the provider** |
+  | The chat is past the model's window | This chat is too long for the model. | **New chat** |
+  | The operator's allowance is spent | Today's allowance is used up. It resets at midnight UTC. | **Add your own key** |
+  | The server restarted mid-run | The server restarted while Moss was working. | **Try again**, or **Continue** after a shutdown |
+  | Anything else that failed | Moss ran into a problem and didn't finish. | **Try again** |
+  | A budget ended the run | Moss ran out of room before finishing. It used all 8 of its turns. | **Continue** |
+  | Somebody stopped it | Moss was stopped before it finished. | **Continue** |
+
+  The server's own words are folded under **Details** in the note. Continue
+  and Try again go on from the chat as it stands and send no message, so
+  nothing you did not write appears in it ([continue](agents.md#continue)),
+  and both leave anything you were typing in the box. A chat from before
+  runs had causes says what its status alone tells. The chats column marks
+  such a chat **Didn't finish**, **Stopped** or **Failed**.
 - **A message the server did not answer is sent again by itself.** Every
   message goes out under an id of its own
   ([a message with its own id](agents.md#a-message-with-its-own-id)), so

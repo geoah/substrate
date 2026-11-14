@@ -47,6 +47,7 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import {
   CircleAlertIcon,
   CirclePauseIcon,
@@ -76,6 +77,7 @@ import {
   threadTally,
 } from "@/lib/agent-chat"
 import { unfinishedTurn, type UnfinishedTurn } from "@/lib/agent-runs"
+import { turnOutcome } from "@/lib/turn-outcome"
 import {
   attachThread,
   continueThread,
@@ -84,6 +86,7 @@ import {
   stopThread,
   streamChat,
   THREAD_LISTS_KEY,
+  TurnFailedError,
   threadMessagesQueryOptions,
   transcriptOrder,
   type AgentEvent,
@@ -171,57 +174,126 @@ const UNFINISHED_TONES: Record<
   },
 }
 
-/** A chat whose last turn ended before it finished: what happened, why, and
- * a way to go on. The button continues the thread and sends no message. */
+/** A failure a stream reported before the thread's record caught up: the
+ * server's words, and the cause where the turn itself failed. */
+interface TurnFailure {
+  message: string
+  cause?: string
+  retryAfter?: number
+}
+
+function failureOf(err: Error): TurnFailure {
+  return err instanceof TurnFailedError
+    ? {
+        message: err.message,
+        cause: err.turnCause,
+        ...(err.retryAfter ? { retryAfter: err.retryAfter } : {}),
+      }
+    : { message: err.message }
+}
+
+/** A chat whose last turn ended before it finished: one sentence, at most
+ * one note, one button, and the server's own words under Details. The words
+ * and the button are chosen in `lib/turn-outcome.ts`, by the run's cause;
+ * this draws them. A button that continues the thread sends no message. */
 function UnfinishedNote({
   turn,
+  agentId,
   onContinue,
   blocked,
 }: {
   turn: UnfinishedTurn
+  /** The chat's agent, for the buttons that open it or a new chat with it. */
+  agentId?: string
   onContinue: () => void
   /** Why the thread can't be continued now, as the composer says it. */
   blocked?: string
 }) {
   const tone = UNFINISHED_TONES[turn.tone]
   const why = useId()
+  const { action } = turn
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-3.5 py-2.5 text-[13px]",
+        "flex flex-col gap-1.5 rounded-lg border px-3.5 py-2.5 text-[13px]",
         tone.box
       )}
     >
-      {tone.icon}
-      {/* The live region is the words alone: one holding the button would
-          be read out whole on every change. */}
-      <div role="status" className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="font-medium">{turn.title}</span>
-        {turn.detail && (
-          <span className="[overflow-wrap:anywhere] text-muted-foreground">
-            {turn.detail}
-          </span>
-        )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {tone.icon}
+        {/* The live region is the words alone: one holding the button would
+            be read out whole on every change. */}
+        <div role="status" className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="font-medium">{turn.title}</span>
+          {turn.detail && (
+            <span className="[overflow-wrap:anywhere] text-muted-foreground">
+              {turn.detail}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {action.kind === "continue" && (
+            // Held, not disabled: a disabled button takes no focus, so a
+            // keyboard or a screen reader would never learn why it waits.
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => !blocked && onContinue()}
+              aria-disabled={blocked ? true : undefined}
+              aria-describedby={blocked ? why : undefined}
+              className={cn(blocked && "cursor-default opacity-50")}
+            >
+              {action.label}
+            </Button>
+          )}
+          {action.kind === "provider" && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link to="/providers" search={{ model: action.provider }}>
+                  {action.label}
+                </Link>
+              }
+            />
+          )}
+          {action.kind === "agent" && agentId && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link to="/agents/$id" params={{ id: agentId }}>
+                  {action.label}
+                </Link>
+              }
+            />
+          )}
+          {action.kind === "new-chat" && agentId && (
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link to="/agents" search={{ agent: agentId }}>
+                  {action.label}
+                </Link>
+              }
+            />
+          )}
+          {blocked && action.kind === "continue" && (
+            <span id={why} className="text-[11.5px] text-muted-foreground">
+              {blocked}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex flex-col items-end gap-1">
-        {/* Held, not disabled: a disabled button takes no focus, so a
-            keyboard or a screen reader would never learn why it waits. */}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => !blocked && onContinue()}
-          aria-disabled={blocked ? true : undefined}
-          aria-describedby={blocked ? why : undefined}
-          className={cn(blocked && "cursor-default opacity-50")}
-        >
-          {turn.action}
-        </Button>
-        {blocked && (
-          <span id={why} className="text-[11.5px] text-muted-foreground">
-            {blocked}
-          </span>
-        )}
-      </div>
+      {turn.said && (
+        <details className="text-[12.5px] text-muted-foreground">
+          <summary className="cursor-pointer select-none">Details</summary>
+          <p className="mt-1 [overflow-wrap:anywhere] whitespace-pre-wrap">
+            The server said: {turn.said}
+          </p>
+        </details>
+      )}
     </div>
   )
 }
@@ -342,7 +414,7 @@ export function Conversation({
   const [live, setLive] = useState<LiveOverlay>(EMPTY_OVERLAY)
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<TurnFailure | null>(null)
   // The unanswered send this page is sending again, as its entry in the
   // unsent store, or 0. The entry is written as soon as a send goes
   // unanswered, so leaving the chat mid-wait keeps the message and its id.
@@ -428,7 +500,7 @@ export function Conversation({
   const resendRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // The last failure an attach saw, shown if the turn turns out to have
   // ended on it.
-  const lastErrorRef = useRef<string | null>(null)
+  const lastErrorRef = useRef<TurnFailure | null>(null)
   useEffect(
     () => () => {
       handleRef.current?.stop()
@@ -705,11 +777,16 @@ export function Conversation({
             if (permanent(err)) {
               // Attaching again would meet the same answer (a deleted
               // thread): say so and release the composer.
-              setError(err.message)
+              setError(failureOf(err))
               return settleRun(run)
             }
-            lastErrorRef.current = err.message
-            reattach(run, thread, attempt + 1)
+            lastErrorRef.current = failureOf(err)
+            // A turn that failed has settled: the thread says so at once.
+            reattach(
+              run,
+              thread,
+              err instanceof TurnFailedError ? 0 : attempt + 1
+            )
           },
           onDone: () => {
             if (run !== runRef.current) return
@@ -734,7 +811,7 @@ export function Conversation({
       // The turn settled on its own first: its stream's `done` is the
       // answer, and there is nothing to say about the stop.
       if (err instanceof ApiError && err.status === 409) return
-      setError(err.message)
+      setError(failureOf(err))
     })
   }
 
@@ -932,7 +1009,7 @@ export function Conversation({
         onError: (err) => {
           if (run !== runRef.current) return
           if (named) {
-            lastErrorRef.current = err.message
+            lastErrorRef.current = failureOf(err)
             return end()
           }
           // Only a 4xx with the server's envelope says nothing ran. A 5xx
@@ -1007,7 +1084,7 @@ export function Conversation({
       },
       onError: (err) => {
         if (run !== runRef.current) return
-        lastErrorRef.current = err.message
+        lastErrorRef.current = failureOf(err)
         const refused =
           !named &&
           err instanceof ApiError &&
@@ -1048,6 +1125,26 @@ export function Conversation({
     current && threadRecord && !busy && !threadRunning && !background
       ? unfinishedTurn(threadRecord, name)
       : undefined
+
+  // A failure the stream reported with its cause reads the same way before
+  // the thread's record catches up: one place chooses the words.
+  const reported =
+    error?.cause && !busy
+      ? turnOutcome(
+          {
+            status: "error",
+            cause: error.cause,
+            reason: error.message,
+            retryAfter: error.retryAfter,
+            provider:
+              typeof threadRecord?.properties.provider === "string"
+                ? threadRecord.properties.provider
+                : undefined,
+          },
+          name
+        )
+      : undefined
+  const outcome = unfinished ?? reported
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -1146,14 +1243,15 @@ export function Conversation({
           )}
           {/* A turn that ended on the failure is said once, by the notice
               below, which reads the reason the thread stored. */}
-          {error && !unfinished && (
+          {error && !outcome && (
             <div className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive">
-              {name} couldn’t answer: {error}
+              {name} couldn’t answer: {error.message}
             </div>
           )}
-          {unfinished && (
+          {outcome && (
             <UnfinishedNote
-              turn={unfinished}
+              turn={outcome}
+              agentId={agentId}
               onContinue={goOn}
               blocked={
                 blockedReason ??
@@ -1161,7 +1259,7 @@ export function Conversation({
               }
             />
           )}
-          {goOnError && unfinished && (
+          {goOnError && outcome && (
             <div
               role="alert"
               className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
