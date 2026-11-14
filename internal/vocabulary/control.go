@@ -68,8 +68,12 @@ var controlKinds = map[string]ControlClass{
 	// (decision 0282) stands in for a key of the kind's declaration, and
 	// shortening it removes history: an admin's, as the declaration is.
 	CoreKind("retention"): ControlDeclarations,
-	CoreKind("actor"):     ControlActors,
-	CoreKind("role"):      ControlRoles,
+	// An owner's override of an agent's budgets (decision 0314) stands in
+	// for a key of the agent's declaration, and raising it spends more:
+	// an admin's, as the declaration is.
+	KindLLMAgentBudget: ControlDeclarations,
+	CoreKind("actor"):  ControlActors,
+	CoreKind("role"):   ControlRoles,
 }
 
 // ControlClassOf is the control class of a kind, "" for a kind that is no

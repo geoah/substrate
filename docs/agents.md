@@ -1236,8 +1236,9 @@ value, and deleting it brings the declared cap back. Both caps hold on any
 key, your own or the operator's, where the operator's
 [allowance](#providers) holds beside them. Only the numeric limits of
 `budgets` belong here; `spendCentsPerDay` is the one it carries today. The
-kind is internal: a glob in an agent's `writes` never reaches it, so an agent
-that writes `*` cannot raise its own cap.
+kind is internal and a [control kind](auth.md#roles): a glob in an agent's
+or a function's `writes` never reaches it, so an agent that writes `*`
+cannot raise its own cap, and of the shipped roles only `admin` writes it.
 
 Spend is what the threads recorded: the `costUSD` of every root thread whose
 `finishedAt` falls inside the window, times 100, plus what runs still going

@@ -258,10 +258,94 @@ func TestAnAgentHasOneBudgetOverride(t *testing.T) {
 		t.Fatalf("a cap past 2^53-1 = %v, want a validation refusal", err)
 	}
 
+	// A patch that moves another agent's override onto this one is held as
+	// a second create is.
+	other := putAgentBudget(t, ds, "capped", 400)
+	_, err = ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMAgentBudget, other, substrate.PatchInput{Properties: map[string]any{
+		"agent": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, spendPackage+"/zero")},
+	}})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("moving an override onto an agent that has one = %v, want a conflict", err)
+	}
+
 	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindLLMAgentBudget, bare.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	putAgentBudget(t, ds, "zero", 300)
+}
+
+// Two creates of an override of one agent at once: writes to a repository
+// take one lock, so one lands and the other meets the first.
+func TestTwoOverridesOfOneAgentAtOnceLandOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openSpendDataset(t)
+	errs := make(chan error, 2)
+	for _, cents := range []int{100, 200} {
+		go func() {
+			_, err := ds.Put(ctx, substrate.ActorPerson, agentBudgetInput("open", map[string]any{"spendCentsPerDay": cents}))
+			errs <- err
+		}()
+	}
+	landed, conflicts := 0, 0
+	for range 2 {
+		switch err := <-errs; {
+		case err == nil:
+			landed++
+		case errors.Is(err, substrate.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("a create racing another: %v", err)
+		}
+	}
+	if landed != 1 || conflicts != 1 {
+		t.Fatalf("landed %d and conflicted %d, want one of each", landed, conflicts)
+	}
+}
+
+// An agent of the repository's own namespace is named by the override in
+// either spelling of `~`, the repository's full name included, and the
+// override holds the agent the engine runs (decision 0259).
+func TestAnOwnersBudgetNamesALocalAgentByEitherSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openSpendDataset(t)
+	pkg := ds.name() + "/budgeted"
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+		vocabulary.PackageManifest(pkg, 0),
+		vocabulary.AgentManifest(pkg, "penny", map[string]any{
+			"description": "penny under test", "prompt": "You are penny.",
+			"provider": "pricedllm", "model": "open",
+		}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: vocabulary.KindLLMAgentBudget,
+		Properties: map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, pkg+"/penny")},
+			"spendCentsPerDay": 0,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("spend cap reached: agent ~/budgeted/penny spent 0 of its 0 cents in the last 24 hours (%s %s)",
+		vocabulary.KindLLMAgentBudget, rec.ID)
+	_, err = ds.CallAgent(ctx, "~/budgeted/penny", "go")
+	if !errors.Is(err, errSpendHeld) || !strings.HasSuffix(err.Error(), want) {
+		t.Fatalf("a local agent under an override written with the full name: %v, want %q", err, want)
+	}
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+		Kind: vocabulary.KindLLMAgentBudget,
+		Properties: map[string]any{
+			"agent":            map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindAgent, "~/budgeted/penny")},
+			"spendCentsPerDay": 500,
+		},
+	})
+	if !errors.Is(err, substrate.ErrConflict) {
+		t.Fatalf("a second override spelled ~ = %v, want a conflict with the full-name one", err)
+	}
 }
 
 // A capped agent stops after its cap: the trigger reads held with the cap's

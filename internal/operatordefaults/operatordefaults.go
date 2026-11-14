@@ -453,7 +453,7 @@ func (d *document) validate(dir string) (*Config, error) {
 	for _, key := range slices.Sorted(maps.Keys(d.Budget.Repositories)) {
 		doc := d.Budget.Repositories[key]
 		if !vocabulary.ValidRepositoryID(key) && !vocabulary.ValidRepositoryAuthority(key) {
-			return nil, fmt.Errorf("budget.repositories: %q is not a repository's name or id", key)
+			return nil, fmt.Errorf("budget.repositories: %q is not a repository's full name (one with a dot) or its id", key)
 		}
 		if doc == nil || doc.CentsPerDay == nil {
 			return nil, fmt.Errorf("budget.repositories.%s: centsPerDay is required", key)

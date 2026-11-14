@@ -70,6 +70,16 @@ data:
   ([0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)).
 - The kind is `internal`, so a glob in an agent's `writes` never reaches it.
   Moss writes `*` and still cannot raise its own cap.
+- It is a control kind of the declarations class
+  ([0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)),
+  as `core/retention` is, because it stands in for a key of a declaration and
+  raising it spends more. A role reaches it only by naming it, so an editor's
+  rules do not. Code reaches it only where its declaration names the kind,
+  so a function whose `writes` are a glob does not. `admin` writes it.
+- An import folds history in without the write's checks, so a repository
+  may still hold two overrides of one agent. The lowest cap holds, the lower
+  id on a tie, and the console shows that one and leaves one when the owner
+  next changes it.
 
 **The declared cap holds on every key**, as 0149 says. The repository's own
 setting is unchanged.
@@ -142,15 +152,22 @@ budget:
 ### Confirmation
 
 `internal/engine/spend_db_test.go`:
-`TestAnOwnersAgentBudgetReplacesTheDeclaredCap` and
-`TestAnAgentHasOneBudgetOverride`.
+`TestAnOwnersAgentBudgetReplacesTheDeclaredCap`,
+`TestAnAgentHasOneBudgetOverride` (a second create, a patch that moves one
+onto another agent's, and the bounds), `TestTwoOverridesOfOneAgentAtOnceLandOne`
+and `TestAnOwnersBudgetNamesALocalAgentByEitherSpelling`.
 `TestAnAgentCannotWriteItsOwnBudgetsThroughAGlob`
-(`internal/engine/agentnamedonly_db_test.go`).
+(`internal/engine/agentnamedonly_db_test.go`),
+`TestAnAgentBudgetIsWrittenByAnAdminAndNoGlob`
+(`internal/engine/roles_internal_db_test.go`) and
+`TestAnAgentBudgetIsAControlKind` (`internal/scope`) hold the control
+kind.
 `internal/engine/operatordefaults_db_test.go`:
-`TestOnTheOperatorsKeyTheOwnersBudgetReplacesTheDeclaredCap`, and
+`TestOnTheOperatorsKeyTheOwnersBudgetReplacesTheDeclaredCap`, whose run is
+held to its repository's own line, and
 `TestTheFileSetsOneRepositorysAllowance`, which covers a listed repository,
-an unlisted one, a key that finds none and a repository registered after
-the start. The `internal/operatordefaults` tests hold the file's refusals of
+an unlisted one, a key that finds none, a repository registered after the
+start, and one listed by its id and its name. The `internal/operatordefaults` tests hold the file's refusals of
 `budget.repositories`.
 
 ## More Information

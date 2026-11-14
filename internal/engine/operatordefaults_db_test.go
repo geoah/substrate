@@ -453,11 +453,16 @@ func TestOperatorHoldsARunAtTheLimit(t *testing.T) {
 // On the operator's key an agent's declared cap holds as on the owner's,
 // beside the allowance, and the owner's override of its budgets replaces it
 // there too: the operator bounds what it pays with the allowance alone
-// (decision 0314).
+// (decision 0314). The allowance the run is held to is this repository's
+// own line: the file's default is nothing.
 func TestOnTheOperatorsKeyTheOwnersBudgetReplacesTheDeclaredCap(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, rowFake, _, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config { return operatorChatConfig(u, "", 1000) })
+	ds, rowFake, _, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config {
+		c := operatorChatConfig(u, "", 0)
+		c.Budget.Repositories = map[string]int64{testdb.Repository(t): 1000}
+		return c
+	})
 	emptyTheChatRow(t, ds, rowFake.srv.URL)
 	const frugal = "frugal.test.dev/frugal"
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
@@ -498,7 +503,7 @@ func TestOnTheOperatorsKeyTheOwnersBudgetReplacesTheDeclaredCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if text := holdOf(); text != "" {
-		t.Fatalf("the owner's 500 on the operator's key, under the allowance, held the run: %q", text)
+		t.Fatalf("the owner's 500 on the operator's key, under the repository's own allowance, held the run: %q", text)
 	}
 }
 
@@ -556,6 +561,21 @@ func TestTheFileSetsOneRepositorysAllowance(t *testing.T) {
 	}
 	if _, err := other.reserveOperator(ctx, substrate.SlotLLM, 11); !errors.Is(err, substrate.ErrAllowance) {
 		t.Fatalf("11 of an unlisted repository's 10 = %v, want the allowance's refusal", err)
+	}
+
+	// Listed twice, by its id and by its name, a repository takes the lower.
+	twice := testdb.RepositoryLabel(t) + "4.example.com"
+	info, err := ds.svc.CreateRepository(ctx, twice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Budget.Repositories[info.ID], cfg.Budget.Repositories[twice] = 5, 7
+	d, err = ds.svc.Dataset(ctx, twice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := allowanceOf(d.(*dataset)); got != 5 {
+		t.Fatalf("a repository listed by its id at 5 and its name at 7 = %d, want the lower", got)
 	}
 }
 
