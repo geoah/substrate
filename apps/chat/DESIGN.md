@@ -527,8 +527,13 @@ A floating glass bar (`safeAreaBar`) holding a field that grows 1 to 8 lines,
 the microphone, and Send, which morphs into Stop while a turn runs
 (`glassEffectID`); on a new chat, the agent chip.
 
-- **Mac**: Return sends, Shift-Return and Option-Return are new lines
-  (`onKeyPress`). **iPad with a keyboard**: ⌘Return sends. **Both**: ⌘. stops.
+- **Keys**: Return makes a new line and ⌘Return sends, on a Mac and on an
+  iPad's or an iPhone's hardware keyboard alike; Shift-Return and
+  Option-Return are new lines too. The keyboard on the screen has no ⌘, so
+  there the button sends. The rule is ChatKit's `ComposerKeys`, which the
+  field's `onKeyPress` asks: only ⌘ alone sends, and a Return that confirms
+  an input method's marked text is left to it. On a Mac and an iPad the Send
+  button's help and its hint name the shortcut. ⌘. stops.
 - While a send cannot go, the text stays and the bar says why ("Waiting for
   the answer", "Checking whether your last message arrived", "Offline", "Add
   an API key first").
@@ -671,7 +676,7 @@ may do and for how long; the app never sees the password.
 15. Rename.
 16. Drafts per chat across launches.
 17. Offline banner and blocked-send reasons.
-18. Mac menus and shortcuts, Settings window, Return to send.
+18. Mac menus and shortcuts, Settings window, ⌘Return to send.
 19. Glass composer, toolbar and Jump to Latest.
 20. Action Button / App Shortcuts: New Chat with an assistant, optionally listening.
 21. Scene restoration of the open chat.
