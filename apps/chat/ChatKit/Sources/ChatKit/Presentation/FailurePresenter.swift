@@ -111,6 +111,15 @@ enum FailurePresenter {
     // MARK: The switch
 
     static func words(_ failure: Failure, _ c: Context) -> Words {
+        var words = worded(failure, c)
+        // A message that stands unsent is sent again under its id,
+        // whatever refused it: that cannot send it twice, and a new
+        // message could.
+        if failure.attempt == .message, words.button?.action != .edit { words.button = retry(failure, c) }
+        return words
+    }
+
+    private static func worded(_ failure: Failure, _ c: Context) -> Words {
         switch failure.why {
         case let .run(status, cause):
             // A cause the server named is taken at its word, known or not;
@@ -146,14 +155,15 @@ enum FailurePresenter {
             case .keyRefused?: return run(.providerKeyRefused, status: "error", failure, c)
             case nil: return refused(status, failure, c)
             }
-        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI, .ended:
+        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI, .ended, .closed, .interrupted:
             return attempted(failure, c)
         }
     }
 
     /// A run that ended without finishing, by its cause, else by its status.
     private static func run(_ cause: RunCause?, status: String, _ failure: Failure, _ c: Context) -> Words {
-        let again = resume("Try Again", c)
+        // A message the server refused is sent again; a run is continued.
+        let again = (failure.attempt == .send || failure.attempt == .message ? retry(failure, c) : nil) ?? resume("Try Again", c)
         switch cause {
         case .providerKeyRefused?:
             return Words(tone: .bad, sentence: "\(provider(c)) refused the API key.", button: page("Replace Key", c.providerPage) ?? again)
@@ -247,6 +257,25 @@ enum FailurePresenter {
                 return Words(tone: .warn, sentence: "Your message wasn't sent.", note: boxNote(failure), button: button)
             }
             return Words(tone: .warn, sentence: because, note: boxNote(failure), button: button)
+        case .message:
+            if takenID(failure) {
+                // The id names another record: sending it again asks the
+                // same thing. Never answered by minting an id and sending
+                // on the app's own: the way on is the person's, from the
+                // composer, and the server's words are under Details.
+                return Words(
+                    tone: .bad, sentence: "This message can't be sent again as it is.",
+                    note: "Something went wrong in \(ChatManifest.appName). Edit the message to send it as a new one.",
+                    button: FailureButton(title: "Edit Message", action: .edit))
+            }
+            // Neither sentence says whether the message arrived, which a
+            // refusal of one copy and a lost answer both leave open, and
+            // neither needs to: it goes again under its id, and is never
+            // sent twice.
+            if case .http = failure.why {
+                return Words(tone: .warn, sentence: "The server turned your message down.", note: because, button: button)
+            }
+            return Words(tone: .warn, sentence: "No answer came back for your message.", note: because, button: button)
         case .resume:
             return Words(tone: .warn, sentence: "Couldn't ask \(c.agent) to carry on.", note: because, button: button)
         case .reply:
@@ -283,6 +312,7 @@ enum FailurePresenter {
     private static func retry(_ failure: Failure, _ c: Context) -> FailureButton? {
         switch failure.attempt {
         case .send: FailureButton(title: "Send Again", action: .send, busy: c.busy, blocked: c.blocked)
+        case .message: FailureButton(title: "Send Again", action: .sendAgain, busy: c.busy, blocked: c.blocked)
         case .resume, .reply: resume("Try Again", c)
         case .stop: FailureButton(title: "Try Again", action: .stop, busy: c.busy)
         case .attach: FailureButton(title: "Try Again", action: .reopen, busy: c.busy)
@@ -310,6 +340,8 @@ enum FailurePresenter {
         case .sessionEnded: return "Your sign-in ended."
         case .needsApproval: return "\(ChatManifest.appName) needs your approval for that."
         case .ended: return "The server ended it."
+        case .closed: return "\(ChatManifest.appName) closed while it was being sent."
+        case .interrupted: return "It was stopped before the server answered."
         case let .http(status, _, _):
             if status >= 500 { return "The server ran into a problem." }
             switch status {
@@ -321,6 +353,17 @@ enum FailurePresenter {
             }
         case .run, .cut, .unanswered: return "It didn't finish."
         }
+    }
+
+    /// A `409` for a message's own id that names no reason: the id is
+    /// another record's. The server gives this refusal no reason of its
+    /// own, and a server older than the `turn_cap` reason answers a full
+    /// set of turns the same way, so its words are read for the field's
+    /// name: the one place a message's refusal is, to delete once the
+    /// server names it.
+    static func takenID(_ failure: Failure) -> Bool {
+        guard case let .http(409, _, reason) = failure.why, reason == nil else { return false }
+        return failure.said?.contains("messageId") == true
     }
 
     // MARK: Parts

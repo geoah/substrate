@@ -14,6 +14,8 @@ public enum FailureFixtures {
         case chat
         /// The strip at the top of the list.
         case list
+        /// A card under a message that stands unsent, the chat's last.
+        case unsent
     }
 
     public struct Fixture: Sendable {
@@ -27,6 +29,12 @@ public enum FailureFixtures {
     static let limited =
         "substrate: validation failed: agent substrate.reamde.dev/assistant/moss: llm: error, status code: 429, "
         + "status: 429 Too Many Requests, message: Rate limit reached for requests. Please try again in 20s."
+
+    static var unconfirmed: Failure {
+        var failure = Failure(.send, .timeout)
+        failure.unconfirmed = true
+        return failure
+    }
 
     static var context: FailurePresenter.Context {
         var context = FailurePresenter.Context()
@@ -69,6 +77,25 @@ public enum FailureFixtures {
                     Failure(.stop, .http(status: 500, code: "internal", reason: nil), said: "the stop could not be written"), context)),
             Fixture(name: "reload-failed", place: .chat, failure: FailurePresenter.present(Failure(.reload, .timeout), context)),
             Fixture(name: "send-offline", place: .chat, failure: FailurePresenter.present(Failure(.send, .offline), context, dismiss: .dismiss)),
+            // What a lost answer reads as on a server that takes no
+            // `messageId`: the app cannot send it again safely.
+            Fixture(name: "send-unconfirmed", place: .chat, failure: FailurePresenter.present(unconfirmed, context, dismiss: .dismiss)),
+            // And on one that does, once the app's own repeats ran out.
+            Fixture(name: "unsent-no-answer", place: .unsent, failure: FailurePresenter.present(Failure(.message, .timeout), context, dismiss: .edit)),
+            Fixture(name: "unsent-relaunch", place: .unsent, failure: FailurePresenter.present(Failure(.message, .closed), context, dismiss: .edit)),
+            Fixture(
+                name: "unsent-refused", place: .unsent,
+                failure: FailurePresenter.present(
+                    Failure(.message, .http(status: 409, code: "conflict", reason: "turn_cap"), said: "4 chat turns are running"), context,
+                    dismiss: .edit)),
+            Fixture(
+                name: "unsent-id-taken", place: .unsent,
+                failure: FailurePresenter.present(
+                    Failure(
+                        .message, .http(status: 409, code: "conflict", reason: nil),
+                        said: "substrate: conflict: the messageId is taken: messageId \"0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03\": send the message under a new id"
+                    ),
+                    context)),
             Fixture(
                 name: "list-refresh", place: .list,
                 failure: FailurePresenter.present(Failure(.refresh, .unreachable, seen: "S.example.com isn't answering."), context)),

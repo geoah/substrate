@@ -25,9 +25,12 @@ changed is listed at the end.
 - **Live.** A reply streams as the model writes it; a chat that is running
   when it is opened is attached to and streams too; the chat list moves as
   threads change anywhere.
-- **Honest.** No message is dropped without a word, nothing is sent later on
-  its own, and a send whose delivery is unknown is checked before it is
-  offered again (the console's rules, #1038).
+- **Honest.** No message is dropped without a word, and nothing is sent
+  again under a new id on its own. A message goes under an id the app mints
+  when Send is pressed, so one whose answer was lost is sent again as it
+  was and can never run twice; on a server that takes no id, a send whose
+  delivery is unknown is checked before it is offered again (the console's
+  rules, #1038).
 - **Native.** One SwiftUI target for iOS 26, iPadOS 26 and macOS 26, Liquid
   Glass on the control layer, platform keyboard and menu conventions.
 
@@ -69,7 +72,7 @@ app target's, and `apps:test:linux` runs ChatKit's on Linux.
 ```text
 ChatKit/Sources/ChatKit/      no UI framework; builds for Linux and Android
   ChatApp/       the root under the kit's link: the list, the agents, the cards, the rows, the watch, the device's folder
-  Conversation/  one chat, a child of the list: the run, the overlay, Stop, the delivery check, the poll
+  Conversation/  one chat, a child of the list: the run, the overlay, Stop, the message sent again under its id, the delivery check, the poll
   Model/         the transcript fold and the live overlay, the notices, the agents and threads, the tool words, Markdown blocks
   API/           the agent streams over the kit's line stream; a failure as a value: what was attempted and why
   Local/         the cache folder (ChatStorage over the kit's RepositoryFolder), the owner's choices
@@ -144,10 +147,11 @@ one segment, encoded exactly once: an agent's id
 | Pending questions | `{"kinds":["…/llm/interaction"],"properties":{"state":{"eq":"pending"}}}`, first 100 |
 | Pending suggestions | `{"kinds":["substrate.reamde.dev/core/recordpatchrequest"],"properties":{"decision":{"eq":"proposed"}}}`, first 100 |
 | Pending approvals | `{"kinds":["…/llm/approval"],"properties":{"state":{"eq":"pending"}}}`, first 100; a refusal (a server older than the kind) reads as none, and the watch names the kind only once this read was answered |
-| Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message}` → ndjson |
+| Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message, messageId}` → ndjson. `messageId` is a lowercase UUID the app mints when Send is pressed, the id of the message's own record, sent only where `agents` is at revision 3 or more: an older server refuses a body field it does not know (`400`). The same body again writes nothing and runs nothing: its stream opens with the same `thread` event, then is the turn's, or one `idle` line |
+| A message kept from a launch before | `GET /api/v1/substrate.reamde.dev/llm/message/{messageId}` (404: no copy was written) |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
-| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision`. 3 or more has the continue route |
+| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision`. 3 or more takes a `messageId` and has the continue route |
 | Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message, called only where `agents` is at revision 3 or more; below it, or before the document is read, the app sends "Continue where you left off." through Send, as it did before the route. The route is never probed. `409` `thread_busy` or `nothing_to_continue`: the thread is read for what it holds |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
@@ -176,7 +180,7 @@ which is what tells them apart in History.
 | `thread` | binds the conversation to the thread (below) | ignored |
 | `reasoning`, `delta`, `toolStarted`, `toolFinished`, `compacted` | fold into the overlay | dropped if a stored row carries its `turn`, else folded |
 | `truncated` | not sent | the replay lost events: the overlay is marked partial ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
-| `idle` | not sent | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
+| `idle` | after `thread`, to a repeat of a message the server already holds: the thread's status is the whole answer, read as on an attach | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
 | `error` (after the 200) | a failed turn: settle, with the `cause` and `retryAfter` the event carries where the server sends them. With no `cause` and a `code`: `auth` is the sign-in ended (the signed-out screen), `internal` a failed turn, `unavailable` a reader cut off for reading too slowly (the turn runs on: attach again, nothing drawn) | same |
 | `{}` | heartbeat, every 30 s; ignored | same |
@@ -185,7 +189,7 @@ which is what tells them apart in History.
 | ---- | ------------ |
 | 4xx with the server's envelope before `thread` | refused: 409 a turn already running or the repository's 4 at once, 422 a hidden agent, 404 no such agent. Text back in the composer, and the strip above it says so (the envelope's `reason` is read where it has one) |
 | No connection, or a server that cannot be reached | the request never left: text back in the composer, Send Again, no check |
-| 5xx, 503 shutdown, a gateway's answer, a dropped connection, a stream that ends before any event | unknown delivery (below) |
+| 5xx, 503 shutdown, a gateway's answer, a dropped connection, a timeout, a stream that ends before any event | the answer was lost (below): under its id the message is sent again; without one, unknown delivery |
 | Stream ends after `thread`, no `done` | the turn runs on: attach again, backing off 0, 1, 2, 4, 8, 15 s |
 | Attach answers 4xx other than 409/429 | permanent (404 a deleted thread): settle, say so in the strip above the composer, release the composer |
 | 401 anywhere | the session ended: one screen, Sign In Again |
@@ -215,7 +219,7 @@ test by its number in `ChatKit/Tests/ChatKitTests/RuleTests.swift`:
 | 2 | the stream runs under the key `run`; `Conversation`'s `opened` step starts nothing while a run is active | `rule2_oneStreamPerConversation` |
 | 3 | the conversation's ownership reaches the list with each of its events; `load` refuses an owned thread, and `rowsRead`, `prefetched` and `cachedLoaded` drop one, while a conversation's own reads publish | `rule3_noRowsPublishUnderALiveOverlay`, `rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped` |
 | 4 | `ChatAppState.readEpochs`, carried by every read, cached read and prefetch, and moved in `ChatAppEngine.reported` by a binding, a send or an attach (the conversation takes the thread) and a settle (it hands it back), each of which also cancels the read under `read:<thread>`; a read that fails clears what is outstanding, so the next asks again | `rule4_aReadIsDroppedWhenItsThreadsEpochMoved`, `rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved` |
-| 5 | the runtime's key epochs: a new run restarts `run` and cancels `retry`, `poll`, `pollTimer`, `stop`, `stopWait` and `check`, so a late result is dropped | `rule5_aNewRunDropsWhatAnOlderRunStillDelivers` |
+| 5 | the runtime's key epochs: a new run restarts `run` and cancels `retry`, `poll`, `pollTimer`, `stop`, `stopWait`, `check` and `repeat`, so a late result is dropped | `rule5_aNewRunDropsWhatAnOlderRunStillDelivers` |
 | 6 | the runtime's controller generation: `ChatApp.resetting(of:on:)` starts the list over when the link's repository changes or is gone, closing every conversation; the folder's lease is retired, so nothing still on its way reaches the folder, the link generation in it moves, the rest of it is deleted on Sign Out, and the notifications are removed; the next sign-in's open runs after all of it | `rule6_aSignOutDropsEverythingStillOnItsWay`, `aSaveStillOnItsWayAcrossASignOutWritesNothing` |
 | 7 | `ChatAppState.isCurrent` | `rule7_cachedRowsAreCurrentOnlyWhileTheirThreadIsSettledAndUnmoved` |
 
@@ -252,7 +256,93 @@ overlay and the list publishes the rows inside the same step of one tree
 (`aSendStreamsThenHandsOverInOneStepWithoutDoubling`). A read that fails or outlasts 15 s keeps the
 overlay, releases the composer and offers Try Again.
 
-**Unknown delivery.** The app waits a second and reads.
+**A message under its own id** (`agents` at revision 3 or more, decision
+0312). The id is minted once, when Send is pressed, and every copy of the
+message goes under it. The bubble carries it from the start and the stored
+row has the same id, so the handover replaces nothing.
+
+- **Kept before it leaves.** The message, its id, its assistant and its
+  thread are written to `unsent.json` before the first request goes: the
+  conversation's send waits for the list's write to answer. A kill at any
+  moment after leaves the id to send it again under. The emptied composer
+  is written in the same step, on any server, so a kill never brings a
+  sent message back as a draft, and a message put back into the composer
+  (a refusal, Edit Message, a chat that is gone) is written as promptly,
+  since it is in no other place. A text moves between the two files both
+  ways (a send out of the drafts, Edit Message and a refusal back into
+  them), so the unsent messages are written first with none taken away,
+  then the drafts, then the unsent messages without the ones that went: a
+  kill between any two leaves the text in both and never in neither. The
+  next launch gives it one owner: a draft that is the message and no more
+  was on its way out, and is the unsent message; a draft that is the
+  message with what was typed since behind it was on its way back, and is
+  the draft, with nothing left standing beside it. A
+  folder that cannot be written (a full disk) does not hold a message
+  back: it goes, the drafts file is left as it was, and the message is
+  kept only while the app runs.
+- **An answer that never came** (a 5xx, a gateway's page, a dropped
+  connection, a timeout, a stream that ended before `thread`, the app
+  suspended mid-request) leaves it unknown whether the message arrived, and
+  it does not matter: the same request goes again. The app repeats it on
+  its own three times at most, one, three and eight seconds after each
+  answer that did not come (the console's waits), wherever the app runs,
+  and never later than two minutes after the press, so a phone that slept
+  sends nothing late. Coming back to the front sends it again at once
+  within the same bounds. While it waits the bubble stays, the composer
+  says "Waiting for the answer", and nothing is drawn as a failure.
+- **Then it stands.** Past those bounds the message stays at its place in
+  the chat, dimmed, with a card under it: "No answer came back for your
+  message.", why as the note, and Send Again, which sends the same request
+  once more under the same id. The pencil beside the words takes the text
+  back into the composer, ahead of anything typed since; what is sent from
+  there is a new message, by the person's own word. While a message stands
+  the composer sends nothing else ("Send or edit the message above
+  first"), and New Chat leads back to a new chat whose first message
+  stands.
+- **A refusal.** The server's own refusal of the only copy sent, or a
+  request that never left the device, proves nothing was written: the text
+  goes back into the composer and the strip above it says why, as on a
+  server without ids, and the id is done with. A refusal of a later copy
+  proves nothing about the earlier ones (a copy still on its way can be
+  written after another was refused), so the message keeps its id and
+  stands with the refusal's sentence and Send Again. A busy thread is also
+  attached to: the turn on it may be this message's own.
+- **An id that names another record** (`409` with no reason, the server's
+  words naming `messageId`) cannot happen for an id the app minted. It is
+  said as the app's own fault, with the server's words under Details and
+  Edit Message as its button. No id is ever minted and sent on the app's
+  own.
+- **The rows decide.** Whenever the thread's rows hold a record with the
+  pending id, the message is that row and is pending no more. A run that
+  left a message standing reads no rows of its own, so the list reads the
+  thread once it is handed back. A new chat's first copy may have opened a
+  thread whose answer was lost: as soon as the rows of any thread the list
+  reads hold the new chat's pending id, the new chat is that thread, and
+  where another conversation already has it (the person opened it from the
+  list) the new chat gives way to that one, so no thread has two
+  conversations and no message two bubbles. The same holds when the new
+  chat's own repeat is answered first: where the conversation on that
+  thread is in the middle of something (a send out, a message standing, a
+  failure unread, a draft the folder keeps for the thread), it stays and
+  the new chat gives way; only one that holds nothing is closed for the
+  new chat, as rule 1 has it.
+- **After a kill.** At the next launch the message is back at its place
+  (a new chat's with the next New Chat) and is read for by its id. Found,
+  it is the stored row: the chat is bound to its thread and read, and
+  nothing is sent. Not found, it stands with "Substrate Chat closed while
+  it was being sent." and Send Again. It is never sent again without a
+  press, and never dropped.
+- **Stop** before the server answered stops the sending: the message
+  stands, and a turn a copy may have started is stopped where its thread
+  is known.
+- **A server that goes back.** Where the document said revision 3 and the
+  server refuses the field (`400`, `unknown field "messageId"`), nothing
+  was written: the message goes once more without an id, and so do the
+  next ones until the document is read again.
+
+**Unknown delivery**, on a server that takes no `messageId` (`agents`
+below revision 3, or its document unread). The app waits a second and
+reads.
 
 - On an existing chat: the thread fresh, and a user row past the newest turn
   held before the send (unknown if the last reload failed) with the same
@@ -264,7 +354,10 @@ overlay, releases the composer and offers Try Again.
   adopted. Otherwise the same strip, and the text is back in the composer.
 - While it reads, the strip says "Checking whether your message arrived…"
   and the composer waits.
-- No message is ever sent again on its own.
+- No message is ever sent again on its own there: without an id a repeat
+  could run twice. Coming back to the front and Stop leave a send the
+  server has not answered alone, since an attach in its place would end it
+  and drop what was typed.
 
 Deltas are coalesced and flushed every 50 ms, so a fast model does not
 redraw the transcript hundreds of times a second.
@@ -284,6 +377,7 @@ be read again.
 | `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
 | `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit moves into it at the first open, which removes it from `state.json`, so it is read once |
 | `drafts.json` | each chat's unsent draft |
+| `unsent.json` | each chat's message sent under an id of its own that the server has not taken: the id, the text, the assistant, the thread. Written before the request leaves and before the draft is cleared, so a kill between the two leaves the message in both files, and the next launch gives it one owner |
 | `link.json` | the link generation (the kit's `LinkGeneration`): moved by every sign-out, and the one file Sign Out keeps, so a refresh job scheduled before it does nothing after the next sign-in |
 
 - **Launch** decodes `state.json` (small: rows a list needs) before the
@@ -628,8 +722,9 @@ the microphone, and Send, which morphs into Stop while a turn runs
   an input method's marked text is left to it. On a Mac and an iPad the Send
   button's help and its hint name the shortcut. ⌘. stops.
 - While a send cannot go, the text stays and the bar says why ("Waiting for
-  the answer", "Checking whether your last message arrived", "Offline", "Add
-  an API key first").
+  the answer", "Send or edit the message above first", "Checking whether
+  your last message arrived" on a server without message ids, "Offline",
+  "Add an API key first").
 - Drafts are kept per chat across launches.
 - **The text is the field's while it is typed.** A key is no command: it
   runs no engine and no presenter and draws nothing but the field. The
@@ -772,13 +867,15 @@ may do and for how long; the app never sees the password.
 
 A failure is a value until it is drawn. Where a request, a stream or a run
 fails, the app keeps a `Failure` (`ChatKit/Sources/ChatKit/API/Failure.swift`):
-what was attempted (a send, a continue, the reply itself, a stop, opening a
+what was attempted (a send, a message that stands unsent under its id, a
+continue, the reply itself, a stop, opening a
 reply's stream, a reload, a chat's rows, a rename, a card read, an answer, a
 decision, a key, the list's refresh, the change feed, the memories and
 instructions) and why (a run's `status` and `cause`, a reply's `cutBy`, an
 HTTP status with the envelope's `code` and `reason`, no connection, a server
-that cannot be reached, a timeout, a stream that ended early, a sign-in that
-ended, an approval that does not reach, an answer that was not the API's).
+that cannot be reached, a timeout, a stream that ended early, the app closed
+or the sending stopped before the answer, a sign-in that ended, an approval
+that does not reach, an answer that was not the API's).
 It holds no sentence. `FailurePresenter` is the one place it becomes words:
 a sentence, at most one note, one button and the details, in switches with
 no default, so a new cause or attempt does not compile without its sentence
@@ -789,7 +886,7 @@ and its button.
 
 | About | Where | Which attempts |
 | ----- | ----- | -------------- |
-| A turn | a card at that turn in the transcript | the reply, Try Again, Continue |
+| A turn | a card at that turn in the transcript | the reply, Try Again, Continue, a message that stands unsent |
 | The chat as a whole | one strip directly above the composer | a send that started no turn, a stop, a stream that will not open, a reload, a chat's rows, a rename |
 | The list | one strip at its top | a refresh, the change feed, a rename of a chat no window shows |
 
@@ -852,9 +949,11 @@ never under the server's name.
   itself, once, and only while the chat is on screen; it never does on a
   server without the continue route, where going on needs a message of the
   person's.
-- Send Again is the composer's Send. A refused or lost send always puts its
-  text back into the composer, ahead of anything typed since, so nothing
-  typed is lost.
+- Send Again on a message that stands unsent sends the same request again
+  under its id, whatever refused it: that cannot send it twice. On the
+  strip above the composer it is the composer's Send. What was typed is
+  never lost: it is in a stored row, in the composer, or on a message that
+  stands with its card.
 - Add Key opens the app's own key sheet where the provider has no key, and
   otherwise the provider's record in the console (`data/…/llm/provider/<id>`),
   as Replace Key and Add Your Own Key do. Open in Console opens the agent's
@@ -879,7 +978,9 @@ button and Details stack where the text size leaves no room side by side.
 | The list's read fails | The cached content stays; the strip at the top of the list, Try Again |
 | The change feed ends | The strip at the top of the list, Try Again |
 | Send refused, or it never left | The strip above the composer; the text back in the composer; Send Again |
-| Send unknown | "Checking whether your message arrived…", then nothing, or the strip and the text back |
+| Send unanswered | Nothing while it is sent again under its id; then the message stands with its card, Send Again and the pencil |
+| Send unknown, on a server without message ids | "Checking whether your message arrived…", then nothing, or the strip and the text back |
+| The app was killed mid-send | The message at its place at the next launch: the stored row where the server holds it, else standing with Send Again |
 | The stream drops | Nothing; the app attaches again with backoff |
 | The turn fails, is stopped or runs out of a limit | A card at that turn: the sentence, Try Again or Continue, Details; the list marks the chat |
 | Stop fails | The strip above the composer says the stop failed; the reply goes on |
@@ -898,7 +999,7 @@ button and Details stack where the text size leaves no room side by side.
 4. Streaming send: reasoning, tools, compaction, result; every event and exit in the tables above.
 5. Attach to running chats, re-attach on drops and on returning to the foreground; background runs.
 6. Stop.
-7. Refused and unknown-delivery sends, with the reconcile reads, for existing and new chats.
+7. Every message under an id of its own, sent again when its answer is lost and kept across a kill; refused sends; unknown-delivery sends with the reconcile reads on a server without ids; for existing and new chats.
 8. The handover with no blink; reload failure with Try Again.
 9. Markdown replies with code blocks and Copy.
 10. Agent picker; Settings → Agents for which agents are offered and the default.
@@ -958,6 +1059,21 @@ button and Details stack where the text size leaves no room side by side.
   moved; the list is kept until the instant a row stops being true; a
   tool's row is made once; and no key is lost by a send, a refusal, leaving
   the front or switching chats.
+- A message under its own id (`SendIDTests.swift`): the bubble's id is the
+  stored row's across the handover; no id below revision 3, with the
+  delivery check as before; the folder holds the message before its
+  request reaches the server; a lost answer is repeated under the same id
+  and arrives once, on a new chat as one chat; three repeats at most, none
+  past the window, then the card; a repeat the server already answered
+  reads the thread; the only copy refused gives the text back and a
+  refused repeat stands, for each reason; an id that names another record
+  is said and never answered with a new one; a kill mid-send stands or is
+  the stored row at the next launch; Stop and a return to the front never
+  drop an unanswered message; a write asked for earlier never lands over
+  a later one, and a stop between the two files leaves a text in one of
+  them whichever way it moves; a new chat is the thread its lost first
+  copy opened once that thread is read, and gives way to a conversation
+  on it that holds something.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

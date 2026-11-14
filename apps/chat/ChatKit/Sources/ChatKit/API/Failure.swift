@@ -18,6 +18,9 @@ struct Failure: Codable, Hashable, Sendable {
     enum Attempt: String, Codable, Hashable, Sendable, CaseIterable {
         /// A message, before the server took it.
         case send
+        /// A message sent under an id of its own that the server has not
+        /// taken: it stands at its place in the chat, to send again.
+        case message
         /// Try Again or Continue: the thread run again with no new message.
         case resume
         /// The reply itself, once the server took the turn.
@@ -93,6 +96,11 @@ struct Failure: Codable, Hashable, Sendable {
         /// The server ended it in its own words and nothing narrower is
         /// known.
         case ended
+        /// The app closed before the answer came.
+        case closed
+        /// Something else took the answer's place before it came: a stop,
+        /// or the reply already being written in the chat.
+        case interrupted
     }
 
     var attempt: Attempt
@@ -169,7 +177,7 @@ struct Failure: Codable, Hashable, Sendable {
     /// Where it is drawn. Exhaustive, so a new attempt names its place.
     var place: Place {
         switch attempt {
-        case .reply, .resume: .turn
+        case .reply, .resume, .message: .turn
         case .send, .stop, .attach, .reload, .rows, .rename: .chat
         case .refresh, .feed: .list
         case .card, .answer, .decide, .addKey, .guidance, .guidanceChange: .inline

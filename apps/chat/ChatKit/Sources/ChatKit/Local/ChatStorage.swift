@@ -14,11 +14,13 @@ import Crypto
 /// (`Application Support/SubstrateChat/` on an Apple device): a
 /// `RepositoryFolder` per signed-in repository, named by its identity's
 /// hash as every build has named it. At its top `state.json` (the list and
-/// the marks no server holds), `drafts.json` and `link.json` (the link
-/// generation); transcripts in the cache area, which the budget and the age
-/// bound; the watch's cursor in the record cache. All of it but the marks,
-/// the drafts and the generation is the server's, and is read again when it
-/// is gone. Synchronous: effects call it.
+/// the marks no server holds), `drafts.json`, `unsent.json` (the messages
+/// sent under an id of their own that the server has not taken) and
+/// `link.json` (the link generation); transcripts in the cache area, which
+/// the budget and the age bound; the watch's cursor in the record cache.
+/// All of it but the marks, the drafts, the unsent messages and the
+/// generation is the server's, and is read again when it is gone.
+/// Synchronous: effects call it.
 ///
 /// A session reaches its folder only through the `Lease` its open answered.
 /// Nothing reopens a folder on the way: a lease retired by a sign-out
@@ -67,6 +69,9 @@ public final class ChatStorage: @unchecked Sendable {
         let folder: RepositoryFolder?
         let records: RecordCache?
         let adoption: TranscriptAdoption
+        /// The unsent messages as the folder holds them, once read or
+        /// written; guarded by `files`.
+        var unsent: [String: UnsentMessage]?
 
         init(lease: Lease, folder: RepositoryFolder?, records: RecordCache?, adoption: TranscriptAdoption) {
             self.lease = lease
@@ -324,6 +329,19 @@ public final class ChatStorage: @unchecked Sendable {
 
     static func transcriptName(_ thread: String) -> String { hash(thread) + ".json" }
 
+    /// The messages sent under an id of their own that the server had not
+    /// taken when the folder was last written, by chat as the drafts are.
+    func unsent(_ lease: Lease) -> [String: UnsentMessage] {
+        whileHeld(lease) { holding in Self.unsent(in: holding) } ?? [:]
+    }
+
+    private static func unsent(in holding: Holding) -> [String: UnsentMessage] {
+        if let held = holding.unsent { return held }
+        let read = (try? holding.folder?.read("unsent.json", in: .root)).flatMap { try? JSONDecoder().decode([String: UnsentMessage].self, from: $0) }
+        holding.unsent = read ?? [:]
+        return read ?? [:]
+    }
+
     // MARK: Writing
 
     func save(_ state: CachedState, _ lease: Lease) { write(state, "state.json", .root, lease) }
@@ -334,13 +352,46 @@ public final class ChatStorage: @unchecked Sendable {
     /// one that lands after a newer is dropped. `ticket` is the write's
     /// place in that order, taken when it was asked for (`draftsTicket()`);
     /// without one the write is the newest.
-    func save(drafts: [String: String], _ lease: Lease, ticket: Int? = nil) {
+    ///
+    /// With `unsent`, the unsent messages are written with them, in the
+    /// same place in that order. A text moves between the two files both
+    /// ways (a send takes it out of the drafts, Edit Message and a refusal
+    /// put it back), and a kill between the two writes must leave it in
+    /// both and never in neither. So the unsent messages are written first
+    /// with none taken away, then the drafts, and only then the unsent
+    /// messages without the ones that went. A text found in both at the
+    /// next launch is given one owner there (`ChatAppEngine.opened`).
+    ///
+    /// A write that fails leaves the files after it as they were: where
+    /// `unsent.json` cannot be written the drafts are not touched, so a
+    /// text that was a saved draft is still one. `between` runs after each
+    /// file but the last, for a test that stops there.
+    func save(
+        drafts: [String: String], unsent: [String: UnsentMessage]? = nil, _ lease: Lease, ticket: Int? = nil,
+        between: (() -> Void)? = nil
+    ) {
         let ticket = ticket ?? draftsTicket()
         guard let data = try? JSONEncoder().encode(drafts) else { return }
         _ = whileHeld(lease) { holding -> Bool? in
             guard ticket > draftsWritten else { return false }
-            try holding.folder?.write(data, to: "drafts.json", in: .root)
             draftsWritten = ticket
+            guard let unsent else {
+                try holding.folder?.write(data, to: "drafts.json", in: .root)
+                return true
+            }
+            let before = Self.unsent(in: holding)
+            let both = before.merging(unsent) { _, new in new }
+            if both != before {
+                try holding.folder?.write(try JSONEncoder().encode(both), to: "unsent.json", in: .root)
+                holding.unsent = both
+                between?()
+            }
+            try holding.folder?.write(data, to: "drafts.json", in: .root)
+            if both != unsent {
+                between?()
+                try holding.folder?.write(try JSONEncoder().encode(unsent), to: "unsent.json", in: .root)
+                holding.unsent = unsent
+            }
             return true
         }
     }

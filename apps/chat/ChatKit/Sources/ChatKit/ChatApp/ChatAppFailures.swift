@@ -75,7 +75,17 @@ extension ChatApp {
 
         let working = live.phase != .idle
         let resuming = live.failures.turnBusy
-        if !live.deleted, !working || resuming, let last = turns.last {
+        // A message that stands unsent is the newest turn, and its card is
+        // its own: sending it again is what goes on from here, so the run
+        // before it offers nothing.
+        if let id = live.unsent, let failure = live.failures.message {
+            var unsent = context
+            unsent.blocked = live.resendBlocked
+            var card = FailurePresenter.present(failure, unsent, dismiss: .edit)
+            if card.button?.action == .edit { card.dismiss = nil }
+            out.turns[id] = card
+            out.spoken = card.spoken
+        } else if !live.deleted, !working || resuming, let last = turns.last, last.id != live.unsent {
             context.busy = resuming
             context.kept = all.last.map { $0.role == .assistant && !$0.content.isEmpty } ?? false
             if let failure = Self.turnFailure(row: row, live: live.failures.turn) {

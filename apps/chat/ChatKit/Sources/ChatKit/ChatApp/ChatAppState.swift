@@ -35,6 +35,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var pollNudge = 0
         var resumeNudge = 0
         var continuing: String?
+        /// The id of the message the conversation last said the server has
+        /// not taken.
+        var unsent: String?
     }
 
     /// One window: the conversation it shows, whether it is in front, and
@@ -151,6 +154,15 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// server's document, never found out by calling: an older server
     /// answers 404, and then they go on as before the route.
     var continues: Bool { (agentsRevision ?? 0) >= Self.continueRevision && !continueUnserved }
+    /// The server said it takes a `messageId` and then refused the field:
+    /// believed until the document is read again.
+    var idsUnserved = false
+    /// The `agents` revision that takes a `messageId` on a chat message.
+    static let messageIDRevision = 3
+    /// Every message goes under an id of its own, so a send whose answer
+    /// was lost is sent again. Asked of the server's document, never found
+    /// out by sending one: an older server refuses the field.
+    var sendsIDs: Bool { (agentsRevision ?? 0) >= Self.messageIDRevision && !idsUnserved }
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]
@@ -181,6 +193,13 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var lastAgent: String?
     var preferences = ChatPreferences()
     var drafts: [String: String] = [:]
+    /// The messages sent under an id of their own that the server has not
+    /// taken, by chat as `drafts` names it: kept in the folder beside the
+    /// drafts, so a kill never loses one or the id to send it again under.
+    var unsent: [String: UnsentMessage] = [:]
+    /// The ids the folder held when it was last written, or read: a
+    /// message's first copy leaves only once its id is among them.
+    var keptUnsent: Set<String> = []
 
     var transcripts: [String: Held] = [:]
     /// Rule 4: every thread's read epoch. A read records the one it started

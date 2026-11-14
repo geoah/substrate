@@ -101,6 +101,11 @@ public enum FailureAction: Codable, Hashable, Sendable {
     case resume
     /// Send Again: the composer's text.
     case send
+    /// Send Again on a message that stands unsent: the same message once
+    /// more, under the id it was sent with.
+    case sendAgain
+    /// A message that stands unsent goes back into the composer.
+    case edit
     /// The stop, again.
     case stop
     /// The chat's rows read again after a run.

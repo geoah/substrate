@@ -14,6 +14,7 @@ extension ChatApp {
         switch event.step {
         case let .linked(link): linked(&next, link)
         case let .diskOpened(disk): opened(&next, disk)
+        case let .unsentSaved(ids): next.keptUnsent = ids
         case let .permissionRead(permission): next.permission = permission
         case let .usageRead(usage): next.usage = usage
         case .transcriptsCleared:
@@ -46,6 +47,7 @@ extension ChatApp {
         case let .featuresRead(agents):
             next.agentsRevision = agents
             next.continueUnserved = false
+            next.idsUnserved = false
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -347,6 +349,25 @@ extension ChatApp {
         state.asks.append(.prune(disk.lease))
         state.preferences = disk.preferences
         state.drafts = disk.drafts
+        // A message sent before the folder was read stays; the rest is
+        // what the folder kept.
+        state.unsent = disk.unsent.merging(state.unsent) { _, sent in sent }
+        state.keptUnsent = Set(disk.unsent.values.map(\.id))
+        // A kill between the two files leaves a text in both, and one
+        // owner is chosen here. A send was on its way out of the drafts:
+        // the draft is the message and no more, and it is the unsent one.
+        // Edit Message or a refusal was on its way back into them: the
+        // draft is the message with what was typed since behind it, as it
+        // is put back, and it is the draft, so the message is not also left
+        // standing to be sent beside it.
+        for (name, message) in state.unsent {
+            guard let draft = state.drafts[name]?.trimmingCharacters(in: .whitespacesAndNewlines) else { continue }
+            if draft == message.message {
+                state.drafts[name] = nil
+            } else if draft.hasPrefix(message.message + "\n\n") {
+                state.unsent[name] = nil
+            }
+        }
         if let cached = disk.state {
             state.agents = cached.agents
             state.providers = Dictionary(cached.providers.map { ($0.id, $0) }) { a, _ in a }
@@ -687,9 +708,10 @@ extension ChatApp {
     private func show(_ state: inout State, _ thread: String, in scene: String, key: ChildKey) {
         if state.conversations[key] == nil {
             let row = state.thread(thread)
+            let unsent = state.unsent[thread]
             state.conversations[key] = State.Entry(
-                seed: Conversation.Seed(thread: thread, agent: row?.agentID, draft: state.drafts[thread] ?? "", listen: false),
-                thread: thread, agent: row?.agentID)
+                seed: Conversation.Seed(thread: thread, agent: row?.agentID, draft: state.drafts[thread] ?? "", listen: false, unsent: unsent),
+                thread: thread, agent: row?.agentID, unsent: unsent?.id)
         }
         state.scenes[scene, default: State.Scene()].current = key
         guard state.session != nil else { return }
@@ -706,18 +728,34 @@ extension ChatApp {
     private static let newDraft = "new:"
 
     /// A new chat takes over an unsent draft a new chat left behind (one
-    /// whose conversation is gone), so what was typed into it is there again.
+    /// whose conversation is gone), so what was typed into it is there
+    /// again; and a message one sent that the server never took, with the
+    /// assistant it was sent to.
     private func newChat(_ state: inout State, agent: String?, listen: Bool, in scene: String, key: ChildKey) {
-        let orphan = state.drafts.keys.sorted().first { draft in
-            draft.hasPrefix(Self.newDraft) && state.conversations[ChildKey(String(draft.dropFirst(Self.newDraft.count)))] == nil
+        // A new chat whose first message the server has not taken, and
+        // that no window shows, has no row in the list to come back by:
+        // New Chat is the way back to it.
+        let shown = Set(state.scenes.values.compactMap(\.current))
+        if let waiting = state.conversations.keys.sorted().first(where: { held in
+            state.conversations[held]?.thread == nil && state.conversations[held]?.unsent != nil && !shown.contains(held)
+        }) {
+            state.scenes[scene, default: State.Scene()].current = waiting
+            return
         }
+        let orphaned = { (name: String) in
+            name.hasPrefix(Self.newDraft) && state.conversations[ChildKey(String(name.dropFirst(Self.newDraft.count)))] == nil
+        }
+        let orphan = state.drafts.keys.sorted().first(where: orphaned)
         let draft = orphan.flatMap { state.drafts.removeValue(forKey: $0) } ?? ""
         if !draft.isEmpty { state.drafts[Self.newDraft + key.rawValue] = draft }
+        let unsent = state.unsent.keys.sorted().first(where: orphaned).flatMap { state.unsent.removeValue(forKey: $0) }
+        if let unsent { state.unsent[Self.newDraft + key.rawValue] = unsent }
+        let agent = unsent?.agent ?? agent
         state.conversations[key] = State.Entry(
             seed: Conversation.Seed(
                 thread: nil, agent: agent ?? state.defaultAgent?.id, draft: draft,
-                listen: listen),
-            agent: agent ?? state.defaultAgent?.id)
+                listen: listen, unsent: unsent),
+            agent: agent ?? state.defaultAgent?.id, unsent: unsent?.id)
         state.scenes[scene, default: State.Scene()].current = key
     }
 
@@ -741,6 +779,27 @@ extension ChatApp {
     /// 3's ownership, its own reads, its draft.
     private func reported(_ state: inout State, _ key: ChildKey, _ report: ChatAppStep.Report, before: State) {
         guard var entry = state.conversations[key] else { return }
+        if let named = report.named, entry.thread != named,
+            let other = state.conversations.keys.sorted().first(where: { $0 != key && state.conversations[$0]?.thread == named }),
+            report.adopted || state.drafts[named] != nil
+                || state.conversations[other].map({ $0.owns || $0.active || $0.outcomes > 0 || $0.unsent != nil }) ?? false
+        {
+            // The thread this new chat turns out to be already has a
+            // conversation that is in the middle of something (a send out,
+            // a message standing unsent, a failure still to be read, a
+            // draft the folder keeps for it), or
+            // this one learned its thread from a read and has no run to
+            // lose: that one is the chat and this one gives way to it. Its
+            // own message is the server's by now, and what was typed here
+            // stays in the folder for the next new chat. Closing the other
+            // instead would drop what it holds.
+            if let before = entry.unsent, state.unsent[Self.newDraft + key.rawValue]?.id == before {
+                state.unsent[Self.newDraft + key.rawValue] = nil
+            }
+            state.conversations[key] = nil
+            for scene in state.scenes.keys where state.scenes[scene]?.current == key { state.scenes[scene]?.current = other }
+            return
+        }
         if let named = report.named, entry.thread != named {
             // The `thread` event named a new chat's thread: from now the list
             // finds the conversation by it, any other conversation on it
@@ -752,7 +811,13 @@ extension ChatApp {
             entry.thread = named
             if let agent = report.agent ?? entry.agent { state.lastAgent = agent }
             bump(&state, named)
-            state.drafts[Self.newDraft + key.rawValue] = nil
+            // What the new chat's composer still holds (typed while its
+            // message was out, or kept from a launch before) is the
+            // thread's draft from here, so it outlives the window.
+            if let draft = state.drafts.removeValue(forKey: Self.newDraft + key.rawValue) { state.drafts[named] = draft }
+            // The server took the new chat's message, or holds it already.
+            state.unsent[Self.newDraft + key.rawValue] = nil
+            entry.unsent = nil
         }
         // Rule 4's moves: a send or an attach takes the thread's rows, a
         // settle hands them back; either way what was read before is old.
@@ -765,6 +830,16 @@ extension ChatApp {
         entry.outcomes = report.outcomes
         entry.name = report.name
         if report.continueUnserved { state.continueUnserved = true }
+        if report.idsUnserved { state.idsUnserved = true }
+        // The message this conversation waits on the server for, kept in
+        // the folder under its chat's name. Only the one this conversation
+        // reported is taken away, so another's is never dropped with it.
+        if report.unsent?.id != entry.unsent {
+            let name = entry.thread ?? Self.newDraft + key.rawValue
+            if let before = entry.unsent, state.unsent[name]?.id == before { state.unsent[name] = nil }
+            if let unsent = report.unsent { state.unsent[name] = unsent }
+            entry.unsent = report.unsent?.id
+        }
         if report.settles > entry.settles { state.answered.raise(ChatAnswer(thread: entry.thread, words: "\(report.name) answered")) }
         entry.settles = report.settles
         if !report.active, entry.continuing != nil {
@@ -775,6 +850,10 @@ extension ChatApp {
         if let thread = entry.thread, started || settled {
             bump(&state, thread)
             if started { state.asks.append(.cancel("prefetch")) }
+            // A run that ended without reading its rows (a message left
+            // standing unsent) held off every read while it had the thread:
+            // what moved meanwhile is read now, and may hold the message.
+            if settled, report.read == nil { load(&state, thread) }
         }
         if let draft = report.draft {
             let name = entry.thread ?? Self.newDraft + key.rawValue
@@ -784,11 +863,22 @@ extension ChatApp {
             // A conversation's own read publishes under its own overlay: the
             // handover is how its rows replace it in one step.
             if let record = read.record {
-                publish(&state, read.thread, read.rows, version: record.version, full: read.rows.count >= 500)
+                // A delivery check that found a new chat's thread read its
+                // row and none of its messages. A thread has its opening
+                // message at least, so no rows is no read: published, it
+                // would stand as the chat's whole transcript at this
+                // version, and nothing would read it again.
+                if !read.rows.isEmpty { publish(&state, read.thread, read.rows, version: record.version, full: read.rows.count >= 500) }
                 upsert(&state, record)
             }
             if read.reload { load(&state, read.thread, force: true) }
         }
+        // A send empties the composer, and the folder hears of it at once:
+        // a draft's own save waits out a pause, and a kill inside it would
+        // bring a message that was sent back as a draft to send again.
+        // A message put back into the composer is written as promptly: it
+        // was sent, and is in no other place.
+        if report.sent || report.gaveBack, let disk = state.disk { state.asks.append(.saveUnsent(disk, state.unsent, drafts: state.drafts)) }
         if report.sent, !state.preferences.askedNotifications {
             state.preferences.askedNotifications = true
             state.asks.append(.askPermission)
