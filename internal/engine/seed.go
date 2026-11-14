@@ -239,6 +239,9 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if f := ds.svc.testShippedRefusal; f != nil {
+			guards = append(guards, f(ds.info.ID)...)
+		}
 		if len(guards) > 0 {
 			refused = guards
 			return nil

@@ -9,6 +9,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -283,6 +284,61 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 		Kind:       evoPackage + "/gizmo",
 		Properties: map[string]any{"size": "small"},
 	})
+}
+
+// A string property retyped to a reference follows the VALUES too: it is
+// refused while a live row holds a value that is not a link yet, or a link
+// outside the pin, in a list as in a scalar, and lands once a rewrite has
+// turned every value into a link to the pinned kind, as the actor links'
+// conversion did for a blob's `createdBy` (decision 0270).
+func TestSchemaEvolutionStringToReferenceFollowsTheLinks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds, dsn := newDatasetWithDSN(t)
+	gizmo := evoPackage + "/gizmo"
+	props := evoBaseProps()
+	props["tags"] = map[string]any{"type": "string", "repeated": true}
+	if err := evoApply(t, ds, props); err != nil {
+		t.Fatalf("install base type: %v", err)
+	}
+	target := mustPut(t, ds, owner, substrate.PutInput{Kind: gizmo, Properties: map[string]any{"size": "big"}})
+	held := mustPut(t, ds, owner, substrate.PutInput{Kind: gizmo, Properties: map[string]any{"note": "a spelling", "tags": []any{"one"}}})
+	link := map[string]any{"ref": gizmo + "/" + target.ID}
+	rewrite := func(values map[string]any) {
+		t.Helper()
+		raw, err := json.Marshal(values)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rawDB(t, dsn).Exec(`UPDATE records SET props = props || $1::jsonb WHERE kind = $2 AND id = $3`, raw, gizmo, held.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retype := evoBaseProps()
+	retype["note"] = map[string]any{"type": "reference", "kind": gizmo}
+	retype["tags"] = map[string]any{"type": "reference", "kind": gizmo, "repeated": true}
+
+	wantNarrowingGuard(t, evoApply(t, ds, retype),
+		`property "note" changes kind string → reference while 1 live records hold a value that is not yet a link to `+gizmo,
+		`property "tags" changes kind repeated string → repeated reference while 1 live records`)
+	// A link outside the pin strands its row as a string does.
+	rewrite(map[string]any{"note": map[string]any{"ref": vocabulary.CoreKind("actor") + "/someone"}, "tags": []any{link}})
+	wantNarrowingGuard(t, evoApply(t, ds, retype), `property "note" changes kind string → reference while 1 live records`)
+	// One element of the list still a string strands it.
+	rewrite(map[string]any{"note": link, "tags": []any{link, "two"}})
+	wantNarrowingGuard(t, evoApply(t, ds, retype), `property "tags" changes kind repeated string → repeated reference while 1 live records`)
+	// Every value a link to the pin: the retype lands, and reads them back.
+	rewrite(map[string]any{"note": link, "tags": []any{link}})
+	if err := evoApply(t, ds, retype); err != nil {
+		t.Fatalf("a string → reference retype every stored value already satisfies must admit: %v", err)
+	}
+	got, err := ds.Get(ctx, gizmo, held.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note, _ := got.Properties["note"].(map[string]any); note["ref"] != link["ref"] {
+		t.Fatalf("the retyped note reads %v, want the link %v", got.Properties["note"], link)
+	}
 }
 
 // Text and markdown are one storage and one validation, so a property flips

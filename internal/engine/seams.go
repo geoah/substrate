@@ -228,3 +228,12 @@ const (
 // WithArchiveStepBytes sets how many blob bytes a pass copies before it
 // publishes (DefaultArchiveStepBytes).
 func WithArchiveStepBytes(n int64) Option { return func(o *options) { o.archiveStepBytes = n } }
+
+// WithTestShippedUpgradeRefusal adds refusal lines to a repository's shipped
+// upgrade guards (seed.go), so an open refuses the upgrade as a binary did
+// before a guard was mended: the repository serves on the declarations it
+// stored, and the next open without the hook upgrades it. refuse answers the
+// lines for one repository's id, none to let it upgrade.
+func WithTestShippedUpgradeRefusal(refuse func(repository string) []string) Option {
+	return func(o *options) { o.shippedRefusal = refuse }
+}
