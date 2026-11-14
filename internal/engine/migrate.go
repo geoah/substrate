@@ -97,7 +97,15 @@ func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion fun
 		return fmt.Errorf("substrate/engine: migration conn: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
+	return migrateOn(ctx, conn, through, vectorVersion, log, nil)
+}
 
+// migrateOn is migrateWith on a connection the caller holds: the writer
+// lease's own session, at a start (decision record 0324). guard, where set,
+// runs first in each migration's transaction and refuses it.
+func migrateOn(ctx context.Context, conn *sql.Conn, through int, vectorVersion func(context.Context, *sql.Conn) (string, error), log *slog.Logger,
+	guard func(context.Context, *sql.Tx) error,
+) error {
 	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(hashtext(current_schema() || $1)::bigint)`, migrationLockKey); err != nil {
 		return fmt.Errorf("substrate/engine: migration lock: %w", err)
 	}
@@ -151,7 +159,7 @@ func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion fun
 			continue
 		}
 		began := time.Now()
-		if err := applyMigration(ctx, conn, m); err != nil {
+		if err := applyMigration(ctx, conn, m, guard); err != nil {
 			return fmt.Errorf("substrate/engine: apply migration %d (%s): %w", m.Version, m.Name, err)
 		}
 		log.Info("substrate: ran a SQL migration",
@@ -390,12 +398,17 @@ func appliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]recorded, e
 	return out, rows.Err()
 }
 
-func applyMigration(ctx context.Context, conn *sql.Conn, m migration) error {
+func applyMigration(ctx context.Context, conn *sql.Conn, m migration, guard func(context.Context, *sql.Tx) error) error {
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if guard != nil {
+		if err := guard(ctx, tx); err != nil {
+			return err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, m.UpSQL); err != nil {
 		return fmt.Errorf("exec sql: %w", err)
 	}

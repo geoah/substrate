@@ -244,6 +244,15 @@ type options struct {
 	// provisionRoles stands in for ensureRoles, so a test can see whether a
 	// start provisions the roles. Tests only.
 	provisionRoles func(context.Context, *sql.DB) error
+	// beforeLeaseRetake is the writer lease's test seam (writerlease.go): a
+	// hook run once a beat found the lease lost and before it retakes it.
+	// Tests only.
+	beforeLeaseRetake func()
+	// retakeResetHook is the retake's test seam (leasefirst.go
+	// resetForRetake): it runs in each reset once the search reindex has
+	// stopped, while every write is still refused, and true has the reset
+	// count that stop as timed out. Tests only.
+	retakeResetHook func() (stopTimedOut bool)
 	// nameDoorsOpen lifts the early refusals of a name the repository holds a
 	// package under (repositorynames.go). Tests only.
 	nameDoorsOpen bool
@@ -804,7 +813,9 @@ type service struct {
 	// (writerlease.go). Nil on a read-only service, which claims nothing,
 	// and on the test seam that opens a second writer on purpose.
 	lease *writerLease
-	log   *slog.Logger
+	// retakeResetHook is options.retakeResetHook. Tests only.
+	retakeResetHook func() (stopTimedOut bool)
+	log             *slog.Logger
 	// seedLLMProviders writes the three keyless vendor rows at creation
 	// and as an open catch-up.
 	seedLLMProviders bool
@@ -1039,7 +1050,10 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// files must not touch the database. The repositories directory is made
 	// here so a repository's own directory is always one level below a
 	// directory the engine owns, with the mode that keeps the bytes private.
-	// A read-only process makes none: it reads the writer's (issue #828).
+	// A read-only process makes none: it reads the writer's (issue #828). A
+	// writer's is the one write a start makes before its writer lease
+	// (leasefirst.go), and a data root a running server shares already has it.
+	// An instance id is read here and minted only past the lease.
 	if o.dataRoot == "" || !filepath.IsAbs(o.dataRoot) {
 		return nil, fmt.Errorf("%w (got %q)", ErrNoDataRoot, o.dataRoot)
 	}
@@ -1048,7 +1062,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			return nil, fmt.Errorf("substrate/engine: create %s under the data root: %w", changelogfile.RepositoriesDir, err)
 		}
 	}
-	instanceID, err := loadInstanceID(o.dataRoot, o.dirReadOnly)
+	instanceID, err := loadInstanceID(o.dataRoot, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1153,11 +1167,13 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// a burst of DDL must not be able to take every connection the cluster
 	// has. It assumes NO role: it exists precisely because the bound roles own
 	// nothing and may not create, so the DSN's own user is the point.
-	admin.SetMaxOpenConns(4)
+	// Four for the DDL, plus one the writer lease pins for the life of the
+	// process (writerlease.go): the start runs its migrations on that one.
+	admin.SetMaxOpenConns(5)
 	// database/sql keeps two idle connections by default, so a burst past two
 	// would dial, authenticate and close the rest; idle ones go back to the
 	// cluster on the shared pool's schedule.
-	admin.SetMaxIdleConns(4)
+	admin.SetMaxIdleConns(5)
 	admin.SetConnMaxIdleTime(repositoryConnIdle)
 	if o.blobs == nil {
 		// A read-only process makes nothing at or under the root, and needs
@@ -1362,31 +1378,62 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// The DDL runs as the DSN's own user: the bound roles own nothing and may
 	// not create. The grants inside it hand the tables to the two roles.
 	//
-	// A read-only process applies none (checkMigrated): it runs beside a live
-	// server, and a newer binary migrating that server's database would close
-	// the server's rollback. It refuses a database it would migrate, as the
-	// runner refuses one a newer binary migrated.
-	schemaGate := func(ctx context.Context, db *sql.DB) error { return migrate(ctx, db, s.log) }
-	if s.readOnly {
-		schemaGate = checkMigrated
+	// The writer lease comes first, on a session of that pool: the start
+	// takes every repository's lease and then applies the migrations on the
+	// same session, so no migration runs while another server holds a
+	// repository, and an older server whose lease connection dropped cannot
+	// take one back while this start runs (leasefirst.go, decision record
+	// 0324).
+	//
+	// A read-only process applies none (checkMigrated) and takes no lease:
+	// it runs beside a live server, and a newer binary migrating that
+	// server's database would close the server's rollback. It refuses a
+	// database it would migrate, as the runner refuses one a newer binary
+	// migrated.
+	var lease *writerLease
+	if !s.readOnly && !o.skipWriterLease {
+		lease = newWriterLease(admin, s.log)
+		lease.retaken = s.leaseRetaken
+		lease.beforeRetake = o.beforeLeaseRetake
+		s.retakeResetHook = o.retakeResetHook
 	}
-	if err := schemaGate(ctx, admin); err != nil {
+	var gateErr error
+	switch {
+	case s.readOnly:
+		gateErr = checkMigrated(ctx, admin)
+	case lease != nil:
+		gateErr = lease.migrateHolding(ctx, s.log)
+	default:
+		gateErr = migrate(ctx, admin, s.log)
+	}
+	if gateErr != nil {
+		lease.close()
 		_ = admin.Close()
-		return nil, err
+		return nil, gateErr
+	}
+	s.lease = lease
+	if s.instanceID == "" && !s.readOnly {
+		if s.instanceID, err = loadInstanceID(o.dataRoot, false); err != nil {
+			s.lease.close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	maint, err := openMaint(dsn, maintRole)
 	if err != nil {
+		s.lease.close()
 		_ = admin.Close()
 		return nil, err
 	}
 	if err := maint.PingContext(ctx); err != nil {
 		_ = maint.Close()
+		s.lease.close()
 		_ = admin.Close()
 		return nil, fmt.Errorf("substrate/engine: open the maintenance pool: %w", err)
 	}
-	// Four for the work, plus one the writer lease pins for the life of the
-	// process (writerlease.go): a cap of four would leave three for a
-	// registration that already holds one of them itself.
+	// Five: a registration pins one for its registration lock
+	// (lockRegistration) while the rest serve its work and every token read.
+	// The writer lease pins one of the admin pool's.
 	maint.SetMaxOpenConns(5)
 	// Every authenticated request reads the token here, so the pool keeps what
 	// it opened rather than database/sql's default of two idle connections,
@@ -1399,6 +1446,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// wall clock moves no hold (repositorynames.go namesNow).
 	if err := maint.QueryRowContext(ctx, `SELECT now()`).Scan(&s.namesBase); err != nil {
 		_ = maint.Close()
+		s.lease.close()
 		_ = admin.Close()
 		return nil, fmt.Errorf("substrate/engine: read the database's clock: %w", err)
 	}
@@ -1410,6 +1458,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	repoPool, err := openRepositoryPool(ctx, dsn, s.appRole, repoConns, o.queryTracer)
 	if err != nil {
 		_ = maint.Close()
+		s.lease.close()
 		_ = admin.Close()
 		return nil, err
 	}
@@ -1442,12 +1491,14 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		if err := assertPoolPrincipal(ctx, maint, roleMaint, true); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
+			s.lease.close()
 			_ = admin.Close()
 			return nil, fmt.Errorf("substrate/engine: maintenance pool principal: %w", err)
 		}
 		if err := s.assertAppPoolPrincipal(ctx); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
+			s.lease.close()
 			_ = admin.Close()
 			return nil, err
 		}
@@ -1464,6 +1515,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		if err := s.sweepOrphans(ctx); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
+			s.lease.close()
 			_ = admin.Close()
 			return nil, err
 		}
@@ -1480,12 +1532,14 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		if err := sweepScratchIndexes(ctx, admin); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
+			s.lease.close()
 			_ = admin.Close()
 			return nil, err
 		}
 		if err := ensureIndices(ctx, admin, reg.Kinds(), indexProgress{}); err != nil {
 			repoPool.Close()
 			_ = maint.Close()
+			s.lease.close()
 			_ = admin.Close()
 			return nil, err
 		}
@@ -1496,16 +1550,16 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if err := s.requireCredentialKeyOpens(ctx); err != nil {
 		repoPool.Close()
 		_ = maint.Close()
+		s.lease.close()
 		_ = admin.Close()
 		return nil, err
 	}
-	// The writer lease, before the boot check and so before anything is
-	// written: one process writes a repository, and the second refuses to
-	// open it rather than append to a directory of its own
-	// (writerlease.go, decision 0083). A read-only process takes none — it
-	// exists precisely to run beside the writer.
-	if !s.readOnly && !o.skipWriterLease {
-		s.lease = newWriterLease(maint, s.log)
+	// Every repository's writer lease by its id, before the boot check and
+	// so before anything is written to a repository: the start took each one
+	// it found before migrating, and a database from before ids has its ids
+	// now (writerlease.go, decision 0083). A read-only process takes none —
+	// it exists precisely to run beside the writer.
+	if s.lease != nil {
 		if err := s.leaseEveryRepository(ctx); err != nil {
 			s.lease.close()
 			repoPool.Close()

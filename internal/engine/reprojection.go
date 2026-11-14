@@ -531,9 +531,9 @@ func (ds *dataset) kickIndexReprojection() {
 }
 
 // stopIndexReprojection cancels the running pass and waits for it to
-// return; final is the dataset closing.
-func (ds *dataset) stopIndexReprojection(final bool) {
-	ds.reproject.stop(ds, final, reprojectionPass)
+// return, and reports whether it did; final is the dataset closing.
+func (ds *dataset) stopIndexReprojection(final bool) bool {
+	return ds.reproject.stop(ds, final, reprojectionPass)
 }
 
 // reprojectIndexes runs the pass: every kind owed, each in pages of

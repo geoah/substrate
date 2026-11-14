@@ -57,10 +57,10 @@ func (ds *dataset) startSearchReindex() {
 // (reindexStep).
 const searchReindexMaxPause = time.Minute
 
-// stopSearchReindex cancels the running reindex and waits for it to return;
-// final is the dataset closing.
-func (ds *dataset) stopSearchReindex(final bool) {
-	ds.reindex.stop(ds, final, "search index re-derivation")
+// stopSearchReindex cancels the running reindex and waits for it to return,
+// and reports whether it did; final is the dataset closing.
+func (ds *dataset) stopSearchReindex(final bool) bool {
+	return ds.reindex.stop(ds, final, "search index re-derivation")
 }
 
 // reindexSearch re-derives every row's `fts`, live and tombstoned, under this

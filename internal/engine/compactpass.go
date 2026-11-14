@@ -1347,9 +1347,17 @@ func (ds *dataset) startCompactor() {
 				return
 			case <-tick.C:
 			}
-			report, err := ds.CompactionPass(ctx)
+			pass, endPass := context.WithCancel(ctx)
+			passDone := make(chan struct{})
+			ds.compactionRun.mu.Lock()
+			ds.compactionRun.cancel, ds.compactionRun.done = endPass, passDone
+			ds.compactionRun.mu.Unlock()
+			report, err := ds.CompactionPass(pass)
+			ended := pass.Err() != nil
+			endPass()
+			close(passDone)
 			switch {
-			case err != nil && ctx.Err() == nil:
+			case err != nil && !ended:
 				ds.svc.log.Error("substrate: a compaction pass failed; the next one tries again",
 					"repository", ds.info.ID, "error", err)
 			case report.Removed > 0:
@@ -1368,6 +1376,30 @@ func (ds *dataset) startCompactor() {
 func (ds *dataset) stopCompactor() {
 	if ds.compactionStop != nil {
 		ds.compactionStop()
+	}
+}
+
+// endCompactionPass ends the compactor's pass in flight, if one is, and
+// waits for it to return, up to the drain budget, reporting whether it did.
+// Its batch rolls back, and the next interval's pass reads every horizon
+// again.
+func (ds *dataset) endCompactionPass() bool {
+	ds.compactionRun.mu.Lock()
+	cancel, done := ds.compactionRun.cancel, ds.compactionRun.done
+	ds.compactionRun.mu.Unlock()
+	if cancel == nil {
+		return true
+	}
+	cancel()
+	timer := time.NewTimer(backgroundDrainTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		ds.svc.log.Error("substrate: a background pass did not stop within the drain budget",
+			"repository", logSafeID(ds.scope.Repository), "pass", "compaction", "timeout", backgroundDrainTimeout)
+		return false
 	}
 }
 

@@ -460,4 +460,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0316](0316-agent-spend-is-counted-in-us-dollars.md) | Agent spend is counted in US dollars | accepted |
 | [0319](0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md) | The hands that wrote a shipped record outlive its history | accepted |
 | [0321](0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md) | The repository migrations a repository ran travel with its archive | accepted |
+| [0324](0324-a-start-takes-every-writer-lease-before-it-migrates-and-a-retaken-lease-checks-the-migrations.md) | A start takes every writer lease before it migrates, and a retaken lease checks the migrations | accepted |
 | [0326](0326-a-repository-whose-first-open-fails-is-set-aside-like-one-the-start-sets-aside.md) | A repository whose first open fails is set aside, like one the start sets aside | accepted |
