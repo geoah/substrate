@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -155,7 +156,14 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 			return err
 		})
 	})
-	if err == nil {
+	committed := err == nil
+	if err != nil && queued {
+		// An error can follow a commit (decision 0271): the row says which.
+		// A row the loop were not told of would be read by nobody, and
+		// start no turn.
+		committed = ds.queuedRowLanded(ctx, l, m)
+	}
+	if committed {
 		// Before the loop may read it, so no client hears of a message taken
 		// that it was never told of.
 		l.hub.publish(substrate.AgentEvent{
@@ -163,7 +171,7 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 		})
 	}
 	if queued {
-		l.settleQueued(m, err == nil)
+		l.settleQueued(m, committed)
 	}
 	if errors.Is(err, errQueueClosed) {
 		// The turn is past reading it. Its settle is short: wait it out, and
@@ -211,6 +219,33 @@ func (l *agentLoop) queuedIDs() []string {
 		ids = append(ids, m.id)
 	}
 	return ids
+}
+
+// queuedRowLanded reports whether m's row is stored after all, where the
+// transaction writing it returned an error: the row under m's id, at the
+// ordinal m drew, which no other write could have given it. Where the read
+// fails too the message is left in doubt, for the turn's settle to read
+// again inside its own transaction (closeQueue).
+func (ds *dataset) queuedRowLanded(ctx context.Context, l *agentLoop, m *queuedMessage) bool {
+	rctx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer done()
+	row, err := ds.loadRowDB(rctx, eref{Kind: typeMessage, ID: m.id})
+	if err != nil {
+		l.turnMu.Lock()
+		l.doubted = append(l.doubted, m)
+		l.turnMu.Unlock()
+		return false
+	}
+	return landedAs(row, m)
+}
+
+// landedAs reports whether row is the row m's transaction wrote.
+func landedAs(row *erow, m *queuedMessage) bool {
+	if row == nil || row.DeletedAt != nil {
+		return false
+	}
+	turn, ok := anyFloat(row.Props["turn"])
+	return ok && int(turn) == m.turn
 }
 
 // settleQueued records how the transaction writing m's row ended. A row that
@@ -276,9 +311,11 @@ func (l *agentLoop) takeQueued(ctx context.Context) []*queuedMessage {
 
 // closeQueue ends admission into the turn and answers the ids of the
 // messages it never handed a model call, oldest first. The settle calls it
-// with the thread's row held, which every admission holds too: a message is
-// either in the queue by now or finds the thread settled.
-func (l *agentLoop) closeQueue(ctx context.Context) []string {
+// in its transaction, with the thread's row held, which every admission
+// holds too: a message is either in the queue by now or finds the thread
+// settled. A message whose write ended in doubt is read here, where no
+// write is in flight.
+func (l *agentLoop) closeQueue(t *txn) ([]string, error) {
 	l.turnMu.Lock()
 	l.queueClosed = true
 	var waiting []*queuedMessage
@@ -287,19 +324,34 @@ func (l *agentLoop) closeQueue(ctx context.Context) []string {
 			waiting = append(waiting, m)
 		}
 	}
+	doubted := l.doubted
 	l.turnMu.Unlock()
-	var unread []string
+	var unread []*queuedMessage
 	for _, m := range waiting {
 		select {
 		case <-m.settled:
-		case <-ctx.Done():
-			return unread
+		case <-t.ctx.Done():
+			return nil, t.ctx.Err()
 		}
 		if m.committed {
-			unread = append(unread, m.id)
+			unread = append(unread, m)
 		}
 	}
-	return unread
+	for _, m := range doubted {
+		row, err := t.loadRow(eref{Kind: typeMessage, ID: m.id}, false)
+		if err != nil {
+			return nil, err
+		}
+		if landedAs(row, m) {
+			unread = append(unread, m)
+		}
+	}
+	slices.SortFunc(unread, func(a, b *queuedMessage) int { return a.turn - b.turn })
+	ids := make([]string, len(unread))
+	for i, m := range unread {
+		ids[i] = m.id
+	}
+	return ids, nil
 }
 
 // startQueuedTurn starts the turn a settled run's unread messages ask for,
@@ -358,9 +410,11 @@ func unansweredRows(rows []threadRow) []threadRow {
 // of place: its row is created at once, before the reply that was streaming
 // and could not have read it, and before the results of calls already under
 // way. Each of those rows drew its ordinal before the message did, so a user
-// row moves behind every row created after it under a smaller ordinal. A
-// user row sent to a settled thread has the smallest ordinal of its turn and
-// never moves.
+// row moves behind the last row created after it under a smaller ordinal,
+// whatever was written between them (a resolution's row, which draws a later
+// ordinal than the message). A user row sent to a settled thread has the
+// smallest ordinal of its turn and never moves. A row with no ordinal, from
+// before rows carried one, ends the search: nothing is moved past it.
 func replayOrder(rows []threadRow) {
 	turnOf := func(r threadRow) (int, bool) {
 		t, ok := anyFloat(r.props["turn"])
@@ -374,12 +428,21 @@ func replayOrder(rows []threadRow) {
 		if !ok {
 			continue
 		}
-		for j := i; j+1 < len(rows); j++ {
-			next, ok := turnOf(rows[j+1])
-			if !ok || next >= at {
+		last := i
+		for j := i + 1; j < len(rows); j++ {
+			next, ok := turnOf(rows[j])
+			if !ok {
 				break
 			}
-			rows[j], rows[j+1] = rows[j+1], rows[j]
+			if next < at {
+				last = j
+			}
 		}
+		if last == i {
+			continue
+		}
+		moved := rows[i]
+		copy(rows[i:last], rows[i+1:last+1])
+		rows[last] = moved
 	}
 }

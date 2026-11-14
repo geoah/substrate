@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -678,5 +679,141 @@ func TestATurnIsHeldToWhoeverItReadAMessageFrom(t *testing.T) {
 	// names the app's token among whom the turn is held to.
 	if held := r.heldRaw(t, typeMessage, "q1"); !strings.Contains(held, token) {
 		t.Fatalf("the queued message is held to %s, want the app's token %s", held, token)
+	}
+}
+
+// A write whose commit landed and whose answer was lost (decision 0271) is a
+// message all the same: the loop is told of it, reads it at its next call,
+// and the request that wrote it is answered as a repeat of itself.
+func TestAQueuedMessageWhoseCommitAnswerWasLostIsStillRead(t *testing.T) {
+	t.Parallel()
+	var lose atomic.Bool
+	ds := openInternalDataset(t, WithTestCommitInDoubt(lose.Load))
+	fake := provisionAgents(t, ds)
+	arrived, release := make(chan struct{}), make(chan struct{})
+	fake.script("lib",
+		fakeTurn{calls: []fakeCall{{"query", listWidgets}}, arrived: arrived, release: release},
+		fakeTurn{content: "done"},
+	)
+	turn := startChat(ds, librarian, substrate.ChatInput{Message: "list widgets", MessageID: "m0"})
+	waitArrived(t, arrived, "the first call")
+	thread := turn.log.waitFor(t, substrate.AgentEventThread).Thread
+
+	// The run is held at its model call, so the one commit in doubt is the
+	// message's.
+	lose.Store(true)
+	q1 := startChat(ds, librarian, substrate.ChatInput{Thread: thread, Message: "only the red ones", MessageID: "q1"})
+	waitUntil(t, "the message to be queued", func() bool { return eventOf(q1.log, substrate.AgentEventMessageQueued, "q1") != nil })
+	lose.Store(false)
+	if n := len(userRows(t, ds, thread)); n != 2 {
+		t.Fatalf("%d user rows after a commit in doubt, want the message's too", n)
+	}
+	close(release)
+	if res, err := turn.wait(t); err != nil || res.Status != threadOK {
+		t.Fatalf("the run = %+v, %v", res, err)
+	}
+	if res, err := q1.wait(t); err != nil || res == nil || res.Status != threadOK {
+		t.Fatalf("the request whose commit was in doubt ended %+v, %v, want the turn's done", res, err)
+	}
+	reqs := fake.requestsOf("lib")
+	if len(reqs) != 2 {
+		t.Fatalf("%d model calls, want 2", len(reqs))
+	}
+	wantConversation(t, "the call after the tool result", reqs[1],
+		"user:list widgets", "assistant", "tool", "user:only the red ones")
+	if n := len(userRows(t, ds, thread)); n != 2 {
+		t.Fatalf("%d user rows, want 2: the message is written once", n)
+	}
+}
+
+// The run's last turn under its deadline reads what was sent, before it is
+// told the turn is its last: a reply written past a message's ordinal is one
+// that read it, so no call leaves a message behind it unread.
+func TestTheLastTurnUnderADeadlineReadsAQueuedMessage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := provisionDeadlineAgents(t)
+	chronicler := deadlinePackage + "/chronicler"
+	held, release := heldTurn(t)
+	arrived := make(chan struct{})
+	fake.script("dchron",
+		fakeTurn{calls: []fakeCall{{"napper", `{"input":"nap"}`}}},
+		fakeTurn{content: "noted, briefly"},
+	)
+	fake.script("dnap", fakeTurn{content: "rested", arrived: arrived, release: held})
+	wait := releaseNearTheDeadline(ds, "chronicler", arrived, release)
+	turn := startChat(ds, chronicler, substrate.ChatInput{Message: "take a nap", MessageID: "m0"})
+	waitArrived(t, arrived, "the slow tool")
+	thread := turn.log.waitFor(t, substrate.AgentEventThread).Thread
+	q1 := queue(t, ds, chronicler, thread, "q1", "and report back")
+	wait()
+	res, err := turn.wait(t)
+	if err != nil || res.Status != threadOK || res.Reply != "noted, briefly" {
+		t.Fatalf("the run = %+v, %v", res, err)
+	}
+	reqs := fake.requestsOf("dchron")
+	if len(reqs) != 2 {
+		t.Fatalf("%d model calls, want 2", len(reqs))
+	}
+	msgs := requestMessages(reqs[1])
+	if n := len(msgs); n < 3 || msgs[n-1]["content"] != finalTurnNudge || msgText(msgs[n-2]) != "and report back" {
+		t.Fatalf("the last turn's request ended %v, want the message and then the word that the turn is the last", msgs[max(0, len(msgs)-2):])
+	}
+	if eventOf(q1.log, substrate.AgentEventMessageTaken, "q1") == nil {
+		t.Fatal("the last turn read the message and no stream said so")
+	}
+	// Read, so it starts no turn of its own.
+	holdFor(t, "the settled thread", func() bool {
+		_, live := ds.runningThreads.Load(thread)
+		return !live && threadProps(t, ds, thread)["status"] == threadOK && len(fake.requestsOf("dchron")) == 2
+	})
+	if _, err := ds.ContinueAgentTurn(ctx, substrate.ActorPerson, thread, nil); !errors.Is(err, substrate.ErrNothingToContinue) {
+		t.Fatalf("continue after the last turn read the message = %v, want ErrNothingToContinue", err)
+	}
+}
+
+// The turn that unread messages start reads all of them, so it is held to
+// every sender, not to the first: an app's message that waits beside a
+// person's holds that turn to the app's grant too.
+func TestTheNextTurnIsHeldToEverySenderItStartsFrom(t *testing.T) {
+	t.Parallel()
+	r := newRunsRepository(t)
+	hold, release := heldTurn(t)
+	write := fakeTurn{calls: []fakeCall{{"write", writeArgs(t, "put", r.note, "", map[string]any{"name": "x"})}}}
+	r.fake.script("scribe", fakeTurn{pieces: []string{"partial ", "reply"}, hold: hold}, write, fakeTurn{content: "done."})
+	ada := r.person(r.adaID, substrate.ActorPerson)
+	log := newEventLog()
+	turn := make(chan error, 1)
+	go func() {
+		_, err := r.ds.ChatAgent(ada, substrate.ActorPerson, r.pkg+"/scribe", substrate.ChatInput{Message: "go", MessageID: "m0"}, log.emit)
+		turn <- err
+	}()
+	log.waitFor(t, substrate.AgentEventDelta)
+	thread := log.snapshot()[0].Thread
+
+	// During the final answer: the person's own message, then an app's that
+	// may talk to the agent and write nothing.
+	send := func(ctx context.Context, actor substrate.Actor, id string) {
+		t.Helper()
+		sent := newEventLog()
+		go func() {
+			_, _ = r.ds.ChatAgent(ctx, actor, r.pkg+"/scribe", substrate.ChatInput{Thread: thread, Message: "write it", MessageID: id}, sent.emit)
+		}()
+		waitUntil(t, "message "+id+" to be queued", func() bool { return eventOf(sent, substrate.AgentEventMessageQueued, id) != nil })
+	}
+	send(ada, substrate.ActorPerson, "q1")
+	app, appCtx, _ := r.app(t, "reader.example.org", "agents:"+r.pkg+"/*", "read:"+r.note)
+	send(appCtx, app, "q2")
+	release()
+	if err := waitTurn(t, turn); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the turn the two messages started", func() bool {
+		_, live := r.ds.runningThreads.Load(thread)
+		return !live && len(r.fake.requestsOf("scribe")) == 3
+	})
+	rows := toolRows(t, r.ds, thread)
+	if len(rows) != 1 || !refusedRow(rows[0]) || r.notes(t) != 0 {
+		t.Fatalf("the next turn's write = %v with %d notes: want it refused by the app's grant", rows, r.notes(t))
 	}
 }
