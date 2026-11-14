@@ -20,6 +20,8 @@ import (
 
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // failureOf is the cause and wait err carries as a failed run.
@@ -276,5 +278,95 @@ func TestAnIdempotentCallsRepeatAnswersTheSettledCause(t *testing.T) {
 	}
 	if n := len(fake.requestsOf("budget")); n != 2 {
 		t.Fatalf("%d model calls, want the first call's 2", n)
+	}
+}
+
+// The cap an owner's llm/agentbudget sets (decision 0314) refuses a run by
+// the reason every spend cap does, on each entry a person starts one by: a
+// call, a new chat and a message to a thread that ran before the cap.
+func TestAnOwnersBudgetRefusesARunWithTheSpendCapsReason(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openSpendDataset(t)
+	fake.script("open", fakeTurn{content: "one"})
+	log := newEventLog()
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, spendPackage+"/open", substrate.ChatInput{Message: "hi"}, log.emit); err != nil {
+		t.Fatalf("a chat with an agent that has no cap: %v", err)
+	}
+	thread := log.snapshot()[0].Thread
+
+	budget := putAgentBudget(t, ds, "open", 50)
+	where := "(" + vocabulary.KindLLMAgentBudget + " " + budget + ")"
+	refused := func(what string, err error) {
+		t.Helper()
+		if !errors.Is(err, errSpendHeld) || substrate.ReasonOf(err) != substrate.ReasonSpendCap || !strings.HasSuffix(err.Error(), where) {
+			t.Fatalf("%s at the owner's cap = %v (reason %q), want a guard refusal with the reason spend_cap naming %s",
+				what, err, substrate.ReasonOf(err), where)
+		}
+	}
+	_, err := ds.CallAgent(ctx, spendPackage+"/open", "go")
+	refused("a call", err)
+	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, spendPackage+"/open", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
+	refused("a new chat", err)
+	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, spendPackage+"/open", substrate.ChatInput{Thread: thread, Message: "and then?"}, func(substrate.AgentEvent) {})
+	refused("a message to a thread", err)
+	if n := len(fake.requestsOf("open")); n != 1 {
+		t.Fatalf("%d model calls, want the first chat's one: a refused run calls nothing", n)
+	}
+	if props := threadProps(t, ds, thread); props["status"] != threadOK || props[propThreadCause] != nil {
+		t.Fatalf("the refused message moved its thread: status %v, cause %v", props["status"], props[propThreadCause])
+	}
+}
+
+// A repository's own allowance in the operator's file (decision 0314) ends
+// and refuses a run by the names the file's one allowance does. A run that
+// started while the least a call costs still fit, and whose call then does
+// not, settles `error` with the cause `allowance_spent`; once not even that
+// fits, a send is refused with the allowance's error before a thread opens.
+func TestARepositorysOwnAllowanceEndsAndRefusesARunByTheAllowancesNames(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	// The file's default would let every call through: the limit that holds
+	// is this repository's own line.
+	ds, rowFake, op, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config {
+		c := operatorChatConfig(u, "", 1000)
+		c.Budget.Repositories = map[string]int64{testdb.Repository(t): 1}
+		return c
+	})
+	emptyTheChatRow(t, ds, rowFake.srv.URL)
+
+	// 0.0325 of the 1 cent is left. The hold asks for a completion's 64
+	// tokens at 5 USD per million, 0.032 cents, which fits; the call's
+	// ceiling adds its prompt, which does not.
+	if _, err := ds.reserveOperator(ctx, substrate.SlotLLM, 0.9675); err != nil {
+		t.Fatal(err)
+	}
+	log := newEventLog()
+	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "hi"}, log.emit)
+	if cause, _ := failureOf(t, err); cause != substrate.CauseAllowanceSpent || !errors.Is(err, substrate.ErrAllowance) {
+		t.Fatalf("a call past the repository's allowance = %v with cause %q, want the allowance's error and allowance_spent", err, cause)
+	}
+	props := threadProps(t, ds, log.snapshot()[0].Thread)
+	if props["status"] != threadError || props[propThreadCause] != substrate.CauseAllowanceSpent {
+		t.Fatalf("thread = %v, cause %v; want error, allowance_spent", props["status"], props[propThreadCause])
+	}
+	if reason, _ := props["reason"].(string); !strings.Contains(reason, "today's allowance from Example") {
+		t.Fatalf("thread reason = %q, want the allowance's words", reason)
+	}
+
+	if _, err := ds.reserveOperator(ctx, substrate.SlotLLM, 0.01); err != nil {
+		t.Fatal(err)
+	}
+	before := threadCountOf(t, ds, chatter)
+	_, err = ds.ChatAgent(ctx, substrate.ActorPerson, chatter, substrate.ChatInput{Message: "again"}, func(substrate.AgentEvent) {})
+	var failure *substrate.AgentFailure
+	if !errors.Is(err, substrate.ErrAllowance) || errors.As(err, &failure) {
+		t.Fatalf("a send at the repository's allowance = %v, want the allowance's refusal and no failed run", err)
+	}
+	if n := threadCountOf(t, ds, chatter); n != before {
+		t.Fatalf("a refused send opened %d threads", n-before)
+	}
+	if n := len(op.authsSeen()); n != 0 {
+		t.Fatalf("the operator's endpoint received %d requests past the allowance", n)
 	}
 }
