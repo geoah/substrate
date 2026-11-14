@@ -16,7 +16,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -70,12 +69,12 @@ func TestEverySetAsideStageIsReachedByARealFailure(t *testing.T) {
 		}
 		for _, c := range cases {
 			file, decl, _ := strings.Cut(c, ":")
-			src, ok := declarationSource(t, file, decl)
+			node, ok := declarationNode(t, file, decl)
 			switch {
 			case !ok:
 				t.Errorf("setAsideStageCases lists %s for %q, which is not declared there", c, value)
-			case !strings.Contains(src, name) && !strings.Contains(src, strconv.Quote(value)):
-				t.Errorf("%s is listed for %q and names neither %s nor %q", c, value, name, value)
+			case !usesStage(node, name, value):
+				t.Errorf("%s is listed for %q and its code uses neither %s nor %q", c, value, name, value)
 			}
 		}
 	}
@@ -126,34 +125,47 @@ func setAsideStages(t *testing.T) map[string]string {
 	return out
 }
 
-// declarationSource is the source of the top-level function or variable
-// named decl in file.
-func declarationSource(t *testing.T, file, decl string) (string, bool) {
+// declarationNode is the top-level function or variable named decl in file,
+// as its syntax: a function's body, or the values a variable is declared
+// with.
+func declarationNode(t *testing.T, file, decl string) (ast.Node, bool) {
 	t.Helper()
-	raw, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatalf("read %s: %v", file, err)
-	}
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, file, raw, 0)
+	f, err := parser.ParseFile(token.NewFileSet(), file, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, d := range f.Decls {
 		switch d := d.(type) {
 		case *ast.FuncDecl:
-			if d.Recv == nil && d.Name.Name == decl {
-				return string(raw[fset.Position(d.Pos()).Offset:fset.Position(d.End()).Offset]), true
+			if d.Recv == nil && d.Name.Name == decl && d.Body != nil {
+				return d.Body, true
 			}
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				if vs, ok := spec.(*ast.ValueSpec); ok && slices.ContainsFunc(vs.Names, func(n *ast.Ident) bool { return n.Name == decl }) {
-					return string(raw[fset.Position(d.Pos()).Offset:fset.Position(d.End()).Offset]), true
+					return vs, true
 				}
 			}
 		}
 	}
-	return "", false
+	return nil, false
+}
+
+// usesStage reports whether node's code uses the stage: its constant by
+// name, or its value as a string literal. A comment is no use, and neither
+// is the name inside a longer string.
+func usesStage(node ast.Node, name, value string) bool {
+	used := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.Ident:
+			used = used || x.Name == name
+		case *ast.BasicLit:
+			used = used || (x.Kind == token.STRING && x.Value == strconv.Quote(value))
+		}
+		return !used
+	})
+	return used
 }
 
 func mapValues(m map[string]string) []string {
