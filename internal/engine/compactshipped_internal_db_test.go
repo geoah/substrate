@@ -1,16 +1,24 @@
 package engine
 
-// A RECORD A PACKAGE SHIPS IS OUTSIDE COMPACTION (decision 0310): an open's
-// seed writes a shipped record only where no hand but the shipping ones ever
-// wrote it, and reads that from the record's history, so a compaction leaves
-// the history whole and the next open finds the owner's hand where the owner
-// left it. A record nobody touched still takes the newer shipped one, and an
-// ordinary record beside them is compacted as before.
+// THE HANDS THAT WROTE A SHIPPED RECORD OUTLIVE ITS HISTORY (decision
+// 0319): an open's seed or a package's install writes a shipped record only
+// where no hand but the shipping ones ever wrote it, and reads that from the
+// hands the history keeps (recordHands): the lines that remain and the
+// writers their states keep. So a shipped record is compacted like any
+// other and the next open finds the owner's hand where the owner left it;
+// where the pass would forget its deletion it forgets the record's own
+// entries but the deletion's line, which it keeps with the hands and no
+// value, and takes nothing else, as forgetting any deletion takes nothing
+// else. A record nobody touched still takes the newer shipped one, and an
+// ordinary record beside them is compacted, and its deletion forgotten, as
+// before.
 
 import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -99,6 +107,34 @@ func (f *shippedFixture) row(ref eref) *erow {
 		f.t.Fatal(err)
 	}
 	return row
+}
+
+// keptDeletion holds a deleted shipped record to what the pass keeps of its
+// own history, the lines addressed to it: one line, its deletion's,
+// carrying a state with no row and no value, whose hands name the person
+// who deleted it. It looks nowhere else: keeping a deletion takes what
+// forgetting it takes, and leaves what a permanent delete's scope reaches.
+func (f *shippedFixture) keptDeletion(r eref) {
+	f.t.Helper()
+	ctx := context.Background()
+	var n int
+	var op, payload string
+	if err := f.ds.db.QueryRowContext(ctx, `SELECT count(*), min(op), min(payload::text) FROM changelog WHERE kind = $1 AND record_id = $2`, r.Kind, r.ID).
+		Scan(&n, &op, &payload); err != nil {
+		f.t.Fatal(err)
+	}
+	if n != 1 || op != string(substrate.OpGC) || !strings.Contains(payload, `"state"`) || strings.Contains(payload, `"row"`) || strings.Contains(payload, `"props"`) {
+		f.t.Errorf("%s %s keeps %d lines of its own history, the last a %s carrying %s, want its deletion's line alone, a state with no row", r.Kind, r.ID, n, op, payload)
+		return
+	}
+	hands, err := recordHandsOf(ctx, f.ds.db, []eref{r})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	person := actorID(substrate.ActorPerson)
+	if !slices.ContainsFunc(hands[r], func(h recordHand) bool { return h.actor == person }) {
+		f.t.Errorf("%s %s keeps the hands %+v, want the person who deleted it among them", r.Kind, r.ID, hands[r])
+	}
 }
 
 // box is an ordinary record's kind, which no package ships.
@@ -239,28 +275,25 @@ func (f *shippedFixture) checkNextOpen(tc touched) {
 	}
 }
 
-// `repository compact`: the shipped records keep every line, the ordinary
-// one is compacted to its state, and the next open leaves each shipped
-// record as the person left it.
-func TestACompactionLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
+// `repository compact`: the shipped records are compacted to their states
+// as the ordinary one is, and the next open leaves each as the person left
+// it, the one nobody touched taking what ships next.
+func TestACompactionKeepsTheOwnersChangesToTheRecordsAPackageShips(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newShippedFixture(t)
 	tc := f.touch()
-	shipped := append([]eref{tc.edited, tc.untouched}, tc.deleted...)
-	before := map[eref]int{}
-	for _, r := range shipped {
-		before[r] = f.lines(r)
-	}
-	if n := f.lines(tc.ordinary); n < 2 {
-		t.Fatalf("the ordinary record has %d lines before the compaction, want two", n)
+	for _, r := range append([]eref{tc.edited, tc.ordinary}, tc.deleted...) {
+		if n := f.lines(r); n < 2 {
+			t.Fatalf("%s %s has %d lines before the compaction, want two at least: the test proves nothing", r.Kind, r.ID, n)
+		}
 	}
 	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	for _, r := range shipped {
-		if got := f.lines(r); got != before[r] {
-			t.Errorf("%s %s has %d lines after the compaction, want its %d", r.Kind, r.ID, got, before[r])
+	for _, r := range append([]eref{tc.edited, tc.untouched}, tc.deleted...) {
+		if n := f.lines(r); n != 1 {
+			t.Errorf("%s %s has %d lines after the compaction, want its state's one", r.Kind, r.ID, n)
 		}
 	}
 	if n := f.lines(tc.ordinary); n != 1 {
@@ -376,24 +409,24 @@ func (f *shippedFixture) checkUpgrade(ti installedTouched) {
 }
 
 // `repository compact` over what an installed package ships: the presets
-// keep every line and the upgrade leaves each as the person left it, while a
-// record the package's function wrote, a mirror's, is compacted.
-func TestACompactionLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
+// are compacted to their states, as a record the package's function wrote
+// is, and the upgrade leaves each as the person left it.
+func TestACompactionKeepsTheOwnersChangesToWhatAnInstalledPackageShips(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newShippedFixture(t)
 	ti := f.touchInstalled()
-	shipped := []eref{ti.edited, ti.deleted, ti.untouched}
-	before := map[eref]int{}
-	for _, r := range shipped {
-		before[r] = f.lines(r)
+	for _, r := range []eref{ti.edited, ti.deleted} {
+		if n := f.lines(r); n < 2 {
+			t.Fatalf("preset %s has %d lines before the compaction, want two at least: the test proves nothing", r.ID, n)
+		}
 	}
 	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
 		t.Fatalf("compact: %v", err)
 	}
-	for _, r := range shipped {
-		if got := f.lines(r); got != before[r] {
-			t.Errorf("preset %s has %d lines after the compaction, want its %d", r.ID, got, before[r])
+	for _, r := range []eref{ti.edited, ti.deleted, ti.untouched} {
+		if n := f.lines(r); n != 1 {
+			t.Errorf("preset %s has %d lines after the compaction, want its state's one", r.ID, n)
 		}
 	}
 	if n := f.lines(ti.mirrored); n != 1 {
@@ -502,12 +535,12 @@ func TestACompactionLeavesTheHandsThatWroteARecord(t *testing.T) {
 	}
 }
 
-// The pass: past their retention and past the deletion period, after
-// `repository compact`, the shipped records keep every line and the
-// deletions among them stay in history, an ordinary record is compacted and
-// its old deletion forgotten, and the next open leaves each shipped record
-// as the person left it.
-func TestThePassLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
+// The pass: past their retention and past the deletion period, the shipped
+// records are compacted and each deletion among them kept as the one line
+// of its own history, with the hands and no value, an ordinary record is
+// compacted and its old deletion forgotten, and the next open leaves each
+// shipped record as the person left it.
+func TestThePassKeepsTheOwnersChangesToTheRecordsAPackageShips(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	clock := time.Now().UTC()
@@ -531,14 +564,6 @@ func TestThePassLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
 	if _, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: tc.ordinary.Kind, Properties: map[string]any{"name": "after"}}); err != nil {
 		t.Fatal(err)
 	}
-	shipped := append([]eref{tc.edited, tc.untouched}, tc.deleted...)
-	before := map[eref]int{}
-	for _, r := range shipped {
-		before[r] = f.lines(r)
-	}
-	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
-		t.Fatalf("compact: %v", err)
-	}
 	clock = time.Now().UTC().Add(2 * time.Hour)
 	report, err := f.ds.CompactionPass(ctx)
 	if err != nil {
@@ -547,13 +572,11 @@ func TestThePassLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
 	if report.Forgotten != 1 {
 		t.Errorf("the pass forgot %d deletions, want the ordinary record's alone", report.Forgotten)
 	}
-	for _, r := range shipped {
-		if got := f.lines(r); got != before[r] {
-			t.Errorf("%s %s has %d lines after the pass, want its %d", r.Kind, r.ID, got, before[r])
-		}
-		if batched.has(r) {
-			t.Errorf("%s %s was read by a batch of the pass, want it passed by its key", r.Kind, r.ID)
-		}
+	if n := f.lines(tc.edited); n != 1 || !batched.has(tc.edited) {
+		t.Errorf("the edited view has %d lines after the pass, compacted by a batch %v, want its state's one", n, batched.has(tc.edited))
+	}
+	for _, r := range tc.deleted {
+		f.keptDeletion(r)
 	}
 	if n := f.lines(tc.ordinary); n != 1 {
 		t.Errorf("the ordinary record has %d lines after the pass, want its state's one", n)
@@ -567,11 +590,12 @@ func TestThePassLeavesTheRecordsAPackageShipsWhole(t *testing.T) {
 }
 
 // The pass over what an installed package ships: past every retention and
-// the deletion period, the presets keep every line and the deletion among
-// them stays in history, so the upgrade leaves each as the person left it;
-// a record the package's function wrote, a mirror's, is compacted, and one
-// it wrote that the person deleted long ago is forgotten.
-func TestThePassLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
+// the deletion period, the presets are compacted and the deleted one kept
+// as the one line of its own history, with the hands and no value, so the
+// upgrade leaves each as the person left it; a record the package's
+// function wrote, a mirror's, is compacted, and one it wrote that the
+// person deleted long ago is forgotten whole.
+func TestThePassKeepsTheOwnersChangesToWhatAnInstalledPackageShips(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	clock := time.Now().UTC()
@@ -590,11 +614,6 @@ func TestThePassLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
 	}
 	// The head is never forgotten.
 	f.mirror("after")
-	shipped := []eref{ti.edited, ti.deleted, ti.untouched}
-	before := map[eref]int{}
-	for _, r := range shipped {
-		before[r] = f.lines(r)
-	}
 	clock = time.Now().UTC().Add(2 * time.Hour)
 	report, err := f.ds.CompactionPass(ctx)
 	if err != nil {
@@ -603,14 +622,10 @@ func TestThePassLeavesWhatAnInstalledPackageShipsWhole(t *testing.T) {
 	if report.Forgotten != 1 {
 		t.Errorf("the pass forgot %d deletions, want the mirror's record's alone", report.Forgotten)
 	}
-	for _, r := range shipped {
-		if got := f.lines(r); got != before[r] {
-			t.Errorf("preset %s has %d lines after the pass, want its %d", r.ID, got, before[r])
-		}
-		if batched.has(r) {
-			t.Errorf("preset %s was read by a batch of the pass, want it passed by its key", r.ID)
-		}
+	if n := f.lines(ti.edited); n != 1 || !batched.has(ti.edited) {
+		t.Errorf("the edited preset has %d lines after the pass, compacted by a batch %v, want its state's one", n, batched.has(ti.edited))
 	}
+	f.keptDeletion(ti.deleted)
 	if n := f.lines(ti.mirrored); n != 1 {
 		t.Errorf("the mirror's record has %d lines after the pass, want its state's one", n)
 	}
@@ -644,15 +659,15 @@ func (b *batchedRefs) has(r eref) bool {
 	return b.refs[r]
 }
 
-// The owner's erasure of a shipped record, the one door that still takes a
-// shipped record's history (decision 0310), and what the seeds' and the
-// install's rule reads afterwards. A permanent delete leaves the record's
-// purge line alone, under the hand that deleted it, with no value and, for
-// what a package's hand created, that hand: the pass never forgets that
-// deletion, and neither the next open nor the package's upgrade writes the
-// record again. A forget stands where the record's newest line is the
-// owner's, and is refused where it is a shipping hand's: the engine's after
-// the owner, or the package's or the seed's alone.
+// The owner's erasure of a shipped record, and what the seeds' and the
+// install's rule reads afterwards. A permanent delete leaves of the
+// record's own history its purge line alone, under the hand that deleted
+// it, with no value and the hands that wrote it: the pass never forgets
+// that deletion, and neither the next open nor the package's upgrade
+// writes the record again. A forget is not a write of the record (decision
+// 0319): where the owner's line is the newest, where the engine wrote after
+// the owner, and where nobody but the shipping hands ever wrote, the rule
+// answers after it as it did before.
 func TestTheOwnersErasureOfARecordAPackageShipsStands(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -735,8 +750,10 @@ func TestTheOwnersErasureOfARecordAPackageShipsStands(t *testing.T) {
 		}
 	}
 
-	// Refused: the engine wrote after the owner, and nobody but the shipping
-	// hands wrote.
+	// Forgotten too, the newest line a shipping hand's: the engine wrote
+	// after the owner, and nobody but the shipping hands wrote. Each
+	// answers as before (below): the owner's view stays the owner's, and
+	// the untouched view and preset still take what ships next.
 	under := view("contact-1-people")
 	if _, err := ds.Patch(ctx, substrate.ActorPerson, under.Kind, under.ID, substrate.PatchInput{Properties: map[string]any{"name": "Folks"}}); err != nil {
 		t.Fatal(err)
@@ -748,12 +765,24 @@ func TestTheOwnersErasureOfARecordAPackageShipsStands(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range []eref{under, view("contact-2-organizations"), preset("untouched")} {
-		lines := f.lines(r)
-		if _, err := ds.Forget(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.ForgetInput{}); !errors.Is(err, substrate.ErrConflict) {
-			t.Errorf("the forget of %s, whose newest line is a shipping hand's, answered %v, want refused", r.ID, err)
+		shipped, err := ds.shippedAmong(ctx, ds.db, []eref{r})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if n := f.lines(r); n != lines {
-			t.Errorf("the refused forget of %s left %d lines of %d", r.ID, n, lines)
+		answer := func() bool {
+			t.Helper()
+			held, err := anotherHandIn(ctx, ds.db, r, shipped[r])
+			if err != nil {
+				t.Fatal(err)
+			}
+			return held
+		}
+		before := answer()
+		if e, err := ds.Forget(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.ForgetInput{}); err != nil || e == nil || e.Pending {
+			t.Errorf("the forget of %s, whose newest line is a shipping hand's, answered %+v (%v), want it done", r.ID, e, err)
+		}
+		if after := answer(); after != before {
+			t.Errorf("after the forget of %s the rule answers that another hand wrote it: %v, before it %v", r.ID, after, before)
 		}
 	}
 
@@ -788,6 +817,99 @@ func TestTheOwnersErasureOfARecordAPackageShipsStands(t *testing.T) {
 	}
 }
 
+// A forget's own line is no hand's write of its record, before a
+// compaction and after one. A seeded view and an installed preset that only
+// their shipping hands wrote are forgotten, written again by the next open
+// and the upgrade, then compacted: the forget's line, which its erasure
+// left with no effect, stays as it is, and the record's other lines are
+// replaced by the newest one's state. The rule still answers that no other
+// hand wrote either, and what ships next still lands.
+func TestAForgottenShippedRecordTakesWhatShipsAfterACompaction(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newShippedFixture(t)
+	f.install("first")
+	refs := []eref{{Kind: shippedViewKind, ID: "contact-2-organizations"}, {Kind: presetKind, ID: "untouched"}}
+	answer := func(when string) {
+		t.Helper()
+		shipped, err := f.ds.shippedAmong(ctx, f.ds.db, refs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range refs {
+			held, err := anotherHandIn(ctx, f.ds.db, r, shipped[r])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if shipped[r] == "" || held {
+				t.Errorf("%s, %s %s is shipped by %q and another hand wrote it: %v, want shipped and no other hand", when, r.Kind, r.ID, shipped[r], held)
+			}
+		}
+	}
+	// lines counts a record's own lines: the forget's, the forget's that
+	// carry no effect, and every other.
+	lines := func(r eref) (forgets, bare, other int) {
+		t.Helper()
+		if err := f.ds.db.QueryRowContext(ctx, `
+			SELECT count(*) FILTER (WHERE `+forgetLineSQL("c")+`),
+			       count(*) FILTER (WHERE `+forgetLineSQL("c")+` AND NOT jsonb_path_exists(c.payload, '$.fold[*]')),
+			       count(*) FILTER (WHERE NOT `+forgetLineSQL("c")+`)
+			FROM changelog c WHERE c.kind = $1 AND c.record_id = $2`, r.Kind, r.ID).Scan(&forgets, &bare, &other); err != nil {
+			t.Fatal(err)
+		}
+		return forgets, bare, other
+	}
+	for _, r := range refs {
+		if e, err := f.ds.Forget(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.ForgetInput{}); err != nil || e == nil || e.Pending {
+			t.Fatalf("the forget of %s answered %+v (%v), want it done", r.ID, e, err)
+		}
+	}
+	answer("after the forget")
+	f.shipNewer()
+	f.reopen()
+	f.install("newer")
+	if row := f.row(refs[0]); row == nil || row.Props["name"] != "Companies" {
+		t.Fatalf("the forgotten view is %+v after the next open, want the newer Companies", row)
+	}
+	if row := f.row(refs[1]); row == nil || row.Props["note"] != "newer" {
+		t.Fatalf("the forgotten preset is %+v after the upgrade, want the newer note", row)
+	}
+	for _, r := range refs {
+		if forgets, _, other := lines(r); forgets != 1 || other < 2 {
+			t.Fatalf("%s %s has %d forget lines and %d others before the compaction, want one and two at least: the test proves nothing", r.Kind, r.ID, forgets, other)
+		}
+	}
+	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	for _, r := range refs {
+		if forgets, bare, other := lines(r); forgets != 1 || bare != 1 || other != 1 {
+			t.Fatalf("%s %s has %d forget lines, %d with no effect, and %d others after the compaction, want the forget's with no effect and the newest write's state", r.Kind, r.ID, forgets, bare, other)
+		}
+	}
+	answer("after the compaction")
+	path := filepath.Join(f.tree, vocabulary.PackageConsole, "views.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newest := strings.Replace(string(raw), "name: Companies", "name: Firms", 1)
+	if newest == string(raw) {
+		t.Fatal("the shipped views name no Companies view")
+	}
+	if err := os.WriteFile(path, []byte(newest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.reopen()
+	f.install("newest")
+	if row := f.row(refs[0]); row == nil || row.Props["name"] != "Firms" {
+		t.Errorf("the forgotten view is %+v after the next open past the compaction, want the newest Firms", row)
+	}
+	if row := f.row(refs[1]); row == nil || row.Props["note"] != "newest" {
+		t.Errorf("the forgotten preset is %+v after the upgrade past the compaction, want the newest note", row)
+	}
+}
+
 // A preset the package installed, merged into the owner's record that is
 // then permanently deleted, goes with it, under the engine's hand acting for
 // the owner, and stays gone: the next open and the package's upgrade read
@@ -816,6 +938,78 @@ func TestAShippedRecordMergedIntoOneErasedStaysGone(t *testing.T) {
 	f.install("newer")
 	if row := f.row(merged); row != nil {
 		t.Fatalf("the installed preset merged away and permanently deleted is back after the next open and the upgrade: %+v", row)
+	}
+}
+
+// Keeping a deletion is a forgetting, not an erasure. A preset the package
+// installed is merged into the owner's record, split from it again, then
+// deleted by the owner and swept: past the deletion period its history
+// holds the merge's and the split's resyncs, which restate the owner's
+// record too. The pass leaves them, as it leaves them for any forgotten
+// record, so a rebuild after it gives the fold the tables hold, and the
+// upgrade leaves the preset deleted.
+func TestAKeptDeletionLeavesAMergeWhole(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	f.install("first")
+	mine, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: presetKind, Properties: map[string]any{"name": "mine", "note": "the owner's"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := eref{Kind: presetKind, ID: "untouched"}
+	merge, err := f.ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: presetKind, Winner: mine.ID, Loser: merged.ID})
+	if err != nil {
+		t.Fatalf("merge the installed preset into the owner's: %v", err)
+	}
+	if _, err := f.ds.Split(ctx, substrate.ActorPerson, substrate.SplitInput{Merge: merge.ID}); err != nil {
+		t.Fatalf("split them again: %v", err)
+	}
+	if _, err := f.ds.Delete(ctx, substrate.ActorPerson, merged.Kind, merged.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("the owner deletes the preset: %v", err)
+	}
+	if _, err := f.ds.RunGC(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if row := f.row(merged); row != nil {
+		t.Fatalf("the sweep left the deleted preset: %+v", row)
+	}
+	if _, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: f.box(), Properties: map[string]any{"name": "the head"}}); err != nil {
+		t.Fatal(err)
+	}
+	var resyncs int
+	if err := f.ds.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE jsonb_path_exists(payload, '$.fold[*] ? (@.kind == "resync")')`).Scan(&resyncs); err != nil {
+		t.Fatal(err)
+	}
+	if resyncs == 0 {
+		t.Fatal("the merge wrote no resync: the test proves nothing")
+	}
+	want := FoldRows(t, f.ds)
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	if _, err := f.ds.CompactionPass(ctx); err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	var after int
+	if err := f.ds.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE jsonb_path_exists(payload, '$.fold[*] ? (@.kind == "resync")')`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != resyncs {
+		t.Errorf("the pass left %d resyncs of %d: keeping a deletion took a merge's", after, resyncs)
+	}
+	if _, err := f.ds.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if diff := DiffFoldTables(want, FoldRows(t, f.ds)); len(diff) > 0 {
+		t.Errorf("the history the pass left replays into another fold:\n%s", strings.Join(diff, "\n"))
+	}
+	f.install("newer")
+	if row := f.row(merged); row != nil {
+		t.Errorf("the upgrade brought back the preset the owner merged away: %+v", row)
+	}
+	if row := f.row(eref{Kind: presetKind, ID: mine.ID}); row == nil || row.Props["name"] != "mine" {
+		t.Errorf("the owner's preset is %+v after the pass and the upgrade", row)
 	}
 }
 
@@ -1040,5 +1234,310 @@ func TestAShippedRecordTheErasedRecordOwnedStaysGone(t *testing.T) {
 		if row := f.row(r); row != nil && row.DeletedAt == nil {
 			t.Errorf("%s is back after the next open and the upgrade: %+v", r.ID, row)
 		}
+	}
+}
+
+// shippedDeletions is a seeded view, a conversion, a provider row and an
+// installed package's preset, each deleted by the owner and swept, and a
+// write after them, since the pass never forgets a deletion from the head.
+func (f *shippedFixture) shippedDeletions() []eref {
+	f.t.Helper()
+	ctx := context.Background()
+	f.install("first")
+	units, err := shippedUnitRecords()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var conversion eref
+	for _, u := range units {
+		if u.kind == vocabulary.KindConversion {
+			conversion = u.ref()
+			break
+		}
+	}
+	deleted := []eref{
+		{Kind: shippedViewKind, ID: "memory-retired"},
+		conversion,
+		{Kind: typeProvider, ID: "gemini"},
+		{Kind: presetKind, ID: "deleted"},
+	}
+	for _, r := range deleted {
+		if _, err := f.ds.Delete(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.DeleteInput{}); err != nil {
+			f.t.Fatalf("the person deletes %s %s: %v", r.Kind, r.ID, err)
+		}
+	}
+	if _, err := f.ds.RunGC(ctx); err != nil {
+		f.t.Fatalf("sweep: %v", err)
+	}
+	if _, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: f.box(), Properties: map[string]any{"name": "after"}}); err != nil {
+		f.t.Fatal(err)
+	}
+	return deleted
+}
+
+// keptState is each record's lines, as stored, and whether the rule reads
+// a hand other than the shipping ones: what a later pass, a compaction, a
+// rebuild and a restore must leave as they found it.
+func keptState(t *testing.T, d *dataset, refs []eref) string {
+	t.Helper()
+	ctx := context.Background()
+	var out []string
+	for _, r := range refs {
+		rows, err := d.db.QueryContext(ctx, `SELECT seq, op, actor, coalesce(on_behalf_of, ''), payload::text FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq`, r.Kind, r.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var seq int64
+			var op, actor, behalf, payload string
+			if err := rows.Scan(&seq, &op, &actor, &behalf, &payload); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, fmt.Sprintf("%s %s: %d %s %s %s %s", r.Kind, r.ID, seq, op, actor, behalf, payload))
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		shipped, err := d.shippedAmong(ctx, d.db, []eref{r})
+		if err != nil {
+			t.Fatal(err)
+		}
+		held, err := anotherHandIn(ctx, d.db, r, shipped[r])
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, fmt.Sprintf("%s %s: shipped by %q, held by another hand %v", r.Kind, r.ID, shipped[r], held))
+	}
+	return strings.Join(out, "\n")
+}
+
+// A shipped record the owner deleted, past the deletion period: the pass
+// keeps one line of its own history, the deletion's, with the hands and no
+// value, and the horizon does not move for it. A second pass, `repository compact`, a
+// rebuild and an archive's restore each leave that line and the rule's
+// answer as they were, and neither the next open nor the next upgrade
+// writes the record again.
+func TestTheDeletionOfARecordAPackageShipsOutlivesTheForgetting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour), WithArchiveInterval(time.Hour),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	deleted := f.shippedDeletions()
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	report, err := f.ds.CompactionPass(ctx)
+	if err != nil || report.Forgotten != 0 {
+		t.Fatalf("the pass forgot %d deletions (%v), want none of a shipped record", report.Forgotten, err)
+	}
+	for _, r := range deleted {
+		f.keptDeletion(r)
+	}
+	if head, err := f.ds.Head(ctx); err != nil || head.Horizon != 0 {
+		t.Fatalf("the horizon is %d (%v) after the pass, want it unmoved by a kept deletion", head.Horizon, err)
+	}
+	want := keptState(t, f.ds, deleted)
+	if report, err := f.ds.CompactionPass(ctx); err != nil || report.Forgotten != 0 {
+		t.Fatalf("a second pass forgot %d (%v)", report.Forgotten, err)
+	}
+	if got := keptState(t, f.ds, deleted); got != want {
+		t.Fatalf("a second pass changed the kept deletions:\n%s\nwant\n%s", got, want)
+	}
+	if _, err := f.ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
+		t.Fatalf("compact: %v", err)
+	}
+	if got := keptState(t, f.ds, deleted); got != want {
+		t.Fatalf("a compaction changed the kept deletions:\n%s\nwant\n%s", got, want)
+	}
+	if _, err := f.ds.svc.RebuildRepository(ctx, testdb.Repository(t)); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := keptState(t, f.ds, deleted); got != want {
+		t.Fatalf("a rebuild changed the kept deletions:\n%s\nwant\n%s", got, want)
+	}
+	// The restore opens with the seeds on, so its own open would write a
+	// deleted record again were the rule to read it otherwise. Its archive
+	// names migration 14, which the restore records and its open does not
+	// run again; the pass's own state does not travel, so a pass over the
+	// restored repository reads every deletion again and keeps each.
+	restoreClock := time.Now().UTC()
+	restored, err := restoredFrom(t, archiveTaken(t, f.ds), WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return restoreClock }),
+		WithRecordSeed(true), WithUnitSeed(true), WithLLMProviderSeed(true))
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if got := keptState(t, restored, deleted); got != want {
+		t.Fatalf("a restore of the archive changed the kept deletions:\n%s\nwant\n%s", got, want)
+	}
+	if src, got := migrationsRanBy(t, f.ds), migrationsRanBy(t, restored); !maps.EqualFunc(src, got, time.Time.Equal) || got[14].IsZero() {
+		t.Errorf("the restored ledger is %v, want the source's %v, migration 14 carried and not run again", got, src)
+	}
+	if n := compactionStateRows(t, restored); n != 0 {
+		t.Errorf("the restore left %d compaction_state rows, want none: the pass's progress does not travel", n)
+	}
+	restoreClock = time.Now().UTC().Add(2 * time.Hour)
+	passUntilFinished(t, restored)
+	if got := keptState(t, restored, deleted); got != want {
+		t.Fatalf("a pass over the restored repository changed the kept deletions:\n%s\nwant\n%s", got, want)
+	}
+	f.reopen()
+	f.install("newer")
+	for _, r := range deleted {
+		if row := f.row(r); row != nil {
+			t.Errorf("%s %s is back after the next open and the upgrade, which the owner deleted", r.Kind, r.ID)
+		}
+	}
+}
+
+// migrationsRanBy is the repository's ledger of repository migrations: each
+// version and when it ran.
+func migrationsRanBy(t *testing.T, d *dataset) map[int]time.Time {
+	t.Helper()
+	rows, err := d.db.QueryContext(context.Background(), `SELECT version, applied_at FROM repository_migrations`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[int]time.Time{}
+	for rows.Next() {
+		var v int
+		var at time.Time
+		if err := rows.Scan(&v, &at); err != nil {
+			t.Fatal(err)
+		}
+		out[v] = at.UTC()
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// compactionStateRows counts the repository's row of the pass's own state.
+func compactionStateRows(t *testing.T, d *dataset) int {
+	t.Helper()
+	var n int
+	if err := d.db.QueryRowContext(context.Background(), `SELECT count(*) FROM compaction_state`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// passUntilFinished runs the pass until one derives the whole index and
+// finishes, and fails if it forgot a deletion.
+func passUntilFinished(t *testing.T, d *dataset) {
+	t.Helper()
+	for range 10 {
+		report, err := d.CompactionPass(context.Background())
+		if err != nil {
+			t.Fatalf("pass: %v", err)
+		}
+		if report.Forgotten != 0 {
+			t.Fatalf("a pass forgot %d deletions, want none of a shipped record", report.Forgotten)
+		}
+		if report.Indexed && report.Finished {
+			return
+		}
+	}
+	t.Fatal("ten passes did not finish")
+}
+
+// An archive written before this release names repository migrations 1 to
+// 13 and holds each shipped deletion's whole history, the interim's. Its
+// restore records those, carries no state of the pass, and runs migration
+// 14 at the first open, which finds no mark to lower; the first pass reads
+// every deletion and keeps each shipped one.
+func TestARestoreOfAnArchiveFromBeforeKeepsItsShippedDeletions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	before := func(o *options) { o.repositoryMigrations = slices.Clone(repositoryMigrations[:13]) }
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithArchiveInterval(time.Hour), before)
+	src := migrationsRanBy(t, f.ds)
+	if _, ran := src[14]; ran || len(src) != 13 {
+		t.Fatalf("the source's ledger is %v, want migrations 1 to 13: the test proves nothing", src)
+	}
+	deleted := f.shippedDeletions()
+	root := archiveTaken(t, f.ds)
+	clock := time.Now().UTC()
+	restored, err := restoredFrom(t, root, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return clock }),
+		WithRecordSeed(true), WithUnitSeed(true), WithLLMProviderSeed(true))
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	got := migrationsRanBy(t, restored)
+	for v, at := range src {
+		if !got[v].Equal(at) {
+			t.Errorf("the restore recorded migration %d at %s, want the source's %s", v, got[v], at)
+		}
+	}
+	if got[14].IsZero() || !got[14].After(src[13]) {
+		t.Errorf("migration 14 is recorded at %s, want it run at the restore's first open", got[14])
+	}
+	if n := compactionStateRows(t, restored); n != 0 {
+		t.Errorf("the restore left %d compaction_state rows, want none: the pass's progress does not travel", n)
+	}
+	for _, r := range deleted {
+		if n := addressedLines(t, restored, r); n < 2 {
+			t.Fatalf("%s %s has %d lines after the restore, want its whole history, the interim's: the test proves nothing", r.Kind, r.ID, n)
+		}
+	}
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	passUntilFinished(t, restored)
+	keep := map[eref]bool{}
+	for _, r := range deleted {
+		keep[r] = true
+	}
+	done, err := restored.keptForm(ctx, deleted, keep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range deleted {
+		if !done[r] {
+			n := addressedLines(t, restored, r)
+			t.Errorf("%s %s keeps %d lines after the pass over the restore, want its deletion's line alone", r.Kind, r.ID, n)
+		}
+	}
+}
+
+// addressedLines counts the lines addressed to ref.
+func addressedLines(t *testing.T, d *dataset, ref eref) int {
+	t.Helper()
+	var n int
+	if err := d.db.QueryRowContext(context.Background(), `SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2`, ref.Kind, ref.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// A repository whose pass ran under the interim (decision 0310) passed its
+// shipped deletions by and moved the forgetting's mark past them. Its first
+// open under this release lowers the mark once (repository migration 14), so
+// the next pass keeps each deletion as it keeps any other.
+func TestARepositoryWhosePassRanUnderTheInterimKeepsItsShippedDeletions(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	deleted := f.shippedDeletions()
+	head, err := f.ds.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The interim's pass: the deletions passed by, the mark past them.
+	if _, err := f.ds.db.ExecContext(ctx, `
+		INSERT INTO compaction_state (forgot_upto) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET forgot_upto = EXCLUDED.forgot_upto`, head.Seq); err != nil {
+		t.Fatal(err)
+	}
+	MakeMigrationPending(t, f.dsn, f.ds.Repository().ID, 14)
+	f.reopen()
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	if _, err := f.ds.CompactionPass(ctx); err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	for _, r := range deleted {
+		f.keptDeletion(r)
 	}
 }

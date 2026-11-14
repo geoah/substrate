@@ -35,9 +35,9 @@ func shippedRecordRef(r vocabulary.ShippedRecord) eref { return eref{Kind: r.Kin
 // read from the lists they write from and where each seed runs: the records
 // the seeded packages ship (here), the units and conversions (unitseed.go),
 // the vendor provider rows (seedproviders.go) and the roles (roles.go). It
-// is one half of what a compaction leaves whole (shippedAmong), so it is the
-// seeds' own enumeration and no second one: a record this binary no longer
-// ships is not in it.
+// is one half of what keeps its deletion through the forgetting
+// (shippedAmong), so it is the seeds' own enumeration and no second one: a
+// record this binary no longer ships is not in it.
 func (s *service) shippedRecordRefs() (map[eref]bool, error) {
 	out := map[eref]bool{}
 	if s.seedRecords {
@@ -66,9 +66,11 @@ func (s *service) shippedRecordRefs() (map[eref]bool, error) {
 }
 
 // shippedAmong is which of refs a package ships, and the hand that ships
-// each: what a compaction leaves whole, for now (decision 0310), because a
-// seed or an install writes a shipped record again unless its history shows
-// a hand other than the shipping ones (anotherHandWrote). A record ships
+// each: the records whose deletion the pass keeps rather than forgets
+// (decision 0319), because a seed or an install writes a shipped record
+// again unless the hands that wrote it hold one other than the shipping ones
+// (anotherHandWrote), and a forgotten deletion would leave no hand. A
+// record ships
 // where an open's seeds write it (shippedRecordRefs), under the seed's hand,
 // or where a package's own hand (bundle:<authority>:<package>, catalog
 // install) is among the hands that ever wrote it (recordHands), at its

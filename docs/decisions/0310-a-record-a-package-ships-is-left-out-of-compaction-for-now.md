@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded-by: 0319
 date: 2026-11-14
 decision-makers: the 1.0 plan's orchestrator session, pending George Antoniadis
 ---

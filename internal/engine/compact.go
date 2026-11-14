@@ -58,18 +58,6 @@ package engine
 //     so they stay with it. Without them a tombstone kept on a line a parked
 //     failure names would find no row, and move the unit graph's revision
 //     by nothing where it moved it by one.
-//   - every effect on a record a package ships (shippedAmong), for now
-//     (decision 0310): one an open's seeds write, or one a package's own
-//     hand created at its install or an upgrade. A seed or an install
-//     writes such a record again only where no hand but the shipping ones
-//     ever wrote it, and reads that from the record's history
-//     (anotherHandWrote). A state on the newest line, say the sweep's purge
-//     of a record the owner deleted, would take the owner's line with it,
-//     and the next open or upgrade would write the record again.
-//     A forgetting is left to its caller: the pass never forgets such a
-//     record's deletion (compactpass.go forgetDeletions). An erasure, the
-//     owner's own act, takes it (erase.go), where the rule still reads the
-//     owner's hand afterwards.
 //   - a line that carries no effect, and every line above the seq.
 //   - every line at or above the first that does not verify (below).
 //
@@ -111,6 +99,15 @@ package engine
 // does what a purge does. A `ledger` drops the trigger's delivery rows and
 // writes the ones it carries. A replay of history with no state entry runs
 // no new code, so it gives what it gave before.
+//
+// WHO WROTE A RECORD OUTLIVES ITS HISTORY. A state keeps the hand of every
+// line it replaces (`writers`), and every rule that asks who wrote a record
+// reads the lines that remain and those (vocabularywrite.go recordHands).
+// So a record a package ships is compacted like any other: the rule that
+// keeps the owner's edit or deletion from the next open or upgrade answers
+// afterwards as before (decision 0319). The one history that leaves no line
+// is a forgotten deletion, and the pass keeps a shipped record's deletion
+// line instead (compactpass.go forgetDeletions).
 //
 // WHAT A READER MEETS. The change event names a state's record with
 // `state` set, and a put or a patch whose state stands for the record's
@@ -579,6 +576,10 @@ type compactLine struct {
 	// movedFrom is the kind a kind move carried the line's record from
 	// (move.go), on the line that carried it.
 	movedFrom string
+	// forget is whether the line is a forget's own (erase.go forgetLine),
+	// which is no hand that wrote its record: a state that replaces it
+	// keeps the writers of a state it carries and not its own columns.
+	forget bool
 }
 
 // compactEdit is what the compaction does to one line: effects it removes
@@ -734,15 +735,6 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 		if err != nil {
 			return report, err
 		}
-		// A forgetting's caller has already chosen what it forgets
-		// (forgetDeletions), and an erasure is the owner's own act on the
-		// record (erase.go), which takes a shipped record's values all the
-		// same.
-		if !t.forgetting && !t.erasing {
-			if err := t.leaveShipped(plans); err != nil {
-				return report, err
-			}
-		}
 		lines = read
 		if damaged > 0 {
 			if err := t.noteDamage(damaged, t.damageNoter()); err != nil {
@@ -859,27 +851,6 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 		return report, err
 	}
 	return report, t.markArchiveRewrite(report.touched)
-}
-
-// leaveShipped drops the plan of every record a package ships
-// (shippedAmong): its history stays whole, for now (decision 0310).
-func (t *txn) leaveShipped(plans map[compactKey]*compactPlan) error {
-	refs := make([]eref, 0, len(plans))
-	for k := range plans {
-		if k.family == familyRecord {
-			refs = append(refs, k.ref)
-		}
-	}
-	shipped, err := t.ds.shippedAmong(t.ctx, t.tx, refs)
-	if err != nil {
-		return err
-	}
-	for k := range plans {
-		if _, ok := shipped[k.ref]; ok {
-			delete(plans, k)
-		}
-	}
-	return nil
 }
 
 // compactBarriers is every line a compaction leaves alone: the lines a live
@@ -1003,6 +974,7 @@ func (t *txn) compactPlans(upTo int64, scope func(eref) bool, only []int64, barr
 				links: stateLinks{Actor: e.Actor, OnBehalfOf: e.OnBehalfOf, Token: e.Token},
 			}
 			l.movedFrom, _ = ch.Payload["movedFrom"].(string)
+			l.forget = forgetLine(l.op, ch.Payload)
 			lines[e.Seq] = l
 			for i, op := range ops {
 				if op.Kind == foldResync {
@@ -1190,16 +1162,17 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 		switch {
 		case state.State == nil || state.State.Row != nil:
 			return foldOp{}, compactOcc{}, nil, nil
-		case state.State.Moves == 0 && !t.erasing:
+		case state.State.Moves == 0 && !t.erasing && !t.keeping:
 			return foldOp{}, at, replaced, nil
 		}
 		kept := &recordState{Moves: state.State.Moves}
-		// An erasure keeps who wrote the record (writers) and nothing of
-		// what it held: whether a package shipped it, and whether a hand
-		// other than the shipping ones wrote it, are read from its hands
-		// (recordHands), so the pass never forgets the deletion of one a
-		// package shipped and no open or upgrade writes it again.
-		if t.erasing {
+		// An erasure, and a forgetting that keeps the deletion, keep who
+		// wrote the record (writers) and nothing of what it held: whether a
+		// package shipped it, and whether a hand other than the shipping
+		// ones wrote it, are read from its hands (recordHands), so the pass
+		// never forgets the deletion of one a package shipped and no open or
+		// upgrade writes it again.
+		if t.erasing || t.keeping {
 			kept.Writers = state.State.Writers
 		}
 		state.State = kept
@@ -1257,7 +1230,7 @@ func (sc *txn) replayFamily(k compactKey, occ, replaced []compactOcc, lines map[
 		}
 		if isReplaced[o] {
 			moves += sc.unitMoves - before
-			if l := lines[o.seq]; l.addr == ref {
+			if l := lines[o.seq]; l.addr == ref && !l.forget {
 				writers[stateHand{Actor: l.links.Actor, OnBehalfOf: l.links.OnBehalfOf, Op: string(l.op)}] = true
 			}
 			if op.Kind == foldState && op.State != nil {

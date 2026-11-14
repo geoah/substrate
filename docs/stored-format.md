@@ -407,8 +407,14 @@ the one that line acted for and the line's `op`, joined with the `writers` of
 a `state` it replaced in turn. Every question of which hands ever wrote a
 record (which package shipped a trigger, whether an actor other than a
 shipped record's shipping hands ever wrote it) reads the lines that remain
-and these, so a compaction leaves its answer as it was
-([decision 0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+and these, so a compaction leaves its answer as it was. The one history
+that leaves no line is a forgotten deletion, so the deletion of a record a
+package ships, and of a bundle record, is kept instead: the record's own
+entries go as a forgotten deletion's do, and its deletion's line stays with
+a `state` that holds the `writers` and no row ([decision
+0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)). A forget's own line (a `patch` whose payload's `reason` is
+`forget`) carries the forget's intent and writes nothing of the record, so
+it is not one of the hands.
 A purge (`gc`) the engine wrote acting for a hand other than the shipping
 ones is that hand's deletion to the last question, read from the line's or
 the writer's `op` and whom it acted for, and no other line the engine wrote

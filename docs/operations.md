@@ -656,11 +656,11 @@ It replaces a record's entries past its kind's retention with one
 [state entry](stored-format.md#state-entries), the record's whole state as of
 the newest entry it replaces: the latest state of every record stays, and so
 does every entry inside the retention. A kind that keeps everything is left
-alone, and so is a record a package ships, whatever its kind's retention, for
-now ([decision
-0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)):
-an open or the package's upgrade writes such a record again unless its
-entries show its owner changed or deleted it. An entry's age is its own
+alone. A record a package ships is compacted like any other: an open or the
+package's upgrade writes such a record again unless the hands that wrote it
+show its owner changed or deleted it, and a state keeps the hands of every
+entry it replaces ([decision
+0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)). An entry's age is its own
 time. A pass compacts no further than the retention in force when it runs: a
 retention changed, or an [override](vocabulary.md#the-reserved-keys) written,
 takes effect at the next pass for every record that pass has not yet
@@ -689,11 +689,20 @@ the last record finished, before it starts another stretch, so a stretch
 longer than one pass is done over several and no record is read twice.
 
 It also **forgets a deletion** older than `SUBSTRATE_DELETIONS_KEPT`: every
-entry of a purged record goes, but a record a package ships, whose deletion
-stays in the history for good, for the same reason. A client that resumed from before it would
+entry of a purged record goes. A client that resumed from before it would
 never hear of the deletion, so the repository's **horizon** moves to the line
 the deletion was on, and a `from=` below it is answered `410 compacted`; the
-change page names the horizon. No deletion past an enabled record trigger's
+change page names the horizon. The deletion of a record a package ships, and
+of a bundle record, is kept instead: the record's own entries go as they
+would, but its deletion's line stays for good, with the hands that wrote the
+record and no value, and moves no horizon, so neither an open nor an upgrade
+writes the record again, and the operator's install list installs no package
+an owner removed ([decision
+0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)).
+Keeping a deletion is not a [permanent delete](api.md#the-records-route): it
+takes what forgetting any deletion takes, and none of what a permanent delete
+also reaches, such as a change request on the record, a merge's or a split's
+own record, a copy a mapping made of it or a trigger's saved position. No deletion past an enabled record trigger's
 cursor is forgotten, so a trigger that stands still holds the horizon back,
 and `repository history` names it; one that is not enabled holds nothing,
 and the pass starts it over from the beginning, once, before it forgets past
@@ -790,9 +799,9 @@ is permanently deleted.
 
 A record a package ships is erased too, and its `gc` line, which names who
 deleted it, is never forgotten, so neither the next open nor an upgrade
-writes it again; its forget is refused unless its newest change is the
-owner's ([decision
-0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+writes it again; a forget of one is not a write of it, and the next open
+treats it as it did before ([decision
+0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)).
 A shipped record the delete takes with the record, merged into it or owned
 by it, stays deleted the same way: the engine's purge of it acts for the
 person who deleted, and counts as theirs ([decision
@@ -2874,13 +2883,13 @@ the exec path needs nothing open at all.
   record's entries up to the seq (the head when it is left out) with one
   [state entry](stored-format.md#state-entries), the record's whole state as
   of the newest entry it replaces, and a trigger's delivery entries with one
-  ledger entry the same way. It leaves every entry of a record a package
-  ships as it is, for now: a seeded view, model, unit, conversion, provider
-  row or role, or a data record an installed package's install or upgrade
-  created, triggers aside. An open or an upgrade writes such a record again
-  where its entries say no hand but the shipping ones ever wrote it, so they
-  keep the owner's edits and deletions ([decision
-  0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+  ledger entry the same way. A record a package ships (a seeded view, model,
+  unit, conversion, provider row or role, or a data record an installed
+  package's install or upgrade created) is compacted too: its state keeps
+  the hands of the entries it replaces, and an open or an upgrade writes such
+  a record again only where those hands say no hand but the shipping ones
+  ever wrote it, so the owner's edits and deletions stand ([decision
+  0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)).
   A rebuild of the compacted history gives the
   records, versions and times a rebuild gave before, and the history is
   smaller: an entry left with no effect is removed and its seq is not used

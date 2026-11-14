@@ -816,6 +816,12 @@ type txn struct {
 	// record's merge resync goes with it, its state with no value stays on
 	// its line, and a live record's that would leave values waits.
 	erasing bool
+	// keeping marks a forgetting that keeps each deletion's line rather
+	// than taking it (compactpass.go forgetBatch, decision 0319): what it
+	// takes and what holds it are a forgetting's, but the state with no
+	// row stays on the line with the hands that wrote the record, and no
+	// horizon moves. It is not an erasure: no intent, no scope, no partner.
+	keeping bool
 	// lineSeq is the seq of the line a replay folds (foldEntry); a live
 	// write's effects fold before or join its newest line, t.maxSeq.
 	lineSeq int64

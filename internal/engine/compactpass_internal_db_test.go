@@ -1489,3 +1489,62 @@ func TestForgettingALongDeletionIsHeldToTheBound(t *testing.T) {
 		t.Error("the purged record is forgotten and a reader below its purge is not refused")
 	}
 }
+
+// A long deletion of a record a package ships is held to the bound as any
+// forgetting is (decision 0319): stepped first, a transaction reading at
+// most twice the bound, and then kept rather than forgotten, as its one
+// deletion's line with no row. The horizon never moves for it.
+func TestKeepingALongShippedDeletionIsHeldToTheBound(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newBoundedPass(t, WithDeletionsKept(time.Hour), WithTestPurgeKeepsHistory(),
+		WithTestCompactionRetention(func(string) (bool, time.Duration) { return true, 0 }),
+		WithTestCompactionFault(func(stage string) error {
+			if stage == compactionAfterBatch {
+				return context.DeadlineExceeded
+			}
+			return nil
+		}))
+	// A package's own hand creates it, so shippedAmong names it.
+	id := vocabulary.DerivedMintedID("shipped", t.Name())
+	if err := b.d.inTx(ctx, substrate.BundleActor("shipper.example.com", "shipper"), true, func(tx *txn) error {
+		_, err := tx.put(substrate.PutInput{Kind: ledgerTask, ID: id, Properties: map[string]any{"name": "shipped"}})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 4 * passBound {
+		if _, err := b.d.Patch(ctx, substrate.ActorPerson, ledgerTask, id, substrate.PatchInput{Properties: map[string]any{"name": fmt.Sprintf("long %d", i)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := b.d.Delete(ctx, substrate.ActorPerson, ledgerTask, id, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerTask, Properties: map[string]any{"name": "the head"}}); err != nil {
+		t.Fatal(err)
+	}
+	ref := eref{Kind: ledgerTask, ID: id}
+	if shipped, err := b.d.shippedAmong(ctx, b.d.db, []eref{ref}); err != nil || shipped[ref] == "" {
+		t.Fatalf("shippedAmong names %v (%v), want the package's hand: the test proves nothing", shipped, err)
+	}
+	reads, passes := 0, 0
+	for ; passes < 20 && b.lines(t, id) > 1; passes++ {
+		b.run(t)
+		for _, r := range b.of(b.pass, id) {
+			reads++
+			if r.lines > 2*passBound {
+				t.Errorf("pass %d: a transaction read %d lines of the shipped record, past twice the bound", b.pass, r.lines)
+			}
+		}
+	}
+	if done, err := b.d.keptForm(ctx, []eref{ref}, map[eref]bool{ref: true}); err != nil || !done[ref] {
+		t.Fatalf("after %d passes the shipped record keeps %d lines, kept %v (%v), want its deletion's line alone", passes, b.lines(t, id), done[ref], err)
+	}
+	if passes < 2 || reads < 3 {
+		t.Errorf("the shipped record was kept over %d passes in %d transactions, want steps and then the keeping", passes, reads)
+	}
+	if head, err := b.d.Head(ctx); err != nil || head.Horizon != 0 {
+		t.Errorf("the horizon is %d (%v), want it unmoved by a kept deletion", head.Horizon, err)
+	}
+}

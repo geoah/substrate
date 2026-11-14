@@ -582,10 +582,13 @@ func recordHandsOf(ctx context.Context, q dbx, refs []eref) (map[eref][]recordHa
 
 // recordHands is the hands that wrote each record of the lines the clause
 // over `c`, the changelog, admits: those lines' own, and the writers their
-// state entries keep.
+// state entries keep. A forget's own line is not one (erase.go
+// forgetLine): it carries the forget's intent and writes nothing of the
+// record, so the rule answers after a forget what it answered before.
 func recordHands(ctx context.Context, q dbx, where string, args ...any) (map[eref][]recordHand, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT c.kind, c.record_id, c.actor, coalesce(c.on_behalf_of, ''), c.op FROM changelog c WHERE `+where+`
+		  AND NOT `+forgetLineSQL("c")+`
 		UNION
 		SELECT c.kind, c.record_id, w ->> 'actor', coalesce(w ->> 'onBehalfOf', ''), coalesce(w ->> 'op', '') FROM changelog c
 		CROSS JOIN LATERAL jsonb_array_elements(c.payload -> 'fold') e

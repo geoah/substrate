@@ -481,11 +481,12 @@ overwrote, what a split moved back) stays with them, because a later split
 needs the merge's record; the reply's `kept` names each, and a permanent
 delete erases them ([#1408](https://github.com/geoah/substrate/issues/1408)). A record a package ships (a
 seeded one, or one an installed package's install created) keeps its owner's
-changes from the next open or upgrade by its history, so its forget is
-refused, `409 conflict`, unless its newest change is the owner's: change it,
-then forget it. Its permanent delete stands, and the `gc` line it leaves names
-who deleted it and is never forgotten
-([0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+changes from the next open or upgrade by the hands that wrote it, which its
+history keeps through every compaction. Forgetting its history is not a
+write of it, so the next open treats it after a forget as it did before. Its
+permanent delete stands, and the `gc` line it leaves names who deleted it
+and is never forgotten
+([0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)).
 So does what a permanent delete takes with the record it names: a shipped
 record merged into it, or one it owned that its cascade deletes, is the
 deleter's deletion too, and neither the next open nor an upgrade writes it

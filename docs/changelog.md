@@ -568,13 +568,15 @@ is answered `410 compacted` ("seq N is below the repository's horizon H: a
 deletion before it was forgotten"), and a history page names it as `horizon`
 (revision 5 of the `changefeed` feature), absent while it is 0. Once the
 horizon has moved, `from=0` is below it too: a first read lists the records
-and then follows from the head. The deletion of a record a package ships is never
-forgotten, for now ([decision
-0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)):
-an open or an upgrade writes such a record again unless its history shows
-another hand. A compaction
-that replaces a record's entries with its state entry (but a record a
-package ships, whose entries it leaves) leaves the horizon where it was: several changes arriving as one is harmless, because a client
+and then follows from the head. The deletion of a record a package ships, and of a
+bundle record, is never forgotten whole: where the pass would forget it, it
+takes the record's own entries, as forgetting any deletion does, and keeps
+the deletion's line, with the hands that wrote it and no value, and that
+moves no horizon ([decision
+0319](decisions/0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md)): an open or an upgrade writes such a record again unless its
+hands show another. A compaction
+that replaces a record's entries with its state entry leaves the horizon
+where it was: several changes arriving as one is harmless, because a client
 fetches the record either way. No deletion past an enabled record trigger's
 cursor is forgotten. A record trigger that is not enabled holds nothing
 back: before the pass forgets a deletion past its cursor it starts the
