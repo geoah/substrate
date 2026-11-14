@@ -202,9 +202,9 @@ func (ds *dataset) rolesIn(ctx context.Context, q dbx, person substrate.Actor) (
 	if err := ds.svc.ruleFault("roles"); err != nil {
 		return scope.Roles{}, fmt.Errorf("read the roles of %s: %w", handWords(person), err)
 	}
-	authority := ds.info.Authority
+	spellings := ds.names()
 	ty, err := ds.resolveType(kindActor)
-	if roles, before, err := preActorRoles(ty, err, authority); err != nil || before {
+	if roles, before, err := preActorRoles(ty, err, spellings); err != nil || before {
 		return roles, err
 	}
 	var raw []byte
@@ -212,14 +212,14 @@ func (ds *dataset) rolesIn(ctx context.Context, q dbx, person substrate.Actor) (
 		WHERE kind = $1 AND id = $2 AND deleted_at IS NULL AND COALESCE(props->>'disabled', '') <> 'true'`,
 		kindActor, actorID(person)).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return scope.NewRoles(nil, authority), nil
+		return scope.NewRoles(nil, spellings...), nil
 	}
 	if err != nil {
 		return scope.Roles{}, fmt.Errorf("read the roles of %s: %w", handWords(person), err)
 	}
 	ids := roleIDs(raw)
 	if len(ids) == 0 {
-		return scope.NewRoles(nil, authority), nil
+		return scope.NewRoles(nil, spellings...), nil
 	}
 	rows, err := q.QueryContext(ctx, `SELECT id, props->'rules' FROM records
 		WHERE kind = $1 AND id = ANY($2) AND deleted_at IS NULL`, kindRole, ids)
@@ -251,7 +251,7 @@ func (ds *dataset) rolesIn(ctx context.Context, q dbx, person substrate.Actor) (
 			held = append(held, scope.Role{ID: id})
 		}
 	}
-	return scope.NewRoles(held, authority), nil
+	return scope.NewRoles(held, spellings...), nil
 }
 
 // preActorRoles answers, from the actor kind as it resolved, whether the
@@ -259,12 +259,12 @@ func (ds *dataset) rolesIn(ctx context.Context, q dbx, person substrate.Actor) (
 // (no `type`, decision 0270), read as such, whose person is `admin`. An actor
 // kind that does not resolve is an error, never a wider answer: a vocabulary
 // that failed to load is not one from before actors.
-func preActorRoles(ty *vocabulary.Kind, err error, authority string) (scope.Roles, bool, error) {
+func preActorRoles(ty *vocabulary.Kind, err error, spellings []string) (scope.Roles, bool, error) {
 	if err != nil {
 		return scope.Roles{}, false, fmt.Errorf("read the roles: the actor kind does not resolve: %w", err)
 	}
 	if ty.Props["type"] == nil {
-		return scope.NewRoles([]scope.Role{{ID: scope.RoleAdmin}}, authority), true, nil
+		return scope.NewRoles([]scope.Role{{ID: scope.RoleAdmin}}, spellings...), true, nil
 	}
 	return scope.Roles{}, false, nil
 }

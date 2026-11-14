@@ -261,13 +261,13 @@ func TestATornTransactionsWholeLineOutlivesARefusedRow(t *testing.T) {
 	w, dir := newAdoptWorld(t, func(ds *dataset) {
 		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			{
-				"kind": "substrate.reamde.dev/core/package", "metadata": map[string]any{"id": ds.info.Authority + "/notes"},
-				"data": map[string]any{"authority": ds.info.Authority, "package": "notes"},
+				"kind": "substrate.reamde.dev/core/package", "metadata": map[string]any{"id": ds.Repository().Authority + "/notes"},
+				"data": map[string]any{"authority": ds.Repository().Authority, "package": "notes"},
 			},
 			{
-				"kind": "substrate.reamde.dev/core/kind", "metadata": map[string]any{"id": ds.info.Authority + "/notes/note"},
+				"kind": "substrate.reamde.dev/core/kind", "metadata": map[string]any{"id": ds.Repository().Authority + "/notes/note"},
 				"data": map[string]any{
-					"authority": ds.info.Authority, "package": "notes", "names": map[string]any{"singular": "note"},
+					"authority": ds.Repository().Authority, "package": "notes", "names": map[string]any{"singular": "note"},
 					"properties": map[string]any{"name": map[string]any{"type": "string"}},
 				},
 			},

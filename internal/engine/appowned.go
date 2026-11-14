@@ -27,7 +27,7 @@ func (ds *dataset) TakeOverPackage(ctx context.Context, actor substrate.Actor, p
 	if confirm != pkg {
 		return nil, fmt.Errorf("%w: confirm must repeat the package identity, %q, to take it over", substrate.ErrValidation, pkg)
 	}
-	pkg = vocabulary.LocalizeRef(pkg, ds.info.Authority)
+	pkg = vocabulary.LocalizeRef(pkg, ds.names()...)
 	ds.vocabularyWriteMu.Lock()
 	defer ds.vocabularyWriteMu.Unlock()
 	var out *substrate.Record

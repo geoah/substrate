@@ -271,7 +271,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	// The operator's install list runs inside the registration, so a person
 	// signs in to the providers the operator gives them already there.
 	s.openForOperatorInstalls(ctx, repo)
-	countAuth(repo.Authority, "registered")
+	countAuth(repo.ID, "registered")
 	return out, nil
 }
 
@@ -459,8 +459,19 @@ func (s *service) pickRepository(ctx context.Context, identity, named string) (R
 		return Repository{}, err
 	}
 	if named != "" {
+		// A name goes through the one lookup, so a former name in its hold
+		// picks the repository it names, and one whose hold has lapsed picks
+		// nothing (decision record 0287).
+		want := named
+		if !vocabulary.ValidRepositoryID(named) {
+			repo, err := s.repositoryByName(ctx, named)
+			if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+				return Repository{}, err
+			}
+			want = repo.ID
+		}
 		for _, repo := range repos {
-			if repo.ID == named || repo.Authority == named {
+			if want != "" && repo.ID == want {
 				return repo, nil
 			}
 		}
@@ -530,8 +541,10 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 	if err != nil {
 		return zero, err
 	}
-	countAuth(repo.Authority, "login")
-	return substrate.MintedToken{Token: info, Secret: secret, Repository: repo.Authority, Identity: m.name}, nil
+	countAuth(repo.ID, "login")
+	// The name is read as the answer is built: repo is the row as the
+	// sign-in picked it, which a rename since may have moved.
+	return substrate.MintedToken{Token: info, Secret: secret, Repository: ds.Repository().Authority, Identity: m.name}, nil
 }
 
 // countFailedSignIn counts a refused sign-in against each repository the
@@ -540,18 +553,17 @@ func (s *service) Login(ctx context.Context, in substrate.LoginInput) (substrate
 // adds the same round trip to both and the timing still tells nothing.
 func (s *service) countFailedSignIn(ctx context.Context, name string) {
 	rows, err := s.maint.QueryContext(ctx, `
-		SELECT p.authority FROM identities i
+		SELECT l.repository_id FROM identities i
 		JOIN identity_repositories l ON l.identity = i.id
-		JOIN repositories p ON p.id = l.repository_id
 		WHERE i.name = $1`, name)
 	if err != nil {
 		return
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var authority string
-		if rows.Scan(&authority) == nil {
-			countAuth(authority, "login_failed")
+		var id string
+		if rows.Scan(&id) == nil {
+			countAuth(id, "login_failed")
 		}
 	}
 	// A count lost to a failed read is a count, not a refusal.
@@ -643,7 +655,7 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	s.lease.release(repo.ID)
 	s.unitGraphs.forget(repo.ID)
 	s.log.Info("substrate: repository deleted by a person who could open it", "repository", repo.ID)
-	forgetUsage(repo.Authority)
+	forgetUsage(repo.ID)
 	return nil
 }
 
@@ -651,6 +663,12 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 // repo: it erases every person's records and sign-in material there. Their
 // roles are read as their every request reads them.
 func (s *service) mayDeleteRepository(ctx context.Context, repo Repository, identity string) error {
+	return s.requireAdmin(ctx, repo, identity, "deleting a repository is an admin's: it erases every person's records")
+}
+
+// requireAdmin refuses, saying why, a person who does not hold `admin` in
+// repo: what only an admin does to a repository as a whole.
+func (s *service) requireAdmin(ctx context.Context, repo Repository, identity, why string) error {
 	ds, err := s.open(ctx, repo)
 	if err != nil {
 		return err
@@ -660,7 +678,7 @@ func (s *service) mayDeleteRepository(ctx context.Context, repo Repository, iden
 		return err
 	}
 	if !slices.ContainsFunc(held, func(r substrate.RoleRules) bool { return r.ID == scope.RoleAdmin }) {
-		return fmt.Errorf("%w: %w: deleting a repository is an admin's: it erases every person's records", substrate.ErrForbidden, substrate.ErrNotPermitted)
+		return fmt.Errorf("%w: %w: %s", substrate.ErrForbidden, substrate.ErrNotPermitted, why)
 	}
 	return nil
 }
@@ -1111,7 +1129,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 		for i, raw := range in.Scopes {
 			local[i] = raw
 			if s, err := scope.Parse(raw); err == nil {
-				local[i] = s.Localize(t.ds.info.Authority).String()
+				local[i] = s.Localize(t.names()...).String()
 			}
 		}
 		in.Scopes = local

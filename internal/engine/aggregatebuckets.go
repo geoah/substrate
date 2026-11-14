@@ -738,7 +738,7 @@ func (ds *dataset) recordBuckets(ctx context.Context, tx *sql.Tx, p *aggPlan) ([
 	source, match := `''`, `'[]'`
 	var pol *recordPolicy
 	if s.bySource {
-		if pol, err = newRecordPolicy(types, path, s.records.Sources, ds.info.Authority); err != nil {
+		if pol, err = newRecordPolicy(types, path, s.records.Sources, ds.names()...); err != nil {
 			return nil, err
 		}
 		source, match = pol.source, pol.match

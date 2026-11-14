@@ -161,6 +161,8 @@ var wireTypes = map[string]any{
 	// open, which a sign-in refused for want of one lists too.
 	"IdentityInfo":     IdentityInfo{},
 	"RepositoryChoice": RepositoryChoice{},
+	"RepositoryNames":  RepositoryNames{},
+	"FormerName":       FormerName{},
 	// The approval page (authorize.ts): the parked request it renders, the
 	// approval it posts and the redirect either answer carries.
 	"AuthorizationRequest":      AuthorizationRequest{},

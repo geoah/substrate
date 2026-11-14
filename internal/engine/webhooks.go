@@ -190,12 +190,33 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 	return fid, nil
 }
 
+// RepositoryIDOf is the id of the repository nameOrID names now: an id is
+// itself, which the door's own checks read (webhookTarget), a repository the
+// start set aside before it had a row included; a name goes through the one
+// lookup (lookupRepositoryByName). A repository the start set aside answers
+// to its name as no repository does, so the door says nothing a prober could
+// learn from (setaside.go).
+func (s *service) RepositoryIDOf(ctx context.Context, nameOrID string) (string, error) {
+	if vocabulary.ValidRepositoryID(nameOrID) {
+		return nameOrID, nil
+	}
+	repo, err := s.repositoryByName(ctx, nameOrID)
+	if err != nil {
+		return "", err
+	}
+	if s.setAsideOf(repo.ID, repo.Authority) != nil {
+		return "", fmt.Errorf("%w: repository %s", substrate.ErrNotFound, nameOrID)
+	}
+	return repo.ID, nil
+}
+
 // webhookTarget resolves the repository by its id or its name and the
 // trigger by id, and checks that the trigger takes webhooks, is enabled and runnable, and
 // that the key matches when it declares one. The door's webhook grant for
-// this authority and trigger (substrate.WithWebhookGrant, an app's token)
-// stands in for the key and for nothing else. Every check that fails answers
-// errWebhookRefused.
+// the resolved repository's id and the trigger (substrate.WithWebhookGrant,
+// an app's token) stands in for the key and for nothing else: a grant names
+// an id, so a name another repository holds now never borrows it. Every
+// check that fails answers errWebhookRefused.
 func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key string) (*dataset, *trigger, error) {
 	repo, err := s.repositoryByKey(ctx, authority)
 	if err != nil {
@@ -243,7 +264,7 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 	if !tr.Webhook || !tr.Enabled || !tr.runnable() {
 		return nil, nil, errWebhookRefused
 	}
-	if tr.WebhookKey != "" && !substrate.WebhookGranted(ctx, authority, triggerID) &&
+	if tr.WebhookKey != "" && !substrate.WebhookGranted(ctx, repo.ID, triggerID) &&
 		subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
 		return nil, nil, errWebhookRefused
 	}
@@ -391,7 +412,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	ctx, held, err := ds.holdDelivery(ctx, tr)
 	if err != nil {
 		ds.svc.log.Error("substrate: webhook fire could not read the spend cap, the entry stays pending",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
 	if held {
@@ -400,7 +421,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	var envelope map[string]any
 	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
 		ds.svc.log.Error("substrate: webhook fire cannot read its recorded request, the entry stays pending",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
 	_, _, err = ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
@@ -413,7 +434,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 		return
 	}
 	outcome := webhookFireOutcome(err)
-	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
+	attrs := []any{"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
 	switch outcome {
 	case fireOutcomeRunning, fireOutcomeRetired:
 		ds.svc.log.Info("substrate: webhook fire not run, another hand holds or delivered it", attrs...)
@@ -484,7 +505,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	pending, err := ds.pendingWebhooks(ctx, 0)
 	if err != nil {
 		ds.svc.log.Error("substrate: pending webhook deliveries could not be read",
-			"repository", ds.Repository().ID, "error", err)
+			"repository", ds.info.ID, "error", err)
 		return
 	}
 	held := map[string]int{}
@@ -503,7 +524,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 		current, err := ds.pendingWebhooks(ctx, int64(p.row.ID))
 		if err != nil {
 			ds.svc.log.Error("substrate: pending webhook delivery could not be read again",
-				"repository", ds.Repository().ID, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
+				"repository", ds.info.ID, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
 			return
 		}
 		if len(current) == 0 {
@@ -513,7 +534,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	}
 	for trigger, n := range held {
 		ds.svc.log.Warn("substrate: webhook deliveries left pending, their trigger does not run",
-			"repository", ds.Repository().ID, "trigger", logSafeID(trigger), "pending", n)
+			"repository", ds.info.ID, "trigger", logSafeID(trigger), "pending", n)
 	}
 }
 

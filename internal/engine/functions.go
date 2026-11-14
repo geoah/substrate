@@ -279,7 +279,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 		defer func() {
 			if r := recover(); r != nil {
 				ds.svc.log.Error("substrate: the schedule lane panicked and was contained; this pass fires no more schedules",
-					"repository", ds.Repository().ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+					"repository", ds.info.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 				res.errs = append(res.errs, fmt.Errorf("schedule lane panicked: %v", r))
 			}
 			scheduled <- res
@@ -353,7 +353,7 @@ func (ds *dataset) passRecordTrigger(ctx context.Context, tr *trigger, pass *pas
 	defer func() {
 		if r := recover(); r != nil {
 			ds.svc.log.Error("substrate: a record trigger's delivery panicked and was contained; the pass goes on to the next trigger",
-				"repository", ds.Repository().ID, "trigger", tr.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+				"repository", ds.info.ID, "trigger", tr.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 			ran, err = 0, fmt.Errorf("delivery panicked: %v", r)
 		}
 	}()
@@ -573,7 +573,7 @@ func (ds *dataset) scheduleLane(ctx context.Context, pass *passStart, first []lo
 					mu.Lock()
 					if r != nil {
 						ds.svc.log.Error("substrate: a schedule fire panicked and was contained; this pass fires the trigger no more",
-							"repository", ds.Repository().ID, "trigger", lt.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+							"repository", ds.info.ID, "trigger", lt.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 						fired[lt.ID] = scheduleDrainPerPass
 						fail(lt.ID, fmt.Errorf("schedule fire panicked: %v", r))
 					}
@@ -1943,7 +1943,7 @@ func (ds *dataset) scheduleDue(ctx context.Context, lt loadedTrigger, lastFire t
 	}
 	if passed > 0 {
 		ds.svc.log.Info("substrate: schedule fires the latest occurrence it missed and passes over the rest",
-			"repository", ds.Repository().ID, "trigger", lt.ID, "fire", fireID(latest), "passed", passed)
+			"repository", ds.info.ID, "trigger", lt.ID, "fire", fireID(latest), "passed", passed)
 	}
 	return []time.Time{latest}, nil
 }
@@ -2142,7 +2142,7 @@ func (ds *dataset) pruneActivity(triggers []loadedTrigger) {
 // delivery's acknowledgement, or the scan past rows that matched nothing.
 func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 	ds.svc.log.Debug("substrate: record trigger yielded: its cursor moved under this pass",
-		"repository", ds.Repository().ID, "trigger", triggerID, "swap", swap, "seq", seq)
+		"repository", ds.info.ID, "trigger", triggerID, "swap", swap, "seq", seq)
 }
 
 // logWalkHeld records a record trigger's walk that did not start because
@@ -2153,18 +2153,18 @@ func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 func (ds *dataset) logWalkHeld(triggerID string, wake bool) {
 	if wake {
 		ds.svc.log.Info("substrate: trigger wake ran nothing: a walk of the trigger is in progress; it or a later pass delivers what the wake asked for",
-			"repository", ds.Repository().ID, "trigger", triggerID)
+			"repository", ds.info.ID, "trigger", triggerID)
 		return
 	}
 	ds.svc.log.Debug("substrate: record trigger skipped this pass: a wake walks it",
-		"repository", ds.Repository().ID, "trigger", triggerID)
+		"repository", ds.info.ID, "trigger", triggerID)
 }
 
 // logFireYield is logYield for a fire whose fire state moved under it: the
 // fire rolls back and settles nothing, without an error.
 func (ds *dataset) logFireYield(triggerID, swap, fid string) {
 	ds.svc.log.Debug("substrate: trigger fire yielded: its fire state moved under this delivery",
-		"repository", ds.Repository().ID, "trigger", triggerID, "swap", swap, "fire", fid)
+		"repository", ds.info.ID, "trigger", triggerID, "swap", swap, "fire", fid)
 }
 
 // owedFires counts a schedule trigger's occurrences that are due and not yet
@@ -3202,12 +3202,12 @@ func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
 // recordChainKey is the paged-cursor key for a record-change delivery, and its
 // idempotency key: repository-qualified because per-repository changelog seqs collide.
 func (ds *dataset) recordChainKey(triggerID string, seq int64) string {
-	return fmt.Sprintf("%s/%s/%d", ds.Repository().ID, triggerID, seq)
+	return fmt.Sprintf("%s/%s/%d", ds.info.ID, triggerID, seq)
 }
 
 // fireChainKey is the paged-cursor key for a schedule or webhook fire delivery.
 func (ds *dataset) fireChainKey(triggerID, fireID string) string {
-	return fmt.Sprintf("%s/%s/%s", ds.Repository().ID, triggerID, fireID)
+	return fmt.Sprintf("%s/%s/%s", ds.info.ID, triggerID, fireID)
 }
 
 // --- cursors ---------------------------------------------------------------
@@ -3608,7 +3608,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
-			st.WebhookPath = webhookPath(ds.Repository().ID, lt.ID)
+			st.WebhookPath = webhookPath(ds.info.ID, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx, `
 			WITH f AS (

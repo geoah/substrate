@@ -227,7 +227,7 @@ func TestEveryFormOfAReferenceIsLocalized(t *testing.T) {
 		map[string]any{"ref": CoreKind(DocKind) + "/" + h + "/tasks/task"},
 		map[string]any{"ref": CoreKind(DocAgent) + "/" + h + "/tasks/helper", "background": true},
 	}
-	w := declarationWalker{home: h}
+	w := declarationWalker{homes: []string{h}}
 	for _, at := range classedKeys(posRef, posAuthority) {
 		for i, form := range forms {
 			for _, value := range []any{form, []any{form, form}} {
@@ -266,7 +266,7 @@ func TestNoValueOutsideAReferenceIsLocalized(t *testing.T) {
 		[]any{h + "/a/b", "see " + h + "/a/b"},
 		map[string]any{"ref": h + "/tasks/task"},
 	}
-	w := declarationWalker{home: h}
+	w := declarationWalker{homes: []string{h}}
 	for _, at := range classedKeys(posWord, posText) {
 		for i, v := range values {
 			in := map[string]any{at[1]: v}

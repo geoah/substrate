@@ -233,7 +233,13 @@ type dataset struct {
 	// parkedSet): read by the fold's index derivations alone, and swapped
 	// with reg wherever reg is.
 	parked *parkedSet
-	info   substrate.RepositoryInfo
+	// info is the repository's id and state. It holds no name: the names
+	// are the names cache's, asked by id when needed (namescache.go).
+	info substrate.RepositoryInfo
+	// creating is the name a repository being created is registered under,
+	// set on the creation's dataset alone (createSeededRepository): no row
+	// holds it yet, so the cache cannot answer it, and nothing can rename it.
+	creating string
 	// beforePublish and beforeSignal, under mu, are set only by tests.
 	// beforePublish runs inside commitAndPublish, after the commit and before
 	// the swap, with mu held exclusively; beforeSignal runs after the publish
@@ -375,8 +381,13 @@ func (ds *dataset) close() {
 
 func (ds *dataset) Repository() substrate.RepositoryInfo {
 	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-	return ds.info
+	info := ds.info
+	ds.mu.RUnlock()
+	if names := ds.answersTo(); len(names) > 0 {
+		info.Authority, info.FormerNames = names[0], names[1:]
+	}
+	info.Spellings = ds.names()
+	return info
 }
 
 // Head is the changelog's highest committed seq and the history generation it

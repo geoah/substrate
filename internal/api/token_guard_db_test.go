@@ -23,7 +23,7 @@ import (
 // distributed-spray cap, not a per-user pacer).
 func TestRegistrationGestureIsOneAttempt(t *testing.T) {
 	t.Parallel()
-	env := newDBEnv(t, withoutRepository())
+	env := newDBEnv(t, withoutRepository(), withNameHost("example.com"))
 	label := testdb.RepositoryLabel(t)
 	enroll := func(user string) *httptest.ResponseRecorder {
 		return env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{

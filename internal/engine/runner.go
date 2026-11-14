@@ -134,7 +134,7 @@ func (ds *dataset) runnerSpec(fn *vocabulary.Function) runner.Spec {
 // live registry does not yet carry the bundle).
 func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registry) runner.Spec {
 	spec := runner.Spec{
-		Repository: ds.Repository().ID, Function: fn.Identity(),
+		Repository: ds.info.ID, Function: fn.Identity(),
 		Runtime: fn.Runtime, Source: fn.Source, TimeoutMs: int(fn.Timeout / time.Millisecond),
 		// The runner gates the union; the engine reads which list names the
 		// target to tell a function from an agent (callBackend.Call).
@@ -970,7 +970,7 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 		if err != nil {
 			return nil, 0, err
 		}
-		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().ID, fn.Identity(), callID)
+		downstream = fmt.Sprintf("%s/%s/call/%s", ds.info.ID, fn.Identity(), callID)
 	}
 	// A networked function's call is audited from here on: the body is about
 	// to run, and what it sends out leaves no other trace (callrun.go).
@@ -1160,7 +1160,7 @@ func (ds *dataset) warmFunctions() {
 					return
 				}
 				ds.svc.log.Error("substrate: function body failed to prepare at repository open — its deliveries will park until the body or toolchain is fixed",
-					"repository", ds.Repository().ID, "function", fn.Identity(), "error", err)
+					"repository", ds.info.ID, "function", fn.Identity(), "error", err)
 			}
 		}
 	})
@@ -1183,7 +1183,7 @@ func (ds *dataset) reconcileRunner(ctx context.Context) {
 	for _, fn := range fns {
 		live = append(live, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package))
 	}
-	runner.Shared.Reconcile(ctx, ds.Repository().ID, live)
+	runner.Shared.Reconcile(ctx, ds.info.ID, live)
 }
 
 // hostFunctionsRemoved keeps the functions that HAVE a body: the three runner

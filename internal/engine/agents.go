@@ -55,7 +55,7 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 		// The stable delivery identity (the function-trigger key shape):
 		// tool idempotency keys derive from it, so a RETRIED delivery — a
 		// fresh thread by construction — reproduces the same keys.
-		delivery: fmt.Sprintf("%s/%s/%d", ds.Repository().ID, tr.ID, ch.Seq),
+		delivery: fmt.Sprintf("%s/%s/%d", ds.info.ID, tr.ID, ch.Seq),
 		complete: agentCompletion(settle, claim, advance),
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		turnContext: renderTurnContext(at, ds.repositoryZone(ctx), nil),
 		// Stable per occurrence: a retried fire reuses the fire id, so tool
 		// keys survive the retry (the functionFire key shape).
-		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().ID, tr.ID, fid),
+		delivery: fmt.Sprintf("%s/%s/%s", ds.info.ID, tr.ID, fid),
 		complete: agentCompletion(settle, claim, false),
 	})
 	if err != nil {
@@ -610,7 +610,7 @@ func (ds *dataset) runInterruptedAgentReruns(ctx context.Context) bool {
 	if err != nil {
 		if ctx.Err() == nil {
 			ds.svc.log.Error("substrate: interrupted agent deliveries could not be read for their rerun",
-				"repository", ds.Repository().ID, "error", err)
+				"repository", ds.info.ID, "error", err)
 		}
 		return false
 	}
@@ -657,7 +657,7 @@ const (
 // one the rerun runs) and the outcome as a fixed word, never the error,
 // which may quote the request or the model.
 func (ds *dataset) rerunInterruptedAgentRun(ctx context.Context, triggerID string, failureID int64) {
-	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(triggerID), "failure", failureID}
+	attrs := []any{"repository", ds.info.ID, "trigger", logSafeID(triggerID), "failure", failureID}
 	skipped := func(outcome string, extra ...any) {
 		ds.svc.log.Warn("substrate: agent delivery a restart interrupted was not rerun, it stays parked",
 			append(append(attrs, "outcome", outcome), extra...)...)

@@ -43,7 +43,7 @@ func newRunsRepository(t *testing.T) *runsRepository {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	pkg := ds.info.Authority + "/runs"
+	pkg := ds.Repository().Authority + "/runs"
 	note := pkg + "/note"
 	agent := func(name string, data map[string]any) map[string]any {
 		data["description"] = name + " under test"

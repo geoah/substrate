@@ -23,6 +23,12 @@ export interface AuthPolicy {
   inviteRequired: boolean
   /** False only where the second factor is switched off. */
   totpRequired: boolean
+  /** The host a short repository name is completed under: the host of the
+   * server's public URL, never the address this page was reached at
+   * (decision 0288). Empty where the server has none, and then a name is
+   * typed whole; absent until discovery answers, and from an older server,
+   * which completes a short name under the address it was reached at. */
+  nameHost?: string
 }
 
 /** One entry of server.json's `features`: a group of routes the server
@@ -150,6 +156,10 @@ export function fetchAuthPolicy(): Promise<AuthPolicy> {
       ? {
           inviteRequired: doc.registration?.inviteRequired !== false,
           totpRequired: doc.registration?.totpRequired !== false,
+          nameHost:
+            typeof doc.registration?.nameHost === "string"
+              ? doc.registration.nameHost
+              : undefined,
         }
       : STRICT_AUTH_POLICY
   )

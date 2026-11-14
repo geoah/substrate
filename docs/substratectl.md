@@ -25,7 +25,7 @@ substratectl export                       # the recovery export, the repository'
 `substratectl` addresses a substrate two different ways, and the flags say which.
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
-`register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
+`register`, `login`, `logout`, `rename`, `token`, `trigger`, `sync`, `function`, `bundle`,
 `takeover`, `catalog`, `add` (with its aliases `install` and `import`) and `export`. It needs a server and a token,
 and it can run anywhere.
 
@@ -81,7 +81,10 @@ authority. The packages you declare kinds in live in the repository's local
 namespace, `~`, not under the name. A command that
 names only `--repository`, as one from before identities does, names you
 after it. A name carrying a dot is taken as it is; a bare label is completed
-under the substrate's own host, and `register` prints the result.
+under the substrate's public host (`SUBSTRATE_PUBLIC_URL`), and `register`
+prints the result. A name under `localhost` or an IP address is refused
+unless the substrate itself runs there, which is development
+([the default name](auth.md#the-default-name)).
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
@@ -102,6 +105,12 @@ forgets it, because a session is its [token record](auth.md#tokens).
 the account has one, and ends every token the person holds, this one, every
 other sign-in, every minted token and every app's and assistant's included
 ([signing out everywhere](auth.md#signing-out-everywhere)).
+
+`substratectl rename <name>` gives the repository a new name, a bare label
+completed as at registration. It asks for the password, and the code where the
+account has one, and stores the new name in the context. The old name keeps
+resolving to the repository for 90 days, on every address, and `rename`
+prints the moment it lapses ([renaming a repository](auth.md#renaming-a-repository)).
 
 `substratectl token create --label backup` mints a token for a script or a device and
 prints the secret exactly once; `--expires` takes a duration (`720h`) or an

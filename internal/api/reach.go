@@ -83,8 +83,9 @@ func controlKinds(registry map[string]substrate.KindInfo) []string {
 	return out
 }
 
-// rolesOf reads the roles the engine answered for a person.
-func rolesOf(held []substrate.RoleRules, authority string) scope.Roles {
+// rolesOf reads the roles the engine answered for a person, in a repository
+// whose names that spell `~` are spellings.
+func rolesOf(held []substrate.RoleRules, spellings ...string) scope.Roles {
 	roles := make([]scope.Role, len(held))
 	for i, h := range held {
 		roles[i] = scope.Role{ID: h.ID, Rules: make([]scope.Rule, len(h.Rules))}
@@ -96,7 +97,7 @@ func rolesOf(held []substrate.RoleRules, authority string) scope.Roles {
 			roles[i].Rules[j] = rule
 		}
 	}
-	return scope.NewRoles(roles, authority)
+	return scope.NewRoles(roles, spellings...)
 }
 
 // scopeKindOf is a registry kind as a reach is held to it.

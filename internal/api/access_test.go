@@ -105,6 +105,7 @@ var routeList = map[string]access{
 	"POST /register":                                                         accessPublic,
 	"POST /register/enroll":                                                  accessPublic,
 	"POST /repository/delete":                                                accessPublic,
+	"POST /repository/rename":                                                accessPublic,
 	"POST /signout/everywhere":                                               accessPublic,
 	"* /site/*":                                                              accessPublic,
 	"GET /tokens":                                                            accessRules,

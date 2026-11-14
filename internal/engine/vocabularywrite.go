@@ -42,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -170,15 +171,52 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 // under the name is the repository's own, which is stored under its local
 // namespace whatever it was spelled as. Actor texts and prose keep the name.
 func (ds *dataset) localizeDocuments(raw []map[string]any) ([]map[string]any, error) {
-	home := ds.info.Authority
-	if home == "" {
+	names := ds.names()
+	if len(names) == 0 {
 		return raw, nil
 	}
-	out, err := vocabulary.LocalizeAuthority(raw, home, home)
+	out, err := vocabulary.LocalizeOwnDocuments(raw, names...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	return out, nil
+}
+
+// closureAuthorities are the authorities raw's declarations name as their
+// own, as sent.
+func closureAuthorities(raw []map[string]any) []string {
+	var out []string
+	for _, doc := range raw {
+		data, _ := doc["data"].(map[string]any)
+		if a, _ := data["authority"].(string); a != "" && a != vocabulary.Local && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// refuseInstallFromName refuses, early and with a plain message, an install
+// of a closure a former name the repository still answers to publishes,
+// until the name lapses (repositorynames.go): it is no guarantee, which the
+// spellings are.
+func (ds *dataset) refuseInstallFromName(ctx context.Context, authorities []string) error {
+	if len(authorities) == 0 {
+		return nil
+	}
+	stored, err := ds.svc.readNames(ctx, ds.info.ID)
+	if err != nil {
+		return err
+	}
+	now := ds.svc.namesNow()
+	for _, a := range authorities {
+		for _, f := range stored.former {
+			if f.name == a && now.Before(f.until()) {
+				return fmt.Errorf("%w: %s is a former name of this repository, which answers to it until %s, so a package %s publishes is not installed here until then",
+					substrate.ErrConflict, a, f.until().UTC().Format(time.RFC3339), a)
+			}
+		}
+	}
+	return nil
 }
 
 // applyVocabularyDocuments is ApplyVocabularyDocumentsWith handing the
@@ -202,7 +240,7 @@ func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate
 	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes}
 	// The documents were folded into `~`, so the origin they are held to is
 	// too: a copy claiming its own package by the full name is refused.
-	if b.origin, b.originVersion, err = claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.info.Authority), docs); err != nil {
+	if b.origin, b.originVersion, err = claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.names()...), docs); err != nil {
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, b)
@@ -251,7 +289,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return plan, err
 	}
-	origin, _, err := claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.info.Authority), docs)
+	origin, _, err := claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.names()...), docs)
 	if err != nil {
 		return plan, err
 	}
@@ -331,6 +369,9 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
+	if err := ds.refuseInstallFromName(ctx, closureAuthorities(vocabularyDocs)); err != nil {
+		return nil, err
+	}
 	vocabularyDocs, err := ds.localizeDocuments(vocabularyDocs)
 	if err != nil {
 		return nil, err
@@ -383,7 +424,7 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 			}
 			copiedFrom, _ := vocabulary.SplitPackageRef(opts.Origin)
 			for _, in := range dataDocs {
-				if copiedFrom != "" && copiedFrom != t.ds.info.Authority {
+				if copiedFrom != "" && copiedFrom != t.ds.name() {
 					var err error
 					if in, err = t.localizeCopied(in, copiedFrom); err != nil {
 						return fmt.Errorf("shipped record %s: %w", in.ID, err)
@@ -1040,7 +1081,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 				}
 			}
 			if !ds.svc.foreignPackages {
-				if err := authorizeNewPackage(*actor, stored, ds.info.Authority, g); err != nil {
+				if err := authorizeNewPackage(*actor, stored, ds.name(), g); err != nil {
 					return nil, err
 				}
 			}
@@ -3016,12 +3057,12 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 	}
 	// The properties are the declaration's data: its name keys are where the
 	// repository's full name is another spelling of `~` (decision record 0259).
-	declared, err := vocabulary.LocalizeDeclaration(vocabulary.CoreKind(short), in.Properties, ds.info.Authority)
+	declared, err := vocabulary.LocalizeDeclaration(vocabulary.CoreKind(short), in.Properties, ds.names()...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	localized, _ := declared.(map[string]any)
-	doc, err := documentFromProps(short, vocabulary.LocalizeRef(in.ID, ds.info.Authority), localized)
+	doc, err := documentFromProps(short, vocabulary.LocalizeRef(in.ID, ds.names()...), localized)
 	if err != nil {
 		return nil, err
 	}

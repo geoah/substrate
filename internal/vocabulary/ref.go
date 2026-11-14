@@ -40,19 +40,22 @@ import (
 // spelling of `~` (LocalizeRef); a reply says `~`.
 const Local = "~"
 
-// LocalizeRef is ref with the repository's own name, home, folded into
-// Local: a kind reference, a package reference, a record path or a glob whose
-// authority is home now names `~`. Anything else comes back unchanged, so it
-// is safe on every reference a caller reads, and an empty home folds nothing.
-func LocalizeRef(ref, home string) string {
-	if home == "" || !strings.HasPrefix(ref, home) {
-		return ref
+// LocalizeRef is ref with the repository's own name folded into Local: a
+// kind reference, a package reference, a record path or a glob whose
+// authority is one of names (the repository's name, then the former names it
+// still answers to, decision record 0287) now names `~`. Anything else comes
+// back unchanged, so it is safe on every reference a caller reads, and no
+// name folds nothing.
+func LocalizeRef(ref string, names ...string) string {
+	for _, home := range names {
+		if home == "" || !strings.HasPrefix(ref, home) {
+			continue
+		}
+		if rest := ref[len(home):]; rest != "" && rest[0] == '/' {
+			return Local + rest
+		}
 	}
-	rest := ref[len(home):]
-	if rest == "" || rest[0] != '/' {
-		return ref
-	}
-	return Local + rest
+	return ref
 }
 
 // IsLocal reports whether a kind, package or record path reference names one
@@ -75,27 +78,26 @@ var namedKinds = map[string]bool{
 // other record's id is its writer's, whatever it looks like.
 func NamedID(kind string) bool { return namedKinds[kind] }
 
-// LocalizePath is a record path with the repository's name, home, folded into
-// `~` in its kind, and in its id where the kind's records are named by a
+// LocalizePath is a record path with the repository's names folded into `~`
+// in its kind, and in its id where the kind's records are named by a
 // reference (`substrate.reamde.dev/core/agent/~/chat/assistant`). A string
 // that is no record path is LocalizeRef's.
-func LocalizePath(path, home string) string {
+func LocalizePath(path string, names ...string) string {
 	kind, id, ok := SplitRecordPath(path)
 	if !ok {
-		return LocalizeRef(path, home)
+		return LocalizeRef(path, names...)
 	}
-	kind = LocalizeRef(kind, home)
-	return RecordPath(kind, LocalizeID(kind, id, home))
+	kind = LocalizeRef(kind, names...)
+	return RecordPath(kind, LocalizeID(kind, id, names...))
 }
 
-// LocalizeID is id with the repository's name, home, folded into `~` where a
-// record of kind is named by a reference (NamedID), and id unchanged
-// otherwise.
-func LocalizeID(kind, id, home string) string {
+// LocalizeID is id with the repository's names folded into `~` where a record
+// of kind is named by a reference (NamedID), and id unchanged otherwise.
+func LocalizeID(kind, id string, names ...string) string {
 	if !NamedID(kind) {
 		return id
 	}
-	return LocalizeRef(id, home)
+	return LocalizeRef(id, names...)
 }
 
 // ReferenceValueKey is the one reserved key of a reference value: `ref` holds

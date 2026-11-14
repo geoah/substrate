@@ -75,7 +75,7 @@ type recordPolicy struct {
 // are of: the property and every match property declared on each, the
 // order's entries as the property's values (a reference's bare id completed
 // with the kind it pins, as the list's filter completes it).
-func newRecordPolicy(types []*vocabulary.Kind, path string, s *substrate.AggregateRecordSources, home string) (*recordPolicy, error) {
+func newRecordPolicy(types []*vocabulary.Kind, path string, s *substrate.AggregateRecordSources, names ...string) (*recordPolicy, error) {
 	if len(types) == 0 {
 		return nil, refuse(path, "the policy reads a property the records' kinds declare; name the kinds in the filter")
 	}
@@ -87,7 +87,7 @@ func newRecordPolicy(types []*vocabulary.Kind, path string, s *substrate.Aggrega
 	for i, o := range s.Order {
 		v := o
 		if prop.Datatype == vocabulary.DatatypeReference {
-			if v, err = referenceFilterPath(fmt.Sprintf("%s.order[%d]", path, i), prop, o, home); err != nil {
+			if v, err = referenceFilterPath(fmt.Sprintf("%s.order[%d]", path, i), prop, o, names...); err != nil {
 				return nil, err
 			}
 		}

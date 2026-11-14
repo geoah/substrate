@@ -77,9 +77,9 @@ export function LoginPage() {
   // Where the sign-in returns to: an app's approval page, or the page whose
   // session ran out. Only a path on this console is followed.
   const returnTo = safeReturnPath(search.redirect)
-  const { inviteRequired } = useAuthPolicy()
+  const { inviteRequired, nameHost } = useAuthPolicy()
   const site = useSite()
-  const host = substrateHostname()
+  const host = nameHost ?? substrateHostname()
   const [apiError, setApiError] = useState<string | null>(null)
   // Whether the substrate asked for a code. The resolver FOLLOWS it rather
   // than being fixed at mount: react-hook-form reads the options it is given

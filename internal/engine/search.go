@@ -553,7 +553,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		// agents, whose tool results are stored as records. The words go to
 		// the log.
 		ds.svc.log.Warn("substrate: the embeddings provider failed to embed a search query; hybrid search answers by its words only",
-			"repository", ds.Repository().ID, "provider", provider.id, "error", err.Error())
+			"repository", ds.info.ID, "provider", provider.id, "error", err.Error())
 		return nil, &semanticDown{
 			note: fmt.Sprintf("The embeddings provider llm/provider %q failed to embed the query, so the hits are ranked by their words only.", provider.id),
 			err:  fmt.Errorf("%w: the embeddings provider llm/provider %q failed to embed the query", substrate.ErrUnavailable, provider.id),
@@ -588,7 +588,7 @@ func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q stri
 		// setting. That is a database the arm cannot run on, not a failed
 		// search, so hybrid answers by its words and the log says why.
 		ds.svc.log.Warn("substrate: the semantic arm could not set up its index scan (it needs pgvector 0.8 or later); hybrid search answers by its words only",
-			"repository", ds.Repository().ID, "error", err.Error())
+			"repository", ds.info.ID, "error", err.Error())
 		return nil, &semanticDown{
 			note: "The semantic arm could not set up its index scan on this database, so the hits are ranked by their words only.",
 			err:  fmt.Errorf("%w: semantic search could not set up its index scan: %w", substrate.ErrUnavailable, err),
@@ -744,7 +744,7 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	}
 	if ds.svc.keyRefusals.drainHeld(provider.key, ds.svc.operatorNow()) {
 		ds.svc.log.Debug("substrate: embed queue waits: the vendor refused the embeddings key",
-			"repository", ds.Repository().ID, "provider", provider.id)
+			"repository", ds.info.ID, "provider", provider.id)
 		return 0, nil
 	}
 	provider.drain = true
@@ -808,14 +808,14 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 				// passes drain it. Not an error, so the drain loop does not
 				// log one every tick.
 				ds.svc.log.Debug("substrate: embed queue waits for the operator's allowance",
-					"repository", ds.Repository().ID, "error", err)
+					"repository", ds.info.ID, "error", err)
 				return d.done, nil
 			}
 			if errors.Is(err, errEmbedKeyHeld) {
 				// Another drain took the step's probe of a refused key
 				// between this pass's check and its request.
 				ds.svc.log.Debug("substrate: embed queue waits: the vendor refused the embeddings key",
-					"repository", ds.Repository().ID, "provider", provider.id)
+					"repository", ds.info.ID, "provider", provider.id)
 				return d.done, nil
 			}
 			return d.done, err
@@ -993,7 +993,7 @@ func (d *embedDrain) setAside(ctx context.Context, j *embedJob, cause error) err
 		return err
 	}
 	d.ds.svc.log.Warn("substrate: the embeddings endpoint rejected a value; its job moved to the back of the queue",
-		"repository", d.ds.Repository().ID, "kind", j.id.Kind, "id", j.id.ID, "property", j.prop, "error", cause.Error())
+		"repository", d.ds.info.ID, "kind", j.id.Kind, "id", j.id.ID, "property", j.prop, "error", cause.Error())
 	return nil
 }
 

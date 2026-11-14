@@ -180,7 +180,7 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 // ResolveFor refuses a document owned by the receiving repository before any fetch.
 func (c *Catalog) ResolveFor(ctx context.Context, id string, floor int64, ds substrate.Dataset) (*Bundle, error) {
 	a, _ := vocabulary.SplitPackageRef(id)
-	if _, binary := c.byID[id]; !binary && c.reader != nil && a == ds.Repository().Authority {
+	if _, binary := c.byID[id]; !binary && c.reader != nil && slices.Contains(ds.Repository().LocalNames(), a) {
 		return nil, fmt.Errorf("%w: %s is your own authority; declare the package here", ErrNotPublished, id)
 	}
 	return c.Resolve(ctx, id, floor)

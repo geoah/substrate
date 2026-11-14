@@ -257,7 +257,7 @@ func TestADeleteHeldAfterItsProofErasesNothing(t *testing.T) {
 		return h.s.DeleteRepository(ctx, in)
 	}, h.signOutWithANewPassword(t))
 	wantFactorsChanged(t, "a repository's delete", err)
-	if _, err := h.s.repositoryByAuthority(ctx, h.name); err != nil {
+	if _, err := h.s.repositoryByName(ctx, h.name); err != nil {
 		t.Fatalf("the repository is gone after a refused delete: %v", err)
 	}
 	if _, err := h.s.Dataset(ctx, h.name); err != nil {
@@ -291,7 +291,7 @@ func TestARegistrationHeldAfterItsProofCreatesNothingOnceItsNameIsTaken(t *testi
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a registration held while another took its name: %v, want the name refused as taken", err)
 	}
-	if _, err := h.s.repositoryByAuthority(ctx, first); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := h.s.repositoryByName(ctx, first); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused registration's repository: %v, want none", err)
 	}
 	person, err := h.s.identityByName(ctx, h.s.maint, name)
@@ -510,7 +510,7 @@ func TestTwoResetsOfARestoredRepositoryGiveItOnePerson(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	h := openHeldDoor(t, "reset")
-	repo, err := h.s.repositoryByAuthority(ctx, h.name)
+	repo, err := h.s.repositoryByName(ctx, h.name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -665,5 +665,59 @@ func TestASignInHeldAcrossASignOutThatChangesNoFactorIsANewSignIn(t *testing.T) 
 	}
 	if n := h.liveTokens(t, h.name); n != 1 {
 		t.Fatalf("%d tokens stand, want the held sign-in's alone", n)
+	}
+}
+
+// A rename proved before the factors changed, held while they change,
+// renames nothing: the rename's transaction holds the person's row to the
+// version it proved.
+func TestARenameHeldAfterItsProofRenamesNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := openHeldDoor(t, "rename")
+	in := h.in()
+	in.Repository = h.name
+	to := testdb.RepositoryLabel(t) + "-renamed.example.com"
+	err := h.run(t, func() error {
+		_, err := h.s.RenameRepository(ctx, in, to)
+		return err
+	}, h.signOutWithANewPassword(t))
+	wantFactorsChanged(t, "a repository's rename", err)
+	if _, err := h.s.repositoryByName(ctx, h.name); err != nil {
+		t.Fatalf("the repository does not answer to its name after a refused rename: %v", err)
+	}
+	if _, err := h.s.repositoryByName(ctx, to); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the new name answers after a refused rename: %v", err)
+	}
+}
+
+// A sign-in that picked its repository before a rename, held while the
+// rename commits, answers the name the repository has when it answers, with
+// a token of that repository.
+func TestASignInHeldAcrossARenameAnswersTheNameItHasNow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	h := openHeldDoor(t, "login")
+	in := h.in()
+	in.Repository = h.name
+	to := testdb.RepositoryLabel(t) + "-renamed.example.com"
+	var minted substrate.MintedToken
+	err := h.run(t, func() error {
+		var err error
+		minted, err = h.s.Login(ctx, in)
+		return err
+	}, func() {
+		if _, err := h.s.RenameRepository(ctx, in, to); err != nil {
+			t.Fatalf("the rename meanwhile: %v", err)
+		}
+	})
+	if err != nil {
+		t.Fatalf("a sign-in held across a rename: %v", err)
+	}
+	if minted.Repository != to {
+		t.Errorf("the sign-in answers %s, want %s, the name the repository has", minted.Repository, to)
+	}
+	if n := h.liveTokens(t, to); n != 2 {
+		t.Errorf("the renamed repository holds %d tokens, want the registration's and the sign-in's", n)
 	}
 }

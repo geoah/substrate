@@ -35,6 +35,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -49,7 +50,7 @@ import (
 // each string of a list, folds.
 type namePosition struct {
 	path []string
-	fold func(s, home string) string
+	fold func(s string, names ...string) string
 }
 
 // recordNamePositions are the properties of the substrate's own records that
@@ -104,44 +105,45 @@ var recordNamePositions = map[string][]namePosition{
 
 // localizeScope is one scope of a token, `<verb>:<pattern>`, its pattern
 // folded (`read:~/tasks/*`); what does not parse as a scope stays.
-func localizeScope(s, home string) string {
+func localizeScope(s string, names ...string) string {
 	sc, err := scope.Parse(s)
 	if err != nil {
 		return s
 	}
-	return sc.Localize(home).String()
+	return sc.Localize(names...).String()
 }
 
 // localizePattern is a kind pattern as a scope names it (a reference, a glob
 // or a trait), folded as a scope's is (scope.Scope.Localize).
-func localizePattern(s, home string) string {
+func localizePattern(s string, names ...string) string {
 	if sc, err := scope.Parse(string(scope.Read) + ":" + s); err == nil {
-		return sc.Localize(home).Pattern
+		return sc.Localize(names...).Pattern
 	}
-	return vocabulary.LocalizeRef(s, home)
+	return vocabulary.LocalizeRef(s, names...)
 }
 
 // localizeNamespace is an authority or a package reference: the name alone is
 // the authority of the repository's own packages, which is `~`.
-func localizeNamespace(s, home string) string {
-	if s == home && home != "" {
+func localizeNamespace(s string, names ...string) string {
+	if s != "" && slices.Contains(names, s) {
 		return vocabulary.Local
 	}
-	return vocabulary.LocalizeRef(s, home)
+	return vocabulary.LocalizeRef(s, names...)
 }
 
 // localizeRecord is props, a record of kind's properties, with the
-// repository's name, home, folded into `~` where the engine wrote a name: a
+// repository's names (its name, then the former names it still answers to)
+// folded into `~` where the engine wrote a name: a
 // declaration's name keys, or the kind's named positions. It is the rule the
 // write path and the conversion share; a reference value is the reference
 // fold's (normalizeReferencesIn at the write, referencePositions in the
 // conversion).
-func localizeRecord(kind string, props map[string]any, home string) (map[string]any, error) {
-	if home == "" || props == nil {
+func localizeRecord(kind string, props map[string]any, names ...string) (map[string]any, error) {
+	if len(names) == 0 || names[0] == "" || props == nil {
 		return props, nil
 	}
 	if _, declaration := vocabularyRecordKinds[kind]; declaration {
-		v, err := vocabulary.LocalizeDeclaration(kind, props, home)
+		v, err := vocabulary.LocalizeDeclaration(kind, props, names...)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 		}
@@ -154,7 +156,7 @@ func localizeRecord(kind string, props map[string]any, home string) (map[string]
 	}
 	var v any = props
 	for _, p := range positions {
-		v = localizeAt(v, p.path, func(s string) string { return p.fold(s, home) })
+		v = localizeAt(v, p.path, func(s string) string { return p.fold(s, names...) })
 	}
 	out, _ := v.(map[string]any)
 	return out, nil

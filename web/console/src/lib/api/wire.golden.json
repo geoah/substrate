@@ -776,6 +776,10 @@
     "reason": false,
     "repositories": false
   },
+  "FormerName": {
+    "name": true,
+    "until": true
+  },
   "FunctionCalled": {
     "effects": true,
     "output": true
@@ -993,6 +997,11 @@
     "inverse": false,
     "offset": false,
     "to": true
+  },
+  "RepositoryNames": {
+    "formerNames": true,
+    "id": true,
+    "name": true
   },
   "RepositoryUnit": {
     "aliases": true,

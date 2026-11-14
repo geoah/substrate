@@ -148,7 +148,7 @@ func (ds *dataset) warnActionless(id string) {
 		return
 	}
 	ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing — give it allow, gate or refuse, or delete it",
-		"repository", logSafeID(ds.Repository().ID), "policy", logSafeID(id))
+		"repository", logSafeID(ds.info.ID), "policy", logSafeID(id))
 }
 
 // validatePolicyRow admits a recordpatchpolicy at the write door, the way a

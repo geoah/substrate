@@ -169,6 +169,8 @@ import type {
   SessionCredential,
   IdentityInfo,
   RepositoryChoice,
+  RepositoryNames,
+  FormerName,
   SetupItem,
   ShippedRecord,
   Scores,
@@ -1011,6 +1013,14 @@ const sessionCredential: Shape<SessionCredential> = {
   signedOut: false,
 }
 
+const formerName: Shape<FormerName> = { name: true, until: true }
+
+const repositoryNames: Shape<RepositoryNames> = {
+  id: true,
+  name: true,
+  formerNames: true,
+}
+
 const registerResult: Shape<RegisterResult> = mintedToken
 
 /** The agent chat stream (agents.ts). */
@@ -1607,6 +1617,8 @@ const mirrors: Record<string, Record<string, boolean>> = {
   SessionCredential: sessionCredential,
   IdentityInfo: identityInfo,
   RepositoryChoice: repositoryChoice,
+  RepositoryNames: repositoryNames,
+  FormerName: formerName,
   AgentResult: agentResult,
   AgentMention: agentMention,
   AgentEvent: agentEvent,

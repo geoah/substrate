@@ -100,8 +100,17 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		deadline = webhookMultipartDeadline
 	}
 	clear := bodyDeadline(w, deadline)
-	repository, trigger, key := pathParam(r, "repository"), pathParam(r, "trigger"), webhookKey(r)
+	named, trigger, key := pathParam(r, "repository"), pathParam(r, "trigger"), webhookKey(r)
 	ctx := r.Context()
+	// The path's name becomes an id here, once (decision record 0287): the
+	// token, the grant and the engine all see the id, so a name that changes
+	// hands meanwhile cannot carry one repository's token to another's.
+	repository, err := h.svc.RepositoryIDOf(ctx, named)
+	if err != nil {
+		w.Header().Set("Connection", "close")
+		refuseUnread(w, r, err)
+		return
+	}
 	tok, granted := h.webhookGranted(r, repository, trigger, key)
 	bearer := key
 	if granted {
@@ -220,11 +229,11 @@ func webhookKey(r *http.Request) string {
 }
 
 // webhookGranted reports whether the bearer, the request's only credential,
-// is an app's token that delivers to this trigger in this repository
-// (`webhook:`, docs/plans/app-setup.md), which the engine then takes in place
-// of the trigger's key, and answers the token. Its person must hold a role
-// in the repository now: a token acts for its person, and one whose person
-// holds none delivers nothing (decision 0275). Anything short of that, a revoked or lapsed token, a
+// is an app's token that delivers to this trigger in the repository with id
+// repository (`webhook:`, docs/plans/app-setup.md), which the engine then
+// takes in place of the trigger's key, and answers the token. Its person must
+// hold a role in the repository now: a token acts for its person, and one
+// whose person holds none delivers nothing (decision 0275). Anything short of that, a revoked or lapsed token, a
 // full-access one, one of another repository or one without the scope, stays
 // the key the bearer always was, so it is refused exactly as a wrong key is
 // and the answer tells a sender nothing about the token.
@@ -254,8 +263,7 @@ func (h *handler) webhookGranted(r *http.Request, repository, trigger, key strin
 		return none, false
 	}
 	grant, err := scope.NewGrant(tok.Scopes)
-	in := ds.Repository()
-	if err != nil || !grant.Delivers(trigger) || (in.ID != repository && in.Authority != repository) {
+	if err != nil || !grant.Delivers(trigger) || ds.Repository().ID != repository {
 		return none, false
 	}
 	held, err := ds.PersonRoles(substrate.WithIdentity(r.Context(), tok.Identity))

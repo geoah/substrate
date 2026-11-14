@@ -46,13 +46,13 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 	// or read the request, so nothing more may land for it.
 	ctx, cancel := context.WithTimeout(ctx, req.Expires.Sub(h.now()))
 	defer cancel()
-	authority := ds.Repository().Authority
+	owner := ds.Repository().ID
 	stop := func(failure *substrate.AuthorizationFailure, moved bool) {
 		end := h.authz.Fail
 		if moved {
 			end = h.authz.Replan
 		}
-		if err := end(req.ID, authority, failure); err != nil {
+		if err := end(req.ID, owner, failure); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 		}
 	}
@@ -66,7 +66,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		}
 	}()
 	out := h.setups.Run(ctx, ds, actor, req.Details, approved, opts, run, func(progress []string) bool {
-		if err := h.authz.Progress(req.ID, authority, progress); err != nil {
+		if err := h.authz.Progress(req.ID, owner, progress); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 			return false
 		}
@@ -93,8 +93,8 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		stop(&substrate.AuthorizationFailure{Message: "Everything is set up, and who publishes this app changed since the page loaded: " + why + ". Start again from the app, which reads who publishes it afresh."}, false)
 		return
 	}
-	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
-		view := reads.view(req, *req.Document, authority, req.Setup, req.PlanHash)
+	_, _, err = h.authz.Finish(req.ID, owner, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
+		view := reads.view(req, *req.Document, ds.Repository().Authority, req.Setup, req.PlanHash)
 		view.Next = withParams(req.RedirectURI, url.Values{"code": {code}}, req)
 		return view
 	})
@@ -351,7 +351,7 @@ func checkedByAnApp(ctx context.Context) (bool, error) {
 // check plans a check's answer for the request's token.
 func (h *handler) check(ctx context.Context, requested []scope.Scope, details []substrate.AuthorizationDetail) (substrate.AuthorizationCheckResult, error) {
 	ds := DatasetFrom(ctx)
-	authority := ds.Repository().Authority
+	names := ds.Repository().LocalNames()
 	// The plan reads the repository whole; what the token may learn of it is
 	// cut below, row by row.
 	owner, grant, full := ds, scope.Grant{}, true
@@ -376,7 +376,7 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	}
 	missing := []string{}
 	for _, s := range requested {
-		resolved := s.Localize(authority)
+		resolved := s.Localize(names...)
 		if !full && !grant.Covers(resolved, scopeInternal(resolved, registry)) && !slices.Contains(missing, resolved.String()) {
 			missing = append(missing, resolved.String())
 		}

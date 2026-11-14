@@ -40,6 +40,13 @@ func WithTestHealthClock(now func() time.Time) Option {
 	return func(o *options) { o.healthNow = now }
 }
 
+// WithTestNamesClock is the clock a repository's former name lapses on
+// (repositorynames.go), and nothing else. A test advances it past the hold
+// instead of waiting 90 days.
+func WithTestNamesClock(now func() time.Time) Option {
+	return func(o *options) { o.namesNow = now }
+}
+
 // WithTestRetryClock is the clock the walk of temporary failures reads a
 // retry's due time on (temporaryretry.go), and nothing else: the parked row's
 // time and every record timestamp stay on the wall clock. A test advances it
@@ -166,6 +173,14 @@ func WithTestConversionStep(name string, line func(e *changelogfile.Entry) error
 		}
 		o.conversion = append(slices.Clone(base), conversionStep{Dialect: chainDialect(base) + 1, Name: name, Line: line})
 	}
+}
+
+// WithTestNameDoorsOpen lets a rename and an import under another name take
+// a name the repository holds a package under, which their early refusals
+// refuse (repositorynames.go), so a test can build the state the spellings
+// hold to.
+func WithTestNameDoorsOpen() Option {
+	return func(o *options) { o.nameDoorsOpen = true }
 }
 
 // WithTestAfterTitleRounds runs fn inside the open's title pass

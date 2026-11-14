@@ -30,8 +30,9 @@ import (
 
 // nameKeys are the key columns the name may fill: where it is the name.
 var nameKeys = map[string]string{
-	"repositories.authority": "the name itself, unique on the substrate",
-	"identities.name":        "the person's sign-in name, unique on the substrate, which a registration takes from the repository's (decision 0274)",
+	"repositories.authority":       "the name itself, unique on the substrate",
+	"identities.name":              "the person's sign-in name, unique on the substrate, which a registration takes from the repository's (decision 0274)",
+	"repository_former_names.name": "a name the repository had, held for 90 days after a rename (decision 0287)",
 }
 
 func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
