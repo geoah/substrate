@@ -81,13 +81,14 @@ import {
   unfinishedTurn,
   type UnfinishedTurn,
 } from "@/lib/agent-runs"
-import { turnOutcome, waitLeft } from "@/lib/turn-outcome"
+import { cutReplyOutcome, turnOutcome, waitLeft } from "@/lib/turn-outcome"
 import {
   attachThread,
   continueThread,
   newMessageId,
   OWN_MESSAGE_ID_REVISION,
   stopThread,
+  STREAM_POSITIONS_REVISION,
   streamChat,
   THREAD_LISTS_KEY,
   TurnFailedError,
@@ -103,6 +104,7 @@ import { LLM_PACKAGE } from "@/lib/api/http"
 import { USD } from "@/lib/money"
 import {
   EMPTY_OVERLAY,
+  liveBeyond,
   pushCompacted,
   pushDelta,
   pushReasoning,
@@ -111,6 +113,7 @@ import {
   settleTool,
   transcriptOf,
   type LiveOverlay,
+  type Placement,
 } from "@/lib/api/transcript"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { APPROVAL_KIND } from "@/lib/core-kinds"
@@ -438,6 +441,12 @@ export function Conversation({
     hasFeature(discovery.data, "agents", OWN_MESSAGE_ID_REVISION)
   // The clock a provider's wait is shown against.
   const [now, setNow] = useState(() => Date.now())
+  // Whether the server's streams say where each piece of text belongs, and
+  // stream a resumed run. Then what is shown is kept across an attach and
+  // the replay is written over it; otherwise an attach starts over.
+  const positions =
+    !discovery.data ||
+    hasFeature(discovery.data, "agents", STREAM_POSITIONS_REVISION)
   // A continue the server refused, in the server's words.
   const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
@@ -521,10 +530,6 @@ export function Conversation({
     []
   )
 
-  // While a turn runs elsewhere, every write to a thread re-reads the
-  // records, so the thread's settle reaches this page.
-  useLiveRecords(background ? [`${LLM_PACKAGE}/thread`] : [], [["records"]])
-
   // A sub-agent's call that waits for the owner is asked on this
   // conversation, but its tool row is in the sub-agent's own thread, which
   // the transcript does not inline: it waits after the transcript instead
@@ -533,7 +538,13 @@ export function Conversation({
     ...pendingApprovalsQueryOptions(current ?? ""),
     enabled: Boolean(current),
   })
-  useLiveRecords(current ? [APPROVAL_KIND] : [], [["records"]])
+  // The same watch hears the thread itself: a run an answer, an approval, a
+  // decision or a background job resumes claims the thread, and the page
+  // attaches to it as it would to a turn it sent; a turn running elsewhere
+  // (a triggered run) settles and the page reads it.
+  useLiveRecords(current ? [APPROVAL_KIND, `${LLM_PACKAGE}/thread`] : [], [
+    ["records"],
+  ])
   const subagentApprovals = (approvals.data?.records ?? [])
     .filter((r) => Boolean(r.properties.requestedIn))
     .map((r) => r.id)
@@ -562,9 +573,15 @@ export function Conversation({
     }, RELOAD_WAIT_MS)
     return () => clearTimeout(timer)
   }, [settledAt, handedOver, reloadErrored])
+  // The rows are the truth for whatever they hold, and the overlay is drawn
+  // past them: both read the same rows here, so a row that lands and the
+  // live turn it replaces change in one render.
+  const shownLive = positions
+    ? liveBeyond(live, messages.data?.records ?? [])
+    : live.turns
   const turns = handedOver
     ? transcriptOf(persisted)
-    : [...transcriptOf(persisted), ...live.turns]
+    : [...transcriptOf(persisted), ...shownLive]
   // A run that has settled but whose rows have not arrived is still busy: a
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.
@@ -575,7 +592,7 @@ export function Conversation({
       ? "Waiting for the previous turn to finish"
       : undefined
   const liveKey = streaming
-    ? [...live.turns].reverse().find((t) => t.role === "assistant")?.key
+    ? [...shownLive].reverse().find((t) => t.role === "assistant")?.key
     : undefined
 
   // The view follows the bottom of the conversation — as turns arrive and as
@@ -606,6 +623,11 @@ export function Conversation({
     setLive(next)
   }
 
+  // Where a streamed piece belongs, from a server that says.
+  function whereOf(ev: AgentEvent): Placement {
+    return positions ? { turn: ev.turn, at: ev.at } : {}
+  }
+
   function onEvent(ev: AgentEvent, run: number) {
     if (run !== runRef.current) return
     switch (ev.kind) {
@@ -624,11 +646,21 @@ export function Conversation({
         break
       case "reasoning":
         if (ev.text)
-          update(pushReasoning(liveRef.current, ev.text, seqRef.current++))
+          update(
+            pushReasoning(
+              liveRef.current,
+              ev.text,
+              seqRef.current++,
+              undefined,
+              whereOf(ev)
+            )
+          )
         break
       case "delta":
         if (ev.text)
-          update(pushDelta(liveRef.current, ev.text, seqRef.current++))
+          update(
+            pushDelta(liveRef.current, ev.text, seqRef.current++, whereOf(ev))
+          )
         break
       case "toolStarted":
         update(
@@ -639,6 +671,7 @@ export function Conversation({
               name: ev.tool ?? "tool",
               ...(ev.callable ? { callable: ev.callable } : {}),
               arguments: ev.args ?? "",
+              ...(positions && ev.turn !== undefined ? { turn: ev.turn } : {}),
             },
             seqRef.current++
           )
@@ -653,6 +686,7 @@ export function Conversation({
               name: ev.tool ?? "tool",
               ...(ev.callable ? { callable: ev.callable } : {}),
               arguments: ev.args ?? "",
+              ...(positions && ev.turn !== undefined ? { turn: ev.turn } : {}),
             },
             ev.output ?? "",
             ev.ok ?? true,
@@ -718,12 +752,14 @@ export function Conversation({
   const [pending, setPending] = useState<{
     thread: string
     attempt: number
+    /** The first attach to a run, not one that follows a dropped stream. */
+    fresh?: boolean
   } | null>(null)
   if (!threadRunning && attachedFor) setAttachedFor("")
   if (!threadRunning && background) setBackground(false)
   if (current && threadRunning && !busy && attachedFor !== current) {
     setAttachedFor(current)
-    setPending({ thread: current, attempt: 0 })
+    setPending({ thread: current, attempt: 0, fresh: true })
     setError(null)
     setResult(null)
     setSettledAt(0)
@@ -755,16 +791,31 @@ export function Conversation({
   }
 
   const openAttach = useEffectEvent(
-    ({ thread, attempt }: { thread: string; attempt: number }) => {
+    ({
+      thread,
+      attempt,
+      fresh,
+    }: {
+      thread: string
+      attempt: number
+      fresh?: boolean
+    }) => {
       runThreadRef.current = thread
       const run = ++runRef.current
       void messages.refetch().then((read) => {
         if (run !== runRef.current) return
         if (read.isError) return reattach(run, thread, attempt + 1)
         const held = persistedTurns(read.data?.records ?? [])
-        update(EMPTY_OVERLAY)
+        // With positions the overlay stays: the replay is written over it in
+        // place, and what the rows just read hold is left to them where the
+        // turns are drawn (`liveBeyond`). Without them a replayed piece
+        // could only be appended, so the overlay starts over.
+        // A first attach to a run starts clean either way: what the overlay
+        // holds then is an earlier run's, which the rows have taken over.
+        if (!positions || fresh) update(EMPTY_OVERLAY)
         let idle = ""
         let done = false
+        let lagged = false
         handleRef.current = attachThread({
           thread,
           onEvent: (ev) => {
@@ -779,6 +830,8 @@ export function Conversation({
               done = true
               lastErrorRef.current = null
             }
+            // This reader fell behind the turn: the turn runs on.
+            if (ev.kind === "lagged") lagged = true
             if (isReplayed(ev, held)) return
             onEvent(ev, run)
           },
@@ -801,7 +854,7 @@ export function Conversation({
           onDone: () => {
             if (run !== runRef.current) return
             if (done) return settleRun(run)
-            if (!idle) return reattach(run, thread, attempt + 1)
+            if (!idle) return reattach(run, thread, lagged ? 0 : attempt + 1)
             settleIdle(run, idle)
           },
         })
@@ -897,6 +950,7 @@ export function Conversation({
           role: "user",
           content: message,
           tools: [],
+          ...(messageId ? { sentId: messageId } : {}),
           ...(about.length ? { contextRecords: about } : {}),
         },
       ],
@@ -1168,7 +1222,22 @@ export function Conversation({
           now
         )
       : undefined
-  const outcome = unfinished ?? reported
+  // A reply the model's limit cut settles fine, so the thread says nothing:
+  // its row does, and going on from it is a continue like any other.
+  const cut =
+    current &&
+    threadRecord?.properties.status === "ok" &&
+    !busy &&
+    !threadRunning &&
+    !background
+      ? cutReplyOutcome(
+          persisted,
+          typeof threadRecord.properties.provider === "string"
+            ? threadRecord.properties.provider
+            : undefined
+        )
+      : undefined
+  const outcome = unfinished ?? reported ?? cut
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">

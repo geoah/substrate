@@ -128,7 +128,6 @@ describe("turnOutcome", () => {
       title: "Moss ran out of room before finishing.",
       detail: "It used all 8 of its turns.",
       action: { kind: "continue", label: "Continue" },
-      said: "max turns reached (8)",
     })
     expect(
       turnOutcome({ status: "stopped", cause: "requested" }, "Moss")

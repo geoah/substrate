@@ -1006,9 +1006,22 @@ panel on the right.
   chat whose turn is still running is marked **Working** in the chats
   column. While a reply streams, **Stop** in the header and in place of the
   send button ends it; what it had written so far stays as its reply, and the
-  chat is ready for the next message. A chat a trigger is still running says
+  chat is ready for the next message. The reply that follows an answer you
+  gave, a suggestion you decided, a call you approved or a background job
+  streams the same way, with Stop. A chat a trigger is still running says
   the agent is working on it in the background, and shows the answer when the
   run finishes.
+- **A reply holds still while it streams.** When the connection drops and
+  the page picks the reply up again, what it already shows stays where it
+  is: the server says where each piece of text belongs, so the page writes
+  the pieces it is sent again over the same text
+  ([agents](agents.md#calling-an-agent)). Against a server that does not
+  say (a console inside an app can meet one), the reply is drawn again from
+  its start.
+- **A reply that was cut short says so.** When the model reached its limit,
+  or the provider withheld the rest, a note under the reply says which
+  ("The reply stopped at the model's limit.") with **Continue**, which goes
+  on from where it stops.
 - **A reply that didn't finish says so.** When a chat's last turn was
   stopped, ran out of time or turns, or failed, a note under the chat says
   which in one sentence, with one button for what to do next. The sentence
