@@ -23,44 +23,10 @@ struct ConversationView: View {
     }
 
     private func transcript(_ screen: ConversationScreen) -> some View {
-        ScrollView {
+        let _ = Meter.shared.count(.body, "Transcript")
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
-                if let hero = screen.hero {
-                    NewChatHeroView(
-                        hero: hero, pick: { host.send(.draft($0), to: key) },
-                        addKey: { keySheet = host.chats?.keys[$0] })
-                }
-                if let older = screen.olderHidden {
-                    Label(older, systemImage: "clock.arrow.circlepath")
-                        .font(.caption)
-                        .foregroundStyle(.quietText)
-                        .frame(maxWidth: .infinity)
-                }
-                ForEach(screen.turns) { turn in
-                    TurnView(turn: turn, cards: screen.cards, expandThinking: screen.expandThinking)
-                        .equatable()
-                }
-                if screen.typing {
-                    TypingDots()
-                }
-                // A sub-agent's asks: its own tool rows are in its own
-                // conversation, so they wait here.
-                ForEach(screen.approvals, id: \.self) { id in
-                    if let card = screen.cards[id]?.approval { ApprovalCardView(id: id, card: card) }
-                }
-                ConversationStatus(screen: screen, key: key)
-                if let technical = screen.technical {
-                    Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
-                        ForEach(technical, id: \.self) { fact in
-                            GridRow {
-                                Text(fact.label).fontWeight(.semibold)
-                                Text(fact.value).monospaced(fact.verbatim).textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.quietText)
-                }
+                TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] })
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -159,6 +125,57 @@ struct ConversationView: View {
         h.combine(screen.error)
         h.combine(screen.typing)
         return h.finalize()
+    }
+}
+
+/// The transcript's rows, in order: a new chat's opening, the turns, what a
+/// sub-agent asks, what became of the run, and the technical details. The
+/// conversation lays them out lazily in its scroll view; a gallery lays
+/// the same rows out whole.
+struct TranscriptRows: View {
+    @Environment(ChatHost.self) private var host
+    let screen: ConversationScreen
+    let key: ChildKey
+    /// Add a key for the provider named.
+    let onKey: (String) -> Void
+
+    var body: some View {
+        if let hero = screen.hero {
+            NewChatHeroView(
+                hero: hero, pick: { host.send(.draft($0), to: key) },
+                addKey: onKey)
+        }
+        if let older = screen.olderHidden {
+            Label(older, systemImage: "clock.arrow.circlepath")
+                .font(.caption)
+                .foregroundStyle(.quietText)
+                .frame(maxWidth: .infinity)
+        }
+        ForEach(screen.turns) { turn in
+            TurnView(turn: turn, cards: screen.cards, expandThinking: screen.expandThinking)
+                .equatable()
+        }
+        if screen.typing {
+            TypingDots()
+        }
+        // A sub-agent's asks: its own tool rows are in its own
+        // conversation, so they wait here.
+        ForEach(screen.approvals, id: \.self) { id in
+            if let card = screen.cards[id]?.approval { ApprovalCardView(id: id, card: card) }
+        }
+        ConversationStatus(screen: screen, key: key)
+        if let technical = screen.technical {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
+                ForEach(technical, id: \.self) { fact in
+                    GridRow {
+                        Text(fact.label).fontWeight(.semibold)
+                        Text(fact.value).monospaced(fact.verbatim).textSelection(.enabled)
+                    }
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.quietText)
+        }
     }
 }
 

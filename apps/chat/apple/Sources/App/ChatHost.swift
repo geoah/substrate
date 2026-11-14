@@ -17,9 +17,37 @@ import UIKit
 final class ChatHost {
     typealias Link = LinkController<ChatApp>
 
-    static let shared = ChatHost()
+    /// What the host is made of: the device's own in the app, a fixture's
+    /// for a measurement or a gallery, which must reach neither the Keychain
+    /// nor the folder a signed-in build keeps.
+    struct Parts {
+        var sessions: SessionStore
+        var transport: any HTTPTransport
+        var folders: any AppFolders
+        var preferences: any PreferenceStore
+        var notifications: (any Notifications)?
+        var background: (any BackgroundWork)?
+        /// The device's network where nil.
+        var connectivity: (any Connectivity)?
+
+        @MainActor static var device: Parts {
+            Parts(
+                sessions: .chat, transport: URLSessionTransport.shared, folders: ApplicationFolders(name: "SubstrateChat"),
+                preferences: DefaultsPreferenceStore(defaults: .standard), notifications: ChatServices.notifications,
+                background: ChatServices.background)
+        }
+    }
+
+    static let shared: ChatHost = {
+        #if DEBUG
+        if let measured = Measure.parts() { return ChatHost(measured) }
+        #endif
+        return ChatHost(.device)
+    }()
 
     let model: PresentationModel<Link>
+    /// Where the session is kept: the Keychain's, but for a fixture's.
+    @ObservationIgnored let sessions: SessionStore
     /// The browser is open for a change of access.
     private(set) var authorizing = false
     /// Why the last change of access did not finish.
@@ -35,10 +63,11 @@ final class ChatHost {
     /// closes.
     private(set) var savedKey: String?
 
-    private init() {
-        let store = SessionStore.chat
-        let transport = URLSessionTransport.shared
-        let folders = ApplicationFolders(name: "SubstrateChat")
+    init(_ parts: Parts) {
+        let store = parts.sessions
+        sessions = store
+        let transport = parts.transport
+        let folders = parts.folders
         // No `environment.folder`: the link has one, and Chat's folder is the
         // signed-in repository's, so `ChatStorage` keeps the link generation
         // in each and moves it as a sign-out retires the folder.
@@ -46,8 +75,9 @@ final class ChatHost {
         environment.client = ClientSource {
             await store.load().map { SubstrateClient(server: $0.server, token: $0.secret, transport: transport) }
         }
-        environment.devices.notifications = ChatServices.notifications
-        environment.devices.background = ChatServices.background
+        environment.devices.notifications = parts.notifications
+        environment.devices.background = parts.background
+        if let connectivity = parts.connectivity { environment.devices.connectivity = connectivity }
         #if os(iOS)
         let platform = ChatPlatform.ios
         let device = UIDevice.current.userInterfaceIdiom == .pad ? "this iPad" : "this iPhone"
@@ -57,7 +87,7 @@ final class ChatHost {
         #endif
         let app = ChatApp(
             storage: ChatStorage(base: try? folders.data(), writingOptions: folders.writingOptions),
-            preferences: DefaultsPreferenceStore(defaults: .standard), platform: platform)
+            preferences: parts.preferences, platform: platform)
         let link = Link(
             app: app, manifest: ChatManifest.manifest, sessions: store,
             words: StatusWords(
@@ -111,7 +141,7 @@ final class ChatHost {
     /// The record views read through the session's own client, refused in
     /// the app's words where its access does not reach.
     func recordDirectory() -> RecordDirectory {
-        let session = SessionStore.chat.load()
+        let session = sessions.load()
         guard session?.identity != recordsFor else { return records }
         recordsFor = session?.identity
         records = RecordDirectory(

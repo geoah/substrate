@@ -26,13 +26,29 @@ SUBSTRATEKIT_SNAPSHOTS="$out/apple" xcrun swift test --package-path apps/kit --f
 # Each app's screens, drawn by its own views in its UI framework's tests,
 # which run on the Mac with no host app: every app whose apple/Tests holds a
 # GalleryTests, by the scheme its app.json names, each into apple/<app>.
+# Chat's views are its app target's, so its tests run inside the app, which
+# the Mac sandboxes: its pictures are attached to the test's result and
+# taken from there, each under the name it was attached with.
 .mise/apple.sh project
 for gallery in apps/*/apple/Tests/GalleryTests.swift; do
   app=$(basename "$(dirname "$(dirname "$(dirname "$gallery")")")")
   scheme=$(jq -r '.apple.scheme' "apps/$app/app.json")
+  result=$out/apple/$app.xcresult
   mkdir -p "$out/apple/$app"
+  rm -rf "$result"
   (cd apps/xcode && TEST_RUNNER_SUBSTRATE_GALLERY="$out/apple/$app" xcodebuild -project Substrate.xcodeproj \
-    -scheme "$scheme" -derivedDataPath build/dd -quiet -destination 'platform=macOS' test -only-testing:"${scheme}Tests/GalleryTests")
+    -scheme "$scheme" -derivedDataPath build/dd -quiet -destination 'platform=macOS' -resultBundlePath "$result" \
+    test -only-testing:"${scheme}Tests/GalleryTests")
+  attached=$(mktemp -d)
+  xcrun xcresulttool export attachments --path "$result" --output-path "$attached" >/dev/null
+  if [[ -f $attached/manifest.json ]]; then
+    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | endswith(".png")) | [.exportedFileName, .suggestedHumanReadableName] | @tsv' \
+      "$attached/manifest.json" | while IFS=$'\t' read -r file name; do
+      # The result names an attachment `<name>_<n>_<uuid>.png`.
+      mv "$attached/$file" "$out/apple/$app/$(sed -E 's/_[0-9]+_[0-9A-F-]{36}\.png$/.png/' <<<"$name")"
+    done
+  fi
+  rm -rf "$attached" "$result"
 done
 .mise/android.sh gallery "$out/android"
 

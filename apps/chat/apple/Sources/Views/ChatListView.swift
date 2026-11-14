@@ -26,6 +26,7 @@ struct ChatListView: View {
     }
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "ChatList")
         let list = chats?.list
         let searched = chats?.scenes[scene]
         let sections = searched?.found ?? list?.sections ?? []
@@ -245,6 +246,7 @@ struct ThreadRowView: View {
     var selected = false
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "ThreadRow")
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if let mode = row.mode {
