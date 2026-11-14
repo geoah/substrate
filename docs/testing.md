@@ -332,16 +332,20 @@ half of validation item 10 of the 1.0 plan, and it runs only when
   created, rewritten and now and then deleted, each following another, by
   several writers at once, with blobs beside them if
   `SUBSTRATE_SCALE_BLOB_BYTES` asks.
-- **What it opens:** `SUBSTRATE_SCALE_WATCHERS` watching connections (100).
-- **What it times:** an archive pass, an export, a rebuild, the compaction
-  pass where the binary has one, the conversion at a start (the stamp one
-  dialect below, so the boot walks the last step over every line and rewrites
-  none, and the import-progress marker set, so it rebuilds the fold in two
-  replays as a conversion that rewrote lines does), and the import of the
-  archive into a database that holds none of it.
+- **What it opens:** `SUBSTRATE_SCALE_WATCHERS` watching connections (100),
+  held open over the archive pass, the export and the rebuild.
+- **What it times:** an archive pass, an export, a rebuild, the conversion at
+  a start (the stamp one dialect below, so the boot walks the last step over
+  every line and rewrites none, and the import-progress marker set, so it
+  rebuilds the fold in two replays as a conversion that rewrote lines does),
+  the import of the archive into a database that holds none of it, timed to
+  the restored repository's first open, and, last because it rewrites the
+  history every phase before it replays, a compaction of every record up to
+  the head through the operator's door (`substratectl repository compact`).
 - **What it records for each:** the wall time, the database's WAL and temp
-  bytes, the process's peak heap, and, while the server is up, a write every
-  100ms beside it, with no timeout of its own: a repository rebuild holds the
+  bytes, the process's peak heap, and, while the server is up (every phase but
+  the conversion and the import, which run at a start), a write every 100ms
+  beside it, with no timeout of its own: a repository rebuild holds the
   changelog's lock for its whole length, so the longest write beside it is
   how long every write to the repository waits for one.
 - **Where the numbers go:** to the log, and to the file

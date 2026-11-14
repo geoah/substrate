@@ -37,7 +37,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -171,6 +170,8 @@ func TestScaleTimings(t *testing.T) {
 		}, opts...)...)
 	}
 	e := start(testenv.WithRepository(scaleAuthority))
+	// The registered owner's token, for a server the harness starts again.
+	token := e.Token
 	e.ApplyVocabularyYAML(scaleVocabulary())
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -256,6 +257,10 @@ func TestScaleTimings(t *testing.T) {
 		Note: fmt.Sprintf("%d lines, %d notes, %d blob bytes, database %d bytes", lines, made.Load(), blobs, dbBytes),
 	})
 
+	// How many watchers are open while a phase runs: all of them from their
+	// opening to their end, none after.
+	var openWatchers atomic.Int64
+
 	// Each timed operation: the database's WAL and temp bytes, the process's
 	// peak heap, and, while the server is up, a write every 100ms beside it
 	// and the watchers held open.
@@ -340,7 +345,7 @@ func TestScaleTimings(t *testing.T) {
 			HeapPeakMB: float64(heapPeak.Load()) / (1 << 20), Bytes: n,
 		}
 		if live {
-			p.Watchers = watchers
+			p.Watchers = int(openWatchers.Load())
 			slices.Sort(latencies)
 			if k := len(latencies); k > 0 {
 				p.Writes = k
@@ -399,6 +404,7 @@ func TestScaleTimings(t *testing.T) {
 		}(resp)
 	}
 	opened.Wait()
+	openWatchers.Store(int64(watchers))
 
 	archivePass := ds.(interface{ ArchivePass(context.Context) error })
 	measure("archive", true, func() (int64, error) { return 0, archivePass.ArchivePass(ctx) })
@@ -413,21 +419,9 @@ func TestScaleTimings(t *testing.T) {
 		_, err := e.Service.(engine.Operator).RebuildRepository(ctx, id)
 		return 0, err
 	})
-	// The compaction pass, where this binary has one (step 23 of the plan):
-	// read by name, so the harness builds without it. It compacts only what
-	// is past each kind's retention, which a history written minutes ago
-	// does not hold, so its time here is the pass's walk.
-	if pass := reflect.ValueOf(ds).MethodByName("CompactionPass"); pass.IsValid() {
-		measure("compaction", true, func() (int64, error) {
-			out := pass.Call([]reflect.Value{reflect.ValueOf(ctx)})
-			err, _ := out[len(out)-1].Interface().(error)
-			return 0, err
-		})
-	} else {
-		note(scalePhase{Phase: "compaction", Note: "this binary has no compaction pass to time"})
-	}
 	endWatch()
 	readers.Wait()
+	openWatchers.Store(0)
 	if delivered.Load() == 0 {
 		t.Error("no watcher was delivered a write while the operations ran")
 	}
@@ -473,6 +467,21 @@ func TestScaleTimings(t *testing.T) {
 		return 0, err
 	})
 	restored.Stop()
+
+	// The compaction, last, because it rewrites the history every phase
+	// above replays: every record's history up to the head folded into its
+	// state entry, as the operator's door runs it (`substratectl repository
+	// compact`) and the compaction pass will. The server is up and a write
+	// goes beside it; the watchers are closed by then.
+	e = start(testenv.WithoutRegistration(), testenv.WithRepository(scaleAuthority))
+	e.Token = token
+	measure("compaction", true, func() (int64, error) {
+		_, err := e.Service.(interface {
+			CompactRepository(context.Context, string, int64) (engine.CompactReport, error)
+		}).CompactRepository(ctx, id, 0)
+		return 0, err
+	})
+	e.Stop()
 
 	if path := os.Getenv("SUBSTRATE_SCALE_REPORT"); path != "" {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
