@@ -89,7 +89,7 @@ extension Conversation {
             next.finding = false
             next.failure = failure
             next.unsentFailure = Failure(.message, .closed, at: at)
-        case .kept, .landed:
+        case .kept, .landed, .draftFound:
             // Read from the value below, as after every event.
             break
         case let .continued(at):
@@ -264,6 +264,14 @@ extension Conversation {
         // has since read: the chat is that thread, whatever became of the
         // copies still asking.
         if let thread = landedOn, next.thread == nil, next.pending != nil { adopt(&next, thread) }
+        // The thread this chat turned out to be had a draft the folder
+        // kept: it goes under what the composer holds, once, and the list
+        // hears of the composer's text at once, as of one given back.
+        if let older = draftFound, next.draftTaken != older {
+            next.draftTaken = older
+            if !next.draft.contains(older) { rewrite(&next, Self.above(next.draft, older)) }
+            next.gaveBack = true
+        }
         if case var .send(run)? = next.run, run.unkept, let pending = next.pending, kept == pending.id {
             run.unkept = false
             next.run = .send(run)
@@ -344,8 +352,7 @@ extension Conversation {
     /// was typed since, the same words again included. The field takes the
     /// text, and keeps after it what it has typed and not said.
     private func giveBack(_ state: inout State, _ message: String) {
-        let typedSince = state.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n" + state.draft
-        rewrite(&state, message + typedSince)
+        rewrite(&state, Self.above(message, state.draft))
         state.gaveBack = true
     }
 
@@ -753,7 +760,7 @@ extension Conversation {
         guard case let .http(_, _, reason) = failure.why, let reason else { return true }
         switch RefusalReason(rawValue: reason) {
         case .threadBusy?, .nothingToContinue?: return true
-        case .turnCap?, .spendCap?, .providerKeyMissing?, .quota?, .keyRefused?, nil: return false
+        case .turnCap?, .spendCap?, .providerKeyMissing?, .quota?, .keyRefused?, .messageIDTaken?, nil: return false
         }
     }
 

@@ -278,6 +278,7 @@ public struct ChatApp: LinkedApp {
         case .saveState: "state"
         case .saveDrafts: "drafts"
         case .saveUnsent: "unsent"
+        case .retryUnsent: "unsentRetry"
         case .savePreferences: "preferences"
         case .prefetch: "prefetch"
         case let .fetchThread(thread): "fetch:\(thread)"
@@ -314,8 +315,9 @@ public struct ChatApp: LinkedApp {
             let agent = facts?.agent ?? entry.agent ?? entry.seed.agent
             let held = entry.thread.flatMap { state.transcripts[$0] }
             // With no folder there is nothing to keep it in, and nothing
-            // to wait for.
-            let kept = entry.unsent.flatMap { state.disk == nil || state.keptUnsent.contains($0) ? $0 : nil }
+            // to wait for; nor is there where the folder refused the write.
+            let unsaved = entry.unsent.flatMap { state.unsaved?.ids.contains($0) == true ? state.unsaved?.seen : nil }
+            let kept = entry.unsent.flatMap { state.disk == nil || unsaved != nil || state.keptUnsent.contains($0) ? $0 : nil }
             let landed = entry.unsent.map { id in held?.records.contains { $0.id == id } ?? false } ?? false
             // A new chat's message, looked for in the rows of every thread
             // read: its first copy may have opened one.
@@ -328,7 +330,8 @@ public struct ChatApp: LinkedApp {
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
-                continues: state.continues, sendsIDs: state.sendsIDs, kept: kept, landed: landed, landedOn: landedOn)
+                continues: state.continues, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved, landed: landed, landedOn: landedOn,
+                draftFound: entry.draftFound)
         }
         return out
     }

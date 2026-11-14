@@ -92,10 +92,14 @@ public enum FailureFixtures {
                 name: "unsent-id-taken", place: .unsent,
                 failure: FailurePresenter.present(
                     Failure(
-                        .message, .http(status: 409, code: "conflict", reason: nil),
+                        .message, .http(status: 409, code: "conflict", reason: "message_id_taken"),
                         said: "substrate: conflict: the messageId is taken: messageId \"0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03\": send the message under a new id"
                     ),
                     context)),
+            // The device could not write the message it is sending.
+            Fixture(
+                name: "unsent-unsaved", place: .chat,
+                failure: FailurePresenter.present(Failure(.keep, .disk, seen: "There isn't enough space on this device."), context)),
             Fixture(
                 name: "list-refresh", place: .list,
                 failure: FailurePresenter.present(Failure(.refresh, .unreachable, seen: "S.example.com isn't answering."), context)),

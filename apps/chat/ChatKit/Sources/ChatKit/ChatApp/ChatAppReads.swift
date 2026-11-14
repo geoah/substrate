@@ -43,6 +43,7 @@ extension ChatAppState {
         state.idsUnserved = false
         state.unsent = [:]
         state.keptUnsent = []
+        state.unsaved = nil
         return state
     }
 

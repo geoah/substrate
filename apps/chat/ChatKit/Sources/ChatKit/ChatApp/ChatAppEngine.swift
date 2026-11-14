@@ -14,7 +14,9 @@ extension ChatApp {
         switch event.step {
         case let .linked(link): linked(&next, link)
         case let .diskOpened(disk): opened(&next, disk)
-        case let .unsentSaved(ids): next.keptUnsent = ids
+        case let .unsentSaved(ids, failed): unsentSaved(&next, ids, failed)
+        case .unsentRetryDue:
+            if next.unsaved != nil, let disk = next.disk { next.asks.append(.saveUnsent(disk, next.unsent, drafts: next.drafts)) }
         case let .permissionRead(permission): next.permission = permission
         case let .usageRead(usage): next.usage = usage
         case .transcriptsCleared:
@@ -353,6 +355,7 @@ extension ChatApp {
         // what the folder kept.
         state.unsent = disk.unsent.merging(state.unsent) { _, sent in sent }
         state.keptUnsent = Set(disk.unsent.values.map(\.id))
+        state.unsaved = nil
         // A kill between the two files leaves a text in both, and one
         // owner is chosen here. A send was on its way out of the drafts:
         // the draft is the message and no more, and it is the unsent one.
@@ -768,6 +771,26 @@ extension ChatApp {
         }
     }
 
+    /// How long after each failed write of the unsent messages the next is
+    /// made, and then every half minute for as long as it fails.
+    static let unsavedDelays: [Double] = [2, 5, 15, 30]
+
+    /// The folder answered a write of the unsent messages. Where it took
+    /// them, they are kept. Where it did not, the ones it lacks are named
+    /// so their chats can say so, their first copies leave all the same,
+    /// and the write is made again after a wait.
+    private func unsentSaved(_ state: inout State, _ ids: Set<String>, _ failed: String?) {
+        guard let failed else {
+            state.keptUnsent = ids
+            if state.unsaved != nil { state.asks.append(.cancel("unsentRetry")) }
+            state.unsaved = nil
+            return
+        }
+        let failures = (state.unsaved?.failures ?? 0) + 1
+        state.unsaved = State.Unsaved(ids: ids.subtracting(state.keptUnsent), seen: failed, failures: failures)
+        state.asks.append(.retryUnsent(after: Self.unsavedDelays[min(failures, Self.unsavedDelays.count) - 1]))
+    }
+
     private func markSeen(_ state: inout State, _ id: String) {
         guard let thread = state.thread(id), !thread.running, let finished = thread.record["finishedAt"]?.string,
             state.seen[id] != finished
@@ -813,8 +836,19 @@ extension ChatApp {
             bump(&state, named)
             // What the new chat's composer still holds (typed while its
             // message was out, or kept from a launch before) is the
-            // thread's draft from here, so it outlives the window.
-            if let draft = state.drafts.removeValue(forKey: Self.newDraft + key.rawValue) { state.drafts[named] = draft }
+            // thread's draft from here, so it outlives the window. Where
+            // the folder keeps a draft for that thread already, written on
+            // it before this chat turned out to be it, both stay: what was
+            // typed here above it. The conversation is told, so its
+            // composer holds both and its next word of its draft cannot
+            // drop the older.
+            let typed = state.drafts.removeValue(forKey: Self.newDraft + key.rawValue)
+            if let older = state.drafts[named] {
+                entry.draftFound = older
+                state.drafts[named] = Conversation.above(typed ?? "", older)
+            } else if let typed {
+                state.drafts[named] = typed
+            }
             // The server took the new chat's message, or holds it already.
             state.unsent[Self.newDraft + key.rawValue] = nil
             entry.unsent = nil
@@ -855,8 +889,13 @@ extension ChatApp {
             // what moved meanwhile is read now, and may hold the message.
             if settled, report.read == nil { load(&state, thread) }
         }
-        if let draft = report.draft {
+        if var draft = report.draft {
             let name = entry.thread ?? Self.newDraft + key.rawValue
+            // A word of the draft from before the conversation took the
+            // thread's kept draft into its composer is without it.
+            if let older = entry.draftFound {
+                if draft.contains(older) { state.conversations[key]?.draftFound = nil } else { draft = Conversation.above(draft, older) }
+            }
             state.drafts[name] = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft
         }
         if let read = report.read {

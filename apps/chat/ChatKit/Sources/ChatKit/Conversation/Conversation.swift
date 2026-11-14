@@ -81,6 +81,8 @@ public struct Conversation: Controller, Equatable {
         case kept
         /// The thread's rows hold the pending message.
         case landed
+        /// The folder kept a draft for the thread this chat turned out to be.
+        case draftFound
         case continued(at: Date)
         /// A rate limit lifted.
         case countdownDue(Date)
@@ -161,12 +163,28 @@ public struct Conversation: Controller, Equatable {
     /// The id of the pending message the device's folder holds, as the
     /// list last heard from the write: a send waits for it.
     let kept: String?
+    /// The device's words where the folder's last write did not take the
+    /// pending message: it is kept only while the app runs, and the list
+    /// tries the write again.
+    let unsaved: String?
     /// The rows the list holds of the thread have the pending message.
     let landed: Bool
     /// The thread whose rows, as the list holds them, have a new chat's
     /// pending message: its first copy opened that thread, and its answer
     /// was lost.
     let landedOn: String?
+    /// The draft the folder kept for the thread this chat turned out to be,
+    /// written on it before: it goes into the composer under what is
+    /// there, and neither is dropped.
+    let draftFound: String?
+
+    /// Two texts for one composer, neither dropped: the newer above the
+    /// older, as Edit Message puts a message above what was typed since.
+    static func above(_ newer: String, _ older: String) -> String {
+        if newer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return older }
+        if older.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return newer }
+        return newer + "\n\n" + older
+    }
 
     /// How long after each unanswered copy the next goes on its own: three
     /// repeats, as the console makes them.
@@ -188,7 +206,7 @@ public struct Conversation: Controller, Equatable {
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
         pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, sendsIDs: Bool = false,
-        kept: String? = nil, landed: Bool = false, landedOn: String? = nil
+        kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil
     ) {
         self.key = key
         self.seed = seed
@@ -203,8 +221,10 @@ public struct Conversation: Controller, Equatable {
         self.continues = continues
         self.sendsIDs = sendsIDs
         self.kept = kept
+        self.unsaved = unsaved
         self.landed = landed
         self.landedOn = landedOn
+        self.draftFound = draftFound
     }
 
     public var initialState: State {
@@ -303,6 +323,7 @@ public struct Conversation: Controller, Equatable {
         if kept != nil, kept != previous.kept { return Event(.kept) }
         if landed, !previous.landed { return Event(.landed) }
         if landedOn != nil, landedOn != previous.landedOn { return Event(.landed) }
+        if draftFound != nil, draftFound != previous.draftFound { return Event(.draftFound) }
         return nil
     }
 

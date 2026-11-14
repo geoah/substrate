@@ -11,7 +11,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case linked(LinkSnapshot)
     case diskOpened(Disk)
     /// The folder holds these unsent messages, by id, as of its last write.
-    case unsentSaved(Set<String>)
+    case unsentSaved(Set<String>, failed: String?)
+    case unsentRetryDue
     case permissionRead(NotificationPermission)
     case usageRead([AreaUsage])
     case transcriptsCleared

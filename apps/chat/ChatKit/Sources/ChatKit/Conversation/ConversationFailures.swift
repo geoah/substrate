@@ -13,6 +13,9 @@ struct ConversationFailures: Codable, Equatable, Sendable {
     /// The message that stands unsent at its place in the chat, by the id
     /// it was sent under, and why.
     var message: Failure?
+    /// The pending message is not in the device's folder: its last write
+    /// failed, and is being tried again.
+    var keep: Failure?
     /// A send of unknown delivery is being read for.
     var checking = false
     /// A stream dropped and is being opened again. A state for the
@@ -33,6 +36,7 @@ extension Conversation {
             out.chatBusy = true
         }
         out.message = state.unsentFailure
+        if state.pending != nil, let unsaved { out.keep = Failure(.keep, .disk, seen: unsaved) }
         out.checking = state.checking
         out.reconnecting = state.reconnecting
         return out

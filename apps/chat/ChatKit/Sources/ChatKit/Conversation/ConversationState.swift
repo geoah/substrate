@@ -167,6 +167,9 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// lost send, Edit Message, a chat that is gone): the list is told, so
     /// the folder holds the text at once and not after a draft's pause.
     var gaveBack = false
+    /// The thread's kept draft this conversation has taken into its
+    /// composer (`Conversation.draftFound`), so it is taken once.
+    var draftTaken: String?
     /// The thread the last event found the pending message on, by a read
     /// and not by a run's `thread` event: the list is told, and where
     /// another conversation already has that thread, this one gives way.

@@ -81,6 +81,9 @@ struct FailureSentences {
             .threadBusy: ("Moss is still answering in this chat.", "Send Again", .send),
             .nothingToContinue: ("Moss already finished this reply.", nil, nil),
             .turnCap: ("Too many replies are being written at once.", "Send Again", .send),
+            // A first copy's: nothing was written, the text is back in the
+            // box, and sending it from there is a new message.
+            .messageIDTaken: ("Your message wasn't sent.", "Send Again", .send),
             .spendCap: ("Today's spending limit is reached.", "Open in Console", agentPage),
             .providerKeyMissing: ("Anthropic has no API key yet.", "Add Key", providerPage),
             .quota: ("Today's allowance is used up.", "Add Your Own Key", providerPage),
@@ -127,6 +130,7 @@ struct FailureSentences {
     static let attempts: [Failure.Attempt: (sentence: String, button: String?, action: FailureAction?)] = [
         .send: ("You're offline.", "Send Again", .send),
         .message: ("No answer came back for your message.", "Send Again", .sendAgain),
+        .keep: ("Your message is on its way, but it isn't saved on this device yet.", nil, nil),
         .resume: ("Couldn't ask Moss to carry on.", "Try Again", .resume),
         .reply: ("Moss couldn't finish this reply.", "Try Again", .resume),
         .stop: ("Couldn't stop Moss. The reply is still being written.", "Try Again", .stop),
@@ -153,9 +157,27 @@ struct FailureSentences {
             #expect(made.sentence == expected.sentence, "\(attempt)")
             #expect(made.button?.title == expected.button, "\(attempt)")
             #expect(made.button?.action == expected.action, "\(attempt)")
-            // The note is why, but for a send, whose sentence it is.
-            #expect(made.note == (attempt == .send ? "Your message is in the box below." : "You're offline."), "\(attempt)")
+            // The note is why, but for a send, whose sentence it is, and
+            // for a message the device could not save, where it is what to
+            // do meanwhile.
+            let note = [Failure.Attempt.send: "Your message is in the box below.", .keep: "Keep Substrate Chat open until it shows as sent."]
+            #expect(made.note == note[attempt] ?? "You're offline.", "\(attempt)")
         }
+    }
+
+    @Test func aMessageTheDeviceCouldNotSaveSaysWhatToDoMeanwhile() {
+        let unsaved = Failure(.keep, .disk, seen: "The volume is full.")
+        #expect(unsaved.place == .chat)
+        let sending = FailurePresenter.present(unsaved, context())
+        #expect(sending.sentence == "Your message is on its way, but it isn't saved on this device yet.")
+        #expect(sending.note == "Keep Substrate Chat open until it shows as sent." && sending.tone == .warn)
+        // The write is tried again on its own: there is nothing to press.
+        #expect(sending.button == nil && sending.dismiss == nil)
+        #expect(sending.details == FailureDetails(title: "Details", label: "This device reported", text: "The volume is full."))
+        // A message that stands unsent is on no way.
+        let standing = FailurePresenter.present(unsaved, context { $0.stands = true })
+        #expect(standing.sentence == "Your message isn't saved on this device yet." && standing.note == "Keep Substrate Chat open until it is sent.")
+        #expect(standing.button == nil)
     }
 
     @Test func everyReasonIsSaidInWordsAPersonUses() {
@@ -165,7 +187,7 @@ struct FailureSentences {
             (.notTheAPI(status: 502), "The server answered with something Substrate Chat can't read."),
             (.sessionEnded, "Your sign-in ended."), (.needsApproval, "Substrate Chat needs your approval for that."),
             (.ended, "The server ended it."), (.closed, "Substrate Chat closed while it was being sent."),
-            (.interrupted, "It was stopped before the server answered."),
+            (.interrupted, "It was stopped before the server answered."), (.disk, "This device couldn't save it."),
             (.http(status: 500, code: "internal", reason: nil), "The server ran into a problem."),
             (.http(status: 429, code: "rate_limited", reason: nil), "The server is busy. Try again in a moment."),
             (.http(status: 409, code: "conflict", reason: nil), "It changed in the meantime."),
@@ -268,7 +290,8 @@ struct FailureSentences {
 struct FailurePlaces {
     @Test func everyAttemptHasOnePlace() {
         let places: [Failure.Attempt: Failure.Place] = [
-            .send: .chat, .message: .turn, .resume: .turn, .reply: .turn, .stop: .chat, .attach: .chat, .reload: .chat, .rows: .chat, .poll: .nowhere,
+            .send: .chat, .message: .turn, .keep: .chat, .resume: .turn, .reply: .turn, .stop: .chat, .attach: .chat, .reload: .chat, .rows: .chat,
+            .poll: .nowhere,
             .rename: .chat, .card: .inline, .answer: .inline, .decide: .inline, .addKey: .inline, .refresh: .list, .feed: .list,
             .guidance: .inline, .guidanceChange: .inline,
         ]

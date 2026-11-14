@@ -50,8 +50,9 @@ extension ChatApp {
     /// thread's row says of its last run, or what this conversation saw of
     /// it, at the newest turn; and an older turn that was cut short or went
     /// unanswered, at that turn, with no button. The chat's, above the
-    /// composer: the conversation's own first, then a rename, then a read
-    /// of its rows that failed.
+    /// composer: a pending message the device could not save, then the
+    /// conversation's own, then a rename, then a read of its rows that
+    /// failed.
     func failures(_ state: State, live: ConversationLive, row: ChatThread?, stored: [Turn], turns: [TurnPresentation]) -> ScreenFailures {
         var out = ScreenFailures(reconnecting: live.failures.reconnecting)
         var context = failureContext(state, agent: live.agent, thread: live.thread)
@@ -99,6 +100,11 @@ extension ChatApp {
         context.busy = live.failures.chatBusy
         if live.failures.checking {
             out.strip = FailurePresentation(id: "checking", tone: .quiet, sentence: "Checking whether your message arrived…", working: true)
+        } else if let failure = live.failures.keep {
+            // Before the chat's other failures: this one is lost with the
+            // app, and the person can only keep the app open.
+            context.stands = live.unsent != nil
+            out.strip = FailurePresenter.present(failure, context)
         } else if let failure = live.failures.chat {
             let dismissible = failure.attempt == .send || failure.attempt == .attach
             out.strip = FailurePresenter.present(failure, context, dismiss: dismissible ? .dismiss : nil)

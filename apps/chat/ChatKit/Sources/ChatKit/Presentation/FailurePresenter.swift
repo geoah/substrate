@@ -35,6 +35,8 @@ enum RefusalReason: String, CaseIterable, Sendable {
     /// A continue of a thread whose reply is complete.
     case nothingToContinue = "nothing_to_continue"
     case turnCap = "turn_cap"
+    /// The `messageId` of a send names another message.
+    case messageIDTaken = "message_id_taken"
     case spendCap = "spend_cap"
     case providerKeyMissing = "provider_key_missing"
     case quota
@@ -78,6 +80,9 @@ enum FailurePresenter {
         var thread: String?
         /// What a rename asked for.
         var subject: String?
+        /// The message the failure is about stands unsent: no copy of it
+        /// is on its way.
+        var stands = false
     }
 
     struct Words {
@@ -139,6 +144,11 @@ enum FailurePresenter {
             switch reason.flatMap(RefusalReason.init(rawValue:)) {
             case .threadBusy?:
                 return Words(tone: .warn, sentence: "\(c.agent) is still answering in this chat.", note: boxNote(failure), button: retry(failure, c))
+            case .messageIDTaken?:
+                // As its attempt says it: a standing message's own words,
+                // and a first copy's as any refusal's, with the text back
+                // in the box.
+                return attempted(failure, c)
             case .turnCap?:
                 return Words(
                     tone: .warn, sentence: "Too many replies are being written at once.", note: "Try again when one finishes.",
@@ -155,7 +165,7 @@ enum FailurePresenter {
             case .keyRefused?: return run(.providerKeyRefused, status: "error", failure, c)
             case nil: return refused(status, failure, c)
             }
-        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI, .ended, .closed, .interrupted:
+        case .offline, .unreachable, .timeout, .streamEnded, .sessionEnded, .needsApproval, .notTheAPI, .ended, .closed, .interrupted, .disk:
             return attempted(failure, c)
         }
     }
@@ -276,6 +286,17 @@ enum FailurePresenter {
                 return Words(tone: .warn, sentence: "The server turned your message down.", note: because, button: button)
             }
             return Words(tone: .warn, sentence: "No answer came back for your message.", note: because, button: button)
+        case .keep:
+            // No button: the write is tried again on its own, and the
+            // strip goes when one lands or the server has the message.
+            if c.stands {
+                return Words(
+                    tone: .warn, sentence: "Your message isn't saved on this device yet.",
+                    note: "Keep \(ChatManifest.appName) open until it is sent.")
+            }
+            return Words(
+                tone: .warn, sentence: "Your message is on its way, but it isn't saved on this device yet.",
+                note: "Keep \(ChatManifest.appName) open until it shows as sent.")
         case .resume:
             return Words(tone: .warn, sentence: "Couldn't ask \(c.agent) to carry on.", note: because, button: button)
         case .reply:
@@ -325,7 +346,7 @@ enum FailurePresenter {
                 nil
             }
         case .refresh, .feed: FailureButton(title: "Try Again", action: .refresh, busy: c.busy)
-        case .poll, .card, .answer, .decide, .addKey, .guidance, .guidanceChange: nil
+        case .poll, .card, .answer, .decide, .addKey, .guidance, .guidanceChange, .keep: nil
         }
     }
 
@@ -342,6 +363,7 @@ enum FailurePresenter {
         case .ended: return "The server ended it."
         case .closed: return "\(ChatManifest.appName) closed while it was being sent."
         case .interrupted: return "It was stopped before the server answered."
+        case .disk: return "This device couldn't save it."
         case let .http(status, _, _):
             if status >= 500 { return "The server ran into a problem." }
             switch status {
@@ -355,14 +377,15 @@ enum FailurePresenter {
         }
     }
 
-    /// A `409` for a message's own id that names no reason: the id is
-    /// another record's. The server gives this refusal no reason of its
-    /// own, and a server older than the `turn_cap` reason answers a full
-    /// set of turns the same way, so its words are read for the field's
-    /// name: the one place a message's refusal is, to delete once the
-    /// server names it.
+    /// The id a message was sent under names another message: the
+    /// server's `message_id_taken`.
     static func takenID(_ failure: Failure) -> Bool {
-        guard case let .http(409, _, reason) = failure.why, reason == nil else { return false }
+        guard case let .http(409, _, reason) = failure.why else { return false }
+        if let reason { return RefusalReason(rawValue: reason) == .messageIDTaken }
+        // TO DELETE with the last server that names no reason for it: such
+        // a server answers a full set of turns with the same bare `409`,
+        // so its words are read for the field's name. The one place a
+        // refusal is told by what the server said.
         return failure.said?.contains("messageId") == true
     }
 
