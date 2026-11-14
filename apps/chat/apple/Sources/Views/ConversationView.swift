@@ -132,7 +132,9 @@ struct ConversationView: View {
     }
 
     private var act: (FailureAction) -> Void {
-        let actions = FailureActions(host: host, scene: scene, key: key, openURL: openURL) { keySheet = host.chats?.keys[$0] }
+        let actions = FailureActions(host: host, scene: scene, key: key, openURL: openURL, draftField: draftField) {
+            keySheet = host.chats?.keys[$0]
+        }
         return { actions($0) }
     }
 

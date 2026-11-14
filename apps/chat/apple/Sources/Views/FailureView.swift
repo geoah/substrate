@@ -204,13 +204,23 @@ struct FailureActions {
     /// The conversation the failure is in; nil for the list's.
     var key: ChildKey?
     var openURL: OpenURLAction
+    /// The composer's field of that conversation, which owns its text
+    /// while it is typed.
+    var draftField: DraftField?
     /// The app's own sheet for a provider's key.
     var showKey: (String) -> Void = { _ in }
 
     func callAsFunction(_ action: FailureAction) {
         switch action {
         case .resume: if let key { host.send(.continueTurn, to: key) }
-        case .send: if let key { host.send(.send, to: key) }
+        case .send:
+            // Send Again sends what the conversation holds: the text given
+            // back, and first what the field has typed after it and not
+            // said.
+            if let key {
+                draftField?()
+                host.send(.send, to: key)
+            }
         case .stop: if let key { host.send(.stop, to: key) }
         case .reload: if let key { host.send(.retryReload, to: key) }
         case .reopen: if let key { host.send(.reopen, to: key) }

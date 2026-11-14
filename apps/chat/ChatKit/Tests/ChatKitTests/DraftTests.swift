@@ -196,6 +196,37 @@ struct DraftTests {
         #expect(await rig.live(key)?.draft == "Water the basil\n\nand the mint!")
     }
 
+    @Test func sendAgainSendsWhatTheFieldHoldsAndNotWhatTheConversationLastHeard() async throws {
+        let refusal = #"{"error":{"code":"conflict","message":"a turn is already running on this thread"}}"#
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .json(409, refusal))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("Water the basil", at: start)
+        try await tell(rig, key, field.reports.say())
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.chatFailure != nil }
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        #expect(field.text == "Water the basil")
+        #expect(await rig.conversation(key)?.failures.strip?.button?.action == .send)
+        // More is typed, with no pause, and the strip's Send Again is
+        // pressed: the field says what it holds first (`DraftField`), then
+        // the send goes.
+        field.type(" twice a week", at: start)
+        #expect(await rig.live(key)?.draft == "Water the basil")
+        rig.server.route("POST", "/chat", .stream(replyStream, holdAfter: 2))
+        try await rig.send(field.reports.tell(field.text), to: key)
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.server.count("/chat") == 2 }
+        let body = try #require(JSONValue.parse(rig.server.body("POST", "/chat")))
+        #expect(body["message"]?.string == "Water the basil twice a week")
+        // And the field is cleared of what was sent.
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        #expect(field.text == "")
+        rig.server.release()
+    }
+
     @Test func aNewLineFromReturnIsTheFieldsAndCommandReturnSendsItWithTheRest() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
         try await rig.signIn()
