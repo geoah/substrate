@@ -165,30 +165,33 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 // discards any paged-checkpoint continuation: the single-shot callers
 // (manual run, host Call, the call API, the agent loop) never page.
 func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, error) {
-	effects, output, _, err := ds.runCallableRaw(ctx, fn, in)
+	effects, output, _, _, err := ds.runCallableRaw(ctx, fn, in)
 	return effects, output, err
 }
 
 // runCallableRaw is runCallable with the paged-checkpoint continuation
 // surfaced: a non-nil *runner.Continuation means the body finished a PAGE and
 // wants re-invoking (the drain loop in functions.go). The delivery paths use
-// this; everyone else takes runCallable and ignores paging.
-func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) (_ []effect, _ any, _ *runner.Continuation, err error) {
+// this; everyone else takes runCallable and ignores paging. refused is
+// every list of the run the substrate refused that the body caught, at any
+// depth: what fails after the reply carries them, as a failed run does
+// (refusedContinuation).
+func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) (_ []effect, _ any, _ *runner.Continuation, refused []runner.RefusedCursor, err error) {
 	// THE BACKSTOP. A host function has no body to invoke: the engine implements
 	// it, under the grants of whoever called it. Every door that can reach one
 	// branches before here (CallFunction, the agent loop, trigger admission), so
 	// arriving is a bug in this file's callers and not a user's mistake — an
 	// internal error rather than a validation refusal.
 	if fn.IsHost() {
-		return nil, nil, nil, fmt.Errorf("substrate/engine: host function %s reached the runner — the engine is its body, and every caller branches before this",
+		return nil, nil, nil, nil, fmt.Errorf("substrate/engine: host function %s reached the runner — the engine is its body, and every caller branches before this",
 			fn.Identity())
 	}
 	if err := ds.admitOutsidePackage(ctx, fn.Package); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	origin := callOriginOf(ctx)
 	if slices.Contains(origin.stack, fn.Identity()) {
-		return nil, nil, nil, fmt.Errorf("call: %s is already on the call stack: recursion is refused", fn.Identity())
+		return nil, nil, nil, nil, fmt.Errorf("call: %s is already on the call stack: recursion is refused", fn.Identity())
 	}
 	inv := &invocation{
 		ds: ds, stack: append(slices.Clone(origin.stack), fn.Identity()),
@@ -212,7 +215,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	if in.Config == nil {
 		cfg, secrets, ch, err := ds.resolveFunctionConfig(ctx, fn)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("run: config: %w", unstartedAtAllowance(err))
+			return nil, nil, nil, nil, fmt.Errorf("run: config: %w", unstartedAtAllowance(err))
 		}
 		in.Config, charge = cfg, ch
 		inv.scrub.add(secrets...)
@@ -222,7 +225,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	}
 	backend, err := newCallBackend(inv, fn, in.IdempotencyKey, in.CausalDepth)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	// Counted while the body runs, so the background digest of a changelog
 	// yields to it (segmentdigest.go); deferred, so a panic a recoverer
@@ -248,7 +251,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
 		backend.failed(err)
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	// The returned effects are ADDRESSED data the outbound scrubber cannot
 	// redact in place: an injected secret copied into a property value, id or
@@ -257,7 +260,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// as user data. The scrubber holds every value injected anywhere under this
 	// root (config + each sub-call's), so a sub-call's secret is caught too.
 	if inv.scrub.found(res.Effects) {
-		return nil, nil, nil, fmt.Errorf("run: %w", errSecretInEffects)
+		return nil, nil, nil, nil, withRefusals(fmt.Errorf("run: %w", errSecretInEffects), res.Refused)
 	}
 	// The paged-checkpoint continuation is the OTHER value that leaves the
 	// runner boundary un-scrubbed: the host stores `more.cursor` verbatim in
@@ -266,13 +269,24 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// like a secret-bearing effect, before any page or cursor commits. The
 	// scrubber holds every value injected anywhere under this root.
 	if res.More != nil && inv.scrub.found(res.More) {
-		return nil, nil, nil, fmt.Errorf("run: %w", errSecretInContinuation)
+		return nil, nil, nil, nil, withRefusals(fmt.Errorf("run: %w", errSecretInContinuation), res.Refused)
 	}
 	own, err := ds.decodeEffects(fn, res.Effects)
 	if err != nil {
-		return nil, nil, nil, inv.scrub.err(fmt.Errorf("run: %w", err))
+		return nil, nil, nil, nil, withRefusals(inv.scrub.err(fmt.Errorf("run: %w", err)), res.Refused)
 	}
-	return append(inv.effects, own...), inv.scrub.value(res.Output), res.More, nil
+	return append(inv.effects, own...), inv.scrub.value(res.Output), res.More, res.Refused, nil
+}
+
+// withRefusals is err carrying the lists a run that answered had refused
+// (runner.Result.Refused): what fails after the reply is decided as a failed
+// run carrying them is (refusedContinuation).
+func withRefusals(err error, refused []runner.RefusedCursor) error {
+	var carried *runner.RefusedCursorError
+	if err == nil || len(refused) == 0 || errors.As(err, &carried) {
+		return err
+	}
+	return &runner.RefusedCursorError{Refused: refused, Err: err}
 }
 
 // invocation is the per-delivery state one root invocation and its nested
@@ -521,8 +535,17 @@ func (b *callBackend) ResolveKind(name string) string {
 // already gated the union of the two allowlists and charged its call budget; the engine's half gates depth, recursion and the
 // callee's declared input/output shapes. The callee's effects accumulate on
 // the shared invocation — they apply in the ROOT delivery's transaction —
-// and its output returns to the calling body.
-func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, error) {
+// and its output returns to the calling body. The lists the callee's body
+// refused, caught, come back beside its output, so they join the calling
+// run's (runner.Result.Refused); a callee that failed carries its own on its
+// error.
+func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, []runner.RefusedCursor, error) {
+	var refused []runner.RefusedCursor
+	out, err := b.call(ctx, ident, args, &refused)
+	return out, refused, err
+}
+
+func (b *callBackend) call(ctx context.Context, ident string, args any, refused *[]runner.RefusedCursor) (any, error) {
 	ds := b.inv.ds
 	if slices.Contains(b.fn.Caps.Agents, ident) {
 		return b.callAgent(ctx, ident, args)
@@ -616,6 +639,7 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 		callee.failed(err)
 		return nil, err
 	}
+	*refused = res.Refused
 	// The callee's effects face the same addressed-data gate as the root's
 	//: a secret copied into an id, relation or property value is
 	// rejected before decode. Truncate the callee's accumulated effects back

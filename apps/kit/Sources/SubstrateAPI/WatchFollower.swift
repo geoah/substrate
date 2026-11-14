@@ -157,6 +157,21 @@ public struct WatchFollower: Sendable {
         }
     }
 
+    /// How far apart two recoveries from `compacted` (a relist, and the watch
+    /// opened again from it) must start: one recovery a minute. A refusal
+    /// within this of the start of the last recovery is a failure, shown as
+    /// one, so a server that keeps refusing never makes a loop. Only the
+    /// minute passing makes the allowance whole again: a bookmark, a list
+    /// that lands or a row the watch delivers does not.
+    public static let recoveryInterval: TimeInterval = 60
+
+    /// Whether a `compacted` refusal met at `now` starts a recovery, the last
+    /// one having started at `last` (nil: none yet). `now` is the app's
+    /// clock (`AppEnvironment.clock`), so a test moves it.
+    public static func recovers(at now: Date, after last: Date?) -> Bool {
+        last.map { now.timeIntervalSince($0) >= recoveryInterval } ?? true
+    }
+
     /// A refusal no retry fixes, as the end it means; nil for one worth
     /// trying again (a busy or failing server).
     static func end(for refusal: any Error, app: String) -> WatchEnd? {

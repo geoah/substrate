@@ -17,7 +17,7 @@
 import { useMemo, useState } from "react"
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { recordsQueryOptions, type ListParams } from "@/lib/api/records"
+import { recordsQueryOptions, type FirstPageParams } from "@/lib/api/records"
 import type {
   KindInfo,
   Page,
@@ -82,7 +82,7 @@ export function childrenListParams(
   orderBy: string,
   expand: readonly string[],
   parentIds: readonly string[]
-): ListParams {
+): FirstPageParams {
   return {
     kinds: [kind.identity],
     first: CHILDREN_PAGE,

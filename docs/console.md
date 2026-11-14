@@ -1645,6 +1645,28 @@ open their detail from anywhere on the row. An actor opens at `/actors/{id}`:
 who it is, and History narrowed to it. The old address `/changelog` redirects
 here with its filters.
 
+When the server can no longer resume a position the console holds (a
+repository restored, for one), it refuses it as `410 compacted`, and every
+list and tail the console reads follows one rule: one recovery a minute, by
+time alone. A refusal starts a recovery: what was read from the refused
+position is dropped, and the list is read again from its first page, or the
+live tail opened again at the head, with no error shown. Another refusal less
+than 60 seconds (60,000 ms) after that recovery started is the failure,
+never a second recovery: History says it didn't load, with **Try again**,
+which reads its first page, and the live tail shows **Stopped**. A refusal 60
+seconds or more after the recovery started recovers again. Nothing else
+restarts the minute: not the tail's bookmark, a page that loaded, a change
+that arrived or leaving the page and coming back, since the minute belongs to
+what is read (History's filter, a list, a tail), not to the page that shows
+it. Whether a refusal recovers or fails, the console never sends the refused
+position again, on that page or when you come back to it. A run History reads
+to say its values follows the same rule by reading History again, with one
+minute per feed, and a run that fails says so beneath its sentence. Every
+other list the console pages with **Load more** or reads whole, and every
+live tail, does the same, each with a minute of its own; a list paged with
+**Load more** says it didn't load, and a tail whose page has no status line
+yet stops quietly.
+
 ## Search
 
 `/search` is the [ranked read](api.md#search) as a page: a query in the

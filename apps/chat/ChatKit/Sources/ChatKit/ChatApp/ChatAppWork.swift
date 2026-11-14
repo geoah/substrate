@@ -42,12 +42,22 @@ extension ChatApp {
             let opening = storage.open(identity)
             return .once {
                 let lease = await opening.value
-                let state = storage.state(lease)
+                var state = storage.state(lease)
                 var stale: [ChatAppState.WatchKey] = []
                 if let cache = storage.records(lease) {
-                    // The cursor an earlier build kept beside the list.
-                    if await cache.cursor == nil, let seq = state?.feedSeq, let generation = state?.feedGeneration {
+                    // The cursor an earlier build kept beside the list moves
+                    // to the record cache, which drops it when it is
+                    // refused, and leaves the list's file: kept there, a
+                    // refused one would be sent again at every launch that
+                    // finds the cache without a cursor.
+                    if let seq = state?.feedSeq, let generation = state?.feedGeneration, await cache.cursor == nil {
                         await cache.bookmark(WatchCursor(seq: seq, generation: generation))
+                    }
+                    if var moved = state, moved.feedSeq != nil || moved.feedGeneration != nil {
+                        moved.feedSeq = nil
+                        moved.feedGeneration = nil
+                        storage.save(moved, lease)
+                        state = moved
                     }
                     stale = await cache.stale.compactMap(Self.watchKey)
                 }
@@ -192,7 +202,7 @@ extension ChatApp {
                             yield(.watchRow(row))
                         case .relist:
                             await cache.relist()
-                            yield(.watchRelist)
+                            yield(.watchRelist(at: clock.now))
                         case .interrupted:
                             break
                         case let .ended(end):

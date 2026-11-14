@@ -175,6 +175,18 @@ class HostError(Exception):
     pass
 
 
+class Compacted(HostError):
+    """A list cursor the substrate can no longer resume: the history was
+    replaced (a restore), the server's paging changed (an upgrade), or the
+    list reads in another order now (a declaration changed, or a unit or a
+    conversion its filter or order converts through). A body lists again
+    from the first page and drops the cursor it saved, as
+    `host.records.list(...)` with no `after`; sending the same cursor again
+    is refused again (docs/api.md, pagination; docs/functions.md).
+    """
+
+
+
 class Temporary(Exception):
     """A failure a later attempt may not meet: the network, a provider that
     answered "try later", a dependency that is down. A body raises it, as
@@ -1370,13 +1382,23 @@ class Observed:
         return counts
 
     def _pages(self, flt):
-        """Every live record a filter matches, read 500 to a page."""
-        out, after = [], None
+        """Every live record a filter matches, read 500 to a page. A cursor
+        the substrate can no longer resume starts the read again from the
+        first page, ONCE, with what it read dropped; a second refusal is
+        raised, so a substrate that keeps refusing fails the body, never
+        loops it."""
+        out, after, restarted = [], None, False
         while True:
             query = {"filter": flt, "first": 500}
             if after:
                 query["after"] = after
-            page = self._host.list(**query)
+            try:
+                page = self._host.list(**query)
+            except Compacted:
+                if not after or restarted:
+                    raise
+                out, after, restarted = [], None, True
+                continue
             out.extend(page.get("records") or [])
             after = page.get("cursor")
             if not after:
@@ -1423,6 +1445,8 @@ class Host:
 
     # The exception a body raises to say its failure is temporary.
     Temporary = Temporary
+    # The refusal of a list cursor the substrate can no longer resume.
+    Compacted = Compacted
 
     def __init__(self, inp, req_id, logs):
         self._config = inp.get("config")
@@ -1470,7 +1494,10 @@ class Host:
             # all that is left to do from this side.
             raise HostError("protocol desync during " + method)
         if not reply.get("ok"):
-            raise HostError(reply.get("error") or method + " failed")
+            error = reply.get("error") or method + " failed"
+            if reply.get("compacted"):
+                raise Compacted(error)
+            raise HostError(error)
         return reply.get("result") or {}
 
     def get(self, kind, id):
@@ -1604,7 +1631,7 @@ def main():
             elif op == "deregister":
                 resp = deregister(req)
             elif op == "describe":
-                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 7}
+                resp = {"ok": True, "functions": sorted(FUNCS), "protocol": 8}
             elif op == "invoke":
                 resp = invoke(req, req_id)
             else:

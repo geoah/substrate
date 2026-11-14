@@ -16,6 +16,7 @@ import { KIND_KIND, PACKAGE_KIND, RETENTION_KIND } from "@/lib/core-kinds"
 import { scalarText } from "@/lib/format"
 import { rememberKindLabels } from "@/lib/kind-names"
 
+import { walkPages } from "./compacted"
 import {
   CORE_AUTHORITY,
   CORE_PACKAGE_NAME,
@@ -97,24 +98,24 @@ export function normalizeKinds(payload: unknown): KindInfo[] {
 }
 
 export async function fetchKinds(signal?: AbortSignal): Promise<KindInfo[]> {
-  const out: KindInfo[] = []
-  let after: string | undefined
-  do {
-    const page = await request<Page>(
-      "GET",
-      listPath({
-        authority: CORE_AUTHORITY,
-        package: CORE_PACKAGE_NAME,
-        name: KINDS,
-        first: REGISTRY_PAGE,
-        after,
-      }),
-      undefined,
-      { signal }
-    )
-    out.push(...normalizeKinds(page))
-    after = page.cursor
-  } while (after)
+  const { pages } = await walkPages(
+    `${CORE_AUTHORITY}/${CORE_PACKAGE_NAME}/${KINDS}`,
+    (after: string | undefined) =>
+      request<Page>(
+        "GET",
+        listPath({
+          authority: CORE_AUTHORITY,
+          package: CORE_PACKAGE_NAME,
+          name: KINDS,
+          first: REGISTRY_PAGE,
+          after,
+        }),
+        undefined,
+        { signal }
+      ),
+    (page) => page.cursor || undefined
+  )
+  const out = pages.flatMap(normalizeKinds)
   rememberKindLabels(out)
   return out
 }

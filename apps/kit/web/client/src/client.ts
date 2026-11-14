@@ -121,19 +121,41 @@ export class SubstrateClient {
   }
 
   /** Every page of a read, up to `limit` rows, the first page's head kept:
-   * a watch from that head sees every write after the read. */
+   * a watch from that head sees every write after the read. A cursor the
+   * server can no longer resume (`410 compacted`) starts the read again from
+   * the first page, ONCE: what it read is dropped with the cursor, and a
+   * second refusal is thrown, so a server that keeps refusing is a failure
+   * and never a loop. Any other refusal is thrown as it is. */
   async listAll(
     q: ListQuery,
     limit = 5000,
     signal?: AbortSignal
   ): Promise<RecordPage> {
-    const all = await this.list(q, signal)
-    all.records ??= []
-    let cursor = all.cursor
-    while (cursor && all.records.length < limit) {
-      const page = await this.list({ ...q, after: cursor }, signal)
-      all.records.push(...(page.records ?? []))
+    let restarted = false
+    let all: RecordPage | undefined
+    let cursor = q.after
+    for (;;) {
+      let page: RecordPage
+      try {
+        page = await this.list({ ...q, after: cursor }, signal)
+      } catch (e) {
+        if (
+          cursor &&
+          !restarted &&
+          e instanceof SubstrateError &&
+          e.compacted
+        ) {
+          restarted = true
+          all = undefined
+          cursor = undefined
+          continue
+        }
+        throw e
+      }
+      if (all) all.records.push(...(page.records ?? []))
+      else all = { ...page, records: page.records ?? [] }
       cursor = page.cursor
+      if (!cursor || all.records.length >= limit) break
     }
     all.cursor = cursor
     return all

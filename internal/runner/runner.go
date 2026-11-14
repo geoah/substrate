@@ -466,25 +466,64 @@ func (r *Runner) invokeOnce(ctx context.Context, spec Spec, in Input, backend Ba
 	resp, err := p.roundtrip(ictx, allowance{timeout: spec.timeout(), until: time.Now().Add(spec.timeout())},
 		frame{Op: "invoke", ID: spec.Key(), Input: &in}, state)
 	// Every line the body wrote has reached the backend already, through
-	// state.log, whichever way the exchange ended.
+	// state.log, whichever way the exchange ended. The lists the substrate
+	// refused travel with every way the run fails (RefusedCursorError): the
+	// run's own record, never the failure's words.
+	fail := func(err error) (*Result, error) {
+		if len(state.refused) > 0 {
+			return nil, &RefusedCursorError{Refused: state.refused, Err: err}
+		}
+		return nil, err
+	}
 	if state.tripped != nil {
-		return nil, state.tripped
+		return fail(state.tripped)
 	}
 	if errors.Is(err, errChildGone) {
 		// The frame went nowhere: Invoke retries once, and a second loss
 		// reaches the caller as a body that never started.
-		return nil, notStarted(err)
+		return fail(notStarted(err))
 	}
 	if err != nil {
-		return nil, err
+		return fail(err)
 	}
 	if !resp.OK {
 		if resp.Temporary {
-			return nil, &temporaryError{msg: "runner: " + resp.Error}
+			return fail(&temporaryError{msg: "runner: " + resp.Error})
 		}
-		return nil, fmt.Errorf("runner: %s", resp.Error)
+		return fail(fmt.Errorf("runner: %s", resp.Error))
 	}
-	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: state.logs, More: resp.More}, nil
+	// A run that caught a refusal and answers with the refused cursor as
+	// its continuation would have the next run send it again.
+	if resp.More != nil && refusedIn(resp.More.Cursor, state.refused) {
+		return fail(errors.New("runner: the body answered with a continuation that holds a list cursor the substrate refused in this run"))
+	}
+	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: state.logs, More: resp.More, Refused: state.refused}, nil
+}
+
+// refusedIn reports whether a refused list's cursor is a value of v,
+// wherever it sits in it.
+func refusedIn(v any, refused []RefusedCursor) bool {
+	switch x := v.(type) {
+	case string:
+		for _, r := range refused {
+			if r.Cursor != "" && r.Cursor == x {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, e := range x {
+			if refusedIn(e, refused) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if refusedIn(e, refused) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // proc returns the live process for one installation, starting it if needed.
@@ -1183,6 +1222,11 @@ type readState struct {
 	// unit call (units.go).
 	units       *vocabulary.UnitGraph
 	unitsLoaded bool
+	// refused is every list of this invocation the substrate refused
+	// because it can no longer resume the cursor the list sent
+	// (substrate.ErrStaleHistory), in order: what a failed run carries
+	// (RefusedCursorError). A list is the one host call that sends a cursor.
+	refused []RefusedCursor
 }
 
 // log takes one line of the body's log off the wire and hands it on at once.
@@ -1205,7 +1249,11 @@ func (s *readState) serve(ctx context.Context, call hostCall) map[string]any {
 	}
 	out, err := s.handle(ctx, call)
 	if err != nil {
-		return map[string]any{"ok": false, "error": err.Error()}
+		reply := map[string]any{"ok": false, "error": err.Error()}
+		if errors.Is(err, substrate.ErrStaleHistory) {
+			reply["compacted"] = true
+		}
+		return reply
 	}
 	return map[string]any{"ok": true, "result": out}
 }
@@ -1283,6 +1331,9 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		}
 		page, err := s.backend.List(ctx, q)
 		if err != nil {
+			if errors.Is(err, substrate.ErrStaleHistory) {
+				s.refused = append(s.refused, RefusedCursor{Refusal: err, Cursor: q.After})
+			}
 			return nil, err
 		}
 		if err := s.chargeRows(len(page.Records)); err != nil {
@@ -1393,7 +1444,15 @@ func (s *readState) handle(ctx context.Context, call hostCall) (any, error) {
 		if err := s.chargeCall(); err != nil {
 			return nil, s.trip(err)
 		}
-		out, err := s.backend.Call(ctx, in.Function, in.Input)
+		out, nested, err := s.backend.Call(ctx, in.Function, in.Input)
+		// A nested run's refused lists are this run's too, at every depth:
+		// a body that hands its cursor to a helper meets the helper's
+		// refusal as its own.
+		s.refused = append(s.refused, nested...)
+		var refused *RefusedCursorError
+		if errors.As(err, &refused) {
+			s.refused = append(s.refused, refused.Refused...)
+		}
 		if err != nil {
 			return nil, err
 		}

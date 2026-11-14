@@ -18,6 +18,7 @@ interface Watch {
   onRow: (row: ChangeRow) => void
   onStatus?: (status: string) => void
   onCompacted?: () => void
+  reader: { key: string }
   stopped: boolean
 }
 
@@ -158,6 +159,9 @@ describe("useUnitReader", () => {
     await waitFor(() => expect(watch.calls).toHaveLength(2))
     expect(first.stopped).toBe(true)
     expect(watch.calls[1].stopped).toBe(false)
+    // The watch's bound: the one opened again is the same reader, so a
+    // refusal of it within the minute is a failure.
+    expect(watch.calls[1].reader.key).toBe(first.reader.key)
   })
 
   it("sees a change made while it was unmounted when it mounts again", async () => {

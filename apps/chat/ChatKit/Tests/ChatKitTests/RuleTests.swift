@@ -345,6 +345,185 @@ struct ListRules {
         #expect(rig.server.count("/api/v1/records", query: "llm/message") == before + 2)
     }
 
+    /// A watch the server can no longer resume (its position fell below
+    /// what the history keeps) reads the list again and follows from the
+    /// head that read answered. The history is the same one, so only
+    /// dropping the saved position keeps it from being sent again.
+    @Test func aWatchToldCompactedReadsTheListAgainAndFollowsItsHead() async throws {
+        let earlier = #"{"head":5,"generation":"g","records":[\#(agentJSON(helper))]}"#
+        let later = #"{"head":12,"generation":"g","records":[\#(agentJSON(helper)),\#(agentJSON(otherAgent))]}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/changes", query: "from=5&generation=g", answer: .json(410, compactedJSON)),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, earlier), once: true),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
+            ] + baseRoutes())
+        try await rig.signIn()
+        // The list read again answers 10 as its earliest head.
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            let state = await harness.state
+            return rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1 && state.watching && !state.refreshing
+        }
+        let state = await rig.harness.state
+        #expect(state.agents.map(\.id) == [helper, otherAgent])
+        #expect(state.refreshError == nil && state.feedProblem == nil)
+        #expect(rig.server.count("/api/v1/changes", query: "from=5&generation=g") == 1)
+        #expect(await rig.storage.records(try await rig.lease())?.cursor == WatchCursor(seq: 10, generation: "g"))
+    }
+
+    /// The watch the refresh opens at the head it just read, refused as
+    /// `compacted` too, is a failure shown as one: no third read.
+    @Test func aWatchRefusedAgainAtTheHeadItJustReadSaysSoAndReadsNoMore() async throws {
+        let earlier = #"{"head":5,"generation":"g","records":[\#(agentJSON(helper))]}"#
+        let later = #"{"head":12,"generation":"g","records":[\#(agentJSON(helper)),\#(agentJSON(otherAgent))]}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/changes", query: "from=5&generation=g", answer: .json(410, compactedJSON)),
+                .init(method: "GET", path: "/api/v1/changes", query: "from=10&generation=g", answer: .json(410, compactedJSON)),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, earlier), once: true),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
+            ] + baseRoutes())
+        try await rig.signIn()
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            await harness.state.feedProblem != nil
+        }
+        let state = await rig.harness.state
+        #expect(state.feedProblem?.contains("could not resume") == true)
+        #expect(!state.watching)
+        #expect(rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1)
+    }
+
+    /// One recovery a minute: the watch the read again opens reaches its
+    /// bookmark and is then refused as `compacted`. The bookmark makes
+    /// nothing whole again, so within the minute that refusal is the
+    /// failure, said, and the list is not read a third time.
+    @Test func aWatchRefusedAfterItsBookmarkWithinAMinuteOfItsReadAgainSaysSoAndReadsNoMore() async throws {
+        let earlier = #"{"head":5,"generation":"g","records":[\#(agentJSON(helper))]}"#
+        let later = #"{"head":12,"generation":"g","records":[\#(agentJSON(helper)),\#(agentJSON(otherAgent))]}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/changes", query: "from=5&generation=g", answer: .json(410, compactedJSON)),
+                .init(
+                    method: "GET", path: "/api/v1/changes", query: "from=10&generation=g",
+                    answer: .stream([#"{"bookmark":10,"generation":"g"}"#, compactedJSON])),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, earlier), once: true),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
+            ] + baseRoutes())
+        try await rig.signIn()
+        let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            await harness.state.feedProblem != nil || lists() > 2
+        }
+        let state = await rig.harness.state
+        // The first read, and the one read again; never a third.
+        #expect(lists() == 2)
+        #expect(state.feedProblem?.contains("could not resume") == true)
+        #expect(!state.watching)
+        #expect(rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1)
+    }
+
+    /// The minute past, a refusal is a recovery again. The read again's
+    /// watch is answered busy and waits on the app's clock; an hour later it
+    /// is refused as `compacted`, though it never opened in between, and
+    /// the list is read once more and followed.
+    @Test func aWatchRefusedAnHourAfterItsReadAgainReadsTheListAgain() async throws {
+        let earlier = #"{"head":5,"generation":"g","records":[\#(agentJSON(helper))]}"#
+        let later = #"{"head":12,"generation":"g","records":[\#(agentJSON(helper)),\#(agentJSON(otherAgent))]}"#
+        let busy = #"{"error":{"code":"unavailable","message":"the server is busy"}}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/changes", query: "from=5&generation=g", answer: .json(410, compactedJSON)),
+                .init(method: "GET", path: "/api/v1/changes", query: "from=10&generation=g", answer: .json(503, busy), once: true),
+                .init(method: "GET", path: "/api/v1/changes", query: "from=10&generation=g", answer: .json(410, compactedJSON), once: true),
+                .init(
+                    method: "GET", path: "/api/v1/changes", query: "from=10&generation=g",
+                    answer: .stream([#"{"bookmark":10,"generation":"g"}"#], holdAfter: 1)),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, earlier), once: true),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
+            ] + baseRoutes())
+        try await rig.signIn()
+        // Busy, the watch waits a second on the app's clock to open again.
+        try await rig.harness.until(timeout: .seconds(20)) { _ in
+            rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1
+                && rig.clock.deadlines.contains(rig.clock.now.addingTimeInterval(1))
+        }
+        await rig.harness.advance(by: 3600)
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            let state = await harness.state
+            return state.feedProblem != nil
+                || (rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 3 && state.watching && !state.refreshing)
+        }
+        let state = await rig.harness.state
+        #expect(state.feedProblem == nil)
+        #expect(state.agents.map(\.id) == [helper, otherAgent])
+        // The first read, the read again, and the one an hour later.
+        #expect(rig.server.count("/api/v1/records", query: "core/agent") == 3)
+    }
+
+    /// The minute to the millisecond: 59.999 seconds after the read again
+    /// started, a refusal is the failure, said, and the list is not read a
+    /// third time, though the read again's list, its watch's bookmark and a
+    /// change the watch delivered came between.
+    @Test func aWatchRefusedAMillisecondShortOfTheMinuteAfterItsReadAgainSaysSo() async throws {
+        let (rig, started) = try await readAgainAndFollowing()
+        let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
+        rig.clock.advance(to: started.addingTimeInterval(59.999))
+        rig.server.release()
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            await harness.state.feedProblem != nil || lists() > 2
+        }
+        let state = await rig.harness.state
+        #expect(state.feedProblem == "the server could not resume the chats' history even after reading them again")
+        #expect(!state.watching && !state.refreshing)
+        #expect(lists() == 2)
+        #expect(state.recoveryStarted == started)
+        #expect(rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1)
+    }
+
+    /// And on the minute exactly, a refusal reads the list again and
+    /// follows from its head.
+    @Test func aWatchRefusedOnTheMinuteAfterItsReadAgainReadsTheListAgain() async throws {
+        let (rig, started) = try await readAgainAndFollowing()
+        let lists: @Sendable () -> Int = { rig.server.count("/api/v1/records", query: "core/agent") }
+        rig.clock.advance(to: started.addingTimeInterval(60))
+        rig.server.release()
+        try await rig.harness.until(timeout: .seconds(20)) { harness in
+            let state = await harness.state
+            return state.feedProblem != nil
+                || (lists() == 3 && rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 2 && state.watching
+                    && !state.refreshing)
+        }
+        let state = await rig.harness.state
+        #expect(state.feedProblem == nil)
+        #expect(lists() == 3)
+        #expect(state.recoveryStarted == started.addingTimeInterval(60))
+        #expect(state.agents.map(\.id) == [helper, otherAgent])
+    }
+
+    /// A list the server can no longer continue part way is read again from
+    /// its first page, and the refresh lands whole.
+    @Test func aRefreshToldCompactedPartWayReadsAgainFromTheFirstPage() async throws {
+        let first = #"{"head":10,"generation":"g","cursor":"c1","records":[\#(agentJSON(helper))]}"#
+        let second = #"{"head":10,"generation":"g","records":[\#(agentJSON(otherAgent))]}"#
+        let rig = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/records", query: "after=c1", answer: .json(410, compactedJSON), once: true),
+                .init(method: "GET", path: "/api/v1/records", query: "after=c1", answer: .json(200, second)),
+                .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, first)),
+            ] + baseRoutes())
+        await rig.runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, online: true))
+        try await rig.harness.until { harness in
+            let state = await harness.state
+            return !state.refreshing && (state.loaded || state.refreshError != nil)
+        }
+        let state = await rig.harness.state
+        #expect(state.refreshError == nil)
+        #expect(state.agents.map(\.id) == [helper, otherAgent])
+        // The first page, the refused continuation, then the walk again.
+        #expect(rig.server.count("/api/v1/records", query: "core/agent") == 4)
+        #expect(rig.server.count("/api/v1/records", query: "after=c1") == 2)
+    }
+
     @Test func aChatTheDeviceHoldsNothingOfIsReadWhenOpened() async throws {
         let threads = #"{"head":10,"generation":"g","records":[\#(threadJSON(version: 3))]}"#
         let rig = ChatRig(baseRoutes(threads: threads))
@@ -434,6 +613,51 @@ struct ListRules {
         #expect(asked { if case .badge = $0 { true } else { false } } == badges + 1)
         #expect(asked { if case .saveState = $0 { true } else { false } } == saves + 1)
     }
+}
+
+/// Chat signed in, its watch refused from 5 at the clock's start and the
+/// list read again; then, in order before anything else is refused: the
+/// read again's list landed, the watch opened from the head it gave and
+/// reached its bookmark, and it delivered a change, which the list read
+/// again. The watch then holds until the server is released, and is
+/// refused as `compacted`. Answers the rig and when the read again started.
+private func readAgainAndFollowing() async throws -> (ChatRig, Date) {
+    let earlier = #"{"head":5,"generation":"g","records":[\#(agentJSON(helper))]}"#
+    let later = #"{"head":12,"generation":"g","records":[\#(agentJSON(helper)),\#(agentJSON(otherAgent))]}"#
+    let row = #"{"seq":11,"ts":"2026-10-31T10:00:06Z","kind":"\#(Kinds.thread)","recordId":"t1","op":"patch"}"#
+    let rig = ChatRig(
+        [
+            .init(method: "GET", path: "/api/v1/changes", query: "from=5&generation=g", answer: .json(410, compactedJSON)),
+            .init(
+                method: "GET", path: "/api/v1/changes", query: "from=10&generation=g",
+                answer: .stream([#"{"bookmark":10,"generation":"g"}"#, row, compactedJSON], holdAfter: 2), once: true),
+            .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, earlier), once: true),
+            .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, later)),
+        ] + baseRoutes())
+    let start = rig.clock.now
+    try await rig.signIn()
+    let changed = ChatAppState.WatchKey(kind: Kinds.thread, id: "t1")
+    try await rig.harness.until(timeout: .seconds(20)) { harness in
+        let state = await harness.state
+        return state.feedProblem != nil || (state.watching && !state.refreshing && state.feedBatch.contains(changed))
+    }
+    #expect(await rig.harness.state.feedProblem == nil)
+    let threadLists = rig.server.count("/api/v1/records", query: "llm/thread")
+    // The change is read again a moment after its row, on the app's clock.
+    try await rig.harness.until(advancing: 0.3) { harness in
+        let state = await harness.state
+        return state.feedApplying == nil && state.feedBatch.isEmpty
+    }
+    #expect(rig.server.count("/api/v1/records", query: "llm/thread") == threadLists + 1)
+    let state = await rig.harness.state
+    #expect(state.recoveryStarted == start)
+    #expect(state.agents.map(\.id) == [helper, otherAgent])
+    #expect(await rig.storage.records(try await rig.lease())?.cursor == WatchCursor(seq: 11, generation: "g"))
+    // The read again's list was read whole before its watch opened.
+    let requests = rig.server.requests
+    let watch = try #require(requests.firstIndex { $0.contains("/api/v1/changes") && $0.contains("from=10&generation=g") })
+    #expect(requests[..<watch].count { $0.contains("/api/v1/records") && $0.contains("core/agent") } == 2)
+    return (rig, start)
 }
 
 /// A list signed in with its folder read, for an engine test.

@@ -84,7 +84,11 @@ export function RecentActivity({
           </button>
         </p>
       ) : feed.entries.length ? (
-        <HistorySentences entries={feed.entries} limit={SHOWN} />
+        <HistorySentences
+          entries={feed.entries}
+          runRecovery={feed.runRecovery}
+          limit={SHOWN}
+        />
       ) : (
         <p className="text-[13px] text-muted-foreground">
           {name} hasn’t changed anything yet.

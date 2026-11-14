@@ -1680,18 +1680,18 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	origin := callOriginOf(ctx)
 	origin.causedBy = ch.Seq
 	ctx = withCallOrigin(ctx, origin)
-	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
+	owner := pagedOwner{triggerID: tr.ID, kind: pagedKindRecord, identity: strconv.FormatInt(ch.Seq, 10)}
+	effects, _, more, refused, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
-		return res, err
+		return res, ds.refusedContinuation(owner, in.IdempotencyKey, resume, err)
 	}
 	actor := substrate.Actor(tr.Callable.Actor())
 	// Paged path: the body returned a page (or this is a resumed drain). The
 	// pages commit off the causal chain — each page's effects with its resume
 	// cursor, the final page clearing the cursor and settling the delivery.
 	if more != nil || resume.exists {
-		owner := pagedOwner{triggerID: tr.ID, kind: pagedKindRecord, identity: strconv.FormatInt(ch.Seq, 10)}
 		summary, pages, derr := ds.pagedDrain(ctx, tr.Callable, in, actor, ch.Seq, tr.Callable.Caps.Emit,
-			owner, resume, pagedPage{effects: effects, more: more}, pagedSettlement(advance, settle))
+			owner, resume, pagedPage{effects: effects, more: more, refused: refused, from: resume}, pagedSettlement(advance, settle))
 		if derr != nil {
 			return res, derr
 		}
@@ -1758,6 +1758,9 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 			if id, err = t.reserveSeq(); err != nil {
 				return err
 			}
+		}
+		if err := t.dropRefusedContinuation(cause); err != nil {
+			return err
 		}
 		text, parkedAt, waiting := ds.parkedError(tr, cause, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
@@ -2438,6 +2441,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 				return err
 			}
 		}
+		if err := t.dropRefusedContinuation(lastErr); err != nil {
+			return err
+		}
 		text, parkedAt, waiting := ds.parkedError(tr, lastErr, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
 			ID: foldInt(id), FireID: fid, Attempts: foldInt(attempts),
@@ -2527,15 +2533,15 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 		}
 		in.Args = tr.Arguments
 	}
-	effects, _, more, err := ds.runCallableRaw(ctx, tr.Callable, in)
+	owner := pagedOwner{triggerID: tr.ID, kind: pagedKindFire, identity: fid}
+	effects, _, more, refused, err := ds.runCallableRaw(ctx, tr.Callable, in)
 	if err != nil {
-		return 0, err
+		return 0, ds.refusedContinuation(owner, in.IdempotencyKey, resume, err)
 	}
 	actor := substrate.Actor(tr.Callable.Actor())
 	if more != nil || resume.exists {
-		owner := pagedOwner{triggerID: tr.ID, kind: pagedKindFire, identity: fid}
 		summary, _, derr := ds.pagedDrain(ctx, tr.Callable, in, actor, 0, tr.Callable.Caps.Emit,
-			owner, resume, pagedPage{effects: effects, more: more}, pagedSettlement(false, settle))
+			owner, resume, pagedPage{effects: effects, more: more, refused: refused, from: resume}, pagedSettlement(false, settle))
 		if derr != nil {
 			return 0, derr
 		}
@@ -2885,6 +2891,21 @@ func mergedSummary(summary map[string]int, effects []effect) map[string]int {
 type pagedPage struct {
 	effects []effect
 	more    *runner.Continuation
+	// refused is every list the run that answered this page refused and
+	// caught, and from the saved position that run resumed from: a failure
+	// of the page after the reply is decided as a failed run carrying them
+	// (refusedContinuation), so a refused cursor the drain holds is dropped
+	// with the park and never sent again.
+	refused []runner.RefusedCursor
+	from    pagedProgress
+}
+
+// parkedNow is err as the immediate park it is, errPagedParked once.
+func parkedNow(err error) error {
+	if errors.Is(err, errPagedParked) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errPagedParked, err)
 }
 
 // pagedOwner is the lifecycle identity a paged_cursors row carries: the
@@ -2906,6 +2927,133 @@ type pagedProgress struct {
 	bytes     int64
 	startedAt time.Time
 	exists    bool
+}
+
+// refusedContinuation answers a failed run of a paged drain resumed from its
+// saved continuation in which the substrate refused one or more of the
+// body's lists because it can no longer resume the cursors they sent: the
+// runner recorded every refusal and its exact cursor as it answered the
+// calls, and carries them with whichever way the run failed
+// (runner.RefusedCursorError), never read from the failure's words. Any
+// other failure comes back as it is.
+//
+// Where the continuation holds one of those cursors, as a value anywhere in
+// it, the saved position is one a retry would send again and have refused
+// again, and a refused position is never sent twice (docs/api.md): the
+// delivery parks at once (errPagedParked, never retried over minutes, though
+// the run timed out), with words that say why and that a retry runs the
+// drain from its first page, and the park drops the continuation in its own
+// transaction (dropRefusedContinuation). That is the one answer to all four
+// causes (staleReason), a restore's new generation among them: a restore
+// keeps every continuation, as an outside service's page token resumes after
+// it (decisions 0064 and 0141), and only a drain that held the server's own
+// list cursor meets this.
+//
+// Where the continuation holds none of them, the body sent cursors it keeps
+// itself (in a record, say): the run is a failure like any other, its
+// continuation kept, and its words still say a list cursor was refused and
+// why.
+func (ds *dataset) refusedContinuation(owner pagedOwner, chain string, resume pagedProgress, err error) error {
+	var refused *runner.RefusedCursorError
+	if !resume.exists || resume.cursor == nil || !errors.As(err, &refused) || len(refused.Refused) == 0 {
+		return err
+	}
+	for _, r := range refused.Refused {
+		if r.Cursor == "" || !continuationHolds(resume.cursor, r.Cursor) {
+			continue
+		}
+		ds.svc.log.Warn("substrate: a paged drain's saved continuation can no longer be resumed; the delivery parks with it dropped until a retry runs it from its first page",
+			"trigger", owner.triggerID, "chain", chain)
+		return &continuationRefusedError{chain: chain, version: resume.version, why: staleWhy(r.Refusal), err: err}
+	}
+	return fmt.Errorf("a list cursor the body sent can no longer be resumed, because %s; this drain's saved position does not hold it, so it is kept, and a retry resumes from the last committed page. The body's failure: %w",
+		staleWhy(refused.Refused[0].Refusal), err)
+}
+
+// continuationRefusedError is a drain's run whose saved continuation holds a
+// list cursor the substrate refused (refusedContinuation). It parks at once
+// (errPagedParked) and nothing else of the run's failure reads through: a
+// timeout under it is not a temporary failure retried over minutes, which
+// would only start the drain over with no person's retry. The park that
+// takes it drops the continuation in its own transaction
+// (dropRefusedContinuation).
+type continuationRefusedError struct {
+	chain   string
+	version int64
+	why     string
+	err     error
+}
+
+func (e *continuationRefusedError) Error() string {
+	return errPagedParked.Error() + ": the list cursor this drain saved can no longer be resumed, because " + e.why +
+		". The saved position is dropped: retry this delivery (substratectl trigger retry, or Retry in the console) " +
+		"to run the drain again from its first page, doing again the pages it had done. The body's failure: " + e.err.Error()
+}
+
+func (e *continuationRefusedError) Is(target error) bool { return target == errPagedParked }
+
+// parkAfterRefusedDrop is the commit seam's stage between a refused
+// continuation's drop and its delivery's park, inside their one transaction.
+const parkAfterRefusedDrop = "after a refused continuation's drop, before its park"
+
+// dropRefusedContinuation drops, in the transaction that parks a delivery
+// whose cause is a continuationRefusedError, the saved position that error
+// names: the drop and the park are one write, so no stop between them finds
+// the position gone and the delivery free to run the drain from its first
+// page unasked. Its version fences it as a page's write is fenced; a chain
+// another dispatcher moved since holds no refused position, and parks as it
+// stands.
+func (t *txn) dropRefusedContinuation(cause error) error {
+	var refused *continuationRefusedError
+	if !errors.As(cause, &refused) {
+		return nil
+	}
+	if err := t.advancePagedCursor(refused.chain, refused.version, nil, 0, 0, 0, t.now); err != nil && !errors.Is(err, errCursorMoved) {
+		return fmt.Errorf("drop paged drain %s's refused continuation: %w", refused.chain, err)
+	}
+	return t.ds.svc.commitFault(parkAfterRefusedDrop)
+}
+
+// staleWhy says why the substrate refused a list cursor, from the reason its
+// refusal carries.
+func staleWhy(refusal error) string {
+	var stale *staleCursorError
+	if errors.As(refusal, &stale) {
+		switch stale.reason {
+		case staleByUnits:
+			return "a unit or a conversion its list converts through changed since it was saved"
+		case staleByOrder:
+			return "a declaration changed the order its list reads in since it was saved"
+		case staleByHistory:
+			return "the repository's history was replaced since it was saved"
+		case staleByPaging:
+			return "the server's paging changed since it was saved"
+		}
+	}
+	return "the substrate refused it as no longer resumable"
+}
+
+// continuationHolds reports whether cursor is a value of the continuation,
+// wherever it sits in it: the continuation itself, or a string anywhere in
+// its objects and lists.
+func continuationHolds(continuation any, cursor string) bool {
+	switch v := continuation.(type) {
+	case string:
+		return v == cursor
+	case map[string]any:
+		for _, x := range v {
+			if continuationHolds(x, cursor) {
+				return true
+			}
+		}
+	case []any:
+		for _, x := range v {
+			if continuationHolds(x, cursor) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // pagedDrain commits `first` and every subsequent page a paged body returns.
@@ -2950,14 +3098,19 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 		if !done {
 			cursor = page.more.Cursor
 		}
+		// A failure of this page after its run answered, decided as a failed
+		// run carrying the run's refusals is.
+		fail := func(err error) error {
+			return ds.refusedContinuation(owner, key, page.from, withRefusals(err, page.refused))
+		}
 		nextPages := cumPages + 1
 		// The door holds this page's effects under a key naming the page, so
 		// a page re-run after a park holds the same effect as the same
 		// request.
 		effects, err := ds.holdEffects(ctx, fn, page.effects, fmt.Sprintf("%s/page/%d", key, nextPages))
 		if err != nil {
-			if committedAny {
-				return summary, pages, fmt.Errorf("%w: %w", errPagedParked, err)
+			if err = fail(err); committedAny || errors.Is(err, errPagedParked) {
+				return summary, pages, parkedNow(err)
 			}
 			return summary, pages, err
 		}
@@ -2972,7 +3125,7 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 		// parking on it would strand the chain forever.
 		if !done {
 			if reason := drainOverBudget(fn, nextPages, nextEffects, nextBytes, deadline); reason != nil {
-				return summary, pages, fmt.Errorf("%w: %w", errPagedParked, reason)
+				return summary, pages, parkedNow(fail(reason))
 			}
 		}
 
@@ -3021,15 +3174,16 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 				// The pass lost the chain: roll back whole and yield. NOT a park.
 				return summary, pages, err
 			}
-			if committedAny {
+			if err = fail(err); committedAny || errors.Is(err, errPagedParked) {
 				// A page error after durable progress parks with the cursor
-				// intact rather than replaying the chain. A yielded guarded
-				// write parks here too: once pages have committed, this pass
-				// OWNS the chain, the duplicated work the claim exists to
-				// prevent has already happened, and dropping the drain
-				// silently would strand those pages. errPagedParked is what
-				// declinedDelivery reads to tell the two apart.
-				return summary, pages, fmt.Errorf("%w: %w", errPagedParked, err)
+				// intact rather than replaying the chain, or dropped where
+				// the run refused a cursor it held. A yielded guarded write
+				// parks here too: once pages have committed, this pass OWNS
+				// the chain, the duplicated work the claim exists to prevent
+				// has already happened, and dropping the drain silently would
+				// strand those pages. errPagedParked is what declinedDelivery
+				// reads to tell the two apart.
+				return summary, pages, parkedNow(err)
 			}
 			// A fresh chain that committed nothing can safely retry from zero
 			// — or, for a yielded claim on the FIRST page, decline outright:
@@ -3053,13 +3207,17 @@ func (ds *dataset) pagedDrain(ctx context.Context, fn *vocabulary.Function, base
 		// depth of the body's effects never grows across the drain.
 		in := baseInput
 		in.Resume = cursor
-		effs, _, more, err := ds.runCallableRaw(ctx, fn, in)
+		effs, _, more, refused, err := ds.runCallableRaw(ctx, fn, in)
 		if err != nil {
 			// A re-invoke error always sits after ≥1 committed page: park with
-			// the cursor intact.
+			// the cursor intact, or dropped where the substrate refused it.
+			err = ds.refusedContinuation(owner, key, pagedProgress{version: version, cursor: cursor, exists: true}, err)
+			if errors.Is(err, errPagedParked) {
+				return summary, pages, err
+			}
 			return summary, pages, fmt.Errorf("%w: %w", errPagedParked, err)
 		}
-		page = pagedPage{effects: effs, more: more}
+		page = pagedPage{effects: effs, more: more, refused: refused, from: pagedProgress{version: version, cursor: cursor, exists: true}}
 	}
 }
 
@@ -4026,6 +4184,9 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 				return err
 			}
 			f.Attempts++
+			if err := t.dropRefusedContinuation(derr); err != nil {
+				return err
+			}
 			text, parkedAt, waiting := ds.parkedError(tr, derr, int(f.Attempts), t.now)
 			f.LastError = text
 			f.ParkedAt = parkedAt

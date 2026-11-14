@@ -10,7 +10,7 @@
  * and the property names where it does not; a run's rows are read for that
  * only when the sentence needs them. */
 
-import { useMemo } from "react"
+import { useEffect, useMemo, useReducer } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 
@@ -22,9 +22,11 @@ import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import type { HistoryFeedState } from "@/hooks/use-history-feed"
+import type { HistoryFeedState, RunRecovery } from "@/hooks/use-history-feed"
 import { runRowsQueryOptions, type WatchStatus } from "@/lib/api/changes"
+import { isCompacted, recoverOrFail } from "@/lib/api/compacted"
 import { splitKind } from "@/lib/api/http"
+import type { ApiError } from "@/lib/api/types"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { hostWritten, netMoves, valueSpecs } from "@/lib/change-values"
 import { relativeTime, shortTime } from "@/lib/format"
@@ -97,21 +99,55 @@ function seqRange(entry: HistoryEntry): string {
   return newestSeq === oldestSeq ? `${newestSeq}` : `${oldestSeq}–${newestSeq}`
 }
 
+// A run's rows are read from the position its summary named, under that
+// summary's generation. Refused `compacted` (a restore replaced the history),
+// that position is dropped, never to be sent again, and the summary that
+// named it is read again, naming the runs of the history the server holds
+// now, under the feed's allowance (RULE W, compacted.ts): a refusal within
+// a minute of the last reload, on this mount or a later one, is the
+// failure, which the row says beneath its sentence. Each refused run's read
+// is here, by its query key, with the failure where it was one; it grows by
+// one per refused read and never sends one again.
+const refusedRuns = new Map<string, ApiError | null>()
+
 export function HistoryEntryRow({
   entry: told,
   today,
+  runRecovery,
 }: {
   entry: HistoryEntry
   /** Today's entries read as "3m ago"; older ones by the time of day, under
    * their day's heading. */
   today: boolean
+  /** The feed the entry is in (`useHistoryFeed`), its runs' allowance. */
+  runRecovery: RunRecovery
 }) {
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
+  const runQuery = runRowsQueryOptions(told.run)
+  const runKey = JSON.stringify(runQuery.queryKey)
   const runRows = useQuery({
-    ...runRowsQueryOptions(told.run),
-    enabled: runNeedsRows(told),
+    ...runQuery,
+    enabled: runNeedsRows(told) && !refusedRuns.has(runKey),
   })
+  const [, failed] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    const refusal = runRows.error
+    if (!isCompacted(refusal) || refusedRuns.has(runKey)) return
+    const recovers = recoverOrFail(
+      {
+        key: runRecovery.key,
+        drop: () => refusedRuns.set(runKey, null),
+        fail: (refused) => {
+          refusedRuns.set(runKey, refused)
+          failed()
+        },
+      },
+      refusal
+    )
+    if (recovers) runRecovery.reload()
+  }, [runRows.error, runKey, runRecovery])
+  const failure = refusedRuns.get(runKey)
   const entry = useMemo(
     () => withRunRows(told, runRows.data),
     [told, runRows.data]
@@ -155,6 +191,14 @@ export function HistoryEntryRow({
         )}
         {showMoves && (
           <ValueMoves moves={moves} specs={specs} className="mt-1" />
+        )}
+        {failure && (
+          <p
+            data-slot="history-entry-failure"
+            className="mt-0.5 text-[12.5px] text-muted-foreground"
+          >
+            What changed didn’t load: {failure.message}
+          </p>
         )}
         {(names.length > 0 || technical) && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
@@ -219,10 +263,13 @@ export function HistoryEntryRow({
  * few); the full page shows every loaded one. */
 export function HistorySentences({
   entries,
+  runRecovery,
   limit,
   className,
 }: {
   entries: readonly HistoryEntry[]
+  /** The feed's runs under RULE W (`HistoryFeedState.runRecovery`). */
+  runRecovery: RunRecovery
   limit?: number
   className?: string
 }) {
@@ -242,6 +289,7 @@ export function HistorySentences({
               key={entry.key}
               entry={entry}
               today={day.label === "Today"}
+              runRecovery={runRecovery}
             />
           ))}
         </section>
@@ -315,7 +363,7 @@ export function HistoryFeed({
   }
   return (
     <>
-      <HistorySentences entries={feed.entries} />
+      <HistorySentences entries={feed.entries} runRecovery={feed.runRecovery} />
       {feed.hasOlder && (
         <div className="pt-4">
           <Button

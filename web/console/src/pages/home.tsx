@@ -210,7 +210,11 @@ export function HomePage() {
             happen.
           </p>
         ) : (
-          <HistorySentences entries={recent.entries} limit={SHOWN_CHANGES} />
+          <HistorySentences
+            entries={recent.entries}
+            runRecovery={recent.runRecovery}
+            limit={SHOWN_CHANGES}
+          />
         )}
       </Section>
     </DocPage>

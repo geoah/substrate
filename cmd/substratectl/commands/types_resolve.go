@@ -36,10 +36,15 @@ const typesPageLimit = 100
 func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
 	out := make([]substrate.KindInfo, 0, typesPageSize)
 	q := url.Values{"first": []string{strconv.Itoa(typesPageSize)}}
-	for range typesPageLimit {
+	if _, err := walkList(typesPageLimit, func() { out = out[:0] }, func(after string) (string, error) {
+		if after == "" {
+			q.Del("after")
+		} else {
+			q.Set("after", after)
+		}
 		items, cursor, err := c.fetchTypePage(ctx, q)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		for _, raw := range items {
 			ti, ok := decodeTypeInfo(raw)
@@ -48,10 +53,12 @@ func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
 			}
 			out = append(out, ti)
 		}
-		if cursor == "" || len(items) == 0 {
-			break
+		if len(items) == 0 {
+			return "", nil
 		}
-		q.Set("after", cursor)
+		return cursor, nil
+	}); err != nil {
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
 	return out, nil

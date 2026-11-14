@@ -7,7 +7,9 @@
 import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryKey } from "@tanstack/react-query"
 
-import { watchChanges, type WatchStatus } from "@/lib/api/changes"
+import type { WatchStatus } from "@/lib/api/changes"
+import { dropPosition, reportUnshown, wasDropped } from "@/lib/api/compacted"
+import { followChanges } from "@/lib/api/follow"
 
 /** A sync writes many rows in one breath: one re-read covers them all. The
  * batch flushes `wait` ms after the LAST item, and never later than
@@ -50,11 +52,6 @@ export function createChangeBatcher<T>(
   }
 }
 
-/** How soon a recovery may follow the one before it: a server that refuses
- * every stream is followed at the pace watchChanges reconnects at, never in
- * a tight loop. */
-const RECOVER_INTERVAL_MS = 3_000
-
 /** Where a watch resumes: the `head` and `generation` of the list read whose
  * rows the surface shows. Without it the stream starts at the server's head
  * when it opens, and a row committed after the read and before that is never
@@ -87,50 +84,48 @@ export function useLiveRecords(
         void queryClient.invalidateQueries({ queryKey: key })
     }
     const batcher = createChangeBatcher<true>(reread)
-    const filter = { kinds: JSON.parse(kindsKey) as string[] }
-    const onRow = () => batcher.push(true)
-    let stopped = false
-    let lastRecovery = -Infinity
-    let paused: ReturnType<typeof setTimeout> | undefined
-    let handle = follow(fromRef.current, false)
-    // Every stream recovers, a replacement too: watchChanges resumes a
-    // reconnect from the stream's own bookmark, which a later history
-    // replacement refuses just as it refused the list's head.
-    function follow(from: LiveFrom | undefined, relist: boolean) {
-      let pending = relist
-      return watchChanges({
-        from: from?.head,
-        generation: from?.generation,
-        filter,
-        onRow,
-        onStatus: (status, detail) => {
-          onStatus?.(status, detail)
-          if (status !== "live" || stopped || !pending) return
-          pending = false
-          reread()
+    // A position the server no longer holds (a restored repository) is
+    // followed from the head again, and re-read once that stream is live.
+    // The surface's read is the caller's, cached where the hook cannot drop
+    // it, so a refusal drops it here (RULE W, compacted.ts): a stream that
+    // finds its read dropped opens at the head and re-reads once live, as a
+    // recovery does.
+    const reader = `live records ${kindsKey} ${invalidateKey}`
+    const read = (at: LiveFrom | undefined) =>
+      at && `${at.head} ${at.generation}`
+    const resumed = read(fromRef.current)
+    const from =
+      resumed === undefined || wasDropped(reader, resumed)
+        ? undefined
+        : fromRef.current
+    let rereadOnceLive = resumed !== undefined && from === undefined
+    const handle = followChanges({
+      from: from?.head,
+      generation: from?.generation,
+      filter: { kinds: JSON.parse(kindsKey) as string[] },
+      reader: {
+        key: reader,
+        // The read the surface shows now, which a stream opened later would
+        // resume; a surface that gave none saved nothing.
+        drop: () => {
+          const shown = read(fromRef.current)
+          if (shown !== undefined) dropPosition(reader, shown)
         },
-        onCompacted: recover,
-      })
-    }
-    // A position the server no longer holds (a restored repository): follow
-    // from the head, and re-read once that stream is live. The server fixes
-    // a stream's head before it answers, so a read sent after misses nothing,
-    // where one sent beside the stream could answer first and leave a row
-    // committed between the two unheard.
-    function recover() {
-      if (stopped) return
-      const wait = lastRecovery + RECOVER_INTERVAL_MS - Date.now()
-      if (wait > 0) {
-        paused = setTimeout(recover, wait)
-        return
-      }
-      lastRecovery = Date.now()
-      handle = follow(undefined, true)
-    }
+        // No surface that follows records shows the watch's state yet (issue
+        // #1378); one that passes `onStatus` hears `stopped`.
+        fail: reportUnshown(reader),
+      },
+      onRow: () => batcher.push(true),
+      onStatus: (status, detail) => {
+        onStatus?.(status, detail)
+        if (status !== "live" || !rereadOnceLive) return
+        rereadOnceLive = false
+        reread()
+      },
+      relist: reread,
+    })
     return () => {
-      stopped = true
       batcher.cancel()
-      clearTimeout(paused)
       handle.stop()
     }
     // The kinds and keys travel as strings so a fresh array each render does

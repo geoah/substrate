@@ -504,7 +504,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		// answer (substrate.ErrStaleHistory, a 410): the client did nothing
 		// wrong, and the only way on is the first page again.
 		if tok.V != keysetVersion {
-			return nil, fmt.Errorf("%w: the cursor was minted by another version of the server's paging; list again", substrate.ErrStaleHistory)
+			return nil, staleCursor(staleByPaging, "the cursor was minted by another version of the server's paging; list again")
 		}
 		if tok.R != request {
 			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
@@ -513,9 +513,9 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 			was, _, _ := strings.Cut(tok.O, "|units@")
 			now, _, _ := strings.Cut(signature, "|units@")
 			if was == now {
-				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so list again", substrate.ErrStaleHistory)
+				return nil, staleCursor(staleByUnits, "the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so list again")
 			}
-			return nil, fmt.Errorf("%w: this filter and orderBy order the rows differently than when the cursor was minted, because a declaration changed; list again", substrate.ErrStaleHistory)
+			return nil, staleCursor(staleByOrder, "this filter and orderBy order the rows differently than when the cursor was minted, because a declaration changed; list again")
 		}
 		if len(tok.K) != len(terms) {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
@@ -526,7 +526,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		// then resume past writes it never saw. The generation the cursor was
 		// minted under is what says the head still means something.
 		if tok.G != ds.historyGeneration() {
-			return nil, fmt.Errorf("%w: cursor was minted against another history; list again", substrate.ErrStaleHistory)
+			return nil, staleCursor(staleByHistory, "cursor was minted against another history; list again")
 		}
 		b.add(seekPredicate(b, terms, tok.K))
 		carriedHead = tok.H
@@ -2306,6 +2306,51 @@ type keyset struct {
 // another version is refused as list again and never read as this one,
 // wherever it was kept (a client, a function's saved continuation).
 const keysetVersion = substrate.IdentityOrder
+
+// keysetDrainsStartOver names, for each keysetVersion this tree has minted,
+// the repository migration that starts over every paged drain whose saved
+// continuation may hold a token of the version before it. The engine saved
+// those continuations, so a version raised without such a migration leaves
+// each drain refused at every retry from its saved position;
+// TestEveryKeysetVersionStartsTheDrainsOver fails until the current version
+// is listed here. Version 1 names none: it is the first.
+var keysetDrainsStartOver = map[int]string{
+	1: "",
+	2: "start_paged_drains_over",
+}
+
+// staleReason is why a list cursor can no longer be resumed.
+type staleReason int
+
+const (
+	// staleByPaging: another version of the server's paging minted it.
+	staleByPaging staleReason = iota + 1
+	// staleByHistory: it was minted against another history generation.
+	staleByHistory
+	// staleByUnits: the unit graph its filter or order converts through
+	// changed.
+	staleByUnits
+	// staleByOrder: a declaration changed the order its filter and orderBy
+	// read in.
+	staleByOrder
+)
+
+// staleCursorError is the list-again refusal (substrate.ErrStaleHistory)
+// with its reason, which the engine reads back when a paged drain fails on
+// one (functions.go refusedContinuation) and no client sees: the words are
+// the refusal's alone.
+type staleCursorError struct {
+	reason staleReason
+	err    error
+}
+
+func staleCursor(reason staleReason, words string) error {
+	return &staleCursorError{reason: reason, err: fmt.Errorf("%w: %s", substrate.ErrStaleHistory, words)}
+}
+
+func (e *staleCursorError) Error() string { return e.err.Error() }
+
+func (e *staleCursorError) Unwrap() error { return e.err }
 
 func encodeKeyset(request, order string, keys []*string, head int64, generation string) string {
 	raw, _ := json.Marshal(keyset{V: keysetVersion, R: request, O: order, K: keys, H: head, G: generation})

@@ -28,6 +28,10 @@ export class SubstrateError extends Error {
    * `observed_rederiving`, `set_aside` (the server found the repository
    * damaged when it started). */
   readonly reason?: string
+  /** On a `410 compacted`, the head and the history generation to start
+   * over from, where the server gives them (an app's token gets neither). */
+  readonly head?: number
+  readonly generation?: string
 
   constructor(
     code: string,
@@ -39,6 +43,8 @@ export class SubstrateError extends Error {
       retryAfter?: number
       insufficientScope?: boolean
       reason?: string
+      head?: number
+      generation?: string
     } = {}
   ) {
     super(message)
@@ -50,11 +56,19 @@ export class SubstrateError extends Error {
     this.retryAfter = extra.retryAfter
     this.insufficientScope = extra.insufficientScope ?? false
     this.reason = extra.reason
+    this.head = extra.head
+    this.generation = extra.generation
   }
 
   /** The words a screen shows: the message and any problems it lists. */
   get words(): string {
     return [this.message, ...this.problems].filter(Boolean).join(" ")
+  }
+
+  /** The server can no longer resume a cursor it was given: list again
+   * from the first page. */
+  get compacted(): boolean {
+    return this.status === 410 && this.code === "compacted"
   }
 
   get conflict(): boolean {
@@ -98,6 +112,8 @@ export async function failure(res: Response): Promise<SubstrateError> {
             message?: string
             problems?: string[]
             problemDetails?: ProblemDetail[]
+            head?: number
+            generation?: string
           }
         | string
       error_description?: string
@@ -110,7 +126,12 @@ export async function failure(res: Response): Promise<SubstrateError> {
         res.status,
         e.problems ?? [],
         e.problemDetails ?? [],
-        { ...extra, reason: e.reason || undefined }
+        {
+          ...extra,
+          reason: e.reason || undefined,
+          head: e.head,
+          generation: e.generation,
+        }
       )
     }
     if (typeof body.error === "string") {

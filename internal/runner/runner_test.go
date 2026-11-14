@@ -55,6 +55,12 @@ type fakeBackend struct {
 	// one that came with its end.
 	logs   []string
 	logged []time.Time
+	// refuseAfter refuses a list sent with a cursor, as the engine refuses
+	// one it can no longer resume, in these words.
+	refuseAfter string
+	// callRefused is what a nested call that answered carries: the lists
+	// its run refused and caught.
+	callRefused []RefusedCursor
 }
 
 func (f *fakeBackend) Log(line string) {
@@ -76,6 +82,9 @@ func (f *fakeBackend) Get(ctx context.Context, typ, id string) (*substrate.Recor
 }
 
 func (f *fakeBackend) List(_ context.Context, q substrate.Query) (*substrate.Page, error) {
+	if f.refuseAfter != "" && q.After != "" {
+		return nil, fmt.Errorf("%w: %s", substrate.ErrStaleHistory, f.refuseAfter)
+	}
 	f.lastFirst = q.First
 	f.orderBys = append(f.orderBys, q.OrderBy)
 	var out []*substrate.Record
@@ -117,12 +126,16 @@ func (f *fakeBackend) Search(_ context.Context, in substrate.SearchInput) (subst
 	return substrate.SearchResult{Pending: f.pending}, nil
 }
 
-func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, error) {
+func (f *fakeBackend) Call(_ context.Context, function string, args any) (any, []RefusedCursor, error) {
 	f.calls = append(f.calls, function)
 	if f.call == nil {
-		return nil, errors.New("no call backend")
+		return nil, nil, errors.New("no call backend")
 	}
-	return f.call(function, args)
+	out, err := f.call(function, args)
+	if err != nil {
+		return nil, nil, err
+	}
+	return out, f.callRefused, nil
 }
 
 // Units answers the fake's own graph, else the shipped seed's, the units a

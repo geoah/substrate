@@ -8,6 +8,7 @@ import { act, cleanup, renderHook } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import type { ResumingReader } from "@/lib/api/compacted"
 import type { ChangeRow } from "@/lib/api/types"
 
 const watch = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const watch = vi.hoisted(() => ({
     onRow: (row: ChangeRow) => void
     onStatus?: (status: string, detail?: string) => void
     onCompacted?: () => void
+    reader: ResumingReader
     stopped: boolean
   }[],
 }))
@@ -30,6 +32,7 @@ vi.mock("@/lib/api/changes", () => ({
     onRow: (row: ChangeRow) => void
     onStatus?: (status: string, detail?: string) => void
     onCompacted?: () => void
+    reader: ResumingReader
   }) => {
     const call = { ...opts, stopped: false }
     watch.calls.push(call)
@@ -46,6 +49,7 @@ import {
   changedInScope,
   dedupeChanges,
   liveChangeReaches,
+  liveScopeReaches,
   useChangeMarks,
   useLiveInvalidation,
 } from "./use-live-invalidation"
@@ -238,6 +242,36 @@ describe("useLiveInvalidation", () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it("follows from the head when its position is gone, and re-reads every read its scope reaches once live", async () => {
+    const { client, invalidate } = setup({ kinds: [TASK] })
+    act(() => watch.calls[0].onCompacted?.())
+    expect(watch.calls).toHaveLength(2)
+    expect(watch.calls[1].reader.key).toBe(watch.calls[0].reader.key)
+    expect(watch.calls[1].from).toBeUndefined()
+    // A read sent before the stream's head is fixed could answer first.
+    expect(invalidate).not.toHaveBeenCalled()
+    const list = ["records", [TASK], { first: 50 }]
+    const record = ["record", "acme.example.com", "tasks", "task", "t9"]
+    const other = ["records", [PERSON], { first: 50 }]
+    for (const queryKey of [list, record, other])
+      client.setQueryData(queryKey, { records: [] })
+    await act(async () => {
+      watch.calls[1].onStatus?.("live")
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(invalidate).toHaveBeenCalledOnce()
+    const stale = (queryKey: unknown[]) =>
+      client.getQueryState(queryKey)?.isInvalidated
+    expect(stale(list)).toBe(true)
+    expect(stale(record)).toBe(true)
+    expect(stale(other)).toBe(false)
+    // The stream opened again recovers too; watchChanges holds it to one
+    // recovery a minute.
+    act(() => watch.calls[1].onCompacted?.())
+    expect(watch.calls).toHaveLength(3)
+    expect(watch.calls[2].reader.key).toBe(watch.calls[0].reader.key)
+  })
+
   it("opens nothing for an empty scope and stops on unmount", () => {
     setup({})
     expect(watch.calls).toHaveLength(0)
@@ -303,44 +337,15 @@ describe("useLiveRecords", () => {
     expect(invalidate).toHaveBeenCalledOnce()
   })
 
-  it("recovers again when a replacement's reconnect is refused, re-reading once per recovery", () => {
-    vi.useFakeTimers()
-    const { invalidate } = setup({ head: 7, generation: "old" })
-    act(() => watch.calls[0].onCompacted?.())
-    act(() => watch.calls[1].onStatus?.("live"))
-    expect(invalidate).toHaveBeenCalledOnce()
-    // The replacement's bookmark, refused on a reconnect long after.
-    act(() => {
-      vi.advanceTimersByTime(60_000)
-    })
-    act(() => watch.calls[1].onCompacted?.())
-    expect(watch.calls).toHaveLength(3)
-    expect(watch.calls[2].from).toBeUndefined()
-    expect(invalidate).toHaveBeenCalledOnce()
-    act(() => watch.calls[2].onStatus?.("live"))
-    expect(invalidate).toHaveBeenCalledTimes(2)
-    act(() => {
-      watch.calls[2].onStatus?.("retrying")
-      watch.calls[2].onStatus?.("live")
-    })
-    expect(invalidate).toHaveBeenCalledTimes(2)
-  })
-
-  it("follows a server that refuses every stream no faster than once per interval", () => {
-    vi.useFakeTimers()
+  it("opens each stream it recovers with as the same reader, so watchChanges holds them to one recovery a minute", () => {
     setup({ head: 7, generation: "old" })
     act(() => watch.calls[0].onCompacted?.())
+    expect(watch.calls[1].reader.key).toBe(watch.calls[0].reader.key)
+    // watchChanges reports a refusal within the minute as `stopped` and
+    // calls nothing; one later is a recovery, which opens another.
     act(() => watch.calls[1].onCompacted?.())
-    expect(watch.calls).toHaveLength(2)
-    act(() => {
-      vi.advanceTimersByTime(2_999)
-    })
-    expect(watch.calls).toHaveLength(2)
-    act(() => {
-      vi.advanceTimersByTime(1)
-    })
-    expect(watch.calls).toHaveLength(3)
-    expect(watch.calls[2].from).toBeUndefined()
+    expect(watch.calls[2]).toMatchObject({ from: undefined })
+    expect(watch.calls[2].reader.key).toBe(watch.calls[0].reader.key)
   })
 
   it("recovers a stream that started at the head", () => {
@@ -349,19 +354,6 @@ describe("useLiveRecords", () => {
     expect(watch.calls).toHaveLength(2)
     act(() => watch.calls[1].onStatus?.("live"))
     expect(invalidate).toHaveBeenCalledOnce()
-  })
-
-  it("opens nothing for a paced recovery once unmounted", () => {
-    vi.useFakeTimers()
-    const { hook } = setup({ head: 7, generation: "old" })
-    act(() => watch.calls[0].onCompacted?.())
-    act(() => watch.calls[1].onCompacted?.())
-    hook.unmount()
-    act(() => {
-      vi.advanceTimersByTime(10_000)
-    })
-    expect(watch.calls).toHaveLength(2)
-    expect(watch.calls[1].stopped).toBe(true)
   })
 
   it("leaves nothing open and re-reads nothing once unmounted mid-recovery", () => {
@@ -383,6 +375,26 @@ describe("useLiveRecords", () => {
   it("starts at the server's head without a position", () => {
     setup()
     expect(watch.calls[0].from).toBeUndefined()
+  })
+})
+
+describe("liveScopeReaches", () => {
+  it("reaches every record of a collection's kind, and one record's own reads", () => {
+    const anyTask = ["record", "acme.example.com", "tasks", "task", "t2"]
+    expect(liveScopeReaches(anyTask, { kinds: [TASK] })).toBe(true)
+    expect(
+      liveScopeReaches(anyTask, { kinds: [TASK], recordIds: ["t1"] })
+    ).toBe(false)
+    expect(
+      liveScopeReaches(
+        ["records-count", "acme.example.com", "tasks", "task", null],
+        { kinds: [TASK] }
+      )
+    ).toBe(true)
+    expect(liveScopeReaches(["records", [PERSON], {}], { kinds: [TASK] })).toBe(
+      false
+    )
+    expect(liveScopeReaches(["records", [PERSON], {}], {})).toBe(true)
   })
 })
 

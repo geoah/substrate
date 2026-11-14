@@ -11,6 +11,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -37,13 +38,21 @@ const tasks = Array.from({ length: 12 }, (_, i) => ({
   updatedAt: "",
 }))
 
-const paging = vi.hoisted(() => ({ more: false }))
+// `refuse`: how many continuations the server answers `410 compacted`.
+const paging = vi.hoisted(() => ({ more: false, refuse: 0 }))
 
 vi.mock("@/lib/api/http", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/http")>()
+  const { ApiError } = await import("@/lib/api/types")
   return {
     ...actual,
     request: vi.fn((_method: string, path: string) => {
+      if (path.includes("after=") && paging.refuse > 0) {
+        paging.refuse--
+        return Promise.reject(
+          new ApiError("compacted", "list again from the first page", 410)
+        )
+      }
       if (decodeURIComponent(path).includes("referencing")) {
         const contact = {
           id: "c1",
@@ -74,6 +83,7 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
 
 import { ConnectedSection } from "./connected"
 import { countWords } from "./record-model"
+import { forgetRecoveries, restartRefusedWalks } from "@/lib/api/compacted"
 import { request } from "@/lib/api/http"
 import {
   ConsolePreferencesContext,
@@ -141,6 +151,7 @@ function renderSection(technical = false) {
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(["registry", "kinds"], [task, person])
+  restartRefusedWalks(client)
   return render(
     <ConsolePreferencesContext.Provider value={preferences(technical)}>
       <QueryClientProvider client={client}>
@@ -153,6 +164,9 @@ function renderSection(technical = false) {
 afterEach(() => {
   cleanup()
   paging.more = false
+  paging.refuse = 0
+  vi.mocked(request).mockClear()
+  forgetRecoveries()
 })
 
 describe("ConnectedSection", () => {
@@ -204,6 +218,50 @@ describe("ConnectedSection", () => {
       .filter((url) => url.searchParams.get("filter")?.includes("referencing"))
     expect(reads.length).toBeGreaterThan(0)
     for (const url of reads) expect(url.searchParams.has("count")).toBe(false)
+  })
+
+  it("starts over from the first page when the server can no longer resume it, and shows no error", async () => {
+    paging.more = true
+    paging.refuse = 1
+    renderSection()
+    expect(await screen.findByText("3 of the first 12 done")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }))
+    await waitFor(() => expect(paging.refuse).toBe(0))
+    // The fresh first page in place of the old one, never beside it.
+    expect(await screen.findByText("3 of the first 12 done")).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy()
+    )
+    expect(screen.queryByRole("alert")).toBeNull()
+    const afters = vi
+      .mocked(request)
+      .mock.calls.map(([, path]) => new URL(path, "http://console.test"))
+      .filter((url) => url.searchParams.get("filter")?.includes("referencing"))
+      .map((url) => url.searchParams.get("after"))
+    expect(afters).toEqual([null, "next", null])
+  })
+
+  it("says what points here didn't load when Load more is refused again within the minute, on another mount too", async () => {
+    paging.more = true
+    paging.refuse = 2
+    const first = renderSection()
+    expect(await screen.findByText("3 of the first 12 done")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }))
+    await waitFor(() => expect(paging.refuse).toBe(1))
+    // Started over: the fresh first page, and no error.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy()
+    )
+    first.unmount()
+    renderSection()
+    expect(await screen.findByText("3 of the first 12 done")).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }))
+    expect(
+      await screen.findByText(
+        /What points here didn’t load: list again from the first page/
+      )
+    ).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull()
   })
 
   it("says a count that did not reach the end in words", async () => {

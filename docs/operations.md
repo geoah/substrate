@@ -2306,7 +2306,13 @@ the directory was written by a release before record ids sorted in byte
 order: its history
 carries no mark of the order its drains' continuations are in, so every drain
 holding one starts over from its first page at the repository's first open
-(repository migration 7). A paged drain that stopped
+(repository migration 7). A restore keeps every other continuation: a drain
+over an outside service resumes from the page it reached, and one that held
+the server's own list cursor, which the restore's new generation refuses,
+parks once at its next run, its saved position dropped, and a retry runs it
+from its first page ([the SDK](functions.md#the-sdk)). That retry is the one
+step a restore asks of a person that it did not before, and only for a drain
+that was half way through listing the repository's records. A paged drain that stopped
 between pages without parking (a crash, or a shutdown mid-drain) starts over
 from its first page: a middle page's entry names the cursor by its SHA-256 and
 leaves the bytes in the database, and only a park carries them into the

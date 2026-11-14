@@ -1703,6 +1703,11 @@ const notOnTheWire: Record<string, string> = {
   // actors.ts
   // bundles.ts
   TraitRecords: "a bounded read's result the console derives from a Page",
+  // compacted.ts
+  ResumingReader:
+    "what a reader registers under RULE W, held in memory, never serialized",
+  UnshownFailure:
+    "a reader's failure kept for the shell to show, never serialized",
   // changes.ts
   ChangeFeedFilter:
     "the feed's query parameters, URL-encoded, never a JSON body",

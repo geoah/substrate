@@ -17,7 +17,8 @@ import { isRecord } from "@/lib/a2ui/coerce"
 import { pathsOverlap } from "@/lib/a2ui/pointer"
 import { SurfaceStore } from "@/lib/a2ui/store"
 import { actApplet, renderApplet } from "@/lib/api/applets"
-import { watchChanges } from "@/lib/api/changes"
+import { nothingSaved } from "@/lib/api/compacted"
+import { followChanges } from "@/lib/api/follow"
 import {
   ApiError,
   type AppletAction,
@@ -314,14 +315,24 @@ export function useAppletRuntime({
     [store, refresh]
   )
 
-  // A change to a kind the screen reads re-renders it.
+  // A change to a kind the screen reads re-renders it, and so does a gap
+  // the watch could not tell (a position the server no longer holds). A
+  // second such gap within the minute stops the watch (RULE W,
+  // compacted.ts), said over the screen still drawn.
   const watchKey = JSON.stringify([...(header?.watch ?? [])].sort())
   useEffect(() => {
     const kinds = JSON.parse(watchKey) as string[]
     if (!kinds.length) return
-    const handle = watchChanges({
+    const handle = followChanges({
       filter: { kinds },
+      reader: {
+        key: `applet ${live.current.appletId} ${watchKey}`,
+        // The watch opens at the head, and a render resumes no position.
+        drop: nothingSaved,
+        fail: setRefusal,
+      },
       onRow: () => refresh(),
+      relist: () => refresh(),
     })
     return () => handle.stop()
   }, [watchKey, refresh])

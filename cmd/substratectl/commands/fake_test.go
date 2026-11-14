@@ -40,6 +40,15 @@ type fakeSubstrate struct {
 	// asymmetry is the contract, so the fake keeps it.
 	marks map[string]map[string]statusProperty
 
+	// compactCursors is how many list continuations (a list with `after`) the
+	// fake refuses with 410 compacted, the way a server that can no longer
+	// resume a cursor does, before it serves them again; cursorStatus, when
+	// non-zero, refuses every continuation with it instead (a 422 for another
+	// filter). continuations counts the continuations it was sent.
+	compactCursors int
+	cursorStatus   int
+	continuations  int
+
 	// extraTypes are registry rows appended to fakeRegistry on the types read.
 	// Empty by default so the golden `types` table is unaffected; the
 	// shipped-example apply test seeds the `trigger` type here so the real
@@ -305,6 +314,28 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// refuseContinuation answers a list continuation the way compactCursors and
+// cursorStatus say, and reports whether it did. The caller holds f.mu.
+func (f *fakeSubstrate) refuseContinuation(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Query().Get("after") == "" {
+		return false
+	}
+	f.continuations++
+	switch {
+	case f.cursorStatus != 0:
+		writeError(w, f.cursorStatus, "validation", "the cursor was minted for another filter or order", nil)
+		return true
+	case f.compactCursors > 0:
+		f.compactCursors--
+		writeJSON(w, http.StatusGone, map[string]any{"error": map[string]any{
+			"code": "compacted", "message": "the cursor was minted by another version of the server's paging; list again",
+			"head": fakeHead, "generation": fakeGeneration,
+		}})
+		return true
+	}
+	return false
+}
+
 func writeError(w http.ResponseWriter, status int, code, msg string, problems []string) {
 	writeJSON(w, status, map[string]any{"error": map[string]any{
 		"code": code, "message": msg, "problems": problems,
@@ -450,7 +481,11 @@ const (
 func (f *fakeSubstrate) handleTypes(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	registry := append(append([]map[string]any{}, f.extraTypes...), fakeRegistry...)
+	refused := f.refuseContinuation(w, r)
 	f.mu.Unlock()
+	if refused {
+		return
+	}
 
 	first := fakeTypesPageSize
 	if raw := r.URL.Query().Get("first"); raw != "" {
@@ -1171,6 +1206,9 @@ func (f *fakeSubstrate) handleList(w http.ResponseWriter, r *http.Request, flt s
 		out = append(out, e)
 	}
 	sortRecords(out)
+	if f.refuseContinuation(w, r) {
+		return
+	}
 	// `first` cuts the page and leaves a cursor, the offset of the next row,
 	// which `after` resends; the cursor is absent once the walk is exhausted.
 	start := 0

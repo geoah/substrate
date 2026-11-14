@@ -75,18 +75,26 @@ func (c *client) alerts(ctx context.Context, all bool) ([]*substrate.Record, err
 		}
 	}
 	var out []*substrate.Record
-	for range alertsPageLimit {
+	complete, err := walkList(alertsPageLimit, func() { out = nil }, func(after string) (string, error) {
+		if after == "" {
+			q.Del("after")
+		} else {
+			q.Set("after", after)
+		}
 		page, err := c.list(ctx, corePackage, alertKindName, q)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		out = append(out, page.Records...)
-		if page.Cursor == "" {
-			return out, nil
-		}
-		q.Set("after", page.Cursor)
+		return page.Cursor, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("more than %d alerts: read them with get %s/%s", alertsPageSize*alertsPageLimit, corePackage, alertKindName)
+	if !complete {
+		return nil, fmt.Errorf("more than %d alerts: read them with get %s/%s", alertsPageSize*alertsPageLimit, corePackage, alertKindName)
+	}
+	return out, nil
 }
 
 func (a *app) printAlertsTable(alerts []*substrate.Record) error {

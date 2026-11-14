@@ -11,7 +11,7 @@
  * something it is not. Nothing here names a kind. */
 
 import { CORE_AUTHORITY } from "@/lib/core-kinds"
-import type { ListParams } from "@/lib/api/records"
+import type { FirstPageParams } from "@/lib/api/records"
 import type { SubstrateRecord } from "@/lib/api/types"
 import type { DeclaredProperty } from "@/lib/definition"
 import {
@@ -31,7 +31,7 @@ export const COLLECTION_VIEW_KIND = `${CORE_AUTHORITY}/console/collectionview`
 /** The list read of the views shipped for one collection: one page as large
  * as the server serves, since the list cannot be ordered by id and the
  * strip orders the views itself. */
-export function collectionViewsParams(identity: string): ListParams {
+export function collectionViewsParams(identity: string): FirstPageParams {
   return {
     kinds: [COLLECTION_VIEW_KIND],
     first: 500,

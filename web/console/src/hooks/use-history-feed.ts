@@ -4,11 +4,12 @@
  * count is exact from one read; against a server without runs the rows are
  * read instead and folded here. */
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
+  type QueryKey,
 } from "@tanstack/react-query"
 
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
@@ -20,6 +21,7 @@ import {
   type HistoryPage,
   type WatchStatus,
 } from "@/lib/api/changes"
+import { emptyQuery, holdAtRefusal } from "@/lib/api/compacted"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { ChangeRow } from "@/lib/api/types"
 import { mergeFeed } from "@/lib/changelog"
@@ -42,6 +44,28 @@ export interface HistoryFeedState {
   loadingOlder: boolean
   loadOlder: () => void
   retry: () => void
+  /** What the feed's runs come under RULE W (compacted.ts) by: a run's rows
+   * refused `compacted` read the summary again at most once a minute. */
+  runRecovery: RunRecovery
+}
+
+/** The feed a run's rows belong to, under RULE W: one allowance per feed,
+ * and the summary that named the run, read again by a recovery. */
+export interface RunRecovery {
+  /** The allowance's key: the feed's filter, so the feed mounted again
+   * within the minute meets the allowance it left. */
+  key: string
+  /** Reads the feed's summary again, from its first page. */
+  reload: () => void
+}
+
+/** Where the tail opens: above the head a page named, under its
+ * generation, so nothing between the read and the tail is lost; or, after a
+ * recovery, at the server's head (no `from`), whatever page lands
+ * meanwhile. Each recovery opens a new one. */
+interface TailOpening {
+  from?: number
+  generation?: string
 }
 
 export interface HistoryFeedOptions {
@@ -132,52 +156,83 @@ export function useHistoryFeed(
     delete plain.values
     return plain
   }, [filter])
-  const history = useInfiniteQuery({
-    ...historyInfiniteOptions(asked, { first, rows }),
-    enabled,
-  })
+  const historyOptions = historyInfiniteOptions(asked, { first, rows })
+  const history = useInfiniteQuery({ ...historyOptions, enabled })
+  const historyKey = JSON.stringify(historyOptions.queryKey)
   const [liveRows, setLiveRows] = useState<ChangeRow[]>([])
   const [status, setStatus] = useState<WatchStatus>("off")
-  const [nonce, setNonce] = useState(0)
+  const [tail, setTail] = useState<TailOpening>()
   const filterKey = JSON.stringify(asked)
   const [lastKey, setLastKey] = useState(filterKey)
   if (lastKey !== filterKey) {
     setLastKey(filterKey)
     setLiveRows([])
+    setStatus("off")
+    setTail(undefined)
   }
 
   const pages = history.data?.pages
-  // The tail resumes at the head the first page reported, under its
-  // generation, so nothing between the read and the tail is lost; a row the
-  // page already told is dropped by its seq.
+  // A tail waiting for a page resumes at the head the first page reported,
+  // under its generation; a row the page already told is dropped by its seq.
   const head = pages?.[0]
-  const resume = useRef<{ from?: number; generation?: string }>({})
+  if (!tail && head && lastKey === filterKey)
+    setTail({ from: head.head, generation: head.generation })
   useEffect(() => {
-    if (head) resume.current = { from: head.head, generation: head.generation }
-  }, [head])
-  const ready = Boolean(head)
-  useEffect(() => {
-    if (!live || !enabled || !ready) return undefined
+    if (!live || !enabled || !tail) return undefined
+    const queryKey = JSON.parse(historyKey) as QueryKey
+    // The stopped tail's last word stands: closing it says nothing more.
+    let open = true
     const handle = watchChanges({
-      from: resume.current.from,
-      generation: resume.current.generation,
+      from: tail.from,
+      generation: tail.generation,
       filter: JSON.parse(filterKey) as ChangeFeedFilter,
+      reader: {
+        key: `history tail ${filterKey}`,
+        // The pages name the refused history's head and generation, which a
+        // tail opened on a later mount would resume, and the rows the tail
+        // delivered are of that history.
+        drop: () => {
+          setLiveRows([])
+          emptyQuery(queryClient, queryKey)
+        },
+        // The feed says it didn't load, with Try again, and the tail
+        // `stopped`; a page read again opens a tail at its head.
+        fail: (refusal) => {
+          setTail(undefined)
+          holdAtRefusal(queryClient, queryKey, refusal)
+        },
+      },
       onRow: (row) =>
         setLiveRows((rows) =>
           rows.some((r) => r.seq === row.seq) ? rows : [row, ...rows]
         ),
-      onStatus: (next) => setStatus(next),
+      onStatus: (next) => {
+        if (open) setStatus(next)
+      },
+      // Open the tail again at the server's head, then read the first page:
+      // a row committed between the two arrives on both, told once by its
+      // seq.
       onCompacted: () => {
-        // The cursor no longer addresses this history: re-list from the head
-        // and re-open the tail there.
-        resume.current = {}
-        setLiveRows([])
-        void queryClient.invalidateQueries({ queryKey: ["changes", "history"] })
-        setNonce((n) => n + 1)
+        setTail({})
+        void queryClient.resetQueries({ queryKey, exact: true })
       },
     })
-    return () => handle.stop()
-  }, [live, enabled, ready, filterKey, nonce, queryClient])
+    return () => {
+      open = false
+      handle.stop()
+    }
+  }, [live, enabled, tail, filterKey, historyKey, queryClient])
+  const runRecovery = useMemo<RunRecovery>(
+    () => ({
+      key: `history runs ${filterKey}`,
+      reload: () =>
+        void queryClient.invalidateQueries({
+          queryKey: JSON.parse(historyKey) as QueryKey,
+          exact: true,
+        }),
+    }),
+    [filterKey, historyKey, queryClient]
+  )
 
   const hasOlder = Boolean(history.hasNextPage)
   const entries = useMemo(
@@ -195,13 +250,14 @@ export function useHistoryFeed(
 
   return {
     entries,
-    status: live && enabled && ready ? status : "off",
+    status: live && enabled && (tail || status === "stopped") ? status : "off",
     isPending: enabled && history.isPending,
     error: history.error,
     hasOlder,
     loadingOlder: history.isFetchingNextPage,
     loadOlder: () => void history.fetchNextPage(),
     retry: () => void history.refetch(),
+    runRecovery,
   }
 }
 

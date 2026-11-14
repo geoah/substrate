@@ -11,6 +11,7 @@ import {
   setSessionChangedHandler,
   setUnauthorizedHandler,
 } from "@/lib/api/session"
+import { forgetRecoveries, restartRefusedWalks } from "@/lib/api/compacted"
 import { retryDelay, retryRead } from "@/lib/api/retry"
 import { returnAfterExpiry } from "@/lib/return-path"
 import { applySiteBranding, loadSite } from "@/lib/site"
@@ -55,11 +56,18 @@ const queryClient = new QueryClient({
   },
 })
 
+// A later page the server can no longer resume (`410 compacted`) starts its
+// list over from the first page, once a minute per query, instead of
+// failing it.
+restartRefusedWalks(queryClient)
+
 // A cached answer belongs to the repository whose token fetched it, and no
 // query key says which; signing in as anybody else drops the lot rather than
-// answering the new session out of the old one's cache.
+// answering the new session out of the old one's cache. So does each
+// reader's allowance (RULE W), whose key names no repository either.
 setSessionChangedHandler(() => {
   queryClient.clear()
+  forgetRecoveries()
 })
 
 createRoot(document.getElementById("root")!).render(

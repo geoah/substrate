@@ -142,7 +142,14 @@ filter's `search` arm, composed with the rest and printed in the list's own
 order), `--order-by`, and `--limit`; `--after` resends the opaque keyset
 cursor a page printed. The cursor line,
 `more results available; next cursor: <cursor>`, goes to stderr, so stdout
-holds only the JSON value or the YAML document stream. `--expand prop1,prop2` carries
+holds only the JSON value or the YAML document stream. A cursor the server
+can no longer resume (`compacted`: a restore, or an upgrade that changed the
+order it was cut in) fails the command with that said: list again from the
+first page, without `--after`, and drop the cursor and the rows read with it,
+since `get` reads one page and the listing is the script's. The commands
+that read every page themselves (`kinds`, the kind names every other command
+resolves, and `alerts`) start again from the first page once on that answer,
+and fail if the fresh listing is refused too. `--expand prop1,prop2` carries
 the referents of those reference
 properties back with the page (as further `---` documents in `-o yaml`, under
 an `included` key in `-o json`; the table prints the page alone), and
@@ -377,7 +384,13 @@ filterable by `--kinds`, `--actors` and `--ops`. A line ends with the id of
 the change's [actor record](api.md#actors), and ` for ` and the id of the
 one it acted for where there is one; `--actors` takes those ids, and
 `substratectl get substrate.reamde.dev/core/actor <id>` reads one. A cursor from a history the
-server has since replaced is refused with the head to resume from. To
+server has since replaced, or below what it keeps, is refused with the head to
+resume from, at the opening or as the stream's last line: list again, then
+resume with the `--from` and `--generation` the hint names, never the
+refused cursor. Unlike the console and the app kits, `watch` and `get -w`
+do not recover by themselves: they end with that error. A command that
+prints changes keeps no copy to read again, and whoever reads its output
+must know it missed some, as `kubectl get --watch` ends the same way. To
 narrow to one kind instead, `substratectl get <kind> -w` streams that
 one kind's changes.
 

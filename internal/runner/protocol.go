@@ -40,6 +40,11 @@ import (
 // server's "try later" answer escape (host.py _temporary). Version 6 had no
 // such word, and every failure rode the same three quick attempts.
 //
+// A failed reply's optional `compacted` says the host call was refused
+// because the substrate cannot resume its cursor (substrate.ErrStaleHistory),
+// and the child raises host.Compacted for it alone, never for an error's
+// words. Version 7 had no such word.
+//
 // A response's optional `more` is the PAGED-CHECKPOINT continuation: it means
 // "this page is done — commit its effects, then re-invoke me with this
 // cursor". The host commits the page's effects and the opaque `more.cursor`
@@ -57,7 +62,7 @@ import (
 //	child → parent   {"kind": "call", "reqId": N, "host": "get"|"list"|"search"|"aggregate", "params": {...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "call", "params": {"function": "<identity>", "input": ...}}
 //	child → parent   {"kind": "call", "reqId": N, "host": "units.convert"|"units.canonical"|"units.converts", "params": {...}}
-//	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
+//	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "...", "compacted": true?}
 //
 // The three `units.*` calls answer from the repository's unit graph
 // (units.go): no grant gates them, and each charges one call.
@@ -85,7 +90,7 @@ import (
 // built it, and one SDK shipping inside this binary cannot. hostpy_test.go is
 // what refuses them drifting, so the frames a reader trusts stay the frames
 // the child serves.
-const ProtocolVersion = 7
+const ProtocolVersion = 8
 
 // The invocation modes.
 const (
@@ -166,6 +171,12 @@ type Result struct {
 	// Resume set to More.Cursor. Nil means drained — the ordinary single-shot
 	// completion.
 	More *Continuation
+	// Refused is every list of the run the substrate refused, the body
+	// having caught each (and those of every call it made, at any depth):
+	// the run answered, and what fails after it (its effects refused, its
+	// page's commit) is decided as a failed run carrying them is
+	// (RefusedCursorError).
+	Refused []RefusedCursor
 }
 
 // Continuation is a paged body's "not done yet": an opaque resume cursor the
@@ -197,7 +208,10 @@ type Backend interface {
 	Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error)
 	// Aggregate is the aggregate read (substrate.Dataset.Aggregate).
 	Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error)
-	Call(ctx context.Context, function string, args any) (any, error)
+	// Call's refusals are those of the nested run that answered, at every
+	// depth; a nested run that failed carries its own on its error
+	// (RefusedCursorError). Both join the calling run's.
+	Call(ctx context.Context, function string, args any) (any, []RefusedCursor, error)
 	ResolveKind(name string) string
 	Log(line string)
 	// Units is the repository's unit graph the unit host calls convert
@@ -226,6 +240,34 @@ var ErrTemporary = errors.New("temporary failure")
 
 // Temporary reports whether the error is a temporary failure.
 func Temporary(err error) bool { return errors.Is(err, ErrTemporary) }
+
+// RefusedCursor is one list of a run the substrate refused because it can no
+// longer resume the cursor the list sent (substrate.ErrStaleHistory, the
+// reply marked `compacted`): the refusal as the backend returned it, and the
+// exact `after` that list sent.
+type RefusedCursor struct {
+	Refusal error
+	Cursor  string
+}
+
+// RefusedCursorError is a failed run in which the substrate refused one or
+// more of the body's lists: Refused is every such refusal, in order, as the
+// runner recorded each while it answered the call, so nothing reads them
+// from the failure's words. Err is the run's failure as it would be without
+// them, whichever way the run failed (the body's error, a body that caught a
+// refusal and failed or hung, a lost child, a broken exchange, a tripped
+// limit), and reads through, so a temporary failure stays one. A paged drain
+// resumed from its saved continuation reads them (engine functions.go
+// refusedContinuation): where the continuation holds one of the cursors, a
+// retry would send the refused position again.
+type RefusedCursorError struct {
+	Refused []RefusedCursor
+	Err     error
+}
+
+func (e *RefusedCursorError) Error() string { return e.Err.Error() }
+
+func (e *RefusedCursorError) Unwrap() error { return e.Err }
 
 // temporaryError is a failure's own text marked temporary: what a reader of
 // the parked row sees is the text alone.
