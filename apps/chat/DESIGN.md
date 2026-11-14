@@ -458,20 +458,28 @@ bubble is a tinted fill. The transcript softens under the composer with
   All of it comes from the transcript (the call's arguments and answer, the
   row's change stamps), so it shows whatever the token may read; a record's
   name comes from what the chat's own lookups returned.
-- **Linked records** are pills everywhere (SubstrateKit's `RecordPill`): the
-  kind's glyph and the record's name, the same as the console draws them. A
-  tap opens the record read-only in a sheet, its own links pushing within
-  it. A session an earlier build kept with scopes reads what they reach; a
-  kind out of that token's reach is said so ("This app can't read people", and where to allow it), never
-  shown as missing, since the server answers both alike.
+- **A record is one pill wherever it stands** (SubstrateKit's `RecordPill`
+  and `RecordPillText`, both drawn from `RecordPillStyle`): the kind's tile
+  and the record's name on a grey capsule, the same as the console draws
+  them. Under "Linked records", under a tool row and in a card it is a
+  view; a name too long for its row is cut in the middle. A tap opens the
+  record read-only in a sheet, its own links pushing within it. A session
+  an earlier build kept with scopes reads what they reach; a kind out of
+  that token's reach is said so ("This app can't read people", and where to
+  allow it), never shown as missing, since the server answers both alike. A
+  record a read found gone is dimmed and struck through.
 - **Record links in a reply** (`[Q4 budget](substrate://<kind>/<id>)`, or the
-  older `ref:<kind>/<id>`) stay in the text, tinted, and a tap opens the
-  record like a pill. A link the engine found no record for (the reply row's
+  older `ref:<kind>/<id>`) are the same pill inside the line, as text: the
+  link's own words are its name, it wraps with the line (a capsule on each
+  line it spans), sits on the baseline, takes the size of the text around
+  it, and leaves the line's height alone, because the capsule and the tile
+  are drawn behind the words (a `TextRenderer`). A tap on the name opens
+  the record. A link the engine found no record for (the reply row's
   `mentions`, marked `missing`) is its text alone, so an invented id never
   reads as a record. Under a settled reply, "Linked records" repeats each
-  record it links as a pill, since a link inside a line of text cannot be one.
-  The `done` event's mentions reach the reply at once, so its links read so
-  from the run's end, before its rows land.
+  record it links, by its own name. The `done` event's mentions reach the
+  reply at once, so its links read so from the run's end, before its rows
+  land. While a reply streams, a link is its Markdown until it closes.
 - **Sources**: under a finished reply, the web pages it links as numbered
   pills, once each, in the order it first cites them.
 - **Questions** (`ask`): a card with each question's options (one or many,

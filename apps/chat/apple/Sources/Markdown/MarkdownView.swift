@@ -39,6 +39,8 @@ struct MarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A record a line links is the kit's pill, drawn behind its words.
+        .recordPillText()
         .environment(\.missingRecords, missing)
         .environment(
             \.openURL,
@@ -86,41 +88,67 @@ func inline(_ text: String, missing: Set<String> = []) -> Text {
     return out
 }
 
-/// A line of inline text, cut where a link that leaves the app ends: its
-/// mark goes there.
+/// A line of inline text, cut where a link that leaves the app ends (its
+/// mark goes there) and around each record a link names (its pill).
 enum InlinePiece: Equatable {
     case text(AttributedString)
     case leaves
+    /// A link to a record, and the link's own words: the pill's name.
+    case record(RecordReference, AttributedString)
 }
 
-/// The pieces of a line: a link that is not a record's leaves the app, and
-/// its mark follows the last run it covers.
+/// The pieces of a line: a record's link is its pill, and any other link
+/// leaves the app, its mark following the last run it covers.
 func inlinePieces(_ text: AttributedString) -> [InlinePiece] {
     var pieces: [InlinePiece] = []
     var pending = AttributedString()
-    var open: URL?
+    var leaving: URL?
+    var record: (reference: RecordReference, link: URL)?
+    func flush() {
+        if !pending.characters.isEmpty { pieces.append(.text(pending)) }
+        pending = AttributedString()
+    }
     for run in text.runs {
-        let leaving = run.link.flatMap { linkedRecord($0) == nil ? $0 : nil }
-        if let current = open, leaving != current {
-            pieces += [.text(pending), .leaves]
+        let named = run.link.flatMap(linkedRecord)
+        let leaves = named == nil ? run.link : nil
+        if leaving != nil, leaves != leaving {
+            flush()
+            pieces.append(.leaves)
+        }
+        if let current = record, run.link != current.link {
+            pending.link = nil
+            pieces.append(.record(current.reference, pending))
             pending = AttributedString()
+            record = nil
+        }
+        if let named, let link = run.link, record == nil {
+            flush()
+            record = (named, link)
         }
         pending.append(text[run.range])
-        open = leaving
+        leaving = leaves
     }
-    if !pending.characters.isEmpty { pieces.append(.text(pending)) }
-    if open != nil { pieces.append(.leaves) }
+    if let current = record {
+        pending.link = nil
+        pieces.append(.record(current.reference, pending))
+    } else {
+        flush()
+    }
+    if leaving != nil { pieces.append(.leaves) }
     return pieces
 }
 
-/// The line as one text, each mark kept beside its link by a no-break space.
+/// The line as one text: each mark kept beside its link by a no-break
+/// space, each record as its pill.
 func marked(_ text: AttributedString) -> Text {
     let pieces = inlinePieces(text)
-    guard pieces.contains(.leaves) else { return Text(text) }
+    guard pieces.contains(where: { if case .text = $0 { false } else { true } }) else { return Text(text) }
     return pieces.reduce(Text(verbatim: "")) { line, piece in
         switch piece {
         case let .text(part): Text("\(line)\(part)")
         case .leaves: Text("\(line)\u{00A0}\(ExternalMark.text)")
+        case let .record(reference, name):
+            Text("\(line)\(RecordPillText.text(reference, name: name, link: URL(string: "substrate://" + reference.path)))")
         }
     }
 }
@@ -142,7 +170,6 @@ func parseInline(_ text: String, missing: Set<String> = []) -> AttributedString 
                     out[run.range].link = nil
                 } else {
                     out[run.range].link = URL(string: "substrate://" + record.path)
-                    out[run.range].backgroundColor = Color.accentColor.opacity(0.12)
                 }
             } else if consolePath(link) == nil, !["http", "https", "mailto"].contains(link.scheme?.lowercased() ?? "") {
                 out[run.range].link = nil

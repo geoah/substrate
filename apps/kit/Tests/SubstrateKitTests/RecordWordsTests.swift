@@ -123,4 +123,18 @@ import FoundationNetworking
         await #expect(throws: RecordReadError.notAllowed) { try await directory.record(secret) }
         #expect(directory.denied.contains(secret.path))
     }
+
+    @Test func aRecordReadAndNotThereIsGoneUntilAReadFindsIt() async throws {
+        let mug = RecordReference(kind: "a.example.com/commerce/product", id: "mug")
+        let empty = RecordDirectory(reader: Fake(records: [:], denied: []))
+        #expect(!empty.isGone(mug))
+        await empty.resolve(mug)
+        #expect(empty.isGone(mug))
+        #expect(empty.title(for: mug) == nil)
+        // One that is there is never gone, and neither is one never read.
+        let held = RecordDirectory(reader: Fake(records: [mug.path: Record(id: "mug", kind: mug.kind, properties: ["title": "Mug"])], denied: []))
+        await held.resolve(mug)
+        #expect(!held.isGone(mug))
+        #expect(!RecordDirectory(reader: nil).isGone(mug))
+    }
 }
