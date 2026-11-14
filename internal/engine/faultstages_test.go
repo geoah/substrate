@@ -15,9 +15,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -43,31 +43,84 @@ func TestEveryFaultSeamStageIsNamedByATest(t *testing.T) {
 	}
 	t.Logf("%d seams report %d stages", len(seams), len(stages))
 	aliases := exportedStageNames(t)
-	var tests []string
+	used := map[string]bool{}
 	for _, dir := range []string{".", "../testenv", "../api"} {
-		files, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, f := range files {
-			if filepath.Base(f) == "export_test.go" || filepath.Base(f) == "faultstages_test.go" {
-				continue
-			}
-			raw, err := os.ReadFile(f)
-			if err != nil {
-				t.Fatal(err)
-			}
-			tests = append(tests, string(raw))
-		}
+		maps.Copy(used, namesUsedInCode(t, dir))
 	}
 	for _, stage := range sortedKeys(stages) {
 		names := []string{strings.TrimPrefix(stage, "changelogfile.")}
 		names = append(names, aliases[stage]...)
-		pattern := regexp.MustCompile(`\b(` + strings.Join(names, "|") + `)\b`)
-		if !slices.ContainsFunc(tests, pattern.MatchString) {
+		if !slices.ContainsFunc(names, func(n string) bool { return used[n] }) {
 			t.Errorf("the seam stage %s (%q) is named by no test: stop the process there in a test and show the next start finishes it", stage, consts[stage])
 		}
 	}
+}
+
+// namesUsedInCode is every identifier the test files of dir use in code:
+// inside a function's body, or in a package-level value a function's body
+// uses (a table of stages a test drives). A name in a comment or inside a
+// string is not one. export_test.go and this file are left out: one
+// re-exports the stages and the other reads them.
+func namesUsedInCode(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inBodies := map[string]bool{}
+	tables := map[string][]string{}
+	idents := func(n ast.Node) []string {
+		var out []string
+		ast.Inspect(n, func(m ast.Node) bool {
+			if id, ok := m.(*ast.Ident); ok {
+				out = append(out, id.Name)
+			}
+			return true
+		})
+		return out
+	}
+	for _, name := range files {
+		if base := filepath.Base(name); base == "export_test.go" || base == "faultstages_test.go" {
+			continue
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Body != nil {
+					for _, n := range idents(d.Body) {
+						inBodies[n] = true
+					}
+				}
+			case *ast.GenDecl:
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					var values []string
+					for _, v := range vs.Values {
+						values = append(values, idents(v)...)
+					}
+					for _, n := range vs.Names {
+						tables[n.Name] = append(tables[n.Name], values...)
+					}
+				}
+			}
+		}
+	}
+	used := maps.Clone(inBodies)
+	for table, values := range tables {
+		if inBodies[table] {
+			for _, n := range values {
+				used[n] = true
+			}
+		}
+	}
+	return used
 }
 
 // parsedFiles parses dir's Go files, the tests among them or not.
@@ -249,4 +302,47 @@ func exportedStageNames(t *testing.T) map[string][]string {
 		}
 	}
 	return out
+}
+
+// A stage named only in a comment, or inside a longer string, is not named:
+// both guards count what code uses.
+func TestAStageNamedOnlyInACommentIsNotNamed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := `package engine
+
+// stopAtFirst is in a comment only.
+var table = []string{stopInTable}
+
+var unusedTable = []string{stopInUnusedTable}
+
+func TestX(t *testing.T) {
+	_ = "a string that mentions stopInString"
+	_ = stopInBody
+	for range table {
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "x_test.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	used := namesUsedInCode(t, dir)
+	for name, want := range map[string]bool{
+		"stopAtFirst": false, "stopInString": false, "stopInUnusedTable": false,
+		"stopInBody": true, "stopInTable": true,
+	} {
+		if used[name] != want {
+			t.Errorf("%s: used %t, want %t", name, used[name], want)
+		}
+	}
+	f, err := parser.ParseFile(token.NewFileSet(), "x_test.go", src, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !usesStage(f, "stopInBody", "") || usesStage(f, "stopAtFirst", "") || usesStage(f, "absent", "mentions stopInString") {
+		t.Error("usesStage counts a comment, or a stage's value inside a longer string")
+	}
+	if !usesStage(f, "absent", "a string that mentions stopInString") {
+		t.Error("usesStage does not count a stage's value as a whole string literal")
+	}
 }
