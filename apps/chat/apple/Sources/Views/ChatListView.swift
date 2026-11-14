@@ -102,6 +102,7 @@ struct ChatListView: View {
                     if let action = empty.action {
                         Button(action) { host.send(.newChat(agent: nil, listen: false, scene: scene)) }
                             .buttonStyle(.glassProminent)
+                            .tint(.accentFill)
                     }
                 }
             } else if query.isEmpty, list?.loading != false {

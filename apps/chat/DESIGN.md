@@ -404,8 +404,8 @@ bubble is a tinted fill. The transcript softens under the composer with
   the grey it is while the focus is elsewhere. An iPad fills the focused
   selection with the list's tint, which is the accent as a fill (the icon's
   purple in both modes: white is 2.8:1 on the dark mode's accent); a Mac's
-  source list fills it with the system's own tone of the accent. On the
-  selection a mark is an outline.
+  source list is left to fill it as the system does. On the selection a
+  mark is an outline.
 - Automated runs are behind a toggle in the list's filter menu (off by
   default), with a glyph for what started each.
 - Search filters titles, previews and cached transcripts, and says it is
@@ -653,11 +653,14 @@ may do and for how long; the app never sees the password.
   tone as words (`toneText`: red, orange and green are not text colours on
   a white page), the accent as words and as a fill, an agent's colour as
   its pill's tint and as the ink of its name. `ChatColours.pairs` lists
-  each pairing of words and fill the views draw, and `ColourContrast` in
-  the app's tests holds every one, and every hue an agent's id can hash to,
-  to WCAG's 4.5:1 (3:1 for large text) in light and in dark. A Markdown
-  block quote, the composer's notes and the navigation bar's subtitle
-  still draw the system's secondary label.
+  the pairings of words and fill the list, the transcript and the cards
+  draw from those names, and `ColourContrast` in the app's tests holds
+  every one, and every hue an agent's id can hash to, to WCAG's 4.5:1 (3:1
+  for large text) in light and in dark. A prominent button of the chat's
+  own is filled with the accent as a fill. Still the system's: a Markdown
+  block quote, the composer's notes and its key callout, the navigation
+  bar's subtitle (the secondary label), and a prominent button in the
+  kit's screens (white on the accent's text tone).
 
 ## Errors, by where they happen
 

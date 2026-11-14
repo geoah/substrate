@@ -115,6 +115,7 @@ struct NoChatView: View {
         } actions: {
             Button("New Chat") { host.send(.newChat(agent: nil, listen: false, scene: scene)) }
                 .buttonStyle(.glassProminent)
+                .tint(.accentFill)
         }
     }
 }

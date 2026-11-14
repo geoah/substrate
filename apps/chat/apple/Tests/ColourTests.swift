@@ -41,7 +41,9 @@ import AppKit
     /// The same agent keeps its hue: the id's hash is what every build and
     /// device computes.
     @Test func anAgentsHueIsItsIdsAlone() {
-        #expect(ChatColours.hue(of: "substrate.reamde.dev/assistant/moss") == ChatColours.hue(of: "substrate.reamde.dev/assistant/moss"))
+        // The hash every build has computed: an agent keeps its colour.
+        #expect(ChatColours.hue(of: "substrate.reamde.dev/assistant/moss") == 341)
+        #expect(ChatColours.hue(of: "ada.example.com/agents/helper") == 346)
         #expect((0 ..< 360).contains(ChatColours.hue(of: "")))
         #expect(ChatColours.hsb(0, 1, 1) == 0xFF0000)
         #expect(ChatColours.hsb(120, 1, 1) == 0x00FF00)
@@ -83,21 +85,22 @@ import AppKit
     }
 
     /// A Mac's source list draws the selection in the system's colours:
-    /// its own tone of the app's accent while the list has the focus, a
-    /// grey while it does not, and white for the primary style on the
-    /// first. The named colours are what this system draws, so the pairs
-    /// test holds the words to it. A person who picks another accent in
-    /// System Settings gets the system's pairing of that one with white.
-    @Test func aMacsSelectionColoursAreTheSystems() throws {
-        let appsOwnAccent = UserDefaults.standard.object(forKey: "AppleAccentColor") == nil
+    /// its own tone of the accent while the list has the focus, a grey
+    /// while it does not. Whatever this system and its accent setting make
+    /// of them, the words the row draws read on both: white on the first
+    /// (what the system makes of the primary style there), the label
+    /// colour on the second.
+    @Test func aMacsSelectedRowReadsOnWhatTheSystemDraws() throws {
         for dark in [false, true] {
+            let mode = dark ? "dark" : "light"
             let focused = try #require(Self.srgb(.selectedContentBackgroundColor, dark: dark))
             let unfocused = try #require(Self.srgb(.unemphasizedSelectedContentBackgroundColor, dark: dark))
-            if appsOwnAccent {
-                #expect(focused == (dark ? ChatColours.selection.dark : ChatColours.selection.light), "the focused selection, \(dark ? "dark" : "light")")
-            }
-            #expect(unfocused == (dark ? ChatColours.unfocusedSelection.dark : ChatColours.unfocusedSelection.light))
-            #expect(Self.srgb(.alternateSelectedControlTextColor, dark: dark) == (dark ? ChatColours.onSelection.dark : ChatColours.onSelection.light))
+            let onFocused = try #require(Self.srgb(.alternateSelectedControlTextColor, dark: dark))
+            let label = dark ? ChatColours.label.dark : ChatColours.label.light
+            #expect(onFocused == (dark ? ChatColours.onSelection.dark : ChatColours.onSelection.light), "\(mode)")
+            #expect(
+                DesignTokens.contrast(onFocused, focused) >= 4.5, "the focused selection, \(mode): \(Self.ratio(DesignTokens.contrast(onFocused, focused)))")
+            #expect(DesignTokens.contrast(label, unfocused) >= 4.5, "the unfocused selection, \(mode): \(Self.ratio(DesignTokens.contrast(label, unfocused)))")
         }
     }
     #endif
