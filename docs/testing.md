@@ -336,11 +336,14 @@ half of validation item 10 of the 1.0 plan, and it runs only when
 - **What it times:** an archive pass, an export, a rebuild, the compaction
   pass where the binary has one, the conversion at a start (the stamp one
   dialect below, so the boot walks the last step over every line and rewrites
-  none: a lower bound), and the import of the archive into a database that
-  holds none of it.
+  none, and the import-progress marker set, so it rebuilds the fold in two
+  replays as a conversion that rewrote lines does), and the import of the
+  archive into a database that holds none of it.
 - **What it records for each:** the wall time, the database's WAL and temp
   bytes, the process's peak heap, and, while the server is up, a write every
-  100ms beside it.
+  100ms beside it, with no timeout of its own: a repository rebuild holds the
+  changelog's lock for its whole length, so the longest write beside it is
+  how long every write to the repository waits for one.
 - **Where the numbers go:** to the log, and to the file
   `SUBSTRATE_SCALE_REPORT` names, one JSON object a line.
 
