@@ -358,6 +358,13 @@ func TestScaleTimings(t *testing.T) {
 	// for; each must still be reading when the last of them ends.
 	filter, _ := json.Marshal(map[string]any{"kinds": []string{kind}})
 	watchCtx, endWatch := context.WithCancel(ctx)
+	// Ended and waited for however the test ends, a Fatal before the
+	// operations among the ways, so no reader outlives it.
+	var readers sync.WaitGroup
+	t.Cleanup(func() {
+		endWatch()
+		readers.Wait()
+	})
 	var delivered atomic.Int64
 	var opened sync.WaitGroup
 	for range watchers {
@@ -367,11 +374,20 @@ func TestScaleTimings(t *testing.T) {
 			t.Fatalf("open a watch: %d", resp.StatusCode)
 		}
 		opened.Add(1)
+		readers.Add(1)
 		go func(resp *http.Response) {
+			defer readers.Done()
 			defer func() { _ = resp.Body.Close() }()
+			first := true
+			// A stream that ends before its first frame still counts as
+			// opened, or the wait below never returns.
+			defer func() {
+				if first {
+					opened.Done()
+				}
+			}()
 			sc := bufio.NewScanner(resp.Body)
 			sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
-			first := true
 			for sc.Scan() {
 				if first {
 					opened.Done()
@@ -411,6 +427,7 @@ func TestScaleTimings(t *testing.T) {
 		note(scalePhase{Phase: "compaction", Note: "this binary has no compaction pass to time"})
 	}
 	endWatch()
+	readers.Wait()
 	if delivered.Load() == 0 {
 		t.Error("no watcher was delivered a write while the operations ran")
 	}
@@ -445,16 +462,17 @@ func TestScaleTimings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Timed to the restored repository's first open; its server's stop, and
+	// the archive pass that stop runs, are not the import's.
+	var restored *testenv.Env
 	measure("import", false, func() (int64, error) {
-		r := testenv.Start(t, testenv.WithDSN(restoredDSN), testenv.WithDataRoot(t.TempDir()), testenv.WithCredentialKey(key),
+		restored = testenv.Start(t, testenv.WithDSN(restoredDSN), testenv.WithDataRoot(t.TempDir()), testenv.WithCredentialKey(key),
 			testenv.WithoutRegistration(), testenv.WithRepository(scaleAuthority),
 			testenv.WithEngineOptions(engine.WithArchive(store), engine.WithArchiveInterval(24*time.Hour)))
-		defer r.Stop()
-		if _, err := r.Service.Dataset(ctx, scaleAuthority); err != nil {
-			return 0, err
-		}
-		return 0, nil
+		_, err := restored.Service.Dataset(ctx, scaleAuthority)
+		return 0, err
 	})
+	restored.Stop()
 
 	if path := os.Getenv("SUBSTRATE_SCALE_REPORT"); path != "" {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
