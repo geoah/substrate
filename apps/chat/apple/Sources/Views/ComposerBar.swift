@@ -20,6 +20,7 @@ struct ComposerBar: View {
     let atBottom: Bool
     let onJump: () -> Void
     let onKey: (String) -> Void
+    @Environment(\.draftField) private var draftField
     @State private var text = ""
     @State private var reports = DraftReports()
     @FocusState private var focused: Bool
@@ -88,6 +89,7 @@ struct ComposerBar: View {
             say()
         }
         .onChange(of: text) { _, text in reports.typed(text, at: .now) }
+        .onAppear { draftField?.flush = { say() } }
         .task(id: reports.due) {
             guard let due = reports.due else { return }
             try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
@@ -277,6 +279,24 @@ struct ComposerBar: View {
             await dictation.start(localeID: host.chats?.settings.voiceLocale)
         }
     }
+}
+
+/// The composer's field as the rest of a conversation's views reach it. The
+/// field owns its text while it is typed, so whatever sends the
+/// conversation's draft from outside the composer (a card's Send Again)
+/// calls this first, then sends its command: the two reach the
+/// conversation in that order, and the send carries every key.
+@MainActor
+final class DraftField {
+    fileprivate var flush: () -> Void = {}
+
+    /// Tells the conversation what the field holds that it has not heard.
+    func callAsFunction() { flush() }
+}
+
+extension EnvironmentValues {
+    /// The composer's field of the conversation the view is in.
+    @Entry var draftField: DraftField?
 }
 
 /// Drawn again only for what it draws: of the conversation's screen, its
