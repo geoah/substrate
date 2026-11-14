@@ -3664,6 +3664,16 @@ func (ds *dataset) ReplayTrigger(ctx context.Context, id string, from int64) err
 	// The reset and the drop below are one ledger entry, so a restore comes
 	// back to the rewound position and not to the delivery it undid.
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// Below the horizon a deletion was forgotten, and a walk from there
+		// would never deliver it: a replay into that stretch starts from the
+		// beginning, meeting every record once in its latest state.
+		var horizon int64
+		if err := t.row(`SELECT coalesce((SELECT horizon FROM compaction_state), 0)`).Scan(&horizon); err != nil {
+			return err
+		}
+		if from > 0 && from < horizon {
+			from = 0
+		}
 		if err := t.setCursorTx(id, from); err != nil {
 			return err
 		}

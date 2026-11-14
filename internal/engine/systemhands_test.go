@@ -46,7 +46,7 @@ var systemHands = map[string]string{
 	"auth.go:ResetUser":                       "carries: the person an operator's reset gives a repository, as an actor naming the identity the reset made and the name the operator chose (or the actor's, or the repository's); held to the operator's own door on the box, which nothing on the network reaches, validIdentityName and the identity's insert in the reset's control-plane transaction, into a core kind that declares no writer:",
 	"blobs.go:blobGCPass":                     "decides: unreferenced blobs collected",
 	"compact.go:captureState":                 "decides: a record's state replayed through the fold inside a savepoint it rolls back",
-	"compact.go:compact":                      "decides: a compaction's rewrite of history it replaces with state entries, appending nothing",
+	"compact.go:withCompactionTx":             "decides: a compaction's, the pass's or a forgetting's rewrite of history it replaces with state entries, appending nothing",
 	"bundles.go:DisableBundle":                "decides: the disabled mark a person's request sets",
 	"bundles.go:EnableBundle":                 "decides: the disabled mark a person's request clears",
 	"bundles.go:UninstallBundle":              "decides: a package's declarations removed",

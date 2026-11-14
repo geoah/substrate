@@ -1201,6 +1201,11 @@ func (ds *dataset) refold(ctx context.Context) error {
 			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
 				return fmt.Errorf("clear the import-progress marker: %w", err)
 			}
+			// The lines came in without the write path, which indexes the
+			// effects a line carries for another record (compactindex.go).
+			if err := t.resetForeignIndex(); err != nil {
+				return err
+			}
 			if _, err := t.exec(`DELETE FROM archive_takes WHERE repository_id = $1`, ds.info.ID); err != nil {
 				return fmt.Errorf("end the take the import carried out: %w", err)
 			}

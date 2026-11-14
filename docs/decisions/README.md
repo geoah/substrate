@@ -437,3 +437,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
 | [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
+| [0300](0300-a-paced-pass-compacts-what-is-past-each-kinds-retention-and-forgets-old-deletions.md) | A paced pass compacts what is past each kind's retention, and forgets old deletions | accepted |

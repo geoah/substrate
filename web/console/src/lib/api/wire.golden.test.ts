@@ -483,6 +483,7 @@ const changePage: Shape<ChangePage> = {
   cursor: false,
   head: true,
   generation: true,
+  horizon: false,
 }
 
 const changeRun: Shape<ChangeRun> = {

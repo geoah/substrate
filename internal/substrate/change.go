@@ -77,6 +77,9 @@ type ChangePage struct {
 	Cursor     int64       `json:"cursor,omitempty"`
 	Head       int64       `json:"head"`
 	Generation string      `json:"generation"`
+	// Horizon is the oldest seq a watch may resume from (ChangelogHead), 0
+	// where nothing was forgotten.
+	Horizon int64 `json:"horizon,omitempty"`
 }
 
 // The verbs a ChangeRun groups by: what a row did to its record, in the
@@ -206,6 +209,10 @@ type PropertyChange struct {
 type ChangelogHead struct {
 	Seq        int64  `json:"seq"`
 	Generation string `json:"generation"`
+	// Horizon is the oldest seq a client may resume from: a compaction
+	// forgot a deletion at it, so a resume from below would miss it
+	// (decision 0300). 0 where nothing was forgotten.
+	Horizon int64 `json:"horizon,omitempty"`
 }
 
 // ChangeFilter narrows a changelog read or watch.

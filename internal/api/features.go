@@ -143,7 +143,8 @@ var featureTable = []feature{
 	// (`token`, `tokenName`), and `actors=` takes actor record ids (decision
 	// 0270). Revision 3: `affected[].state`, a compaction's state entry
 	// (decision 0296).
-	{name: "changefeed", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 4: `horizon` on a page, the repository's own (decision 0300).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/changes",
 	}},
 	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{

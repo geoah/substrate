@@ -313,11 +313,13 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// transaction that appends more than one entry slices its effect stream at
 	// each append, so the effects stay in the order they happened even where an
 	// inner write (a mapping shell, a recompute) borrows an outer one's.
+	var foreign []eref
 	if len(t.folded) > 0 {
 		if payload == nil {
 			payload = map[string]any{}
 		}
 		payload[foldPayloadKey] = t.folded
+		foreign = foreignOf(t.folded, eref{Kind: typ, ID: recordID})
 		t.folded = nil
 	}
 	raw, err := jsonb(payload)
@@ -333,7 +335,7 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// A bulk run sends its entries in one INSERT (bulkwrite.go) and records
 	// each as below.
 	if t.bulk != nil {
-		t.bulk.entries = append(t.bulk.entries, bulkEntry{links: t.linksOf(actor), op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
+		t.bulk.entries = append(t.bulk.entries, bulkEntry{links: t.linksOf(actor), op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy, foreign: foreign})
 		return nil
 	}
 	if err := t.lockChangelog(); err != nil {
@@ -357,14 +359,14 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 		t.now, links.actor, links.onBehalfOf, links.token, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
-	t.appended(links, op, recordID, typ, causedBy, seq, stored)
+	t.appended(links, op, recordID, typ, causedBy, seq, stored, foreign)
 	return nil
 }
 
 // appended records one inserted changelog row on the transaction: its seq,
 // its address and the pending line its checksum and file write read, with
 // the payload as stored.
-func (t *txn) appended(links writeLinks, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
+func (t *txn) appended(links writeLinks, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte, foreign []eref) {
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
@@ -378,7 +380,7 @@ func (t *txn) appended(links writeLinks, op substrate.Op, recordID, typ string, 
 		Seq: seq, TS: t.now, Actor: links.actor, OnBehalfOf: links.onBehalfOf, Token: links.token,
 		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
-		PayloadText: stored,
+		PayloadText: stored, Foreign: foreign,
 	})
 }
 

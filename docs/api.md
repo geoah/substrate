@@ -981,7 +981,8 @@ holds a token. The well-known path is what lets an outside system ask whether
 a domain is a substrate at all before it speaks the rest of the contract, the
 same way `/.well-known/openid-configuration` works for an OIDC issuer. It
 reports: the served API versions; the server build; the
-[changelog horizon](changelog.md#frames-and-the-horizon); the reference
+[changelog horizon](changelog.md#frames-and-the-horizon) for the server as a
+whole, 0 (a repository's own is on its change pages); the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
 registration asks for; the request surface,

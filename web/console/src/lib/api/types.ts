@@ -724,6 +724,11 @@ export interface ChangePage {
   cursor?: number
   head: number
   generation: string
+  /** The oldest seq a watch may resume from: a compaction forgot a deletion
+   * at it, and a `from` below it is answered `410 compacted` (decision
+   * 0300). Absent where nothing was forgotten. Since the changefeed's
+   * revision 3. */
+  horizon?: number
 }
 
 /** Consecutive rows of the filtered feed that share an actor, a kind and a
