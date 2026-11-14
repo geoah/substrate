@@ -6,7 +6,8 @@ package engine
 // A reader that finds a line whose columns are not what its stored checksum
 // was stamped over (checksumRow.verifies) notes its seq in changelog_damage:
 // a compaction (the door's whole-history run, the pass's batches),
-// backfillForeign, an erasure, and the archive pass where it refuses a row. A batch
+// backfillForeign, an erasure, and the archive pass where it refuses a row
+// or takes its line from the piece it replaces (archive.go keptLine). A batch
 // finds a record's lines by the very columns damage may change, so it can
 // miss a line a whole-history reader meets; the note makes what one reader
 // found hold for all of them. Every compaction reads the lowest noted seq
