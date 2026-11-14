@@ -87,6 +87,8 @@ public struct KeyedList<Row: Codable & Equatable & Sendable & Identifiable>: Cod
     }
 }
 
+extension KeyedList: Hashable where Row: Hashable {}
+
 /// One step of a `KeyedList`, from the revision `base` to `revision`.
 public struct KeyedListDelta<Row: Codable & Equatable & Sendable>: Codable, Equatable, Sendable {
     public var base: Int
