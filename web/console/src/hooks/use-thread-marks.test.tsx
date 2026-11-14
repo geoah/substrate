@@ -67,6 +67,8 @@ let server: {
   writes: { thread: string; readThrough?: string; markedUnread?: boolean }[]
   lists: number
   known: boolean
+  /** Holds a write of a position until it is called, as a slow request. */
+  hold?: Promise<void>
 }
 
 function stored(threadId: string): SubstrateRecord {
@@ -104,6 +106,7 @@ beforeEach(() => {
         }
         const { thread, readThrough, markedUnread } = body.properties
         server.writes.push(body.properties)
+        if (readThrough && server.hold) await server.hold
         const held = server.marks.get(thread) ?? {}
         // As the server does: a taken position clears the flag unless the
         // write sets it.
@@ -233,6 +236,35 @@ describe("useThreadMarks", () => {
     await act(() => vi.advanceTimersByTimeAsync(SEEN_MS + WRITE_MS + 100))
     expect(server.writes[1]).toEqual({ thread: "t2", readThrough: "m5" })
     await waitFor(() => expect(result.current.unread.has("t2")).toBe(false))
+  })
+
+  it("sends Mark as Unread after a read that was already on its way", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    let release = () => {}
+    server.hold = new Promise<void>((resolve) => (release = resolve))
+    const { result } = renderHook(() => useThreadMarks(threads, threads[1]), {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(result.current.supported).toBe(true))
+    // The read is sent and has not been answered yet.
+    await act(() => vi.advanceTimersByTimeAsync(SEEN_MS + WRITE_MS + 100))
+    expect(server.writes).toEqual([{ thread: "t2", readThrough: "m5" }])
+    act(() => result.current.markUnread("t2"))
+    await act(() => vi.advanceTimersByTimeAsync(200))
+    // Held back until the read is answered, so it lands after it.
+    expect(server.writes).toHaveLength(1)
+    release()
+    await waitFor(() =>
+      expect(server.writes).toEqual([
+        { thread: "t2", readThrough: "m5" },
+        { thread: "t2", markedUnread: true },
+      ])
+    )
+    await waitFor(() => expect(result.current.unread.has("t2")).toBe(true))
+    expect(server.marks.get("t2")).toEqual({
+      readThrough: "m5",
+      markedUnread: true,
+    })
   })
 
   it("follows a mark another device wrote, from the change feed", async () => {

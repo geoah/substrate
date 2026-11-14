@@ -52,7 +52,8 @@ write.
 - **A person writes only their own.** A person's token and an app's token
   write the mark of the person they act for, found as the one check finds
   whom a hand acts for. An agent, a function and a package write none.
-  `thread` and `readBy` do not change after the create.
+  `thread` and `readBy` do not change after the create, and a delete, a pin
+  and a release of a mark are its person's alone too.
 - **Forward only.** A message's place is its `turn`, then when its row was
   written, then its id. A write naming a message before the stored one keeps
   the stored position, and a write that then changes nothing lands nothing
@@ -87,7 +88,8 @@ write.
   move (`readThrough` and `markedUnread` alone). No `write:` scope names an
   `llm` kind, so the grammar is unchanged.
 - **Reading one's own.** In a filter, a condition on a reference to
-  `core/actor` may name `me`, the actor of the person the request acts for.
+  `core/actor` may name `me`, the actor of the person the read acts for: a
+  request's, or a run's that acts for a person.
   A client lists its own marks for a page of threads without knowing its
   actor, and a person who may not read actor records filters by their own.
 - **History.** The kind declares `retention: P7D`: once a compaction runs,
@@ -120,8 +122,8 @@ are.
 - Bad, because the migration writes a line per thread and a line per thread
   and person at the first open, in one transaction: 25,005 lines and about
   20 seconds for 5,000 threads and four people where it was measured.
-- Bad, because `me` is a word in the filter grammar that only a request with
-  a token behind it can say.
+- Bad, because `me` is a word in the filter grammar that a read acting for
+  nobody, a trigger's, cannot say.
 - Bad, because a role a repository writes later must name the mark kind for
   its people to keep their place.
 

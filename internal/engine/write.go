@@ -3229,7 +3229,7 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 			return nil, err
 		}
 	}
-	if err := t.guardThreadMarkDelete(ty.Identity, row); err != nil {
+	if err := t.guardThreadMarkOwner(ty.Identity, row, "delete"); err != nil {
 		return nil, err
 	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen

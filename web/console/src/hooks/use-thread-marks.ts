@@ -115,11 +115,23 @@ export function useThreadMarks(
     },
     [queryClient]
   )
+  // One thread's writes go out one after another, in the order they were
+  // made: a read already sent would otherwise land after a Mark as Unread
+  // made a moment later, and clear it.
+  const sending = useRef(new Map<string, Promise<void>>())
   const write = useCallback(
     (thread: string, change: Parameters<typeof writeThreadMark>[1]) => {
+      const before = sending.current.get(thread) ?? Promise.resolve()
       // A read that fails is tried again the next time the chat is opened;
       // it is nothing the person can act on.
-      void writeThreadMark(thread, change).then(keep, () => {})
+      const sent = before
+        .then(() => writeThreadMark(thread, change))
+        .then(keep, () => {})
+        .finally(() => {
+          if (sending.current.get(thread) === sent)
+            sending.current.delete(thread)
+        })
+      sending.current.set(thread, sent)
     },
     [keep]
   )
