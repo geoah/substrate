@@ -33,7 +33,7 @@ struct ConversationView: View {
                 if let older = screen.olderHidden {
                     Label(older, systemImage: "clock.arrow.circlepath")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.quietText)
                         .frame(maxWidth: .infinity)
                 }
                 ForEach(screen.turns) { turn in
@@ -59,7 +59,7 @@ struct ConversationView: View {
                         }
                     }
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.quietText)
                 }
             }
             .padding(.horizontal, 20)
@@ -190,7 +190,7 @@ private struct NewChatHeroView: View {
                     .font(.title.weight(.bold))
                 if let description = hero.description {
                     Text(description)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.quietText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let keyless = hero.keyless {
@@ -232,13 +232,13 @@ private struct ConversationStatus: View {
             case .partial:
                 Label(note.message, systemImage: "text.badge.minus")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.quietText)
             case .background:
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
                     Text(note.message)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.quietText)
                 }
             case .failed:
                 VStack(alignment: .leading, spacing: 10) {

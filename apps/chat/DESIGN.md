@@ -398,6 +398,14 @@ bubble is a tinted fill. The transcript softens under the composer with
   restart or a limit, "Stopped" (grey) for a stop, "Failed" (red) for an
   error. No avatar and no agent pill: each took a column and said no more
   than the name.
+- The selected row draws every word in the system's primary style and
+  keeps no colour of its own: the system makes that white on the
+  selection's fill while the list has the focus, and the label colour on
+  the grey it is while the focus is elsewhere. An iPad fills the focused
+  selection with the list's tint, which is the accent as a fill (the icon's
+  purple in both modes: white is 2.8:1 on the dark mode's accent); a Mac's
+  source list fills it with the system's own tone of the accent. On the
+  selection a mark is an outline.
 - Automated runs are behind a toggle in the list's filter menu (off by
   default), with a glyph for what started each.
 - Search filters titles, previews and cached transcripts, and says it is
@@ -638,6 +646,18 @@ may do and for how long; the app never sees the password.
   once, and felt, where its chat is on screen (the list's `answered`
   signal, acted on once per raise by `PresentationModel.onSignal`); Reduce Motion stills the shimmer and the pulse; code scales with
   Dynamic Type; every control has a label; light and dark.
+- **Colour.** Every colour the chat's own views choose has a name in
+  `ChatColours` (`apple/Sources/Views/ChatColours.swift`), over the kit's
+  `DesignTokens` for what another app would share: quiet words
+  (`quietText`, where the system's secondary label is 3.4:1 on white), a
+  tone as words (`toneText`: red, orange and green are not text colours on
+  a white page), the accent as words and as a fill, an agent's colour as
+  its pill's tint and as the ink of its name. `ChatColours.pairs` lists
+  each pairing of words and fill the views draw, and `ColourContrast` in
+  the app's tests holds every one, and every hue an agent's id can hash to,
+  to WCAG's 4.5:1 (3:1 for large text) in light and in dark. A Markdown
+  block quote, the composer's notes and the navigation bar's subtitle
+  still draw the system's secondary label.
 
 ## Errors, by where they happen
 

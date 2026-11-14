@@ -37,7 +37,7 @@ struct QuestionCardView: View {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(option.label)
                                     if let description = option.description {
-                                        Text(description).font(.caption).foregroundStyle(.secondary)
+                                        Text(description).font(.caption).foregroundStyle(.quietText)
                                     }
                                 }
                                 Spacer(minLength: 0)
@@ -51,7 +51,7 @@ struct QuestionCardView: View {
                 }
             }
             if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(.red)
+                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
             }
             if card.pending {
                 HStack {
@@ -61,6 +61,7 @@ struct QuestionCardView: View {
                         if card.busy == "answer" { ProgressView().controlSize(.small) } else { Text(card.answer) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.accentFill)
                     .disabled(card.busy != nil || !card.questions.allSatisfy { !(picked[$0.id]?.isEmpty ?? true) })
                     Button(card.dismiss) { host.send(.dismissQuestions(id)) }
                         .buttonStyle(.bordered)
@@ -104,11 +105,11 @@ struct SuggestionCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             ChangeHeaderView(heading: card.panel.heading)
             if let rationale = card.rationale {
-                Text(rationale).font(.footnote).foregroundStyle(.secondary)
+                Text(rationale).font(.footnote).foregroundStyle(.quietText)
             }
             ForEach(card.values) { line in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
                     if let before = line.before {
                         RecordValueView(before, struck: true).font(.footnote).lineLimit(4)
                     }
@@ -116,12 +117,12 @@ struct SuggestionCardView: View {
                 }
             }
             if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(.red)
+                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
             }
             if let console = card.console.flatMap(URL.init(string:)) {
                 // Without `decide:` the request is not the app's to decide.
                 if let note = card.consoleNote {
-                    Text(note).font(.footnote).foregroundStyle(.secondary)
+                    Text(note).font(.footnote).foregroundStyle(.quietText)
                 }
                 ConsoleLink(title: "Open in the Console", destination: console)
                     .font(.footnote.weight(.semibold))
@@ -133,7 +134,7 @@ struct SuggestionCardView: View {
                         if card.busy == "accept" { ProgressView().controlSize(.small) } else { Text(card.apply) }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(card.destructive ? .red : .accentColor)
+                    .tint(card.destructive ? .destructiveFill : .accentFill)
                     Button(card.dismiss) { host.send(.decide(suggestion: id, accept: false)) }
                         .buttonStyle(.bordered)
                 }
@@ -158,7 +159,7 @@ struct ApprovalCardView: View {
             HStack(spacing: 6) {
                 Label(card.title, systemImage: symbol)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(card.tone == .failed ? Color.red : Color.primary)
+                    .foregroundStyle(card.tone == .failed ? ScreenTone.critical.textColor : Color.primary)
                 Spacer(minLength: 0)
                 if card.tone == .running { ProgressView().controlSize(.small) }
             }
@@ -170,13 +171,13 @@ struct ApprovalCardView: View {
                     Text(card.tool).monospaced()
                 }
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
             }
             if !card.arguments.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(card.arguments) { argument in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(argument.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(argument.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
                             // The model wrote it: plain text, never Markdown.
                             // While it waits every line shows: the owner
                             // approves all of it, not what fits.
@@ -192,10 +193,10 @@ struct ApprovalCardView: View {
                 .background(.secondary.opacity(0.08), in: .rect(cornerRadius: 10))
             }
             if let error = card.error {
-                Text(verbatim: error).font(.footnote).foregroundStyle(.red)
+                Text(verbatim: error).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
             }
             if let problem = card.problem {
-                Text(problem).font(.footnote).foregroundStyle(.red)
+                Text(problem).font(.footnote).foregroundStyle(ScreenTone.critical.textColor)
             }
             if card.pending {
                 HStack {
@@ -205,6 +206,7 @@ struct ApprovalCardView: View {
                         if card.busy == "approve" { ProgressView().controlSize(.small) } else { Text(card.approve) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.accentFill)
                     Button {
                         host.send(.decideApproval(id, approve: false))
                     } label: {
@@ -261,9 +263,9 @@ struct ChangeHeaderView: View {
                 let applied = badge == .applied
                 Label(label, systemImage: applied ? "checkmark" : "xmark")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(applied ? Color.green : Color.secondary)
+                    .foregroundStyle(applied ? ScreenTone.positive.textColor : Color.quietText)
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background((applied ? Color.green : Color.secondary).opacity(0.15), in: .capsule)
+                    .background((applied ? Color.green : Color.secondary).opacity(ChatColours.badge), in: .capsule)
                     .fixedSize()
             }
         }
@@ -287,18 +289,18 @@ struct ChangePanel: View {
         VStack(alignment: .leading, spacing: 10) {
             ChangeHeaderView(heading: panel.heading)
             if let note = panel.note {
-                Text(note).font(.footnote).foregroundStyle(.secondary)
+                Text(note).font(.footnote).foregroundStyle(.quietText)
             }
             ForEach(panel.values) { line in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(line.label).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
                     RecordValueView(line.value, struck: panel.struck)
                         .font(.footnote)
                         .lineLimit(6)
                 }
             }
             if let more = panel.more {
-                Text(more).font(.caption).foregroundStyle(.secondary)
+                Text(more).font(.caption).foregroundStyle(.quietText)
             }
         }
         .card(tint: tint)

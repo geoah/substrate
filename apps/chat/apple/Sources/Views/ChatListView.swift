@@ -32,6 +32,9 @@ struct ChatListView: View {
         List(selection: selection) {
             if let banner = host.link.banner {
                 AccessBannerView(banner) { perform($0) }
+                    // The banner's buttons are words in the accent, not
+                    // words on it: the text tone, not the list's fill.
+                    .tint(ChatColours.accent.color)
                     .listRowSeparator(.hidden)
             }
             if let problem = host.authorizeProblem {
@@ -52,18 +55,18 @@ struct ChatListView: View {
                     .listRowSeparator(.hidden)
             }
             ForEach(sections) { section in
-                Section(section.title) {
+                Section {
                     ForEach(section.rows) { row in
-                        ThreadRowView(row: row)
+                        ThreadRowView(row: row, selected: selection.wrappedValue == row.id)
                             .tag(row.id)
                             .contextMenu { menu(row) }
                             .swipeActions(edge: .leading) {
                                 if row.unread {
                                     Button("Read", systemImage: "envelope.open") { host.send(.markRead(row.id)) }
-                                        .tint(.accentColor)
+                                        .tint(.accentFill)
                                 } else {
                                     Button("Unread", systemImage: "envelope.badge") { host.send(.markUnread(row.id)) }
-                                        .tint(.accentColor)
+                                        .tint(.accentFill)
                                 }
                             }
                             .swipeActions(edge: .trailing) {
@@ -71,6 +74,9 @@ struct ChatListView: View {
                                     .tint(.gray)
                             }
                     }
+                } header: {
+                    // The system's header grey is 3.2:1 on the list.
+                    Text(section.title).foregroundStyle(.quietText)
                 }
             }
             if let nothing = searched?.nothingFound {
@@ -80,6 +86,12 @@ struct ChatListView: View {
             }
         }
         .listStyle(.sidebar)
+        // An iPad fills the focused selection with the list's tint. The
+        // accent in dark mode is a text tone, and the system's white words
+        // are 2.8:1 on it, so the list's tint is the accent as a fill, the
+        // same purple in both modes. A Mac's source list fills it with the
+        // system's own tone of the accent, whatever the tint.
+        .tint(ChatColours.selectionTint)
         .overlay {
             if query.isEmpty, let empty = list?.empty {
                 ContentUnavailableView {
@@ -218,9 +230,18 @@ struct ReviewSheet: View {
     }
 }
 
+/// One chat in the list. Its words are chosen for the fill behind them. On
+/// the list's own background each has its colour: the agent's, the accent
+/// for an unread date, quiet for the rest. On the selection nothing keeps a
+/// colour of its own: every word is the system's primary style, which the
+/// system draws white on the selection's fill while the list has the focus
+/// and in the label colour on the grey it is while the focus is elsewhere.
+/// So the row never has to know which of the two is behind it, and a
+/// colour chosen for the list's background is never left on either.
 struct ThreadRowView: View {
-    @Environment(\.colorScheme) private var scheme
     let row: ThreadRow
+    /// The row is the list's selection, focused or not.
+    var selected = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -228,7 +249,7 @@ struct ThreadRowView: View {
                 if let mode = row.mode {
                     Image(systemName: Self.symbol(mode))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(quiet)
                         .accessibilityLabel(mode)
                 }
                 Text(row.title)
@@ -237,7 +258,7 @@ struct ThreadRowView: View {
                 Spacer(minLength: 4)
                 Text(row.stamp)
                     .font(.caption)
-                    .foregroundStyle(row.unread ? Color.accentColor : .secondary)
+                    .foregroundStyle(row.unread ? own(ChatColours.accent.color) : quiet)
                     .monospacedDigit()
             }
             HStack(alignment: .top, spacing: 6) {
@@ -246,15 +267,15 @@ struct ThreadRowView: View {
                     .lineLimit(2)
                 Spacer(minLength: 4)
                 if let unfinished = row.unfinished {
-                    UnfinishedPill(mark: unfinished)
+                    UnfinishedPill(mark: unfinished, selected: selected)
                 }
                 switch row.mark {
                 case .attention?:
                     Image(systemName: "questionmark.circle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(own(.orange))
                         .accessibilityLabel("Waiting on you")
                 case .unread?:
-                    Circle().fill(Color.accentColor).frame(width: 9, height: 9).padding(.top, 5)
+                    Circle().fill(own(ChatColours.accent.color)).frame(width: 9, height: 9).padding(.top, 5)
                         .accessibilityLabel("Unread")
                 case nil:
                     EmptyView()
@@ -265,12 +286,21 @@ struct ThreadRowView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// A colour of the row's own on the list, and the system's primary
+    /// style on the selection.
+    private func own(_ color: Color) -> AnyShapeStyle {
+        selected ? AnyShapeStyle(.primary) : AnyShapeStyle(color)
+    }
+
+    /// The preview, the date and the glyph of an automated run.
+    private var quiet: AnyShapeStyle { own(.quietText) }
+
     /// The agent's name in its colour, then the start of the last reply:
     /// one run of text, so the name costs a word, not a column.
     private var preview: Text {
-        let name = Text(row.agentName).fontWeight(.semibold).foregroundStyle(agentTint(row.agent, dark: scheme == .dark))
+        let name = Text(row.agentName).fontWeight(.semibold).foregroundStyle(own(AgentColours(row.agent).ink))
         guard !row.preview.isEmpty else { return name }
-        return Text("\(name) \(Text(row.preview).foregroundStyle(.secondary))")
+        return Text("\(name) \(Text(row.preview).foregroundStyle(quiet))")
     }
 
     private static func symbol(_ mode: String) -> String {
@@ -284,26 +314,33 @@ struct ThreadRowView: View {
 }
 
 /// The mark of a chat whose last turn didn't finish: "Didn’t finish",
-/// "Stopped" or "Failed", in its tone.
+/// "Stopped" or "Failed". On the list it is its tone's words on its tone's
+/// pale fill. On the selection it is an outline in the row's own style with
+/// no fill, since a fill would take from what contrast the words have
+/// there.
 private struct UnfinishedPill: View {
     let mark: ThreadRow.Unfinished
+    let selected: Bool
 
     var body: some View {
         Text(mark.words)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(tint)
+            .foregroundStyle(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(tone.textColor))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(tint.opacity(0.15), in: .capsule)
+            .background(tone.color.opacity(selected ? 0 : ChatColours.badge), in: .capsule)
+            .overlay {
+                if selected { Capsule().strokeBorder(.primary.opacity(0.6), lineWidth: 1) }
+            }
             .fixedSize()
             .padding(.top, 2)
     }
 
-    private var tint: Color {
+    private var tone: ScreenTone {
         switch mark.tone {
-        case .bad: .red
-        case .warn: .orange
-        case .quiet: .secondary
+        case .bad: .critical
+        case .warn: .caution
+        case .quiet: .quiet
         }
     }
 }

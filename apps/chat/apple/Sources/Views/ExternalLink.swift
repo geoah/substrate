@@ -40,12 +40,12 @@ struct SourceListView: View {
             if let heading = list.heading {
                 Text(heading)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.quietText)
             }
             if let empty = list.empty {
                 Text(empty)
                     .font(.footnote)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.quietText)
             } else {
                 WrapLayout(spacing: 6) {
                     ForEach(list.pills) { SourcePillView(pill: $0) }
@@ -86,12 +86,12 @@ struct SourcePillView: View {
                 Text(index, format: .number)
                     .monospacedDigit()
                     .fontWeight(.medium)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.quietText)
             } else {
                 Image(systemName: "globe").foregroundStyle(.tertiary)
             }
             Text(pill.host)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
                 .lineLimit(1)
                 .layoutPriority(1)
             if let title = pill.title {
@@ -117,7 +117,7 @@ struct SourcePillView: View {
     private var preview: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(pill.title ?? pill.host).font(.headline)
-            Text(pill.url).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text(pill.url).font(.caption).foregroundStyle(.quietText).lineLimit(2)
             if let snippet = pill.snippet {
                 Text(snippet).font(.subheadline)
             }

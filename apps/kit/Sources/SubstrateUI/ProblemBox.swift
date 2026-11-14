@@ -39,7 +39,9 @@ public struct ProblemBox: View {
                 if let title { Text(title).font(.subheadline.weight(.semibold)) }
                 Text(message)
                     .font(.subheadline)
-                    .foregroundStyle(title == nil ? .primary : .secondary)
+                    // Quiet, not the system's secondary: a problem's words
+                    // sit on a card of its tone, where secondary is 3.3:1.
+                    .foregroundStyle(title == nil ? Color.primary : Color.quietText)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
