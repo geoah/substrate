@@ -163,6 +163,14 @@ var (
 	// and the person's next message is what goes on. It follows ErrConflict,
 	// whose words lead; the payload's reason is ReasonNothingToContinue.
 	ErrNothingToContinue = errors.New("the thread's last turn finished")
+	// ErrMessageIDTaken refuses a chat message whose messageId names a
+	// record that is not this message: another thread's, another text's, or
+	// no sent message at all. The same request meets the same answer, so the
+	// message goes again under a new id. It follows ErrConflict, whose words
+	// lead; the payload's reason is ReasonMessageIDTaken, the same for every
+	// caller, and the words say which of those it is only to a hand that may
+	// continue the thread the id is on.
+	ErrMessageIDTaken = errors.New("the messageId is taken")
 	// ErrNotPermitted is a refusal by the one check (decision 0276): the
 	// rules of the hand that writes, or of the actor it acts for, do not
 	// allow the write. It follows ErrForbidden, whose words lead.
@@ -212,11 +220,13 @@ const (
 	ReasonFirstAttemptLanded  = "first_attempt_landed"
 )
 
-// ReasonThreadBusy and ReasonNothingToContinue are the ErrorPayload reasons
-// of ErrThreadBusy and ErrNothingToContinue, on `conflict`.
+// ReasonThreadBusy, ReasonNothingToContinue and ReasonMessageIDTaken are the
+// ErrorPayload reasons of ErrThreadBusy, ErrNothingToContinue and
+// ErrMessageIDTaken, on `conflict`.
 const (
 	ReasonThreadBusy        = "thread_busy"
 	ReasonNothingToContinue = "nothing_to_continue"
+	ReasonMessageIDTaken    = "message_id_taken"
 )
 
 // ErrorReasons is the closed set of reasons: every Reason constant above and
@@ -229,6 +239,7 @@ var ErrorReasons = []string{
 	ReasonFirstAttemptRunning,
 	ReasonInDoubt,
 	ReasonKeyRefused,
+	ReasonMessageIDTaken,
 	ReasonNotPermitted,
 	ReasonNothingToContinue,
 	ReasonObservedRederiving,
@@ -254,8 +265,8 @@ type ErrorEnvelope struct {
 // set: ReasonObservedRederiving, ReasonKeyRefused and ReasonSetAside on
 // `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
 // ReasonInDoubt on `internal` and `unavailable`, and
-// ReasonFirstAttemptRunning, ReasonFirstAttemptLanded, ReasonThreadBusy and
-// ReasonNothingToContinue on `conflict`.
+// ReasonFirstAttemptRunning, ReasonFirstAttemptLanded, ReasonThreadBusy,
+// ReasonNothingToContinue and ReasonMessageIDTaken on `conflict`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`

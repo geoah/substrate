@@ -1830,13 +1830,16 @@ again:
   events to its `done`, or one `idle` line carrying the thread's status when
   the turn already settled. A client reads the rows as it does after any
   attach.
-- **The record is something else.** `409 conflict`, and nothing is written:
-  the id names a message of another thread, a message with another text, a
-  row that is no sent message, or a deleted one. A request with no `thread`
-  repeats only the message its thread opened with. The refusal says which
-  only to a hand that may continue the thread the id is on; any other hand
-  is told that the id is taken and nothing more, so a guessed id says
-  nothing about a chat its sender cannot reach.
+- **The record is something else.** `409 conflict` with the reason
+  `message_id_taken`, and nothing is written: the id names a message of
+  another thread, a message with another text, a row that is no sent
+  message, or a deleted one. A request with no `thread` repeats only the
+  message its thread opened with. The reason is the same for every caller,
+  and it is what a client acts on: the same request meets the same answer,
+  so the message goes again under a new id. The refusal's words say which
+  of those it is only to a hand that may continue the thread the id is on;
+  any other hand is told that the id is taken and nothing more, so a guessed
+  id says nothing about a chat its sender cannot reach.
 
 So the first message of a new chat, repeated, never opens a second thread,
 and two copies of one request that race run one turn: the copy that lost is

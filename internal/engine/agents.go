@@ -340,7 +340,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 			if rerr == nil && thread != "" {
 				return ds.answerRepeatedSend(ctx, thread, emit)
 			}
-			if errors.Is(rerr, errMessageIDTaken) {
+			if errors.Is(rerr, substrate.ErrMessageIDTaken) {
 				return nil, rerr
 			}
 		}
@@ -470,18 +470,14 @@ func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag 
 	return hub, nil
 }
 
-// errMessageIDTaken refuses a send whose messageId names a record that is
-// not this message: another thread's, another text's, or no user message at
-// all. It follows ErrConflict, as a reused Idempotency-Key does: the id
-// exists and this request is not the one that may use it.
-var errMessageIDTaken = errors.New("the messageId is taken")
-
 // sentMessage answers the thread a send's messageId already landed on, ""
 // when no record has the id. The stored row must be this request's own
 // message: a user row of the thread the request names (or, for a request
 // that opens a chat, the row that opened its thread), of the agent it
 // addresses, holding the text it sends. Anything else under the id is
-// refused.
+// refused with ErrMessageIDTaken after ErrConflict, as a reused
+// Idempotency-Key is: the id exists and this request is not the one that may
+// use it.
 //
 // The hand is held to the row's thread before anything about the row is
 // said, as a message into that thread is (mayContinue): a request that
@@ -501,7 +497,7 @@ func (ds *dataset) sentMessage(ctx context.Context, actor substrate.Actor, ag *v
 		if why != "" {
 			why = " " + why
 		}
-		return "", fmt.Errorf("%w: %w: messageId %q%s: send the message under a new id", substrate.ErrConflict, errMessageIDTaken, in.MessageID, why)
+		return "", fmt.Errorf("%w: %w: messageId %q%s: send the message under a new id", substrate.ErrConflict, substrate.ErrMessageIDTaken, in.MessageID, why)
 	}
 	thread := referenceID(row.Props[msgRelThread])
 	if role, _ := row.Props["role"].(string); row.DeletedAt != nil || role != "user" || thread == "" {

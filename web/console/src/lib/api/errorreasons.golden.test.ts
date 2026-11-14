@@ -22,6 +22,7 @@ const errorReasons: Record<ErrorReason, true> = {
   first_attempt_running: true,
   in_doubt: true,
   key_refused: true,
+  message_id_taken: true,
   not_permitted: true,
   nothing_to_continue: true,
   observed_rederiving: true,

@@ -1026,7 +1026,9 @@ panel on the right.
   note with **Send again**, which sends the request it first went out as,
   to the chat it was for. A message left waiting when you open another chat
   is kept in its own chat with the same button. A message the server refused
-  comes back to the box with the server's words. Against a server from
+  comes back to the box with the server's words, or, where another message
+  already has its id (the reason `message_id_taken`), with a sentence saying
+  that the next send goes under a new one. Against a server from
   before messages had ids (a console inside an app can meet one), a message
   goes out once, an unanswered one is shown to copy, and Continue sends
   "Continue where you left off." as before.
