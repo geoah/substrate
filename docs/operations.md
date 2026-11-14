@@ -523,15 +523,35 @@ before the request is sent.
    [restore without the credential key](#restore-without-the-credential-key)).
    Once before the choice is recorded, and again at the boot before
    anything of the repository goes, with the key and the listing as they
-   are then. A refusal at the boot leaves the repository whole and served
-   and its choice recorded, and logs why; the next boot tries again. A take
-   reads its copy twice for this, so it costs one more reading of the
-   history than a restore. After the removal, what can still fail is the
-   database, the staged copy changed between the two readings, and the
-   conversion and fold of what was read; the choice stays recorded and the
-   store keeps the archive it names, so after the repair (for a changed
-   copy, removing `archive-take/<id>/<stage>/`, which the next boot stages
-   again from the store) a boot restores the repository. `archive resolve --take-archive` stages,
+   are then. **The conversion is tried too**: a copy in an older changelog
+   dialect has every line run through each conversion step the restore
+   will run, kept nowhere, so a line a step refuses refuses the take, naming
+   the seq and the step, while the repository is whole. The command is
+   exclusive and a start serves nothing yet, so no server serves the
+   repository while either runs: it is served when the server next serves,
+   as it would have been without the take. A refusal at the boot leaves the
+   repository whole and its choice recorded, and logs why; the next boot
+   tries again. A take reads its copy twice for this, so it costs one more
+   reading of the history than a restore, and the CPU of converting every
+   line of a copy in an older dialect once. A copy from before the local
+   namespace (dialect 6) is read once more before that: that step reads the
+   repository's declaration and actor records first, so their lines are
+   converted through the steps below it and folded into the records'
+   versions as they are read. For such a copy the admission, like the
+   restore, holds every version of the repository's declarations and actors
+   in memory, one for each write of them, and nothing else of the history:
+   a repository whose function bodies were rewritten often holds that much.
+   **The fold is not tried.**
+   After the removal, what can still fail is the database, the staged copy
+   changed between the two readings, the rows a conversion step carries
+   beside the lines, and the fold: a line the rebuild refuses stops the
+   restore with the repository already removed. The boot logs the refusal
+   with its seq, the repository is served by nobody, its row keeps the
+   unfinished-import marker, and every boot tries it again from the staged
+   copy; the choice stays recorded and the store keeps the archive it
+   names. A binary that accepts the line (or, for a changed copy, removing
+   `archive-take/<id>/<stage>/`, which the next boot stages again from the
+   store) finishes it, and the repository is restored. `archive resolve --take-archive` stages,
    in a directory of its own, before it records the choice; a read or a
    check that fails records nothing and changes nothing, an earlier choice's
    copy included, says why, and the choice is still the operator's. A second choice is
@@ -1781,7 +1801,7 @@ names:
 | `credential key` | its row's data key wrap names this host's key and does not open | restore its row in `repositories` from a database dump taken before the damage: the row is what the start reads, so an archive restored beside it changes nothing |
 | `writer lease` | its writer lease could not be taken, for a reason that is neither another process holding it nor a database that stopped answering | a restart; the error names what failed |
 | `id` | a repository or a 0.x directory from before ids could not take its id: a data key that does not open, a name another repository took since the copy was made | as the error says: restore it, list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, or move the directory out of the data root. A directory is tied to a row by one of two things only: its data key opening to the row's (a manifest's id is held to the row of that id the same way), or the keying's own record, `repositories/.keying/<name>` under the data root, which the keying writes before it gives the row of that name its id and every start reads before any directory; tied, the row is set aside with it (its blobs and spool are in it), whatever the directory holds. Where neither ties it, the directory claims its name alone, and the repository that holds the name serves, whatever the manifest says in the clear |
-| `take` | a take its operator recorded (`archive resolve --take-archive`) failed once it began to remove the repository's rows and files | repair what the error names, then restart: the choice is still recorded, and the next start carries the take on from the copy staged for it. A take whose staged copy the restore would refuse sets nothing aside: the repository stays whole and served, the choice recorded, and the log names what the copy failed |
+| `take` | a take its operator recorded (`archive resolve --take-archive`) failed once it began to remove the repository's rows and files | repair what the error names, then restart: the choice is still recorded, and the next start carries the take on from the copy staged for it. A take whose staged copy the restore would refuse sets nothing aside: the repository stays whole, and is served when the server serves, as it would have been without the take; the choice stays recorded, and the log names what the copy failed |
 | `boot check` | its directory, which the start could not read, or its rows: a 0.x directory that disagrees with them at a seq, an import a start began whose archive cannot be read now or holds a line whose `sum` does not verify, a history conversion step that refuses a line | put the archive (or the 0.x directory) back, or restore it from a copy taken before the damage. A row the comparison or the conversion refuses is named by its seq, and the repository's 0.x directory, where it had one, is kept whole until its history converts: its `changelog/` segment files hold that seq's line, one JSON line with its `sum`. Write the row's columns in the `changelog` table back from that line, or restore the database from the copy taken before the upgrade, check the table with `substratectl --dsn … repository verify --recanonicalize`, and restart: the next start converts the history and only then removes the directory's |
 | `import` | a 0.x directory with no row: a data key this host's key does not open and the operator did not list, a manifest that does not read, a newer dialect, a sealed file the key does not open, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` ([restore without the credential key](#restore-without-the-credential-key)), restore it, or move it out of the data root. Like the keying's, it only claims its name |
 | `restore` | an archive with no row, or the copy staged for a take whose rows the take removed: a data key this host's key does not open and the operator did not list, a sealed value the key does not open, a newer dialect, a piece or a line that does not verify, a name another repository holds | list it in `SUBSTRATE_IMPORT_WITHOUT_SECRETS`, restore `repositories/<id>/` in the archive from a copy, or move it out of the archive. For a name another repository holds, delete that repository, or import this one under another name with `substratectl archive import <id> <archive> --name <name>` ([restore under another name](#restore-under-another-name)), which the cause names. It only claims its name, under the name its newest manifest gives |
