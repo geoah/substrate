@@ -23,11 +23,13 @@ const errorReasons: Record<ErrorReason, true> = {
   in_doubt: true,
   key_refused: true,
   not_permitted: true,
+  nothing_to_continue: true,
   observed_rederiving: true,
   quota: true,
   repository_required: true,
   set_aside: true,
   stale_revision: true,
+  thread_busy: true,
 }
 
 it("ErrorReason is exactly the server's closed set", () => {

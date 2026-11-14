@@ -498,6 +498,10 @@ func (a *assistantDataset) AttachAgentTurn(ctx context.Context, threadID string,
 	return a.inner.AttachAgentTurn(ctx, threadID, emit)
 }
 
+func (a *assistantDataset) ContinueAgentTurn(ctx context.Context, actor substrate.Actor, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	return a.inner.ContinueAgentTurn(ctx, actor, threadID, emit)
+}
+
 func (a *assistantDataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
 	return a.inner.StopAgentTurn(ctx, actor, threadID)
 }

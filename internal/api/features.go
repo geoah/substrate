@@ -144,8 +144,9 @@ var featureTable = []feature{
 	// reason `repository_required` and the payload's `repositories`, a
 	// sign-in that must name one (decision 0274). Revision 5: the reason
 	// `not_permitted`, a refusal by a rule of the person's roles (decision
-	// 0276).
-	{name: "errors", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}},
+	// 0276). Revision 6: the reasons `thread_busy` and `nothing_to_continue`,
+	// a message or a continue a thread's state refuses (decision 0312).
+	{name: "errors", stability: substrate.StabilityStable, revision: 6, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
 	// change links the actor record that wrote it, the one it acted for
@@ -316,14 +317,16 @@ var featureTable = []feature{
 		"GET /api/v1/units",
 		"GET /api/v1/units/convert",
 	}},
-	// The agent call and chat routes and the two that reach a running turn.
-	// Experimental with the agent kind and the llm package they run on
-	// (substrate/agent.go).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// The agent call and chat routes and the three that reach a thread's
+	// turn. Experimental with the agent kind and the llm package they run on
+	// (substrate/agent.go). Revision 3: a chat message may name its own id,
+	// `messageId`, and a thread is continued with no message (decision 0312).
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",
 		"POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop",
+		"POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue",
 	}},
 	// The MCP door (decision 0230): an assistant's tools over the REST verbs,
 	// experimental while the protocol's stateless revision and the tool set

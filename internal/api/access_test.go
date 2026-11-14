@@ -84,6 +84,7 @@ var routeList = map[string]access{
 	"POST /api/v1/substrate.reamde.dev/core/trigger/{id}/wake":               accessAdmin,
 	"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events":                accessRules,
 	"POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop":                 accessRules,
+	"POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue":             accessRules,
 	"GET /api/v1/sync/status":                                                accessAdmin,
 	"GET /api/v1/units":                                                      accessRules,
 	"GET /api/v1/units/convert":                                              accessRules,

@@ -163,6 +163,12 @@ type ChatInput struct {
 	// Thread continues an existing thread; empty or absent opens one.
 	Thread  string `json:"thread,omitempty"`
 	Message string `json:"message"`
+	// MessageID is the id the client chooses for this message (decision
+	// 0312): the engine writes the user row under it, and a request that
+	// repeats it writes nothing and runs nothing, so a send whose answer was
+	// lost is sent again as it was. Any legal record id; absent, the server
+	// mints one and the send cannot be repeated safely.
+	MessageID string `json:"messageId,omitempty"`
 	// Timezone is the client's IANA zone (`Europe/London`). Empty falls
 	// back to the repository's `substrate.reamde.dev/llm/timezone` setting,
 	// then UTC.

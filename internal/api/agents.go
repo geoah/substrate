@@ -89,6 +89,23 @@ func (h *handler) getThreadEvents(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(substrate.AgentEvent{Kind: substrate.AgentEventIdle, Thread: rec.ID, Status: status})
 }
 
+// postThreadContinue runs a continuation of a thread with no user message
+// (decision 0312) and streams it as postAgentChat streams a turn: what
+// Continue does on a turn that stopped, ran out of budget or failed. It takes
+// no body. A thread a turn runs on answers 409 `conflict` with the reason
+// `thread_busy`, and one whose last turn finished 409 with
+// `nothing_to_continue`.
+func (h *handler) postThreadContinue(w http.ResponseWriter, r *http.Request) {
+	ds := DatasetFrom(r.Context())
+	actor, id := ActorFrom(r.Context()), pathParam(r, "id")
+	ok, err := h.streamAgentEvents(w, r, func(ctx context.Context, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+		return ds.ContinueAgentTurn(ctx, actor, id, emit)
+	})
+	if !ok {
+		writeSubstrateError(w, r, err)
+	}
+}
+
 // postThreadStop stops the detached chat turn running on a thread and
 // answers its settled AgentResult once the settle committed.
 func (h *handler) postThreadStop(w http.ResponseWriter, r *http.Request) {

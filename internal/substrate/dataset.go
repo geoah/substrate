@@ -219,6 +219,12 @@ type Dataset interface {
 	// ErrNotFound when the thread does not exist; ctx.Err() when the client
 	// left first.
 	AttachAgentTurn(ctx context.Context, threadID string, emit func(AgentEvent)) (*AgentResult, error)
+	// ContinueAgentTurn runs a continuation of threadID with no user message
+	// (decision 0312): the stored rows are the whole context, and the turn
+	// streams through emit as a chat turn does. ErrThreadBusy while a turn
+	// runs on the thread, ErrNothingToContinue when its last turn finished,
+	// ErrNotFound when the thread does not exist.
+	ContinueAgentTurn(ctx context.Context, actor Actor, threadID string, emit func(AgentEvent)) (*AgentResult, error)
 	// StopAgentTurn cancels the running detached turn of threadID on behalf
 	// of actor and returns its settled result. ErrNoRunningTurn and
 	// ErrNotFound as above.

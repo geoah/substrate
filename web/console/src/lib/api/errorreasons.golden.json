@@ -4,9 +4,11 @@
   "in_doubt",
   "key_refused",
   "not_permitted",
+  "nothing_to_continue",
   "observed_rederiving",
   "quota",
   "repository_required",
   "set_aside",
-  "stale_revision"
+  "stale_revision",
+  "thread_busy"
 ]

@@ -221,3 +221,85 @@ func TestChatCarriesTheTimezoneAndTheContextRecords(t *testing.T) {
 		t.Fatalf("the engine got %+v, want %+v", chat.got, want)
 	}
 }
+
+// continueFake answers a continue by emitting its events, then returning err.
+type continueFake struct {
+	stubSignals
+	events []substrate.AgentEvent
+	err    error
+	// thread is the thread the handler asked to continue.
+	thread string
+}
+
+func (c *continueFake) ContinueAgentTurn(_ context.Context, _ substrate.Actor, thread string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	c.thread = thread
+	for _, ev := range c.events {
+		emit(ev)
+	}
+	return nil, c.err
+}
+
+const threadContinuePath = "/api/v1/substrate.reamde.dev/llm/thread/th1/continue"
+
+// A continue streams as a chat does and takes no body; its two refusals
+// answer 409 with a reason a client acts on (decision 0312).
+func TestThreadContinueStreamsOrRefusesWithAReason(t *testing.T) {
+	res := &substrate.AgentResult{Thread: "th1", Status: "ok", Reply: "and the rest"}
+	cont := &continueFake{events: []substrate.AgentEvent{
+		{Kind: substrate.AgentEventThread, Thread: "th1"},
+		{Kind: substrate.AgentEventDelta, Text: "and the rest", Turn: 4},
+		{Kind: substrate.AgentEventDone, Result: res},
+	}}
+	env := newStubEnv(t, cont)
+	rec := env.do(t, http.MethodPost, threadContinuePath, stubToken, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := rec.Header().Get("Content-Type"); got != "application/x-ndjson" {
+		t.Fatalf("a continue's Content-Type = %q, want the ndjson stream", got)
+	}
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	if cont.thread != "th1" || len(lines) != 3 || lines[0] != `{"kind":"thread","thread":"th1"}` || !strings.Contains(lines[2], `"kind":"done"`) {
+		t.Fatalf("continue of %q streamed %s", cont.thread, rec.Body.String())
+	}
+
+	for _, tc := range []struct {
+		err    error
+		reason string
+	}{
+		{fmt.Errorf("%w: %w: thread th1", substrate.ErrConflict, substrate.ErrThreadBusy), substrate.ReasonThreadBusy},
+		{fmt.Errorf("%w: %w: thread th1", substrate.ErrConflict, substrate.ErrNothingToContinue), substrate.ReasonNothingToContinue},
+	} {
+		cont.events, cont.err = nil, tc.err
+		rec := env.do(t, http.MethodPost, threadContinuePath, stubToken, nil)
+		wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+		var body substrate.ErrorEnvelope
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Error.Reason != tc.reason {
+			t.Fatalf("a continue refused with %v carries the reason %q, want %q", tc.err, body.Error.Reason, tc.reason)
+		}
+	}
+}
+
+// A chat body's messageId reaches the engine as it was sent, and a message
+// into a running thread says why it was refused.
+func TestChatCarriesItsMessageIDAndABusyThreadSaysSo(t *testing.T) {
+	chat := &chatFake{events: []substrate.AgentEvent{{Kind: substrate.AgentEventThread, Thread: "th1"}, {Kind: substrate.AgentEventIdle, Thread: "th1", Status: "ok"}}}
+	env := newStubEnv(t, chat)
+	rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"thread": "th1", "message": "hi", "messageId": "c41a7e9b02"})
+	wantStatus(t, rec, http.StatusOK)
+	if chat.got.MessageID != "c41a7e9b02" || chat.got.Thread != "th1" {
+		t.Fatalf("the engine was handed %+v", chat.got)
+	}
+	// A repeated send's whole answer: the thread, then the one idle line.
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"kind":"thread","thread":"th1"}`+"\n"+`{"kind":"idle","thread":"th1","status":"ok"}` {
+		t.Fatalf("a repeated send answered %s", got)
+	}
+
+	chat.events, chat.err = nil, fmt.Errorf("%w: %w: thread th1", substrate.ErrConflict, substrate.ErrThreadBusy)
+	rec = env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"thread": "th1", "message": "hi"})
+	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+	if !strings.Contains(rec.Body.String(), `"reason":"thread_busy"`) {
+		t.Fatalf("a message into a running thread answered %s", rec.Body.String())
+	}
+}

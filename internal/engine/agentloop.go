@@ -121,6 +121,15 @@ const (
 	reasonDeadlineLastTurn = "deadline exceeded after a last turn"
 )
 
+// continueNudge is the user message a continued turn's request ends with
+// when the stored rows end on the assistant's own text (a reply a stop or a
+// limit cut short). It is never stored, as finalTurnNudge is not: a provider
+// refuses, or answers nothing to, a conversation that ends on the
+// assistant's turn, and the transcript must not hold words the person did
+// not write.
+const continueNudge = "Your last reply was cut off before it was finished. " +
+	"Continue it from exactly where it stops, without repeating what is already written."
+
 // finalTurnNudge is the user message that opens the final phase. It rides
 // that turn's request and is never stored: replay and compaction read the
 // stored rows, and a stored nudge would reach every later run of the thread
@@ -178,8 +187,17 @@ type agentInvocation struct {
 	// the declaration, because the contract belongs to the run the engine
 	// asked for and a judge is an ordinary agent everywhere else.
 	systemSuffix string
+	// messageID is the id a chat client chose for its message (decision
+	// 0312): the user row is written under it, in the transaction that
+	// claims or opens the thread, so a record with the id exists exactly
+	// when the turn was admitted. Empty mints an id, in a write of its own.
+	messageID string
 	// threadID continues an existing thread (chat); empty mints one.
 	threadID string
+	// continued marks the person's own Continue (decision 0312): a
+	// continuation with no user message, which takes up a stopped thread
+	// and is refused on one whose last turn finished.
+	continued bool
 	// parent is the calling agent's thread, on sub-agent invocations.
 	parent string
 	// root is the call chain's root thread, on sub-agent invocations: the
@@ -801,6 +819,9 @@ type agentLoop struct {
 	partial strings.Builder
 	// opening is the history openThread returned, which run starts from.
 	opening []llm.Message
+	// sent is set once the claim's own transaction wrote the turn's user row
+	// under the id its client chose (putSentMessage).
+	sent bool
 	// settledStatus and settledReason are what the last settle committed,
 	// which a stop arriving during it may have turned into `stopped`.
 	settledStatus, settledReason string
@@ -947,6 +968,9 @@ func (l *agentLoop) run(ctx context.Context) (res *substrate.AgentResult, err er
 	defer l.closeJobs()
 	l.runCtx = ctx
 	messages := l.compactAtOpen(ctx, l.opening)
+	if n := len(messages); l.in.continued && n > 0 && messages[n-1].Role == llm.RoleAssistant && len(messages[n-1].ToolCalls) == 0 {
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: continueNudge})
+	}
 
 	started := nowUTC()
 	deadline := started.Add(time.Duration(ag.Budgets.DeadlineSeconds) * time.Second)
@@ -1511,6 +1535,11 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			}
 			return nil, err
 		}
+		if l.sent {
+			// The claim wrote this turn's user row, which is the run's own
+			// turn below and not history it replays.
+			rows = slices.DeleteFunc(rows, func(r threadRow) bool { return r.id == l.in.messageID })
+		}
 		history, origin, maxTurn := replayView(rows, l.replaysTools(), l.ds.svc.log)
 		messages = append(messages, history...)
 		l.rows, l.origin, l.historyLen = rows, origin, len(history)
@@ -1548,9 +1577,11 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 				return err
 			}
 			if l.in.onThread != nil {
-				return l.in.onThread(t, id)
+				if err := l.in.onThread(t, id); err != nil {
+					return err
+				}
 			}
-			return nil
+			return l.putSentMessage(t)
 		}); err != nil {
 			return nil, err
 		}
@@ -1563,14 +1594,64 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		if userActor == "" {
 			userActor = l.actor
 		}
-		props := map[string]any{"role": "user", "content": l.in.user}
-		l.in.turnContext.stamp(props)
-		if err := l.putMessage(ctx, userActor, props); err != nil {
-			return nil, l.failWrite(ctx, err)
+		if !l.sent {
+			if err := l.putMessage(ctx, userActor, l.userRowProps()); err != nil {
+				return nil, l.failWrite(ctx, err)
+			}
 		}
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user, Context: l.in.turnContext.text})
 	}
 	return messages, nil
+}
+
+// userRowProps are the properties of the turn's user row, before its
+// ordinal and its thread.
+func (l *agentLoop) userRowProps() map[string]any {
+	props := map[string]any{"role": "user", "content": l.in.user}
+	l.in.turnContext.stamp(props)
+	return props
+}
+
+// putSentMessage writes the user row of a message that names its own id
+// (in.messageID), inside the transaction that claims or opens the thread: a
+// record with the id then exists exactly when the turn was admitted, which
+// is what lets a repeat of the request be told from a first send whatever
+// happened in between (decision 0312). The write creates and never
+// replaces: an id some record already holds fails the whole transaction,
+// the claim with it. A turn with no chosen id writes its row after the
+// claim, as before.
+func (l *agentLoop) putSentMessage(t *txn) error {
+	if l.in.messageID == "" || l.in.user == "" {
+		return nil
+	}
+	turn, err := t.nextThreadTurn(l.threadID)
+	if err != nil {
+		return err
+	}
+	props := l.userRowProps()
+	if hook := l.ds.agentRowWrite; hook != nil {
+		if err := hook(t.ctx, props); err != nil {
+			return err
+		}
+	}
+	props["turn"] = turn
+	props[msgRelThread] = l.threadID
+	userActor := l.in.userActor
+	if userActor == "" {
+		userActor = l.actor
+	}
+	var unwritten int64
+	if err := t.asActor(userActor, func() error {
+		_, err := t.put(substrate.PutInput{Kind: typeMessage, ID: l.in.messageID, Properties: props, IfVersion: &unwritten})
+		return err
+	}); err != nil {
+		return err
+	}
+	l.turnMu.Lock()
+	l.turn = max(l.turn, int(turn)+1)
+	l.turnMu.Unlock()
+	l.sent = true
+	return nil
 }
 
 // recheckResolutions spawns a continuation when a system row landed after
@@ -1635,26 +1716,34 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		}
 		// Checked under the row lock, so a resume admitted just before a
 		// stop settled still finds the stop.
-		if status, _ := row.Props["status"].(string); status == threadStopped && l.in.resume {
+		status, _ := row.Props["status"].(string)
+		if status == threadStopped && l.in.resume {
 			return fmt.Errorf("%w: thread %s", errResumeStopped, l.in.threadID)
 		}
-		if status, _ := row.Props["status"].(string); status == threadRunning {
+		if status == threadRunning {
 			if until, _ := row.Props["leaseUntil"].(string); until != "" {
 				if at, perr := time.Parse(time.RFC3339Nano, until); perr == nil && nowUTC().Before(at) {
-					return fmt.Errorf("%w: thread %s already has a running turn — wait for it to settle", substrate.ErrConflict, l.in.threadID)
+					return fmt.Errorf("%w: %w: thread %s already has a running turn — wait for it to settle", substrate.ErrConflict, substrate.ErrThreadBusy, l.in.threadID)
 				}
 			}
 			// No lease, or an expired one: a crashed turn — take over.
+		}
+		// Under the row lock too: a continue takes up unfinished work, and a
+		// thread whose last turn finished has none.
+		if l.in.continued && status == threadOK {
+			return fmt.Errorf("%w: %w: thread %s: send a message to go on", substrate.ErrConflict, substrate.ErrNothingToContinue, l.in.threadID)
 		}
 		l.threadID = l.in.threadID
 		l.leaseAt = l.leaseUntil()
 		l.openCost, _ = anyFloat(row.Props["costUSD"])
 		l.pinnedStored = row.Props[propThreadPinned]
 		t.claiming = true
-		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
+		if _, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			"status": threadRunning, "leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
-		}})
-		return err
+		}}); err != nil {
+			return err
+		}
+		return l.putSentMessage(t)
 	})
 }
 

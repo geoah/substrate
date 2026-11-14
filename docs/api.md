@@ -59,14 +59,15 @@ exists answers `405`. Neither ever falls through to a write.
 A few runtime verbs sit one segment past a record path and act on that
 record, never on its data. A chat turn runs detached from the request that
 started it, so the `substrate.reamde.dev/llm/thread` record it runs on carries
-two ([agents](agents.md#calling-an-agent)):
+three ([agents](agents.md#calling-an-agent)):
 
 ```http
-GET  /api/v1/substrate.reamde.dev/llm/thread/{id}/events  # attach to the running chat turn: replay, then live ndjson
-POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop    # stop it; answers the settled result
+GET  /api/v1/substrate.reamde.dev/llm/thread/{id}/events    # attach to the running chat turn: replay, then live ndjson
+POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop      # stop it; answers the settled result
+POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue  # go on with no new message; streams as a chat does
 ```
 
-An app's token reaches the chat, these two routes and the change feed only
+An app's token reaches the chat, these three routes and the change feed only
 under the scopes [app authorization](apps.md#talk-to-agents) describes, and
 the function call under a `call:` scope ([run functions](apps.md#run-functions)).
 
@@ -659,6 +660,8 @@ The contract, per key:
   retained. For a write of a record the message names the record the first
   attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
+  A chat message is repeated safely under its own `messageId` instead
+  ([a message with its own id](agents.md#a-message-with-its-own-id)).
   `vocabulary/apply`, catalog add and `POST /tokens` do not take the header.
   A write of a vocabulary kind (`kind`, `trait`, ...) refuses it (`422`),
   through `POST /api/v1/records` or at the record's path: a declaration is
@@ -1186,7 +1189,7 @@ them:
 | `aggregate` | `experimental` | [The aggregate read](#the-aggregate-read), `aggregate=` on the records route. |
 | `embeddings` | `experimental` | The semantic arm of `q=`, its one door. |
 | `units` | `experimental` | `GET /api/v1/units` and `GET /api/v1/units/convert` ([units](#units-and-conversions)). |
-| `agents` | `experimental` | The agent chat and call routes, and a thread's `events` and `stop` ([agents](agents.md)). |
+| `agents` | `experimental` | The agent chat and call routes, and a thread's `events`, `stop` and `continue` ([agents](agents.md)). |
 | `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
 | `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
 | `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
@@ -2816,6 +2819,12 @@ and `name`, and the same request naming one signs in
 says a rule refused the request: the roles of the person it acts for, or the
 rules of the hand that writes for them, do not reach it, so another person,
 or the same one with another role, may make it ([roles](auth.md#roles)).
+`thread_busy` and `nothing_to_continue` on `conflict`, since revision 6 of
+the `errors` feature, are about the thread a chat message or a continue
+addresses: a turn is running on it, so the client attaches to that turn or
+stops it, or its last turn finished, so there is nothing for a continue to
+take up and the next message is what goes on
+([continue](agents.md#continue)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2825,8 +2834,9 @@ removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
 The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `not_permitted`, `observed_rederiving`, `quota`,
-`repository_required`, `set_aside`, `stale_revision`.
+`in_doubt`, `key_refused`, `not_permitted`, `nothing_to_continue`,
+`observed_rederiving`, `quota`, `repository_required`, `set_aside`,
+`stale_revision`, `thread_busy`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

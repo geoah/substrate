@@ -1136,6 +1136,7 @@ const agentMention: Shape<AgentMention> = {
 const chatRequest: Shape<ChatRequest> = {
   thread: false,
   message: true,
+  messageId: false,
   timezone: false,
   context: false,
 }

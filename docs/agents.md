@@ -1786,7 +1786,8 @@ the first user message, and the answer carries
 `turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function
 call, something durable is minted — the thread is the trace.
 
-`POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with `{"thread"?, "message"}`
+`POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat` with
+`{"thread"?, "message", "messageId"?}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
 per streamed token, `reasoning` carrying `text` per streamed piece of the
@@ -1802,9 +1803,82 @@ event instead, the same choice the
 assistant turns, each tool call with its stored result right after it, and a
 `summary` row standing in for the older turns it covers) and keeps one running
 tally on the thread row; one active turn per thread is enforced by a lease, so
-a second concurrent turn is refused as a conflict, leaving nothing on the
-thread, and a crashed turn's expired lease is taken over by the next
-continuation.
+a second concurrent turn is refused `409 conflict` with the reason
+`thread_busy`, leaving nothing on the thread, and a crashed turn's expired
+lease is taken over by the next continuation.
+
+### A message with its own id
+
+A chat body may name the id of its own message
+([decision 0312](decisions/0312-a-chat-message-may-name-its-own-id-and-a-thread-is-continued-with-no-message.md)):
+
+```json
+{"thread": "01k9z3v8q4c0d5m2r7w1x6y8ab", "messageId": "0195c1f2-7a3e-7b10-9c44-2f6d8e1a5b03", "message": "And the tomatoes?"}
+```
+
+`messageId` is any legal record id; a UUID in lowercase is the usual choice.
+The engine writes the user `message` row under it, in the transaction that
+claims or opens the thread, so a record with that id exists exactly when the
+turn was admitted. A client that never got an answer sends the same body
+again:
+
+- **No record has the id.** The first attempt never arrived. The request
+  runs as any send does.
+- **The record is this message.** Nothing is written and nothing runs. The
+  stream opens with the same `thread` event and is then what an
+  [attach](#calling-an-agent) to that thread answers: the running turn's
+  events to its `done`, or one `idle` line carrying the thread's status when
+  the turn already settled. A client reads the rows as it does after any
+  attach.
+- **The record is something else.** `409 conflict`, and nothing is written:
+  the id names a message of another thread, a message with another text, a
+  row that is no sent message, or a deleted one. A request with no `thread`
+  repeats only the message its thread opened with.
+
+So the first message of a new chat, repeated, never opens a second thread,
+and two copies of one request that race run one turn: the copy that lost is
+answered as a repeat. The check reads the stored row alone, so it holds
+across a restart and for as long as the message exists. A copy refused while
+the first has not yet committed (the person's fourth running turn, say) is
+refused as it would have been, and is safe to send again. A body without
+`messageId` is admitted as before, under an id the server mints, and cannot
+be repeated safely. The chat route takes no `Idempotency-Key`
+([idempotency](api.md#idempotency-and-retries)): a key's stored outcome
+answers a repeat for 24 hours and is not part of the repository's history,
+and a stream has no outcome to store.
+
+### Continue
+
+`POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue`, with no body,
+runs one more turn of a thread with no user message, and streams it exactly
+as the chat route streams a turn. The stored rows are the whole
+conversation, as they are when a decision or an answer resumes a thread, and
+no row is written for the continue itself. It is what a client's Continue
+and Try Again do, so the transcript never holds words the person did not
+write. What it means depends on how the last turn ended:
+
+| The thread's `status` | What a continue does |
+| --- | --- |
+| `error` | Tries again: the model is called on the rows as they stand, which end on the message or the tool results the failed call was answering. |
+| `stopped` | Takes the turn up where the stop left it. It is the person's word, so it is the one continuation a stopped thread accepts. |
+| `overbudget` | Goes on with a fresh set of budgets (turns, tool calls, the deadline); the daily spend cap still holds. |
+| `ok` | Refused, `409 conflict` with the reason `nothing_to_continue`: the turn finished, and the next message is what goes on. |
+| `running` | Refused, `409 conflict` with the reason `thread_busy`: attach to the turn, or stop it. A `running` thread whose lease has expired is taken over, as a message takes it over. |
+
+Where the stored rows end on the assistant's own text (a reply a stop cut
+short), the request to the model ends with one sentence from the engine
+asking it to go on from where the reply stops. The sentence is never stored,
+like the deadline's last-turn message
+([threads](#threads-messages-and-cost)): a provider refuses, or answers
+nothing to, a conversation that ends on the assistant's turn. The model's
+continuation is a new `assistant` row after the cut one. A continue renders
+no [turn context](#turn-context), since it has no user row to carry one.
+
+Every refusal a chat send can meet (a hidden agent, the spend cap, the
+person's running turns, a thread that does not exist, a hand that could not
+have started the run) answers a continue the same way, before the stream
+opens. An answer that was lost is settled by attaching to the thread: the
+turn is running, or the thread's status says what happened.
 
 ### Turn context
 
@@ -1909,7 +1983,8 @@ reaches a sub-agent. A message write that fails settles the thread `error`.
 **A stopped thread holds until its owner writes again.** Nothing resumes it
 on its own: not a resolution that landed during the turn, not one that lands
 later, and not the resolution sweep. The owner's next message replays the
-resolution rows with the rest of the history.
+resolution rows with the rest of the history, and so does the owner's
+[continue](#continue).
 
 A person runs at most 4 chat turns at once, or the number the server sets
 (`SUBSTRATE_CHAT_TURNS_PER_PERSON`, [running a substrate](operations.md#configuration)).

@@ -1352,6 +1352,19 @@ func (s *scopedDataset) AttachAgentTurn(ctx context.Context, threadID string, em
 	return s.inner.AttachAgentTurn(ctx, threadID, emit)
 }
 
+// ContinueAgentTurn continues a thread the grant talks to, as a message into
+// it would: the turn runs the agent under the agent's permissions, so the
+// scoped mark stops here (decision 0195).
+func (s *scopedDataset) ContinueAgentTurn(ctx context.Context, actor substrate.Actor, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+	if !s.grant.Talks() {
+		return nil, errScope("agents")
+	}
+	if err := s.requireThread(ctx, threadID); err != nil {
+		return nil, err
+	}
+	return s.inner.ContinueAgentTurn(substrate.WithoutScopes(ctx), s.writer(actor), threadID, emit)
+}
+
 func (s *scopedDataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
 	if err := s.requireThread(ctx, threadID); err != nil {
 		return nil, err
