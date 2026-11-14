@@ -58,6 +58,20 @@ public enum ComposerKeys {
         }
     }
 
+    /// The draft with a new line written at the cursor, and where the
+    /// cursor then stands, both counted in characters. `selection` is what
+    /// the new line replaces: an empty range is a cursor, and none is the
+    /// end of the draft. The cursor is counted in the new text and never
+    /// taken as one past where it was: a new line after a carriage return
+    /// joins it into one character, and the draft grows by none.
+    public static func newline(in draft: String, replacing selection: Range<Int>? = nil) -> (text: String, cursor: Int) {
+        let count = draft.count
+        let lower = min(max(selection?.lowerBound ?? count, 0), count)
+        let upper = min(max(selection?.upperBound ?? count, lower), count)
+        let head = String(draft.prefix(lower)) + "\n"
+        return (head + draft.dropFirst(upper), head.count)
+    }
+
     /// The Send button's help where a hardware keyboard is expected: what it
     /// does and the keys that do the same. A phone's says nothing, since its
     /// keyboard has no Command key.

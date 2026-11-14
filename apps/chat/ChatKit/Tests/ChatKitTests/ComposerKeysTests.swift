@@ -42,6 +42,32 @@ struct ReturnInTheComposer {
         #expect(ComposerKeys.onReturn(modifiers, on: device, composing: true) == .fieldsOwn)
     }
 
+    @Test func aNewLineGoesWhereTheCursorIsAndTheCursorAfterIt() {
+        #expect(ComposerKeys.newline(in: "") == ("\n", 1))
+        #expect(ComposerKeys.newline(in: "one") == ("one\n", 4))
+        #expect(ComposerKeys.newline(in: "onetwo", replacing: 3 ..< 3) == ("one\ntwo", 4))
+        // Over a selection: it is replaced.
+        #expect(ComposerKeys.newline(in: "one and two", replacing: 3 ..< 8) == ("one\ntwo", 4))
+        // Characters of several scalars count as one each.
+        #expect(ComposerKeys.newline(in: "👩🏽‍🚀é", replacing: 1 ..< 1) == ("👩🏽‍🚀\né", 2))
+        // A selection past the draft's end is the end.
+        #expect(ComposerKeys.newline(in: "one", replacing: 9 ..< 12) == ("one\n", 4))
+    }
+
+    /// A pasted draft may end in a carriage return, and a new line after
+    /// one makes a single character of the two: the cursor is at the end
+    /// of the draft, not one past it.
+    @Test func aNewLineAfterACarriageReturnKeepsTheCursorInsideTheDraft() {
+        let (text, cursor) = ComposerKeys.newline(in: "hello\r")
+        #expect(text == "hello\r\n")
+        #expect(text.count == 6)
+        #expect(cursor == 6)
+        let middle = ComposerKeys.newline(in: "a\rb", replacing: 2 ..< 2)
+        #expect(middle.text == "a\r\nb")
+        #expect(middle.cursor == 2)
+        #expect(middle.cursor <= middle.text.count)
+    }
+
     @Test func theSendButtonNamesTheShortcutWhereAHardwareKeyboardIsExpected() {
         for device in [ComposerKeys.Device.mac, .pad] {
             #expect(ComposerKeys.sendHelp(on: device) == "Send (⌘Return)")

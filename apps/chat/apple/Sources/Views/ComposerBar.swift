@@ -211,20 +211,17 @@ struct ComposerBar: View {
 
     /// Return on a Mac: a new line where the cursor is, over any selection.
     private func insertNewline() {
-        var text = text
-        var lower = text.count
-        var upper = text.count
+        var replaced: Range<Int>?
         if case let .selection(range)? = selection?.indices,
             range.lowerBound >= text.startIndex, range.upperBound <= text.endIndex
         {
-            lower = text.distance(from: text.startIndex, to: range.lowerBound)
-            upper = text.distance(from: text.startIndex, to: range.upperBound)
+            replaced = text.distance(from: text.startIndex, to: range.lowerBound) ..< text.distance(from: text.startIndex, to: range.upperBound)
         }
-        let start = text.index(text.startIndex, offsetBy: lower)
-        let end = text.index(text.startIndex, offsetBy: upper)
-        text.replaceSubrange(start ..< end, with: "\n")
+        // Where the cursor lands is ChatKit's to say: a new line can join
+        // the character before it, and the draft is then no longer.
+        let (text, cursor) = ComposerKeys.newline(in: text, replacing: replaced)
         self.text = text
-        selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: lower + 1))
+        selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: cursor))
     }
 
     private func send() {
