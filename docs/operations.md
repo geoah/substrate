@@ -690,13 +690,40 @@ cutoff, reading only the records with a line in it (and the effects other
 records' lines carry on them, from an index the write path keeps), never the
 whole history.
 
-It works in batches of 25 records or 1,000 lines of their history, whichever
-comes first, each one transaction that holds the changelog lock a write
-waits for; a record whose history is longer than that is compacted alone, in
-steps of 1,000 lines. Beside its records' lines, a batch's transaction reads
-the other lines of each transaction it re-frames and the repository's
-barriers (the lines its parked failures, drains and parked webhook fires
-name), which grow with what waits to be delivered, not with the history.
+It works in batches of 25 records, 1,000 lines of their history or 32 MiB of
+those lines, whichever comes first, each one transaction that holds the
+changelog lock a write waits for; a record whose history is past that is
+compacted alone, in steps. The 32 MiB are counted beyond the largest line a
+batch reads, so a batch of records reads at most 32 MiB and one line, and a
+line larger than 32 MiB is that one line, beside up to 32 MiB of others. A
+step reads up to 1,000 new lines and the lines the record retains below the
+step before (the state that step left, and what a hold keeps), so fewer than
+2,000, and it always takes at least one new line. It cannot leave out what
+it retains, which it replays from, and the first step of a record in a pass
+cannot tell that from new lines; so that step, and one whose first new line
+would pass 32 MiB, take the line that passes it. What a record retains is
+under 32 MiB beyond its largest line, or the record is passed by, so such a
+step reads at most 32 MiB beyond the two largest lines it reads: two
+retained lines of 30 MiB and a new one of 30 MiB is 90 MiB. No record waits
+on its bytes alone.
+
+The 32 MiB are the lines' size as Postgres stores them, compressed where it
+compressed them, read without reading the lines. What a batch holds in
+memory is its lines decompressed and decoded, so it depends on how they
+compress: a sync's saved position, a list of ids and timestamps, measured
+about twice its stored size, an opaque value its stored size, and a value
+that compresses ten to one takes ten times its stored size. For the shape
+measured, a batch holds about one archive piece (64 MiB) of text.
+
+Two reads of the pass are outside these bounds. An erasure (below) takes its
+record whole, in one transaction, however long its history
+([#1452](https://github.com/geoah/substrate/issues/1452)). And a batch that
+removes the line ending a transaction verifies that whole transaction's
+lines, which neither bound counts
+([#1453](https://github.com/geoah/substrate/issues/1453)). Beside its
+records' lines, a batch's transaction also reads the repository's barriers
+(the lines its parked failures, drains and parked webhook fires name), which
+grow with what waits to be delivered, not with the history.
 The pass sleeps as long as each batch took and stops after two minutes,
 leaving the rest to the next pass, so about half of its two minutes are
 pauses, and it runs every `SUBSTRATE_COMPACTION_INTERVAL` (an hour by
@@ -726,10 +753,10 @@ own record, a copy a mapping made of it or a trigger's saved position. No deleti
 cursor is forgotten, so a trigger that stands still holds the horizon back,
 and `repository history` names it; one that is not enabled holds nothing,
 and the pass starts it over from the beginning, once, before it forgets past
-it. Forgetting is held to the same bound: purged records are forgotten as
-many at a time as 1,000 lines of their history admit, and one with more is
-first compacted in steps up to its purge, whatever its kind keeps, then
-forgotten. One that still keeps more, under a line something holds or the
+it. Forgetting is held to the same bounds: purged records are forgotten as
+many at a time as 1,000 lines of their history or 32 MiB of them admit, and
+one with more is first compacted in steps up to its purge, whatever its kind
+keeps, then forgotten. One that still keeps more, under a line something holds or the
 purge of an earlier life, is passed by, and its deletion stays until a
 later pass can forget it. A purged record with a line that must stay, such
 as one a parked failure names, keeps every line until it goes. So does any record such a line, a
@@ -739,9 +766,9 @@ the same bound as a window's, so a hold that lasts takes no more of a pass
 than that, and `repository history` counts the ones that wait, how many
 passes a round of their retries takes, and whether the last pass finished or
 ran out of its budget. What the pass leaves, and counts there among the
-held: a record that keeps 1,000 lines or more below a line something
-still holds, which it passes by after the step that finds it so and retries
-within the bound at each later pass. The history of a record from before it
+held: a record that keeps 1,000 lines or more, or 32 MiB beyond its largest
+line, below a line something still holds, which it passes by after the step
+that finds it so and retries within the bounds at each later pass. The history of a record from before it
 was purged and written again is kept with the purge, whatever its retention:
 a compaction that meets the purge compacts nothing under it
 ([#1401](https://github.com/geoah/substrate/issues/1401)).

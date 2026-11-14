@@ -517,8 +517,12 @@ type CompactReport struct {
 	// read is how many distinct lines a compactRecords took as input for
 	// its records, their own and the ones carrying an effect on them up to
 	// its seq: not everything its transaction read, which adds the other
-	// lines of a transaction it re-frames and the barriers.
-	read int
+	// lines of a transaction it re-frames and the barriers. readBytes is
+	// those lines' stored bytes, and readLargest and readSecond the two
+	// largest of them, what the pass's byte bound holds (compactpass.go
+	// compactionBatchBytes).
+	read                               int
+	readBytes, readLargest, readSecond int64
 	// unindexed is an erasure held because the foreign-effects index does
 	// not cover its history yet (compactindex.go).
 	unindexed bool
@@ -644,8 +648,16 @@ func (t *txn) compactRecords(upTo int64, refs []eref) (CompactReport, error) {
 	}
 	t.held = map[eref]bool{}
 	defer func() { t.held = nil }()
+	var readBytes, readLargest, readSecond int64
+	if err := t.row(`
+		WITH l AS (SELECT pg_column_size(payload)::bigint AS size FROM changelog WHERE seq = ANY($1))
+		SELECT coalesce(sum(size), 0)::bigint, coalesce(max(size), 0)::bigint,
+			coalesce((SELECT size FROM l ORDER BY size DESC OFFSET 1 LIMIT 1), 0)
+		FROM l`, only).Scan(&readBytes, &readLargest, &readSecond); err != nil {
+		return CompactReport{}, err
+	}
 	report, err := t.compactOver(upTo, func(r eref) bool { return in[r] }, only)
-	report.read = len(only)
+	report.read, report.readBytes, report.readLargest, report.readSecond = len(only), readBytes, readLargest, readSecond
 	for r := range t.held {
 		report.held = append(report.held, r)
 	}
