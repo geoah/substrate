@@ -116,6 +116,7 @@ import {
   keepUnsent,
   moveUnsent,
   RESEND_DELAYS_MS,
+  refusalWords,
   setUnsent,
   unsentKey,
   useUnsent,
@@ -956,7 +957,7 @@ export function Conversation({
           end()
           addUnsent(sentKey, {
             kind: "refused",
-            reason: err.message,
+            reason: refusalWords(err),
             message,
             restored: giveBack(message),
           })

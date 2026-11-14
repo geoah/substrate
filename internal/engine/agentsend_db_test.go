@@ -303,7 +303,7 @@ func TestAMessageIDThatIsNotThisMessageIsRefused(t *testing.T) {
 		{"a row that is no sent message", substrate.ChatInput{Thread: one.Thread, Message: "c", MessageID: reply}},
 	} {
 		_, events, err := sendChat(ds, tc.in)
-		if !errors.Is(err, substrate.ErrConflict) || !errors.Is(err, errMessageIDTaken) || len(events) != 0 {
+		if !errors.Is(err, substrate.ErrConflict) || !errors.Is(err, substrate.ErrMessageIDTaken) || len(events) != 0 {
 			t.Errorf("%s = %v with events %+v, want a conflict before the stream", tc.name, err, events)
 		}
 	}
@@ -326,7 +326,7 @@ func TestAMessageIDThatIsNotThisMessageIsRefused(t *testing.T) {
 	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeMessage, "taken-3", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the message: %v", err)
 	}
-	if _, _, err := sendChat(ds, substrate.ChatInput{Thread: one.Thread, Message: "later", MessageID: "taken-3"}); !errors.Is(err, errMessageIDTaken) {
+	if _, _, err := sendChat(ds, substrate.ChatInput{Thread: one.Thread, Message: "later", MessageID: "taken-3"}); !errors.Is(err, substrate.ErrMessageIDTaken) {
 		t.Fatalf("a deleted message's id = %v, want it refused as taken", err)
 	}
 }
@@ -579,7 +579,7 @@ func TestAGuessedMessageIDSaysNothingAboutAThreadTheHandMayNotContinue(t *testin
 	} {
 		log := newEventLog()
 		_, err := r.ds.ChatAgent(ctx, app, r.pkg+"/scribe", in, log.emit)
-		if !errors.Is(err, errMessageIDTaken) || len(log.snapshot()) != 0 {
+		if !errors.Is(err, substrate.ErrMessageIDTaken) || len(log.snapshot()) != 0 {
 			// A named thread the app may not continue is refused before the
 			// id is read at all.
 			if in.Thread != "" && errors.Is(err, substrate.ErrForbidden) {
@@ -602,7 +602,7 @@ func TestAGuessedMessageIDSaysNothingAboutAThreadTheHandMayNotContinue(t *testin
 	}
 	// Ada, who may continue it, is told what is wrong with her own request.
 	_, err = r.ds.ChatAgent(r.adaCtx(), substrate.ActorPerson, r.pkg+"/proposer", substrate.ChatInput{Message: "changed", MessageID: "guess-1"}, nil)
-	if !errors.Is(err, errMessageIDTaken) || !strings.Contains(err.Error(), "another text") {
+	if !errors.Is(err, substrate.ErrMessageIDTaken) || !strings.Contains(err.Error(), "another text") {
 		t.Fatalf("ada's own mismatch = %v, want it named", err)
 	}
 }

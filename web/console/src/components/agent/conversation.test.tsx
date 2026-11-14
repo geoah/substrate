@@ -94,7 +94,11 @@ import {
 } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
-import { RESEND_DELAYS_MS, resetUnsent } from "@/lib/unsent-messages"
+import {
+  ID_TAKEN_REFUSAL,
+  RESEND_DELAYS_MS,
+  resetUnsent,
+} from "@/lib/unsent-messages"
 import { Conversation, RELOAD_WAIT_MS } from "./conversation"
 
 // The waits before an unanswered send goes again, shortened for the tests.
@@ -676,6 +680,46 @@ describe("Conversation", () => {
     )
     await act(() => new Promise((r) => setTimeout(r, 50)))
     expect(attaches).toHaveLength(0)
+  })
+
+  it("says a taken id by its reason, gives the message back and sends it under a new id", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-7")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "one more thing" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    const first = calls[0].messageId
+    expect(first).toBeTruthy()
+    act(() =>
+      calls[0].onError?.(
+        new ApiError(
+          "conflict",
+          `substrate: version conflict: the messageId is taken: messageId "${first}": send the message under a new id`,
+          409,
+          [],
+          [],
+          undefined,
+          "message_id_taken"
+        )
+      )
+    )
+    const note = screen.getByRole("alert").textContent ?? ""
+    expect(note).toContain("Your message wasn’t sent")
+    expect(note).toContain(ID_TAKEN_REFUSAL)
+    expect(note).not.toContain("the messageId is taken")
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+    // Nothing goes again on its own, and the next send is a new request.
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(calls).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(calls).toHaveLength(2)
+    expect(calls[1].message).toBe("one more thing")
+    expect(calls[1].messageId).toBeTruthy()
+    expect(calls[1].messageId).not.toBe(first)
   })
 })
 

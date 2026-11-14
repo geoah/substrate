@@ -2825,6 +2825,10 @@ addresses: a turn is running on it, so the client attaches to that turn or
 stops it, or its last turn finished, so there is nothing for a continue to
 take up and the next message is what goes on
 ([continue](agents.md#continue)).
+`message_id_taken` on `conflict`, at the same revision, is a chat message
+whose `messageId` names a record that is not this message: the same request
+meets the same answer, so the client sends the message under a new id
+([a message with its own id](agents.md#a-message-with-its-own-id)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2834,9 +2838,9 @@ removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
 The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `not_permitted`, `nothing_to_continue`,
-`observed_rederiving`, `quota`, `repository_required`, `set_aside`,
-`stale_revision`, `thread_busy`.
+`in_doubt`, `key_refused`, `message_id_taken`, `not_permitted`,
+`nothing_to_continue`, `observed_rederiving`, `quota`, `repository_required`,
+`set_aside`, `stale_revision`, `thread_busy`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

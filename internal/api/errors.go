@@ -212,6 +212,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 			p.Reason = substrate.ReasonThreadBusy
 		case errors.Is(err, substrate.ErrNothingToContinue):
 			p.Reason = substrate.ReasonNothingToContinue
+		case errors.Is(err, substrate.ErrMessageIDTaken):
+			p.Reason = substrate.ReasonMessageIDTaken
 		}
 		return http.StatusConflict, p
 	case errors.Is(err, substrate.ErrLossyConversion):

@@ -62,7 +62,9 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * an app's scope refusal carries no reason (decision 0276). `thread_busy` and
  * `nothing_to_continue` ride a `conflict` (409) on a chat message or a
  * continue: a turn is running on the thread, or its last turn finished and
- * there is nothing to take up (decision 0312). */
+ * there is nothing to take up (decision 0312). `message_id_taken` rides a
+ * `conflict` (409) on a chat message: its `messageId` names a record that is
+ * not this message, so it goes again under a new id. */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -76,6 +78,7 @@ export type ErrorReason =
   | "not_permitted"
   | "thread_busy"
   | "nothing_to_continue"
+  | "message_id_taken"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`

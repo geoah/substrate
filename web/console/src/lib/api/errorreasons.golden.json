@@ -3,6 +3,7 @@
   "first_attempt_running",
   "in_doubt",
   "key_refused",
+  "message_id_taken",
   "not_permitted",
   "nothing_to_continue",
   "observed_rederiving",

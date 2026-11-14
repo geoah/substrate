@@ -303,3 +303,27 @@ func TestChatCarriesItsMessageIDAndABusyThreadSaysSo(t *testing.T) {
 		t.Fatalf("a message into a running thread answered %s", rec.Body.String())
 	}
 }
+
+// A messageId that names another message is refused with one reason, whether
+// or not the words say which message it is: the engine says that only to a
+// hand that may continue the thread the id is on, and a client acts on the
+// reason, never on the words.
+func TestAMessageIDThatNamesAnotherMessageIsRefusedAsTaken(t *testing.T) {
+	chat := &chatFake{}
+	env := newStubEnv(t, chat)
+	for _, words := range []string{
+		`messageId "c41a7e9b02": send the message under a new id`,
+		`messageId "c41a7e9b02" names a message with another text: send the message under a new id`,
+	} {
+		chat.err = fmt.Errorf("%w: %w: %s", substrate.ErrConflict, substrate.ErrMessageIDTaken, words)
+		rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"message": "hi", "messageId": "c41a7e9b02"})
+		wantErrorCode(t, rec, http.StatusConflict, codeConflict)
+		var body substrate.ErrorEnvelope
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Error.Reason != substrate.ReasonMessageIDTaken || !strings.HasSuffix(body.Error.Message, words) {
+			t.Fatalf("a reused messageId answered reason %q and %q, want message_id_taken and the engine's words", body.Error.Reason, body.Error.Message)
+		}
+	}
+}

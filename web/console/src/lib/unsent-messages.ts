@@ -29,6 +29,21 @@ export interface SentRequest {
  * revision 3 of its `agents` feature), where going on is a message. */
 export const CONTINUE_MESSAGE = "Continue where you left off."
 
+/** What a refused send's notice says for a `messageId` the server holds for
+ * another message (the reason `message_id_taken`). The message is given
+ * back, and the next send mints a new id. */
+export const ID_TAKEN_REFUSAL =
+  "another message already has the id this one was sent under. Send it again, and it goes under a new id."
+
+/** The words a refused send's notice shows: the console's own for a refusal
+ * it knows by its reason, the server's for any other. */
+export function refusalWords(err: {
+  reason?: string
+  message: string
+}): string {
+  return err.reason === "message_id_taken" ? ID_TAKEN_REFUSAL : err.message
+}
+
 /** What became of one send that started no turn. */
 export interface Unsent {
   id: number
@@ -37,7 +52,7 @@ export interface Unsent {
    * send and on each time it was sent again, so the message may or may not
    * have arrived. */
   kind: "refused" | "unanswered"
-  /** The server's words, or what failed. */
+  /** The server's words (refusalWords), or what failed. */
   reason: string
   message: string
   /** The request an unanswered message went out as, whole: sending that
