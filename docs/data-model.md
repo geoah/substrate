@@ -12,8 +12,9 @@ passes.
 Registering creates a user and, in the same transaction, that user's one
 repository. A repository is:
 
-- an **append-only changelog**: every change, in one strictly sequential order, with
-  values in the payload;
+- a **changelog**: every write appended in one strictly sequential order,
+  with values in the payload, until a compaction replaces what is past a
+  kind's retention or an erasure removes a record's history;
 - the **records**: the fold of that changelog, which is what reads and queries
   answer from;
 - two side stores: **blobs** (content-addressed bytes) and **sealed** (secret
@@ -30,9 +31,13 @@ plus sealed, as one unit**: the repository's archive, which the server writes
 behind the commits and which holds all three
 ([backups](operations.md#backups)).
 
-Sequence numbers are per repository, gapless, and assigned at commit, so
-commit-visibility order **is** sequence order and a consumer resuming from a
-remembered seq misses nothing. Nothing prunes or compacts today.
+Sequence numbers are per repository and assigned at commit without a gap,
+so commit-visibility order **is** sequence order and a consumer resuming
+from a remembered seq misses no record. Past a kind's retention, the
+[compaction pass](operations.md#the-compaction-pass) replaces a record's
+entries with one holding its state, which leaves gaps between the seqs that
+remain, and a resume from below a deletion it forgot is told `compacted`
+([the horizon](changelog.md#frames-and-the-horizon)).
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
 Every entry carries a SHA-256 checksum of its own canonical line, in the

@@ -36,9 +36,11 @@ and the webhook address the server gives out, so no table or path holds the
 name
 ([0261](docs/decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 There is no username.
-Everything the user has lives in it: an append-only,
-strictly sequential **changelog**, checksummed lines in Postgres's
-`changelog` table, is the truth and the **records** table is its fold.
+Everything the user has lives in it: a strictly sequential **changelog**
+that every write appends to (a compaction later replaces what is past a
+kind's retention, and an erasure a record's history), checksummed lines in
+Postgres's `changelog` table, is the truth and the **records** table is its
+fold.
 Postgres alone confirms a write, and a background pass copies each
 repository to its **archive** after the commits, a directory or an
 S3-compatible bucket that is the backup and what a restore reads
@@ -383,7 +385,7 @@ words, and what each one replaced:
 | **authority** | who publishes a package; one DNS-style name, or `~` for the repository's own | group        |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
-| **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
+| **changelog** | the sequence of deltas every write appends to, compacted past each kind's retention; the `changelog` table | log |
 | **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
 | **published** | a package its publisher keeps (`keptBy: publisher`), ADDED under the authority that publishes it; it says who keeps a package, never what it is for | provider, tier (as who keeps a package) |
 | **provider**  | a package that connects the substrate to an outside service, as the catalog says on its entry: every package under `providers.substrate.reamde.dev`, and any other published one with an account kind ([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)) | integration |

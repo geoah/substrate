@@ -29,8 +29,10 @@ its own copy. It runs on a machine you choose.
   over [MCP](docs/mcp.md) the same way, and you revoke it in Settings. The
   Substrate apps for iPhone, iPad and Mac (Chat, Tasks, Workouts, Sync and
   the console) are on [reamde.dev/substrate](https://reamde.dev/substrate).
-- **Yours to keep.** Every change is kept, in order, so nothing is quietly
-  lost, and you can download everything, as one file, whenever you like.
+- **Yours to keep.** The latest state of everything is always kept. Your own
+  collections keep their whole history, and what a provider brings in keeps
+  a month of it, unless you set it otherwise. You can download everything, as
+  one file, whenever you like.
 
 To get one, have someone you trust host it for you, or run your own: the
 next section is all it takes.
@@ -47,7 +49,9 @@ substrate asks for no invite code and no second factor. Put an Anthropic key
 on the `anthropic` provider (the console's Providers page) and Moss answers.
 
 Under the console, everything is a typed **record** in one **repository**,
-computed from an append-only **changelog**. A **kind**, declared in YAML,
+computed from a **changelog** every write appends to, in one order (a
+compaction later replaces what is past a kind's retention, and a permanent
+delete erases a record's history). A **kind**, declared in YAML,
 validates every write; kinds, tokens, functions (Python the substrate runs
 on a trigger) and agents are records too. One REST API reads and writes all
 of it, an app gets a scoped token through an OAuth flow that needs no client

@@ -46,7 +46,7 @@ display form is the kind's declared `label` (decision 0117), **incoming** → th
 
 | Term | What it is |
 | ---- | ---------- |
-| **changelog** | The repository's one append-only, strictly sequential list of every change, the `changelog` table in Postgres. It is the truth. |
+| **changelog** | The repository's one strictly sequential list of changes, the `changelog` table in Postgres: every write appends to it, and later a compaction replaces what is past a kind's retention and an erasure a record's history. It is the truth. |
 | **fold** | The records the changelog is replayed into. The only write path to them, so a live write and a rebuild cannot drift. |
 | **archive** | The copy of each repository the server writes after its writes commit, into a directory or an S3-compatible bucket: its changelog in pieces, its blobs, its sealed values, its webhook spool and a manifest. The backup, what a restore reads and what the recovery export hands out. Not Postgres's WAL archive. |
 | **piece** | One object of an archive's changelog, `changelog/<dialect>/<first seq>-<last seq>.ndjson`: whole transactions of consecutive entries as newline-delimited JSON, each line carrying its own SHA-256 checksum in `sum`. Written once and never changed. |
