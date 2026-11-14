@@ -20,6 +20,10 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     /// "Older messages aren't shown here."
     public var olderHidden: String?
     public var turns: [TurnPresentation]
+    /// Where what the person had not read begins, when the chat was opened
+    /// with more than they had seen: a line above that turn, which the
+    /// chat opens at. It stays while the chat is open.
+    public var newLine: NewLine?
     /// A send is out and nothing has come back yet.
     public var typing: Bool
     public var status: [ConversationNote]
@@ -40,6 +44,16 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var streaming: Bool
     public var stopping: Bool
     public var expandThinking: Bool
+}
+
+/// The line above the first turn the person had not read.
+public struct NewLine: Codable, Equatable, Sendable {
+    /// The turn it stands above.
+    public var turn: String
+    /// "New"
+    public var label: String
+    /// What a screen reader says of it.
+    public var spoken: String
 }
 
 public struct NewChatHero: Codable, Equatable, Sendable {

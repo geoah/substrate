@@ -1017,9 +1017,18 @@ available), the speech model downloaded the first time a language is used.
 The words heard so far are drawn in the composer, the guess dimmed, and land
 in the field when listening stops; Send stops, finalizes and sends.
 
+**Read state.** How far a person has read each chat is the server's record
+of it (`llm/threadmark`, where the `records` feature is at revision 8 or
+more), so a chat read on one device is read on every other: the dots, the
+badge and the notifications follow the person's marks, a chat is read once
+its end has been on screen for a second, and one opened with more than was
+read opens at a "New" line. On an older server the device keeps its own,
+as before ([its design](chat/DESIGN.md#read-state)).
+
 **Notifications.** The server has no push channel, so the app notifies what it
 sees: a reply that settles in a chat not on screen, and a new question or
-suggestion waiting on the owner, each once. On iOS a turn still streaming when
+suggestion waiting on the owner, each once; a reply waits five seconds for
+a mark, so one read on another device stays quiet. On iOS a turn still streaming when
 the app leaves is kept running as a continued processing task, which iOS draws
 with a Stop button, and a refresh task checks now and then when iOS lets it.
 

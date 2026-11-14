@@ -42,6 +42,18 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// to be, until the conversation has it in its composer under what
         /// was typed there.
         var draftFound: String?
+        /// Where what the person had not read began when the chat was
+        /// opened: the "New" line stands there while the chat stays open.
+        var newFrom: NewFrom?
+    }
+
+    /// Where a chat's unread part begins.
+    enum NewFrom: Codable, Equatable, Sendable {
+        /// After the message read through: the latest in the rows of
+        /// these, the server's position and what this device saw since.
+        case after([String])
+        /// The person never opened the chat: everything held is new.
+        case start
     }
 
     /// One window: the conversation it shows, whether it is in front, and
@@ -50,6 +62,19 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var current: ChildKey?
         var active = true
         var query = ""
+        /// The conversation whose end this window shows to somebody looking
+        /// at it, as its view last said.
+        var atEnd: ChildKey?
+    }
+
+    /// The end of a chat on screen in a window in front: `message` is the
+    /// newest one the thread settled with. Read once it has been there a
+    /// second, and then kept until the chat is left, so a chat marked
+    /// unread while it is open stays unread until it is opened again or
+    /// says more.
+    struct Sight: Codable, Equatable, Sendable {
+        var message: String
+        var read = false
     }
 
     /// A question's, a suggestion's or an approval's card, as last read and
@@ -111,6 +136,11 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         }
     }
 
+    /// Where asking for the permission to notify stands.
+    enum NotificationOffer: String, Codable, Sendable {
+        case checking, offered
+    }
+
     /// What the watch reported, to read again once its batch is due.
     struct WatchKey: Codable, Hashable, Sendable {
         var kind: String
@@ -154,6 +184,9 @@ public struct ChatAppState: Codable, Equatable, Sendable {
 
     /// The `agents` revision that has the continue route.
     static let continueRevision = 3
+    /// The `records` revision that has the person's marks: `me` in a
+    /// filter, and the mark kind.
+    static let marksRevision = 8
     /// Try Again and Continue may call the continue route. Asked of the
     /// server's document, never found out by calling: an older server
     /// answers 404, and then they go on as before the route.
@@ -192,6 +225,34 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// an older server lacks is refused whole.
     var approvalsKnown = false
     var seen: [String: String] = [:]
+    /// The `records` feature's revision, from the server's discovery
+    /// document; nil until it is read.
+    var recordsRevision: Int?
+    /// The server said it keeps marks and then answered that it does not
+    /// know the kind: believed until the document is read again.
+    var marksUnserved = false
+    /// The person's marks by thread, as the server last said them: what is
+    /// unread. Nil while the server keeps none (one older than marks), when
+    /// `seen` says it, as before marks.
+    var marks: [String: ThreadMark]?
+    /// A read of the marks was answered since the folder was opened: the
+    /// server declares the kind and the token reaches it, so the watch may
+    /// follow it. A watch naming a kind an older server lacks is refused
+    /// whole.
+    var marksKnown = false
+    /// The marks this device moved and has not sent yet, by thread, and the
+    /// ones on their way: each reads as written here at once.
+    var marking: [String: MarkChange] = [:]
+    var markSending: [String: MarkChange] = [:]
+    /// When the wait before the next write ends.
+    var marksDue: Date?
+    /// The chats whose end somebody is looking at, or looked at since they
+    /// were opened, by thread.
+    var sights: [String: Sight] = [:]
+    /// The permission to notify: about to be asked for, once the system
+    /// says whether it ever was (`checking`), or offered in the app's own
+    /// words (`offered`), which the system's prompt follows.
+    var notificationOffer: NotificationOffer?
     var notified: Set<String> = []
     var baselined = false
     var lastAgent: String?

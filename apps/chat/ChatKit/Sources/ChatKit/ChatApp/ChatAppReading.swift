@@ -139,15 +139,25 @@ extension ChatAppState {
         return Availability(available: false)
     }
 
+    /// Whether a settled chat is unread: by the person's mark of it where
+    /// the server keeps marks (decision 0313), else by when this device
+    /// last saw it settled. A chat that is running is working, not unread.
     func unread(_ thread: ChatThread) -> Bool {
-        guard !thread.running, let finished = thread.record["finishedAt"]?.string else { return false }
-        return seen[thread.id] != finished
+        guard !thread.running else { return false }
+        guard marks != nil else {
+            guard let finished = thread.record["finishedAt"]?.string else { return false }
+            return seen[thread.id] != finished
+        }
+        return mark(thread.id, last: thread.lastMessage)?.unread(lastMessage: thread.lastMessage) ?? false
     }
 
     /// The cards waiting on the owner in a thread: questions, suggestions
-    /// and approvals.
+    /// and approvals. A server that keeps marks counts them on the thread's
+    /// row; on an older one they are counted from the three lists read for
+    /// it.
     func attention(_ thread: String) -> Int {
-        (interactions + requests + approvals).count { $0["thread"]?.referenceID == thread }
+        if marks != nil, let row = self.thread(thread) { return row.waiting }
+        return (interactions + requests + approvals).count { $0["thread"]?.referenceID == thread }
     }
 
     /// The approvals a sub-agent asked on a conversation: its own tool rows
@@ -157,6 +167,11 @@ extension ChatAppState {
     }
 
     var unreadCount: Int { threads.count { unread($0) } }
+
+    /// The settled chats that read as unread, listed or opened on their own.
+    var unreadThreads: Set<String> {
+        Set((chats + automated + Array(others.values)).map(ChatThread.init(record:)).filter { unread($0) }.map(\.id))
+    }
 
     /// Rule 1: there is one conversation per thread in the process.
     func key(of thread: String) -> ChildKey? {
@@ -197,7 +212,7 @@ extension ChatAppState {
             showAutomated: preferences.showAutomated, canChat: session?.canChat ?? true,
             canDecide: session?.canDecide ?? true, canReadProviders: session?.canReadProviders ?? true,
             canReadModels: session?.canReadModels ?? true, readsOperator: session?.full ?? true,
-            namesThreads: !(session?.full ?? true))
+            namesThreads: !(session?.full ?? true), readsMarks: readsMarks)
     }
 
     var threadIDs: [String] { (chats + automated).map(\.id) }
@@ -206,7 +221,8 @@ extension ChatAppState {
         CachedState(
             agents: agents, providers: providers.values.sorted { $0.id < $1.id },
             models: models.map { $0.values.sorted { $0.id < $1.id } }, keys: keys, threads: chats, automated: automated,
-            openings: openings, interactions: interactions, requests: requests, seen: seen, notified: notified,
+            openings: openings, interactions: interactions, requests: requests, seen: seen, marks: keptMarks, marking: unsentMarks,
+            notified: notified,
             baselined: baselined, lastAgent: lastAgent, memories: guidance.read ? guidance.memories : nil,
             instructions: guidance.read ? guidance.instructions : nil)
     }

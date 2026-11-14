@@ -20,8 +20,16 @@ struct CachedState: Codable, Equatable, Sendable {
     var openings: [String: String] = [:]
     var interactions: [Record] = []
     var requests: [Record] = []
-    /// Each chat's `finishedAt` when it was last seen settled.
+    /// Each chat's `finishedAt` when it was last seen settled: what is
+    /// unread on a server that keeps no marks, and never sent anywhere.
     var seen: [String: String] = [:]
+    /// The person's marks by thread, as the server last said them, so the
+    /// list draws its dots before it asks anything; absent from a file an
+    /// earlier build wrote, and while the server keeps none.
+    var marks: [String: ThreadMark]?
+    /// The marks this device moved that the server has not answered yet, by
+    /// thread: sent at the next chance, a launch later included.
+    var marking: [String: MarkChange]?
     /// What has been notified: `reply|<thread>|<finishedAt>`, `card|<kind>/<id>`.
     var notified: Set<String> = []
     /// Whether the first sign-in's history was marked seen.

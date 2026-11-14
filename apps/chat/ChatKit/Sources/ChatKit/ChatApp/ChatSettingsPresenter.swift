@@ -40,6 +40,8 @@ extension ChatApp {
             ? "iPhone and iPad have no push from your server: a reply notifies when the app sees it settle, while it is open, while it keeps an answer running after you leave, or when iOS lets it check in the background."
             : "Your server has no push: replies and questions notify while the app is open."
         let denied = state.permission == .off
+        // Not asked yet, or the app's offer was put off: asked from here.
+        let unasked = state.permission == .notAsked
         var sections = [
             SettingsSection(
                 id: .app("chats"), title: "Chats",
@@ -59,8 +61,16 @@ extension ChatApp {
                             SettingsRow(
                                 id: .app("allowNotifications"), label: "Allow Notifications in Settings",
                                 control: .action(destructive: false, enabled: true))
+                        ] : [])
+                    + (unasked
+                        ? [
+                            SettingsRow(
+                                id: .app("askNotifications"), label: "Turn On Notifications",
+                                control: .action(destructive: false, enabled: true))
                         ] : []),
-                footer: denied ? "Notifications are off for Substrate Chat. " + reach : reach),
+                footer: denied
+                    ? "Notifications are off for Substrate Chat. " + reach
+                    : unasked ? "Substrate Chat has not asked to notify you yet. " + reach : reach),
         ]
         if state.session != nil { sections.append(SettingsPresenter.storage(state.usage, budget: ChatStorage.budget)) }
         return ChatSettingsPresentation(

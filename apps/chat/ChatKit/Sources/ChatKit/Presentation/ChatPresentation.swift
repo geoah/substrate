@@ -24,6 +24,10 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     public var defaultAgent: AgentChoice?
     public var settings: ChatSettingsPresentation
     public var unread: Int
+    /// The app's own question before the system's: what it would notify.
+    /// Drawn in the chat on screen once a first reply settled; nil once it
+    /// was answered, and where the system was asked before.
+    public var notificationOffer: NotificationOfferPresentation?
     /// For each provider without a key.
     public var keys: [String: KeySheet]
     /// The provider whose key was just saved: its sheet closes.
@@ -37,6 +41,15 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     /// stands. For the runtime's tick alone: no view reads it, and it is in
     /// no part the tree goes out in.
     public var redrawAt: Date?
+}
+
+/// What the app would notify, said before the system asks to allow it.
+public struct NotificationOfferPresentation: Codable, Equatable, Sendable {
+    public var title: String
+    public var message: String
+    /// Asks the system.
+    public var allow: String
+    public var decline: String
 }
 
 /// An agent as a chat offers it.

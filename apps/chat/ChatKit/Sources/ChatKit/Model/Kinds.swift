@@ -21,6 +21,8 @@ enum Kinds {
     static let thread = "\(llm)/thread"
     static let message = "\(llm)/message"
     static let interaction = "\(llm)/interaction"
+    /// How far one person has read one thread (decision record 0313).
+    static let threadMark = "\(llm)/threadmark"
     /// A call an agent made to a function that waits for the owner's
     /// approval (decision record 0254).
     static let approval = "\(llm)/approval"
