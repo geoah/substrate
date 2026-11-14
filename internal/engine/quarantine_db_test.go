@@ -499,11 +499,13 @@ func TestASeededClosureRefusesRatherThanQuarantines(t *testing.T) {
 		return
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	_, err = svc2.Dataset(ctx, testdb.Repository(t))
-	if err == nil {
-		t.Fatal("a repository whose seeded closure no longer loads must refuse, not open without it")
+	// The refusal sets the repository aside at its first open (decision
+	// 0326), and the warning names it.
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("a repository whose seeded closure no longer loads must refuse, not open without it: %v, want it set aside", err)
 	}
-	if !strings.Contains(err.Error(), "substrate.reamde.dev/llm") {
+	err = engine.SetAsideCause(svc2, testdb.Repository(t))
+	if err == nil || !strings.Contains(err.Error(), "substrate.reamde.dev/llm") {
 		t.Fatalf("the refusal does not name the seeded closure it refused for: %v", err)
 	}
 	// The reason travels with it: an operator reading the refusal has to see

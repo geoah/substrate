@@ -72,6 +72,18 @@ const EarliestPointsQuery = earliestPointsQuery
 // shared pool does in production.
 func SetRepositoryConnsPerHandle(svc substrate.Service, n int) { svc.(*service).repoConnsPerHandle = n }
 
+// SetAsideCause is the failure that set the repository named (by its id or
+// its name) aside in this process, or nil while it is not set aside: what
+// the warning names, for a test of a step that sets a repository aside where
+// its open answers the refusal alone.
+func SetAsideCause(svc substrate.Service, repository string) error {
+	r := svc.(*service).setAsideOf(repository, repository)
+	if r == nil {
+		return nil
+	}
+	return r.cause
+}
+
 // SetTestMigrationHook runs fn inside every repository migration's
 // transaction, with the migration's own connection held, for the
 // repositories opened from here on.

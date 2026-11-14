@@ -315,9 +315,14 @@ func TestRepositoryMigrationsRefuseADivergentLedger(t *testing.T) {
 
 			svc2 := rmOpen(t, dsn, root)
 			t.Cleanup(func() { _ = svc2.Close() })
-			_, err = svc2.Dataset(ctx, repo)
+			// The refusal sets the repository aside at its first open
+			// (decision 0326), and the warning names it.
+			if _, err := svc2.Dataset(ctx, repo); !errors.Is(err, substrate.ErrSetAside) {
+				t.Fatalf("a repository with a divergent ledger: %v, want it set aside", err)
+			}
+			err = engine.SetAsideCause(svc2, repo)
 			if err == nil {
-				t.Fatal("a repository with a divergent ledger opened")
+				t.Fatal("a repository with a divergent ledger is set aside for nothing")
 			}
 			if tc.newer != errors.Is(err, engine.ErrRepositoryMigrationsNewer) {
 				t.Fatalf("ErrRepositoryMigrationsNewer = %v, want %v: %v", !tc.newer, tc.newer, err)

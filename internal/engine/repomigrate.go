@@ -106,6 +106,11 @@ var repositoryMigrations = []repositoryMigration{
 // not know what that code changed.
 var ErrRepositoryMigrationsNewer = errors.New("substrate/engine: the repository recorded migrations this binary does not carry")
 
+// errLedgerDiverges is a ledger this binary cannot continue though it carries
+// every version recorded: one recorded under another name, or one pending
+// below the highest recorded, which may not run after its successors did.
+var errLedgerDiverges = errors.New("substrate/engine: the repository's migration ledger diverges from this binary's")
+
 // runLandedRepositoryMigrations is runRepositoryMigrations for an open. Its
 // one exception to the rule that a dataset holds no name (namescache.go):
 // migration 6, landed and frozen, finds the repository's record under the
@@ -193,7 +198,12 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 			}
 			summary, err := m.Run(t)
 			if err != nil {
-				return err
+				return ownRefusal(err)
+			}
+			if f := ds.svc.testMigrationFault; f != nil {
+				if err := f(ds.info.ID, m.Version); err != nil {
+					return ownRefusal(err)
+				}
 			}
 			if err := t.requestUnprojected(); err != nil {
 				return err
@@ -291,16 +301,16 @@ func checkRepositoryMigrations(repository string, carried []repositoryMigration,
 		}
 	}
 	if len(drift) > 0 {
-		errs = append(errs, fmt.Errorf("substrate/engine: repository %s recorded %d repository migration(s) under another name than this binary carries, "+
+		errs = append(errs, fmt.Errorf("%w: repository %s recorded %d repository migration(s) under another name than this binary carries, "+
 			"so the ledger no longer says what ran. A landed repository migration is never renamed or renumbered; the database this came from was "+
 			"opened by a build that was still revising one. Throw it away or restore a copy a released binary wrote. What diverges:\n%s",
-			repository, len(drift), strings.Join(drift, "\n")))
+			errLedgerDiverges, repository, len(drift), strings.Join(drift, "\n")))
 	}
 	if len(gap) > 0 {
-		errs = append(errs, fmt.Errorf("substrate/engine: repository %s has %d repository migration(s) pending below the highest one it recorded (%d). "+
+		errs = append(errs, fmt.Errorf("%w: repository %s has %d repository migration(s) pending below the highest one it recorded (%d). "+
 			"They run in order, so one may not run after its successors did: a ledger row was removed by hand, or the numbering differs. "+
 			"Restore a copy a matching binary wrote. Pending out of order:\n%s",
-			repository, len(gap), highestRecorded, strings.Join(gap, "\n")))
+			errLedgerDiverges, repository, len(gap), highestRecorded, strings.Join(gap, "\n")))
 	}
 	return errors.Join(errs...)
 }
