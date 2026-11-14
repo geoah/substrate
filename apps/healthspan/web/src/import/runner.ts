@@ -16,14 +16,17 @@
 //   only while 20 s of the lease remain, and given up 5 s before it ends.
 //   A renewal refused stops this browser at once.
 // - Setup (planned): the import's source, then `importing`.
-// - Writing (importing): the plan's records in its order, each under its
+// - Writing (importing), only by the importer's version that read the
+//   plan: the plan's records in its order, each under its
 //   derived id. An import's own records (a CSV's, a hand entry's) are
 //   compared and stop the import where they differ; a provider's are
 //   decided by revision; a source is written where absent; an organization
 //   is merged.
 // - Undo: the lease and `undoing` in one patch, a wait past the previous
 //   lease's end, what the import created deleted, then whatever still points
-//   at it through `origin`, read again, and `undone`.
+//   at it through `origin`, read again, and `undone`. A record another
+//   import still standing also writes is handed to it instead, its values
+//   kept.
 
 import {
   SubstrateError,
@@ -59,6 +62,7 @@ import {
   storedPlan,
   type StoredPlan,
 } from "./planfile"
+import { knownVersion } from "./importers/versions"
 import { originKinds, refPath, sameAsPlanned, type UnitKey } from "./records"
 
 export const LEASE_MS = 60_000
@@ -97,6 +101,14 @@ const CASCADES: Readonly<
 > = {
   [KIND.labreport]: [{ kind: KIND.labresult, property: "report" }],
 }
+
+/** The states of an import that has written, or may yet write, what its
+ * plan holds: Undo of another import hands it such a record. */
+const STANDING: ReadonlySet<ImportStatus> = new Set([
+  "importing",
+  "stopped",
+  "imported",
+])
 
 /** The records the runner reads and writes: the client's own calls, the
  * blob store, and the records pointing at an import through `origin`. */
@@ -149,6 +161,8 @@ export interface RunnerStore {
   /** A unit's identity in the repository's unit graph, for comparing a
    * row found with the row planned; absent, units compare as spelled. */
   unitKey?(signal?: AbortSignal): Promise<UnitKey>
+  /** Every live import record. */
+  imports(signal?: AbortSignal): Promise<SubstrateRecord[]>
   /** Every live record of `kinds` whose `origin` is `path`. */
   pointingAt(
     kinds: string[],
@@ -1109,6 +1123,15 @@ class Run {
 
   private async writing(): Promise<RunOutcome> {
     const plan = await this.loadPlan()
+    // Written only by the importer's version that read it: an older plan
+    // resumed would write back what a newer version corrected.
+    const now = knownVersion(plan.importer)
+    if (now !== undefined && plan.version !== now)
+      throw new Stop(
+        plan.version < now
+          ? "An older version of the app read its files, and how it reads them has changed since. Import the files again, then Undo this import."
+          : "A newer version of the app read its files. Reload the page to update the app, then resume it."
+      )
     this.counts = { ...NO_COUNTS }
     const keys = new Set(plan.records.map(keyOf))
     const maintained = maintainedByKind(plan.records)
@@ -1211,6 +1234,46 @@ class Run {
 
   // Undo.
 
+  /** Each record a plan of another import of this importer holds, by its
+   * path, to the latest such import still standing; read once per Undo.
+   * Undo hands such a record to it instead of deleting it, so undoing an
+   * earlier export keeps what a later one wrote over it. A plan that can no
+   * longer be read holds nothing. */
+  private holding?: Map<string, string>
+
+  private async holders(): Promise<Map<string, string>> {
+    if (this.holding) return this.holding
+    const latest = new Map<string, { path: string; at: string }>()
+    await this.guard()
+    const rows = await this.request((s) => this.store.imports(s))
+    for (const row of rows) {
+      const other = Import.read(row)
+      if (other.id === this.id || !other.plan) continue
+      if (other.importer !== this.imp?.importer) continue
+      if (!STANDING.has(other.status)) continue
+      let plan: StoredPlan
+      try {
+        await this.guard()
+        const digest = other.plan
+        plan = parsePlan(await this.request((s) => this.store.blob(digest, s)))
+      } catch (e) {
+        if (control(e)) throw e
+        continue
+      }
+      const path = `${KIND.import}/${other.id}`
+      // One still writing has no `importedAt`: the latest.
+      const at = other.importedAt ?? "\uffff"
+      for (const r of plan.records) {
+        if (r.mode !== "maintain" || r.namespace === OWN) continue
+        const key = recordPath(r)
+        const had = latest.get(key)
+        if (!had || at > had.at) latest.set(key, { path, at })
+      }
+    }
+    this.holding = new Map([...latest].map(([k, v]) => [k, v.path]))
+    return this.holding
+  }
+
   /** Where a record this import created goes instead of being deleted.
    * A live record another import or another writer created that points at
    * it through a cascading reference would be collected with it, so it is
@@ -1238,14 +1301,17 @@ class Run {
   /** A provider's record deleted where this import created it: read, and
    * deleted held to the version read only where its `origin` is this
    * import, so a record another import created and this one only updated
-   * is never deleted. One another's records hang from is handed over
-   * instead, held to the same version (`heir`). */
+   * is never deleted. One another import still standing also writes
+   * (`holders`), or another's records hang from (`heir`), is handed over
+   * instead, held to the same version. */
   private async deleteIfCreated(kind: string, id: string): Promise<void> {
     for (let n = 0; n < DECISIONS; n++) {
       await this.guard()
       const found = await this.read(kind, id)
       if (!found || !originIs(found, this.path)) return
-      const heir = await this.heir(kind, id)
+      const heir =
+        (await this.holders()).get(`${kind}/${id}`) ??
+        (await this.heir(kind, id))
       try {
         await this.request(async (s) => {
           if (heir === undefined)

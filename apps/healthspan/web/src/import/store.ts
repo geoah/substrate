@@ -13,6 +13,7 @@ import {
   unitSpellingKey,
   type UnitGraph,
 } from "../labs/units"
+import { KIND } from "../kinds"
 import { refPath } from "./records"
 import type { RunnerStore } from "./runner"
 
@@ -191,6 +192,7 @@ export function clientStore(client: SubstrateClient): RunnerStore {
         return unitSpellingKey
       }
     },
+    imports: (signal) => listFiltered(client, { kinds: [KIND.import] }, signal),
     pointingAt: async (kinds, path, signal) =>
       (await pointingAt(client, kinds, path, signal)).map((r) => ({
         kind: r.kind,

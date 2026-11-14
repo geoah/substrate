@@ -11,6 +11,7 @@ import type {
   RecordKey,
 } from "./importers/types"
 import { sha256 } from "./ids"
+import { knownVersion } from "./importers/versions"
 
 /** A document as the plan blob names it: no bytes. */
 export interface StoredDocument {
@@ -24,6 +25,9 @@ export interface StoredPlan {
   /** The shape's version. */
   v: 1
   importer: ImporterId
+  /** The version of the importer that read it: the runner writes it only
+   * by that version. */
+  version: number
   name: string
   source?: RecordKey
   records: PlannedRecord[]
@@ -43,6 +47,7 @@ export function storedPlan(plan: Plan): StoredPlan {
   const out: StoredPlan = {
     v: 1,
     importer: plan.importer,
+    version: knownVersion(plan.importer) ?? plan.version ?? 1,
     name: plan.name,
     records: plan.records,
     documents,
@@ -97,6 +102,7 @@ export function parsePlan(bytes: Uint8Array): StoredPlan {
   return {
     v: 1,
     importer: o.importer as ImporterId,
+    version: typeof o.version === "number" ? o.version : 1,
     name: typeof o.name === "string" ? o.name : "Import",
     source: isKey(o.source) ? o.source : undefined,
     records: o.records as PlannedRecord[],

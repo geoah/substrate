@@ -40,16 +40,10 @@ data:
       required: true
       description: the file's or the folder's name, or Entered by hand
     importer:
-      type: enum
-      description: which importer read it
-      values:
-        - csv
-        - manual
-        - numan
-        - randox
-        - dxa
-        - nhs
-        - mychart
+      type: string
+      description: which importer read it, one of the app's own (csv, manual,
+        numan, randox, dxa, nhs, mychart) or another's named under its authority
+        (example.com/thiva)
     status:
       type: state
       description: staging while its documents and plan go up; planned until

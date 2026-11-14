@@ -170,7 +170,7 @@ enough to resume on any device and to undo ([Importers](#importers)).
 | Property | Type | What |
 | --- | --- | --- |
 | `name` | string, required | the file's or the folder's name, or "Entered by hand" |
-| `importer` | enum `csv`, `manual`, `numan`, `randox`, `dxa`, `nhs`, `mychart` | which importer read it; a new importer is a new value |
+| `importer` | string | which importer read it: one of the app's own (`csv`, `manual`, `numan`, `randox`, `dxa`, `nhs`, `mychart`), or another's named under its authority (`example.com/thiva`), so an importer written in another repository keeps its imports under its own name with no new version of this package |
 | `status` | state | `staging` → `planned` → `importing` → `imported`; `importing` → `stopped` → `importing`; `staging`, `planned`, `importing`, `stopped`, `imported` → `undoing` → `undone`; `undone` → `undoing`, to clean up what landed late |
 | `runner` | object | the lease of the browser running it: a device id the browser minted, and `until`, a datetime |
 | `lab` | string | for a CSV or a hand entry: the lab's name as the file or the owner gave it, which names its source where none exists yet |
@@ -334,7 +334,12 @@ both win a transition.
   and class, taken as it is where present, whatever the owner renamed it
   to. Either way the import names it as `source`, and moves to
   `importing`.
-- **Writing** (in `importing`): the plan's records in its order (sources
+- **Writing** (in `importing`), only by the version of the importer that
+  read the plan, which the plan names (`version`; each of the app's
+  importers has one, raised whenever the same files would be read into
+  other records): a plan another version read stops as `stopped`, an older
+  one asking for the files to be imported again and the plan undone, a
+  newer one for the page to be reloaded. Then the plan's records in its order (sources
   and organizations, then each report and its results, then the clinical
   records, a record after every record it names), each a PUT at
   `ifVersion: 0` under its derived id. A 409 reads the row. For a CSV or a
@@ -363,7 +368,11 @@ both win a transition.
   names whose `origin` is this import (for a CSV or a hand entry, every
   report and result, its ids the import's own), each read first and
   deleted held to the version read, so a record another import created and
-  this one only updated is never deleted. Then everything that still points at the
+  this one only updated is never deleted. A record another import of the
+  same importer still standing (`importing`, `stopped` or `imported`) holds
+  in its plan is handed to the latest such import instead, as it is, held
+  to the version read, so undoing an earlier export keeps what a later one
+  wrote over it. Then everything that still points at the
   import through `origin` (listed for every kind the importer may create,
   so it is found when the plan cannot be read), each read again and held
   to its version in the same way, and the import moves to `undone`.
@@ -572,10 +581,11 @@ document's bytes are already up when the records are written (staging).
 
 **Undo** deletes what the import created, and only that ([The
 runner](#the-runner)): what it updated stays updated, and the screen says so
-before the owner confirms. Undoing an earlier import of a provider takes
-with it the records a later one only updated; importing that later export
-again writes them anew. A report a later import's results still name goes
-to that import instead, so its results stay.
+before the owner confirms. Undoing an earlier import of a provider hands
+the records a later one also writes to that import, as the later one wrote
+them, so they stay; a report a later import's results still name goes to
+that import too, so its results stay. Once the later one is undone, Undo
+of the earlier takes them.
 
 **The owner's existing records.** The owner's repository holds about 1,600
 records the scripts wrote, under their own ids and 143 metrics of the

@@ -5,6 +5,7 @@
 // the owner's do, and change nothing but the page.
 
 import { SubstrateError, type SubstrateRecord } from "@substrate/client"
+import { KIND } from "../kinds"
 import { refPath } from "./records"
 import type { RunnerStore } from "./runner"
 
@@ -169,6 +170,13 @@ export class MemoryStore implements RunnerStore {
       deletedAt: this.stamp(),
     })
     this.changed()
+  }
+
+  async imports(signal?: AbortSignal) {
+    await this.settle(signal)
+    return [...this.rows.values()].filter(
+      (r) => !r.deletedAt && r.kind === KIND.import
+    )
   }
 
   async pointingAt(kinds: string[], path: string, signal?: AbortSignal) {

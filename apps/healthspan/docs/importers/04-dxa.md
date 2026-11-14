@@ -280,11 +280,16 @@ under one key: the table's is kept, and where the two differ the plan says
 so. The results go through the shared [lab records](00-shared.md#lab-records):
 a value whose metric the repository lacks is left out with the reason.
 
-**The revision** of every report and result is the newest scan date of the
-import (of its printouts and transcribed pages) at midnight UTC, in seconds:
-a later scan's table can restate an earlier scan's figures, so adding a
-scan raises every DXA record's revision once, and an older set of files
-replayed after a newer one is stale.
+**The revision** of a scan's report and results is its date at midnight
+UTC, in seconds, plus how near what they are read from is to the scan:
+86,000 for its own printout, 85,000 for its own transcribed page, and for a
+scan only trend tables list, one for every day between it and the latest
+scan whose table lists it, at most 80,000. A later scan's table restates
+the figures of earlier scans, often differently once the scanner's
+software has changed, so a scan's own printout is never overwritten by
+another scan's table, whichever is imported first; a later table raises
+the scans only tables list; and an older set of files replayed after a
+newer one is stale where it differs.
 
 **Documents.** A report's printout or photo is stored as it is, under a
 neutral name, `DXA <kind> <date>.<ext>`, where the kind is `bone density`,

@@ -5,7 +5,7 @@ import {
   stringProp,
   type SubstrateRecord,
 } from "@substrate/react"
-import type { ImporterId } from "./import/importers/types"
+import type { BuiltinImporterId, ImporterId } from "./import/importers/types"
 
 /** Every kind the app names, in full: its own package's two, and the shared
  * ones it reads (and, for labs and sources, writes). */
@@ -133,10 +133,11 @@ export type ImportStatus =
   | "undoing"
   | "undone"
 
-export type { ImporterId }
+export type { BuiltinImporterId, ImporterId }
 
-/** `import.yaml`'s `importer` values: every importer's id. */
-export const IMPORTER_IDS: readonly ImporterId[] = [
+/** The importers this app ships, as `import.yaml`'s `importer` names
+ * them; another's is any other id. */
+export const BUILTIN_IMPORTERS: readonly BuiltinImporterId[] = [
   "csv",
   "manual",
   "numan",
@@ -269,7 +270,7 @@ export const Import = defineKind(KIND.import, {
       id: r.id,
       version: r.version,
       name: stringProp(r, "name") ?? "Import",
-      importer: IMPORTER_IDS.find((i) => i === importer),
+      importer: importer || undefined,
       status: STATUSES.find((s) => s === status) ?? "staging",
       runner:
         runner && typeof runner === "object"

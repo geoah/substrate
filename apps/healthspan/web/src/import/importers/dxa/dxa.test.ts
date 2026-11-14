@@ -20,6 +20,7 @@ import {
 } from "../testing"
 import type { Context, ImportError, Input, Plan } from "../types"
 import { centreKey, dxa } from "."
+import { revisionOf } from "./plan"
 import { words } from "./layout"
 import { decimal, grams, printedClock, printedDate } from "./printout"
 import {
@@ -279,9 +280,13 @@ describe("one scan's printouts", () => {
     })
     const rec = plannedRecord(p, KINDS.labreport, "2024-07-15", NS)!
     expect(rec.createOnly).toEqual(["review"])
-    expect(rec.revision).toBe(epoch("2024-07-15T00:00:00Z"))
+    // Read from the scan's own printout: past any trend table's revision of
+    // the same date.
+    expect(rec.revision).toBe(epoch("2024-07-15T00:00:00Z")! + 86_000)
     expect(
-      p.records.every((x) => x.mode === "create" || x.revision === rec.revision)
+      p.records
+        .filter((x) => x.key.startsWith("2024-07-15"))
+        .every((x) => x.revision === rec.revision)
     ).toBe(true)
   })
 
@@ -551,12 +556,19 @@ describe("the trend merge", () => {
       name: "DXA trend photo 2026-03-05.jpg",
       mediaType: "image/jpeg",
     })
-    const newest = epoch("2026-03-05T00:00:00Z")
-    expect(
-      p.records
-        .filter((r) => r.mode !== "create")
-        .every((r) => r.revision === newest)
-    ).toBe(true)
+    // Each scan's records at its own revision: its printout's above its
+    // page's, either above a trend table's, the latest table's above an
+    // earlier one's.
+    const rev = (key: string) =>
+      plannedRecord(p, KINDS.labreport, key, NS)!.revision
+    expect(rev("2024-07-15")).toBe(revisionOf("2024-07-15", "printout"))
+    expect(rev("2026-03-05")).toBe(revisionOf("2026-03-05", "page"))
+    expect(rev("2025-11-12")).toBe(
+      revisionOf("2025-11-12", "trend", "2026-03-05")
+    )
+    for (const r of p.records)
+      if (r.kind === KINDS.labresult)
+        expect(r.revision).toBe(rev(r.key.slice(0, 10)))
     expect(
       p.records.filter((r) => r.kind === KINDS.labreport).map((r) => r.key)
     ).toEqual([

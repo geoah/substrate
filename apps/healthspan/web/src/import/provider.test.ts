@@ -3,6 +3,7 @@ import { Import, KIND, type ImportRecord } from "../kinds"
 import { Server, VirtualClock, browser, urlOf } from "./harness"
 import { derivedMintedId, recordId } from "./ids"
 import type { Plan, PlannedRecord, RecordKey } from "./importers/types"
+import { IMPORTER_VERSIONS } from "./importers/versions"
 import { LEASE_MS } from "./runner"
 
 // A provider's plans, written by hand in the shape the importers make:
@@ -523,6 +524,8 @@ describe("Undo of a provider's imports", () => {
     reportRecord("T1", 100),
     resultRecord("T1/a", "T1", "1", 100),
     resultRecord("T1/b", "T1", "2", 100),
+    // Only the earlier export has it.
+    resultRecord("T1/d", "T1", "4", 100),
   ])
   const second = plan([
     orgRecord(200, {
@@ -557,29 +560,58 @@ describe("Undo of a provider's imports", () => {
     })
     expect(live(report("T1"))?.properties.status).toBe("amended")
     expect(live(result("T1/a"))).toBeDefined()
+    expect(live(result("T1/d"))?.properties.origin).toBe(originOf(A))
     expect(live(SOURCE)).toBeDefined()
     expect(live(ORG)).toBeDefined()
   })
 
-  it("of the earlier takes what it created, the later's updates with them, and never the later's own, a source or an organization", async () => {
+  it("of the earlier hands what the later also writes to the later, as the later wrote it, and takes only what no other import writes", async () => {
     expect(await browser(server, "a").undo(A)).toEqual({
       state: "undone",
       remaining: 0,
     })
-    expect(live(result("T1/a"))).toBeUndefined()
-    expect(live(result("T1/b"))).toBeUndefined()
-    expect(live(result("T1/c"))?.properties.origin).toBe(originOf(B))
+    expect(live(result("T1/d"))).toBeUndefined()
+    for (const k of ["T1/a", "T1/b", "T1/c"])
+      expect(live(result(k))?.properties.origin).toBe(originOf(B))
+    expect(live(result("T1/b"))?.properties.value).toEqual({
+      value: "2.5",
+      unit: "ug/L",
+    })
+    expect(live(report("T1"))?.properties.status).toBe("amended")
     expect(live(SOURCE)).toBeDefined()
     expect(live(ORG)?.properties.address).toEqual({ city: "Leeds" })
-    // Each delete was held to the version read.
-    const deletes = server.fake.requests.filter(
-      (r) => r.method === "DELETE" && r.path.includes("/labresult/")
+    // The delete and each hand-over held to the version read.
+    const writes = server.fake.requests.filter(
+      (r) =>
+        (r.method === "DELETE" || r.method === "PATCH") &&
+        r.path.includes("/labresult/")
     )
-    expect(deletes.length).toBeGreaterThan(0)
-    expect(deletes.every((r) => r.query.get("ifVersion"))).toBe(true)
+    expect(writes.map((r) => r.method).sort()).toEqual([
+      "DELETE",
+      "PATCH",
+      "PATCH",
+    ])
+    expect(
+      writes.every((r) =>
+        r.method === "DELETE"
+          ? r.query.get("ifVersion")
+          : (r.body as { ifVersion?: number }).ifVersion
+      )
+    ).toBe(true)
   })
 
-  it("of the earlier hands a report the later's results still name to the later, so the collector leaves them; the later's Undo then takes both", async () => {
+  it("of the earlier after the later's Undo takes what it created: an undone import holds nothing", async () => {
+    await browser(server, "a").undo(B)
+    expect(await browser(server, "a").undo(A)).toEqual({
+      state: "undone",
+      remaining: 0,
+    })
+    for (const k of ["T1/a", "T1/b", "T1/c", "T1/d"])
+      expect(live(result(k))).toBeUndefined()
+    expect(live(report("T1"))).toBeUndefined()
+  })
+
+  it("of the earlier hands the report to the later, so the collector leaves the later's results; the later's Undo then takes both", async () => {
     await browser(server, "a").undo(A)
     // Deleted, the report would take T1/c with it when collected.
     expect(live(report("T1"))?.properties.origin).toBe(originOf(B))
@@ -656,5 +688,37 @@ describe("Undo with no plan to read", () => {
     // Its report goes to the same import rather than taking it along.
     expect(live(report("T1"))?.properties.origin).toBe(originOf(B))
     expect(live(condition)).toBeUndefined()
+  })
+})
+
+describe("a plan another version of its importer read", () => {
+  const versions = IMPORTER_VERSIONS as Record<string, number>
+
+  it("stops instead of writing, and is undone as any other", async () => {
+    const one = browser(server, "a")
+    expect(
+      await one.stage({ id: A, plan: plan([reportRecord("T1", 100)]) })
+    ).toEqual({ state: "planned" })
+    versions.nhs += 1
+    try {
+      expect(await one.resume(A)).toMatchObject({ state: "stopped" })
+      expect(imp(A).problem).toMatch(/older version of the app/)
+      expect(live(report("T1"))).toBeUndefined()
+      expect(await one.undo(A)).toEqual({ state: "undone", remaining: 0 })
+    } finally {
+      versions.nhs -= 1
+    }
+  })
+
+  it("from a newer app asks for a reload", async () => {
+    const one = browser(server, "a")
+    await one.stage({ id: A, plan: plan([reportRecord("T1", 100)]) })
+    versions.nhs -= 1
+    try {
+      expect(await one.resume(A)).toMatchObject({ state: "stopped" })
+      expect(imp(A).problem).toMatch(/Reload the page/)
+    } finally {
+      versions.nhs += 1
+    }
   })
 })

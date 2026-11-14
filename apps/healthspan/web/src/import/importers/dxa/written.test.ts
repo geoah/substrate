@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { KIND } from "../../../kinds"
+import { KIND, type ImportCounts } from "../../../kinds"
 import { Server, VirtualClock, browser } from "../../harness"
 import { recordId } from "../../ids"
 import { fakeContext, inputFromRecord } from "../testing"
@@ -10,8 +10,9 @@ import { dxa } from "."
 
 // The invented scans' plans written by the one runner into the fake
 // substrate: created once, unchanged on a second import of the same files;
-// a later scan raises every record's revision once; the earlier files
-// replayed after it change nothing.
+// a later scan's trend table raises the scans only tables list, never a
+// scan its own printout wrote, whichever is imported first; the earlier
+// files replayed after it change nothing.
 
 const IDS = [
   "0194a1b2-0000-7000-8000-0000000000a1",
@@ -71,7 +72,7 @@ describe("the invented scans, written", () => {
     })
   })
 
-  it("raise every record's revision once for a later scan, and an older set replayed changes nothing", async () => {
+  it("raise the scans only tables list for a later scan, and an older set replayed changes nothing", async () => {
     const older = inputFromRecord("scans", scanC())
     const first = await importFiles(IDS[0], older)
     const later = inputFromRecord("all", { ...scanC(), ...transcribedPage() })
@@ -89,14 +90,17 @@ describe("the invented scans, written", () => {
     )
     expect(restated.length).toBeGreaterThan(0)
     expect(restated.every((r) => r.key.startsWith("2023-10-03"))).toBe(true)
-    // Every record of the first set the later one names: its revision
-    // raised, its content where restated; the rest created.
+    // Every record of the first set the later one names: a scan only
+    // tables list raised, its content where restated; scan C's, read from
+    // its printout both times, unchanged; the rest created.
+    const own = both.filter((r) => r.key.startsWith("2024-07-15"))
+    expect(own.length).toBeGreaterThan(0)
     expect(second.outcome).toMatchObject({
       state: "imported",
       counts: {
         created: second.plan.records.length - both.length - 1,
-        updated: both.length,
-        unchanged: 1,
+        updated: both.length - own.length,
+        unchanged: 1 + own.length,
         stale: 0,
       },
     })
@@ -112,5 +116,43 @@ describe("the invented scans, written", () => {
         stale: restated.length,
       },
     })
+  })
+
+  it("keep a scan's own printout over a later scan's trend table imported alone, either way round", async () => {
+    const ns = "dxa/invented-imaging-centre"
+    const reportId = recordId({
+      kind: KIND.labreport,
+      namespace: ns,
+      key: "2024-07-15",
+    })
+    const fatId = recordId({
+      kind: KIND.labresult,
+      namespace: ns,
+      key: "2024-07-15/fat_mass",
+    })
+    const original = inputFromRecord("scans", scanC())
+    await importFiles(IDS[0], original)
+    const report = server.live(KIND.labreport, reportId)!.properties
+    const fat = server.live(KIND.labresult, fatId)!.properties
+    // The later scan's page alone restates scan C, with other figures, a
+    // date for its accession and noon for its time: stale against its
+    // printout.
+    const page = await importFiles(
+      IDS[1],
+      inputFromRecord("page", transcribedPage())
+    )
+    expect(page.outcome).toMatchObject({ state: "imported" })
+    const counts = (page.outcome as { counts: ImportCounts }).counts
+    expect(counts.stale).toBeGreaterThan(0)
+    expect(server.live(KIND.labreport, reportId)!.properties).toEqual(report)
+    expect(server.live(KIND.labresult, fatId)!.properties).toEqual(fat)
+    // The printout again: nothing of its scan changes.
+    const again = await importFiles(IDS[2], original)
+    expect(again.outcome).toMatchObject({
+      state: "imported",
+      counts: { updated: 0 },
+    })
+    expect(server.live(KIND.labreport, reportId)!.properties).toEqual(report)
+    expect(server.live(KIND.labresult, fatId)!.properties).toEqual(fat)
   })
 })

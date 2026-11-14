@@ -8,10 +8,10 @@ import { Badge } from "../Badge"
 import { ImportActionsBar } from "../sources/ImportItem"
 import { PlanPreview } from "./PlanPreview"
 import {
-  IMPORTER_WORDS,
   STATUS,
   countsWords,
   createdWords,
+  importerWords,
   runWords,
 } from "./words"
 
@@ -48,7 +48,7 @@ export function ImportDetail(props: { imp: ImportRecord }) {
           value={<Badge label={status.word} tone={status.tone} />}
         />
         {imp.importer && (
-          <Row label="How" value={IMPORTER_WORDS[imp.importer]} />
+          <Row label="How" value={importerWords(imp.importer)} />
         )}
         {source && <Row label={imp.lab ? "Lab" : "Source"} value={source} />}
         {imp.status === "staging" && (

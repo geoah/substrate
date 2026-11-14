@@ -52,12 +52,16 @@ const CLINICAL_KINDS: readonly string[] = [
   "communication",
 ].map((k) => `substrate.reamde.dev/clinical/${k}`)
 
+/** The app's own importers that write lab records alone. */
+const LAB_ONLY = new Set(["csv", "manual", "numan", "randox", "dxa"])
+
 /** The kinds whose records may point at an import of an importer through
- * `origin`: what it may create. A source and an organization carry none. */
+ * `origin`: what it may create, every kind the app writes for an importer
+ * not its own. A source and an organization carry none. */
 export function originKinds(importer: string | undefined): string[] {
-  return importer === "nhs" || importer === "mychart"
-    ? [...LAB_KINDS, ...CLINICAL_KINDS]
-    : [...LAB_KINDS]
+  return importer && LAB_ONLY.has(importer)
+    ? [...LAB_KINDS]
+    : [...LAB_KINDS, ...CLINICAL_KINDS]
 }
 
 /** A reference as served (`{ref}`) or written (the path). */

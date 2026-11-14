@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
-  IMPORTER_IDS,
+  BUILTIN_IMPORTERS,
   Import,
   Profile,
   type ImportDraft,
@@ -116,8 +116,18 @@ describe("the package's kinds", () => {
     )
   })
 
-  it("names import.yaml's importers and states, in its order", () => {
-    expect(listed("import.yaml", "importer", "values")).toEqual(IMPORTER_IDS)
+  it("keeps import.yaml's importer open, naming the app's own, and its states in order", () => {
+    // Any importer's id, another repository's too: a string, its
+    // description naming the app's own.
+    const yaml = readFileSync(
+      new URL("../../package/import.yaml", import.meta.url),
+      "utf8"
+    )
+    expect(yaml).toMatch(/^ {4}importer:\n {6}type: string$/m)
+    const importer = /^ {4}importer:\n(?: {6,}\S.*\n)+/m
+      .exec(yaml)![0]
+      .replace(/\s+/g, " ")
+    expect(importer).toContain(`(${BUILTIN_IMPORTERS.join(", ")})`)
     const states: ImportStatus[] = [
       "staging",
       "planned",

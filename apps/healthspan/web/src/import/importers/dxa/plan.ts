@@ -259,12 +259,47 @@ class Merge {
     return out
   }
 
+  /** The latest scan whose table gives a figure of `day`. */
+  latest(day: Day): Day | undefined {
+    let out: Day | undefined
+    for (const f of this.figures.get(day)?.values() ?? [])
+      if (out === undefined || f.scan > out) out = f.scan
+    return out
+  }
+
   /** The document a scan known only from trend tables is attached to: a
    * printout listing it before a photo, the latest scan's first, its trend
    * printout before its bone density printout. */
   source(day: Day): Source | undefined {
     return this.sources.get(day)?.source
   }
+}
+
+/** What a scan's records are read from: its own printout, its own page
+ * transcribed, or only the trend tables of later scans. */
+type Evidence = "printout" | "page" | "trend"
+
+const DAY_SECONDS = 86_400
+/** The seconds past a scan's date its records' revision takes, by what
+ * they are read from; a trend table's take one for every day between the
+ * scan and the latest scan whose table lists it, up to `TREND`. */
+const PAST_MIDNIGHT: Record<Exclude<Evidence, "trend">, number> = {
+  printout: 86_000,
+  page: 85_000,
+}
+const TREND = 80_000
+
+/** A scan's records' revision: its date at midnight UTC, in seconds, then
+ * how near what they are read from is to the scan. Its own printout wins
+ * over its own transcribed page, either over a later scan's trend table,
+ * and a later scan's table over an earlier one's, whichever is imported
+ * first: an import of a later scan's trend table alone never overwrites
+ * what the scan's own printout wrote. */
+export function revisionOf(day: Day, from: Evidence, latest?: Day): number {
+  const midnight = epoch(`${day}T00:00:00Z`)!
+  if (from !== "trend") return midnight + PAST_MIDNIGHT[from]
+  const later = latest ? epoch(`${latest}T00:00:00Z`)! - midnight : 0
+  return midnight + Math.min(TREND, Math.max(1, later / DAY_SECONDS))
 }
 
 function row(
@@ -355,18 +390,10 @@ export function dxaPlan(
       })
   }
 
-  // Every record's revision: the newest scan any printout or page is of
-  // (a later scan's trend table can restate an earlier scan's figures).
-  const scanDays = [
-    ...scans.map((s) => s.day),
-    ...read.transcriptions.map((t) => t.day),
-  ].sort()
-  const newest = scanDays[scanDays.length - 1]
-  const revision = newest ? epoch(`${newest}T00:00:00Z`)! : 0
-
   const source: RecordKey = sourceKey(answers.namespace)
   const report = (
     day: Day,
+    from: Evidence,
     r: Omit<LabReportInput, "namespace" | "key" | "source" | "lab" | "revision">
   ): LabReportInput => ({
     namespace: answers.namespace,
@@ -375,7 +402,7 @@ export function dxaPlan(
     lab: answers.centre,
     status: "final",
     orderedAt: null,
-    revision,
+    revision: revisionOf(day, from, merge.latest(day)),
     review: true,
     ...r,
   })
@@ -434,7 +461,7 @@ export function dxaPlan(
         })
       )
     planned.set(scan.day, {
-      report: report(scan.day, {
+      report: report(scan.day, "printout", {
         accession: accession ?? null,
         at: at(first.measured),
         issuedAt: analyzed ? at(analyzed) : null,
@@ -456,7 +483,7 @@ export function dxaPlan(
   for (const t of read.transcriptions) {
     if (planned.has(t.day)) continue
     planned.set(t.day, {
-      report: report(t.day, {
+      report: report(t.day, "page", {
         accession: t.accession,
         at: at(t.measured),
         issuedAt: at(t.analyzed),
@@ -475,7 +502,7 @@ export function dxaPlan(
     if (planned.has(day)) continue
     const [y, m, d] = day.split("-").map(Number)
     planned.set(day, {
-      report: report(day, {
+      report: report(day, "trend", {
         accession: day,
         at: at(wallClock(y, m, d, 12)!),
         issuedAt: null,

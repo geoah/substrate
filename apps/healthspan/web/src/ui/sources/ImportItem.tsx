@@ -9,10 +9,10 @@ import { routeHash } from "../../route"
 import { Badge } from "../Badge"
 import { TextButton } from "../IconButton"
 import {
-  IMPORTER_WORDS,
   STATUS,
   countsWords,
   createdWords,
+  importerWords,
   runWords,
 } from "../import/words"
 
@@ -80,7 +80,7 @@ export function ImportActionsBar(props: { imp: ImportRecord }) {
             ? `${createdWords(created)} still point at this import, written after it was undone. They are deleted from your repository.`
             : own
               ? "Every report and result it wrote is deleted from your repository. A write still in flight is waited for first."
-              : "Every record it created is deleted from your repository. What it only updated stays as it updated it, and a source or a care provider is never deleted. A write still in flight is waited for first."
+              : "Every record it created is deleted from your repository, except one another import also wrote, which stays as it is. What it only updated stays as it updated it, and a source or a care provider is never deleted. A write still in flight is waited for first."
         }
         confirm={undoLabel}
         onCancel={() => setAsking(null)}
@@ -131,14 +131,14 @@ export function ImportItem(props: { imp: ImportRecord; sourceName?: string }) {
           <span className="text-[17px] break-words">{imp.name}</span>
           <span className="text-[15px] break-words text-secondary">
             {[
-              imp.importer && IMPORTER_WORDS[imp.importer] !== imp.name
-                ? IMPORTER_WORDS[imp.importer]
+              imp.importer && importerWords(imp.importer) !== imp.name
+                ? importerWords(imp.importer)
                 : undefined,
               // "From Randox" says its source already.
               props.sourceName &&
               !(
                 imp.importer &&
-                IMPORTER_WORDS[imp.importer].endsWith(` ${props.sourceName}`)
+                importerWords(imp.importer).endsWith(` ${props.sourceName}`)
               )
                 ? props.sourceName
                 : undefined,

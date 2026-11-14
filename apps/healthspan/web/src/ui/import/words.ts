@@ -1,7 +1,12 @@
 // How an import's state, its importer, a run's progress, a run's end and a
 // run's counts read on the page.
 
-import type { ImportCounts, ImportStatus, ImporterId } from "../../kinds"
+import type {
+  BuiltinImporterId,
+  ImportCounts,
+  ImportStatus,
+  ImporterId,
+} from "../../kinds"
 import type { RunState } from "../../import/registry"
 import type { Tone } from "../tone"
 
@@ -17,7 +22,7 @@ export const STATUS: Record<ImportStatus, { word: string; tone: Tone }> = {
 
 /** What each importer is called on Sources and an import's page, without
  * loading it. */
-export const IMPORTER_WORDS: Record<ImporterId, string> = {
+export const IMPORTER_WORDS: Record<BuiltinImporterId, string> = {
   csv: "From a CSV file",
   manual: "Entered by hand",
   numan: "From a Numan export",
@@ -25,6 +30,11 @@ export const IMPORTER_WORDS: Record<ImporterId, string> = {
   dxa: "From DXA scans",
   nhs: "From the NHS App",
   mychart: "From MyChart",
+}
+
+/** An importer's words: the app's own, else another's by its id. */
+export function importerWords(id: ImporterId): string {
+  return (IMPORTER_WORDS as Record<string, string>)[id] ?? `From ${id}`
 }
 
 const KIND_WORDS: Record<string, [string, string]> = {

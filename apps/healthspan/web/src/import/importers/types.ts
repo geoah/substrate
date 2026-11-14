@@ -7,8 +7,15 @@ import type { Effect } from "effect"
 import type { MetricRecord } from "../../catalogue/types"
 import type { UnitGraph } from "../../labs/units"
 
-export type ImporterId =
+/** The importers this app ships. */
+export type BuiltinImporterId =
   "csv" | "manual" | "numan" | "randox" | "dxa" | "nhs" | "mychart"
+
+/** An importer's id, as the import record keeps it: one of the app's own,
+ * or another's named under its authority (`example.com/thiva`), so an
+ * importer written in another repository keeps its imports under its own
+ * name, resumed and undone from their plans alone. */
+export type ImporterId = BuiltinImporterId | (string & {})
 
 /** One file the owner handed in: a picked file, or one file of a picked
  * folder or zip, by its path inside it (`items/visit/12.json`). */
@@ -148,6 +155,9 @@ export interface LeftOut {
  * every record it names), the documents they name, and what it left out. */
 export interface Plan {
   importer: ImporterId
+  /** The version of the importer that read it, for an importer not the
+   * app's own; the app's own are versioned by `IMPORTER_VERSIONS`. */
+  version?: number
   /** The import's name: the file's, the folder's, the zip's. */
   name: string
   /** The provider's own source, which the import names as `source`; its

@@ -2,12 +2,12 @@
 // that needs it, so a provider's parsers (and a PDF reader) load only
 // when they are used.
 
-import type { Importer, ImporterId } from "./types"
+import type { BuiltinImporterId, Importer } from "./types"
 
-export type { Importer, ImporterId } from "./types"
+export type { BuiltinImporterId, Importer, ImporterId } from "./types"
 
 export const IMPORTERS: Readonly<
-  Record<Exclude<ImporterId, "csv" | "manual">, () => Promise<Importer>>
+  Record<Exclude<BuiltinImporterId, "csv" | "manual">, () => Promise<Importer>>
 > = {
   numan: () => import("./numan").then((m) => m.numan),
   randox: () => import("./randox").then((m) => m.randox),

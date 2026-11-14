@@ -70,13 +70,14 @@ this app's, kept on its profile.
 
 ## Its access
 
-The approval asks for three packages (`healthspan` 1, `health` 3, `labs` 2)
-and these scopes: its own package to write; lab reports and results to
-write (imports and hand entries), the rest of `labs` to read; sources and
-source links to write (ranks and devices), the rest of `observations` to
-read; `health` and `clinical` to read; your contact and the settings to
-read. `app.json` names them, and `web/src/manifest.ts` is held to it by a
-test.
+The approval asks for four packages (`healthspan` 1, `health` 3, `labs` 2,
+`clinical` 1) and these scopes: its own package to write; lab reports and
+results to write (imports and hand entries), the rest of `labs` to read;
+sources and source links to write (ranks and devices), the rest of
+`observations` to read; `health` to read; `clinical` to write (the NHS App
+and MyChart imports write your patient record); your contact and the
+settings to read. `app.json` names them, and `web/src/manifest.ts` is held
+to it by a test.
 
 ## Run it
 
