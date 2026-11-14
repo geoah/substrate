@@ -942,8 +942,8 @@ is never sent again on its own. A chat whose last turn was stopped, ran out
 of a limit or failed says so in a card at that turn, in one sentence with
 one button: Try Again or Continue runs the thread again through
 `…/llm/thread/{id}/continue`, which writes no message, and on a server
-older than that route sends "Continue where you left off." as the owner's
-own message. Every failure is drawn by one component in one of three
+whose `agents` feature is older than that route (below revision 3) sends
+"Continue where you left off." as the owner's own message. Every failure is drawn by one component in one of three
 places, never an alert ([its design](chat/DESIGN.md#failures)).
 
 **Signing in** is the substrate's app authorization, through

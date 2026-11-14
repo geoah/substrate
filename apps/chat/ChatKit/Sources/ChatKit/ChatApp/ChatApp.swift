@@ -259,6 +259,7 @@ public struct ChatApp: LinkedApp {
         switch effect.ask {
         case .openDisk: "disk"
         case .refresh: "refresh"
+        case .readFeatures: "features"
         case .cards: "cards"
         case .openings: "openings"
         case let .read(thread, _, _, _): "read:\(thread)"
@@ -306,7 +307,7 @@ public struct ChatApp: LinkedApp {
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
-                continues: !state.continueUnserved)
+                continues: state.continues)
         }
         return out
     }

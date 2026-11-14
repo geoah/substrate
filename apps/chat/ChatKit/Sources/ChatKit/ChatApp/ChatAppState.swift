@@ -137,9 +137,20 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var renameFailure: Rename?
     /// A chat's rows could not be read when it was opened, by thread.
     var rowsFailed: [String: Failure] = [:]
-    /// The server answered that it does not serve the continue route:
-    /// remembered while this session lasts, so no later Continue asks.
+    /// The `agents` feature's revision, from the server's discovery
+    /// document; nil until it is read, when the chat calls nothing a
+    /// revision added.
+    var agentsRevision: Int?
+    /// The server said it serves the continue route and then answered that
+    /// it does not: believed until the document is read again.
     var continueUnserved = false
+
+    /// The `agents` revision that has the continue route.
+    static let continueRevision = 3
+    /// Try Again and Continue may call the continue route. Asked of the
+    /// server's document, never found out by calling: an older server
+    /// answers 404, and then they go on as before the route.
+    var continues: Bool { (agentsRevision ?? 0) >= Self.continueRevision && !continueUnserved }
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]

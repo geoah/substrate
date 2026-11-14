@@ -65,7 +65,7 @@ struct FailureWordsTests {
         #expect(FailureFallback.cause(status: "overbudget", reason: "max tool calls reached (32)") == .toolCallLimit)
         #expect(FailureFallback.cause(status: "overbudget", reason: "deadline exceeded after a last turn") == .deadline)
         #expect(FailureFallback.cause(status: "stopped", reason: "stopped: the server shut down during the turn") == .shutdown)
-        #expect(FailureFallback.cause(status: "stopped", reason: "stopped by api") == .owner)
+        #expect(FailureFallback.cause(status: "stopped", reason: "stopped by api") == .requested)
         #expect(FailureFallback.cause(status: "ok", reason: "401 Unauthorized") == nil)
     }
 

@@ -86,12 +86,13 @@ public enum FailureFixtures {
             let status =
                 switch cause {
                 case .turnLimit, .toolCallLimit, .deadline: "overbudget"
-                case .owner, .shutdown: "stopped"
+                case .requested, .shutdown: "stopped"
                 default: "error"
                 }
             return FailurePresenter.present(
                 Failure(.reply, .run(status: status, cause: cause.rawValue), retryAfter: cause == .providerRateLimited ? 20 : nil, at: now), context)
         }
+        out.append(FailurePresenter.present(Failure(.send, .http(status: 422, code: "validation", reason: "provider_key_missing")), context))
         out.append(FailurePresenter.present(Failure(.send, .http(status: 403, code: "guard", reason: "spend_cap")), context))
         out.append(FailurePresenter.present(Failure(.reply, .cut("length")), context))
         out.append(FailurePresenter.present(Failure(.send, .offline), context))

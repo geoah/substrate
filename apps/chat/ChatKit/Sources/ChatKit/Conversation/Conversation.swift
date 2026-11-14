@@ -34,8 +34,9 @@ public struct Conversation: Controller, Equatable {
         case choose(agent: String)
         case send
         /// Try Again and Continue: runs the thread again with no new
-        /// message, and leaves the draft alone. A server without the
-        /// continue route gets `continueMessage` as the owner's own.
+        /// message, and leaves the draft alone. A server whose `agents`
+        /// feature is older than the continue route gets `continueMessage`
+        /// as the owner's own.
         case continueTurn
         case stop
         case retryReload
@@ -132,7 +133,8 @@ public struct Conversation: Controller, Equatable {
     let resumeNudge: Int
     /// The continued processing the app asked for while this one streams.
     let continuing: String?
-    /// The server serves the continue route, as far as this session knows.
+    /// The server serves the continue route: its `agents` feature is at
+    /// the revision that has it.
     let continues: Bool
 
     struct Seed: Codable, Hashable, Sendable {
@@ -144,7 +146,7 @@ public struct Conversation: Controller, Equatable {
 
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = true
+        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false
     ) {
         self.key = key
         self.seed = seed

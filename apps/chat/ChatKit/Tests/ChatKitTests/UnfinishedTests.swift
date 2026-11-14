@@ -75,7 +75,7 @@ struct UnfinishedTurns {
         let rig = ChatRig(
             routes("stopped", "stopped: the server shut down during the turn")
                 + [.init(method: "POST", path: "/continue", answer: .stream(replyStream, holdAfter: 2))])
-        try await rig.signIn()
+        try await rig.signIn(agents: 3)
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }

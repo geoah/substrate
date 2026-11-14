@@ -133,8 +133,8 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// tried again on its own for this failure: once, never in a loop.
     var armed: Date?
     var autoRetried = false
-    /// The server told this conversation it does not serve the continue
-    /// route: the list remembers it for the session.
+    /// The server answered that it does not serve the continue route its
+    /// document said it has: the list is told.
     var continueUnserved = false
     var deleted = false
     /// Moved when a run settles, for the view's haptic and announcement.

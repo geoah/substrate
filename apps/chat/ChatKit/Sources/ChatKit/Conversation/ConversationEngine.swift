@@ -413,13 +413,15 @@ extension Conversation {
         }
     }
 
-    /// A continue that ended before the server said anything. A server
-    /// without the route answers 404 or 405: what Continue did before the
-    /// route is done instead, and the list is told, so no later Continue
-    /// pays for the answer again. A busy thread is attached to. Anything
-    /// else is the turn's failure now, in the place of the one whose button
-    /// was pressed; where the request may have reached the server, an
-    /// attach reads whether a turn runs first.
+    /// A continue that ended before the server said anything. The route is
+    /// called only where the server's document says it is served, so a 404
+    /// or a 405 for it is a server that went back since: what Continue did
+    /// before the route is done instead, and the list is told, so the next
+    /// one does not ask until the document is read again. A thread that is
+    /// busy, or that has nothing to continue, is read for what it holds.
+    /// Anything else is the turn's failure now, in the place of the one
+    /// whose button was pressed; where the request may have reached the
+    /// server, an attach reads whether a turn runs first.
     private func resumeEnded(_ state: inout State, _ run: State.Send, failure: Failure?, outcome: UUID) {
         guard let failure else { return reattach(&state, attempt: 0) }
         state.failure = failure

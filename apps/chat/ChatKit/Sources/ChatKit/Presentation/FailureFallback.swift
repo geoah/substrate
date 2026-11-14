@@ -36,7 +36,7 @@ enum FailureFallback {
             if line.hasPrefix("max tool calls reached") { return .toolCallLimit }
             return nil
         case "stopped":
-            return line == shutdownReason ? .shutdown : .owner
+            return line == shutdownReason ? .shutdown : .requested
         default:
             return nil
         }

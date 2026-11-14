@@ -58,6 +58,15 @@ func baseRoutes(threads: String = emptyPage, threadVersion: Int = 3, status: Str
     ]
 }
 
+/// The server's discovery document, saying how far its `agents` feature has
+/// grown: 3 has the continue route. Without this route the document is not
+/// read, and the chat calls nothing a revision added.
+func featuresRoute(agents revision: Int) -> ChatServer.Route {
+    .init(
+        method: "GET", path: "/.well-known/substrate/server.json",
+        answer: .json(200, #"{"server":{"version":"dev"},"features":[{"name":"agents","stability":"experimental","revision":\#(revision)}]}"#))
+}
+
 /// Chat's list on a runtime of its own, as the link runs it, against a
 /// scripted server, a folder of its own, fake notifications and fake
 /// background work.
@@ -100,6 +109,13 @@ struct ChatRig {
             let state = await harness.state
             return state.loaded && !state.refreshing
         }
+    }
+
+    /// Signed in, with the server's features read.
+    func signIn(agents revision: Int) async throws {
+        server.route("GET", "/.well-known/substrate/server.json", featuresRoute(agents: revision).answer)
+        try await signIn()
+        try await harness.until { harness in await harness.state.agentsRevision == revision }
     }
 
     func signOut() async {
