@@ -35,6 +35,7 @@ var seededNoControl = map[string]string{
 	"substrate.reamde.dev/llm/memory":               "the owner's standing facts for their agents: text a prompt reads, which grants nothing (decision 0231)",
 	"substrate.reamde.dev/llm/message":              "one turn of an agent thread's transcript",
 	"substrate.reamde.dev/llm/thread":               "one agent invocation's conversation state",
+	"substrate.reamde.dev/llm/threadmark":           "how far one person has read one thread: what a chat list shows as unread, which grants nothing (decision 0313)",
 	"substrate.reamde.dev/observations/metric":      "the owner's data: something that can be measured (decision 0192)",
 	"substrate.reamde.dev/observations/observation": "the owner's data: one measured value (decision 0192)",
 	"substrate.reamde.dev/observations/source":      "the owner's data: a device, app or service that produces measured values (decision 0192)",
