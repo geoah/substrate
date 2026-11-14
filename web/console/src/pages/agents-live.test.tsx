@@ -4,7 +4,7 @@
  * own head, so a chat that settles between the list read and the stream
  * opening loses the mark too, and so does one that settles while the page
  * recovers from a head the server no longer holds. It recovers once: a
- * refusal of the stream it opened again ends the watch. Nothing is watched
+ * refusal of the stream it opened again ends the watch. No chat is watched
  * when none runs. The watch is the real hook over a fake server, not a
  * stand-in. */
 
@@ -129,6 +129,27 @@ function watchStream(from: number | null, signal: AbortSignal): Response {
   })
 }
 
+/** A stream that answers its bookmark and then says nothing until the
+ * client stops it. */
+function quietStream(signal: AbortSignal): Response {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(
+          JSON.stringify({ bookmark: server.head, generation: "g" }) + "\n"
+        )
+      )
+      signal.addEventListener("abort", () =>
+        controller.error(new DOMException("stopped", "AbortError"))
+      )
+    },
+  })
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "application/x-ndjson" },
+  })
+}
+
 beforeEach(() => {
   server = {
     status: "running",
@@ -154,6 +175,10 @@ beforeEach(() => {
       const u = new URL(String(url), "http://x")
       if (u.searchParams.get("watch") === "1") {
         const signal = init?.signal ?? new AbortController().signal
+        // The page follows the person's thread marks too, on a stream of
+        // its own, which stays quiet here: these tests are the chats' watch.
+        if (!u.searchParams.getAll("kinds").includes(THREAD))
+          return quietStream(signal)
         server.watches.push({
           from: u.searchParams.get("from"),
           generation: u.searchParams.get("generation"),

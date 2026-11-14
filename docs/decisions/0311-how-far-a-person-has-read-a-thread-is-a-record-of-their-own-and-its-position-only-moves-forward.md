@@ -125,7 +125,7 @@ are.
 
 `internal/engine/threadmarks_internal_db_test.go` holds the admission rules,
 the race, `lastMessage` for each way a run ends and the count;
-`repomigration_0014_internal_db_test.go` the migration and its rebuild;
+`repomigrate_threadmarks_internal_db_test.go` the migration and its rebuild;
 `internal/api/threadmarks_db_test.go` the roles, the `agents:` reach, `me`
 and the REST round trip; the console's `thread-marks.test.ts` the unread
 rule.
