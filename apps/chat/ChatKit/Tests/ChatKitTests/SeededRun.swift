@@ -101,6 +101,14 @@ struct SeededRun {
     private var suspect: Set<String> = []
     private var inFront = true
     private var signedOut = false
+    /// The waits on the clock each conversation asked for, and the list.
+    private var waits: [ChildKey: [Wait]] = [:]
+    private var listWaits: [Wait] = []
+    private var scanned = 0
+    /// The sent texts a composer holds now, and when the person last typed
+    /// each without sending it: what a kill may and may not take.
+    private var composed: Set<String> = []
+    private var typedAt: [String: Date] = [:]
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -155,6 +163,7 @@ struct SeededRun {
         }
         server.misbehave(rate, with401: with401)
         for _ in 0 ..< count {
+            forgetTrace()
             await step()
             await drain()
             if server.took401() {
@@ -206,9 +215,7 @@ struct SeededRun {
     /// Waits for the app to stand still: nothing started, delivered, sent or
     /// received over a few turns of the scheduler. What still runs then
     /// waits on the server or on the clock, which only the next step moves.
-    private func drain(keepingTrace: Bool = false) async {
-        // The trace is kept for one step, for a failure to print.
-        if !keepingTrace, ProcessInfo.processInfo.environment["CHATKIT_TRACE"] == nil { rig.harness.clearTrace() }
+    private mutating func drain() async {
         var last = await snapshot()
         var still = 0
         var rounds = 0
@@ -224,6 +231,7 @@ struct SeededRun {
             last = now
             rounds += 1
         }
+        collect()
     }
 
     private func snapshot() async -> [Int] {
@@ -344,6 +352,7 @@ struct SeededRun {
         let ids = await rig.harness.state.sendsIDs
         let held = sent[text]
         sent[text] = ((held?.presses ?? 0) + 1, ids || held?.ids == true, held?.before ?? server.chatRequests(saying: text))
+        typedAt[text] = nil
         ever[text, default: 1] += 0
         await tell(.send, key)
     }
@@ -383,6 +392,7 @@ struct SeededRun {
             // held stays.
             let draft = await rig.live(key)?.draft ?? text
             await tell(.draft(draft.replacingOccurrences(of: text, with: other)), key)
+            typedAt[other] = clock.now
         case .stop:
             steps.append("presses Try Again on a stop")
             await tell(.stop, key)
@@ -439,10 +449,20 @@ struct SeededRun {
         await rig.runtime.close()
         let kept = Self.onDisk(rig)
         for text in Array(sent.keys) where server.userRows(saying: text) == 0 && !kept.contains(where: { $0.contains(text) }) {
-            // Left tracked, a pending message the folder lost is caught by
-            // the next check.
-            if !pending.contains(text) { sent[text] = nil }
+            // What the folder must hold, and so stays tracked for the next
+            // check to miss: a pending message, and a text the app put
+            // back into a composer, which is written at once. What a kill
+            // may take, as before ids: a draft the person typed less than
+            // its save's pause ago, and a send without an id still on its
+            // way.
+            let young = typedAt[text].map { clock.now.timeIntervalSince($0) < 1 } ?? false
+            let owed = pending.contains(text) || (composed.contains(text) && !young)
+            if !owed { sent[text] = nil }
         }
+        waits = [:]
+        listWaits = []
+        scanned = 0
+        composed = []
         rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
         inFront = true
         signedOut = false
@@ -493,7 +513,7 @@ struct SeededRun {
 
     /// Whether something still moves a conversation that waits: a request
     /// at the server about it, or a wait on the clock.
-    private func moves(_ live: ConversationState) -> Bool {
+    private func moves(_ live: ConversationState, _ key: ChildKey) -> Bool {
         var tags = [live.thread].compactMap { $0 }
         if let pending = live.pending { tags += ["new:\(pending.message)", "message:\(pending.id)"] }
         if case let .send(run)? = live.run { tags.append("new:\(run.message)") }
@@ -502,10 +522,100 @@ struct SeededRun {
         // A delivery check for a new chat reads other threads to find its
         // own, so any request still at the server may be its.
         if live.checking, live.thread == nil, !server.openExchanges.isEmpty { return true }
-        // An attach's, a repeat's or a handover's wait is 15 s at most, the
-        // client's own before it asks a busy server again 10 s, and a
-        // request that hangs waits out its timeout, 75 s for a stream.
-        return clock.deadlines.contains { $0.timeIntervalSince(clock.now) <= 80 }
+        // A wait on the clock counts only where it is this conversation's
+        // own (it asked for one that ends then), or nobody's that is known:
+        // the client's wait before it asks a busy server again, inside a
+        // request that could be anyone's. Another conversation's retry, its
+        // poll, the list's saves and a request hanging at the server about
+        // something else do not keep this one alive. Waits are told apart
+        // by when they end, and counted, since two often end together.
+        func same(_ a: Date, _ b: Date) -> Bool { abs(a.timeIntervalSince(b)) < 0.000_001 }
+        let sleepers = clock.deadlines
+        if (waits[key] ?? []).contains(where: { wait in sleepers.contains { same($0, wait.end) } }) { return true }
+        let known = waits.values.flatMap { $0 }.map(\.end) + listWaits.map(\.end) + server.sleepDeadlines
+        var seen: [Date] = []
+        for deadline in sleepers where !seen.contains(where: { same($0, deadline) }) {
+            seen.append(deadline)
+            if sleepers.filter({ same($0, deadline) }).count > known.filter({ same($0, deadline) }).count { return true }
+        }
+        return false
+    }
+
+    /// A wait on the clock an effect asked for: when it ends, and the key
+    /// its effect runs under, which the next effect under it replaces.
+    private struct Wait {
+        var end: Date
+        var key: String
+        /// A poll's timer: armed again for this long each time it ends.
+        var every: Double?
+    }
+
+    /// Reads the waits the app asked for since the last time out of the
+    /// trace: each conversation's own, and the list's. The clock moves
+    /// only between steps, so a wait asked for in this one began now. A
+    /// wait is taken away as the runtime takes its effect away: when
+    /// another starts under its key, when its key is cancelled, and when
+    /// it ends.
+    private mutating func collect() {
+        let trace = rig.harness.trace
+        let now = clock.now
+        // A poll's timer that ended in this step was armed again from now.
+        for key in Array(waits.keys) {
+            waits[key] = waits[key]?.compactMap { wait in
+                guard wait.end <= now else { return wait }
+                return wait.every.map { Wait(end: now.addingTimeInterval($0), key: wait.key, every: $0) }
+            }
+        }
+        listWaits.removeAll { $0.end <= now }
+        for entry in trace.dropFirst(scanned) {
+            guard case let .effect(path, effect) = entry else { continue }
+            if let key = path.last, let ask = (effect as? Conversation.Effect)?.ask {
+                var wait: Wait?
+                var under: String?
+                switch ask {
+                case let .wait(_, seconds): wait = Wait(end: now.addingTimeInterval(seconds), key: "retry")
+                case let .repeatWait(_, seconds):
+                    under = "repeat"
+                    if seconds > 0 { wait = Wait(end: now.addingTimeInterval(seconds), key: "repeat") }
+                case .handover: wait = Wait(end: now.addingTimeInterval(15), key: "run")
+                case .chat, .resume, .attach: under = "run"
+                case .check: wait = Wait(end: now.addingTimeInterval(1), key: "check")
+                case .stopWait: wait = Wait(end: now.addingTimeInterval(1), key: "stopWait")
+                case .pollEvery: wait = Wait(end: now.addingTimeInterval(5), key: "pollTimer", every: 5)
+                case let .countdown(date):
+                    under = "countdown"
+                    if date > now { wait = Wait(end: date, key: "countdown") }
+                case let .cancel(cancelled): under = cancelled
+                case .find, .poll, .stop, .advance: break
+                }
+                if let replaced = wait?.key ?? under { waits[key]?.removeAll { $0.key == replaced } }
+                if let wait { waits[key, default: []].append(wait) }
+            } else if path.isEmpty, let ask = (effect as? ChatApp.Effect)?.ask {
+                var wait: Wait?
+                switch ask {
+                case .saveState: wait = Wait(end: now.addingTimeInterval(0.4), key: "state")
+                case .saveDrafts: wait = Wait(end: now.addingTimeInterval(0.6), key: "drafts")
+                case let .feedWait(seconds): wait = Wait(end: now.addingTimeInterval(seconds), key: "feedWait")
+                case let .cancel(cancelled): listWaits.removeAll { $0.key == cancelled }
+                default: break
+                }
+                if let wait {
+                    listWaits.removeAll { $0.key == wait.key }
+                    listWaits.append(wait)
+                }
+            }
+        }
+        scanned = trace.count
+    }
+
+    /// Forgets the trace before a step: what the step asks for is read
+    /// from what follows.
+    private mutating func forgetTrace() {
+        collect()
+        if ProcessInfo.processInfo.environment["CHATKIT_TRACE"] == nil {
+            rig.harness.clearTrace()
+            scanned = 0
+        }
     }
 
     /// Every rule, on what the app holds and draws now. `settled` adds
@@ -513,7 +623,15 @@ struct SeededRun {
     private mutating func check(settled: Bool) async -> Violation? {
         let state = await rig.harness.state
         let presentation = await rig.harness.presentation
+        // A wait's effect ends with its conversation, and a handover's
+        // with the read it waits beside.
+        for key in Array(waits.keys) {
+            let phase = await rig.live(key)?.phase
+            if phase == nil { waits[key] = nil } else if phase != .handingOver { waits[key]?.removeAll { $0.key == "run" } }
+            if phase != .background { waits[key]?.removeAll { $0.key == "pollTimer" } }
+        }
         var homes: Set<String> = []
+        var inComposer: Set<String> = []
         func home(_ text: String) { for known in sent.keys where text.contains(known) { homes.insert(known) } }
         state.drafts.values.forEach(home)
         state.unsent.values.forEach { home($0.message) }
@@ -528,6 +646,7 @@ struct SeededRun {
             let said = Self.said(screen)
             let name = live.thread ?? "a new chat"
             home(screen.composer.draft)
+            for text in sent.keys where screen.composer.draft.contains(text) { inComposer.insert(text) }
             said.filter { $0.role == "user" }.forEach { home($0.text) }
             if let pending = live.pending { home(pending.message) }
             if let lost = live.lost { home(lost.message) }
@@ -536,11 +655,15 @@ struct SeededRun {
             // for a reload and then let the rows that hold the same turns
             // be drawn above it. Noted once each, and this conversation is
             // not held to what the leftover breaks.
+            // Set aside: only what a leftover overlay breaks, the drawing
+            // of its turns twice and beside the rows. Every other rule
+            // still holds this conversation, the last one included.
+            var leftover = false
             if live.phase == .idle, !live.ownsTranscript, !live.overlay.turns.isEmpty {
                 if noted[.overlay] == nil {
                     noted[.overlay] = broke(.overlay, "\(name) is idle and still draws \(live.overlay.turns.map(\.content)) from a run that ended")
                 }
-                continue
+                leftover = true
             }
             var keeps = live.reloadFailed != nil || live.reloading != nil
             if case let .send(run)? = live.run, !run.kept.isEmpty { keeps = true }
@@ -551,15 +674,15 @@ struct SeededRun {
                     if noted[.kept] == nil {
                         noted[.kept] = broke(.kept, "\(name) keeps \(again) from a run whose reload failed, and draws it under the rows that hold it")
                     }
-                    continue
+                    leftover = true
                 }
             }
 
             // No row is drawn twice: not by its id, and no message of the
             // person's as a bubble and a stored row both.
             let turnIDs = screen.turns.map(\.id)
-            if Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
-            for (text, meant) in ever where said.filter({ $0.role == "user" && $0.text == text }).count > meant {
+            if !leftover, Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
+            for (text, meant) in ever where !leftover && said.filter({ $0.role == "user" && $0.text == text }).count > meant {
                 return broke(.drawnTwice, "\(name) draws \"\(text)\" twice: \(said.map(\.text))")
             }
 
@@ -596,7 +719,7 @@ struct SeededRun {
 
             // No conversation is left waiting with no stream open.
             let waits = live.phase != .idle || live.finding || live.checking
-            if waits, !moves(live) {
+            if waits, !moves(live, key) {
                 return broke(.streaming, "\(name) is \(Self.waiting(live)) with no request at the server and no wait on the clock")
             }
             if settled, waits || live.ownsTranscript || state.reading[live.thread ?? ""] != nil {
@@ -606,7 +729,8 @@ struct SeededRun {
 
             // The transcript equals the fold of the server's rows, once the
             // app holds the thread as the server does.
-            guard let thread = live.thread, !waits, !live.ownsTranscript, state.reading[thread] == nil, !server.running(thread) else { continue }
+            guard !leftover, let thread = live.thread, !waits, !live.ownsTranscript, state.reading[thread] == nil, !server.running(thread)
+            else { continue }
             guard let held = state.transcripts[thread], held.version == server.version(of: thread) else {
                 if settled, server.version(of: thread) != nil {
                     return broke(
@@ -629,6 +753,7 @@ struct SeededRun {
             if drawn.map(\.id) != rowIDs { return broke(.fold, "\(name) draws its rows under \(drawn.map(\.id)), and the server holds \(rowIDs)") }
         }
 
+        composed = inComposer
         if let watched = ProcessInfo.processInfo.environment["CHATKIT_WATCH"] {
             var places: [String] = []
             if server.userRows(saying: watched) > 0 { places.append("server") }
@@ -686,6 +811,7 @@ struct SeededRun {
         }
         await drain()
         for round in 0 ..< 60 {
+            forgetTrace()
             server.finishTurns()
             await drain()
             clock.advance(by: 4)
@@ -724,7 +850,7 @@ struct SeededRun {
         guard await check(settled: settled) != nil else { return nil }
         for attempt in 0 ..< 6 {
             try? await Task.sleep(nanoseconds: UInt64(20_000_000 * (attempt + 1)))
-            await drain(keepingTrace: true)
+            await drain()
             if await check(settled: settled) == nil { return nil }
         }
         var broken = await check(settled: settled)

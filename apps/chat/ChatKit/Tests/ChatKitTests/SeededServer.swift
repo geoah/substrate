@@ -169,6 +169,7 @@ final class SeededServer: @unchecked Sendable {
     private var closed = 0
     private var counted: [String: Int] = [:]
     private var inside: [Int: String] = [:]
+    private var sleeping: [Int: Date] = [:]
     /// Every chat request that reached the server, by its message's text.
     private var chats: [String: Int] = [:]
 
@@ -215,6 +216,17 @@ final class SeededServer: @unchecked Sendable {
     /// Requests still at the server about a thread, or a new chat's
     /// message: waiting on a turn, on a hang or on a delay.
     func exchanges(about tag: String) -> Int { lock.withLock { open[tag, default: 0] } }
+
+    /// When each request that hangs or is delayed at the server stops
+    /// waiting on the clock.
+    var sleepDeadlines: [Date] { lock.withLock { Array(sleeping.values) } }
+
+    private func sleep(for seconds: Double, _ serial: Int) async throws {
+        let deadline = clock.now.addingTimeInterval(seconds)
+        lock.withLock { sleeping[serial] = deadline }
+        defer { lock.withLock { sleeping[serial] = nil } }
+        try await clock.sleep(until: deadline)
+    }
 
     /// Every tag a request is still at the server about, and every request
     /// not yet answered, by what it waits on.
@@ -550,7 +562,7 @@ final class SeededServer: @unchecked Sendable {
         case .unreachable:
             throw URLError(.cannotConnectToHost)
         case let .delay(seconds):
-            try await clock.sleep(until: clock.now.addingTimeInterval(seconds))
+            try await sleep(for: seconds, serial)
             try alive()
         default:
             break
@@ -589,7 +601,7 @@ final class SeededServer: @unchecked Sendable {
         case .dropped:
             throw URLError(.networkConnectionLost)
         case .hang:
-            try await clock.sleep(until: clock.now.addingTimeInterval(max(1, request.timeoutInterval)))
+            try await sleep(for: max(1, request.timeoutInterval), serial)
             throw URLError(.timedOut)
         }
         switch outcome ?? .json(500, "{}") {
