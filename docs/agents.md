@@ -2048,19 +2048,21 @@ message's.
 
 A message adds no model call to the run it joins and moves none of its
 budgets: a steered run is one run under its turns, its tool calls and its
-deadline. It takes none of the person's chat turns, since it starts no run,
-and the turn a message starts itself waits for one like any other. The
+deadline. It takes none of the person's chat turns, since it starts no run;
+the turn a message starts waits for a free one, as any turn does. The
 run's last turn under a deadline reads no message; they start the next
 turn. A repeat of the request is answered as [a repeat](#a-message-with-its-own-id)
-always is, and writes nothing.
+always is, and writes nothing. The sender is admitted only where they could
+have started the run themselves, as for any message into a thread, and the
+rest of the turn is held to them as well as to whoever started it.
 
-What refuses it, as before: a message with no `messageId`, and a message
-into a running thread that is not a chat turn's (a sub-agent's, a call's, a
-triggered run's), are `409 conflict` with the reason `thread_busy`. A thread
-that waits on the person (a question, an approval) is not running, so a
-message to it is an ordinary send: it starts a turn, and it neither answers
-nor dismisses what is waiting. A message cannot be withdrawn once sent; it
-is a record, and is deleted as one.
+Two sends are refused as before, `409 conflict` with the reason
+`thread_busy`: a message with no `messageId`, and a message into a running
+thread that is not a chat turn's (a sub-agent's, a call's, a triggered
+run's). A thread that waits on the person (a question, an approval) is not
+running, so a message to it is an ordinary send: it starts a turn, and it
+neither answers nor dismisses what is waiting. A message cannot be withdrawn
+once it is sent.
 
 The rows keep the order things happened in. A message's `turn` is past the
 reply that was streaming when it was sent and below the first reply that
