@@ -587,3 +587,57 @@ func TestARestoreWhoseStoreStopsAnsweringIsSetAsideAtTheArchiveStore(t *testing.
 		t.Fatalf("the restored contact: %v", err)
 	}
 }
+
+// A PEOPLE PASS THE DATABASE REFUSES. A repository from before identities
+// takes its first person at the start, made from its sign-in record, and the
+// database refuses to let that identity open it. The trigger on
+// `identity_repositories` stands for any refusal of the database's own. The
+// start sets the repository aside at its people and gives the one beside it
+// its person; with the refusal gone, the next start gives it its own.
+func TestAPeoplePassTheDatabaseRefusesIsSetAsideAtItsPeople(t *testing.T) {
+	ctx := context.Background()
+	dsn, root := MigratedDSN(t), t.TempDir()
+	s := openForPeople(t, dsn, root)
+	whole, _, _, _ := preIdentityRepository(t, s, dsn, testdb.RepositoryLabel(t)+"w.example.com")
+	refused, info, _, _ := preIdentityRepository(t, s, dsn, testdb.RepositoryLabel(t)+"r.example.com")
+	_ = s.Close()
+	db := rawDBOf(t, dsn)
+	if _, err := db.Exec(`
+		CREATE FUNCTION refuse_the_link() RETURNS trigger LANGUAGE plpgsql AS $fn$
+		BEGIN
+			IF NEW.repository_id = '` + info.ID + `' THEN
+				RAISE EXCEPTION 'the database refuses to link this repository';
+			END IF;
+			RETURN NEW;
+		END $fn$;
+		CREATE TRIGGER refuse_the_link BEFORE INSERT ON identity_repositories FOR EACH ROW EXECUTE FUNCTION refuse_the_link();`); err != nil {
+		t.Fatal(err)
+	}
+
+	s = openForPeople(t, dsn, root)
+	if r := s.setAsideOf(info.ID, ""); r == nil || r.stage != setAsideAtPeople {
+		t.Fatalf("the repository whose link was refused: %+v, want it set aside at %q", r, setAsideAtPeople)
+	}
+	if !heldIdentityNamed(t, s, whole) {
+		t.Error("the repository beside it got no person")
+	}
+	if heldIdentityNamed(t, s, refused) {
+		t.Error("the refused repository's identity stands with no repository to open")
+	}
+	_ = s.Close()
+
+	if _, err := db.Exec(`DROP TRIGGER refuse_the_link ON identity_repositories; DROP FUNCTION refuse_the_link()`); err != nil {
+		t.Fatal(err)
+	}
+	s = openForPeople(t, dsn, root)
+	t.Cleanup(func() { _ = s.Close() })
+	if r := s.setAsideOf(info.ID, ""); r != nil {
+		t.Fatalf("the repository is still set aside after the refusal went: %+v", r)
+	}
+	if !heldIdentityNamed(t, s, refused) {
+		t.Error("the repository got no person once the refusal went")
+	}
+	if _, err := s.Dataset(ctx, info.Authority); err != nil {
+		t.Fatalf("the repository, served: %v", err)
+	}
+}

@@ -40,6 +40,7 @@ var setAsideStageCases = map[string][]string{
 	setAsideAtImport:  {"startgate_internal_db_test.go:TestA0xDirectoryWhoseLineDoesNotVerifyIsSetAsideAtTheImport"},
 	setAsideAtRestore: {"../testenv/setaside_db_test.go:asideCases"},
 	setAsideAtStore:   {"startgate_internal_db_test.go:TestARestoreWhoseStoreStopsAnsweringIsSetAsideAtTheArchiveStore"},
+	setAsideAtPeople:  {"startgate_internal_db_test.go:TestAPeoplePassTheDatabaseRefusesIsSetAsideAtItsPeople"},
 }
 
 // setAsideOnlyBySeam are the stages no real failure reaches today, each with
