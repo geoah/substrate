@@ -434,6 +434,15 @@ public struct LinkController<App: LinkedApp>: Controller {
 
     public func children(in state: LinkState) -> [ChildKey: App] { [Self.appKey: app] }
 
+    /// The link's own screens under no key, with no app in them, and the
+    /// app's parts under the app's key: a view of the app is not drawn again
+    /// for what moved in the link, nor the banner for what moved in the app.
+    public func parts(of presentation: Presentation) -> [PresentationPart] {
+        var own = presentation
+        own.app = nil
+        return [PresentationPart(own)] + (presentation.app.map { app.parts(of: $0).map { $0.under(Self.appKey) } } ?? [])
+    }
+
     public func link(in state: LinkState) -> LinkSnapshot? { snapshot(of: state) }
 
     public func snapshot(of state: LinkState) -> LinkSnapshot {

@@ -17,10 +17,14 @@ import SubstrateCore
 /// republishes them on the main actor for SwiftUI, and the Android bridge
 /// reads `encodedFrames()` and sends `send(encoded:)`.
 public actor Runtime<Root: Controller> {
+    /// The root controller the runtime was made with: nothing replaces a
+    /// root, so it is the one running.
+    public nonisolated let controller: Root
     private let loop: Loop<Root>
     private var opened = false
 
     public init(_ root: Root, environment: AppEnvironment, options: RuntimeOptions = RuntimeOptions()) {
+        controller = root
         let box = RuntimeBox<Root>()
         let loop = Loop<Root>(environment: environment, options: options) { body in
             await box.runtime?.perform(body)
@@ -81,6 +85,20 @@ public actor Runtime<Root: Controller> {
     public func presentations() -> AsyncStream<Root.Presentation> {
         open()
         return loop.subscribe()
+    }
+
+    /// The presentations in the parts the root names (`Controller.parts(of:)`),
+    /// for a UI that observes each part on its own: every part as it
+    /// stands first, then, with each publish, the parts whose value moved
+    /// and the paths that hold none any more, beside the whole tree. The
+    /// tree is split and compared here, on the runtime's executor, so the
+    /// reader only takes what moved. A slow reader misses nothing: what was
+    /// published since it last read is merged into one update, the newest
+    /// value of each part kept, so the parts it holds always add up to the
+    /// tree the update carries.
+    public func parts() -> PresentationParts<Root.Presentation> {
+        open()
+        return loop.subscribeParts()
     }
 
     /// The presentations as JSON, every keyed list in them whole. One that
