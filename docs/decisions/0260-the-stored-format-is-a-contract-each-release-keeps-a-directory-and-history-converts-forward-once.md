@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
-amended-by: 0279
+amended-by: 0279, 0309
 ---
 
 # 0260. The stored format is a contract, each release keeps a directory, and history converts forward once

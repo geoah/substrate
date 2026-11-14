@@ -48,12 +48,16 @@ package engine
 // went in and before they fold. ONE TRANSACTION, under the
 // changelog lock, walks the table once for each step, in step order,
 // rewriting every row whose line the step changed, then runs every step's
-// Carry in order, raises the stamp to the last step's dialect and sets the
-// import-progress marker, because the fold was folded from the old lines;
-// the fold is then rebuilt from the table, which clears the marker. A crash
-// before the commit leaves the history and every carried row as they were,
-// and the next boot converts them again; one after leaves the marker, and
-// the next boot rebuilds the fold before any open. Nothing unseals or folds
+// Carry in order, and raises the stamp to the last step's dialect. Where a
+// step changed a line of the repository, or a step says the fold must be
+// rebuilt (Refolds), it sets the import-progress marker too, because the fold
+// was folded from the old lines; the fold is then rebuilt from the table,
+// which clears the marker. A raise that changed no line leaves the fold as it
+// stands: the lines it was folded from are the lines it holds (decision
+// 0309). A crash before the commit leaves the history and every carried row
+// as they were, and the next boot converts them again; one after leaves the
+// marker where it was set, and the next boot rebuilds the fold before any
+// open. Nothing unseals or folds
 // between the lines and the carry. The archive follows on its own: its pieces are kept under
 // their dialect, and the next pass writes the converted history beside the
 // old and moves its manifest to it (archive.go).
@@ -116,6 +120,13 @@ type conversionStep struct {
 	// before its first line, and returns what the step does in that
 	// repository. An error refuses the conversion, and so the boot.
 	ForRepository func(r conversionRepository) (conversionPass, error)
+	// Refolds says the fold must be rebuilt after this step even where it
+	// changed no line of the repository (decision 0309): its Carry changes a
+	// row the fold is derived from, or it comes with a fold table the lines
+	// already held the content of, which the schema migration beside it left
+	// empty. A step that rewrites lines needs no flag: a changed line
+	// rebuilds the fold whatever the steps say.
+	Refolds bool
 }
 
 // conversionRepository is the repository a step converts.
@@ -193,7 +204,9 @@ var conversionSteps = []conversionStep{
 	{Dialect: 2, Name: "drop_recovery_wrap", Line: convertDropRecoveryWrap},
 	{Dialect: 3, Name: "link_actors", Line: linkActorsLine},
 	{Dialect: 4, Name: "move_body_into_properties", Line: moveBodyIntoProperties},
-	{Dialect: 5, Name: "marks", Line: markLine},
+	// The marks are a fold table SQL 0026 created empty, of what the
+	// lines held as `manager` effects, and it re-keyed the derived offers.
+	{Dialect: 5, Name: "marks", Line: markLine, Refolds: true},
 }
 
 // The conversion's steps, as the import's test seam names them
@@ -264,7 +277,8 @@ func conversionNames(steps []conversionStep) string {
 
 // convertTable converts the repository's history in the table into this
 // binary's dialect, as the header says, and reports whether it converted. The
-// caller rebuilds the fold (the marker it set says so).
+// caller rebuilds the fold where the marker says so, which a conversion sets
+// only where a line changed or a step refolds.
 func (ds *dataset) convertTable(ctx context.Context) (bool, error) {
 	return ds.convertTableTo(ctx, 0)
 }
@@ -309,7 +323,10 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 	// transaction: a step's Line sees every line once, in seq order, as the
 	// steps below it left it, and the step after reads the table they wrote
 	// (its Declarations included), so no line is converted outside a walk.
-	changed := map[int64]bool{}
+	// How many line rewrites the steps made, summed over the steps: a count
+	// and nothing per line, since a history from the last release has every
+	// line rewritten and may hold tens of millions.
+	var rewrites int64
 	passes := make([]conversionPass, 0, len(steps))
 	for i, step := range steps {
 		pass, err := ds.conversionPass(ctx, tx, step)
@@ -317,9 +334,11 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 			return false, err
 		}
 		passes = append(passes, pass)
-		if err := ds.walkConversionStep(ctx, t, step, pass, head, int64(i)*head, prog, changed); err != nil {
+		n, err := ds.walkConversionStep(ctx, t, step, pass, head, int64(i)*head, prog)
+		if err != nil {
 			return false, err
 		}
+		rewrites += n
 	}
 	for i, pass := range passes {
 		if pass.Carry == nil {
@@ -335,14 +354,33 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 	if _, err := t.exec(changelogDialectStamp, target); err != nil {
 		return false, fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", target, err)
 	}
-	if err := markImportIncomplete(ctx, tx, head); err != nil {
+	// The fold was folded from the lines as they stood: a changed line, or
+	// a step that says so, rebuilds it (the marker); a raise that changed no
+	// line leaves it standing (decision 0309). A marker already set, by an
+	// import or a start cut short, stays.
+	refold := rewrites > 0 || slices.ContainsFunc(steps, func(s conversionStep) bool { return s.Refolds })
+	marked := refold
+	if refold {
+		if err := markImportIncomplete(ctx, tx, head); err != nil {
+			return false, err
+		}
+	} else if _, marked, err = importIncomplete(ctx, tx); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	ds.svc.log.Info("substrate: converted the changelog; the fold is rebuilt from it next",
-		"repository", ds.scope.Repository, "dialect", target, "changed", len(changed))
+	switch {
+	case refold:
+		ds.svc.log.Info("substrate: converted the changelog; the fold is rebuilt from it next",
+			"repository", ds.scope.Repository, "dialect", target, "lineRewritesSummedOverSteps", rewrites)
+	case marked:
+		ds.svc.log.Info("substrate: converted the changelog; no line changed, and the import in progress rebuilds the fold next",
+			"repository", ds.scope.Repository, "dialect", target)
+	default:
+		ds.svc.log.Info("substrate: converted the changelog; no line changed, so the fold stands",
+			"repository", ds.scope.Repository, "dialect", target)
+	}
 	if err := ds.importFault(conversionAfterCommit); err != nil {
 		return true, err
 	}
@@ -350,13 +388,14 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 }
 
 // walkConversionStep runs one step's Line over every line of the table, in
-// seq order, and writes back each line it changed with its new checksum. A
-// step may not move a line's seq or txn.
-func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversionStep, pass conversionPass, head, done int64, prog *progress, changed map[int64]bool) error {
+// seq order, writes back each line it changed with its new checksum, and
+// returns how many it changed. A step may not move a line's seq or txn.
+func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversionStep, pass conversionPass, head, done int64, prog *progress) (int64, error) {
+	var rewritten int64
 	for after := int64(0); after < head; {
 		page, err := scanChecksumPage(ctx, t.tx, after, rebuildBatch)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if len(page) == 0 {
 			break
@@ -364,19 +403,19 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 		for _, row := range page {
 			e, err := walkedLine(row)
 			if err != nil {
-				return fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
+				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
 			}
 			seq, txnSeq := e.Seq, e.Txn
 			after = seq
 			if err := pass.Line(&e); err != nil {
-				return fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)
+				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)
 			}
 			if e.Seq != seq || e.Txn != txnSeq {
-				return fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)
+				return 0, fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)
 			}
 			_, sum, err := changelogfile.Encode(e)
 			if err != nil {
-				return fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
+				return 0, fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
 			}
 			// The row was held to its stored checksum before the step ran,
 			// so an unchanged checksum is a line the step left as it found
@@ -393,13 +432,13 @@ func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversi
 					kind = $8, payload = $9::jsonb, caused_by = $10, txn = $11, hash = $12
 				WHERE seq = $1`,
 				e.Seq, e.TS, e.Actor, e.OnBehalfOf, lineToken(e), e.Op, e.RecordID, e.Kind, []byte(e.Payload), causedBy, e.Txn, sum[:]); err != nil {
-				return fmt.Errorf("substrate/engine: convert seq %d: %w", e.Seq, err)
+				return 0, fmt.Errorf("substrate/engine: convert seq %d: %w", e.Seq, err)
 			}
-			changed[seq] = true
+			rewritten++
 		}
 		prog.tick(changelogfile.Position{Seq: done + after})
 	}
-	return nil
+	return rewritten, nil
 }
 
 // lineFrame is the key set a row's line was encoded in, which only its

@@ -1812,7 +1812,19 @@ History is rewritten in one case only: a binary that carries a
 [conversion step](stored-format.md#conversions) above a repository's changelog
 dialect converts that repository at its boot check, once, before it serves
 it, and logs `substrate: converting the changelog` with the dialects and the
-steps.
+steps. What that costs is one walk of the history for each step, and the
+records are rebuilt after it only where a step changed a line of that
+repository or says it must (`Refolds`): the line after it says either `the
+fold is rebuilt from it next`, and the rebuild replays the history twice, or
+`no line changed, so the fold stands`
+([conversions](stored-format.md#conversions)). As measured on a test machine,
+not as a promise, over 502,979 lines: a step's walk ran at about 5,900 lines
+a second, and one replay, as `repository rebuild` makes it, at about 1,300.
+The boot check takes the repositories one after another, and the server
+listens only once it has finished them all, so a long conversion and rebuild
+of one repository holds the start of the whole server and every repository
+on it, logging `still booting` every 10 s until the listener is up. Plan the
+upgrade of a server holding a long history for that wait.
 
 **Rolling the image back is only safe while both stamps and the schema still
 fit.** An older binary refuses a repository stamped above its maxima and a
