@@ -20,6 +20,7 @@ import {
   isReplayed,
   judgeVerdictOf,
   lastChatAgent,
+  newestReplyTurn,
   persistedTurns,
   openingMessages,
   propertyLabel,
@@ -752,6 +753,37 @@ describe("attaching to a running turn", () => {
     // meanwhile took 2: the reply has no row yet and must stay.
     const held = new Set([0, 2])
     expect(isReplayed({ kind: "delta", text: "a", turn: 1 }, held)).toBe(false)
+  })
+
+  it("keeps the events about a message sent mid-turn, whose row it may hold", () => {
+    // The row says the message exists; only the events say whether the
+    // model has been handed it.
+    const held = new Set([0, 1, 2])
+    expect(
+      isReplayed({ kind: "messageQueued", id: "q1", turn: 2, text: "x" }, held)
+    ).toBe(false)
+    expect(isReplayed({ kind: "messageTaken", id: "q1", turn: 2 }, held)).toBe(
+      false
+    )
+  })
+
+  it("finds the newest reply's ordinal among the rows", () => {
+    const row = (turn: number, role: string) =>
+      record({
+        id: `m${turn}`,
+        kind: "substrate.reamde.dev/llm/message",
+        properties: { turn, role },
+      })
+    expect(newestReplyTurn([])).toBe(-1)
+    // A tool row past the reply is no reply: it reads nothing.
+    expect(
+      newestReplyTurn([
+        row(0, "user"),
+        row(1, "assistant"),
+        row(2, "user"),
+        row(3, "tool"),
+      ])
+    ).toBe(1)
   })
 })
 

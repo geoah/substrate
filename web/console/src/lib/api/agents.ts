@@ -482,10 +482,13 @@ export interface AgentEvent {
     | "done"
     | "error"
     | "lagged"
+    | "messageQueued"
+    | "messageTaken"
   /** Rides the first event: the thread id, minted or continued. */
   thread?: string
   /** A streamed content delta, or on a `reasoning` event a piece of the
-   * model's thinking, which arrives ahead of the turn's text. */
+   * model's thinking, which arrives ahead of the turn's text. On a
+   * `messageQueued` event, what the message says. */
   text?: string
   /** Tool lifecycle. `id` is the tool CALL's id and rides both sides: one turn
    * may dispatch the same tool twice, so a client pairing by name settles the
@@ -493,7 +496,9 @@ export interface AgentEvent {
    * `toolCallId`, so a live card and its replayed row are the same card.
    * `callable` rides both sides too: the identity behind the `tool` alias, as
    * the rows stamp it. `output` rides the finished event: the dispatch's
-   * result payload. */
+   * result payload. On `messageQueued` and `messageTaken` (decision 0318)
+   * `id` is the id of a message sent while the turn ran: its row is written,
+   * then the model is handed it. */
   id?: string
   tool?: string
   callable?: string
@@ -517,9 +522,11 @@ export interface AgentEvent {
    * with no cause is the stream's own end, not the turn's. */
   cause?: string
   retryAfter?: number
-  /** Rides delta, toolStarted and toolFinished: the `turn` ordinal the
-   * matching `llm/message` row carries or will carry. An attach after reading
-   * the rows drops every replayed event at or below the highest turn held. */
+  /** Rides delta, reasoning, toolStarted, toolFinished, messageQueued and
+   * messageTaken: the `turn` ordinal the matching `llm/message` row carries
+   * or will carry. An attach after reading the rows drops a replayed piece
+   * of text and a replayed tool event whose ordinal a row it holds carries
+   * (`isReplayed`). */
   turn?: number
   /** Rides delta and reasoning (decision 0317): how many Unicode code points
    * of this turn's text of that kind came before this piece. Text and
@@ -763,6 +770,12 @@ export const OWN_MESSAGE_ID_REVISION = 3
  * overlay over. */
 export const STREAM_POSITIONS_REVISION = 5
 
+/** The revision of the server's `agents` feature that takes a message sent
+ * to a thread a chat turn runs on (decision 0318): the message joins that
+ * turn, and the stream says when it is queued and when the model is handed
+ * it. Below it the same send is refused as busy. */
+export const MESSAGE_DURING_RUN_REVISION = 6
+
 /** An id for a message this client is about to send: a UUID, which is a
  * legal record id. The fallback is for a page served without a secure
  * context, where `randomUUID` is absent. */
@@ -781,7 +794,11 @@ export function newMessageId(): string {
  * The message goes under `messageId`, so the same call made again is safe: a
  * message the server already holds writes nothing and runs nothing, and the
  * stream is the `thread` event and then what an attach answers (the running
- * turn, or one `idle` line). */
+ * turn, or one `idle` line).
+ *
+ * Sent to a thread a chat turn runs on, with a `messageId`, the message
+ * joins that turn (`MESSAGE_DURING_RUN_REVISION`): the stream is again the
+ * `thread` event and then that turn's. */
 export function streamChat(
   opts: {
     agent: string

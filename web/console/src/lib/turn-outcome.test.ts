@@ -5,7 +5,14 @@
 import { describe, expect, it } from "vitest"
 
 import golden from "@/lib/api/agentcauses.golden.json"
-import { turnOutcome, waitLeft, type SettledRun } from "./turn-outcome"
+import {
+  hasUnansweredMessage,
+  turnOutcome,
+  unansweredOutcome,
+  unreadMessageNote,
+  waitLeft,
+  type SettledRun,
+} from "./turn-outcome"
 
 const failed = (cause: string, more: Partial<SettledRun> = {}): SettledRun => ({
   status: "error",
@@ -189,5 +196,57 @@ describe("turnOutcome", () => {
       turnOutcome({ status: "error", cause: "provider_key_refused" }, "Moss")
         ?.action
     ).toEqual({ kind: "continue", label: "Try again" })
+  })
+})
+
+describe("a message no turn answered", () => {
+  const row = (turn: number, role: string) => ({ properties: { turn, role } })
+
+  it("is one whose ordinal is past every reply's", () => {
+    expect(hasUnansweredMessage([])).toBe(false)
+    expect(hasUnansweredMessage([row(0, "user"), row(1, "assistant")])).toBe(
+      false
+    )
+    expect(
+      hasUnansweredMessage([
+        row(0, "user"),
+        row(1, "assistant"),
+        row(2, "user"),
+      ])
+    ).toBe(true)
+    // The result of a call that was under way when the message was sent
+    // comes after it, and answers nothing.
+    expect(
+      hasUnansweredMessage([
+        row(0, "user"),
+        row(1, "assistant"),
+        row(2, "user"),
+        row(3, "tool"),
+      ])
+    ).toBe(true)
+    // A failed first call left the opening message with no reply.
+    expect(hasUnansweredMessage([row(0, "user")])).toBe(true)
+  })
+
+  it("reads as a quiet note with Continue on a turn that finished", () => {
+    const rows = [row(0, "user"), row(1, "assistant"), row(2, "user")]
+    expect(unansweredOutcome(rows, "Moss")).toEqual({
+      tone: "quiet",
+      title: "Moss hasn’t answered your last message.",
+      action: { kind: "continue", label: "Continue" },
+    })
+    expect(unansweredOutcome(rows.slice(0, 2), "Moss")).toBeUndefined()
+  })
+
+  it("names the button that reads it on a turn that did not finish", () => {
+    expect(unreadMessageNote({ kind: "continue", label: "Continue" })).toBe(
+      "It hasn’t read your last message. Continue, and it will."
+    )
+    expect(unreadMessageNote({ kind: "continue", label: "Try again" })).toBe(
+      "It hasn’t read your last message. Try again, and it will."
+    )
+    expect(unreadMessageNote({ kind: "new-chat", label: "New chat" })).toBe(
+      "It hasn’t read your last message."
+    )
   })
 })

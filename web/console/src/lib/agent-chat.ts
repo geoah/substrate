@@ -357,9 +357,27 @@ export function persistedTurns(messages: SubstrateRecord[]): Set<number> {
  * carries its `turn`. Events without a turn (the thread, a compaction,
  * done) are never dropped. A highest-turn cutoff is wrong here: a
  * resolution written while the reply streams takes a later ordinal than
- * the reply, and would hide it. */
+ * the reply, and would hide it. The two events about a message sent while
+ * the turn ran name a row too, and say what the row does not (whether the
+ * model has read it), so they are kept. */
 export function isReplayed(event: AgentEvent, held: Set<number>): boolean {
+  if (event.kind === "messageQueued" || event.kind === "messageTaken")
+    return false
   return typeof event.turn === "number" && held.has(event.turn)
+}
+
+/** The highest `turn` an assistant row among `messages` carries, or -1. A
+ * reply past a message's ordinal belongs to a call that read the message
+ * (decision 0318), so the rows already show such a message where it was
+ * read. */
+export function newestReplyTurn(messages: SubstrateRecord[]): number {
+  let newest = -1
+  for (const m of messages) {
+    const turn = m.properties.turn
+    if (m.properties.role === "assistant" && typeof turn === "number")
+      newest = Math.max(newest, turn)
+  }
+  return newest
 }
 
 // ── tools ──────────────────────────────────────────────────────────────────

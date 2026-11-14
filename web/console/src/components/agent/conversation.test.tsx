@@ -1780,6 +1780,328 @@ describe("a server from before a message could name its id", () => {
   })
 })
 
+describe("a message sent while a turn runs", () => {
+  beforeEach(() => {
+    agentsRevision = 6
+  })
+
+  /** The waiting messages' marks, and the bubbles drawn as waiting. */
+  const marks = () => document.querySelectorAll("[data-slot=queued-mark]")
+  const waiting = () => document.querySelectorAll("[data-queued]")
+  /** The page's text, to read what is drawn above what. */
+  const page = () => document.body.textContent ?? ""
+
+  /** A chat with one stored exchange, and a turn this page sent running. */
+  async function running(thread = "t-30") {
+    stubRows([
+      message("m1", 1, "assistant", "an answer"),
+      message("m0", 0, "user", "question"),
+    ])
+    mount(thread)
+    await waitFor(() => expect(screen.getByText("an answer")).toBeTruthy())
+    type("list my tasks")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => calls[0].onEvent({ kind: "thread", thread }))
+  }
+
+  /** Sends `text` into the running turn, and has the server take it. */
+  function sendMeanwhile(text: string) {
+    type(text)
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    const call = calls[calls.length - 1]
+    act(() => call.onEvent({ kind: "thread", thread: call.thread ?? "" }))
+    return call
+  }
+
+  it("keeps the composer usable beside Stop, and sends into the running thread", async () => {
+    await running()
+    // Send stays, beside the composer's Stop and the header's.
+    expect(screen.getAllByRole("button", { name: "Stop" })).toHaveLength(2)
+    const box = screen.getByRole<HTMLTextAreaElement>("textbox")
+    expect(box.disabled).toBe(false)
+    expect(box.placeholder).toBe("Add to what Helper is working on…")
+    expect(screen.queryByText(/Waiting for the previous turn/)).toBeNull()
+
+    const call = sendMeanwhile("only the open ones")
+    // The same send as any other: the thread, the text, an id of its own.
+    expect(calls).toHaveLength(2)
+    expect(call.thread).toBe("t-30")
+    expect(call.message).toBe("only the open ones")
+    expect(call.messageId).toBeTruthy()
+    expect(call.messageId).not.toBe(calls[0].messageId)
+    expect(box.value).toBe("")
+    // The turn it joined goes on: nothing was reset, and Stop is still there.
+    expect(screen.getByText("list my tasks")).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Stop" })).toHaveLength(2)
+  })
+
+  it("shows the message as queued until the model is handed it, then as any message", async () => {
+    await running()
+    act(() =>
+      calls[0].onEvent({ kind: "delta", text: "Looking", turn: 3, at: 0 })
+    )
+    const call = sendMeanwhile("only the open ones")
+    expect(screen.getByText("only the open ones")).toBeTruthy()
+    expect(marks()).toHaveLength(1)
+    expect(marks()[0].textContent).toBe("Queued")
+    expect(waiting()).toHaveLength(1)
+
+    // What the turn does meanwhile happened before the model read it, and
+    // is drawn above it: the rest of the reply, and a call it makes.
+    act(() => {
+      calls[0].onEvent({
+        kind: "messageQueued",
+        id: call.messageId,
+        turn: 4,
+        text: "only the open ones",
+      })
+      calls[0].onEvent({ kind: "delta", text: " them up.", turn: 3, at: 7 })
+      calls[0].onEvent({
+        kind: "toolStarted",
+        id: "call_0",
+        tool: "query",
+        args: "{}",
+        turn: 5,
+      })
+    })
+    expect(screen.getAllByText("only the open ones")).toHaveLength(1)
+    expect(marks()).toHaveLength(1)
+    expect(page().indexOf("Looking them up.")).toBeLessThan(
+      page().indexOf("only the open ones")
+    )
+
+    act(() => {
+      calls[0].onEvent({ kind: "messageTaken", id: call.messageId, turn: 4 })
+      calls[0].onEvent({ kind: "delta", text: "Two are open.", turn: 6, at: 0 })
+    })
+    // Taken: an ordinary message, with the reply that read it under it.
+    expect(marks()).toHaveLength(0)
+    expect(waiting()).toHaveLength(0)
+    expect(page().indexOf("only the open ones")).toBeLessThan(
+      page().indexOf("Two are open.")
+    )
+    expect(screen.queryByText(/reads your message at its next step/)).toBeNull()
+  })
+
+  it("says what a stop does to a queued message, before and after it", async () => {
+    await running()
+    sendMeanwhile("not that one")
+    expect(
+      screen.getByText(
+        "Helper reads your message at its next step. If you stop it first, the message stays here and is read when you continue."
+      )
+    ).toBeTruthy()
+    sendMeanwhile("the other one")
+    expect(
+      screen.getByText(
+        "Helper reads your 2 messages at its next step. If you stop it first, they stay here and are read when you continue."
+      )
+    ).toBeTruthy()
+    // A stop on its way takes no more messages.
+    fireEvent.click(screen.getAllByRole("button", { name: "Stop" })[0])
+    expect(stops).toEqual(["t-30"])
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull()
+  })
+
+  it("says a stopped turn left the last message unread, and that Continue reads it", async () => {
+    stubRows([
+      message("q1", 2, "user", "not that one"),
+      message("m1", 1, "assistant", "partial"),
+      message("m0", 0, "user", "question"),
+    ])
+    const stopped = runningThread("t-31")
+    stopped.properties = { status: "stopped", cause: "requested" }
+    mount("t-31", { threadRecord: stopped })
+    await waitFor(() => expect(screen.getByText("not that one")).toBeTruthy())
+    expect(
+      screen.getByText("Helper was stopped before it finished.")
+    ).toBeTruthy()
+    expect(
+      screen.getByText(
+        "It hasn’t read your last message. Continue, and it will."
+      )
+    ).toBeTruthy()
+    // A stored message is a message like any other: nothing is queued.
+    expect(marks()).toHaveLength(0)
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(continues.map((c) => c.thread)).toEqual(["t-31"])
+    expect(calls).toHaveLength(0)
+  })
+
+  it("offers Continue on a finished turn whose last message got no reply", async () => {
+    stubRows([
+      message("q1", 2, "user", "and the notes?"),
+      message("m1", 1, "assistant", "All of it."),
+      message("m0", 0, "user", "question"),
+    ])
+    const done = runningThread("t-32")
+    done.properties = { status: "ok" }
+    mount("t-32", { threadRecord: done })
+    await waitFor(() => expect(screen.getByText("and the notes?")).toBeTruthy())
+    expect(
+      screen.getByText("Helper hasn’t answered your last message.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(continues.map((c) => c.thread)).toEqual(["t-32"])
+  })
+
+  it("follows a message the turn never read to the turn it starts", async () => {
+    await running()
+    const call = sendMeanwhile("and the notes?")
+    act(() => {
+      calls[0].onEvent({
+        kind: "messageQueued",
+        id: call.messageId,
+        turn: 4,
+        text: "and the notes?",
+      })
+      calls[0].onEvent({ kind: "delta", text: "No tasks.", turn: 3, at: 0 })
+      calls[0].onEvent({
+        kind: "done",
+        result: { ...settled, thread: "t-30" },
+      })
+      calls[0].onDone?.()
+    })
+    // The turn ended on its own with the message unread: the page attaches
+    // to the turn the message starts, and the composer is not released as
+    // if the chat were idle.
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    expect(attaches[0].thread).toBe("t-30")
+    expect(marks()).toHaveLength(1)
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-30" })
+      attaches[0].onEvent({
+        kind: "messageTaken",
+        id: call.messageId,
+        turn: 4,
+      })
+      attaches[0].onEvent({ kind: "delta", text: "No notes.", turn: 5, at: 0 })
+    })
+    expect(marks()).toHaveLength(0)
+    expect(screen.getAllByText("and the notes?")).toHaveLength(1)
+    expect(page().indexOf("and the notes?")).toBeLessThan(
+      page().indexOf("No notes.")
+    )
+  })
+
+  it("reads a reply past the message as the model having read it, when no event said so", async () => {
+    await running()
+    const call = sendMeanwhile("only the open ones")
+    act(() => {
+      calls[0].onEvent({
+        kind: "messageQueued",
+        id: call.messageId,
+        turn: 4,
+        text: "only the open ones",
+      })
+      // A tool event past it says nothing: the call was already under way.
+      calls[0].onEvent({
+        kind: "toolFinished",
+        id: "call_0",
+        tool: "query",
+        ok: true,
+        output: "{}",
+        turn: 5,
+      })
+    })
+    expect(marks()).toHaveLength(1)
+    act(() =>
+      calls[0].onEvent({ kind: "delta", text: "Two are open.", turn: 6, at: 0 })
+    )
+    expect(marks()).toHaveLength(0)
+  })
+
+  it("takes a refused message out and puts it back in the composer", async () => {
+    await running()
+    type("too late")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    expect(marks()).toHaveLength(1)
+    act(() =>
+      calls[1].onError?.(
+        new ApiError("conflict", "thread t-30 already has a running turn", 409)
+      )
+    )
+    expect(marks()).toHaveLength(0)
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "too late"
+    )
+    expect(screen.getByRole("alert").textContent).toContain(
+      "already has a running turn"
+    )
+    // The turn it was sent into is untouched.
+    expect(screen.getAllByRole("button", { name: "Stop" })).toHaveLength(2)
+  })
+
+  it("sends an unanswered one again under the same id", async () => {
+    await running()
+    type("did it arrive?")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() =>
+      calls[1].onError?.(
+        new TransportError("the connection failed before the server answered")
+      )
+    )
+    await waitFor(() => expect(calls).toHaveLength(3))
+    expect(calls[2].messageId).toBe(calls[1].messageId)
+    expect(calls[2].thread).toBe("t-30")
+    expect(marks()).toHaveLength(1)
+  })
+
+  it("shows a message another window sent into the turn", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-33", { threadRecord: runningThread("t-33") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-33" })
+      attaches[0].onEvent({ kind: "delta", text: "Working", turn: 1, at: 0 })
+      attaches[0].onEvent({
+        kind: "messageQueued",
+        id: "from-the-phone",
+        turn: 2,
+        text: "also the notes",
+      })
+    })
+    expect(screen.getByText("also the notes")).toBeTruthy()
+    expect(marks()).toHaveLength(1)
+  })
+
+  it("leaves a message the rows already answer to the rows", async () => {
+    stubRows([
+      message("m3", 3, "assistant", "Two are open."),
+      message("q1", 2, "user", "only the open ones"),
+      message("m1", 1, "assistant", "Looking."),
+      message("m0", 0, "user", "question"),
+    ])
+    mount("t-34", { threadRecord: runningThread("t-34") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-34" })
+      attaches[0].onEvent({
+        kind: "messageQueued",
+        id: "q1",
+        turn: 2,
+        text: "only the open ones",
+      })
+      attaches[0].onEvent({ kind: "messageTaken", id: "q1", turn: 2 })
+    })
+    // Once, where the rows have it, above the reply that read it.
+    expect(screen.getAllByText("only the open ones")).toHaveLength(1)
+    expect(marks()).toHaveLength(0)
+    expect(page().indexOf("only the open ones")).toBeLessThan(
+      page().indexOf("Two are open.")
+    )
+  })
+
+  it("holds the composer shut while a turn runs on a server that takes no message meanwhile", async () => {
+    agentsRevision = 5
+    await running()
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull()
+    type("something")
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
+    expect(calls).toHaveLength(1)
+  })
+})
+
 /** A conversation the page remounts by thread, as the agents page does. */
 function Keyed({ thread }: { thread: string }) {
   const [draft, setDraft] = useState("")

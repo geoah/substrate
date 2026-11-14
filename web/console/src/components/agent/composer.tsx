@@ -1,7 +1,11 @@
 /** Where you write to the agent: a growing text box, the agent it goes to
  * (chosen on a new chat, fixed on an existing one, since a thread keeps its
- * agent) and the send button, which is a stop button while a turn runs.
- * Enter sends; Shift+Enter starts a new line. */
+ * agent), the send button, and a stop button while a turn runs. Enter sends;
+ * Shift+Enter starts a new line.
+ *
+ * While a turn runs on a server that takes a message meanwhile (`queues`),
+ * the box stays usable and Send sits beside Stop: what is sent is read by
+ * the agent at its next step. On an older server Stop takes Send's place. */
 
 import { useEffect, useRef } from "react"
 import { ArrowUpIcon, ChevronDownIcon, SquareIcon } from "lucide-react"
@@ -31,6 +35,7 @@ export function Composer({
   disabled,
   onStop,
   stopping = false,
+  queues = false,
 }: {
   value: string
   onChange: (value: string) => void
@@ -50,6 +55,8 @@ export function Composer({
   onStop?: () => void
   /** A stop was asked for and the turn has not settled yet. */
   stopping?: boolean
+  /** A turn runs and a message sent now joins it: Send stays beside Stop. */
+  queues?: boolean
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -80,7 +87,11 @@ export function Composer({
             e.preventDefault()
             if (canSend) onSend()
           }}
-          placeholder={`Ask ${name} anything about your data…`}
+          placeholder={
+            queues
+              ? `Add to what ${name} is working on…`
+              : `Ask ${name} anything about your data…`
+          }
           aria-label={`Message ${name}`}
           disabled={disabled}
           className="min-h-[22px] resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-faint disabled:cursor-not-allowed"
@@ -120,21 +131,27 @@ export function Composer({
             <span role="status" className="text-muted-foreground">
               {blockedReason}
             </span>
+          ) : queues ? (
+            <span className="hidden sm:inline">
+              {name} reads a message you send now at its next step
+            </span>
           ) : (
             <span className="hidden sm:inline">
               Enter to send · Shift+Enter for a new line
             </span>
           )}
-          {onStop ? (
+          {onStop && (
             <Button
               size="icon-sm"
+              variant={queues ? "outline" : "default"}
               aria-label={stopping ? "Stopping" : "Stop"}
               disabled={stopping}
               onClick={onStop}
             >
               {stopping ? <Spinner className="size-3.5" /> : <SquareIcon />}
             </Button>
-          ) : (
+          )}
+          {(!onStop || queues) && (
             <Button
               size="icon-sm"
               aria-label="Send"

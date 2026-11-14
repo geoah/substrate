@@ -36,7 +36,14 @@
  * holds no second time, and answers with the turn it started. That is the
  * one thing this page sends again on its own, and only under the same id.
  * Going on after a turn that stopped, ran out of budget or failed is the
- * thread's `continue`, which writes no message. */
+ * thread's `continue`, which writes no message.
+ *
+ * A message can be sent while a turn runs (decision 0318), on a server that
+ * takes one. It is its own request, beside the stream the page already
+ * reads: once the server has named the thread the message is stored, and
+ * that second stream is closed. The message waits at the bottom of the
+ * conversation, marked, until the turn's stream says the model was handed
+ * it; a turn that ends first is followed to the turn the message starts. */
 
 import {
   useEffect,
@@ -70,6 +77,7 @@ import {
   agentName,
   examplePrompts,
   isReplayed,
+  newestReplyTurn,
   persistedTurns,
   providerName,
   tallyWords,
@@ -81,10 +89,18 @@ import {
   unfinishedTurn,
   type UnfinishedTurn,
 } from "@/lib/agent-runs"
-import { cutReplyOutcome, turnOutcome, waitLeft } from "@/lib/turn-outcome"
+import {
+  cutReplyOutcome,
+  hasUnansweredMessage,
+  turnOutcome,
+  unansweredOutcome,
+  unreadMessageNote,
+  waitLeft,
+} from "@/lib/turn-outcome"
 import {
   attachThread,
   continueThread,
+  MESSAGE_DURING_RUN_REVISION,
   newMessageId,
   OWN_MESSAGE_ID_REVISION,
   stopThread,
@@ -103,15 +119,20 @@ import { discoveryQueryOptions, hasFeature } from "@/lib/api/discovery"
 import { LLM_PACKAGE } from "@/lib/api/http"
 import { USD } from "@/lib/money"
 import {
+  dropQueued,
   EMPTY_OVERLAY,
+  hasWaiting,
   liveBeyond,
   liveCalls,
   pushCompacted,
   pushDelta,
+  pushQueued,
   pushReasoning,
   pushToolStart,
+  queuedIds,
   settleMentions,
   settleTool,
+  takeQueued,
   transcriptOf,
   type LiveOverlay,
   type Placement,
@@ -448,6 +469,11 @@ export function Conversation({
   const positions =
     !discovery.data ||
     hasFeature(discovery.data, "agents", STREAM_POSITIONS_REVISION)
+  // Whether the server takes a message sent while a turn runs: then the
+  // composer stays usable beside Stop, and what is sent joins the turn.
+  const steers =
+    !discovery.data ||
+    hasFeature(discovery.data, "agents", MESSAGE_DURING_RUN_REVISION)
   // A continue the server refused, in the server's words.
   const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
@@ -476,6 +502,20 @@ export function Conversation({
     }
   }, [unsentAt])
   const handleRef = useRef<ChatHandle | null>(null)
+  // The result the stream in flight ended its turn with, read when the
+  // stream closes: a state would not have landed by then.
+  const resultRef = useRef<AgentResult | null>(null)
+  // Whether the page is still this conversation's: a message sent while a
+  // turn ran is answered on a request of its own, which may outlive it.
+  const aliveRef = useRef(true)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+    }
+  }, [])
+  // Messages sent while a turn ran, each waiting to go again.
+  const queueTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>())
   const liveRef = useRef<LiveOverlay>(EMPTY_OVERLAY)
   const seqRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -527,6 +567,9 @@ export function Conversation({
       clearTimeout(retryRef.current)
       // A send waiting to go again must not go from a chat that was left.
       clearTimeout(resendRef.current)
+      const waits = queueTimersRef.current
+      for (const timer of waits) clearTimeout(timer)
+      waits.clear()
     },
     []
   )
@@ -550,8 +593,14 @@ export function Conversation({
     .filter((r) => Boolean(r.properties.requestedIn))
     .map((r) => r.id)
 
-  const persisted = transcriptOrder(messages.data?.records ?? [])
+  const stored = messages.data?.records ?? []
   const handedOver = settledAt > 0 && messages.dataUpdatedAt >= settledAt
+  // A message sent while the turn runs is shown by the overlay, where the
+  // run read it: its stored row, read early by an attach, would show it
+  // above the reply that was streaming when it was sent.
+  const steered = handedOver ? undefined : queuedIds(live)
+  const rows = steered?.size ? stored.filter((r) => !steered.has(r.id)) : stored
+  const persisted = transcriptOrder(rows)
   // The read after a run failed for good: no handover will come on its own.
   // The overlay stays (it is the only view of the run), the composer is
   // released, and a retry that lands completes the handover.
@@ -577,9 +626,7 @@ export function Conversation({
   // The rows are the truth for whatever they hold, and the overlay is drawn
   // past them: both read the same rows here, so a row that lands and the
   // live turn it replaces change in one render.
-  const shownLive = positions
-    ? liveBeyond(live, messages.data?.records ?? [])
-    : live.turns
+  const shownLive = positions ? liveBeyond(live, rows) : live.turns
   // A call the rows declare has its one card there; the stream's result for
   // it, where its result row is not read yet, is shown on that card.
   const turns = handedOver
@@ -592,11 +639,21 @@ export function Conversation({
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.
   const busy = streaming || (settledAt > 0 && !handedOver && !reloadFailed)
-  const blockedReason = resending
+  // Why a turn cannot be started now: a send that opens one, a continue, a
+  // message sent again.
+  const turnBlocked = resending
     ? "Sending your last message again"
     : busy
       ? "Waiting for the previous turn to finish"
       : undefined
+  // A message sent while a turn streams joins it, once the turn's thread is
+  // known and unless a stop is on its way.
+  const canQueue =
+    steers && streaming && Boolean(current) && !stopping && !resending
+  const blockedReason = canQueue ? undefined : turnBlocked
+  const waitingCount = streaming
+    ? live.turns.filter((t) => t.queued === "waiting").length
+    : 0
   const liveKey = streaming
     ? [...shownLive].reverse().find((t) => t.role === "assistant")?.key
     : undefined
@@ -710,8 +767,24 @@ export function Conversation({
           )
         )
         break
+      case "messageQueued":
+        // A message sent while the turn runs is stored: this page's own,
+        // which now learns its ordinal, or one sent from another window.
+        if (ev.id)
+          update(
+            pushQueued(
+              liveRef.current,
+              { id: ev.id, content: ev.text ?? "", turn: ev.turn },
+              seqRef.current++
+            )
+          )
+        break
+      case "messageTaken":
+        if (ev.id) update(takeQueued(liveRef.current, ev.id))
+        break
       case "done":
         if (ev.result) {
+          resultRef.current = ev.result
           setResult(ev.result)
           update(settleMentions(liveRef.current, ev.result.mentions))
         }
@@ -746,6 +819,26 @@ export function Conversation({
     // stale too. Coarse on purpose: the run reports a tally, not which
     // collections moved.
     void client.invalidateQueries({ queryKey: ["records-count"] })
+  }
+
+  // A turn's stream ended with its `done`. A message the turn never read
+  // starts the next turn itself where the turn ended on its own, so the
+  // page follows it there rather than hand over in between; with nothing
+  // running by then, the attach says so and the rows are read.
+  function finishRun(run: number) {
+    if (run !== runRef.current) return
+    const status = resultRef.current?.status
+    const thread = runThreadRef.current || current
+    if (
+      thread &&
+      hasWaiting(liveRef.current) &&
+      (status === "ok" || status === "overbudget")
+    ) {
+      resultRef.current = null
+      setStopping(false)
+      return reattach(run, thread, 0)
+    }
+    settleRun(run)
   }
 
   // The turn running on the thread, attached once per running stretch.
@@ -812,6 +905,10 @@ export function Conversation({
         if (run !== runRef.current) return
         if (read.isError) return reattach(run, thread, attempt + 1)
         const held = persistedTurns(read.data?.records ?? [])
+        // A reply past a message's ordinal read it: the rows show such a
+        // message where it belongs, and its replayed events add nothing.
+        const replied = newestReplyTurn(read.data?.records ?? [])
+        resultRef.current = null
         // With positions the overlay stays: the replay is written over it in
         // place, and what the rows just read hold is left to them where the
         // turns are drawn (`liveBeyond`). Without them a replayed piece
@@ -839,6 +936,12 @@ export function Conversation({
             // This reader fell behind the turn: the turn runs on.
             if (ev.kind === "lagged") lagged = true
             if (isReplayed(ev, held)) return
+            if (
+              ev.kind === "messageQueued" &&
+              ev.turn !== undefined &&
+              ev.turn < replied
+            )
+              return
             onEvent(ev, run)
           },
           onError: (err) => {
@@ -859,7 +962,7 @@ export function Conversation({
           },
           onDone: () => {
             if (run !== runRef.current) return
-            if (done) return settleRun(run)
+            if (done) return finishRun(run)
             if (!idle) return reattach(run, thread, lagged ? 0 : attempt + 1)
             settleIdle(run, idle)
           },
@@ -917,8 +1020,12 @@ export function Conversation({
   function send(text = draft, again?: SentRequest) {
     const message = text.trim()
     const to = again?.agent ?? agentId
+    if (!message || !to || keylessProvider) return
+    // While a turn runs, what is typed joins it; a message sent again is a
+    // turn of its own and waits like one.
+    if (!again && canQueue) return queueSend(text)
     // `blockedReason` says why on the composer, and the text stays there.
-    if (!message || blockedReason || !to || keylessProvider) return
+    if (turnBlocked) return
     // A message sent again leaves what is being typed alone.
     if (!again && text === draft) onDraft("")
     const messageId = again?.messageId ?? (ownIds ? newMessageId() : undefined)
@@ -942,6 +1049,7 @@ export function Conversation({
     // whose message went back into the composer is that composer's now.
     keepUnsent(unsentAt, (o) => o.message !== message)
     setResult(null)
+    resultRef.current = null
     seqRef.current++
     // The previous run's overlay is the persisted transcript's job now —
     // unless its read failed, when the overlay is still the only view of it.
@@ -993,7 +1101,7 @@ export function Conversation({
       const end = (unanswered?: string) => {
         if (run !== runRef.current) return
         if (named && idle) return settleIdle(run, idle)
-        if (named && done) return settleRun(run)
+        if (named && done) return finishRun(run)
         if (named) return reattach(run, runThreadRef.current, 0)
         if (unanswered !== undefined && !entry) {
           // Kept outside the page from the first lost answer, with the
@@ -1122,18 +1230,123 @@ export function Conversation({
     post(0)
   }
 
+  // Sends a message into the turn that is running. The request is the same
+  // chat send: the server stores the message at once and answers with that
+  // turn's stream, which this page already reads, so the request is done
+  // once it names the thread. The message waits at the bottom, marked, until
+  // the page's own stream says the model was handed it.
+  //
+  // A refusal (an older server, a run that is no chat turn) takes the
+  // message out and puts it back in the composer. An answer that was lost
+  // is sent again under the same id, which cannot send it twice.
+  function queueSend(text: string) {
+    const message = text.trim()
+    const thread = runThreadRef.current || current
+    if (!agentId || !thread) return
+    if (text === draft) onDraft("")
+    const to = agentId
+    const messageId = newMessageId()
+    const sentContext = context?.length ? context : undefined
+    const about = (sentContext ?? []).flatMap((p) => {
+      const parts = splitRecordPath(p)
+      return parts ? [parts] : []
+    })
+    update(
+      pushQueued(
+        liveRef.current,
+        { id: messageId, content: message, contextRecords: about },
+        seqRef.current++
+      )
+    )
+    const sentKey = unsentAt
+    const post = (attempt: number) => {
+      let named = false
+      const lost = (reason: string) => {
+        if (named || !aliveRef.current) return
+        if (attempt < RESEND_DELAYS_MS.length) {
+          console.warn("chat: a message sent mid-turn went unanswered", {
+            thread,
+            attempt: attempt + 1,
+            reason,
+          })
+          const timer = setTimeout(() => {
+            queueTimersRef.current.delete(timer)
+            post(attempt + 1)
+          }, RESEND_DELAYS_MS[attempt])
+          queueTimersRef.current.add(timer)
+          return
+        }
+        update(dropQueued(liveRef.current, messageId))
+        addUnsent(sentKey, {
+          kind: "unanswered",
+          reason,
+          message,
+          restored: false,
+          request: {
+            agent: to,
+            thread,
+            messageId,
+            ...(sentContext && { context: sentContext }),
+          },
+        })
+      }
+      const handle = streamChat({
+        agent: to,
+        thread,
+        message,
+        messageId,
+        context: sentContext,
+        onEvent: (ev) => {
+          if (named || ev.kind !== "thread") return
+          // The server holds the message. Its turn's stream is the one the
+          // page reads already, so this one has said all it had to.
+          named = true
+          handle.stop()
+          if (aliveRef.current && sentContext) onContextDone?.()
+        },
+        onError: (err) => {
+          if (named || !aliveRef.current) return
+          if (
+            err instanceof ApiError &&
+            err.status >= 400 &&
+            err.status < 500
+          ) {
+            console.error("chat: a message sent mid-turn was refused", {
+              status: err.status,
+              code: err.code,
+              message: err.message,
+            })
+            update(dropQueued(liveRef.current, messageId))
+            addUnsent(sentKey, {
+              kind: "refused",
+              reason: err.message,
+              message,
+              restored: giveBack(message),
+            })
+            return
+          }
+          lost(err.message)
+        },
+        onDone: () =>
+          lost("the connection closed before the server said anything"),
+      })
+    }
+    post(0)
+  }
+
   // Goes on with a thread whose last turn stopped, ran out of budget or
   // failed (Continue, Try again): the thread's `continue`, which runs a turn
   // on the stored rows and writes no message.
   function goOn() {
     const thread = current
-    if (!thread || blockedReason || keylessProvider) return
+    if (!thread || turnBlocked || keylessProvider) return
     // A server with no `continue` route goes on only when written to.
     if (!ownIds) return send(CONTINUE_MESSAGE)
     void dropReads()
     setError(null)
     setGoOnError(null)
     setResult(null)
+    resultRef.current = null
     const kept = reloadFailed ? liveRef.current.turns : []
     const settledBefore = settledAt
     setSettledAt(0)
@@ -1176,7 +1389,7 @@ export function Conversation({
       },
       onDone: () => {
         if (run !== runRef.current) return
-        if (named && done) return settleRun(run)
+        if (named && done) return finishRun(run)
         reattach(run, thread, 0)
       },
     })
@@ -1207,6 +1420,8 @@ export function Conversation({
     current && threadRecord && !busy && !threadRunning && !background
       ? unfinishedTurn(threadRecord, name, now)
       : undefined
+  // Every stored row, the ones the overlay stands in for included.
+  const everyRow = transcriptOrder(stored)
 
   // A failure the stream reported with its cause reads the same way before
   // the thread's record catches up: one place chooses the words.
@@ -1236,14 +1451,21 @@ export function Conversation({
     !busy &&
     !threadRunning &&
     !background
-      ? cutReplyOutcome(
-          persisted,
+      ? (cutReplyOutcome(
+          everyRow,
           typeof threadRecord.properties.provider === "string"
             ? threadRecord.properties.provider
             : undefined
-        )
+        ) ?? unansweredOutcome(everyRow, name))
       : undefined
-  const outcome = unfinished ?? reported ?? cut
+  // A turn that was stopped, failed or ran out of room may have left a
+  // message unread, one sent while it ran: the note says so, and that going
+  // on reads it.
+  const ended = unfinished ?? reported
+  const outcome =
+    ended && !ended.detail && !busy && hasUnansweredMessage(everyRow)
+      ? { ...ended, detail: unreadMessageNote(ended.action) }
+      : (ended ?? cut)
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -1333,6 +1555,16 @@ export function Conversation({
             agentId={agentId}
             agent={agent}
           />
+          {waitingCount > 0 && (
+            <p
+              role="status"
+              className="max-w-[70%] self-end text-right text-[12.5px] text-muted-foreground"
+            >
+              {waitingCount === 1
+                ? `${name} reads your message at its next step. If you stop it first, the message stays here and is read when you continue.`
+                : `${name} reads your ${waitingCount} messages at its next step. If you stop it first, they stay here and are read when you continue.`}
+            </p>
+          )}
           <PendingApprovals ids={subagentApprovals} />
           {background && (
             <p role="status" className="text-sm text-muted-foreground">
@@ -1353,7 +1585,7 @@ export function Conversation({
               agentId={agentId}
               onContinue={goOn}
               blocked={
-                blockedReason ??
+                turnBlocked ??
                 (keylessProvider ? "Add an API key first" : undefined)
               }
             />
@@ -1383,7 +1615,7 @@ export function Conversation({
                   o.request ? () => send(o.message, o.request) : undefined
                 }
                 blocked={
-                  blockedReason ??
+                  turnBlocked ??
                   (keylessProvider ? "Add an API key first" : undefined)
                 }
               />
@@ -1452,7 +1684,8 @@ export function Conversation({
           agentId={agentId}
           agents={current ? undefined : pickable}
           onPickAgent={current ? undefined : onPickAgent}
-          busy={busy}
+          busy={busy && !canQueue}
+          queues={canQueue}
           blockedReason={blockedReason}
           disabled={!agentId || Boolean(keylessProvider)}
         />

@@ -225,20 +225,39 @@ function SummaryTurn({ turn }: { turn: TurnView }) {
   )
 }
 
+/** A message of the person's. One sent while a turn runs waits to be read
+ * (decision 0318): it is drawn lighter, with the word under it, until the
+ * agent has been handed it, and then it is a message like any other. */
 function UserTurn({ turn }: { turn: TurnView }) {
+  const waiting = turn.queued === "waiting"
   const bubble = (
     <div
       data-slot="user-message"
-      className="max-w-[70%] self-end rounded-[14px_14px_4px_14px] bg-hover px-3.5 py-2 leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap"
+      data-queued={waiting ? "" : undefined}
+      className={cn(
+        "max-w-[70%] self-end rounded-[14px_14px_4px_14px] bg-hover px-3.5 py-2 leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap",
+        waiting &&
+          "border border-dashed border-border-strong bg-transparent text-muted-foreground"
+      )}
     >
       {turn.content}
     </div>
   )
-  if (!turn.contextRecords?.length) return bubble
+  if (!turn.contextRecords?.length && !waiting) return bubble
   return (
     <div className="flex flex-col items-end gap-1.5 self-end">
-      <ContextChips records={turn.contextRecords} />
+      {turn.contextRecords?.length ? (
+        <ContextChips records={turn.contextRecords} />
+      ) : null}
       {bubble}
+      {waiting && (
+        <span
+          data-slot="queued-mark"
+          className="text-[11.5px] text-muted-foreground"
+        >
+          Queued
+        </span>
+      )}
     </div>
   )
 }
