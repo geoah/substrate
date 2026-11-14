@@ -238,7 +238,8 @@ describe("targets by sex", () => {
   it("takes a sex's own bands where it has them", () => {
     const waist = forSex(entry("waist_circumference"), "female")
     expect(targetBand(waist, 90)?.label).toBe("High Risk")
-    expect(targetBand(entry("waist_circumference"), 90)?.label).toBe("At Risk")
+    expect(targetBand(entry("waist_circumference"), 90)?.label).toBe("Optimal")
+    expect(targetBand(entry("waist_circumference"), 98)?.label).toBe("At Risk")
   })
 })
 

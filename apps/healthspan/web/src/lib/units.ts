@@ -30,12 +30,31 @@ const DISPLAY: Record<string, string> = {
   "mL/kg/min": "mL/kg/min",
   "mmol/L_glucose": "mmol/L",
   score: "",
+  "{score}": "",
+  "[pH]": "",
+  "kcal/d": "kcal/day",
 }
 
-/** How a unit symbol prints beside a value. */
+const SUPERSCRIPT = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+/** How a unit symbol prints beside a value: one of the forms above, else
+ * its UCUM code made readable, since an importer writes the lab's unit in
+ * UCUM: `[IU]/L` as IU/L, `u[IU]/mL` as µIU/mL, `mm[Hg]` as mmHg,
+ * `mL/min/{1.73_m2}` as mL/min/1.73m², `10*9/L` as ×10⁹/L. */
 export function unitLabel(symbol: string | undefined): string {
   if (!symbol) return ""
-  return DISPLAY[symbol] ?? symbol
+  const shown = DISPLAY[symbol]
+  if (shown !== undefined) return shown
+  return symbol
+    .replace(/\{1\.73_m2\}/g, "1.73m²")
+    .replace(/(^|[/.])u(?=g\b|mol\b|L\b|\[)/g, "$1µ")
+    .replace(/\[([^\]]+)\]/g, "$1")
+    .replace(/\{([^}]+)\}/g, "$1")
+    .replace(
+      /(^|\/)10\*(\d+)/g,
+      (_, at: string, n: string) =>
+        `${at}×10${[...n].map((d) => SUPERSCRIPT[Number(d)]).join("")}`
+    )
 }
 
 /** factor such that value_in_to = value_in_from × factor. */

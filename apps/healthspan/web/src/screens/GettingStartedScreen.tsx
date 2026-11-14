@@ -225,7 +225,8 @@ function GettingStarted({
             <ConsoleLink link={consoleLink} path={CONSOLE.providers}>
               the console
             </ConsoleLink>
-            . A lab report no provider delivers can be imported from a file.
+            . What a lab or a care provider gives you as files (an export, a
+            folder, a PDF or a CSV) is imported on Sources.
           </>
         }
       >
@@ -234,7 +235,7 @@ function GettingStarted({
           href="#/sources/import"
           className="flex min-h-11 items-center px-4 py-2.5 text-[17px] text-accent-text active:bg-selected"
         >
-          Import a lab report
+          Import from a file
         </a>
         <a
           href="#/sources"

@@ -68,10 +68,25 @@ function ResultLine(props: {
   const name =
     typeof coding?.display === "string" ? coding.display : metric || "Result"
   const v = p.value as Record<string, unknown> | undefined
+  const coded = p.codedValue as { display?: unknown } | undefined
+  // A coded answer (Negative, Not detected) where there is no number, and
+  // a value kept as the lab sent it where its unit is not the repository's.
   const value = rowValue({
-    ...quantity(v),
+    ...(v
+      ? quantity(v)
+      : {
+          value: typeof p.sourceValue === "string" ? p.sourceValue : undefined,
+          unit: typeof p.sourceUnit === "string" ? p.sourceUnit : undefined,
+        }),
     comparator: typeof v?.comparator === "string" ? v.comparator : undefined,
-    text: typeof p.text === "string" ? p.text : undefined,
+    text:
+      typeof p.text === "string"
+        ? p.text
+        : typeof coded?.display === "string"
+          ? coded.display
+          : typeof p.code === "string"
+            ? p.code
+            : undefined,
   })
   const ranges = Array.isArray(p.referenceRanges)
     ? (p.referenceRanges as Record<string, unknown>[])

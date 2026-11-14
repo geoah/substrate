@@ -1544,10 +1544,12 @@ const ENTRIES: Entry[] = [
     description:
       "Waist circumference - measure of central obesity and metabolic risk",
     trendGoal: "lower",
+    // The IDF's and the WHO's thresholds: a man's risk rises from 94 cm and
+    // is high from 102 cm, a woman's from 80 cm and 88 cm.
     target: [
-      { to: 80, tone: "success", label: "Optimal" },
-      { from: 80, to: 94, tone: "warning", label: "At Risk" },
-      { from: 94, tone: "danger", label: "High Risk" },
+      { to: 94, tone: "success", label: "Optimal" },
+      { from: 94, to: 102, tone: "warning", label: "At Risk" },
+      { from: 102, tone: "danger", label: "High Risk" },
     ],
     targetFor: {
       female: [

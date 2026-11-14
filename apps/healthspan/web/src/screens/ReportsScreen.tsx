@@ -44,7 +44,7 @@ export function ReportsScreen() {
       ) : rows.length === 0 ? (
         <EmptyState
           title="No lab reports yet"
-          description="Import a lab report or connect a provider that sends them, on Sources."
+          description="Import a lab’s or a care provider’s files, or connect a provider that sends them, on Sources."
           action={{
             label: "Open Sources",
             onClick: () => go({ screen: "sources" }),

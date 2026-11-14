@@ -77,7 +77,7 @@ export function TodayScreen() {
       {empty ? (
         <EmptyState
           title="Nothing here yet"
-          description="Connect a provider, or import a lab report, on Sources: what needs attention shows here."
+          description="Connect a provider, or import your labs’ and care providers’ files, on Sources: what needs attention shows here."
           action={{
             label: "Open Sources",
             onClick: () => go({ screen: "sources" }),

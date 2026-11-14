@@ -34,8 +34,8 @@ data:
   package: healthspan
   description: >-
     What Substrate Healthspan keeps for you: the reference basis your age
-    score and lab targets use, and the lab results you imported, so each import
-    can be undone.
+    score and lab targets use, and every import from your labs and care providers,
+    so each can be resumed or undone.
   installs:
     - substrate.reamde.dev/healthspan/profile
     - substrate.reamde.dev/healthspan/import

@@ -134,7 +134,14 @@ export function ImportItem(props: { imp: ImportRecord; sourceName?: string }) {
               imp.importer && IMPORTER_WORDS[imp.importer] !== imp.name
                 ? IMPORTER_WORDS[imp.importer]
                 : undefined,
-              props.sourceName,
+              // "From Randox" says its source already.
+              props.sourceName &&
+              !(
+                imp.importer &&
+                IMPORTER_WORDS[imp.importer].endsWith(` ${props.sourceName}`)
+              )
+                ? props.sourceName
+                : undefined,
               when ? formatDate(when) : undefined,
             ]
               .filter(Boolean)

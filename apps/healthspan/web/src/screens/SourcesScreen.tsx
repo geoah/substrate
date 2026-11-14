@@ -91,7 +91,7 @@ export function SourcesScreen() {
       ) : !list.length ? (
         <EmptyState
           title="No sources yet"
-          description="Connect a provider in your console, or import a file of lab results."
+          description="Connect a provider in your console, or import your labs’ and care providers’ files."
           action={{
             label: "Import a file",
             onClick: () => go({ screen: "import" }),
