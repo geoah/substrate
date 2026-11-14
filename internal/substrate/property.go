@@ -115,3 +115,12 @@ func MarksWithinKinds(marks map[string]PropertyMark, allowPath func(path string)
 	}
 	return out
 }
+
+// Hot property names: the properties that occupy their own storage column,
+// spelled as the DSL and the wire spell them.
+const (
+	PropTitle  = "title"
+	PropAt     = "at"
+	PropEndsAt = "endsAt"
+	PropDueAt  = "dueAt"
+)

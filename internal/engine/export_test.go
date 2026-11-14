@@ -372,6 +372,12 @@ func WithTestArchiveYieldMax(d time.Duration) Option {
 	return func(o *options) { o.archiveYieldMax = d }
 }
 
+// PutBounded is the write an agent's write built-in makes: a put under the
+// run's ceiling, emit the kinds it names.
+func PutBounded(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, in substrate.PutInput, emit []string) (*substrate.Record, error) {
+	return ds.(*dataset).putBounded(ctx, actor, in, &effectCeiling{emit: emit})
+}
+
 // WithTestOperator opens the service as OpenOperator opens substratectl's:
 // no repository's open digests its changelog segments in the background, so
 // a test that damages the source a snapshot reads sees the snapshot's own

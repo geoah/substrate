@@ -14,8 +14,6 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Datatype is a built-in property datatype: what a VALUE is, never what a
@@ -1297,27 +1295,4 @@ func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
 	}
 	sort.Strings(names)
 	return nil, errors.New(bareNameProblem("", "trait", iface, names))
-}
-
-// ActorTier resolves the tier a hand writes at from registry DATA: the bundle
-// tier for every registered function's and agent's own actor. A package
-// declares no actor of its own (decision 0270), so its hand is the engine's
-// to resolve; an unknown actor is simply not the registry's to answer.
-func (r *Registry) ActorTier(actor string) (substrate.Tier, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, name := range r.order {
-		g := r.packages[name]
-		for _, fn := range g.Functions {
-			if fn.Actor() == actor {
-				return substrate.TierBundle, true
-			}
-		}
-		for _, ag := range g.Agents {
-			if ag.Actor() == actor {
-				return substrate.TierBundle, true
-			}
-		}
-	}
-	return "", false
 }

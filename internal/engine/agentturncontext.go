@@ -196,7 +196,10 @@ func (ds *dataset) contextRecord(ctx context.Context, ag *vocabulary.Agent, path
 	if err != nil {
 		return nil, fmt.Errorf("%w: context %s: %w", substrate.ErrValidation, path, err)
 	}
-	scope := queryScope{kinds: ag.Reads.Kinds}
+	scope, err := ds.heldScope(ctx, queryScope{kinds: ag.Reads.Kinds})
+	if err != nil {
+		return nil, fmt.Errorf("context %s: %w", path, err)
+	}
 	if !scope.allows(ty.Identity) {
 		return nil, fmt.Errorf("%w: context %s: agent %s does not read %s: add it to the agent's reads, or ask another agent",
 			substrate.ErrValidation, path, ag.Identity(), ty.Identity)

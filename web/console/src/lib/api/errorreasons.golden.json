@@ -3,6 +3,7 @@
   "first_attempt_running",
   "in_doubt",
   "key_refused",
+  "not_permitted",
   "observed_rederiving",
   "quota",
   "repository_required",

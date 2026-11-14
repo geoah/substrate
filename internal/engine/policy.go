@@ -702,6 +702,11 @@ func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
 		props["policy"] = vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, gw.policyID)
 		props["policyRevision"] = gw.policyVersion
 	}
+	// The held write is held to the one check as if it were written: a hand
+	// whose rules do not reach the target has nothing to put up for review.
+	if err := t.authorizeWrite(gw.kind); err != nil {
+		return "", err
+	}
 	if _, err := t.put(substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: requestID, Properties: props,
 	}); err != nil {

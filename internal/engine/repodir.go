@@ -1182,7 +1182,7 @@ func (ds *dataset) refold(ctx context.Context) error {
 		}
 		defer func() { _ = tx.Rollback() }()
 		t := &txn{
-			ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
+			ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem,
 			now: nowUTC(), internal: true,
 		}
 		var report RebuildReport

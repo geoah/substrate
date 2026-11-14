@@ -428,6 +428,8 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
 | [0273](0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md) | Body is an ordinary property, and no property name is stored apart | accepted |
 | [0274](0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md) | A person signs in as an identity beside the repositories, and picks the repository | accepted |
+| [0275](0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md) | What a person may do is the roles they hold, and nothing is called owner | accepted |
+| [0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md) | One check holds every hand that writes, and one list names the control kinds | accepted |
 | [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
 | [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
 | [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |
@@ -436,3 +438,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0283](0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md) | Trigger run records keep a week of history, and positions stay in the log | accepted |
 | [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
+| [0294](0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md) | Every route is public, for an admin, or held to its rules | accepted |
+| [0295](0295-a-persons-token-is-held-to-that-persons-roles.md) | A person's token is held to that person's roles | accepted |

@@ -367,7 +367,11 @@ entry could name only a function.
   names an existing `target` with its `kind` and a `diff` the accept applies;
   `create` names a `kind`, a stable `id` and a `diff` the accept mints
   create-if-absent; `delete` names an existing `target` with its `kind`, which
-  the accept tombstones.
+  the accept tombstones. Whether a `patch` or a `delete` target exists is a
+  read: the target's kind must be in the agent's `permissions.reads`, and
+  read by whoever the run works for, or the tool answers that it is not in
+  the reads allowlist, the same whether the record exists or not
+  ([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
   The diff is validated and normalised at propose time — the `properties`
   wrapper is required or a bare property map is coerced into it, and every
   property must be writable on the target kind — so a malformed proposal (a
@@ -1613,7 +1617,10 @@ own `budgets.spendCentsPerDay`, nothing reads the app's token to admit it,
 and it stops when the owner pauses or removes the package. An app's token
 reaches it through `agents:` only when the app's own `read` and `write`
 scopes cover every kind the agent reads, which holds for every agent an
-app talks to, not only one an app brought.
+app talks to, not only one an app brought. What the agent then reads and
+writes in a turn the app drives is held, read by read and write by write,
+to the app's grant as it stands and to the person the app acts for
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
 
 ## Calling an agent
 

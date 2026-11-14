@@ -133,6 +133,7 @@ var refoldLedgerFloors = map[string]string{
 	"name_writers_by_actor_type":             "0024_changelog_on_behalf_of",
 	"drop_a_body_its_kind_does_not_declare":  "0025_records_drop_body",
 	"move_the_sign_in_out_of_the_repository": "0027_identities",
+	"give_every_person_admin":                "0027_identities",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its

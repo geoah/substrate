@@ -624,6 +624,9 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
 		return err
 	}
+	if err := s.mayDeleteRepository(ctx, repo, m.identity); err != nil {
+		return err
+	}
 	cp, unlock, err := s.lockRegistration(ctx, repo.Authority)
 	if err != nil {
 		return err
@@ -641,6 +644,24 @@ func (s *service) DeleteRepository(ctx context.Context, in substrate.LoginInput)
 	s.unitGraphs.forget(repo.ID)
 	s.log.Info("substrate: repository deleted by a person who could open it", "repository", repo.ID)
 	forgetUsage(repo.Authority)
+	return nil
+}
+
+// mayDeleteRepository refuses the delete to a person who is not an admin of
+// repo: it erases every person's records and sign-in material there. Their
+// roles are read as their every request reads them.
+func (s *service) mayDeleteRepository(ctx context.Context, repo Repository, identity string) error {
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return err
+	}
+	held, err := ds.PersonRoles(substrate.WithIdentity(ctx, identity))
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(held, func(r substrate.RoleRules) bool { return r.ID == scope.RoleAdmin }) {
+		return fmt.Errorf("%w: %w: deleting a repository is an admin's: it erases every person's records", substrate.ErrForbidden, substrate.ErrNotPermitted)
+	}
 	return nil
 }
 
@@ -812,8 +833,12 @@ func (s *service) ResetUser(ctx context.Context, name, newPassword, createAs str
 		finish = func(err error) error {
 			return fmt.Errorf("%w (the repository's history may now name its new person: run the reset again, and it finishes under the same identity)", err)
 		}
+		// The repository's person, whoever else it holds: its admin.
 		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-			return t.namePersonActor(key, person.ID, person.Name)
+			if err := t.namePersonActor(key, person.ID, person.Name); err != nil {
+				return err
+			}
+			return t.givePersonRoles(key, scope.RoleAdmin)
 		}); err != nil {
 			if errors.Is(err, substrate.ErrWriteInDoubt) {
 				return zero, finish(err)
@@ -934,9 +959,41 @@ func (s *service) Identity(ctx context.Context, id string) (substrate.IdentityIn
 		Repositories: make([]substrate.RepositoryChoice, len(repos)),
 	}
 	for i, repo := range repos {
-		out.Repositories[i] = substrate.RepositoryChoice{ID: repo.ID, Name: repo.Authority}
+		roles, err := s.rolesHeldIn(ctx, repo, id)
+		if err != nil {
+			return substrate.IdentityInfo{}, err
+		}
+		out.Repositories[i] = substrate.RepositoryChoice{ID: repo.ID, Name: repo.Authority, Roles: roles}
 	}
 	return out, nil
+}
+
+// rolesHeldIn are the record ids of the roles the identity's actor holds in
+// repo, read as every request reads them. A repository that does not open
+// says none, and is logged: the person's read of themselves does not fail
+// for one repository set aside. A read of the roles that fails is an error:
+// "none" would be an answer it did not read.
+func (s *service) rolesHeldIn(ctx context.Context, repo Repository, identity string) ([]string, error) {
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		s.log.Warn("substrate: the roles a person holds were not read: the repository did not open", "repository", logSafeID(repo.ID), "error", err)
+		return nil, nil
+	}
+	actors, err := personActorsOf(ctx, ds.db, repo.ID)
+	if err != nil {
+		return nil, fmt.Errorf("read the people of repository %s: %w", repo.ID, err)
+	}
+	for _, a := range actors {
+		if a.identity != identity {
+			continue
+		}
+		roles, err := ds.rolesIn(ctx, ds.db, a.key)
+		if err != nil {
+			return nil, err
+		}
+		return roles.IDs(), nil
+	}
+	return nil, nil
 }
 
 // openSealedRef reads and unseals one sealed row by ref, INSIDE the
@@ -1263,6 +1320,9 @@ func (s *service) resolveToken(ctx context.Context, tokenSecret string, revoking
 		return nil, zero, fmt.Errorf("%w: malformed token", substrate.ErrAuth)
 	}
 	hash := hashToken(tokenSecret)
+	if err := s.ruleFault("token"); err != nil {
+		return nil, zero, fmt.Errorf("read the token: %w", err)
+	}
 	repo, info, err := s.cachedTokenByHash(ctx, hash)
 	if err != nil {
 		return nil, zero, err

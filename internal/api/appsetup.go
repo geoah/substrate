@@ -356,7 +356,12 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	// cut below, row by row.
 	owner, grant, full := ds, scope.Grant{}, true
 	if sd, ok := ds.(*scopedDataset); ok {
-		owner, grant, full = sd.inner, sd.grant, false
+		// A person's view holds no app's grant: it is checked as one that
+		// grants nothing.
+		owner, full = sd.inner, false
+		if app, isApp := sd.grant.(appReach); isApp {
+			grant = app.Grant
+		}
 	}
 	var registry map[string]substrate.KindInfo
 	if !full {

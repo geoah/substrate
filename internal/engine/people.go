@@ -52,6 +52,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -174,8 +175,13 @@ func (ds *dataset) settlePeople(ctx context.Context) error {
 		}
 		if !first.exists || (first.live && first.identity == "") {
 			person := ds.people[0]
+			// The person from before roles could do everything, and keeps
+			// it as `admin`.
 			if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-				return t.namePersonActor(substrate.ActorPerson, person, ds.info.Authority)
+				if err := t.namePersonActor(substrate.ActorPerson, person, ds.info.Authority); err != nil {
+					return err
+				}
+				return t.givePersonRoles(substrate.ActorPerson, scope.RoleAdmin)
 			}); err != nil {
 				return fmt.Errorf("substrate/engine: open repository %s: name its person: %w", ds.info.ID, err)
 			}
@@ -513,11 +519,14 @@ func (ds *dataset) nameTokensPeople(ctx context.Context) error {
 }
 
 // AddPerson lets the identity named identityName open the repository named
-// repository, as its first person when its first person names nobody, else
-// as another, with an actor of their own: the actor first, then the index.
-// Nothing on the network adds a person; this is the operator's door and the
-// tests'.
-func (s *service) AddPerson(ctx context.Context, identityName, repository string) error {
+// repository, holding roles, as its first person when its first person names
+// nobody, else as another, with an actor of their own: the actor first, then
+// the index. Nothing on the network adds a person; this is the operator's
+// door and the tests'.
+func (s *service) AddPerson(ctx context.Context, identityName, repository string, roles ...string) error {
+	if len(roles) == 0 {
+		return fmt.Errorf("%w: a person is added holding at least one role", substrate.ErrValidation)
+	}
 	person, err := s.identityByName(ctx, s.maint, identityName)
 	if err != nil {
 		return err
@@ -539,7 +548,10 @@ func (s *service) AddPerson(ctx context.Context, identityName, repository string
 		key = substrate.ActorPerson
 	}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		return t.namePersonActor(key, person.ID, person.Name)
+		if err := t.namePersonActor(key, person.ID, person.Name); err != nil {
+			return err
+		}
+		return t.setPersonRoles(key, roles)
 	})
 	named := func() {
 		if key == substrate.ActorPerson {
@@ -555,4 +567,118 @@ func (s *service) AddPerson(ctx context.Context, identityName, repository string
 	}
 	named()
 	return s.indexPerson(person.ID, repo.ID)
+}
+
+// SetPersonRoles replaces the roles the person named identityName holds in
+// the repository named repository. It is the operator's door and the tests':
+// nothing on the network changes a role at 1.0.
+func (s *service) SetPersonRoles(ctx context.Context, identityName, repository string, roles ...string) error {
+	if len(roles) == 0 {
+		return fmt.Errorf("%w: a person holds at least one role; take them out of the repository instead", substrate.ErrValidation)
+	}
+	person, err := s.identityByName(ctx, s.maint, identityName)
+	if err != nil {
+		return err
+	}
+	repo, err := s.repositoryByKey(ctx, repository)
+	if err != nil {
+		return err
+	}
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return err
+	}
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		actors, err := personActorsOf(ctx, t.tx, repo.ID)
+		if err != nil {
+			return err
+		}
+		i := slices.IndexFunc(actors, func(a personActor) bool { return a.identity == person.ID })
+		if i < 0 {
+			return fmt.Errorf("%w: %s is no person of repository %s", substrate.ErrNotFound, person.Name, repo.label())
+		}
+		return t.setPersonRoles(actors[i].key, roles)
+	})
+}
+
+// setPersonRoles writes the roles a person's actor holds, as the engine's own
+// write: each a role the repository holds, and never leaving it without a
+// person who holds `admin` (the fixed check on roles, decision 0275). Who may
+// ask is the door's to decide; at 1.0 only the operator's and the engine's
+// own do.
+func (t *txn) setPersonRoles(key substrate.Actor, roles []string) error {
+	if ty, err := t.resolveType(kindActor); err != nil || ty.Props["roles"] == nil {
+		return nil
+	}
+	for _, id := range roles {
+		row, err := t.loadRow(eref{Kind: kindRole, ID: id}, false)
+		if err != nil {
+			return err
+		}
+		if row == nil || row.DeletedAt != nil {
+			return fmt.Errorf("%w: the repository holds no role %q", substrate.ErrValidation, id)
+		}
+	}
+	if !slices.Contains(roles, scope.RoleAdmin) {
+		admins, err := t.adminsBut(key)
+		if err != nil {
+			return err
+		}
+		if admins == 0 {
+			if held, err := t.rolesOf(key); err != nil {
+				return err
+			} else if held.Admin() {
+				return fmt.Errorf("%w: the repository's last admin keeps the role: give it to another person first", substrate.ErrConflict)
+			}
+		}
+	}
+	wasScoped, wasInternal := t.scoped, t.internal
+	t.scoped, t.internal = false, true
+	defer func() { t.scoped, t.internal = wasScoped, wasInternal }()
+	delete(t.roles, key)
+	return t.asActor(substrate.ActorSystem, func() error {
+		_, err := t.patch(eref{Kind: kindActor, ID: actorID(key)}, substrate.PatchInput{
+			Properties: map[string]any{"roles": roleRefs(roles...)},
+		})
+		return err
+	})
+}
+
+// givePersonRoles gives a person's live actor roles where it holds none: the
+// person a repository is created for, and the person from before roles,
+// who could do everything and keeps that as `admin`.
+func (t *txn) givePersonRoles(key substrate.Actor, roles ...string) error {
+	if ty, err := t.resolveType(kindActor); err != nil || ty.Props["roles"] == nil {
+		return nil
+	}
+	row, err := t.loadRow(eref{Kind: kindActor, ID: actorID(key)}, true)
+	if err != nil || row == nil || row.DeletedAt != nil || row.Props["disabled"] == true {
+		return err
+	}
+	if raw, err := json.Marshal(row.Props["roles"]); err == nil && len(roleIDs(raw)) > 0 {
+		return nil
+	}
+	return t.setPersonRoles(key, roles)
+}
+
+// adminsBut counts the live person actors other than key that hold `admin`.
+func (t *txn) adminsBut(key substrate.Actor) (int, error) {
+	actors, err := personActorsOf(t.ctx, t.tx, t.ds.info.ID)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, a := range actors {
+		if a.key == key {
+			continue
+		}
+		roles, err := t.rolesOf(a.key)
+		if err != nil {
+			return 0, err
+		}
+		if roles.Admin() {
+			n++
+		}
+	}
+	return n, nil
 }

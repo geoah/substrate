@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
@@ -464,7 +465,7 @@ func TestARepositoryDeletedTakesItsPeopleOutWithAWarmCache(t *testing.T) {
 	if _, err := h.s.CreateRepository(ctx, other); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.s.AddPerson(ctx, h.name, other); err != nil {
+	if err := h.s.AddPerson(ctx, h.name, other, scope.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	signIn := func(repository string) string {

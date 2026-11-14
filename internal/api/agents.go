@@ -248,14 +248,16 @@ func (h *handler) streamAgentEvents(w http.ResponseWriter, r *http.Request,
 
 // leaseEnded ends an agent stream once its token no longer stands
 // (tokenlease.go), with an error event whose code, `auth`, a client reads as
-// the sign-in ending. The record is read at most every `every`.
+// the sign-in ending, or once its person's roles changed, `unavailable`,
+// which a client opens again. The record is read at most every `every`.
 func leaseEnded(ctx context.Context, enc *json.Encoder, flusher http.Flusher, frame func(), every time.Duration) bool {
 	err := leaseFrom(ctx).alive(ctx, every)
 	if err == nil {
 		return false
 	}
 	frame()
-	if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Code: codeAuth, Error: err.Error()}) == nil {
+	_, p := problemFor(err)
+	if enc.Encode(substrate.AgentEvent{Kind: substrate.AgentEventError, Code: p.Code, Error: err.Error()}) == nil {
 		flusher.Flush()
 	}
 	return true

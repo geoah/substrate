@@ -296,7 +296,7 @@ func (s *scopedDataset) requireBlob(ctx context.Context, digest string) error {
 	}
 	var sites []blobSite
 	for id, k := range reg {
-		if s.grant.Reads(scope.KindOf(id, k.Definition)) {
+		if s.grant.Reads(scopeKindOf(id, k)) {
 			sites = append(sites, blobRefProperties(k)...)
 		}
 	}

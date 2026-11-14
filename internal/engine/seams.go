@@ -101,6 +101,22 @@ func WithTestActorFillOff() Option {
 	return func(o *options) { o.noActorFill = true }
 }
 
+// WithTestRulesFault runs fn before each read of the rules a check holds a
+// hand to (ruleFault): a token's row, a person's roles, an app's grant, the
+// holders of a piece of work. An error fails that read, as a database that
+// did not answer would.
+func WithTestRulesFault(fn func(what string) error) Option {
+	return func(o *options) { o.rulesFault = fn }
+}
+
+// ruleFault is the rules' read seam (WithTestRulesFault): nil outside tests.
+func (s *service) ruleFault(what string) error {
+	if s.testRulesFault == nil {
+		return nil
+	}
+	return s.testRulesFault(what)
+}
+
 // WithTestEraseFault runs fn at each durable step of a repository's
 // deletion (repositories.go eraseRepositoryOn); an error stops the deletion
 // there, as a process killed there would.

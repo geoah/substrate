@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authorize"
@@ -24,7 +26,47 @@ const (
 	// place an assistant's token authenticates (decision 0230). It is set on
 	// the context alone, never read from a header, so no client can claim it.
 	ctxKeyMCPDoor
+	// ctxKeyHeld marks a request whose person is not an admin: the routes
+	// for an admin alone refuse it, and the rest are held to their roles by
+	// the person's view (decision 0294).
+	ctxKeyHeld
 )
+
+// heldToRoles reports whether the request's person is held to their roles.
+func heldToRoles(ctx context.Context) bool {
+	held, _ := ctx.Value(ctxKeyHeld).(bool)
+	return held
+}
+
+// personView is the dataset a token's person reaches the repository through:
+// the repository whole for an admin, the person's view held to their roles
+// for anybody else (decision 0276). The roles are read on each request, so a
+// role changed or taken away holds from the next one; a stream outlives its
+// request, and its lease compares the roles' print (rolesPrint) with the one
+// answered here.
+func personView(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo) (substrate.Dataset, bool, string, error) {
+	held, err := ds.PersonRoles(substrate.WithIdentity(ctx, tok.Identity))
+	if err != nil {
+		return nil, false, "", err
+	}
+	at, err := rolesPrint(held)
+	if err != nil {
+		return nil, false, "", err
+	}
+	roles := rolesOf(held, ds.Repository().Authority)
+	if roles.Admin() {
+		return ds, false, at, nil
+	}
+	return newPersonDataset(ds, roles), true, at, nil
+}
+
+// rolesPrint is the roles a person holds as one comparable string: which
+// roles, and every rule of each.
+func rolesPrint(held []substrate.RoleRules) (string, error) {
+	sorted := slices.SortedFunc(slices.Values(held), func(a, b substrate.RoleRules) int { return strings.Compare(a.ID, b.ID) })
+	raw, err := json.Marshal(sorted)
+	return string(raw), err
+}
 
 // withMCPDoor marks ctx as the MCP door's.
 func withMCPDoor(ctx context.Context) context.Context {
@@ -110,10 +152,20 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	ctx = r.Context()
+	// Every token acts for its person, and is held to that person's roles:
+	// an app's, an assistant's and the person's own.
+	whole := ds
+	ds, held, opened, err := personView(ctx, ds, tok)
+	if err != nil {
+		return nil, http.StatusServiceUnavailable, codeUnavailable, "repository temporarily unavailable", err
+	}
 	// A stream outlives this check: the lease reads the token again before
 	// the stream writes on, and whenever the repository's changelog moves, so
 	// a revoked or expired token stops every stream it opened, a full
-	// token's, an assistant's and an app's alike.
+	// token's, an assistant's and an app's alike. It reads the person's roles
+	// too: the stream reads through the view they built, so a role changed
+	// or taken away ends it, and the client opens it again on the roles held
+	// now.
 	tokenID := tok.ID
 	lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
 		_, again, err := h.svc.Authenticate(ctx, secret)
@@ -123,9 +175,19 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		if again.ID != tokenID {
 			return substrate.ErrAuth
 		}
+		now, err := whole.PersonRoles(substrate.WithIdentity(ctx, again.Identity))
+		if err != nil {
+			return err
+		}
+		if p, err := rolesPrint(now); err != nil || p != opened {
+			return errRolesChanged
+		}
 		return nil
 	}}
 	ctx = withTokenLease(ctx, lease)
+	if held {
+		ctx = context.WithValue(ctx, ctxKeyHeld, true)
+	}
 	if scope.IsMCP(tok.Scopes) {
 		// An assistant's token (decision 0230): the owner's tier, no scope
 		// mark, at the MCP door alone, on the dataset that keeps the auth
@@ -183,22 +245,39 @@ func appActorFor(clientID, authority string, local bool) substrate.Actor {
 	return authorize.AppActorFor(clientID, authority, local)
 }
 
-// requireAuth admits a full-access token and refuses an app's: every route
-// behind it is the owner's unless it is registered behind
-// requireAuthAllowingApps instead, so a route added later is the owner's by
-// default (decision 0194).
+// A route takes a token through one of three doors, which the route list
+// names (decision 0294, access_test.go):
+//   - requireAuth admits a token whose person holds `admin`, and refuses an
+//     app's and a person held to their roles: every route behind it is an
+//     admin's unless it is registered behind another, so a route added
+//     later is an admin's by default (decision 0194);
+//   - requireAuthAllowingApps admits every token, each held to its rules by
+//     the scoped view the bearer check hands it: an app's to its scopes, a
+//     person's to their roles;
+//   - requirePerson admits a person's own token, held to their roles or
+//     not, for what is theirs alone (their sign-ins and their identity),
+//     and refuses an app's.
+type door int
+
+const (
+	doorAdmin door = iota
+	doorRules
+	doorPerson
+)
+
 func (h *handler) requireAuth(next http.Handler) http.Handler {
-	return h.bearer(next, false)
+	return h.bearer(next, doorAdmin)
 }
 
-// requireAuthAllowingApps admits an app's token too, for the scoped surface
-// alone: the records route, the record path and the unit reads. Each is held
-// to the token's scopes by the scopedDataset the bearer check hands it.
 func (h *handler) requireAuthAllowingApps(next http.Handler) http.Handler {
-	return h.bearer(next, true)
+	return h.bearer(next, doorRules)
 }
 
-func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
+func (h *handler) requirePerson(next http.Handler) http.Handler {
+	return h.bearer(next, doorPerson)
+}
+
+func (h *handler) bearer(next http.Handler, d door) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, status, code, msg, cause := h.authenticate(r)
 		if ctx == nil {
@@ -226,10 +305,17 @@ func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 				"an assistant's token does not reach "+r.Method+" "+r.URL.Path)
 			return
 		}
-		if _, scoped := substrate.ScopesFrom(ctx); scoped && !apps {
+		if _, scoped := substrate.ScopesFrom(ctx); scoped && d != doorRules {
 			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 			writeError(w, http.StatusForbidden, codeForbidden,
-				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is the owner's alone")
+				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is a person's alone")
+			return
+		}
+		if heldToRoles(ctx) && d == doorAdmin {
+			writeJSON(w, http.StatusForbidden, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{
+				Code: codeForbidden, Reason: substrate.ReasonNotPermitted,
+				Message: r.Method + " " + r.URL.Path + " is for a person who holds the admin role",
+			}})
 			return
 		}
 		if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID, ownTokenRequest(ctx, r)) {

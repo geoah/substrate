@@ -324,11 +324,10 @@ func oauthScopesForAccount(meta *vocabulary.BundleOAuth2, row *erow) []string {
 // record path `<authority>/<package>/<kind>/<id>`: it returns the provider
 // consent URL, state signed over (repository, record path, nonce). The
 // requested scope union is DERIVED from the account's enabled feature
-// toggles; the flow is gated on the OWNER TIER —
-// an actor DECLARED below owner (an authority's or a bundle's own hand) may
-// not start or restart a consent. An undeclared actor reads
-// as owner (actorTier's default), so the gate binds declared machine actors,
-// not unknown names.
+// toggles. Starting one writes the account, a control kind, so it is held to
+// the one check: a person's request, or an app's acting for its person, whose
+// roles write the account's kind; installed code never starts a consent, and
+// an app's scoped token never does.
 // The nonce's hash lands in oauth_flows beside the flow's PKCE verifier, with
 // the state's own expiry: the callback consumes it exactly once, so a captured
 // state cannot replay.
@@ -337,14 +336,18 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if fl == nil {
 		return "", fmt.Errorf("%w: oauth is not configured on this substrate", substrate.ErrValidation)
 	}
-	if ds.actorTier(actor) != substrate.TierOwner {
-		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not %s", substrate.ErrForbidden, handWords(actor))
-	}
 	if _, scoped := substrate.ScopesFrom(ctx); scoped {
-		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not an app's token", substrate.ErrForbidden)
+		return "", fmt.Errorf("%w: an app's token does not start an oauth flow", substrate.ErrForbidden)
 	}
 	account, err := ds.findAccountRef(ctx, record)
 	if err != nil {
+		return "", err
+	}
+	accountKind, err := ds.resolveType(account.Kind)
+	if err != nil {
+		return "", err
+	}
+	if err := ds.requestMayWrite(ctx, actor, accountKind); err != nil {
 		return "", err
 	}
 	row, b, err := ds.oauthAccountOf(ctx, account)

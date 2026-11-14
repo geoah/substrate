@@ -171,7 +171,13 @@ def main(input, host):
 `)
 	fnPermissions(relay["data"].(map[string]any))["call"] = []any{fnPackage + "/sender"}
 	ds := newFnDataset(t, nil, networkedFn(), relay)
-	ctx := substrate.WithPrincipal(context.Background(), "tok-645")
+	// The request's token is a real one: what a call works for is read from
+	// it at each write (run.go).
+	tok, _, err := ds.MintToken(context.Background(), substrate.MintTokenInput{Label: "the caller"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := substrate.WithPrincipal(context.Background(), tok.ID)
 	name := fnPackage + "/sender"
 
 	if _, n, err := ds.CallFunction(ctx, substrate.ActorPerson, name, map[string]any{"title": "hello"}); err != nil || n != 1 {
@@ -183,7 +189,7 @@ def main(input, host):
 	}
 	p := runs[0].Properties
 	want := map[string]any{
-		"status": "ok", "token": "tok-645",
+		"status": "ok", "token": tok.ID,
 		"callable": name,
 	}
 	for k, v := range want {

@@ -40,10 +40,15 @@ import (
 // Everything else is ErrForbidden.
 type scopedDataset struct {
 	inner substrate.Dataset
-	grant scope.Grant
+	grant viewReach
 	// actor is the app's own derived actor, `app:<host>`: every write goes
-	// out under it whatever actor the handler passes.
+	// out under it whatever actor the handler passes. A person's view has
+	// none and passes on the actor it is handed, the person's or, beneath an
+	// app's view, the app's.
 	actor substrate.Actor
+	// person is whether this is a person's view (newPersonDataset): their
+	// own sign-ins are theirs to list, mint and revoke whatever their roles.
+	person bool
 
 	// The registry snapshot, read once per request (a scopedDataset lives for
 	// one request), so a kind's purpose is known without a lookup per record.
@@ -64,7 +69,34 @@ type scopedDataset struct {
 var _ substrate.Dataset = (*scopedDataset)(nil)
 
 func newScopedDataset(inner substrate.Dataset, grant scope.Grant, actor substrate.Actor) *scopedDataset {
-	return &scopedDataset{inner: inner, grant: grant, actor: actor}
+	return &scopedDataset{inner: inner, grant: appReach{grant}, actor: actor}
+}
+
+// newPersonDataset is the view a person who is not an admin reaches the
+// repository through: held to the rules of the roles they hold (decision
+// 0276), as an app's token is held to its scopes.
+func newPersonDataset(inner substrate.Dataset, roles scope.Roles) *scopedDataset {
+	return &scopedDataset{inner: inner, grant: personReach{roles: roles}, person: true}
+}
+
+// declarations is what the view reads a declaration through to hold a
+// call or a chat to what the code reaches: the engine under every view. A
+// person's view below an app's reads no declaration, and the check reads
+// what the code declares, not what the caller reads.
+func (s *scopedDataset) declarations() substrate.Dataset {
+	if in, ok := s.inner.(*scopedDataset); ok {
+		return in.declarations()
+	}
+	return s.inner
+}
+
+// writer is the actor a write goes out under: the app's own, or for a
+// person's view the one it was handed.
+func (s *scopedDataset) writer(handed substrate.Actor) substrate.Actor {
+	if s.person {
+		return handed
+	}
+	return s.actor
 }
 
 // errScope is the refusal of everything outside the scoped surface.
@@ -114,7 +146,7 @@ func scopeKind(kind string, registry map[string]substrate.KindInfo) scope.Kind {
 	if !held {
 		return scope.Kind{Ref: kind, Internal: true}
 	}
-	return scope.KindOf(kind, k.Definition)
+	return scopeKindOf(kind, k)
 }
 
 // reads reports whether the grant reads kind; a kind the registry does not
@@ -125,7 +157,7 @@ func (s *scopedDataset) reads(ctx context.Context, kind string) (bool, error) {
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && s.grant.Reads(scope.KindOf(kind, k.Definition)), nil
+	return ok && s.grant.Reads(scopeKindOf(kind, k)), nil
 }
 
 func (s *scopedDataset) writes(ctx context.Context, kind string) (bool, error) {
@@ -134,7 +166,7 @@ func (s *scopedDataset) writes(ctx context.Context, kind string) (bool, error) {
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && s.grant.Writes(scope.KindOf(kind, k.Definition)), nil
+	return ok && s.grant.Writes(scopeKindOf(kind, k)), nil
 }
 
 // readable is the sorted list of every kind the grant reads today.
@@ -145,7 +177,7 @@ func (s *scopedDataset) readable(ctx context.Context) ([]string, error) {
 	}
 	var out []string
 	for id, k := range reg {
-		if s.grant.Reads(scope.KindOf(id, k.Definition)) {
+		if s.grant.Reads(scopeKindOf(id, k)) {
 			out = append(out, id)
 		}
 	}
@@ -177,7 +209,7 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 	}
 	allowKind := func(kind string) bool {
 		k, ok := reg[kind]
-		return ok && s.grant.Reads(scope.KindOf(kind, k.Definition))
+		return ok && s.grant.Reads(scopeKindOf(kind, k))
 	}
 	cp := *rec
 	if len(rec.LinkedFrom) > 0 {
@@ -199,7 +231,44 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 	if !s.grant.Reads(scope.Kind{Ref: kindBlob, Internal: true}) {
 		withoutBlobManifests(&cp, reg[rec.Kind])
 	}
+	withoutHeldTo(&cp)
 	return &cp, nil
+}
+
+// heldKinds are a run's own records, each of which names in `heldTo` whose
+// rules hold its work: the persons it acts for and the tokens their apps
+// reached it with (decision 0276). That is the engine's bookkeeping of other
+// people's tokens, which a view held to a person's roles or an app's grant
+// never shows, whatever it reads of the record.
+var heldKinds = map[string]bool{
+	llmPackage + "/thread": true, llmPackage + "/message": true,
+	llmPackage + "/interaction": true, llmPackage + "/approval": true,
+}
+
+// withoutHeldTo drops `heldTo`, and its mark, from a run's record. The maps
+// it changes are copies.
+func withoutHeldTo(rec *substrate.Record) {
+	if !heldKinds[rec.Kind] {
+		return
+	}
+	if _, ok := rec.Properties["heldTo"]; ok {
+		props := make(map[string]any, len(rec.Properties))
+		for k, v := range rec.Properties {
+			if k != "heldTo" {
+				props[k] = v
+			}
+		}
+		rec.Properties = props
+	}
+	if _, ok := rec.Marks["heldTo"]; ok {
+		marks := make(map[string]substrate.PropertyMark, len(rec.Marks))
+		for k, v := range rec.Marks {
+			if k != "heldTo" {
+				marks[k] = v
+			}
+		}
+		rec.Marks = marks
+	}
 }
 
 // kindBlob is a blob's manifest, which holds the name and media type its
@@ -363,6 +432,11 @@ func (s *scopedDataset) requireWrite(ctx context.Context, kind string) error {
 		return err
 	}
 	if !ok {
+		// A person's refusal is a rule's: another person, or this one with
+		// another role, may make the same write (`not_permitted`).
+		if s.person {
+			return fmt.Errorf("%w: %w: no rule of the roles you hold writes %s", substrate.ErrForbidden, substrate.ErrNotPermitted, kind)
+		}
 		return fmt.Errorf("%w: an app's token does not write %s", substrate.ErrForbidden, kind)
 	}
 	return nil
@@ -403,7 +477,7 @@ func (s *scopedDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error)
 	}
 	out := make([]substrate.KindInfo, 0, len(all))
 	for _, k := range all {
-		if r, ok := reg[k.Identity]; ok && (s.grant.Reads(scope.KindOf(k.Identity, r.Definition)) || s.rowKind(k.Identity)) {
+		if r, ok := reg[k.Identity]; ok && (s.grant.Reads(scopeKindOf(k.Identity, r)) || s.rowKind(k.Identity)) {
 			out = append(out, k)
 		}
 	}
@@ -446,11 +520,32 @@ func (s *scopedDataset) TypesImplementing(ctx context.Context, trait string) ([]
 }
 
 func (s *scopedDataset) Units(ctx context.Context) (substrate.UnitTable, error) {
+	if err := s.requireUnitGraph(ctx); err != nil {
+		return substrate.UnitTable{}, err
+	}
 	return s.inner.Units(ctx)
 }
 
 func (s *scopedDataset) ConvertUnit(ctx context.Context, in substrate.UnitConvert) (substrate.UnitConversion, error) {
+	if err := s.requireUnitGraph(ctx); err != nil {
+		return substrate.UnitConversion{}, err
+	}
 	return s.inner.ConvertUnit(ctx, in)
+}
+
+// requireUnitGraph holds a person to the units and conversions their rules
+// read: the graph is those records. An app's token converts with it
+// whatever it reads, as before roles.
+func (s *scopedDataset) requireUnitGraph(ctx context.Context) error {
+	if !s.person {
+		return nil
+	}
+	for _, kind := range []string{vocabulary.CoreKind("unit"), vocabulary.CoreKind("conversion")} {
+		if err := s.requireRead(ctx, kind); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *scopedDataset) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
@@ -502,6 +597,9 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 	if _, ok := substrate.AskedFilterFrom(ctx); !ok {
 		ctx = substrate.WithAskedFilter(ctx, q.Filter)
 	}
+	if s.person && slices.Equal(q.Filter.Kinds, []string{kindDeclarationRow}) {
+		return s.listDeclarations(ctx, q)
+	}
 	if gated, err := s.anyRowGated(ctx, q.Filter.Kinds); err != nil {
 		return nil, err
 	} else if gated {
@@ -519,6 +617,44 @@ func (s *scopedDataset) List(ctx context.Context, q substrate.Query) (*substrate
 		return nil, err
 	}
 	return s.cutPage(ctx, page)
+}
+
+// listDeclarations is a person's list of kind declarations (the console's
+// and `substratectl kinds`' first read): the declarations of the kinds their
+// rules read, each whole, as the one-declaration read serves it. It pages as
+// the engine pages every declaration, so a page may come back short of its
+// size, and never empty while more follow: the CLI ends its walk at an
+// empty page. The size of the whole set is not said, since it counts what
+// the person does not read. Every declaration, read whole, stays an admin's.
+func (s *scopedDataset) listDeclarations(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
+	if q.Count {
+		return nil, fmt.Errorf("%w: a person's list of kind declarations carries no count: it holds the kinds their roles read", substrate.ErrValidation)
+	}
+	for {
+		page, err := s.inner.List(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		out := *page
+		out.Head, out.Generation = 0, ""
+		out.Records = make([]*substrate.Record, 0, len(page.Records))
+		for _, rec := range page.Records {
+			ok, err := s.reads(ctx, rec.ID)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out.Records = append(out.Records, rec)
+			}
+		}
+		if out.Included, err = s.cutIncluded(ctx, page.Included); err != nil {
+			return nil, err
+		}
+		if len(out.Records) > 0 || page.Cursor == "" || q.Offset > 0 {
+			return &out, nil
+		}
+		q.After = page.Cursor
+	}
 }
 
 // noneReached answers a request the grant now resolves to no kind or no row
@@ -904,26 +1040,33 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 	return res, nil
 }
 
-func (s *scopedDataset) Put(ctx context.Context, _ substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+func (s *scopedDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
 	if err := s.requireWrite(ctx, in.Kind); err != nil {
 		return nil, err
 	}
 	if err := s.checkReferenceValues(ctx, in.Kind, in.Properties); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Put(ctx, s.actor, in)
+	rec, err := s.inner.Put(ctx, s.writer(actor), in)
 	if err != nil {
 		return nil, err
 	}
 	return s.cut(ctx, rec)
 }
 
-func (s *scopedDataset) Patch(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+func (s *scopedDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	// No scope writes a kind the agent verbs reach (they are core's and
-	// llm's), so their few writes are the agent verbs' even where a read
-	// scope reads the kind whole.
+	// llm's), so an app's few writes of them are the agent verbs' even where
+	// a read scope reads the kind whole. A person's role may write one whole,
+	// and then writes it as any other.
 	if s.rowKind(typ) {
-		return s.patchRow(ctx, typ, id, in)
+		whole, err := s.writes(ctx, typ)
+		if err != nil {
+			return nil, err
+		}
+		if !whole {
+			return s.patchRow(ctx, actor, typ, id, in)
+		}
 	}
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
@@ -931,44 +1074,50 @@ func (s *scopedDataset) Patch(ctx context.Context, _ substrate.Actor, typ, id st
 	if err := s.checkReferenceValues(ctx, typ, in.Properties); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Patch(ctx, s.actor, typ, id, in)
+	rec, err := s.inner.Patch(ctx, s.writer(actor), typ, id, in)
 	if err != nil {
 		return nil, err
 	}
 	return s.cut(ctx, rec)
 }
 
-func (s *scopedDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
+func (s *scopedDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.DeleteInput) (*substrate.Record, error) {
+	// A person revokes their own sign-ins whatever their roles; the engine
+	// tells their own from another's (decision 0275).
+	if s.person && typ == vocabulary.CoreKind("token") {
+		return s.inner.Delete(ctx, s.writer(actor), typ, id, in)
+	}
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Delete(ctx, s.actor, typ, id, in)
+	rec, err := s.inner.Delete(ctx, s.writer(actor), typ, id, in)
 	if err != nil {
 		return nil, err
 	}
 	return s.cut(ctx, rec)
 }
 
-// --- everything else is the owner's ---
+// --- everything else is an admin's ---
 
-// Pin and Release are writes on the record: a grant that writes its kind
-// may pin and release its properties, and the answer is cut to the grant.
-func (s *scopedDataset) Pin(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+// Pin and Release are writes on the record: a grant or a person's roles
+// that write its kind may pin and release its properties, and the answer is
+// cut to the view.
+func (s *scopedDataset) Pin(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Pin(ctx, s.actor, typ, id, in)
+	rec, err := s.inner.Pin(ctx, s.writer(actor), typ, id, in)
 	if err != nil {
 		return nil, err
 	}
 	return s.cut(ctx, rec)
 }
 
-func (s *scopedDataset) Release(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+func (s *scopedDataset) Release(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
 	if err := s.requireWrite(ctx, typ); err != nil {
 		return nil, err
 	}
-	rec, err := s.inner.Release(ctx, s.actor, typ, id, in)
+	rec, err := s.inner.Release(ctx, s.writer(actor), typ, id, in)
 	if err != nil {
 		return nil, err
 	}
@@ -1000,12 +1149,35 @@ func (s *scopedDataset) WatchSignal(ctx context.Context) <-chan int64 {
 	return s.inner.WatchSignal(ctx)
 }
 
-func (s *scopedDataset) MintToken(context.Context, substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
+func (s *scopedDataset) MintToken(ctx context.Context, in substrate.MintTokenInput) (substrate.TokenInfo, string, error) {
+	if s.person {
+		return s.inner.MintToken(ctx, in)
+	}
 	return substrate.TokenInfo{}, "", errScope("minting tokens")
 }
 
-func (s *scopedDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) {
-	return nil, errScope("the token list")
+// Tokens are, for a person's view, their own sign-ins alone.
+func (s *scopedDataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
+	if !s.person {
+		return nil, errScope("the token list")
+	}
+	all, err := s.inner.Tokens(ctx)
+	if err != nil {
+		return nil, err
+	}
+	identity := substrate.IdentityFrom(ctx)
+	out := make([]substrate.TokenInfo, 0, len(all))
+	for _, tok := range all {
+		if identity != "" && tok.Identity == identity {
+			out = append(out, tok)
+		}
+	}
+	return out, nil
+}
+
+// PersonRoles are the roles of the person the request acts for.
+func (s *scopedDataset) PersonRoles(ctx context.Context) ([]substrate.RoleRules, error) {
+	return s.inner.PersonRoles(ctx)
 }
 
 func (s *scopedDataset) RunGC(context.Context) (int, error) { return 0, errScope("the collector") }
@@ -1100,7 +1272,7 @@ func (s *scopedDataset) CallAgent(context.Context, string, any) (*substrate.Agen
 // user message is the app's, under its own actor; the turn runs the agent
 // under the agent's permissions, so the scoped mark stops here and the
 // agent's writes meet the gates an owner's chat meets (decision 0195).
-func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+func (s *scopedDataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	if !s.grant.Talks() {
 		return nil, errScope("agents")
 	}
@@ -1135,7 +1307,7 @@ func (s *scopedDataset) ChatAgent(ctx context.Context, _ substrate.Actor, name s
 			return nil, err
 		}
 	}
-	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.actor, name, in, emit)
+	return s.inner.ChatAgent(substrate.WithoutScopes(ctx), s.writer(actor), name, in, emit)
 }
 
 func (s *scopedDataset) AttachAgentTurn(ctx context.Context, threadID string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
@@ -1145,11 +1317,11 @@ func (s *scopedDataset) AttachAgentTurn(ctx context.Context, threadID string, em
 	return s.inner.AttachAgentTurn(ctx, threadID, emit)
 }
 
-func (s *scopedDataset) StopAgentTurn(ctx context.Context, _ substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+func (s *scopedDataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
 	if err := s.requireThread(ctx, threadID); err != nil {
 		return nil, err
 	}
-	return s.inner.StopAgentTurn(ctx, s.actor, threadID)
+	return s.inner.StopAgentTurn(ctx, s.writer(actor), threadID)
 }
 
 func (s *scopedDataset) SweepResolutions(context.Context) (int, error) {
@@ -1211,11 +1383,11 @@ func (s *scopedDataset) ProcessOAuthFinalizers(context.Context) (int, error) {
 // The answer is the digest and size of what the app sent and the name and
 // media type it sent: a blob that already held those bytes keeps what its
 // first upload said, and that is not the app's to read.
-func (s *scopedDataset) PutBlob(ctx context.Context, _ substrate.Actor, up substrate.BlobUpload, data []byte, digest string) (*substrate.BlobInfo, error) {
+func (s *scopedDataset) PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, digest string) (*substrate.BlobInfo, error) {
 	if err := s.admitBlobs(ctx); err != nil {
 		return nil, err
 	}
-	info, err := s.inner.PutBlob(ctx, s.actor, up, data, digest)
+	info, err := s.inner.PutBlob(ctx, s.writer(actor), up, data, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -1234,7 +1406,7 @@ func (s *scopedDataset) admitBlobs(ctx context.Context) error {
 		return err
 	}
 	for id, k := range reg {
-		if s.grant.Writes(scope.KindOf(id, k.Definition)) && declaresBlobRef(k) {
+		if s.grant.Writes(scopeKindOf(id, k)) && declaresBlobRef(k) {
 			return nil
 		}
 	}

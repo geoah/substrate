@@ -1099,23 +1099,33 @@ func TestOAuthStartRefusesANonOwnerActor(t *testing.T) {
 }
 
 // External create and delete of a config or account record are owner-only.
-func TestAccountRecordCreateAndDeleteAreOwnerOnly(t *testing.T) {
+// An account is a control kind (decision 0276): a hand writes it only where
+// its rules name it. A function whose declaration does not name the account
+// kind neither creates nor deletes one; the connector, which names it to
+// write its sync state, deletes one, and still sets none of the properties
+// that are a person's.
+func TestAnAccountIsWrittenOnlyByAHandWhoseRulesNameIt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds, _, account := installOAuthBundle(t)
+	other := substrate.FunctionActor(vocabulary.SplitKindRef(mbMarkFn))
 	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 
+	if _, err := ds.Put(ctx, other, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{}}); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("a function that does not name the account kind created one: %v", err)
+	}
+	if _, err := ds.Delete(ctx, other, account.Kind, account.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("a function that does not name the account kind deleted one: %v", err)
+	}
 	if _, err := ds.Put(ctx, connector, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "intruder@example.com"},
 	}); err == nil {
-		t.Fatal("a non-owner created an account record")
+		t.Fatal("the connector set a person's property on an account")
 	} else {
-		wantErr(t, err, substrate.ErrForbidden, "non-owner account create")
+		wantErr(t, err, substrate.ErrForbidden, "the connector writes a person's property")
 	}
-	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID, substrate.DeleteInput{}); err == nil {
-		t.Fatal("a non-owner deleted an account record")
-	} else {
-		wantErr(t, err, substrate.ErrForbidden, "non-owner account delete")
+	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("the connector, which names the account kind, deleting one: %v", err)
 	}
 }
 

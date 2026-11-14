@@ -504,7 +504,7 @@ func TestBackgroundJobResumeIsBounded(t *testing.T) {
 	// The hour's budget, spent before the job ends.
 	for i := 0; i <= resumeBudgetPerHour; i++ {
 		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
-			return tx.putThreadSystemRow(lead.Thread, map[string]any{"event": "recordResolved"}, nil)
+			return tx.putThreadSystemRow(lead.Thread, map[string]any{"event": "recordResolved"}, nil, map[string]any{})
 		}); err != nil {
 			t.Fatal(err)
 		}

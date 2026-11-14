@@ -151,6 +151,9 @@ type Kind struct {
 	Ref      string
 	Internal bool
 	Traits   []string
+	// Control is whether the kind is a control kind (vocabulary.ControlClassOf),
+	// which a role's pattern reaches only by naming it.
+	Control bool
 }
 
 // KindOf is the kind ref as its declaration's data says it (a registry

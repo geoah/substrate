@@ -269,6 +269,10 @@ type IdentityInfo struct {
 type RepositoryChoice struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Roles are the record ids of the roles the person holds there
+	// (decision 0275), on the person's own read of themselves; absent where
+	// a sign-in lists the repositories to pick from.
+	Roles []string `json:"roles,omitempty"`
 }
 
 // RepositoryRequiredError is a sign-in that proved its factors and named no

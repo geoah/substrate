@@ -11,11 +11,13 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
@@ -28,6 +30,8 @@ type restartable struct {
 	t         *testing.T
 	dsn, root string
 	s         *service
+	// faulted is what the reads of the rules answer while set (failRules).
+	faulted atomic.Pointer[rulesFaulted]
 }
 
 func openRestartable(t *testing.T) *restartable {
@@ -40,11 +44,38 @@ func openRestartable(t *testing.T) *restartable {
 
 func (r *restartable) start() {
 	r.t.Helper()
-	svc, err := OpenForTest(r.t, context.Background(), r.dsn, WithDataRoot(r.root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
+	svc, err := OpenForTest(r.t, context.Background(), r.dsn, WithDataRoot(r.root), WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds),
+		WithTestRulesFault(r.rulesFault))
 	if err != nil {
 		r.t.Fatalf("open: %v", err)
 	}
 	r.s = svc.(*service)
+}
+
+// rulesFaulted is the reads failRules fails: every one, or those named.
+type rulesFaulted struct {
+	err   error
+	whats []string
+}
+
+// rulesFault answers the error failRules set for a read it names, while it
+// is set (WithTestRulesFault).
+func (r *restartable) rulesFault(what string) error {
+	f := r.faulted.Load()
+	if f == nil || len(f.whats) > 0 && !slices.Contains(f.whats, what) {
+		return nil
+	}
+	return f.err
+}
+
+// failRules makes the reads of the rules fail with err: those whats names
+// ("token", "roles", "grant", "holders"), or every one. Nil reads again.
+func (r *restartable) failRules(err error, whats ...string) {
+	if err == nil {
+		r.faulted.Store(nil)
+		return
+	}
+	r.faulted.Store(&rulesFaulted{err: err, whats: whats})
 }
 
 func (r *restartable) restart() {
@@ -369,7 +400,7 @@ func TestAnAdditionWhoseIndexWriteFailsIsFinished(t *testing.T) {
 		}
 		return nil
 	}
-	if err := r.s.AddPerson(ctx, ada, bo); err == nil {
+	if err := r.s.AddPerson(ctx, ada, bo, scope.RoleAdmin); err == nil {
 		t.Fatal("an addition whose index write failed answered success")
 	}
 	eventually(t, "the person signs in to the repository they were added to", func() bool {
@@ -453,7 +484,7 @@ func TestWorkLeftByAPersonTakenOutIsSettledForNobody(t *testing.T) {
 			r.register(ada)
 			if door == "another person's sign-in" {
 				r.register(bo)
-				if err := r.s.AddPerson(ctx, bo, ada); err != nil {
+				if err := r.s.AddPerson(ctx, bo, ada, scope.RoleAdmin); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -592,7 +623,7 @@ func TestAnAdditionInDoubtIsIndexedOnlyWhereItsActorLanded(t *testing.T) {
 					return commit()
 				}
 			}
-			if err := r.s.AddPerson(ctx, bo, ada); !errors.Is(err, substrate.ErrWriteInDoubt) {
+			if err := r.s.AddPerson(ctx, bo, ada, scope.RoleAdmin); !errors.Is(err, substrate.ErrWriteInDoubt) {
 				t.Fatalf("an addition whose commit is in doubt = %v, want ErrWriteInDoubt", err)
 			}
 			select {

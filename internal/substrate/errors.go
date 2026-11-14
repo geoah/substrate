@@ -153,6 +153,10 @@ var (
 	// The API answers it 503 `unavailable` with Retry-After, and the
 	// payload's reason is ReasonSetAside.
 	ErrSetAside = errors.New("substrate: the repository is set aside")
+	// ErrNotPermitted is a refusal by the one check (decision 0276): the
+	// rules of the hand that writes, or of the actor it acts for, do not
+	// allow the write. It follows ErrForbidden, whose words lead.
+	ErrNotPermitted = errors.New("no rule allows it")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -185,6 +189,11 @@ const ReasonInDoubt = "in_doubt"
 // RepositoryRequiredError (auth.go), on `conflict`.
 const ReasonRepositoryRequired = "repository_required"
 
+// ReasonNotPermitted is the ErrorPayload reason of ErrNotPermitted, on
+// `forbidden`: the refusal is a rule's, so another person, or the same one
+// with another role, may make the same request.
+const ReasonNotPermitted = "not_permitted"
+
 // ReasonFirstAttemptRunning and ReasonFirstAttemptLanded are the
 // ErrorPayload reasons of ErrFirstAttemptRunning and ErrFirstAttemptLanded,
 // on `conflict`.
@@ -203,6 +212,7 @@ var ErrorReasons = []string{
 	ReasonFirstAttemptRunning,
 	ReasonInDoubt,
 	ReasonKeyRefused,
+	ReasonNotPermitted,
 	ReasonObservedRederiving,
 	ReasonQuota,
 	ReasonRepositoryRequired,

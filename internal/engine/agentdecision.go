@@ -60,7 +60,9 @@ type resolutionNote struct {
 // the marker names, inside the resolving transaction — the transition and
 // its report land together or not at all. `wrote` is the transaction's own
 // changelog entries: the record's transition, and whatever the transition's
-// onEnter applied.
+// onEnter applied. The row carries the resolved item's holders, the
+// continuer among them (itemHolders), so the resume it starts is held to
+// the item's work and to whoever continued it.
 func (t *txn) recordResolution(ty *vocabulary.Kind, rec *erow, note *resolutionNote, wrote []changeEntry) error {
 	threadID := referenceID(rec.Props[note.prop])
 	if threadID == "" {
@@ -70,7 +72,11 @@ func (t *txn) recordResolution(ty *vocabulary.Kind, rec *erow, note *resolutionN
 	if err != nil {
 		return err
 	}
-	row, err := t.putThreadSystemRowID(threadID, env, wrote)
+	held, err := t.itemHolders(ty, rec)
+	if err != nil {
+		return err
+	}
+	row, err := t.putThreadSystemRowID(threadID, env, wrote, held)
 	if err != nil {
 		return err
 	}
@@ -168,7 +174,11 @@ func (t *txn) recordProposalConflict(req *erow, reason string) error {
 	} else if target.ID != "" {
 		env["target"] = vocabulary.RecordPath(target.Kind, target.ID)
 	}
-	row, err := t.putThreadSystemRowID(threadID, env, t.entries)
+	held, err := t.requestHolders(req)
+	if err != nil {
+		return err
+	}
+	row, err := t.putThreadSystemRowID(threadID, env, t.entries, held)
 	if err != nil {
 		return err
 	}
@@ -196,13 +206,22 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 // next stored turn ordinal. The writer is the resolving actor — an owner
 // decision writes under the owner's hand, a judge's under the policy's — so
 // the row says who resolved.
-func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []changeEntry) error {
-	_, err := t.putThreadSystemRowID(threadID, env, wrote)
+func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []changeEntry, held map[string]any) error {
+	_, err := t.putThreadSystemRowID(threadID, env, wrote, held)
 	return err
 }
 
-// putThreadSystemRowID is putThreadSystemRow answering the row's id.
-func (t *txn) putThreadSystemRowID(threadID string, env map[string]any, wrote []changeEntry) (string, error) {
+// putThreadSystemRowID is putThreadSystemRow answering the row's id. The row
+// reports an item, and carries held, that item's holders, whatever hand's
+// transaction writes it: the resume it starts is the item's work (decision
+// 0276). None is an item asked before this release: the row carries no
+// `heldTo`, so no resume runs from it, and it says so.
+func (t *txn) putThreadSystemRowID(threadID string, env map[string]any, wrote []changeEntry, held map[string]any) (string, error) {
+	if held == nil {
+		if _, said := env["error"]; !said {
+			env["error"] = errAskAgain.Error()
+		}
+	}
 	content, err := json.Marshal(env)
 	if err != nil {
 		return "", err
@@ -227,7 +246,13 @@ func (t *txn) putThreadSystemRowID(threadID string, env map[string]any, wrote []
 	if err := t.requireThreadKinds(); err != nil {
 		return "", err
 	}
-	if _, err := t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props}); err != nil {
+	// The row is the run's record of the resolution, whichever hand's
+	// transaction writes it.
+	was, wasReport := t.exempt, t.report
+	t.exempt, t.report = exemptConversation, &reportHolders{held: held}
+	_, err = t.put(substrate.PutInput{Kind: typeMessage, ID: id, Properties: props})
+	t.exempt, t.report = was, wasReport
+	if err != nil {
 		return "", err
 	}
 	return id, nil
@@ -365,11 +390,10 @@ func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (i
 // continueThread runs one continuation of a settled thread: no user message,
 // the stored rows are the whole context. Fire-and-forget by design — a
 // refusal (mid-turn lease, disabled bundle) is logged, and the settle-time
-// re-check or the sweep is the retry. The continuation acts for whom the line
-// that wrote its first record names: the resolution row (resolution) that
-// starts the turn.
+// re-check or the sweep is the retry. The continuation is held to whom the
+// resolution row (resolution) that starts the turn names in its `heldTo`.
 func (ds *dataset) continueThread(ctx context.Context, threadID, resolution string) {
-	ctx, err := ds.actingFor(ctx, typeMessage, resolution)
+	ctx, err := ds.heldBy(ctx, typeMessage, resolution)
 	if err != nil {
 		ds.svc.log.Warn("substrate: resume: whom the turn acts for was not read", "thread", threadID, "error", err)
 		return

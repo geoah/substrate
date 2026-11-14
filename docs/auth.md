@@ -303,14 +303,16 @@ Five things follow from a token being a record:
   an export or a blob's bytes still going out are cut, which a client reads
   as a body that ended early. [What ends with a token](#what-ends-with-a-token)
   says which responses do which.
-- **Only the owner revokes a token.** The engine refuses a token delete from
-  installed code with `403 forbidden`, whatever its grant names: a
-  function's `delete` effect, an agent's `write` built-in, and a policy
-  judge's accept of a proposed delete all run at the bundle tier. A judged
-  proposal escalates to the owner's review instead, and the owner's own
-  accept revokes. The loader refuses a function or agent whose
-  `permissions.writes` names `substrate.reamde.dev/core/token` or
-  `/credential`, and a stored one quarantines its package at the next open.
+- **A person revokes their own tokens; another's is an admin's.** A token is
+  sign-in material, which no rule reaches but by naming it and which the
+  `admin` role reaches by being `admin` ([roles](#roles)). The engine refuses
+  a token delete from installed code with `403 forbidden`, whatever its
+  declaration names: a function's `delete` effect, an agent's `write`
+  built-in, and a policy judge's accept of a proposed delete. A judged
+  proposal escalates to a person's review instead, and an admin's accept
+  revokes. The loader refuses a function or agent whose `permissions.writes`
+  names `substrate.reamde.dev/core/token` or `/credential`, and a stored one
+  quarantines its package at the next open.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted. Login and registration mint theirs
@@ -326,6 +328,88 @@ Present one on every request under `/api`:
 ```http
 Authorization: Bearer substrate_tok_…
 ```
+
+## Roles
+
+What a person may read and write in a repository is the roles they hold
+([0275](decisions/0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md)).
+A role is a record of `substrate.reamde.dev/core/role`: a name and a list of
+rules, each a list of verbs (`read`, `write`, which includes read) over a
+list of kinds, spelled as an app's scope spells them (`*`,
+`<authority>/*`, `<authority>/<package>/*`, one kind,
+`implements(<trait>)`, `~` for the repository's own authority). Rules only
+add. A person's actor names the roles they hold (`roles`), and they are read
+on every request, so a role changed or taken away holds from the next one
+([0295](decisions/0295-a-persons-token-is-held-to-that-persons-roles.md)).
+
+| Role | May |
+| --- | --- |
+| `admin` | everything: every kind, the control kinds and sign-in material included, and changing who may do what |
+| `editor` | read and write every kind that is not a control kind |
+| `viewer` | read every kind that is not a control kind |
+
+The **control kinds** decide what code runs, what it may do, what the
+vocabulary is and who may do what
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)):
+triggers; policies; AI providers and the
+models they offer; a package's settings, the kinds its bundle takes as
+inputs, and the accounts that connect it; applets; declarations; actors;
+and roles. A kind's description says its class (`control`, with `sign-in`
+for sign-in material). A rule reaches one only by naming that kind; `*`
+never does. `admin` reaches every one by being `admin`. A change request is
+not one: deciding it writes its target as the person who decides, so an
+editor accepts or adjusts a request only where they could write its
+target.
+
+Who may do what is fixed, not a rule: no rule writes an actor or a role, a
+person's roles among them. Only an admin changes them, and the last admin
+keeps the role. Nothing is called owner: the creator is the first admin,
+and every person a repository had before roles became one. At 1.0 nothing
+on the network adds a person or changes a role; the operator's interface
+does (`AddPerson` with roles, `SetPersonRoles`).
+
+**One check holds every hand.** A write is allowed when the rules of the
+hand that writes allow it and, where it acts for someone, that person's
+rules allow it too: never more than both. A person's rules are their roles;
+an app's token is held to its scopes and to its person's roles; an
+assistant's reaches what its person's roles reach but sign-in material; a
+function or an agent is held to the writes its declaration lists, naming
+each control kind it writes (but a policy, which installed code never
+writes), and, read by read and write by write, to the
+roles of the person its turn acts for and the grant of the app that drives
+the turn, each as it stands at that read or write. So an agent a viewer
+starts writes nothing but its own conversation, a role reduced or an app's
+token revoked holds from the run's next read or write, and a function a
+trigger runs, acting for nobody, keeps its own rules. Answering a run's
+question, approving its call, writing its next message or stopping its turn
+is admitted only to a hand that could have started that run itself, and the
+work it continues is held to that hand too. Whose rules hold a run's work
+once its request is over (an approved call, a background job, a resume) is
+stored on the run's own records, `heldTo`, which the engine alone writes and
+the person's view does not show; work reads its own record's, never the
+conversation's latest turn, so a person's message between an app's call and
+its approval does not lend the call the person's rules. Work asked before
+the release that records it is refused once, and the person asks again. A
+refusal by a rule is `403 forbidden` with the reason `not_permitted`.
+
+**What a person who is not an admin reaches.** Every route is public, for
+an admin, or held to its rules
+([0294](decisions/0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md)).
+Such a person reaches the routes an app's token reaches, held by the same
+view to their roles instead of a grant: they read and write what their
+rules reach, talk to every agent whose reads their rules cover and call
+every function whose reach they cover, and a kind their rules do not read is
+answered as one the repository never declared; the unit graph is read where
+their rules read units and conversions. Their own sign-ins
+(`/tokens`) and identity (`GET /identity`, which lists the roles they hold
+in each repository) are theirs whatever their roles. The list of kind
+declarations holds the kinds their rules read, and they search the history
+of the kinds they read whole. Every other route answers them `403
+forbidden`, `not_permitted`: merging and splitting records, which rewrite
+references in kinds they may not write, and `/sync/status`, whose syncs sit
+on account kinds, among them. An app's token that delivers to a webhook
+(`webhook:`) acts for its person: it delivers only while they hold a role,
+and the delivery's run is held to their roles.
 
 ## Signing out everywhere
 
@@ -388,10 +472,19 @@ for that token once the answer has begun:
   later: the watch, and an agent's event streams. It reads its token before
   its first byte, then at every batch and every heartbeat, and whenever the
   repository's changelog moves, and ends when the token is dead: an ordinary
-  `401` before its first byte, a terminal `auth` frame or event after it.
+  `401` before its first byte, a terminal `auth` frame or event after it. It
+  reads the roles of the token's person with it. A change of them ends a
+  watch with no terminal frame, so its client reconnects from its cursor
+  onto the roles held now, and an agent stream `unavailable` (an ordinary
+  `503` before its first event, an `error` event after it), which a client
+  opens again rather than signing in. A read of the token or the roles that
+  cannot be made (a database that did not answer) ends either `unavailable`,
+  a watch with that terminal frame: no stream goes on under what it read
+  before.
 - **A long transfer** is a response with no bound on its size: the export
   and a blob's bytes. It reads its token before its headers and then between
-  writes, at most once a second, and a dead token cuts it, so that no client
+  writes, at most once a second, and a dead token, a change of its person's
+  roles, or a read of either that cannot be made cuts it, so that no client
   can take it for complete: the connection closes mid-body, which a client
   reads as an unexpected end, and an export's archive lacks its last entry,
   `snapshot.json`.
@@ -456,7 +549,9 @@ POST /repository/delete  # {"identity","repository","password","totpCode"} → 2
 
 It erases every record, token and file the repository holds, its archive
 included, and frees its name for the next registration
-([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
+([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)),
+so it is an admin's: another person of the repository who proves their own
+factors is answered `403 forbidden`, `not_permitted` ([roles](#roles)).
 A person whose last repository it was goes with it, and their name is free
 too. The console offers it under Settings, Danger zone.
 

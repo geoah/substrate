@@ -1180,13 +1180,14 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 // refused, naming the traits carrying the word (decision record 0101), never
 // widened to a local look-alike answering for a core trait.
 func (ds *dataset) TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error) {
-	types, err := ds.registry().ImplementingStrict(trait)
+	reg := ds.registry()
+	types, err := reg.ImplementingStrict(trait)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	out := make([]substrate.KindInfo, 0, len(types))
 	for _, t := range types {
-		out = append(out, typeInfo(t))
+		out = append(out, typeInfoIn(reg, t))
 	}
 	return out, nil
 }

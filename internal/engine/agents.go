@@ -291,6 +291,13 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		return nil, fmt.Errorf("%w: agent %s is hidden from chat: call it from another agent, or drop data.hiddenFromChat from its declaration",
 			substrate.ErrValidation, ag.Identity())
 	}
+	// A message into a thread continues its run: admitted where the hand
+	// could have started it (run.go).
+	if in.Thread != "" {
+		if err := ds.mayContinue(ctx, actor, in.Thread, false); err != nil {
+			return nil, err
+		}
+	}
 	// Admission under the lifecycle fence, held through the whole chat turn's
 	// writes (thread claim/mint, every message, settlement): the detached
 	// task releases it, so a bundle disable waits for the turn as it did
@@ -412,6 +419,12 @@ func (ds *dataset) AttachAgentTurn(ctx context.Context, threadID string, emit fu
 // for its settle: the result is the turn's own, `stopped` unless it settled
 // first. A triggered run is not stoppable: it ends within its own budget.
 func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+	// A stop continues the run: it settles the turn and its jobs, which are
+	// the run's work. A person or an app stops only a run it could have
+	// started itself (run.go mayContinue), as it answers or approves one.
+	if err := ds.mayContinue(ctx, actor, threadID, false); err != nil {
+		return nil, err
+	}
 	hub, err := ds.runningTurn(ctx, threadID)
 	// The turn is stopped before its jobs are read: a job the turn registers
 	// after that read takes the stop from the turn (startJob).
@@ -796,9 +809,10 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 		if _, live := ds.runningThreads.Load(id); live {
 			continue
 		}
-		// The settlement is the lost run's: it acts for whom that run's lease
-		// line names, unless they are no longer there.
-		rctx, err := ds.settling(ds.actingForRun(ctx, id))
+		// The settlement is the lost run's, a turn cut short: held to the
+		// thread's holders, its turn's (heldto.go), unless they are no
+		// longer there.
+		rctx, err := ds.settlingHeld(ctx, typeThread, id)
 		if err != nil {
 			return fmt.Errorf("settle lost thread %s: %w", id, err)
 		}
@@ -929,9 +943,10 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		// The settlement is the interrupted run's: it acts for whom that
-		// run's lease line names, unless they are no longer there.
-		rctx, err := ds.settling(ds.actingForRun(ctx, id))
+		// The settlement is the interrupted run's, a turn cut short: held to
+		// the thread's holders, its turn's (heldto.go), unless they are no
+		// longer there.
+		rctx, err := ds.settlingHeld(ctx, typeThread, id)
 		if err != nil {
 			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
 		}

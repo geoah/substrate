@@ -6,9 +6,11 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -88,6 +90,11 @@ func TestPackageDocumentCannotWriteDeclaredBy(t *testing.T) {
 
 // An agent that declares a package through the generic PUT door is named as
 // its declarer, and a package re-declared after a delete names the new hand.
+// The agent writes as a run does, through the bounded write under its
+// ceiling, acting for the admin: a declaration is a control kind, which an
+// agent writes only where its ceiling names it (decision 0276), so the same
+// put under a glob, or with no ceiling and no declaration of its own, is
+// refused.
 func TestAgentPutOfPackageRecordsTheAgent(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -95,11 +102,19 @@ func TestAgentPutOfPackageRecordsTheAgent(t *testing.T) {
 
 	authority, name := vocabulary.SplitPackageRef(swPackage)
 	agent := substrate.AgentActor(authority, name, "notekeeper")
-	if _, err := ds.Put(ctx, agent, substrate.PutInput{
+	in := substrate.PutInput{
 		Kind:       kindPackageRef,
 		ID:         swPackage,
 		Properties: map[string]any{"authority": authority, "package": name},
-	}); err != nil {
+	}
+	run := substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
+	if _, err := engine.PutBounded(run, ds, agent, in, []string{"*"}); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("agent put under a glob: %v, want refused by the one check", err)
+	}
+	if _, err := ds.Put(run, agent, in); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("agent put with no ceiling and no declaration: %v, want refused by the one check", err)
+	}
+	if _, err := engine.PutBounded(run, ds, agent, in, []string{kindPackageRef}); err != nil {
 		t.Fatalf("agent put: %v", err)
 	}
 	if got := mustGet(t, ds, kindPackageRef, swPackage).Properties["declaredBy"]; !linksActor(got, agent) {

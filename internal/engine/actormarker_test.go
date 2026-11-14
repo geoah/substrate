@@ -439,7 +439,7 @@ func baseRefusals(hand string) []error {
 		fmt.Errorf("%w: %s may not materialize a %s through an accepted %s request — %s is not in its effective emit allowlist",
 			substrate.ErrForbidden, hand, markedTask, "create", markedTask),
 		fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
-			substrate.ErrForbidden, kindToken, hand, substrate.TierBundle),
+			substrate.ErrForbidden, kindToken, hand, "bundle"),
 		fmt.Errorf("%w: %q is not a minted id: function %s runs as %s's tool and writes as the agent, so its new %s takes a minted id. The function has to derive it with host.ids.minted(<key>), which names the same record for the same key",
 			substrate.ErrValidation, "x", "providers.example.com/web/scrape", hand, markedTask),
 	}
@@ -455,7 +455,7 @@ func currentRefusals(words string) []error {
 		fmt.Errorf("%w: %s may not materialize a %s through an accepted %s request — %s is not in its effective emit allowlist",
 			substrate.ErrForbidden, words, markedTask, "create", markedTask),
 		fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
-			substrate.ErrForbidden, kindToken, words, substrate.TierBundle),
+			substrate.ErrForbidden, kindToken, words, "bundle"),
 		fmt.Errorf("%w: %q is not a minted id: function %s runs as %s's tool and writes as the agent, so its new %s takes a minted id. The function has to derive it with host.ids.minted(<key>), which names the same record for the same key",
 			substrate.ErrValidation, "x", "providers.example.com/web/scrape", words, markedTask),
 	}

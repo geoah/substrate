@@ -190,6 +190,7 @@ func TestAThreadsSettlementActsForWhomItsRunsLeaseLineNames(t *testing.T) {
 	claim := func(ctx context.Context, until time.Time) {
 		t.Helper()
 		if err := ds.inTx(ctx, substrate.Actor(ag.Actor()), false, func(tx *txn) error {
+			tx.claiming = true
 			_, err := tx.patch(eref{Kind: typeThread, ID: thread}, substrate.PatchInput{Properties: map[string]any{
 				"status": threadRunning, "leaseUntil": until.Format(time.RFC3339Nano),
 			}})
@@ -239,7 +240,8 @@ func TestAThreadsSettlementActsForWhomItsRunsLeaseLineNames(t *testing.T) {
 }
 
 // The sweep resumes a settled thread whose resolution's notice was lost: the
-// turn acts for whom the resolution's line names, not the thread's first line.
+// turn acts for whom the resolution row's `heldTo` names, the item's it
+// reports, not the thread's first turn.
 func TestTheSweepsResumeActsForWhomTheResolutionsLineNames(t *testing.T) {
 	ds, fake := provisionJobAgents(t)
 	fake.script("jlead", fakeTurn{content: "ready"}, fakeTurn{content: "noted"})
@@ -249,7 +251,8 @@ func TestTheSweepsResumeActsForWhomTheResolutionsLineNames(t *testing.T) {
 	}
 	person := substrate.WithOnBehalfOf(context.Background(), substrate.ActorPerson)
 	if err := ds.inTx(person, substrate.ActorSystem, true, func(tx *txn) error {
-		return tx.putThreadSystemRow(opened.Thread, map[string]any{"event": "recordResolved"}, nil)
+		return tx.putThreadSystemRow(opened.Thread, map[string]any{"event": "recordResolved"}, nil,
+			map[string]any{"onBehalfOf": vocabulary.ActorRef(actorID(substrate.ActorPerson))})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -343,9 +346,6 @@ func TestWorkWhoseLineIsGoneActsForNoOneAndAFailedReadIsAnError(t *testing.T) {
 	for name, read := range map[string]func(context.Context, string) (context.Context, error){
 		"its creating line": func(ctx context.Context, id string) (context.Context, error) {
 			return ds.actingFor(ctx, typeThread, id)
-		},
-		"its run's lease line": func(ctx context.Context, id string) (context.Context, error) {
-			return ds.actingForRun(ctx, id)
 		},
 	} {
 		got, err := read(person, gone)

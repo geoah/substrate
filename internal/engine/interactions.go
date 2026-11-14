@@ -119,11 +119,11 @@ func (t *txn) guardInteraction(sp *applySpec) error {
 	target, transitioning := sp.states[propInteractionState]
 	cur := sp.existing.States[propInteractionState]
 	if transitioning && target != cur {
-		// Asks are always the user's: a bundle actor answering an ask — its
-		// own or anybody's — would make "what did the user authorize" a
+		// Asks are always a person's: installed code answering an ask — its
+		// own or anybody's — would make "what did the person authorize" a
 		// record of the agent.
-		if t.tier == substrate.TierBundle {
-			return fmt.Errorf("%w: an interaction is resolved by the owner, never by installed code", substrate.ErrForbidden)
+		if t.installedCode() {
+			return fmt.Errorf("%w: an interaction is resolved by a person, never by installed code", substrate.ErrForbidden)
 		}
 	}
 	answers, answersNamed := sp.props["answers"]
@@ -219,7 +219,7 @@ func (l *agentLoop) dispatchAsk(ctx context.Context, c *toolRun, args map[string
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	err = l.ds.runRecordTx(ctx, l.actor, exemptAsk, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		t.changeSink = &c.changes
 		t.interactionThread = true

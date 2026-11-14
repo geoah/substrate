@@ -153,6 +153,7 @@
   "substrate.reamde.dev/core/recordsplit": "all",
   "substrate.reamde.dev/core/repository": "all",
   "substrate.reamde.dev/core/retention": "all",
+  "substrate.reamde.dev/core/role": "all",
   "substrate.reamde.dev/core/secret": "all",
   "substrate.reamde.dev/core/setting": "all",
   "substrate.reamde.dev/core/token": "all",

@@ -33,6 +33,19 @@ type tokenLease struct {
 // client signs in again rather than retrying.
 var errLeaseEnded = fmt.Errorf("%w: the token was revoked or its approved time is up", substrate.ErrAuth)
 
+// errRolesChanged ends a stream whose person's roles changed since it opened:
+// it reads through the view those roles built (personView). The token
+// stands, so it is no ErrAuth: the client opens the stream again, on a view
+// of the roles held now. A watch ends without a terminal frame, as a drain
+// does, and both clients reconnect from their cursor.
+var errRolesChanged = fmt.Errorf("%w: the roles of the person this token acts for changed since the stream opened: open it again", substrate.ErrUnavailable)
+
+// errLeaseUnread ends a stream whose token or roles could not be read again:
+// what was read when it opened is no answer now (decision 0276: a read of
+// the rules that fails is an error, never a wider answer). It is no
+// ErrAuth: the token may stand, and the client opens the stream again.
+var errLeaseUnread = fmt.Errorf("%w: the token or the roles it is held to could not be read again: open the stream again", substrate.ErrUnavailable)
+
 func withTokenLease(ctx context.Context, l *tokenLease) context.Context {
 	return context.WithValue(ctx, ctxKeyLease, l)
 }
@@ -43,11 +56,13 @@ func leaseFrom(ctx context.Context) *tokenLease {
 	return l
 }
 
-// alive answers nil while the token stands. The expiry is checked on every
-// call; the record is read again when the last read is older than every, so
-// zero reads it every time. Only a refusal ends the lease: a read that could
-// not be made (a database that did not answer) leaves the stream running,
-// and the next call reads again.
+// alive answers nil while the token stands and its person holds the roles
+// the stream opened under. The expiry is checked on every call; the record
+// and the roles are read again when the last read is older than every, so
+// zero reads them every time. A refusal ends the lease `auth`, a change of
+// the roles and a read that could not be made (a database that did not
+// answer) `unavailable`: no stream goes on under an answer it cannot read
+// again.
 func (l *tokenLease) alive(ctx context.Context, every time.Duration) error {
 	if l == nil {
 		return nil
@@ -63,10 +78,13 @@ func (l *tokenLease) alive(ctx context.Context, every time.Duration) error {
 		return nil
 	}
 	if err := l.recheck(ctx); err != nil {
-		if errors.Is(err, substrate.ErrAuth) {
+		switch {
+		case errors.Is(err, substrate.ErrAuth):
 			return errLeaseEnded
+		case errors.Is(err, errRolesChanged):
+			return errRolesChanged
 		}
-		return nil
+		return fmt.Errorf("%w: %w", errLeaseUnread, err)
 	}
 	l.mu.Lock()
 	l.checked = now

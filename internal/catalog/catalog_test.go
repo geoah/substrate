@@ -50,8 +50,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Package != "readinglist" {
 		t.Errorf("package = %q, want readinglist", b.Package)
 	}
-	if b.Version != 14 {
-		t.Errorf("version = %d, want 14", b.Version)
+	if b.Version != 15 {
+		t.Errorf("version = %d, want 15", b.Version)
 	}
 	// Its configuration is a shipped `setting` record, not an input: a bundle
 	// with no declared input is the shape decision record 0076 moved to.

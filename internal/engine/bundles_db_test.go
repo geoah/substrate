@@ -95,11 +95,18 @@ func mbMessageTypeDoc() map[string]any {
 }
 
 func mbFnDoc(name, source string) map[string]any {
+	writes := []any{mbMessageType}
+	if name == "echo" {
+		// The connector names its account, as every provider's sync names
+		// its own: an account is a control kind, which no glob reaches and
+		// which a hand writes only where its rules name it (decision 0276).
+		writes = append(writes, mbAccountType)
+	}
 	return vocabulary.FunctionManifest(mbPackage, name, map[string]any{
 		"description": "test function " + name,
 		"runtime":     vocabulary.RuntimePython,
 		"source":      source,
-		"permissions": map[string]any{"writes": []any{mbMessageType}},
+		"permissions": map[string]any{"writes": writes},
 	})
 }
 

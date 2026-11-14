@@ -73,15 +73,18 @@ func (l *agentLoop) titleAfterFirstTurn(status, reply string) {
 	if skip || strings.TrimSpace(reply) == "" {
 		return
 	}
+	// The title is the first turn's work, held to that turn's holders, which
+	// its rows carry: bound now, from the turn itself, never read later from
+	// the thread, which a next turn may have claimed by the time it runs.
+	held := holdersOf(l.runCtx, l.actor)
+	if substrate.IsPerson(held.onBehalfOf) {
+		held.onBehalfOf = l.ds.personActorFor(l.runCtx, held.onBehalfOf)
+	}
 	l.ds.spawn("title thread", func(ctx context.Context) {
-		// The title is the thread's first turn's, whose first record is the
-		// thread this run opened: it acts for whom that line names.
-		ctx, err := l.ds.actingFor(ctx, typeThread, l.threadID)
-		if err != nil {
-			l.ds.svc.log.Warn("substrate: thread title skipped", "thread", l.threadID, "error", err)
-			return
+		if hook := l.ds.beforeTitle; hook != nil {
+			hook()
 		}
-		l.titleThread(ctx, reply)
+		l.titleThread(withHolders(ctx, held), reply)
 	})
 }
 
@@ -178,7 +181,7 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 // wrote none, so no snapshot holds the row yet), and whether a patch was
 // made at all: a deleted thread takes none.
 func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usage, cost float64) (lifetime float64, finished, patched bool, err error) {
-	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	err = l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		patched, finished = false, false
 		t.causedBy = l.in.causedBy
 		// The order every put takes (claimThread says why).

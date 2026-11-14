@@ -39,6 +39,7 @@ import (
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -70,6 +71,8 @@ type options struct {
 	shippedRefusal func(repository string) []string
 	// peopleFault is the start's people pass's test seam (identityboot.go).
 	peopleFault func(repository string) error
+	// rulesFault is the readers of the rules' test seam (ruleFault).
+	rulesFault func(what string) error
 	// repositoryConns caps the pool every repository shares
 	// (WithRepositoryConnections).
 	repositoryConns int
@@ -654,6 +657,9 @@ type service struct {
 	// testPeopleFault is the options' people pass seam (identityboot.go):
 	// an error fails that repository's pass.
 	testPeopleFault func(repository string) error
+	// testRulesFault is the options' seam at the readers of the rules
+	// (ruleFault).
+	testRulesFault func(what string) error
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
@@ -1112,6 +1118,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testArchiveFault:      o.archiveFault,
 		testShippedRefusal:    o.shippedRefusal,
 		testPeopleFault:       o.peopleFault,
+		testRulesFault:        o.rulesFault,
 		conversion:            conversionSteps,
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
@@ -1738,6 +1745,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// The shipped records after the upgrade, which declares the kinds a
 		// newer binary's records are of (recordseed.go).
 		ds.ensureShippedRecords,
+		// The roles before the people, whose actors name them (roles.go).
+		ds.ensureShippedRoles,
 		// After the upgrade, which declares the identity a person's actor
 		// names and the person a token acts for (people.go).
 		ds.settlePeople,
@@ -2019,12 +2028,19 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 		if err := t.ensureActors(substrate.ActorSystem, substrate.ActorPerson); err != nil {
 			return err
 		}
+		// The roles, and the creator as the first admin (decision 0275).
+		if err := t.ensureShippedRoles(); err != nil {
+			return err
+		}
 		// The person the repository is created for is its first person, and
 		// that actor names their identity (people.go).
 		if person != nil {
 			if err := t.namePersonActor(substrate.ActorPerson, person.ID, authority); err != nil {
 				return err
 			}
+		}
+		if err := t.givePersonRoles(substrate.ActorPerson, scope.RoleAdmin); err != nil {
+			return err
 		}
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			if err := t.seedDefaultProviders(); err != nil {

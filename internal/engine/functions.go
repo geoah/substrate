@@ -2298,6 +2298,14 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		if err := settle.acquire(settle.retire); err != nil {
 			return 0, false, err
 		}
+		// A request an app's token delivered acts for the token's person,
+		// whom its delivery line names (webhookBehalf): the run is held to
+		// their roles, read now, after a restart as before it.
+		held, err := ds.deliveryBehalf(ctx, settle.retire)
+		if err != nil {
+			return 0, false, err
+		}
+		ctx = held
 	}
 	// As in deliverWithRetry: a function body that ran an agent parks on
 	// its first failure after the thread opened (agentThreads).
@@ -2705,9 +2713,12 @@ func (t *txn) putRun(r runRecord) error {
 // transaction carries it beside the effects it describes, so a crash cannot
 // commit effects with no completion recorded.
 func (t *txn) putSystemRun(r runRecord, prune bool) error {
-	prevInternal := t.internal
-	t.internal = true
-	defer func() { t.internal = prevInternal }()
+	// The run's own record, a named exemption from the one check (run.go),
+	// written by the engine's hand, which the managed properties and a
+	// system kind need.
+	prevInternal, prevExempt := t.internal, t.exempt
+	t.internal, t.exempt = true, exemptRunRecord
+	defer func() { t.internal, t.exempt = prevInternal, prevExempt }()
 	return t.asActor(substrate.ActorSystem, func() error {
 		if err := t.putRun(r); err != nil {
 			return err

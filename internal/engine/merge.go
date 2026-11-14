@@ -102,6 +102,9 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	if err := guardMergeType(ty); err != nil {
 		return nil, err
 	}
+	if err := t.authorizeWrite(ty); err != nil {
+		return nil, err
+	}
 	// The preconditions, ahead of the replay branch below: a merge that
 	// already happened moved both versions, so a retried CONDITIONED merge
 	// fails conflict the way a retried put under IfVersion does, and the

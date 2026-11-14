@@ -26,7 +26,7 @@
   {
     "name": "errors",
     "stability": "stable",
-    "revision": 4,
+    "revision": 5,
     "routes": []
   },
   {
@@ -91,7 +91,7 @@
   {
     "name": "auth",
     "stability": "beta",
-    "revision": 3,
+    "revision": 4,
     "routes": [
       "DELETE /tokens/{id}",
       "GET /identity",
@@ -127,7 +127,7 @@
   {
     "name": "vocabulary",
     "stability": "beta",
-    "revision": 2,
+    "revision": 3,
     "routes": [
       "GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors",
       "GET /api/v1/vocabulary/upgrade",

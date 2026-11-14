@@ -66,6 +66,10 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, errLeaseEnded):
 			slog.Info("export aborted mid-stream: its token was revoked or ran out", attrs...)
+		case errors.Is(err, errRolesChanged):
+			slog.Info("export aborted mid-stream: the roles of the person who took it changed", attrs...)
+		case errors.Is(err, errLeaseUnread):
+			slog.Warn("export aborted mid-stream: its token or its person's roles could not be read again", attrs...)
 		case errors.Is(err, os.ErrDeadlineExceeded):
 			slog.Warn("export aborted mid-stream: the client stopped reading", attrs...)
 		case errors.Is(ctx.Err(), context.Canceled):

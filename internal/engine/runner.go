@@ -382,6 +382,9 @@ func (b *callBackend) Units(ctx context.Context) (*vocabulary.UnitGraph, error) 
 }
 
 func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	if err := b.hostReadsHeld(ctx, typ); err != nil {
+		return nil, err
+	}
 	e, err := b.inv.ds.Get(ctx, typ, id)
 	if errors.Is(err, substrate.ErrNotFound) {
 		// Absence is a normal answer: existence probes ask exactly this.
@@ -391,7 +394,37 @@ func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Recor
 }
 
 func (b *callBackend) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
-	return b.inv.ds.readList(ctx, q)
+	if err := b.hostReadsHeld(ctx, q.Filter.Kinds...); err != nil {
+		return nil, err
+	}
+	page, err := b.inv.ds.readList(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	held, err := b.inv.ds.runReads(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for path, e := range page.Included {
+		if held != nil && !held(e.Kind) {
+			delete(page.Included, path)
+		}
+	}
+	return page, nil
+}
+
+// hostReadsHeld refuses a read of kinds the persons and the apps this invocation
+// works for do not read (run.go), as the runner refuses one outside the
+// function's own allowlist.
+func (b *callBackend) hostReadsHeld(ctx context.Context, kinds ...string) error {
+	resolved := make([]string, len(kinds))
+	for i, k := range kinds {
+		resolved[i] = b.ResolveKind(k)
+	}
+	if err := b.inv.ds.heldReads(ctx, resolved...); err != nil {
+		return fmt.Errorf("%w: %w", runner.ErrReadForbidden, err)
+	}
+	return nil
 }
 
 // readList is a function body's or an agent's list read. A filter bounding
@@ -416,6 +449,10 @@ func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.
 // their kinds are held here, where the declarations are, and a kind outside
 // the allowlist trips.
 func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	kinds := slices.Concat(q.Filter.Kinds, b.inv.ds.rankingSourceKinds(q), b.inv.ds.sourceLinkKinds(q))
+	if err := b.hostReadsHeld(ctx, slices.DeleteFunc(kinds, func(k string) bool { return k == "" })...); err != nil {
+		return nil, err
+	}
 	for _, pin := range b.inv.ds.rankingSourceKinds(q) {
 		if pin == "" {
 			return nil, fmt.Errorf("%w: aggregate ranks its sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order",
@@ -450,7 +487,21 @@ func (b *callBackend) grants(kind string) bool {
 }
 
 func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
-	return b.inv.ds.Search(ctx, in)
+	if err := b.hostReadsHeld(ctx, in.Kinds...); err != nil {
+		return substrate.SearchResult{}, err
+	}
+	res, err := b.inv.ds.Search(ctx, in)
+	if err != nil {
+		return res, err
+	}
+	// A search naming no kinds ranks across them: a hit of a kind this
+	// invocation's persons and apps do not read is dropped.
+	held, err := b.inv.ds.runReads(ctx)
+	if err != nil || held == nil {
+		return res, err
+	}
+	res.Hits = slices.DeleteFunc(res.Hits, func(h substrate.Hit) bool { return h.Record == nil || !held(h.Record.Kind) })
+	return res, nil
 }
 
 // ResolveKind answers the runner's reads gate in the repository's own
@@ -1005,9 +1056,14 @@ func (ds *dataset) callHostFunction(ctx context.Context, fn *vocabulary.Function
 	var ok bool
 	switch fn.Identity() {
 	case vocabulary.HostFunctionQuery:
-		// One call, the default row budget: a token needs no kind allowlist, but a
-		// list still answers a page rather than the repository.
-		out, ok, _ = ds.runQueryTool(ctx, queryScope{rows: vocabulary.DefaultReadRows}, m)
+		// One call, the default row budget: a token needs no kind allowlist,
+		// so the scope is every kind, said as such, but a list still answers a
+		// page rather than the repository.
+		scope, err := ds.heldScope(ctx, queryScope{all: true, rows: vocabulary.DefaultReadRows})
+		if err != nil {
+			return nil, 0, err
+		}
+		out, ok, _ = ds.runQueryTool(ctx, scope, m)
 	case vocabulary.HostFunctionWait:
 		return nil, 0, fmt.Errorf("%w: %s waits on the background jobs of the CALLING AGENT's thread, and a direct call has none: declare an agent carrying %s as a tool and call the agent",
 			substrate.ErrForbidden, fn.Identity(), fn.Identity())

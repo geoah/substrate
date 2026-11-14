@@ -134,8 +134,10 @@ var featureTable = []feature{
 	// because it is every route's refusal. Revision 3: the reason
 	// `set_aside`, a repository the server's start set aside. Revision 4: the
 	// reason `repository_required` and the payload's `repositories`, a
-	// sign-in that must name one (decision 0274).
-	{name: "errors", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}},
+	// sign-in that must name one (decision 0274). Revision 5: the reason
+	// `not_permitted`, a refusal by a rule of the person's roles (decision
+	// 0276).
+	{name: "errors", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}},
 	// The changefeed: paged backward (`?before=`), resumed forward (`?from=`)
 	// and tailed (`?watch=1`, here and on the records route). Revision 2: a
 	// change links the actor record that wrote it, the one it acted for
@@ -185,9 +187,10 @@ var featureTable = []feature{
 		"POST /api/v1/catalog/{id}/install",
 	}},
 	// The sign-in door: registering, signing in, the credential changes and
-	// the tokens.
+	// the tokens. Revision 4: `GET /identity` names the roles the person
+	// holds in each repository they may open (decision 0275).
 	{
-		name: "auth", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST},
+		name: "auth", stability: substrate.StabilityBeta, revision: 4, surfaces: []string{surfaceREST},
 		routes: []string{
 			"POST /register/enroll",
 			"POST /register",
@@ -224,8 +227,10 @@ var featureTable = []feature{
 		"POST /api/v1/vocabulary/takeover",
 	}},
 	// Revision 2: a definition's `writer:` takes a type of actor or a list of
-	// them, and the three words before refuse (decision 0290).
-	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// them, and the three words before refuse (decision 0290). Revision 3: a
+	// kind's info says whether it is a control kind (`control`, decision
+	// 0276).
+	{name: "vocabulary", stability: substrate.StabilityBeta, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/vocabulary/apply",
 		"POST /api/v1/vocabulary/plan",
 		"GET /api/v1/vocabulary/upgrade",

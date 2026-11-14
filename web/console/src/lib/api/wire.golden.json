@@ -795,6 +795,7 @@
   },
   "KindInfo": {
     "authority": true,
+    "control": false,
     "definition": true,
     "description": true,
     "identity": true,
@@ -981,7 +982,8 @@
   },
   "RepositoryChoice": {
     "id": true,
-    "name": true
+    "name": true,
+    "roles": false
   },
   "RepositoryConversion": {
     "expr": false,
