@@ -2898,16 +2898,41 @@ the exec path needs nothing open at all.
   state stands at is counted (`absent`, beside `compactedUpTo`) and is no
   finding, and one above it is a gap, as in a history never compacted. A
   state does not name the lines it replaced, so verify cannot tell a line a
-  compaction took from one that went missing below it. With an archive it then holds the archive
+  compaction took from one that went missing below it. With an archive it holds the archive, last
   to the table: its manifest's head may not be past the table's, and every
   line of the chain of pieces to it must carry the checksum the table stamped
   for its seq. An archive behind the table is not a finding, because it is
-  copied after the commits. What it could not hold to the table it prints
+  copied after the commits. **Beside a server that is archiving**, a pass
+  may publish a manifest and drop the one before while verify reads the
+  store, so verify reads the archive's record again once it has read the
+  store. Where a pass published since, what a publish explains (the store's
+  newest manifest is not the one the record names, the published manifest
+  or an object it selects is gone) is dropped, and verify reads the archive
+  again in a snapshot taken then, at most five times, until a reading is not
+  overtaken. A later reading reads only what the earlier ones did not prove:
+  no object name in an archive ever holds two contents, so a piece, a blob or
+  a sealed value held whole once is not read again, and a piece's lines held
+  to the table once stay held. What lies between one piece and the next is
+  held to the table at every reading, read or not, so a line the table
+  holds that no piece holds is found whichever pieces were skipped. A later
+  reading still lists the store's manifests and the archive's blobs, reads
+  the published manifest, lists every object under the archive to count the
+  ones the database has no record of, and reads what passes wrote since:
+  seconds for most archives, but those listings grow with the archive.
+  Damage found in an object (a piece, a blob or a sealed value whose bytes
+  are not the ones its name or its manifest says, a line that is not the
+  table's) is a finding whatever the passes did, unless a pass has since
+  replaced that object in the manifest the verify settled on. An archive a
+  pass overtook under every reading is `NOT VERIFIED`, and beside a running
+  server that is a finding: run verify again, and where a pass publishes
+  faster than one such reading takes, run it with the server stopped. A manifest the record says
+  is about to be published is the database's too, as a pass reads it. What
+  it could not hold to the table it prints
   as `NOT VERIFIED` (`archiveUnverified` in `-o json`), and that is a
   finding for a store that cannot be read, a manifest gone from a store a
   pass published to, and history in an earlier changelog dialect than the
   table's; an archive no pass has published to yet is said and is no
-  finding. It then
+  finding. Before the archive, it
   holds the side stores to the fold: every blob whose manifest says `stored`
   is read out of the blob store and hashed against its digest, every secret
   reference a live record holds (by the repository's own declarations, as a
