@@ -1357,7 +1357,7 @@ function record(){
       <div class="sechead"><h2 class="h2">Connected to</h2><span class="hint">what points here, and what this points to</span></div>${linksSection(r)}
       <div class="sechead"><h2 class="h2">Where it comes from</h2><span class="hint">providers that fill this in</span></div>${sourcesSection(r)}
       ${merged?`<div class="sechead"><h2 class="h2">Merged</h2></div>${merged}`:""}
-      <div class="sechead"><h2 class="h2">History</h2><span class="hint">every change, newest first</span></div>${histSection(r)}
+      <div class="sechead"><h2 class="h2">History</h2><span class="hint">the changes still held, newest first</span></div>${histSection(r)}
       ${tech()?`<div class="sechead"><h2 class="h2">Record</h2></div>${detailsSection(r)}`:""}`}`)}</div>`;
 }
 function newRecord(){
@@ -1478,7 +1478,7 @@ function providersPage(){
 /* ================= history / settings ================= */
 function historyPage(){
   return topbar([["History","history"]],`<button class="btn sm">${ic("filter")}Filter</button>`)+`<div class="scroll">${docL(`
-    <h1 class="h1">History</h1><p class="lede">Every change to your data, newest first: by you, your agents and your providers. Nothing is ever lost from here.</p>
+    <h1 class="h1">History</h1><p class="lede">The changes your repository still holds, newest first: by you, your agents and your providers. How long a collection keeps its history is set by its retention.</p>
     <div class="toolbar"><div class="views"><button class="view" aria-pressed="true">Everything</button><button class="view">By you</button><button class="view">By agents</button><button class="view">By providers</button></div></div>
     ${feed(ACT)}`)}</div>`;
 }

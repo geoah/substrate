@@ -363,7 +363,7 @@ export function stepLines(plan: ConversionPlan | undefined): string[] {
           s.lossy ? "; afterwards the two can’t be told apart" : ""
         }`
       default:
-        return `Removes ${s.property} from ${n}${where}; the old values stay in History`
+        return `Removes ${s.property} from ${n}${where}; the old values stay in History as long as the collection keeps its history`
     }
   })
 }

@@ -81,6 +81,26 @@ afterEach(() => {
   feeds.length = 0
 })
 
+// The page says what it shows and nothing the server does not do: the
+// changes the repository still holds, since the compaction pass removes
+// what is past each kind's retention and a permanent delete erases a
+// record's history (#1427).
+describe("History's description", () => {
+  it("says it shows the changes still held, and that retention sets how long", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {}))
+    )
+    renderAt("you")
+    expect(
+      screen.getByText(
+        "The changes your repository still holds, newest first: by you, your agents and your providers. How long a collection keeps its history is set by its retention."
+      )
+    ).toBeTruthy()
+    expect(screen.queryByText(/ever lost|Every change/)).toBeNull()
+  })
+})
+
 describe("History's views by actor", () => {
   it("show they are loading while the directory loads", () => {
     vi.stubGlobal(
