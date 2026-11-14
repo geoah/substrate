@@ -423,7 +423,13 @@ function callsOf(record: SubstrateRecord): ToolCallView[] {
 /** Fold the rows into turns. The rows arrive in loop order (`turn` ascending,
  * then created) — this preserves that order and never sorts, because `turn` is
  * the loop's own counter and two rows of one turn are ordered by creation. */
-export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
+export function transcriptOf(
+  messages: SubstrateRecord[],
+  /** The calls a running turn's stream has settled, by call id: a stored
+   * call whose result row is not read yet takes its result from here, so
+   * the one card a call has shows what the stream already said. */
+  live?: ReadonlyMap<string, ToolCallView>
+): TurnView[] {
   const turns: TurnView[] = []
   // Every unsettled call in the transcript so far, so a tool row finds its
   // call even when another assistant turn has landed in between.
@@ -546,6 +552,16 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
         },
       ],
     })
+  }
+  // A call still waiting for its result row: the stream may have its result.
+  if (live) {
+    for (const [id, call] of pending) {
+      const settled = live.get(id)
+      if (!settled || settled.ok === undefined) continue
+      call.output = settled.output
+      call.ok = settled.ok
+      if (settled.job) call.job = settled.job
+    }
   }
   return turns
 }
@@ -984,10 +1000,21 @@ export function pushToolStart(
   return { ...live, turns }
 }
 
+/** The calls a live overlay has settled, by call id, for `transcriptOf`. */
+export function liveCalls(live: LiveOverlay): Map<string, ToolCallView> {
+  const calls = new Map<string, ToolCallView>()
+  for (const turn of live.turns) {
+    for (const call of turn.tools) {
+      if (call.id && call.ok !== undefined) calls.set(call.id, call)
+    }
+  }
+  return calls
+}
+
 /** The live turns the stored rows do not show yet. The rows are the truth
  * for whatever they hold, so a live user message whose row is stored, the
- * text of a turn whose row is stored, a tool card whose row is stored and a
- * compaction whose summary row is stored are left to them. Everything else
+ * text of a turn whose row is stored, a tool card whose call or whose result
+ * is stored and a compaction whose summary row is stored are left to them. Everything else
  * stays as it is, under the keys it had: an attach that reads the rows again
  * never empties what is still only live. */
 export function liveBeyond(
@@ -998,9 +1025,15 @@ export function liveBeyond(
   const ids = new Set(rows.map((r) => r.id))
   const held = new Set<number>()
   const compactions = new Set<number>()
+  // The calls the stored assistant rows declare: each has its card there,
+  // result row or not, so a live card of the same call would be a second.
+  const declared = new Set<string>()
   for (const r of rows) {
     const turn = r.properties.turn
     if (typeof turn === "number") held.add(turn)
+    if (r.properties.role === "assistant") {
+      for (const call of callsOf(r)) if (call.id) declared.add(call.id)
+    }
     if (r.properties.role === "summary") {
       const before = num(r.properties.tokensBefore)
       if (before !== undefined) compactions.add(before)
@@ -1015,7 +1048,9 @@ export function liveBeyond(
       return before !== undefined && compactions.has(before) ? [] : [turn]
     }
     const tools = turn.tools.filter(
-      (c) => c.turn === undefined || !held.has(c.turn)
+      (c) =>
+        !(c.id && declared.has(c.id)) &&
+        (c.turn === undefined || !held.has(c.turn))
     )
     if (turn.live && held.has(turn.live.turn)) {
       // Its text is a row now; calls of its that are still only live go on

@@ -433,7 +433,7 @@ func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag 
 	slotHeld := true
 	defer func() {
 		if slotHeld {
-			ds.chatTurns.give(person)
+			ds.resumeWaiting(ds.chatTurns.give(person))
 		}
 	}()
 	hub := newTurnHub()
@@ -453,7 +453,8 @@ func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag 
 	stopOnShutdown := context.AfterFunc(ds.svc.bg.ctx, cancel)
 	slotHeld = false
 	turn := func() {
-		defer ds.chatTurns.give(person)
+		// A resume that waited for one of this person's turns starts now.
+		defer func() { ds.resumeWaiting(ds.chatTurns.give(person)) }()
 		defer stopOnShutdown()
 		defer cancel()
 		res, err := (*substrate.AgentResult)(nil), errors.New("the chat turn ended without settling")

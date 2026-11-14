@@ -422,7 +422,7 @@ func (ds *dataset) continueThread(ctx context.Context, threadID, resolution stri
 	mode, _ := row.Props["mode"].(string)
 	in := agentInvocation{mode: mode, threadID: threadID, resume: true}
 	if mode == agentModeChat {
-		err = ds.resumeChatTurn(ctx, ag, in)
+		err = ds.resumeChatTurn(ctx, ag, in, resolution)
 	} else {
 		_, err = ds.runAgent(ctx, ag, in)
 	}
@@ -437,9 +437,10 @@ func (ds *dataset) continueThread(ctx context.Context, threadID, resolution stri
 }
 
 // errResumeWaits ends a chat thread's continuation that found its person's
-// chat-turn slots all taken: nothing was claimed, the resolution row stays
-// unconsumed, and the sweep runs the continuation once a slot is free.
-var errResumeWaits = errors.New("the person's chat turns are all running: the resume waits for the sweep")
+// chat-turn slots all taken: nothing was claimed, and the resume is kept
+// with the slots (personSlots.takeOrWait) to be started again when one of
+// that person's turns settles, or at the next sweep.
+var errResumeWaits = errors.New("the person's chat turns are all running: the resume waits for one to settle")
 
 // resumeChatTurn runs a chat thread's continuation as a detached chat turn
 // (decision 0317): the loop publishes into a hub the thread's attaches and
@@ -447,16 +448,22 @@ var errResumeWaits = errors.New("the person's chat turns are all running: the re
 // and settles past that cancellation, so a stop or a shutdown settles it
 // `stopped` with what it streamed kept, as a sent turn's does. It holds one
 // of its person's chat-turn slots from before the claim to after the settle;
-// with none free it runs nothing (errResumeWaits). It returns when the turn
-// has settled: the caller is already a background task of the service.
-func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) error {
+// with none free it runs nothing and waits for one (errResumeWaits):
+// resolution is the row the turn starts from, kept to start it again. It
+// returns when the turn has settled: the caller is already a background
+// task of the service.
+//
+// The wait is kept in memory, as the settle-time re-check is: a resume that
+// waits when the process stops is one the sweep finds again only where the
+// thread settled before its resolution landed.
+func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in agentInvocation, resolution string) error {
 	person, limit := ds.turnPerson(ctx), ds.svc.chatTurnsPerPerson
-	if !ds.chatTurns.take(person, limit) {
-		ds.svc.log.Info("substrate: resume: the person's chat turns are all running, the resume waits for the sweep",
+	if !ds.chatTurns.takeOrWait(person, limit, deferredResume{thread: in.threadID, resolution: resolution}) {
+		ds.svc.log.Info("substrate: resume: the person's chat turns are all running, the resume waits for one to settle",
 			"thread", in.threadID, "limit", limit)
 		return errResumeWaits
 	}
-	defer ds.chatTurns.give(person)
+	defer func() { ds.resumeWaiting(ds.chatTurns.give(person)) }()
 	hub := newTurnHub()
 	in.hub = hub
 	runCtx, l, err := ds.prepareAgentRun(ctx, ag, in)
@@ -474,6 +481,16 @@ func (ds *dataset) resumeChatTurn(ctx context.Context, ag *vocabulary.Agent, in 
 	defer func() { hub.finish(res, err) }()
 	res, err = l.run(runCtx)
 	return err
+}
+
+// resumeWaiting starts again the resumes that waited for a chat-turn slot,
+// each through the admission every resume passes: a thread stopped
+// meanwhile stays stopped, and one whose person's turns are still all
+// running waits again.
+func (ds *dataset) resumeWaiting(waited []deferredResume) {
+	for _, w := range waited {
+		ds.resumeNotifiedThread(w.thread, "", w.resolution)
+	}
 }
 
 // turnPerson is the person whose chat-turn slots a turn on ctx counts
@@ -530,6 +547,10 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		ds.continueThread(ctx, id, first)
 		resumed++
 	}
+	// The resumes that wait for a slot are tried again here too: the give
+	// that would start them comes only when one of their person's turns
+	// settles, and a slot can also free by a limit that was raised.
+	ds.resumeWaiting(ds.chatTurns.drainWaiting())
 	return resumed, nil
 }
 

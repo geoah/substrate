@@ -105,6 +105,7 @@ import { USD } from "@/lib/money"
 import {
   EMPTY_OVERLAY,
   liveBeyond,
+  liveCalls,
   pushCompacted,
   pushDelta,
   pushReasoning,
@@ -579,9 +580,14 @@ export function Conversation({
   const shownLive = positions
     ? liveBeyond(live, messages.data?.records ?? [])
     : live.turns
+  // A call the rows declare has its one card there; the stream's result for
+  // it, where its result row is not read yet, is shown on that card.
   const turns = handedOver
     ? transcriptOf(persisted)
-    : [...transcriptOf(persisted), ...shownLive]
+    : [
+        ...transcriptOf(persisted, positions ? liveCalls(live) : undefined),
+        ...shownLive,
+      ]
   // A run that has settled but whose rows have not arrived is still busy: a
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.

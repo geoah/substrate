@@ -49,9 +49,12 @@ one event at the first piece's position.
 **Resumed runs.** A chat thread's continuation publishes into a hub exactly
 as a sent turn does: an attach streams it, a stop stops it, and a stop or a
 shutdown settles it `stopped`. It holds one of its person's chat turns, the
-person the resolution is held to. With none free it claims nothing, and the
-sweep that already retries resumes runs it later. A thread of another mode
-resumes as before.
+person the resolution is held to. With none free it claims nothing and
+waits, kept with the slots, and starts when one of that person's turns
+settles or at the next sweep. The sweep alone would not do: it finds a
+resolution only on a thread that settled `ok` or `overbudget` before the
+resolution landed, so one that landed mid-turn, or on a failed thread,
+would be lost. A thread of another mode resumes as before.
 
 **What streamed is kept.** The text a call had streamed when it failed, or
 when the run's deadline ended it, is written as the turn's assistant row
@@ -76,7 +79,9 @@ turn did not fail.
   the partial row every few seconds would close that at a changelog entry
   per few seconds, for text that settles a moment later.
 - Bad, because a resumed run now needs a free chat turn, so a person at
-  their cap waits for the sweep where the resume used to run at once.
+  their cap waits for one of their turns to settle where the resume used to
+  run at once, and that wait is in memory: a restart keeps only the resumes
+  the sweep can find.
 - Bad, because a shutdown during a resumed run settles it `stopped`, which
   nothing resumes on its own; before, the next start settled it `error`,
   which nothing resumed either.
@@ -92,6 +97,8 @@ turn did not fail.
 `TestReasoningIsPlacedApartFromTheReply`, `TestAnAttachIsSafeToApplyTwice`,
 `TestAResumedChatRunStreams`, `TestAStopStopsAResumedChatRun`,
 `TestAResumedChatRunWaitsForASlot`,
+`TestAResolutionMidTurnAtTheCapStillResumes`,
+`TestAResumeThatWaitsOnAFailedThreadStartsWhenASlotFrees`,
 `TestWhatACallStreamedIsKeptWhenItFails`,
 `TestAReplyCutAtTheModelsLimitSaysSoAndIsContinued`,
 `TestADeadlineInsideACallKeepsWhatItStreamed`; the hub is
