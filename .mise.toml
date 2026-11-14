@@ -563,7 +563,7 @@ run = ".mise/frozencheck.sh"
 # branch's, which the golden in the tree cannot hold because a branch rewrites
 # it (decision 0256).
 [tasks."features:check"]
-description = "Refuse a discovery feature whose routes changed under an unchanged revision, or whose revision went down"
+description = "Refuse a discovery feature whose routes changed under an unchanged revision, whose revision went down, or that is stable and gives a route up"
 run = ".mise/featurescheck.sh"
 
 # The same against the base branch for the vocabulary dialect: a declaration

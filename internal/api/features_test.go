@@ -258,6 +258,12 @@ func revisionProblems(before, after []featureGolden) []string {
 	for _, f := range after {
 		was, existed := old[f.Name]
 		if f.Gone || !existed || was.Gone {
+			// A stable feature goes only in 2.0 (docs/stability.md), whatever
+			// it declares: the label is read at the base, so lowering it in
+			// the same change does not open the way.
+			if f.Gone && existed && !was.Gone && was.Stability == substrate.StabilityStable {
+				problem("%s is stable and goes: a stable feature is removed only in 2.0", f.Name)
+			}
 			if !f.Gone && existed && was.Gone {
 				problem("%s was removed and is back in featureTable: a removed feature's name is never used again", f.Name)
 			}
@@ -274,6 +280,13 @@ func revisionProblems(before, after []featureGolden) []string {
 		}
 		if was.Stability == substrate.StabilityStable && f.Stability != substrate.StabilityStable {
 			problem("%s was %s and is now %s: a stable feature keeps its label", f.Name, was.Stability, f.Stability)
+		}
+		if was.Stability == substrate.StabilityStable {
+			for _, r := range f.Removed {
+				if !slices.ContainsFunc(was.Removed, func(w string) bool { return sameRoute(w) == sameRoute(r) }) {
+					problem("%s is stable and lists %q as removed: a stable feature gives up a route only in 2.0", f.Name, r)
+				}
+			}
 		}
 	}
 
@@ -330,7 +343,18 @@ func TestRevisionProblems(t *testing.T) {
 		"a revision down":               {after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 1, Routes: two}}, want: "only goes up"},
 		"a new feature past 1":          {after: []featureGolden{x[0], {Name: "y", Revision: 2, Routes: two[1:]}}, want: "starts at 1"},
 
-		"a route gone and declared":     {after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}, Removed: one}}},
+		"a route gone and declared": {
+			before: []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 2, Routes: one}},
+			after:  []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 3, Routes: []string{}, Removed: one}},
+		},
+		"a route gone and declared, from a stable feature": {
+			after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}, Removed: one}},
+			want:  "only in 2.0",
+		},
+		"a route gone and declared, from a stable feature lowered at once": {
+			after: []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 3, Routes: []string{}, Removed: one}},
+			want:  "only in 2.0",
+		},
 		"a route gone and not declared": {after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}}}, want: "listed in the feature's `removed`"},
 		"a route moved to another feature": {after: []featureGolden{
 			{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: []string{}},
@@ -360,12 +384,19 @@ func TestRevisionProblems(t *testing.T) {
 		},
 		"a route served and newly listed as removed": {after: []featureGolden{{Name: "x", Stability: substrate.StabilityStable, Revision: 3, Routes: one, Removed: one}}, want: "never served again"},
 		"a stable label lowered":                     {after: []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 2, Routes: one}}, want: "keeps its label"},
-		"a feature gone and declared":                {after: []featureGolden{{Name: "x", Routes: []string{}, Removed: one, Gone: true}}},
-		"a feature gone, its routes moved":           {after: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}, {Name: "y", Revision: 1, Routes: one}}},
-		"a feature gone, its routes not listed":      {after: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, want: "lists the routes it held"},
-		"a feature gone and not declared":            {after: []featureGolden{}, want: "listed in removedFeatures"},
-		"a removed feature's name reused":            {before: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, after: []featureGolden{{Name: "x", Revision: 1, Routes: one}}, want: "never used again"},
-		"a removed feature left the list":            {before: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, after: []featureGolden{}, want: "the list only grows"},
+		"a feature gone and declared": {
+			before: []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 2, Routes: one}},
+			after:  []featureGolden{{Name: "x", Routes: []string{}, Removed: one, Gone: true}},
+		},
+		"a stable feature gone and declared": {after: []featureGolden{{Name: "x", Routes: []string{}, Removed: one, Gone: true}}, want: "removed only in 2.0"},
+		"a feature gone, its routes moved": {
+			before: []featureGolden{{Name: "x", Stability: substrate.StabilityBeta, Revision: 2, Routes: one}},
+			after:  []featureGolden{{Name: "x", Routes: []string{}, Gone: true}, {Name: "y", Revision: 1, Routes: one}},
+		},
+		"a feature gone, its routes not listed": {after: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, want: "lists the routes it held"},
+		"a feature gone and not declared":       {after: []featureGolden{}, want: "listed in removedFeatures"},
+		"a removed feature's name reused":       {before: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, after: []featureGolden{{Name: "x", Revision: 1, Routes: one}}, want: "never used again"},
+		"a removed feature left the list":       {before: []featureGolden{{Name: "x", Routes: []string{}, Gone: true}}, after: []featureGolden{}, want: "the list only grows"},
 		"a removed feature's routes shrink": {
 			before: []featureGolden{{Name: "x", Routes: []string{}, Removed: one, Gone: true}},
 			after:  []featureGolden{{Name: "x", Routes: []string{}, Gone: true}},

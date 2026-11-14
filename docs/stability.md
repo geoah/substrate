@@ -113,7 +113,10 @@ a token:
   a deprecation.
 
 Every route the server registers is in exactly one feature, so no route is
-without a label. The list is not repeated on this page, because the server
+without a label. The tree holds the labels to what they promise: a change
+that lowers a stable feature's label, lists one of its routes as removed or
+takes the feature away is refused before it merges (`mise run
+features:check`), because a stable feature gives nothing up before 2.0. The list is not repeated on this page, because the server
 is the place it is true: read it from the server you talk to.
 [Discovery](api.md#discovery) describes every key of an entry and names the
 features, and the console shows the list under Settings, Developer, with
