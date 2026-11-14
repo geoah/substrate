@@ -29,6 +29,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/url"
@@ -38,6 +39,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -124,9 +126,11 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	} else {
 		copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
 	}
+	refusals := newKeptRefusals()
 	e := testenv.Start(t, append([]testenv.Option{
 		testenv.WithoutRegistration(), testenv.WithRepository(fixture.Repository),
 		testenv.WithDataRoot(root), testenv.WithCredentialKey(fixture.CredentialKey),
+		testenv.WithEngineOptions(engine.WithLogger(slog.New(refusals))),
 	}, opts...)...)
 	e.Token = fixture.Token
 
@@ -220,9 +224,100 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 		t.Fatalf("the directory %s kept imports under the current code into %d difference(s) no entry after its head explains:\n  %s",
 			fixture.Tag, len(diffs), strings.Join(diffs, "\n  "))
 	}
+	// The release's repository ends on what this binary ships: an upgrade the
+	// boot refused leaves every record served as above and the declarations
+	// behind, which the comparison cannot see.
+	if lines := refusals.lines(); len(lines) > 0 {
+		t.Errorf("%s: the boot refused the shipped upgrade:\n  %s", fixture.Tag, strings.Join(lines, "\n  "))
+	}
+	for _, d := range keptSeededVersions(t, e, "fresh.example.com") {
+		t.Errorf("%s: %s", fixture.Tag, d)
+	}
 	t.Logf("%s: %d records compared, %d of them rewritten by the %d entries the boot appended after head %d",
 		fixture.Tag, len(want.Records), len(upgraded), keptAppended(upgraded), want.Head)
 	return keptImport{e: e, fixture: fixture, got: got, upgraded: upgraded}
+}
+
+// keptRefusals records the shipped upgrades the engine refused, and passes
+// every line on to the default handler.
+type keptRefusals struct {
+	slog.Handler
+	mu   *sync.Mutex
+	seen *[]string
+}
+
+func newKeptRefusals() keptRefusals {
+	return keptRefusals{Handler: slog.Default().Handler(), mu: &sync.Mutex{}, seen: &[]string{}}
+}
+
+func (r keptRefusals) Handle(ctx context.Context, rec slog.Record) error {
+	if strings.Contains(rec.Message, "REFUSED to upgrade") {
+		line := rec.Message
+		rec.Attrs(func(a slog.Attr) bool {
+			line += " " + a.String()
+			return true
+		})
+		r.mu.Lock()
+		*r.seen = append(*r.seen, line)
+		r.mu.Unlock()
+	}
+	return r.Handler.Handle(ctx, rec)
+}
+
+func (r keptRefusals) WithAttrs(attrs []slog.Attr) slog.Handler {
+	r.Handler = r.Handler.WithAttrs(attrs)
+	return r
+}
+
+func (r keptRefusals) WithGroup(name string) slog.Handler {
+	r.Handler = r.Handler.WithGroup(name)
+	return r
+}
+
+func (r keptRefusals) lines() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(*r.seen)
+}
+
+// keptSeededVersions holds the repository e opens to the seeded packages this
+// binary ships, each at the version a repository registered now under the
+// name fresh holds, and answers each difference.
+func keptSeededVersions(t *testing.T, e *testenv.Env, fresh string) []string {
+	t.Helper()
+	now := e.RegisterUser(fresh, "a password for the fresh repository")
+	want, got := keptBuiltinVersions(t, now), keptBuiltinVersions(t, e)
+	if len(want) == 0 {
+		t.Fatal("a repository registered now holds no seeded package: the check reads nothing")
+	}
+	var out []string
+	for _, id := range slices.Sorted(maps.Keys(want)) {
+		if got[id] != want[id] {
+			out = append(out, fmt.Sprintf("seeded package %s is at version %q, and this binary ships %q", id, got[id], want[id]))
+		}
+	}
+	return out
+}
+
+// keptBuiltinVersions is each seeded package's stored version, by the
+// package record's id.
+func keptBuiltinVersions(t *testing.T, e *testenv.Env) map[string]string {
+	t.Helper()
+	q := url.Values{"filter": {`{"kinds":["substrate.reamde.dev/core/package"]}`}, "first": {"500"}}
+	var page struct {
+		Records []struct {
+			ID         string         `json:"id"`
+			Properties map[string]any `json:"properties"`
+		} `json:"records"`
+	}
+	e.MustJSON(http.MethodGet, "/api/v1/records?"+q.Encode(), nil, &page)
+	out := map[string]string{}
+	for _, r := range page.Records {
+		if r.Properties["source"] == "builtin" {
+			out[r.ID] = fmt.Sprint(r.Properties["version"])
+		}
+	}
+	return out
 }
 
 // keptTouch is what the entries after the release's head did to one record,

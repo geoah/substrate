@@ -529,6 +529,25 @@ func propertyNarrowings(ident, pname string, curP, candP *vocabulary.Property, c
 						ident, pname, from, to, quotedList(candP.ValueStrings())),
 					query: q, args: args,
 				})
+			// A string retyped to a reference strands only the values that
+			// are not links yet, or link outside the candidate's kind pin: a
+			// conversion or a repository migration rewrites them into links
+			// first (the actor links of decision 0270 did, for a blob's
+			// `createdBy` and a package's `declaredBy`), and the declaration
+			// then follows them. Counting presence refused the shipped
+			// upgrade of every repository those links had already reached.
+			case stringToReference(curP, candP):
+				var accept []string
+				pin := ""
+				if candP.To != "" && candP.To != vocabulary.ToAny {
+					accept, pin = acceptedTargets(candP.To, moved), " to "+candP.To
+				}
+				q, args := notLinksAtPath(ident, containerPath(nil, curP, pname), accept)
+				out = append(out, narrowing{
+					format: fmt.Sprintf("kind %s: property %q changes kind %s → %s while %%d live records hold a value that is not yet a link%s — rewrite them first",
+						ident, pname, from, to, pin),
+					query: q, args: args,
+				})
 			default:
 				out = append(out, narrowing{
 					format: fmt.Sprintf("kind %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
@@ -1112,6 +1131,35 @@ func valuesAdded(cur, cand *vocabulary.Property) bool {
 func stringToEnum(cur, cand *vocabulary.Property) bool {
 	return cur.Datatype == vocabulary.DatatypeString && cand.Datatype == vocabulary.DatatypeEnum &&
 		cur.Repeated == cand.Repeated && cur.Keyed == cand.Keyed
+}
+
+// stringToReference reports the flip of a plain string to a reference in the
+// same container, counted by value rather than by presence: the value a
+// rewrite turns into a link stops stranding the row. A trait pin is left to
+// the presence count, because which kinds implement the trait is the
+// candidate registry's to say and not this count's.
+func stringToReference(cur, cand *vocabulary.Property) bool {
+	return cur.Datatype == vocabulary.DatatypeString && cand.Datatype == vocabulary.DatatypeReference &&
+		cand.ToTrait == "" && cur.Repeated == cand.Repeated && cur.Keyed == cand.Keyed
+}
+
+// notLinksAtPath counts the live rows holding, at the path, a value that is
+// not a link (`{ref: "<kind>/<id>"}`, the one stored shape), or, when accept
+// names kinds, a link to none of them.
+func notLinksAtPath(ident string, path []fieldStep, accept []string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		key := sqlLiteral(vocabulary.ReferenceValueKey)
+		notLink := fmt.Sprintf("NOT (jsonb_typeof(%s) = 'object' AND jsonb_typeof(%s->%s) = 'string')", expr, expr, key)
+		if len(accept) == 0 {
+			return notLink
+		}
+		off := make([]string, len(accept))
+		for i, k := range accept {
+			arg := a.add(k)
+			off[i] = fmt.Sprintf("left(%s->>%s, length(%s) + 1) <> %s || '/'", expr, key, arg, arg)
+		}
+		return fmt.Sprintf("(%s OR (%s))", notLink, strings.Join(off, " AND "))
+	})
 }
 
 // keysOutsidePattern counts the live rows whose keyed map at the path holds a

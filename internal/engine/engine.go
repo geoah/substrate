@@ -65,6 +65,9 @@ type options struct {
 	archiveStepBytes  int64
 	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
 	archiveFault func(stage string) error
+	// shippedRefusal is the shipped upgrade's test seam
+	// (WithTestShippedUpgradeRefusal).
+	shippedRefusal func(repository string) []string
 	// repositoryConns caps the pool every repository shares
 	// (WithRepositoryConnections).
 	repositoryConns int
@@ -642,6 +645,8 @@ type service struct {
 	archiveProcess   string
 	// testArchiveFault is the options' archive pass seam (archive.go).
 	testArchiveFault func(stage string) error
+	// testShippedRefusal is the options' shipped upgrade seam (seed.go).
+	testShippedRefusal func(repository string) []string
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
@@ -1074,6 +1079,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		archiveStepBytes:      o.archiveStepBytes,
 		archiveProcess:        process,
 		testArchiveFault:      o.archiveFault,
+		testShippedRefusal:    o.shippedRefusal,
 		conversion:            conversionSteps,
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
