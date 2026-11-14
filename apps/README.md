@@ -937,11 +937,14 @@ an overlay over them, and the overlay is dropped in the same update the rows
 land in once the turn settles, so nothing blinks. A chat that is running when
 it is opened is attached to (`…/llm/thread/{id}/events`), a dropped stream is
 attached again with backoff, Stop posts `…/stop`, and a send the server
-refused, or whose delivery is unknown, says so with the message to copy and
+refused, or whose delivery is unknown, says so with the message back in the composer and
 is never sent again on its own. A chat whose last turn was stopped, ran out
-of a limit or failed says so under the transcript, and its Continue sends
-"Continue where you left off." as the owner's own message, since a stopped
-thread resumes only when its owner writes.
+of a limit or failed says so in a card at that turn, in one sentence with
+one button: Try Again or Continue runs the thread again through
+`…/llm/thread/{id}/continue`, which writes no message, and on a server
+older than that route sends "Continue where you left off." as the owner's
+own message. Every failure is drawn by one component in one of three
+places, never an alert ([its design](chat/DESIGN.md#failures)).
 
 **Signing in** is the substrate's app authorization, through
 [SubstrateKit](kit/README.md) under Chat's manifest

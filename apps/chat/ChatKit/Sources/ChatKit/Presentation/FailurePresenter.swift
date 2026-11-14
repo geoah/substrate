@@ -286,24 +286,23 @@ enum FailurePresenter {
 
     /// Why, as one short sentence a person would say.
     private static func because(_ why: Failure.Why, _ c: Context) -> String {
-        let host = c.host.capitalizedFirst
         switch why {
         case .offline: return "You're offline."
         case .unreachable: return "Couldn't reach \(c.host)."
-        case .timeout: return "\(host) took too long to answer."
+        case .timeout: return "The server took too long to answer."
         case .streamEnded: return "The connection dropped."
-        case .notTheAPI: return "\(host) answered with something \(ChatManifest.appName) can't read."
+        case .notTheAPI: return "The server answered with something \(ChatManifest.appName) can't read."
         case .sessionEnded: return "Your sign-in ended."
         case .needsApproval: return "\(ChatManifest.appName) needs your approval for that."
-        case .ended: return "\(host) ended it."
+        case .ended: return "The server ended it."
         case let .http(status, _, _):
-            if status >= 500 { return "\(host) ran into a problem." }
+            if status >= 500 { return "The server ran into a problem." }
             switch status {
-            case 429: return "\(host) is busy. Try again in a moment."
+            case 429: return "The server is busy. Try again in a moment."
             case 409: return "It changed in the meantime."
             case 404: return "It is no longer there."
             case 403: return "You're not allowed to do that."
-            default: return "\(host) refused it."
+            default: return "The server refused it."
             }
         case .run, .cut, .unanswered: return "It didn't finish."
         }

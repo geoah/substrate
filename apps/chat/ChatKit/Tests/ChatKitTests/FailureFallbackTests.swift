@@ -92,7 +92,9 @@ struct FailureWordsTests {
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
         let card = try #require(await rig.card(key))
         #expect(card.sentence == "OpenAI refused the API key." && card.details?.text == "401 Unauthorized")
-        #expect(card.button == FailureButton(title: "Replace Key", action: .open("https://s.example.com/data/substrate.reamde.dev/llm/provider/openai"), external: true))
+        #expect(
+            card.button
+                == FailureButton(title: "Replace Key", action: .open("https://s.example.com/data/substrate.reamde.dev/llm/provider/openai"), external: true))
     }
 }
 

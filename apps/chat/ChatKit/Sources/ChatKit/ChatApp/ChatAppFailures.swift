@@ -64,7 +64,11 @@ extension ChatApp {
         for (index, turn) in stored.enumerated() where index < stored.count - 1 {
             if turn.role == .assistant, let cut = turn.cutBy, cut != CutBy.stop.rawValue {
                 out.turns[turn.id] = FailurePresenter.present(Failure(.reply, .cut(cut)), older)
-            } else if turn.role == .user, stored[index + 1].role == .user, deliveryNotice(turn) == nil {
+            } else if turn.role == .user, stored[index + 1].role == .user, deliveryNotice(turn) == nil,
+                turn.content != Conversation.continueMessage
+            {
+                // Continue's own words, from before the continue route, are
+                // no question of the person's that went unanswered.
                 out.turns[turn.id] = FailurePresenter.present(Failure(.reply, .unanswered), older)
             }
         }

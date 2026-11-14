@@ -51,17 +51,29 @@ public struct FailurePalette: Hashable, Sendable {
     public static func of(_ tone: FailurePresentation.Tone, dark: Bool) -> FailurePalette {
         switch (tone, dark) {
         case (.bad, false):
-            FailurePalette(fill: Shade(0xFDECEA), edge: Shade(0xF2C4BF), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0xB3261E), onAccent: Shade(0xFFFFFF), idle: Shade(0xF3D9D6))
+            FailurePalette(
+                fill: Shade(0xFDECEA), edge: Shade(0xF2C4BF), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0xB3261E), onAccent: Shade(0xFFFFFF),
+                idle: Shade(0xF3D9D6))
         case (.bad, true):
-            FailurePalette(fill: Shade(0x3A1715), edge: Shade(0x6B2C27), ink: Shade(0xFFFFFF), soft: Shade(0xD6D0D0), accent: Shade(0xFFB4AB), onAccent: Shade(0x3A1715), idle: Shade(0x4F2623))
+            FailurePalette(
+                fill: Shade(0x3A1715), edge: Shade(0x6B2C27), ink: Shade(0xFFFFFF), soft: Shade(0xD6D0D0), accent: Shade(0xFFB4AB), onAccent: Shade(0x3A1715),
+                idle: Shade(0x4F2623))
         case (.warn, false):
-            FailurePalette(fill: Shade(0xFFF4E3), edge: Shade(0xF1D5A8), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0x8A4B00), onAccent: Shade(0xFFFFFF), idle: Shade(0xF5E3C6))
+            FailurePalette(
+                fill: Shade(0xFFF4E3), edge: Shade(0xF1D5A8), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0x8A4B00), onAccent: Shade(0xFFFFFF),
+                idle: Shade(0xF5E3C6))
         case (.warn, true):
-            FailurePalette(fill: Shade(0x38290F), edge: Shade(0x66491A), ink: Shade(0xFFFFFF), soft: Shade(0xD6D2CA), accent: Shade(0xFFCC80), onAccent: Shade(0x38290F), idle: Shade(0x4C3A1B))
+            FailurePalette(
+                fill: Shade(0x38290F), edge: Shade(0x66491A), ink: Shade(0xFFFFFF), soft: Shade(0xD6D2CA), accent: Shade(0xFFCC80), onAccent: Shade(0x38290F),
+                idle: Shade(0x4C3A1B))
         case (.quiet, false):
-            FailurePalette(fill: Shade(0xF2F2F7), edge: Shade(0xD9D9E0), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0x48484A), onAccent: Shade(0xFFFFFF), idle: Shade(0xE3E3EA))
+            FailurePalette(
+                fill: Shade(0xF2F2F7), edge: Shade(0xD9D9E0), ink: Shade(0x1C1C1E), soft: Shade(0x4A4A4F), accent: Shade(0x48484A), onAccent: Shade(0xFFFFFF),
+                idle: Shade(0xE3E3EA))
         case (.quiet, true):
-            FailurePalette(fill: Shade(0x2C2C2E), edge: Shade(0x48484A), ink: Shade(0xFFFFFF), soft: Shade(0xD1D1D6), accent: Shade(0xD1D1D6), onAccent: Shade(0x1C1C1E), idle: Shade(0x3A3A3C))
+            FailurePalette(
+                fill: Shade(0x2C2C2E), edge: Shade(0x48484A), ink: Shade(0xFFFFFF), soft: Shade(0xD1D1D6), accent: Shade(0xD1D1D6), onAccent: Shade(0x1C1C1E),
+                idle: Shade(0x3A3A3C))
         }
     }
 
