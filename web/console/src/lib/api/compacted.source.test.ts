@@ -111,6 +111,7 @@ const READERS: Record<string, Partial<Record<Used, Use[]>>> = {
   "src/lib/api/agents.ts": {
     fetchRecordsPage: [
       { by: "walkPages", why: "the llm/model records, read whole" },
+      { by: "firstPage", why: "an agent's one llm/agentbudget" },
       { by: "firstPage", why: "readThreadNow: a thread's newest messages" },
     ],
   },

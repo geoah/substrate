@@ -265,7 +265,7 @@ export function llmModelsQueryOptions(enabled = true) {
  * per agent, so the first match is the one. A server older than the kind
  * refuses it as unknown, which reads as none. */
 export function agentBudgetQueryOptions(agentId: string) {
-  const params: ListParams = {
+  const params: FirstPageParams = {
     authority: CORE_AUTHORITY,
     package: LLM_PACKAGE_NAME,
     name: "agentbudget",
