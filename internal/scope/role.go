@@ -65,8 +65,14 @@ var ShippedRoles = []ShippedRole{
 		Name: "Editor", Description: "reads and writes every kind that is not a control kind",
 	},
 	{
-		Role: Role{ID: RoleViewer, Rules: []Rule{{Verbs: []Verb{Read}, Kinds: []string{"*"}}}},
-		Name: "Viewer", Description: "reads every kind that is not a control kind",
+		// A viewer reads chats, and reading one moves their own mark of it
+		// (decision 0311): the one kind a viewer writes, held by the engine
+		// to the person's own record.
+		Role: Role{ID: RoleViewer, Rules: []Rule{
+			{Verbs: []Verb{Read}, Kinds: []string{"*"}},
+			{Verbs: []Verb{Write}, Kinds: []string{vocabulary.KindLLMThreadMark}},
+		}},
+		Name: "Viewer", Description: "reads every kind that is not a control kind, and keeps their own place in the chats they read",
 	},
 }
 

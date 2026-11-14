@@ -4,8 +4,9 @@
 # that: a `provider` says where completions are bought, a `model` is one model
 # a provider offers and what it costs, a `thread` is one invocation (there is
 # no agent-run kind — the thread IS the run), a `message` is one turn of it,
-# an `interaction` is one batch of questions the agent asked its owner, and an
-# `approval` is one call the agent wants to make that waits for its owner. A
+# an `interaction` is one batch of questions the agent asked its owner, an
+# `approval` is one call the agent wants to make that waits for its owner, and
+# a `threadmark` is how far one person has read one thread. A
 # repository that never runs an agent still holds these kinds, because the
 # binary seeds every package it ships. Core declares against them in exactly
 # four places: the `agent` kind's `provider` and `runsOn` references,
@@ -47,7 +48,10 @@ data:
   # version 8: the `agentbudget` kind, the owner's override of one agent's
   # budgets, each limit it sets replacing the declared one (decision record
   # 0314).
-  version: 8
+  # version 9: the `threadmark` kind, how far one person has read one
+  # thread, and `lastMessage` and `waitingOnPerson` on a thread (decision
+  # record 0311).
+  version: 9
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

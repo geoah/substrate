@@ -243,6 +243,15 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		return nil, lerr
 	}
 	in.Properties = localized
+	// A mark created without an id is named for its thread and the person
+	// the write is made as, never minted (threadmarks.go).
+	if ty.Identity == typeThreadMark && in.ID == "" && !t.internal {
+		built, err := t.buildThreadMarkID(in.Properties)
+		if err != nil {
+			return nil, err
+		}
+		in.ID = built
+	}
 	// A supplied id is the writer's OWN key, not an address to resolve: a
 	// former id (of this type — trails are per-type) is refused outright
 	// (conflict), so nothing here canonicalizes. Reads, patches, links and
@@ -991,6 +1000,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.resolveQuantities(sp); err != nil {
 		return nil, err
 	}
+	// A thread mark is held to its own person and its position to moving
+	// forward, and its `readAt` is the engine's (threadmarks.go): settled
+	// before the managed check reads the write.
+	markRead, err := t.prepareThreadMark(sp)
+	if err != nil {
+		return nil, err
+	}
 	// A managed property is the engine's to write, on a data kind exactly as
 	// on a declaration row (checkDeclarationWrite).
 	if err := t.checkManagedProps(sp); err != nil {
@@ -1132,6 +1148,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if take(name, cur, had, next) {
 			row.Props[name] = next
 		}
+	}
+
+	// A mark whose position this write took says when (threadmarks.go).
+	if markRead {
+		row.Props[propMarkReadAt] = t.now.Format(time.RFC3339Nano)
+		accepted = append(accepted, propMarkReadAt)
 	}
 
 	// Title is a property with its own column; a displayTemplate overrides
@@ -1381,6 +1403,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// Whose rules hold the run's work, which the engine writes after the
 	// hand's own checks: no hand names it (heldto.go).
 	accepted = t.stampHeldTo(sp, row, before, create, accepted)
+	// The newest message of a thread this write settles, the engine's too
+	// (threadmarks.go).
+	if accepted, err = t.stampLastMessage(sp, row, accepted); err != nil {
+		return nil, err
+	}
 
 	title, err := t.deriveTitle(sp.ty, row)
 	if err != nil {
@@ -1585,6 +1612,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// rolls back reports nothing.
 	if notify != nil && sp.op == substrate.OpPatch {
 		if err := t.recordResolution(sp.ty, row, notify, t.entries[entriesMark:]); err != nil {
+			return nil, err
+		}
+	}
+	// What waits on a person in the thread this record names is counted
+	// again where the write created or resolved it (threadmarks.go).
+	if changed {
+		if err := t.syncWaitingOnPerson(sp.ty.Identity, before, row); err != nil {
 			return nil, err
 		}
 	}
@@ -3195,6 +3229,9 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 			return nil, err
 		}
 	}
+	if err := t.guardThreadMarkDelete(ty.Identity, row); err != nil {
+		return nil, err
+	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen
 	// config/accounts when disabled (engine/bundles.go); purge is internal.
 	if err := t.checkBundleDelete(ty); err != nil {
@@ -3236,6 +3273,11 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 		// mapping graph runs here (mapping.go afterTombstone): the record's
 		// offers go, and the subjects it was a source of recompute without it.
 		if err := t.afterTombstone(ref); err != nil {
+			return nil, err
+		}
+		// A deleted question, suggestion or approval no longer waits on
+		// anybody (threadmarks.go).
+		if err := t.syncWaitingOnPerson(row.Kind, row); err != nil {
 			return nil, err
 		}
 	}

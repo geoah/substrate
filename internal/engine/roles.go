@@ -144,6 +144,11 @@ func (t *txn) handWrites(hand substrate.Actor, k scope.Kind) error {
 		}
 		return nil
 	case substrate.ActorTypeFunction, substrate.ActorTypeAgent:
+		// A person's place in a thread is theirs to keep: no declaration
+		// hands it to code (decision 0311).
+		if k.Ref == typeThreadMark {
+			return refuse("only a person, or an app acting for them, keeps their place in a thread")
+		}
 		if !k.Control {
 			return nil
 		}
@@ -158,6 +163,9 @@ func (t *txn) handWrites(hand substrate.Actor, k scope.Kind) error {
 	case substrate.ActorTypePackage:
 		if vocabulary.SignInMaterial(k.Ref) {
 			return refuse("a package's own hand writes no sign-in material")
+		}
+		if k.Ref == typeThreadMark {
+			return refuse("only a person, or an app acting for them, keeps their place in a thread")
 		}
 		return nil
 	}

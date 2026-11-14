@@ -111,6 +111,10 @@ const KindRecordPatchRequest = "substrate.reamde.dev/core/recordpatchrequest"
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
 const KindLLMThread = "substrate.reamde.dev/llm/thread"
 
+// KindLLMThreadMark is how far one person has read one thread (decision
+// record 0311): the one kind the shipped `viewer` role writes.
+const KindLLMThreadMark = "substrate.reamde.dev/llm/threadmark"
+
 // The two kinds' pre-move identities (record 0077). The boot upgrade never
 // prunes, so a repository seeded by an older binary still declares them and
 // still declares what points at them; the loader accepts both spellings so

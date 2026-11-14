@@ -99,6 +99,7 @@ var repositoryMigrations = []repositoryMigration{
 	{Version: 12, Name: "move_the_sign_in_out_of_the_repository", Run: migrateMoveTheSignInOutOfTheRepository},
 	{Version: 13, Name: "give_every_person_admin", Run: migrateGiveEveryPersonAdmin},
 	{Version: 14, Name: "look_again_at_kept_deletions", Run: migrateLookAgainAtKeptDeletions},
+	{Version: 15, Name: "mark_existing_threads_read", Run: migrateMarkExistingThreadsRead},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside

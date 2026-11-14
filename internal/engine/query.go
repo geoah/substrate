@@ -735,6 +735,11 @@ func (ds *dataset) buildFilter(ctx context.Context, x dbx, b *builder, f substra
 	if err != nil {
 		return nil, err
 	}
+	// `me` on a reference to an actor is the person the request acts for
+	// (threadmarks.go).
+	if f, err = ds.resolveMe(ctx, types, f); err != nil {
+		return nil, err
+	}
 	if restrict && len(types) == 0 {
 		b.add(`FALSE`)
 	}
