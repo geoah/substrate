@@ -39,6 +39,17 @@ enum ChatAPI {
         }
     }
 
+    /// Runs a thread again with no new message (`…/continue`): what Try
+    /// Again and Continue ask for. A server older than the route answers
+    /// 404, which the conversation falls back on.
+    static func resume(_ client: SubstrateClient, thread: String) -> AsyncThrowingStream<AgentEvent, any Error> {
+        stream(client) {
+            try client.request(
+                "POST", "api/v1/\(Kinds.thread)/\(segment(thread))/continue", body: .jsonValue(.object([:])),
+                accept: "application/x-ndjson", timeout: streamTimeout)
+        }
+    }
+
     /// Attaches to the chat turn running on a thread: its replay, then live
     /// events, then `done`; or one `idle` line when no chat turn runs.
     static func events(_ client: SubstrateClient, thread: String) -> AsyncThrowingStream<AgentEvent, any Error> {
@@ -87,26 +98,23 @@ enum ChatAPI {
                     // admitted.
                     if lines.head.statusCode != 200 {
                         let body = try await lines.body(limit: 256 * 1024)
-                        throw SubstrateClient.failure(SubstrateClient.Response(data: body, response: lines.head))
+                        throw ChatRefusal.reading(
+                            SubstrateClient.failure(SubstrateClient.Response(data: body, response: lines.head)), body: body,
+                            retryAfter: lines.head.value(forHTTPHeaderField: "Retry-After"))
                     }
                     for try await line in lines.lines {
                         guard let event = AgentEvent.parse(line) else { continue }
-                        if let failure = event.failure { throw TurnFailed(text: failure) }
+                        if let failure = event.failure { throw TurnFailed(text: failure, cause: event.cause, retryAfter: event.retryAfter) }
                         continuation.yield(event)
                     }
                     continuation.finish()
                 } catch {
                     if Task.isCancelled { return continuation.finish() }
                     switch error {
-                    case is ServerError, is SessionExpired, is InsufficientScope, is TurnFailed, is TransportError, is Redirected:
+                    case is ServerError, is ChatRefusal, is SessionExpired, is InsufficientScope, is TurnFailed, is TransportError, is Redirected:
                         continuation.finish(throwing: error)
                     default:
-                        let detail = explain(error, app: ChatManifest.appName, server: client.server)
-                        continuation.finish(
-                            throwing: TransportError(
-                                text: answered
-                                    ? "The connection closed while the answer was read. \(detail)"
-                                    : "The connection failed before the server answered. \(detail)"))
+                        continuation.finish(throwing: StreamBroke(answered: answered, underlying: error))
                     }
                 }
             }
@@ -115,7 +123,10 @@ enum ChatAPI {
     }
 }
 
-/// A turn that failed after its stream began: the loop's own words.
+/// A turn that failed after its stream began: the loop's own words, and
+/// the `cause` and `retryAfter` a server that names causes sends with them.
 struct TurnFailed: Error, Sendable {
     let text: String
+    var cause: String?
+    var retryAfter: Int?
 }

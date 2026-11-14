@@ -1,8 +1,9 @@
 import Foundation
 
-/// A chat turn that ended before it finished, said for the person reading
-/// the chat (the console's `unfinishedTurn`, web/console/src/lib/agent-runs.ts).
-public struct UnfinishedTurn: Codable, Hashable, Sendable {
+/// How a chat turn that ended before it finished is marked in the list
+/// (the console's `unfinishedTurn`, web/console/src/lib/agent-runs.ts). What
+/// the chat itself says of it is its failure card (`FailurePresenter`).
+public enum UnfinishedTurn {
     public enum Tone: String, Codable, Hashable, Sendable {
         /// A stop somebody asked for.
         case quiet
@@ -11,12 +12,6 @@ public struct UnfinishedTurn: Codable, Hashable, Sendable {
         /// A failure.
         case bad
     }
-
-    public var tone: Tone
-    /// What happened, naming the agent.
-    public var title: String
-    /// Why, when the thread says.
-    public var detail: String?
 }
 
 /// The reason the loop settles a turn the server's shutdown ended with
@@ -38,26 +33,6 @@ func unfinishedTone(status: String, reason: String?) -> UnfinishedTurn.Tone? {
     case "overbudget": .warn
     case "error": .bad
     default: nil
-    }
-}
-
-/// Why a thread's last turn didn't finish, from its stored `status` and
-/// `reason`; nil for one still running or one that finished. The reasons
-/// read here are the loop's own, and one this does not know is shown as the
-/// loop wrote it.
-func unfinishedTurn(status: String, reason: String?, name: String) -> UnfinishedTurn? {
-    let line = reasonLine(reason) ?? ""
-    switch unfinishedTone(status: status, reason: reason) {
-    case nil:
-        return nil
-    case .quiet:
-        return UnfinishedTurn(tone: .quiet, title: "\(name) was stopped before it finished")
-    case .warn where status == "stopped":
-        return UnfinishedTurn(tone: .warn, title: "\(name) didn’t finish", detail: "The server restarted while it was working.")
-    case .warn:
-        return UnfinishedTurn(tone: .warn, title: "\(name) didn’t finish", detail: limitWords(line))
-    case .bad:
-        return UnfinishedTurn(tone: .bad, title: "\(name) ran into a problem and didn’t finish", detail: line.isEmpty ? nil : "What failed: \(line)")
     }
 }
 

@@ -73,7 +73,7 @@ extension ChatApp {
         let framed = kept.part("frame", reading: state.framed) { self.framed(state) }
         let list = ChatListPresentation(
             title: "Chats", sections: listed.sections, offline: state.online ? nil : "Offline. Showing saved chats.",
-            problem: state.online ? state.refreshError.map { "Couldn't refresh: \($0)" } : nil, feedProblem: state.feedProblem,
+            failure: listFailure(state), reconnecting: state.feedReconnecting,
             empty: listed.rows.isEmpty && state.loaded ? framed.emptyList : nil, loading: listed.rows.isEmpty && !state.loaded,
             showAutomated: state.preferences.showAutomated, searchPrompt: "Search chats")
         var conversations: [ChildKey: ConversationScreen] = [:]
@@ -98,7 +98,7 @@ extension ChatApp {
             host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
             routePending: state.route != nil, onScreen: framed.onScreen, streaming: framed.streaming, conversations: conversations,
             offered: framed.offered, defaultAgent: framed.defaultAgent, settings: settings, unread: listed.unread,
-            renameProblem: state.renameProblem, keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
+            keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
             redrawAt: redrawAt)
     }
 
@@ -303,22 +303,6 @@ extension ChatApp {
                     kind: .background, title: nil,
                     message: "\(live.name) is working on this chat in the background. Its answer shows here when it finishes."))
         }
-        // The thread's last turn, when it ended before it finished. Read off
-        // the stored thread, so a reload says it too, and only once nothing
-        // runs.
-        let unfinished =
-            live.phase == .idle && !live.deleted ? row.flatMap { unfinishedTurn(status: $0.status, reason: $0.reason, name: live.name) } : nil
-        // A run that failed before this conversation was opened left its
-        // words on the thread alone; the list marks it failed, so the chat says why.
-        let failure = live.error ?? (working || row?.status != "error" ? nil : row?.reason ?? "The run ended in an error.")
-        // The notice of a turn that ended in an error says what failed, from
-        // the same words: the card stays beside it only where it names a
-        // cause the notice cannot, a refused key or a rate limit.
-        if let failure, unfinished?.tone != .bad || TurnFailureWords.cause(failure) != .other {
-            status.append(
-                TurnFailureWords.note(failure, agent: live.name, provider: state.provider(of: live.agent, thread: live.thread)?.name))
-        }
-        if let failed = live.reloadFailed { status.append(ConversationNote(kind: .reloadFailed, title: nil, message: failed, action: "Try Again")) }
         if live.deleted {
             status.append(
                 ConversationNote(
@@ -351,12 +335,7 @@ extension ChatApp {
             agent: live.agent, agentName: live.name, hero: hero,
             olderHidden: (held?.records.count ?? 0) >= 500 ? "Older messages aren't shown here." : nil,
             turns: turns, typing: live.awaitingFirstEvent, status: status,
-            unfinished: unfinished.map {
-                UnfinishedNotice(
-                    tone: $0.tone, title: $0.title, detail: $0.detail, action: "Continue", blocked: blocked,
-                    hint: "Sends “\(Conversation.continueMessage)”")
-            },
-            outcomes: live.outcomes.map(Self.outcome), technical: technical,
+            failures: failures(state, live: live, row: row, stored: stored, turns: turns), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, draftReplaced: live.draftReplaced, draftBefore: live.draftBefore,
@@ -366,7 +345,7 @@ extension ChatApp {
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
                 canSend: blocked == nil),
             streaming: live.phase == .streaming, stopping: live.stopping,
-            error: live.error, expandThinking: state.preferences.expandThinking)
+            expandThinking: state.preferences.expandThinking)
     }
 
     /// The stored rows' part of a conversation: its turns as drawn, what
@@ -430,26 +409,6 @@ extension ChatApp {
         }
     }
 
-    static func outcome(_ outcome: Outcome) -> OutcomePresentation {
-        switch outcome.kind {
-        case .refused:
-            OutcomePresentation(
-                id: outcome.id.uuidString, kind: .refused, title: "Your message wasn't sent",
-                message: "The server said: \(outcome.reason)" + (outcome.restored ? "\nIt's back in the box below." : ""),
-                text: outcome.message)
-        case .checking:
-            OutcomePresentation(
-                id: outcome.id.uuidString, kind: .checking, title: nil,
-                message: "The connection dropped before the server confirmed your message. Checking whether it arrived…", text: nil)
-        case .unknown:
-            OutcomePresentation(
-                id: outcome.id.uuidString, kind: .unknown, title: "It may not have arrived",
-                message:
-                    "The connection dropped before the server confirmed your message (\(outcome.reason)). Look for it in this chat, or for a new chat in the list, before sending it again.",
-                text: outcome.message)
-        }
-    }
-
     private func cards(_ state: State, _ scan: CardScan, titles: [String: String]) -> [String: CardPresentation] {
         var out: [String: CardPresentation] = [:]
         for interaction in scan.interactions {
@@ -479,6 +438,6 @@ extension ChatApp {
                 : "Its completions go to \(provider.endpoint).",
             console: console, consoleLink: "Open \(provider.name) in the Console",
             consoleNote: "Agents run on your own key, sealed on the provider's record. Add it in the console, where only you can write it.",
-            problem: state.keyProblem)
+            problem: failureLine(state, state.keyProblem))
     }
 }

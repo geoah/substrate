@@ -92,7 +92,7 @@ import Testing
     func view(_ host: ChatHost, _ key: ChildKey, streaming: Bool) -> some View {
         let screen = host.conversation(key)
         return VStack(alignment: .leading, spacing: 22) {
-            if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }) }
+            if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }, act: { _ in }) }
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)

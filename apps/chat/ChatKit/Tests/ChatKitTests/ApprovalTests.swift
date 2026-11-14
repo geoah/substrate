@@ -107,7 +107,7 @@ struct ApprovalReads {
                 #"{"error":{"code":"validation","message":"substrate: validation failed: unknown type \"substrate.reamde.dev/llm/approval\""}}"#))
         let rig = ChatRig([older] + baseRoutes(threads: threads))
         try await rig.signIn()
-        #expect(await rig.harness.state.refreshError == nil)
+        #expect(await rig.harness.state.listFailure == nil)
         #expect(await rig.harness.state.approvals.isEmpty)
         try await rig.harness.until { _ in rig.server.count("/api/v1/changes") > 0 }
         #expect(rig.server.count("/api/v1/changes", query: Kinds.approval) == 0)

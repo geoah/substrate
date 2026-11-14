@@ -42,7 +42,7 @@ extension ChatApp {
         case let .refreshed(refresh): refreshed(&next, refresh)
         case let .refreshFailed(failure):
             next.refreshing = false
-            next.refreshError = failure.report == nil ? failure.words : nil
+            next.listFailure = failure.report == nil ? failure : nil
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -55,9 +55,15 @@ extension ChatApp {
             apply(&next, cards: cards)
         case .readFailed:
             break
-        case let .rowsFailed(thread, epoch, _):
-            // The read is no longer outstanding: the next asks again.
-            if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
+        case let .rowsFailed(thread, epoch, failure):
+            // The read is no longer outstanding: the next asks again. A
+            // chat somebody is looking at says it could not be read.
+            guard next.readEpochs[thread, default: 0] == epoch else { break }
+            next.reading[thread] = nil
+            if failure.report == nil, next.key(of: thread) != nil { next.rowsFailed[thread] = failure }
+        case let .rowsAsked(thread):
+            next.rowsFailed[thread] = nil
+            load(&next, thread, force: true)
         case let .openingsRead(openings):
             next.openings.merge(openings) { _, new in new }
         case let .rowsRead(thread, epoch, version, rows, full):
@@ -84,7 +90,8 @@ extension ChatApp {
             upsert(&next, record)
 
         case let .watchOpened(fresh):
-            next.feedProblem = nil
+            next.feedReconnecting = false
+            if next.listFailure?.attempt == .feed { next.listFailure = nil }
             // Opened at the live head with no list read under it (an app
             // token's lists carry none): what was written before the
             // bookmark is read again now.
@@ -113,9 +120,14 @@ extension ChatApp {
             }
             next.recoveryStarted = at
             refresh(&next)
+        case let .watchInterrupted(dropped):
+            next.feedReconnecting = dropped
         case let .watchEnded(words, failure):
             next.watching = false
-            if failure?.report == nil { next.feedProblem = words }
+            next.feedReconnecting = false
+            // Ended for good, in the server's words: drawn at the top of
+            // the list, where Try Again reads the list and opens it again.
+            if failure?.report == nil { next.listFailure = Failure(.feed, .ended, said: words) }
         case .feedDue: drain(&next)
         case let .feedApplied(feed): fed(&next, feed)
 
@@ -161,12 +173,18 @@ extension ChatApp {
             // server refuses.
             let before = next.thread(thread)?.record
             setSubject(&next, thread, subject)
-            next.renameProblem = nil
+            next.renameFailure = nil
+            next.renaming[thread] = subject
             next.asks.append(.rename(thread: thread, subject: subject, before: before))
-        case let .renamed(record): upsert(&next, record)
+        case let .renamed(record):
+            next.renaming[record.id] = nil
+            upsert(&next, record)
         case let .renameFailed(thread, before, failure):
             if let before { replaceRow(&next, before) } else { setSubject(&next, thread, nil) }
-            next.renameProblem = failure.words
+            let subject = next.renaming.removeValue(forKey: thread)
+            if failure.report == nil, let subject { next.renameFailure = State.Rename(thread: thread, subject: subject, failure: failure) }
+        case .renameDismissed:
+            next.renameFailure = nil
         case let .keyAsked(provider, key):
             next.keyProblem = nil
             next.asks.append(.setKey(provider: provider, key: key))
@@ -182,7 +200,7 @@ extension ChatApp {
             case .rows, nil: break
             }
             next.keySaved.raise(record.id)
-        case let .keyFailed(failure): next.keyProblem = failure.words
+        case let .keyFailed(failure): next.keyProblem = failure
 
         case let .cardAsked(reference):
             let target = (reference.isSuggestion && next.cards[reference.id]?.target == nil)
@@ -194,7 +212,7 @@ extension ChatApp {
             card.problem = nil
             next.cards[id] = card
         case let .cardFailed(id, failure):
-            if failure.report == nil { next.cards[id, default: State.Card()].problem = failure.words }
+            if failure.report == nil { next.cards[id, default: State.Card()].problem = failure }
         case let .answerAsked(id, picks):
             guard let record = next.cards[id]?.record else { break }
             next.cards[id]?.busy = "answer"
@@ -248,9 +266,9 @@ extension ChatApp {
             if record.kind == Kinds.approval, record["state"]?.string == "approved" {
                 next.asks.append(.readCard(.approval(id), target: false))
             }
-        case let .cardWriteFailed(id, failure, conflict):
+        case let .cardWriteFailed(id, failure):
             next.cards[id, default: State.Card()].busy = nil
-            if failure.report == nil { next.cards[id]?.problem = failure.status == 409 ? conflict : failure.words }
+            if failure.report == nil { next.cards[id]?.problem = failure }
             if let reference = next.reference(of: id) { next.asks.append(.readCard(reference, target: false)) }
         case let .setting(row, toggle, choice): setting(&next, row, toggle, choice)
         case .settingsOpened:
@@ -425,7 +443,7 @@ extension ChatApp {
 
     private func refreshed(_ state: inout State, _ refresh: ChatAppStep.Refresh) {
         state.refreshing = false
-        state.refreshError = nil
+        if state.listFailure?.attempt == .refresh { state.listFailure = nil }
         state.agents = refresh.agents
         if let providers = refresh.providers { state.providers = Dictionary(providers.map { ($0.id, $0) }) { a, _ in a } }
         if let models = refresh.models { state.models = Self.byID(models) }
@@ -545,7 +563,7 @@ extension ChatApp {
                         .notify(
                             ChatNotifications.reply(
                                 thread: thread, agent: agentName(thread.agentID ?? ""),
-                                title: state.title(thread))))
+                                title: state.title(thread), failed: notificationWords(state, thread: thread))))
                 }
             }
         }
@@ -618,6 +636,7 @@ extension ChatApp {
     private func publish(_ state: inout State, _ thread: String, _ rows: [Record], version: Int, full: Bool) {
         if let held = state.transcripts[thread], held.version > version { return }
         state.transcripts[thread] = State.Held(records: rows, turns: transcript(of: rows), version: version, full: full)
+        state.rowsFailed[thread] = nil
         if let disk = state.disk {
             state.asks.append(.saveTranscript(disk, thread: thread, CachedTranscript(threadVersion: version, full: full, records: rows, openedAt: nil)))
         }
@@ -742,6 +761,7 @@ extension ChatApp {
         entry.streaming = report.streaming
         entry.outcomes = report.outcomes
         entry.name = report.name
+        if report.continueUnserved { state.continueUnserved = true }
         if report.settles > entry.settles { state.answered.raise(ChatAnswer(thread: entry.thread, words: "\(report.name) answered")) }
         entry.settles = report.settles
         if !report.active, entry.continuing != nil {

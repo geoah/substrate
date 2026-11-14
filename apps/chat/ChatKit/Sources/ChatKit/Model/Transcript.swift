@@ -101,6 +101,9 @@ struct Turn: Codable, Hashable, Sendable, Identifiable {
     var pending = false
     /// When the row was written; nil on a live turn.
     var createdAt: Date?
+    /// On a stored assistant turn the model did not finish: how it was cut
+    /// short, the row's `cutBy`. Absent from a server older than it.
+    var cutBy: String?
 }
 
 // MARK: Reading rows
@@ -204,7 +207,7 @@ func transcript(of messages: [Record]) -> [Turn] {
                     reasoning: reasoning,
                     reasoningMillis: reasoning == nil ? nil : record["reasoningMillis"]?.int,
                     mentions: role == "assistant" ? mentions(record["mentions"]?.array) : nil,
-                    createdAt: record.createdDate))
+                    createdAt: record.createdDate, cutBy: role == "assistant" ? record["cutBy"]?.string : nil))
             for (i, call) in tools.enumerated() where !call.id.isEmpty {
                 pending[call.id] = (turns.count - 1, i)
                 located[call.id] = (turns.count - 1, i)

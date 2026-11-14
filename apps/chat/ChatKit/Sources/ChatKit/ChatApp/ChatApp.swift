@@ -34,6 +34,10 @@ public struct ChatApp: LinkedApp {
         case markRead(String)
         case markUnread(String)
         case rename(thread: String, subject: String)
+        /// The rename that failed was read.
+        case dismissRename
+        /// A chat's rows, read again after a read that failed.
+        case reloadRows(thread: String)
         /// A provider's key, for a password sign-in: sent once, never kept.
         case addKey(provider: String, key: String)
         case loadCard(CardReference)
@@ -124,6 +128,8 @@ public struct ChatApp: LinkedApp {
         case let .rename(thread, subject):
             let text = subject.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? [] : [Event(.renameAsked(thread: thread, subject: text))]
+        case .dismissRename: return [Event(.renameDismissed)]
+        case let .reloadRows(thread): return [Event(.rowsAsked(thread))]
         case let .addKey(provider, key):
             let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
             return value.isEmpty ? [] : [Event(.keyAsked(provider: provider, key: value))]
@@ -168,6 +174,9 @@ public struct ChatApp: LinkedApp {
         var read: ChatAppStep.Read?
         var draft: String?
         var sent = false
+        // A lost send gives its text back when the read for it ends, or
+        // when a run that starts meanwhile ends that read.
+        if state.chatFailure?.attempt == .send { draft = state.draft }
         switch event.step {
         case let .streamed(streamed, _) where streamed.kind != .done && streamed.kind != .idle:
             return nil
@@ -192,8 +201,8 @@ public struct ChatApp: LinkedApp {
                 key,
                 ChatAppStep.Report(
                     thread: state.thread, agent: state.agent, owns: state.ownsTranscript, active: state.active, streaming: state.streaming,
-                    outcomes: state.outcomes.count, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
-                    read: read, draft: draft, sent: sent, failure: state.failure)))
+                    outcomes: state.held, name: state.agent.map(agentName) ?? "the assistant", settles: state.settles, named: named,
+                    read: read, draft: draft, sent: sent, failure: state.failure, continueUnserved: state.continueUnserved)))
     }
 
     public func report(of event: Event) -> LinkReport? {
@@ -201,7 +210,7 @@ public struct ChatApp: LinkedApp {
         case let .conversation(_, report): report.failure?.report
         case let .refreshFailed(failure), let .readFailed(failure), let .rowsFailed(_, _, failure), let .keyFailed(failure),
             let .cardFailed(_, failure),
-            let .cardWriteFailed(_, failure, _), let .renameFailed(_, _, failure):
+            let .cardWriteFailed(_, failure), let .renameFailed(_, _, failure):
             failure.report
         case let .watchEnded(_, failure?): failure.report
         case let .feedApplied(feed): feed.failure?.report
@@ -296,7 +305,8 @@ public struct ChatApp: LinkedApp {
                 key: key, seed: entry.seed, facts: facts, online: state.online,
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
-                pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing)
+                pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
+                continues: !state.continueUnserved)
         }
         return out
     }

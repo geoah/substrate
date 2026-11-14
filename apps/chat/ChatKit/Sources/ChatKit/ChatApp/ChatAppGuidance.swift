@@ -22,7 +22,7 @@ extension ChatApp {
             state.guidance.problem = nil
         case let .readFailed(failure):
             state.guidance.reading = false
-            if failure.report == nil { state.guidance.problem = failure.words }
+            if failure.report == nil { state.guidance.problem = failure }
         case let .changeAsked(reference, change):
             guard !state.guidance.busy.contains(reference.path), let before = state.guidance.record(reference) else { return }
             state.guidance.busy.insert(reference.path)
@@ -50,18 +50,11 @@ extension ChatApp {
             state.guidance.busy.remove(reference.path)
             state.guidance.put(before)
             guard failure.report == nil else { return }
-            switch failure.status {
-            case 409:
-                state.guidance.failed[reference.path] = "It changed since you opened it, so nothing was saved. This is what it says now."
-                guidance(&state, .asked)
-            case 404:
-                // Only a switch or a rewording gets here: the kit's delete
-                // takes a 404 as done, the record being gone already.
-                state.guidance.failed[reference.path] = "It was deleted since you opened it, so nothing was saved."
-                guidance(&state, .asked)
-            default:
-                state.guidance.failed[reference.path] = "That didn't go through: \(failure.words)"
-            }
+            state.guidance.failed[reference.path] = failure
+            // It moved or went since it was opened: the list is read again.
+            // Only a switch or a rewording meets a 404: the kit's delete
+            // takes one as done, the record being gone already.
+            if failure.status == 409 || failure.status == 404 { guidance(&state, .asked) }
         }
     }
 }

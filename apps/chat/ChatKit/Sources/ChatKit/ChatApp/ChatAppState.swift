@@ -52,7 +52,15 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         /// A suggestion's target, for its values before.
         var target: Record?
         var busy: String?
-        var problem: String?
+        var problem: Failure?
+    }
+
+    /// A rename the server did not take: what was asked, so Try Again asks
+    /// it again.
+    struct Rename: Codable, Equatable, Sendable {
+        var thread: String
+        var subject: String
+        var failure: Failure
     }
 
     /// The owner's memories and instructions, as Settings last read them:
@@ -63,12 +71,12 @@ public struct ChatAppState: Codable, Equatable, Sendable {
         var instructions: [Record] = []
         var read = false
         var reading = false
-        var problem: String?
+        var problem: Failure?
         /// The records a write is out for, by path: one at a time each, so
         /// no write is made over a version another is moving.
         var busy: Set<String> = []
         /// What a write that did not go through left to say, by path.
-        var failed: [String: String] = [:]
+        var failed: [String: Failure] = [:]
 
         func record(_ reference: RecordReference) -> Record? {
             (reference.kind == Kinds.memory ? memories : instructions).first { $0.id == reference.recordID }
@@ -112,14 +120,26 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     /// Something to draw: the cache, or a first read.
     var loaded = false
     var refreshing = false
-    var refreshError: String?
-    var feedProblem: String?
+    /// The list's one failure, drawn at its top: a refresh that failed, or
+    /// the change feed ended. A second replaces the first.
+    var listFailure: Failure?
+    /// The change feed dropped and is being opened again: a state the
+    /// composer's status line may read, never drawn as a failure.
+    var feedReconnecting = false
     var watching = false
     /// When the last read again for a `compacted` watch started: another
     /// refusal within a minute of it is a failure shown as one, never
     /// another refresh (`WatchFollower.recovers`). Nothing but the minute
     /// passing lets the next one start.
     var recoveryStarted: Date?
+    /// The renames out, by thread, each with the subject it asked for.
+    var renaming: [String: String] = [:]
+    var renameFailure: Rename?
+    /// A chat's rows could not be read when it was opened, by thread.
+    var rowsFailed: [String: Failure] = [:]
+    /// The server answered that it does not serve the continue route:
+    /// remembered while this session lasts, so no later Continue asks.
+    var continueUnserved = false
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]
@@ -176,8 +196,7 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var feedBatch: Set<WatchKey> = []
     var feedApplying: Set<WatchKey>?
     var cards: [String: Card] = [:]
-    var renameProblem: String?
-    var keyProblem: String?
+    var keyProblem: Failure?
     /// A provider's key was saved: its sheet closes.
     var keySaved = Signal<String>()
     /// A conversation's run settled: announced, where its chat is on screen.

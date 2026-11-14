@@ -26,24 +26,30 @@ private func routes(_ status: String, _ reason: String? = nil) -> [ChatServer.Ro
 @Suite("A chat whose last turn didn't finish", .timeLimit(.minutes(10)))
 struct UnfinishedTurns {
     @Test func itSaysWhyInWordsAndNothingForOneThatFinished() {
-        #expect(
-            unfinishedTurn(status: "stopped", reason: "stopped: the server shut down during the turn", name: "Moss")
-                == UnfinishedTurn(tone: .warn, title: "Moss didn’t finish", detail: "The server restarted while it was working."))
-        #expect(
-            unfinishedTurn(status: "stopped", reason: "stopped by api", name: "Moss")
-                == UnfinishedTurn(tone: .quiet, title: "Moss was stopped before it finished"))
-        #expect(unfinishedTurn(status: "overbudget", reason: "max turns reached (8)", name: "Moss")?.detail == "It used all 8 of its turns.")
-        #expect(unfinishedTurn(status: "overbudget", reason: "max tool calls reached (32)", name: "Moss")?.detail == "It used all 32 of its tool calls.")
-        #expect(unfinishedTurn(status: "overbudget", reason: "deadline exceeded after a last turn", name: "Moss")?.detail == "It ran out of time.")
-        // A reason the app does not know is shown as the server wrote it.
-        #expect(unfinishedTurn(status: "overbudget", reason: "a new cap (3)", name: "Moss")?.detail == "It reached a limit: a new cap (3)")
-        #expect(unfinishedTurn(status: "overbudget", reason: nil, name: "Moss")?.detail == "It reached a limit.")
-        #expect(
-            unfinishedTurn(status: "error", reason: "llm: overloaded\nstack…", name: "Moss")
-                == UnfinishedTurn(tone: .bad, title: "Moss ran into a problem and didn’t finish", detail: "What failed: llm: overloaded"))
-        #expect(unfinishedTurn(status: "error", reason: nil, name: "Moss") == UnfinishedTurn(tone: .bad, title: "Moss ran into a problem and didn’t finish"))
+        func card(_ status: String, _ reason: String?) -> FailurePresentation? {
+            let thread = ChatThread(record: Record(id: "t1", kind: Kinds.thread, properties: ["status": .string(status), "reason": reason.map(JSONValue.string) ?? .null]))
+            var context = FailurePresenter.Context()
+            context.agent = "Moss"
+            return thread.runFailure.map { FailurePresenter.present($0, context) }
+        }
+        let restart = card("stopped", "stopped: the server shut down during the turn")
+        #expect(restart?.sentence == "The server restarted while Moss was working." && restart?.tone == .warn)
+        #expect(restart?.button?.title == "Try Again")
+        let stopped = card("stopped", "stopped by api")
+        #expect(stopped?.sentence == "Moss was stopped before it finished." && stopped?.tone == .quiet && stopped?.button?.title == "Continue")
+        #expect(card("overbudget", "max turns reached (8)")?.note == "It used all 8 of its turns.")
+        #expect(card("overbudget", "max tool calls reached (32)")?.note == "It used all 32 of its tool calls.")
+        #expect(card("overbudget", "deadline exceeded after a last turn")?.note == "It ran out of time.")
+        // A reason the app does not know is the server's, under Details.
+        let unknown = card("overbudget", "a new cap (3)")
+        #expect(unknown?.sentence == "Moss ran out of room before finishing." && unknown?.note == nil)
+        #expect(unknown?.details == FailureDetails(title: "Details", label: "The server said", text: "a new cap (3)"))
+        #expect(card("overbudget", nil)?.button?.title == "Continue")
+        let failed = card("error", "llm: overloaded\nstack…")
+        #expect(failed?.sentence == "Moss couldn't finish this reply." && failed?.tone == .bad && failed?.button?.title == "Try Again")
+        #expect(card("error", nil)?.details == nil)
         for status in ["ok", "running", ""] {
-            #expect(unfinishedTurn(status: status, reason: nil, name: "Moss") == nil)
+            #expect(card(status, nil) == nil)
             #expect(unfinishedTone(status: status, reason: nil) == nil)
         }
     }
@@ -67,35 +73,31 @@ struct UnfinishedTurns {
     @Test func itSaysWhyAndContinuesLeavingTheDraftAlone() async throws {
         let rig = ChatRig(
             routes("stopped", "stopped: the server shut down during the turn")
-                + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
+                + [.init(method: "POST", path: "/continue", answer: .stream(replyStream, holdAfter: 2))])
         try await rig.signIn()
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
-        #expect(
-            await rig.conversation(key)?.unfinished
-                == UnfinishedNotice(
-                    tone: .warn, title: "Helper didn’t finish", detail: "The server restarted while it was working.", action: "Continue",
-                    blocked: nil, hint: "Sends “Continue where you left off.”"))
+        let card = try #require(await rig.card(key))
+        #expect(card.sentence == "The server restarted while Helper was working.")
+        #expect(card.button == FailureButton(title: "Try Again", action: .resume))
 
         let revision = await rig.conversation(key)?.composer.draftRevision
         try await rig.send(.draft("half a thought"), to: key)
         try await rig.send(.continueTurn, to: key)
-        try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
-        let body = try #require(JSONValue.parse(rig.server.body("POST", "/chat")))
-        #expect(body["thread"]?.string == "t1")
-        #expect(body["message"]?.string == "Continue where you left off.")
-        // The owner's own message, and the half-typed one stays.
-        #expect(await rig.turns(key).dropFirst(2).first == "Continue where you left off.")
+        try await rig.harness.until { _ in rig.server.count("/continue") == 1 }
+        // No message of the person's is written, and the half-typed one stays.
+        #expect(rig.server.count("/chat") == 0)
+        #expect(await rig.turns(key).contains("Continue where you left off.") == false)
         #expect(await rig.live(key)?.draft == "half a thought")
         #expect(await rig.conversation(key)?.composer.draftRevision == revision)
-        // The turn it started is running: the notice is gone.
-        #expect(await rig.conversation(key)?.unfinished == nil)
+        // The turn it started is running: the card is gone.
+        try await rig.harness.until { _ in await rig.card(key) == nil }
 
         rig.server.route("GET", "/llm/thread/t1", .json(200, threadJSON(version: 4)))
         rig.server.release()
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
-        #expect(await rig.conversation(key)?.unfinished == nil)
+        #expect(await rig.card(key) == nil)
         #expect(await rig.live(key)?.draft == "half a thought")
     }
 
@@ -105,7 +107,7 @@ struct UnfinishedTurns {
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
-        #expect(await rig.conversation(key)?.unfinished == nil)
+        #expect(await rig.conversation(key)?.failures == ScreenFailures())
     }
 
     @Test func continueWaitsOnWhatHoldsTheComposer() async throws {
@@ -115,32 +117,23 @@ struct UnfinishedTurns {
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
         await rig.runtime.linkChanged(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, online: false))
-        try await rig.harness.until { _ in await rig.conversation(key)?.unfinished?.blocked == "Offline" }
-        #expect(await rig.conversation(key)?.unfinished?.title == "Helper was stopped before it finished")
+        try await rig.harness.until { _ in await rig.card(key)?.button?.blocked == "Offline" }
+        #expect(await rig.card(key)?.sentence == "Helper was stopped before it finished.")
+        #expect(await rig.card(key)?.button?.enabled(at: Date()) == false)
         try await rig.send(.continueTurn, to: key)
         await rig.harness.settle()
-        #expect(rig.server.count("/chat") == 0)
+        #expect(rig.server.count("/chat") == 0 && rig.server.count("/continue") == 0)
     }
 
-    @Test func aFailureIsSaidOnceUnlessTheCardSaysWhatToDo() async throws {
+    @Test func aFailureIsSaidOnceInOnePlace() async throws {
         let rig = ChatRig(routes("error", "llm: overloaded"))
         try await rig.signIn()
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
         let screen = try #require(await rig.conversation(key))
-        #expect(screen.unfinished?.title == "Helper ran into a problem and didn’t finish")
-        #expect(screen.unfinished?.detail == "What failed: llm: overloaded")
+        #expect(screen.failures.turns.count == 1 && screen.failures.strip == nil)
+        #expect(screen.failures.turns[screen.turns.last?.id ?? ""]?.sentence == "Helper couldn't finish this reply.")
         #expect(screen.status.isEmpty)
-
-        // A refused key keeps its card, which says what to do about it.
-        let refused = ChatRig(routes("error", "401 Unauthorized"))
-        try await refused.signIn()
-        await refused.harness.send(.show(thread: "t1", scene: "s"))
-        let other = try #require(await refused.harness.state.scenes["s"]?.current)
-        try await refused.harness.until { _ in await refused.turns(other) == ["Hi", "Hello"] }
-        let both = try #require(await refused.conversation(other))
-        #expect(both.status.map(\.title) == ["The provider refused the API key"])
-        #expect(both.unfinished?.detail == "What failed: 401 Unauthorized")
     }
 }

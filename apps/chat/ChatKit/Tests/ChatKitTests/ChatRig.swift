@@ -142,4 +142,13 @@ struct ChatRig {
     }
 
     func live(_ key: ChildKey) async -> ConversationState? { await runtime.state(of: key) }
+
+    /// The failure card under the chat's newest turn.
+    func card(_ key: ChildKey) async -> FailurePresentation? {
+        guard let screen = await conversation(key), let last = screen.turns.last else { return nil }
+        return screen.failures.turns[last.id]
+    }
+
+    /// The strip above the chat's composer.
+    func strip(_ key: ChildKey) async -> FailurePresentation? { await conversation(key)?.failures.strip }
 }

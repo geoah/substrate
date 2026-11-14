@@ -32,6 +32,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case openingsRead([String: String])
     case rowsRead(thread: String, epoch: Int, version: Int, rows: [Record], full: Bool)
     case rowsFailed(thread: String, epoch: Int, Failure)
+    case rowsAsked(String)
     case cachedLoaded(thread: String, epoch: Int, CachedTranscript?)
     case prefetched(thread: String, epoch: Int, version: Int, rows: [Record])
     case threadFetched(Record)
@@ -43,6 +44,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     /// the app's clock: the list is read again, once a minute
     /// (`WatchFollower.recovers`).
     case watchRelist(at: Date)
+    /// The feed dropped, or came back.
+    case watchInterrupted(Bool)
     case watchEnded(String?, Failure?)
     case feedDue
     case feedApplied(Feed)
@@ -65,6 +68,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case renameAsked(thread: String, subject: String)
     case renamed(Record)
     case renameFailed(thread: String, before: Record?, Failure)
+    case renameDismissed
     case keyAsked(provider: String, key: String)
     case keySet(Record)
     case keyFailed(Failure)
@@ -76,7 +80,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case decideAsked(String, accept: Bool, shown: [String: JSONValue])
     case approveAsked(String, approve: Bool)
     case cardWritten(String, Record)
-    case cardWriteFailed(String, Failure, conflict: String)
+    case cardWriteFailed(String, Failure)
     case setting(row: String, toggle: Bool?, choice: String?)
     case settingsOpened
     case clearAsked
@@ -167,6 +171,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
         var draft: String?
         var sent: Bool
         var failure: Failure?
+        /// The server said it does not serve the continue route.
+        var continueUnserved = false
     }
 
     struct Read: Codable, Equatable, Sendable {

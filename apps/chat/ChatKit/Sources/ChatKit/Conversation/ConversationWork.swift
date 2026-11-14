@@ -27,9 +27,36 @@ extension Conversation {
                         yield(.streamEnded(nil, outcome: ids.next()))
                     } catch {
                         if Task.isCancelled { return }
-                        yield(.streamEnded(Failure(error, server: client.server), outcome: ids.next()))
+                        yield(.streamEnded(Failure(.send, error, server: client.server, at: clock.now), outcome: ids.next()))
                     }
                 }
+            }
+        case let .resume(thread):
+            return .sequence {
+                Self.relay { yield in
+                    guard let client = await source.current() else { return }
+                    do {
+                        for try await event in ChatAPI.resume(client, thread: thread) {
+                            if event.kind == .thread, let named = event.thread {
+                                yield(.named(named))
+                            } else {
+                                yield(.streamed(event, at: clock.now))
+                            }
+                        }
+                        yield(.streamEnded(nil, outcome: ids.next()))
+                    } catch {
+                        if Task.isCancelled { return }
+                        yield(.streamEnded(Failure(.resume, error, server: client.server, at: clock.now), outcome: ids.next()))
+                    }
+                }
+            }
+        case let .countdown(date):
+            // A limit that lifted before anybody waited on it is the
+            // button's alone: nothing is tried again on its own late.
+            guard date > clock.now else { return .none }
+            return .once {
+                do { try await clock.sleep(until: date) } catch { return nil }
+                return Event(.countdownDue(date))
             }
         case let .attach(thread):
             return .sequence {
@@ -42,7 +69,7 @@ extension Conversation {
                         yield(.attachRead(thread: now.thread, rows: now.rows))
                         guard now.thread != nil else { return }
                     } catch {
-                        if !Task.isCancelled { yield(.attachReadFailed(Failure(error, server: client.server))) }
+                        if !Task.isCancelled { yield(.attachReadFailed(Failure(.attach, error, server: client.server))) }
                         return
                     }
                     do {
@@ -52,7 +79,7 @@ extension Conversation {
                         yield(.streamEnded(nil, outcome: ids.next()))
                     } catch {
                         if Task.isCancelled { return }
-                        yield(.streamEnded(Failure(error, server: client.server), outcome: ids.next()))
+                        yield(.streamEnded(Failure(.attach, error, server: client.server, at: clock.now), outcome: ids.next()))
                     }
                 }
             }
@@ -71,13 +98,12 @@ extension Conversation {
                             return .handedOver(thread: now.thread, rows: now.rows)
                         } catch {
                             if Task.isCancelled { return nil }
-                            let failure = Failure(error, server: client.server)
-                            return .handoverFailed("The conversation didn't reload: \(failure.words)", failure)
+                            return .handoverFailed(Failure(.reload, error, server: client.server))
                         }
                     }
                     group.addTask {
                         do { try await clock.sleep(until: clock.now.addingTimeInterval(15)) } catch { return nil }
-                        return .handoverFailed("The conversation didn't reload: the read has not come back after 15 seconds.", nil)
+                        return .handoverFailed(Failure(.reload, .timeout))
                     }
                     let first = await group.next() ?? nil
                     group.cancelAll()
@@ -101,7 +127,7 @@ extension Conversation {
                     let now = try await ChatAPI.readNow(client, thread: thread)
                     return Event(.polled(thread: now.thread, rows: now.rows))
                 } catch {
-                    return Task.isCancelled ? nil : Event(.pollFailed(Failure(error, server: client.server)))
+                    return Task.isCancelled ? nil : Event(.pollFailed(Failure(.poll, error, server: client.server)))
                 }
             }
         case let .stop(thread):
@@ -112,7 +138,7 @@ extension Conversation {
                     try await ChatAPI.stop(client, thread: thread)
                     return nil
                 } catch {
-                    return Task.isCancelled ? nil : Event(.stopFailed(Failure(error, server: client.server)))
+                    return Task.isCancelled ? nil : Event(.stopFailed(Failure(.stop, error, server: client.server)))
                 }
             }
         case .stopWait:
@@ -130,7 +156,7 @@ extension Conversation {
                 } catch {
                     // A read that failed proves nothing either way.
                     if Task.isCancelled { return nil }
-                    return Event(.checked(outcome: check.outcome, found: nil, failure: Failure(error, server: client.server)))
+                    return Event(.checked(outcome: check.outcome, found: nil, failure: Failure(.send, error, server: client.server)))
                 }
             }
         case .advance:

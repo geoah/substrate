@@ -87,7 +87,7 @@ extension ChatApp {
             }
             return GuidanceRow(
                 reference: reference, text: record["text"]?.string ?? "", active: record["active"]?.bool != false, facts: facts,
-                busy: held.busy.contains(reference.path), problem: held.failed[reference.path])
+                busy: held.busy.contains(reference.path), problem: held.failed[reference.path].map { FailurePresenter.line($0) })
         }
         func count(_ rows: [GuidanceRow]) -> String {
             let on = rows.count { $0.active }
@@ -112,6 +112,6 @@ extension ChatApp {
                 empty: "No instructions yet. Ask your assistant to work differently, and it suggests one for you to accept.",
                 rows: instructions, editTitle: "Edit Instruction", deleteQuestion: "Delete this instruction?",
                 deleteMessage: "Its assistant stops reading it. To keep it without using it, switch it off instead."),
-            loading: held.read ? nil : (held.problem == nil ? "Loading…" : nil), problem: held.problem.map { "Couldn't read them: \($0)" })
+            loading: held.read ? nil : (held.problem == nil ? "Loading…" : nil), problem: held.problem.map { FailurePresenter.line($0) })
     }
 }

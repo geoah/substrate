@@ -15,11 +15,13 @@ public enum ChatNotifications {
     /// record id alphabet, so one thread's prefix never covers another's.
     static func prefix(_ thread: String) -> String { "chat|\(thread)|" }
 
-    /// A reply settled in a chat that is not on screen.
-    static func reply(thread: ChatThread, agent: String, title: String) -> NotificationRequest {
+    /// A reply settled in a chat that is not on screen. One that failed
+    /// says what its card in the chat says (`failed`), never the server's
+    /// own text.
+    static func reply(thread: ChatThread, agent: String, title: String, failed: String? = nil) -> NotificationRequest {
         NotificationRequest(
             id: prefix(thread.id) + "reply", title: agent,
-            body: thread.status == "error" ? "Couldn't answer\(thread.reason.map { ": \($0)" } ?? ".")" : thread.preview ?? "Answered.",
+            body: thread.status == "error" ? failed ?? "\(agent) couldn't finish this reply." : thread.preview ?? "Answered.",
             thread: thread.id, userInfo: [threadKey: thread.id], subtitle: title)
     }
 

@@ -33,12 +33,16 @@ public struct Conversation: Controller, Equatable {
         case heard(String)
         case choose(agent: String)
         case send
-        /// Sends `continueMessage` as the owner's own, for a last turn that
-        /// didn't finish, and leaves the draft alone.
+        /// Try Again and Continue: runs the thread again with no new
+        /// message, and leaves the draft alone. A server without the
+        /// continue route gets `continueMessage` as the owner's own.
         case continueTurn
         case stop
         case retryReload
-        case dismiss(UUID)
+        /// Try Again on a stream that would not open.
+        case reopen
+        /// The failure above the composer was read.
+        case dismissFailure
         /// The composer started listening, as a shortcut asked.
         case listened
     }
@@ -58,6 +62,11 @@ public struct Conversation: Controller, Equatable {
         case listened
         case opened
         case sent(message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool)
+        case continued(at: Date)
+        /// A rate limit lifted.
+        case countdownDue(Date)
+        case reopened
+        case failureDismissed
         case named(String)
         case streamed(AgentEvent, at: Date)
         case streamEnded(Failure?, outcome: UUID)
@@ -65,7 +74,7 @@ public struct Conversation: Controller, Equatable {
         case attachReadFailed(Failure)
         case retryDue(attempt: Int)
         case handedOver(thread: Record?, rows: [Record])
-        case handoverFailed(String, Failure?)
+        case handoverFailed(Failure)
         case pollTick
         case polled(thread: Record?, rows: [Record])
         case pollFailed(Failure)
@@ -73,7 +82,6 @@ public struct Conversation: Controller, Equatable {
         case stopFailed(Failure)
         case stopWaited
         case checked(outcome: UUID, found: Found?, failure: Failure?)
-        case dismissed(UUID)
         case retriedReload
         case threadMoved(ThreadFacts?)
         case nudgedPoll
@@ -91,9 +99,9 @@ public struct Conversation: Controller, Equatable {
 
     public typealias State = ConversationState
 
-    /// What Continue sends. The server resumes a stopped thread only when its
-    /// owner writes again, so going on is a message like any other, and the
-    /// transcript shows it.
+    /// What Continue sends to a server without the continue route. Such a
+    /// server resumes a stopped thread only when its owner writes again, so
+    /// going on is a message like any other, and the transcript shows it.
     static let continueMessage = "Continue where you left off."
 
     /// An effect, opaque outside ChatKit.
@@ -124,6 +132,8 @@ public struct Conversation: Controller, Equatable {
     let resumeNudge: Int
     /// The continued processing the app asked for while this one streams.
     let continuing: String?
+    /// The server serves the continue route, as far as this session knows.
+    let continues: Bool
 
     struct Seed: Codable, Hashable, Sendable {
         var thread: String?
@@ -134,7 +144,7 @@ public struct Conversation: Controller, Equatable {
 
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-        pollNudge: Int, resumeNudge: Int, continuing: String?
+        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = true
     ) {
         self.key = key
         self.seed = seed
@@ -146,6 +156,7 @@ public struct Conversation: Controller, Equatable {
         self.pollNudge = pollNudge
         self.resumeNudge = resumeNudge
         self.continuing = continuing
+        self.continues = continues
     }
 
     public var initialState: State {
@@ -189,13 +200,15 @@ public struct Conversation: Controller, Equatable {
         case .listened: return state.listenOnOpen ? [Event(.listened)] : []
         case .stop: return [Event(.stopAsked)]
         case .retryReload: return [Event(.retriedReload)]
-        case let .dismiss(id): return [Event(.dismissed(id))]
+        case .reopen: return [Event(.reopened)]
+        case .dismissFailure: return [Event(.failureDismissed)]
         case .send:
             let message = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !message.isEmpty else { return [] }
             return sent(message, fromDraft: true, state, at: context.now)
         case .continueTurn:
-            guard state.thread != nil else { return [] }
+            guard state.thread != nil, blockedReason(state) == nil else { return [] }
+            if continues { return [Event(.continued(at: context.now))] }
             return sent(Self.continueMessage, fromDraft: false, state, at: context.now)
         }
     }
@@ -244,7 +257,8 @@ public struct Conversation: Controller, Equatable {
 
     public func key(of effect: Effect) -> String? {
         switch effect.ask {
-        case .chat, .attach, .handover: "run"
+        case .chat, .resume, .attach, .handover: "run"
+        case .countdown: "countdown"
         case .wait: "retry"
         case .pollEvery: "pollTimer"
         case .poll: "poll"

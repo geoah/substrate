@@ -33,11 +33,34 @@ extension Conversation {
                 attach(&next, attempt: 0)
             }
         case let .sent(message, agent, at, baseline, fromDraft):
+            // The person's own word: a rate limit after it may be tried
+            // again once on its own.
+            if fromDraft { next.autoRetried = false }
             send(&next, message: message, agent: agent, at: at, baseline: baseline, fromDraft: fromDraft)
+        case let .continued(at):
+            next.autoRetried = false
+            resume(&next, at: at)
+        case let .countdownDue(date):
+            // At zero, once, and only where somebody is looking at it.
+            // A server without the continue route would need a message of
+            // the person's to go on, which only the person sends.
+            guard visible, continues, next.phase == .idle, !next.autoRetried, next.thread != nil, retryDeadline(next) == date,
+                blockedReason(next) == nil
+            else { break }
+            next.autoRetried = true
+            resume(&next, at: date, automatic: true)
+        case .reopened:
+            guard next.thread != nil, !next.active else { break }
+            if next.chatFailure?.attempt == .attach { next.chatFailure = nil }
+            if facts?.running == true { attach(&next, attempt: 0) } else { settle(&next) }
+        case .failureDismissed:
+            next.chatFailure = nil
         case let .named(thread):
             guard case var .send(run)? = next.run else { break }
             run.named = true
+            run.started = true
             next.run = .send(run)
+            if run.resumes { next.turnFailure = nil }
             if next.thread == nil { next.thread = thread }
             // The server took the message: the optimistic turn is confirmed.
             if let i = next.overlay.turns.lastIndex(where: { $0.role == .user && $0.pending }) {
@@ -74,12 +97,14 @@ extension Conversation {
             }
             next.overlay = .empty
             next.reloadFailed = nil
+            next.reloading = nil
             next.phase = .idle
             next.run = nil
             next.settles += 1
-        case let .handoverFailed(words, failure):
+        case let .handoverFailed(failure):
             next.failure = failure
-            next.reloadFailed = words
+            next.reloadFailed = failure
+            next.reloading = nil
             next.phase = .idle
             next.run = nil
         case .pollTick, .nudgedPoll:
@@ -116,16 +141,16 @@ extension Conversation {
             // another process owns it. An attach reads which.
             if failure.status == 409 {
                 next.asks.append(.stopWait)
-            } else {
-                next.error = failure.words
+            } else if next.phase == .streaming {
+                // The stop failed, not the reply: the turn is still being
+                // written, and the strip above the composer says so.
+                next.chatFailure = failure
             }
         case .stopWaited:
             if next.phase == .streaming { attach(&next, attempt: 0) }
         case let .checked(outcome, found, failure):
             next.failure = failure
             checked(&next, outcome: outcome, found: found)
-        case let .dismissed(id):
-            next.outcomes.removeAll { $0.id == id }
         case .retriedReload:
             retryReload(&next)
         case let .threadMoved(moved):
@@ -143,6 +168,12 @@ extension Conversation {
         case .resumed:
             if next.phase == .streaming, next.thread != nil { attach(&next, attempt: 0) }
         }
+        // The wait for a rate limit's end follows the failure that names it.
+        let deadline = retryDeadline(next)
+        if deadline != next.armed {
+            next.armed = deadline
+            next.asks.append(deadline.map { .countdown($0) } ?? .cancel("countdown"))
+        }
         return next
     }
 
@@ -159,6 +190,13 @@ extension Conversation {
         state.draftRevision += 1
     }
 
+    /// When the rate limit the turn ended on lifts: from the failure the
+    /// stream carried, else from the thread's row.
+    func retryDeadline(_ state: State) -> Date? {
+        guard state.phase == .idle else { return nil }
+        return state.turnFailure?.retryAt ?? facts?.retryAt
+    }
+
     // MARK: Runs
 
     /// Every key a run's work runs under but its own: a new run cancels
@@ -167,25 +205,46 @@ extension Conversation {
         state.asks += ["retry", "pollTimer", "poll", "stop", "stopWait", "check"].map { .cancel($0) }
         state.polling = false
         state.pollAgain = false
-        for index in state.outcomes.indices where state.outcomes[index].kind == .checking {
-            state.outcomes[index].kind = .unknown
+        // A check the run leaves can no longer say what it found.
+        if let lost = state.lost {
+            state.lost = nil
+            unsent(&state, lost.message, typed: lost.typed, failure: lost.failure, unconfirmed: true)
         }
+    }
+
+    /// A send that started no turn: its text goes back into the composer,
+    /// ahead of anything typed since, so nothing typed is lost, and the
+    /// strip above the composer says what happened.
+    private func unsent(_ state: inout State, _ message: String, typed: Bool, failure: Failure, unconfirmed: Bool) {
+        var failure = failure.attempting(typed ? .send : .resume)
+        failure.unconfirmed = unconfirmed
+        guard typed else {
+            // Continue's own words are nobody's to give back: the turn's
+            // card takes the failure, and its button asks again.
+            state.turnFailure = failure
+            return
+        }
+        let draft = state.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft != message { state.draft = draft.isEmpty ? message : message + "\n\n" + state.draft }
+        state.draftRevision += 1
+        state.chatFailure = failure
     }
 
     private func send(_ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool) {
         startRun(&state)
         // Continue sends its own words and leaves what is being typed alone.
         if fromDraft { rewrite(&state, "") }
-        state.error = nil
-        state.lastError = nil
-        // An outcome stays until its message is sent again or dismissed.
-        state.outcomes.removeAll { $0.message == message && $0.kind != .checking }
+        state.turnFailure = nil
+        state.lastFailure = nil
+        // The strip's failure was about a send or this chat's last run: a
+        // new send answers it.
+        state.chatFailure = nil
         // The last run's overlay is the stored rows' job now, unless their
         // read failed: then it is still the only view of that run.
         let kept = state.reloadFailed != nil ? state.overlay.turns : []
         let run = State.Send(
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
-            baseline: baseline, sentAt: at)
+            baseline: baseline, sentAt: at, typed: fromDraft)
         state.reloadFailed = nil
         state.seq += 1
         state.overlay = LiveOverlay(turns: kept + [Turn(id: "live-u\(state.seq)", role: .user, content: message, pending: true)])
@@ -195,13 +254,34 @@ extension Conversation {
         state.asks.append(.chat(agent: agent, thread: state.thread, message: message))
     }
 
+    /// Runs the thread again with no new message: Try Again and Continue.
+    /// The failure whose button was pressed stays drawn, working, until the
+    /// server answers, so a second failure replaces it in place.
+    private func resume(_ state: inout State, at: Date, automatic: Bool = false) {
+        guard let thread = state.thread, let agent = agent(state) else { return }
+        startRun(&state)
+        state.lastFailure = nil
+        let kept = state.reloadFailed != nil ? state.overlay.turns : []
+        var run = State.Send(
+            message: "", agent: agent, sentTo: thread, kept: kept, failedBefore: state.reloadFailed, baseline: nil, sentAt: at,
+            typed: false, resumes: true)
+        run.automatic = automatic
+        run.named = true
+        state.reloadFailed = nil
+        state.overlay = LiveOverlay(turns: kept)
+        state.phase = .streaming
+        state.stopping = false
+        state.run = .send(run)
+        state.asks.append(.resume(thread: thread))
+    }
+
     /// Attaches to the turn running on the thread: the rows are read first
     /// and their ordinals frozen, so the replayed events they hold are
     /// dropped.
     private func attach(_ state: inout State, attempt: Int) {
         guard let thread = state.thread else { return }
         startRun(&state)
-        state.error = nil
+        state.turnFailure = nil
         state.stopping = false
         state.phase = .streaming
         state.run = .attach(State.Attach(attempt: attempt))
@@ -225,24 +305,43 @@ extension Conversation {
         if continuing != nil, event.kind == .heartbeat || state.seq % 8 == 0 { state.asks.append(.advance) }
         switch state.run {
         case var .send(run)?:
+            if !run.started {
+                // The server answered a continue: the failure it was
+                // pressed on is this run's to replace.
+                run.started = true
+                state.run = .send(run)
+                if run.resumes { state.turnFailure = nil }
+            }
             if event.kind == .done {
                 run.done = true
                 state.run = .send(run)
                 state.overlay.mention(event.result?.mentions)
+                state.turnFailure = ended(event.result, at: at)
                 return
             }
         case var .attach(run)?:
             switch event.kind {
             case .idle:
                 run.idle = event.status ?? "unknown"
-                if run.idle != "running", let last = state.lastError { state.error = last }
+                // The turn ended. A failure the run itself reported is the
+                // turn's; a continue that never got an answer is said in
+                // its place; a stream that merely dropped says nothing of
+                // how the turn ended, which the thread's row does.
+                if run.idle != "running", let last = state.lastFailure {
+                    if last.attempt == .resume {
+                        state.turnFailure = last
+                    } else if case .run = last.why {
+                        state.turnFailure = last.attempting(.reply)
+                    }
+                }
                 state.run = .attach(run)
                 return
             case .done:
                 run.done = true
-                state.lastError = nil
+                state.lastFailure = nil
                 state.run = .attach(run)
                 state.overlay.mention(event.result?.mentions)
+                state.turnFailure = ended(event.result, at: at)
                 return
             case .thread:
                 return
@@ -256,32 +355,41 @@ extension Conversation {
         state.overlay.apply(event, seq: state.seq, now: at)
     }
 
+    /// How a `done` result says its run ended, where it did not finish: a
+    /// server that names causes says why here, before the thread's row is
+    /// read.
+    private func ended(_ result: AgentResult?, at: Date) -> Failure? {
+        guard let result, ["error", "overbudget", "stopped"].contains(result.status) else { return nil }
+        return Failure(.reply, .run(status: result.status, cause: result.cause), said: result.reason, retryAfter: result.retryAfter, at: at)
+    }
+
     private func ended(_ state: inout State, failure: Failure?, outcome: UUID) {
         switch state.run {
+        case let .send(run)? where run.resumes && !run.started:
+            resumeEnded(&state, run, failure: failure, outcome: outcome)
         case let .send(run)?:
             guard let failure else {
                 if run.named, run.done { return settle(&state) }
                 if run.named { return reattach(&state, attempt: 0) }
-                return end(&state, run, unknown: "The connection closed before the server said anything.", outcome: outcome)
+                return end(&state, run, unknown: Failure(.send, .streamEnded), outcome: outcome)
             }
             state.failure = failure
             if failure.report == .accessEnded { return end(&state, run, unknown: nil, outcome: outcome) }
             if run.named {
                 // The turn runs on; the attach that follows reads how it ended.
-                state.lastError = failure.words
+                state.lastFailure = failure
                 return reattach(&state, attempt: 0)
             }
-            // Only the server's own 4xx says nothing ran. A 5xx, a 503 at
-            // shutdown or a gateway's answer can come after the turn was
-            // admitted, and so can a dropped connection.
-            if let refusal = failure.refusal() {
+            // Only the server's own 4xx says nothing ran, and a request that
+            // never left ran nothing either. A 5xx, a 503 at shutdown or a
+            // gateway's answer can come after the turn was admitted, and so
+            // can a dropped connection.
+            if failure.refusal() != nil || failure.neverSent {
                 end(&state, run, unknown: nil, outcome: outcome)
-                let restored = state.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                if restored { rewrite(&state, run.message) }
-                state.outcomes.append(Outcome(id: outcome, kind: .refused, reason: refusal.text, message: run.message, restored: restored))
+                unsent(&state, run.message, typed: run.typed, failure: failure, unconfirmed: false)
                 return
             }
-            end(&state, run, unknown: failure.words, outcome: outcome)
+            end(&state, run, unknown: failure, outcome: outcome)
         case let .attach(run)?:
             guard let failure else {
                 if run.done { return settle(&state) }
@@ -291,29 +399,63 @@ extension Conversation {
             }
             state.failure = failure
             if failure.report == .accessEnded { return stopRunning(&state) }
-            if let refusal = failure.refusal(permanent: true) {
-                if refusal.status == 404 { return gone(&state) }
-                state.error = refusal.text
+            if let status = failure.refusal(permanent: true) {
+                if status == 404 { return gone(&state) }
+                // The stream will not open: the strip says so, and the
+                // rows are read for what the thread holds.
+                state.chatFailure = failure
                 return settle(&state)
             }
-            state.lastError = failure.words
+            state.lastFailure = failure
             reattach(&state, attempt: run.attempt + 1)
         case nil:
             return
         }
     }
 
+    /// A continue that ended before the server said anything. A server
+    /// without the route answers 404 or 405: what Continue did before the
+    /// route is done instead, and the list is told, so no later Continue
+    /// pays for the answer again. A busy thread is attached to. Anything
+    /// else is the turn's failure now, in the place of the one whose button
+    /// was pressed; where the request may have reached the server, an
+    /// attach reads whether a turn runs first.
+    private func resumeEnded(_ state: inout State, _ run: State.Send, failure: Failure?, outcome: UUID) {
+        guard let failure else { return reattach(&state, attempt: 0) }
+        state.failure = failure
+        if failure.status == 404 || failure.status == 405 {
+            // The router's own answer for a path it does not serve; a 404
+            // in other words is a thread that is gone, which the send's own
+            // refusal then says.
+            if failure.status == 405 || failure.said?.hasPrefix("no such API path") == true { state.continueUnserved = true }
+            end(&state, run, unknown: nil, outcome: outcome)
+            // What it tried on its own ends here: the button is the
+            // person's to press.
+            if run.automatic { return }
+            return send(&state, message: Self.continueMessage, agent: run.agent, at: run.sentAt, baseline: nil, fromDraft: false)
+        }
+        if failure.status == 409 { return reattach(&state, attempt: 0) }
+        let resumed = failure.attempting(.resume)
+        if failure.report == .accessEnded || failure.refusal() != nil || failure.neverSent {
+            end(&state, run, unknown: nil, outcome: outcome)
+            if failure.report == nil { state.turnFailure = resumed }
+            return
+        }
+        state.lastFailure = resumed
+        reattach(&state, attempt: 0)
+    }
+
     /// A run that never named its thread wrote nothing: the optimistic turn
     /// goes, and the chat is where it was. One whose delivery is unknown is
     /// read for, once, a second later.
-    private func end(_ state: inout State, _ run: State.Send, unknown: String?, outcome: UUID) {
+    private func end(_ state: inout State, _ run: State.Send, unknown: Failure?, outcome: UUID) {
         state.overlay = LiveOverlay(turns: run.kept)
         state.reloadFailed = run.failedBefore
         state.phase = .idle
         state.stopping = false
         state.run = nil
         guard let unknown else { return }
-        state.outcomes.append(Outcome(id: outcome, kind: .checking, reason: unknown, message: run.message))
+        state.lost = State.Lost(id: outcome, message: run.message, typed: run.typed, failure: unknown)
         state.asks.append(
             .check(
                 State.Check(
@@ -332,6 +474,9 @@ extension Conversation {
     /// releases the composer.
     private func settle(_ state: inout State) {
         state.stopping = false
+        state.lastFailure = nil
+        // The turn ended: a stop that failed is no longer a thing to try again.
+        if state.chatFailure?.attempt == .stop { state.chatFailure = nil }
         guard let thread = state.thread else {
             state.overlay = .empty
             state.phase = .idle
@@ -343,8 +488,9 @@ extension Conversation {
     }
 
     private func retryReload(_ state: inout State) {
-        guard state.reloadFailed != nil else { return }
+        guard let failed = state.reloadFailed else { return }
         startRun(&state)
+        state.reloading = failed
         state.reloadFailed = nil
         settle(&state)
     }
@@ -379,12 +525,13 @@ extension Conversation {
     }
 
     private func checked(_ state: inout State, outcome: UUID, found: Found?) {
-        guard let index = state.outcomes.firstIndex(where: { $0.id == outcome && $0.kind == .checking }) else { return }
+        guard let lost = state.lost, lost.id == outcome else { return }
+        state.lost = nil
         guard let found else {
-            state.outcomes[index].kind = .unknown
-            return
+            // It may or may not have arrived: the text is given back, and
+            // the strip says to look before sending it again.
+            return unsent(&state, lost.message, typed: lost.typed, failure: lost.failure, unconfirmed: true)
         }
-        state.outcomes.remove(at: index)
         if state.thread == nil { state.thread = found.thread }
         if found.running { attach(&state, attempt: 0) }
     }

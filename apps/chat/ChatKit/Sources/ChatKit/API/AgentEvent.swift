@@ -16,6 +16,10 @@ struct AgentResult: Codable, Hashable, Sendable {
     /// The records the reply links, as the engine read them when the run
     /// settled: what its row will carry.
     var mentions: [Mention]?
+    /// Why a run that did not finish ended, from the server's closed set,
+    /// and the seconds a provider asked to wait; nil from an older server.
+    var cause: String?
+    var retryAfter: Int?
 
     init() {}
 
@@ -32,6 +36,8 @@ struct AgentResult: Codable, Hashable, Sendable {
         totalTokens = (try? c.decode(Int.self, forKey: .totalTokens)) ?? 0
         costUSD = (try? c.decode(Double.self, forKey: .costUSD)) ?? 0
         mentions = ChatKit.mentions(try? c.decode([JSONValue].self, forKey: .mentions))
+        cause = try? c.decode(String.self, forKey: .cause)
+        retryAfter = try? c.decode(Int.self, forKey: .retryAfter)
     }
 }
 
@@ -72,6 +78,10 @@ struct AgentEvent: Codable, Sendable, Equatable {
     /// handle answers, then where the job ended on a second one under the
     /// same `id`.
     var job: String?
+    /// Rides `error`: why the run failed, from the server's closed set, and
+    /// the seconds a provider asked to wait. Absent from an older server.
+    var cause: String?
+    var retryAfter: Int?
 
     /// One ndjson line, or nil: a blank line, an unknown kind (a newer
     /// server's) or garbage. The `{}` heartbeat is `.heartbeat`.
@@ -97,6 +107,8 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.turn = int("turn")
         event.status = string("status")
         event.job = string("job")
+        event.cause = string("cause")
+        event.retryAfter = int("retryAfter")
         if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }
