@@ -359,21 +359,30 @@ stops the server for it
 ([#1314](https://github.com/geoah/substrate/issues/1314)); alert on the delay
 yourself.
 
-**A row that does not verify stops the pass at its piece.** A pass holds
-every line it copies to the checksum the `changelog` table stores beside it,
-so a row whose columns are not what that checksum was stamped over fails it
-with `two histories of the repository disagree: seq N: the table's checksum
-is not the checksum of the row it holds`. The archive stays at its last
-manifest and every pass fails at the same seq, as when the store fails, and
-the pass notes the row, so a compaction stops below it rather than stamp it
-again and one such row holds back the compaction of everything written after
-it ([while a line is known not to verify](#the-compaction-pass), [`repository
-compact`](#operator-recovery)). The repair is the row: write its columns in
-the `changelog` table back from a whole copy of its line, which is the
-archive's piece that holds the seq where a pass copied it before the damage
-(the piece's name carries its first and last seq; the line is one JSON line
-with its `sum`), or restore the database from a copy taken before the
-damage, then check the table with `substratectl --dsn … repository verify
+**A row that does not verify is copied from the archive's own line, or
+stops the pass.** A pass holds every line it copies to the checksum the
+`changelog` table stores beside it. Where a row's columns are not what that
+checksum was stamped over and the pass is writing a piece the archive
+already holds again (the small last piece, or one a compaction changed a
+line of), it takes that one line from the piece it replaces, where that
+copy is the line the table stamped, and goes on: the archive stays one cut
+of the history as it was stamped, and the copy a repair comes from. It
+logs `substrate: a row of the history does not verify, and the archive
+keeps the copy of its line it already held` with the seq, once a process.
+A row the archive holds no copy of, or whose copy is not the stamped line,
+fails the pass with `two histories of the repository disagree: seq N: the
+table's checksum is not the checksum of the row it holds`: the archive
+stays at its last manifest and every pass fails at the same seq, as when
+the store fails. Either way the pass notes the row, so a compaction stops
+below it rather than stamp it again and one such row holds back the
+compaction of everything written after it ([while a line is known not to
+verify](#the-compaction-pass), [`repository compact`](#operator-recovery)),
+and `repository verify --recanonicalize` names it in the table. The repair
+is the row: write its columns in the `changelog` table back from a whole
+copy of its line, which is the archive's piece that holds the seq (the
+piece's name carries its first and last seq; the line is one JSON line with
+its `sum`), or restore the database from a copy taken before the damage,
+then check the table with `substratectl --dsn … repository verify
 --recanonicalize`. The next pass goes on from the mark.
 
 With `SUBSTRATE_METRICS` on, each open repository reports seven

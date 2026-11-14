@@ -156,6 +156,9 @@ type archiveState struct {
 	// manifests it found that the record does not hold.
 	stopped  string
 	reported bool
+	// kept is the seqs of the rows that do not verify whose line a pass
+	// took from the piece it replaced, logged once a process each.
+	kept map[int64]bool
 	// mark and the prints are what the last manifest built from a snapshot
 	// was built from, so an idle repository costs one query and a read of a
 	// directory.
@@ -802,7 +805,7 @@ func (b *archiveBuild) blobs(ctx context.Context, stored []storedBlob, uploading
 // row whose stamped checksum is not the checksum of what it holds is
 // refused, as the boot check refuses it: it is not history.
 func (b *archiveBuild) writePieces(ctx context.Context, q dbx, dialect int, after, head int64, pace func(context.Context, int) error) ([]changelogfile.ArchivePiece, string, error) {
-	return writePieces(ctx, q, after, head, b.ds.svc.archivePieceBytes, pace, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
+	return writePieces(ctx, q, after, head, b.ds.svc.archivePieceBytes, pace, b.keptLine(dialect), func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
 		sum := sha256.Sum256(data)
 		name := changelogfile.PieceObjectName(dialect, first, last, b.pass, sum)
 		if err := b.put(ctx, name, fmt.Sprintf("piece:%d:%d-%d", dialect, first, last), data); err != nil {
@@ -816,10 +819,71 @@ func (b *archiveBuild) writePieces(ctx context.Context, q dbx, dialect int, afte
 	})
 }
 
+// keptLine is where a pass takes the line of a row that does not verify:
+// the piece of the manifest it started from that holds the seq, in the
+// dialect the pass writes, read from the store and held to the manifest's
+// sum, where that copy's checksum is the one the table stamped. A
+// compaction leaves alone a record whose line does not verify (compact.go),
+// so the row is the line the archive already holds, damaged, never one a
+// compaction changed since. The seq stays noted (damage.go), so nothing is
+// compacted at or above it, `repository verify` names the row, and the
+// repair writes it back from this copy; it is logged once a process.
+func (b *archiveBuild) keptLine(dialect int) func(ctx context.Context, seq int64, sum []byte) (changelogfile.Entry, []byte, bool, error) {
+	a := b.ds.archive
+	if a.start.Epoch == 0 || a.start.ChangelogDialect != dialect {
+		return nil
+	}
+	return func(ctx context.Context, seq int64, sum []byte) (changelogfile.Entry, []byte, bool, error) {
+		var found changelogfile.Entry
+		var line []byte
+		for _, p := range a.start.Pieces {
+			_, first, last, _, ok := changelogfile.ParsePieceObjectName(p.Name)
+			if !ok || seq < first || seq > last {
+				continue
+			}
+			data, err := archive.ReadAll(ctx, b.store, changelogfile.ArchivePrefix(b.ds.info.ID, a.rec.archive)+p.Name)
+			if errors.Is(err, archive.ErrNotFound) {
+				return found, nil, false, nil
+			}
+			if err != nil {
+				return found, nil, false, err
+			}
+			if changelogfile.SumText(sha256.Sum256(data)) != p.Sum {
+				return found, nil, false, nil
+			}
+			err = changelogfile.ReadPiece(bytes.NewReader(data), first, last, func(e changelogfile.Entry, l []byte, s [32]byte) error {
+				if e.Seq == seq && bytes.Equal(s[:], sum) {
+					found, line = e, bytes.Clone(l)
+				}
+				return nil
+			})
+			if err != nil || line == nil {
+				return found, nil, false, nil
+			}
+			if err := b.ds.noteDamageAlone(ctx, seq, "archive"); err != nil {
+				return found, nil, false, err
+			}
+			if !a.kept[seq] {
+				if a.kept == nil {
+					a.kept = map[int64]bool{}
+				}
+				a.kept[seq] = true
+				b.ds.svc.log.Error("substrate: a row of the history does not verify, and the archive keeps the copy of its line it already held; nothing is compacted at or above it until the row is written back from that copy",
+					"repository", b.ds.info.ID, "seq", seq)
+			}
+			return found, line, true, nil
+		}
+		return found, nil, false, nil
+	}
+}
+
 // writePieces reads the table's lines after `after` up to head, cuts them
 // into pieces at the first transaction boundary past pieceBytes, and hands
-// each to put.
+// each to put. A row whose stamped checksum is not the checksum of what it
+// holds is refused, unless kept, when it is not nil, holds a copy of its
+// line that is: that copy goes in its place.
 func writePieces(ctx context.Context, q dbx, after, head, pieceBytes int64, pace func(context.Context, int) error,
+	kept func(ctx context.Context, seq int64, sum []byte) (changelogfile.Entry, []byte, bool, error),
 	put func(first, last int64, data []byte) (changelogfile.ArchivePiece, error),
 ) ([]changelogfile.ArchivePiece, string, error) {
 	var (
@@ -864,7 +928,19 @@ func writePieces(ctx context.Context, q dbx, after, head, pieceBytes int64, pace
 				return written, "", fmt.Errorf("substrate/engine: seq %d does not encode as a changelog line: %w", e.Seq, err)
 			}
 			if !bytes.Equal(row.hash, s[:]) {
-				return written, "", &damagedLineError{seq: e.Seq, err: fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)}
+				refused := &damagedLineError{seq: e.Seq, err: fmt.Errorf("%w: seq %d: the table's checksum is not the checksum of the row it holds", ErrChangelogDiverged, e.Seq)}
+				if kept == nil {
+					return written, "", refused
+				}
+				ke, kline, ok, err := kept(ctx, e.Seq, row.hash)
+				if err != nil {
+					return written, "", err
+				}
+				if !ok {
+					return written, "", refused
+				}
+				e, line = ke, kline
+				copy(s[:], row.hash)
 			}
 			lines = append(lines, changelogfile.Line{Seq: e.Seq, Txn: e.Txn, Bytes: line})
 			size += int64(len(line)) + 1

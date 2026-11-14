@@ -247,7 +247,7 @@ func (e *export) write(tw *tar.Writer) error {
 		}
 	}
 	if head := m.Head; head > 0 {
-		written, _, err := writePieces(e.ctx, e.tx, 0, head, e.ds.svc.archivePieceBytes, nil, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
+		written, _, err := writePieces(e.ctx, e.tx, 0, head, e.ds.svc.archivePieceBytes, nil, nil, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
 			sum := sha256.Sum256(data)
 			name := changelogfile.PieceObjectName(m.ChangelogDialect, first, last, m.Pass, sum)
 			if err := t.Put(e.ctx, prefix+name, bytes.NewReader(data), int64(len(data))); err != nil {
