@@ -107,6 +107,13 @@ func TestKeptDirectories(t *testing.T) {
 // current code serves to what the release served, the release's records
 // taken through conversions first; opts are the environment's.
 func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConversion, opts ...testenv.Option) keptImport {
+	return checkKeptDirectoryIn(t, dir, "", conversions, opts...)
+}
+
+// checkKeptDirectoryIn is checkKeptDirectory over the data root root, which
+// holds what an earlier start left of the kept directory's copy; an empty
+// root is a fresh copy.
+func checkKeptDirectoryIn(t *testing.T, dir, root string, conversions map[int]keptConversion, opts ...testenv.Option) keptImport {
 	var fixture keptFixture
 	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
 	var want keptRecords
@@ -120,11 +127,13 @@ func checkKeptDirectory(t *testing.T, dir string, conversions map[int]keptConver
 	// The import writes into the data root, so it gets a copy. A release from
 	// before the archive kept its repository directory and one after it keeps
 	// its archive (decision 0277); the boot restores from either.
-	root := t.TempDir()
-	if _, err := os.Stat(filepath.Join(dir, "archive")); err == nil {
-		copyKept(t, filepath.Join(dir, "archive"), filepath.Join(root, "archive"))
-	} else {
-		copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
+	if root == "" {
+		root = t.TempDir()
+		if _, err := os.Stat(filepath.Join(dir, "archive")); err == nil {
+			copyKept(t, filepath.Join(dir, "archive"), filepath.Join(root, "archive"))
+		} else {
+			copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
+		}
 	}
 	refusals := newKeptRefusals()
 	e := testenv.Start(t, append([]testenv.Option{
