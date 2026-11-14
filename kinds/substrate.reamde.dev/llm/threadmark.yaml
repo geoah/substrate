@@ -21,9 +21,9 @@ data:
   authority: substrate.reamde.dev
   package: llm
   description: >-
-    How far one person has read one thread: the newest message they have
-    seen, when, and whether they marked the thread unread. Each person has
-    their own for a thread, and it follows them to every device.
+    How far one person has read one thread: the newest message they have seen,
+    when, and whether they marked the thread unread. Each person has their
+    own for a thread, and it follows them to every device.
   purpose: internal
   # The id is `<thread id>.<actor id>`, a name the engine checks against the
   # two references, so a client reads a mark without a search.
@@ -34,7 +34,8 @@ data:
   retention: P7D
   names:
     singular: threadmark
-  displayTemplate: "{thread}"
+  # Whose mark, then of what: two people's marks of one thread read apart.
+  displayTemplate: "{readBy}: {thread}"
   properties:
     thread:
       type: reference
