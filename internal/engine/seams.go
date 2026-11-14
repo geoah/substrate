@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"database/sql"
 	"errors"
 	"slices"
 	"sync"
@@ -91,13 +92,37 @@ func (c *TestClock) Advance(d time.Duration) {
 
 // WithTestImportFault runs fn at each durable step of a boot import
 // (repodir.go importEntries): after every batch of changelog rows commits,
-// with ImportAfterBatch, and after the first fold pass commits, with
-// ImportAfterFirstFold. An error from fn ends the boot there, which is the
+// with ImportAfterBatch, and inside the refold's one transaction, after its
+// first replay and before its commit, with RefoldAfterFirstReplay and
+// RefoldBeforeCommit. An error from fn ends the boot there, which is the
 // shape of a process dying at that step. A batch above zero replaces
 // rebuildBatch for the import's row batches, so a short history spans
 // several.
 func WithTestImportFault(batch int, fn func(stage string) error) Option {
 	return func(o *options) { o.importFault, o.importBatch = fn, batch }
+}
+
+// WithTestReplay runs page after each page of every replay (rebuild.go
+// txn.rebuild) with the seq it reached, and end at the replay's end, both
+// inside its transaction and before it commits, so a test can act beside a
+// replay and read what its transaction does: Postgres's counts of its own
+// reads, or the plans its statements get. Either may be nil. Tests only.
+func WithTestReplay(page func(seq int64, tx *sql.Tx), end func(tx *sql.Tx)) Option {
+	return func(o *options) { o.replayPage, o.replayEnd = page, end }
+}
+
+// WithTestStatisticsLockTimeout replaces the ten minutes the reset before a
+// replay and the ANALYZE after it wait for a table's lock, so a test can hold
+// the lock past it. Tests only.
+func WithTestStatisticsLockTimeout(d time.Duration) Option {
+	return func(o *options) { o.statisticsLockTimeout = d }
+}
+
+// WithTestReplaySQL runs fn with every statement a replay runs through its
+// transaction, so a test can hold the list of the fold's statements to what
+// it checks. Tests only.
+func WithTestReplaySQL(fn func(sqlText string)) Option {
+	return func(o *options) { o.replaySQL = fn }
 }
 
 // WithTestActorFillOff skips the open's actor fill (actorfill.go), so a
@@ -142,15 +167,16 @@ const (
 
 // The import stages WithTestImportFault reports.
 const (
-	ImportAfterRow       = importAfterRow
-	ImportAfterSealed    = importAfterSealed
-	ImportBeforeCleanup  = importBeforeCleanup
-	CleanupSetAside      = changelogfile.RemoveHistorySetAside
-	CleanupPartly        = changelogfile.RemoveHistoryPartly
-	ImportAfterBatch     = importAfterBatch
-	ImportAfterFirstFold = importAfterFirstFold
-	TakeAfterStaged      = takeAfterStaged
-	TakeAfterStaging     = takeAfterStaging
+	ImportAfterRow         = importAfterRow
+	ImportAfterSealed      = importAfterSealed
+	ImportBeforeCleanup    = importBeforeCleanup
+	CleanupSetAside        = changelogfile.RemoveHistorySetAside
+	CleanupPartly          = changelogfile.RemoveHistoryPartly
+	ImportAfterBatch       = importAfterBatch
+	RefoldAfterFirstReplay = refoldAfterFirstReplay
+	RefoldBeforeCommit     = refoldBeforeCommit
+	TakeAfterStaged        = takeAfterStaged
+	TakeAfterStaging       = takeAfterStaging
 )
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is

@@ -569,11 +569,9 @@ func TestAnInterruptedRestoreResumesAtTheNextBoot(t *testing.T) {
 	}{
 		{"after the first batch", []crash{{engine.ImportAfterBatch, 1}}},
 		{"after the last batch", []crash{{engine.ImportAfterBatch, batches}}},
-		{"between the fold passes", []crash{{engine.ImportAfterFirstFold, 1}}},
 		{"at every step in turn", []crash{
 			{engine.ImportAfterBatch, 1},
 			{engine.ImportAfterBatch, batches - 1},
-			{engine.ImportAfterFirstFold, 1},
 		}},
 	}
 	errKilled := errors.New("the process died here")

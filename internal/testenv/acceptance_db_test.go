@@ -1510,7 +1510,8 @@ func (d *drill) retryParked(t *testing.T, e *testenv.Env) {
 // interruptedImport boots the copied directory into a fresh schema and kills
 // the boot at the import's durable steps (the progress-marker hook, #365):
 // after the first batch, after a later batch of the resumed boot, then after
-// the first fold pass; the fourth boot finishes. Each kill leaves exactly the
+// the third boot's last batch, every line in and nothing folded; the fourth
+// boot finishes. Each kill leaves exactly the
 // rows its batches committed, the unfinished import is refused to a reader
 // and reported by verify, and the boot that finishes reproduces the fold.
 // internal/engine/repodir_db_test.go TestAnInterruptedImportResumesAtTheNextBoot
@@ -1534,7 +1535,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 	}{
 		{engine.ImportAfterBatch, 1, int64(batch)},
 		{engine.ImportAfterBatch, batches - 2, int64((batches - 1) * batch)},
-		{engine.ImportAfterFirstFold, 1, d.snapHead},
+		{engine.ImportAfterBatch, 1, d.snapHead},
 	}
 	if !(crashes[0].rows < crashes[1].rows && crashes[1].rows < crashes[2].rows) {
 		t.Fatalf("the kills do not land on three distinct boundaries: %d, %d, %d rows", crashes[0].rows, crashes[1].rows, crashes[2].rows)

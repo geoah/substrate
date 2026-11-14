@@ -472,10 +472,31 @@ before anything is served, and finds nothing to finish where none was.
 So a start costs one walk of the history for each step a repository lacks,
 and, only where a line changed or a step says `Refolds`, the rebuild, which
 replays the history twice before the repository serves (once under an empty
-registry, then under the real one). As measured on a test machine, not as a
-promise, over a history of 502,979 lines: a step's walk ran at about 5,900
-lines a second, and one replay, as `repository rebuild` makes it, at about
-1,300. A repository an earlier build converted and rebuilt replays nothing.
+registry, then under the real one). The two replays are one transaction, so
+the fold tables are never committed in a state that is not a fold of the
+whole history under the repository's declarations; the transaction holds the
+row versions and the WAL of both replays until it commits, twice what one
+replay held (about 2.1 GB of WAL for 150,540 lines). Each replay plans every
+statement against the tables as they stand (`planEveryStatement` in
+`internal/engine/rebuild.go`), so a line costs the same at the end of the
+history as at its start; that planning costs about 18% of a replay's time.
+Before a replay, a fold table that holds pages while its statistics, or an
+index's, say it holds no rows is vacuumed and analyzed (an older build left a
+repository so when it stopped between its two replays, and a kind's own index
+is built empty); the reset waits at most ten minutes for a table's lock, and
+one that cannot run is a warning naming the table and the command to run by
+hand, never a refused start. After the replay commits the fold tables are
+analyzed. As measured on a test machine, not as a promise, over a history of
+150,540 lines: a step's walk ran at about 7,000 lines a second, and a replay,
+a conversion's, an import's or `repository rebuild`'s, at about 1,000 to
+1,700, the same at its last line as at its first. A repository an earlier
+build converted and rebuilt replays nothing.
+
+What this does not remove is
+[issue 1393](https://github.com/geoah/substrate/issues/1393): every secondary
+index of the fold tables leads with `repository`, so statistics that record a
+repository's rows as fewer than they are, from any other cause, can still
+lead a key lookup through an index that walks all of them.
 
 A history from an archive or a 0.x directory is converted the same way,
 between its lines going into the table and their fold. The archive follows on

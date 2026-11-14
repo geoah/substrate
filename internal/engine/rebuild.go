@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -129,6 +131,153 @@ var foldTables = append([]string{
 	"unit_graph", "unit_uses",
 }, deliveryTables...)
 
+// planEveryStatement has the transaction plan each statement against the
+// tables as they stand when it runs (plan_cache_mode = force_custom_plan, for
+// this transaction only). A transaction that replays a history, or fills fold
+// tables wholesale, runs the same few prepared statements once a line, and
+// Postgres keeps a generic plan after a statement's fifth execution. One made
+// while a table was still empty, as every fold table is at the start of an
+// import, is a scan of the whole table, and nothing the transaction does
+// invalidates it: its own rows are invisible to autovacuum. Held to such a
+// plan, each line read every row the replay had written, and the replay was
+// quadratic in the history. Planned each time, a statement costs the same at
+// line N as at line 1, up to the depth of an index; the planning costs a
+// fraction of a millisecond.
+func (t *txn) planEveryStatement() error {
+	_, err := t.exec(`SET LOCAL plan_cache_mode = force_custom_plan`)
+	return err
+}
+
+// emptyStatisticsPages is the fewest pages a fold table or one of its
+// indexes holds before statistics that call it empty are reset before a
+// replay (resetEmptyStatistics).
+const emptyStatisticsPages = 8
+
+// statisticsLockTimeout bounds how long the reset before a replay and the
+// ANALYZE after it wait for a table's lock: an autovacuum gives way within
+// seconds, and a holder that does not is not the start's to wait for.
+const statisticsLockTimeout = 10 * time.Minute
+
+// resetEmptyStatistics vacuums and analyzes, before a replay's transaction
+// begins, every fold table that holds pages while its statistics, or one of
+// its indexes', say it holds no rows (reltuples <= 0: analyzed while empty,
+// or never analyzed). The planner believes such a relation empty: every index
+// narrowed by `repository` alone then prices as a one-row probe, and a key
+// lookup may take one that walks every entry it holds, dead ones included
+// (issue 1393). The engine leaves two such states behind itself: a build
+// from before one-transaction refolds that committed the first of its two
+// replays (a fold table emptied over the pages its old rows still fill), and
+// a kind's own index, built empty when the kind was declared and filled since
+// without an ANALYZE.
+//
+// Speed is what it protects, not the fold, so nothing it meets stops a
+// replay: it says what it is about to do before it waits, its wait for a
+// table's lock is bounded (statisticsStatement), and a reset that could not
+// run is a warning naming the table and the command to run by hand, after
+// which the replay goes ahead. A table this process has reset is not reset
+// again by it; one that still reads as empty after its reset is empty, and
+// is said so once.
+func (s *service) resetEmptyStatistics(ctx context.Context, repository string) {
+	rows, err := s.admin.QueryContext(ctx, `
+		SELECT DISTINCT t.relname, r.relname, r.reltuples, pg_relation_size(r.oid) / current_setting('block_size')::int
+		FROM pg_class t
+		LEFT JOIN pg_index i ON i.indrelid = t.oid
+		JOIN pg_class r ON r.oid = t.oid OR r.oid = i.indexrelid
+		WHERE t.relnamespace = current_schema()::regnamespace AND t.relkind = 'r'
+			AND t.relname = ANY (string_to_array($1, ','))
+			AND pg_relation_size(r.oid) / current_setting('block_size')::int >= $2
+			AND r.reltuples <= 0`,
+		strings.Join(foldTables, ","), emptyStatisticsPages)
+	if err != nil {
+		s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+			"repository", repository, "err", err)
+		return
+	}
+	type relation struct {
+		table, name string
+		tuples      float64
+		pages       int64
+	}
+	var empty []relation
+	for rows.Next() {
+		var r relation
+		if err := rows.Scan(&r.table, &r.name, &r.tuples, &r.pages); err != nil {
+			_ = rows.Close()
+			s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+				"repository", repository, "err", err)
+			return
+		}
+		empty = append(empty, r)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+			"repository", repository, "err", err)
+		return
+	}
+	for _, r := range empty {
+		s.statsMu.Lock()
+		done := s.statsReset[r.table]
+		s.statsReset[r.table] = true
+		s.statsMu.Unlock()
+		if done {
+			continue
+		}
+		s.log.Info("substrate: vacuuming a fold table whose statistics say it is empty before a replay; the replay waits for it",
+			"repository", repository, "table", r.table, "relation", r.name, "rows", r.tuples, "pages", r.pages)
+		began := time.Now()
+		if err := s.statisticsStatement(ctx, `VACUUM (ANALYZE) `+r.table); err != nil {
+			s.log.Warn("substrate: could not vacuum a fold table whose statistics say it is empty; the replay goes ahead and may be slow, "+
+				"so run the command once the table is free and the next replay is not",
+				"repository", repository, "table", r.table, "command", "VACUUM (ANALYZE) "+r.table, "err", err)
+			continue
+		}
+		s.log.Info("substrate: vacuumed a fold table whose statistics said it was empty before a replay",
+			"repository", repository, "table", r.table, "took", time.Since(began).Round(time.Millisecond))
+		var tuples float64
+		if err := s.admin.QueryRowContext(ctx, `SELECT reltuples FROM pg_class WHERE oid = $1::regclass`, r.name).Scan(&tuples); err == nil && tuples <= 0 {
+			s.log.Info("substrate: a fold table's statistics still say it is empty after its vacuum: it is",
+				"repository", repository, "table", r.table, "relation", r.name)
+		}
+	}
+}
+
+// statisticsStatement runs one VACUUM or ANALYZE as the engine's own user,
+// which owns the tables, on a connection of its own, its wait for a table's
+// lock bounded by the service's statisticsLockTimeout.
+func (s *service) statisticsStatement(ctx context.Context, stmt string) error {
+	conn, err := s.admin.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET lock_timeout = %d`, s.statisticsLockTimeout.Milliseconds())); err != nil {
+		return err
+	}
+	defer func() { _, _ = conn.ExecContext(context.WithoutCancel(ctx), `RESET lock_timeout`) }()
+	_, err = conn.ExecContext(ctx, stmt)
+	return err
+}
+
+// analyzeFold brings the fold tables' statistics to what a replay just
+// committed, so a plan the next statement on them caches (the live requests
+// once the server listens, the second replay of an import) is made against
+// the tables as they are, not as they were before it: empty, for an import.
+// It runs as the engine's own user, which owns the tables: a repository's
+// role may not ANALYZE, and its transaction cannot change to the owner's
+// without its writes after it running as the owner. Statistics are no part
+// of the fold, so a failure, a lock it waited for past its bound included,
+// is logged and autovacuum brings them up later.
+func (s *service) analyzeFold(ctx context.Context, repository string) {
+	began := time.Now()
+	if err := s.statisticsStatement(ctx, `ANALYZE `+strings.Join(foldTables, ", ")); err != nil {
+		s.log.Warn("substrate: could not analyze the fold tables after a replay; autovacuum brings their statistics up later",
+			"repository", repository, "err", err)
+		return
+	}
+	s.log.Info("substrate: analyzed the fold tables after a replay",
+		"repository", repository, "took", time.Since(began).Round(time.Millisecond))
+}
+
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
 // cursor while it writes, so the changelog is read a page at a time by seq.
 const rebuildBatch = 500
@@ -151,6 +300,7 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err != nil {
 		return RebuildReport{}, err
 	}
+	s.resetEmptyStatistics(ctx, ds.scope.Repository)
 	report := RebuildReport{Repository: repo.ID}
 	// The replay re-derives every row's `fts` itself, so the open's reindex
 	// stops first: its pages would skip every row the replay's delete holds and
@@ -206,6 +356,7 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 		return report, err
 	}
 	s.tokens.forget(repo.ID)
+	s.analyzeFold(ctx, ds.scope.Repository)
 	rebuilt = true
 	if owed > 0 {
 		ds.kickIndexReprojection()
@@ -233,6 +384,9 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	// that must not run on a stale claim, and it refuses here, before the fold
 	// tables are cleared.
 	if err := t.refuseNewerChangelogDialect(); err != nil {
+		return err
+	}
+	if err := t.planEveryStatement(); err != nil {
 		return err
 	}
 	if err := t.keepPagedCursors(); err != nil {
@@ -286,6 +440,9 @@ func (t *txn) rebuild(report *RebuildReport) error {
 			report.Head = ch.Seq
 		}
 		prog.tick(changelogfile.Position{Seq: report.Head})
+		if f := t.ds.svc.testReplayPage; f != nil {
+			f(report.Head, t.tx)
+		}
 	}
 	if err := t.dropKeptCursors(); err != nil {
 		return err
@@ -298,7 +455,13 @@ func (t *txn) rebuild(report *RebuildReport) error {
 	if err := t.rederiveOffers(); err != nil {
 		return err
 	}
-	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
+	if err := t.row(`SELECT count(*) FROM records`).Scan(&report.Records); err != nil {
+		return err
+	}
+	if f := t.ds.svc.testReplayEnd; f != nil {
+		f(t.tx)
+	}
+	return nil
 }
 
 // keepPagedCursors copies every resume cursor paged_cursors holds into a

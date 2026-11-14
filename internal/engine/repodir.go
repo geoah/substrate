@@ -1108,12 +1108,15 @@ func (ds *dataset) importFault(stage string) error {
 // beside the conversion's (conversion.go) and the removal of a 0.x
 // directory's history (changelogfile.RemoveHistory*).
 const (
-	importBeforeRow      = "with the name held, before the restored repository's row"
-	importAfterRow       = "after the restored repository's row committed"
-	importAfterSealed    = "after the source's files and sealed values were taken in"
-	importAfterBatch     = "after a batch of rows committed"
-	importAfterFirstFold = "after the first fold pass committed"
-	importBeforeCleanup  = "after the import finished, before the directory gave its history up"
+	importBeforeRow   = "with the name held, before the restored repository's row"
+	importAfterRow    = "after the restored repository's row committed"
+	importAfterSealed = "after the source's files and sealed values were taken in"
+	importAfterBatch  = "after a batch of rows committed"
+	// Inside the refold's one transaction: a stop there leaves the fold as
+	// it was before the refold and the marker set.
+	refoldAfterFirstReplay = "inside the refold's transaction, after its first replay"
+	refoldBeforeCommit     = "inside the refold's transaction, after the embeddings' reconcile, before its commit"
+	importBeforeCleanup    = "after the import finished, before the directory gave its history up"
 )
 
 // importStage runs the import's test seam at a step no dataset is open for.
@@ -1196,77 +1199,83 @@ func (ds *dataset) insertEntries(ctx context.Context, entries []changelogfile.En
 // sites (refs.go syncRefs), and the registry is built from declaration
 // RECORDS that do not exist until the first pass has folded them. So the
 // first pass folds under an empty registry to bring the declaration rows into
-// being, the registry is loaded from them without writing anything, and the
-// second pass folds every row the way the live write did. Nothing appends
-// here: an import runs before any dataset is open.
+// being, the registry is loaded from them, read through the same transaction,
+// without writing anything, and the second pass folds every row the way the
+// live write did. Nothing appends here: an import runs before any dataset is
+// open.
 //
-// The second pass's transaction is also the one that deletes the
-// import-progress marker, so the import is complete exactly when the fold is
-// the live write's, and the operator's take the import carries out (rule 4),
-// which no boot acts on after it. The first pass commits on its own: a crash after it
-// leaves records with no `refs` and unweighted `fts`, which is why the marker
-// stays set until the second pass, and the resume runs both passes again
-// (each clears the fold tables first).
+// BOTH PASSES ARE ONE TRANSACTION. The first pass, under no declarations,
+// leaves `refs` and the other derived tables empty; committed, an empty table
+// over the pages the old fold's rows still fill is what an ANALYZE (ours, or
+// autovacuum's a minute later) records as no rows at all, and the planner,
+// believing it empty, prices an index that only `repository` narrows as one
+// row: the second pass's `DELETE FROM refs` walked every entry of the
+// repository for every line it folded. Uncommitted, the first pass is seen by
+// no one, and the table stays what it was before the refold.
 //
-// The same transaction converges the vectors with the fold and queues what is
-// missing (reconcileEmbeddings): the fold never reaches the live write's
-// enqueueEmbed, and the vectors are in no archive, so the queue is what stands
-// in for them.
+// The same transaction deletes the import-progress marker, so the import is
+// complete exactly when the fold is the live write's, and the operator's take
+// the import carries out (rule 4), which no boot acts on after it. A crash
+// anywhere in it leaves the fold as it was and the marker set, and the resume
+// runs both passes again (each clears the fold tables first).
+//
+// It also converges the vectors with the fold and queues what is missing
+// (reconcileEmbeddings): the fold never reaches the live write's enqueueEmbed,
+// and the vectors are in no archive, so the queue is what stands in for them.
 func (ds *dataset) refold(ctx context.Context) error {
-	queued := 0
-	replay := func(last bool) error {
-		tx, err := ds.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
+	ds.svc.resetEmptyStatistics(ctx, ds.scope.Repository)
+	tx, err := ds.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	replay := func() (*txn, error) {
 		t := &txn{
 			ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem,
 			now: nowUTC(), internal: true,
 		}
 		var report RebuildReport
-		if err := t.rebuild(&report); err != nil {
-			return err
-		}
-		if _, err := t.queueObservedRederivation(); err != nil {
-			return err
-		}
-		if last {
-			n, err := ds.reconcileEmbeddings(ctx, tx, t.now)
-			if err != nil {
-				return err
-			}
-			queued = n
-			if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
-				return fmt.Errorf("clear the import-progress marker: %w", err)
-			}
-			if _, err := t.exec(`DELETE FROM archive_takes WHERE repository_id = $1`, ds.info.ID); err != nil {
-				return fmt.Errorf("end the take the import carried out: %w", err)
-			}
-		}
-		// No token-cache fence (tokencache.go): a replay commits only where
-		// nothing is served from the cache, at the boot before the server
-		// listens or at a creation holding the repository's open slot, which
-		// replays nothing. The repository's entries go after all, so the
-		// claim costs nothing if it is ever wrong.
-		if err := tx.Commit(); err != nil {
-			return err
-		}
-		ds.svc.tokens.forget(ds.info.ID)
-		return nil
+		return t, t.rebuild(&report)
 	}
-	if err := replay(false); err != nil {
+	if _, err := replay(); err != nil {
 		return fmt.Errorf("substrate/engine: import: first fold: %w", err)
 	}
-	if err := ds.importFault(importAfterFirstFold); err != nil {
+	if err := ds.importFault(refoldAfterFirstReplay); err != nil {
 		return err
 	}
-	if err := ds.loadDeclarationsForReplay(ctx, ds.db); err != nil {
+	if err := ds.loadDeclarationsForReplay(ctx, tx); err != nil {
 		return err
 	}
-	if err := replay(true); err != nil {
+	t, err := replay()
+	if err != nil {
 		return fmt.Errorf("substrate/engine: import: second fold: %w", err)
 	}
+	if _, err := t.queueObservedRederivation(); err != nil {
+		return err
+	}
+	queued, err := ds.reconcileEmbeddings(ctx, tx, t.now)
+	if err != nil {
+		return err
+	}
+	if err := ds.importFault(refoldBeforeCommit); err != nil {
+		return err
+	}
+	if _, err := t.exec(`DELETE FROM import_progress`); err != nil {
+		return fmt.Errorf("clear the import-progress marker: %w", err)
+	}
+	if _, err := t.exec(`DELETE FROM archive_takes WHERE repository_id = $1`, ds.info.ID); err != nil {
+		return fmt.Errorf("end the take the import carried out: %w", err)
+	}
+	// No token-cache fence (tokencache.go): a replay commits only where
+	// nothing is served from the cache, at the boot before the server
+	// listens or at a creation holding the repository's open slot, which
+	// replays nothing. The repository's entries go after all, so the
+	// claim costs nothing if it is ever wrong.
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	ds.svc.tokens.forget(ds.info.ID)
+	ds.svc.analyzeFold(ctx, ds.scope.Repository)
 	if queued > 0 {
 		ds.svc.log.Info("substrate: import queued the repository's embeddable properties for the drain",
 			"repository", ds.scope.Repository, "queued", queued)

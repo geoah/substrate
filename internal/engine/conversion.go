@@ -406,6 +406,9 @@ func (ds *dataset) convertTableTo(ctx context.Context, to int) (bool, error) {
 // returns how many it changed. A step may not move a line's seq or txn.
 func (ds *dataset) walkConversionStep(ctx context.Context, t *txn, step conversionStep, pass conversionPass, head, done int64, prog *progress) (int64, error) {
 	var rewritten int64
+	if err := t.planEveryStatement(); err != nil {
+		return 0, err
+	}
 	for after := int64(0); after < head; {
 		page, err := scanChecksumPage(ctx, t.tx, after, rebuildBatch)
 		if err != nil {

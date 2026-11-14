@@ -180,6 +180,14 @@ type options struct {
 	// rebuildBatch, so a small history spans more than one batch. The seams
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
+	// replayPage and replayEnd run after each page of a replay and at its
+	// end, inside its transaction (seams.go WithTestReplay). Tests only.
+	replayPage func(seq int64, tx *sql.Tx)
+	replayEnd  func(tx *sql.Tx)
+	replaySQL  func(sqlText string)
+	// statisticsLockTimeout replaces the bound on the reset's and the
+	// ANALYZE's wait for a lock (seams.go WithTestStatisticsLockTimeout).
+	statisticsLockTimeout time.Duration
 	// beforeDirectories runs between the keying's rows and its directories.
 	// Tests only.
 	beforeDirectories func(s *service)
@@ -836,6 +844,16 @@ type service struct {
 	// testImportFault and testImportBatch are the options' import seams
 	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
+	// testReplayPage and testReplayEnd are options.replayPage and replayEnd.
+	testReplayPage func(seq int64, tx *sql.Tx)
+	testReplayEnd  func(tx *sql.Tx)
+	testReplaySQL  func(sqlText string)
+	// statisticsLockTimeout bounds the reset's and the ANALYZE's wait for a
+	// table's lock (rebuild.go statisticsStatement), and statsReset is every
+	// fold table this process has reset before a replay, under statsMu.
+	statisticsLockTimeout time.Duration
+	statsMu               sync.Mutex
+	statsReset            map[string]bool
 	// testBeforeDirectories is options.beforeDirectories.
 	testBeforeDirectories func(s *service)
 	testImportBatch       int
@@ -1148,6 +1166,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		opening:          map[string]chan struct{}{},
 
 		testImportFault:       o.importFault,
+		testReplayPage:        o.replayPage,
+		testReplayEnd:         o.replayEnd,
+		testReplaySQL:         o.replaySQL,
+		statisticsLockTimeout: cmp.Or(o.statisticsLockTimeout, statisticsLockTimeout),
+		statsReset:            map[string]bool{},
 		testBeforeDirectories: o.beforeDirectories,
 		testImportBatch:       o.importBatch,
 		testEraseFault:        o.eraseFault,
