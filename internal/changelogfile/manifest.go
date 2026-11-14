@@ -122,6 +122,41 @@ type Manifest struct {
 	// before the archive carried them, and in an export, all but the person
 	// who took it.
 	Identities []ManifestIdentity
+	// RepositoryMigrations is the repository's ledger of repository
+	// migrations as of Head, in version order: what its data has been
+	// through. A restore records them as run, so its first open runs only
+	// those the repository had not. Absent in a manifest written before the
+	// archive carried it, whose restore runs them all.
+	RepositoryMigrations []RepositoryMigration
+}
+
+// RepositoryMigration is one row of a repository's ledger of repository
+// migrations: the migration's version and name, and when it ran, where it
+// first ran, which a restore keeps.
+type RepositoryMigration struct {
+	Version   int       `json:"version"`
+	Name      string    `json:"name"`
+	AppliedAt time.Time `json:"appliedAt"`
+}
+
+// reMigrationName is a repository migration's name as its file spells it.
+var reMigrationName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// checkRepositoryMigrations refuses a ledger a restore could not record: a
+// version below 1 or not above the one before it, a name that is not one,
+// or no time.
+func checkRepositoryMigrations(rows []RepositoryMigration) error {
+	for i, r := range rows {
+		switch {
+		case r.Version < 1 || (i > 0 && r.Version <= rows[i-1].Version):
+			return fmt.Errorf("%w: repository migration %d is not the next of the ledger", ErrManifestFormat, r.Version)
+		case !reMigrationName.MatchString(r.Name):
+			return fmt.Errorf("%w: repository migration %d is named %q", ErrManifestFormat, r.Version, r.Name)
+		case r.AppliedAt.IsZero():
+			return fmt.Errorf("%w: repository migration %d carries no time", ErrManifestFormat, r.Version)
+		}
+	}
+	return nil
 }
 
 // ManifestIdentity is one person's sign-in as the server's `identities` row
@@ -226,6 +261,8 @@ type manifestWire struct {
 	PendingBlobs []string           `json:"pendingBlobs,omitempty"`
 	Epoch        *int64             `json:"epoch,omitempty"`
 	Identities   []ManifestIdentity `json:"identities,omitempty"`
+	// RepositoryMigrations is written when the ledger holds a row.
+	RepositoryMigrations []RepositoryMigration `json:"repositoryMigrations,omitempty"`
 }
 
 // MarshalJSON renders the manifest in its file form.
@@ -249,7 +286,7 @@ func (m Manifest) MarshalJSON() ([]byte, error) {
 		archive, pass := m.Archive, m.Pass
 		w.Archive, w.Pass = &archive, &pass
 		w.Pieces, w.Sealed, w.Spool, w.MissingBlobs, w.PendingBlobs = m.Pieces, m.Sealed, m.Spool, m.MissingBlobs, m.PendingBlobs
-		w.Identities = m.Identities
+		w.Identities, w.RepositoryMigrations = m.Identities, m.RepositoryMigrations
 		epoch := m.Epoch
 		w.Epoch = &epoch
 	}
@@ -284,7 +321,8 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 	var headSum string
 	switch {
 	case w.Format != ManifestFormatArchive && (w.Archive != nil || w.Pass != nil || w.Head != nil || w.HeadSum != nil || w.Pieces != nil ||
-		w.Sealed != nil || w.Spool != nil || w.MissingBlobs != nil || w.PendingBlobs != nil || w.Epoch != nil || w.Identities != nil):
+		w.Sealed != nil || w.Spool != nil || w.MissingBlobs != nil || w.PendingBlobs != nil || w.Epoch != nil || w.Identities != nil ||
+		w.RepositoryMigrations != nil):
 		return fmt.Errorf("%w: a format-%d manifest carries nothing of an archive's", ErrManifestFormat, w.Format)
 	case w.Format == ManifestFormatArchive:
 		if w.Archive == nil || !ValidArchiveID(*w.Archive) || w.Pass == nil || !ValidPassID(*w.Pass) {
@@ -324,6 +362,9 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		if err := checkIdentities(w.Identities); err != nil {
 			return err
 		}
+		if err := checkRepositoryMigrations(w.RepositoryMigrations); err != nil {
+			return err
+		}
 	}
 	id := ""
 	if w.ID != nil {
@@ -339,7 +380,7 @@ func (m *Manifest) UnmarshalJSON(data []byte) error {
 		VocabularyDialect: w.VocabularyDialect, DEK: w.DEK,
 		DEKKeyID: w.DEKKeyID, Head: head, HeadSum: headSum,
 		Pieces: w.Pieces, Sealed: w.Sealed, Spool: w.Spool, MissingBlobs: w.MissingBlobs, PendingBlobs: w.PendingBlobs,
-		Identities: w.Identities,
+		Identities: w.Identities, RepositoryMigrations: w.RepositoryMigrations,
 	}
 	if w.Epoch != nil {
 		m.Epoch = *w.Epoch
@@ -391,6 +432,9 @@ func EncodeArchiveManifest(m Manifest) ([]byte, error) {
 		return nil, err
 	}
 	if err := checkIdentities(m.Identities); err != nil {
+		return nil, err
+	}
+	if err := checkRepositoryMigrations(m.RepositoryMigrations); err != nil {
 		return nil, err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")

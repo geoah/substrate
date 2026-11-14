@@ -210,6 +210,10 @@ type options struct {
 	// conversion replaces the conversion chain (conversion.go), so a test
 	// converts through a step no release carries. Tests only.
 	conversion []conversionStep
+	// repositoryMigrations replaces the repository migrations the binary
+	// carries (repomigrate.go), so a test boots as a binary of another
+	// release. Tests only.
+	repositoryMigrations []repositoryMigration
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
@@ -909,6 +913,9 @@ type service struct {
 	// binary's own, or a test's.
 	conversion []conversionStep
 	maxDialect int
+	// repoMigrations is the repository migrations this service carries and
+	// runs (repomigrate.go): the binary's own, or a test's.
+	repoMigrations []repositoryMigration
 	// testCommitFault is the options' commit seam (dataset.go commit).
 	// Tests only.
 	testCommitFault func(stage string) error
@@ -1271,6 +1278,10 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			return nil, fmt.Errorf("substrate/engine: the conversion chain: %w", err)
 		}
 		s.conversion, s.maxDialect = o.conversion, chainDialect(o.conversion)
+	}
+	s.repoMigrations = repositoryMigrations
+	if o.repositoryMigrations != nil {
+		s.repoMigrations = o.repositoryMigrations
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —

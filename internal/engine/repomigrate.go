@@ -33,10 +33,14 @@ package engine
 //     points as they stand, and its kind is recorded for the background pass
 //     to re-derive every row of it once the vocabulary has loaded
 //     (requestUnprojected), so a live store and a rebuilt one agree.
-//   - It is IDEMPOTENT. The ledger is the database's, and a repository
-//     directory imported into a fresh database carries its changelog and not
-//     the ledger, so every migration runs once more there and must find
-//     nothing to do.
+//   - It is IDEMPOTENT. The ledger is the database's, and it travels with the
+//     repository only in an archive's manifest (repositoryMigrations), which
+//     a restore, an import and a take record as run before the first open
+//     (repodir.go insertRestoredRow), so a restore runs nothing the
+//     repository had run. An archive written before the manifest carried
+//     the ledger, and a 0.x directory, which never does, run every
+//     migration once more over what they bring, which must find nothing to
+//     do where the repository had already run it.
 //   - It reads through its transaction (t), never through the dataset's pool
 //     handle. Every repository shares one connection pool, and a read on it
 //     while the transaction holds a connection is a second acquisition that
@@ -44,14 +48,14 @@ package engine
 //     are frozen, which is why the runner gives the transaction a connection
 //     of its own (runRepositoryMigrations).
 //
-// THE IMPORT PATH IS THE ONE THAT NEEDS THIS MOST. A repository directory
-// restored under a fresh database (repodir.go importRepositoryDir) is folded
-// from its segment files at boot, under whatever of its stored closure this
-// binary admits, and the migrations then run at its first open, over rows the
-// source installation may never have migrated: a directory carried over from
-// an older substrate, or from one that never opened it again. The rewrite
-// lands in THIS installation's changelog for the repository, and the ledger
-// row in this database.
+// THE IMPORT PATH IS THE ONE THAT NEEDS THIS MOST. A repository restored
+// under a fresh database (repodir.go restoreRow) is folded from its history
+// at boot, under whatever of its stored closure this binary admits, and the
+// migrations its ledger lacks then run at its first open, over rows the
+// source installation never migrated: an archive written before a migration
+// existed or before the manifest carried the ledger, or a 0.x directory. The
+// rewrite lands in THIS installation's history for the repository, and the
+// ledger row in this database.
 
 import (
 	"context"
@@ -123,11 +127,11 @@ func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := checkRepositoryMigrations(ds.info.ID, repositoryMigrations, applied); err != nil {
+	if err := checkRepositoryMigrations(ds.info.ID, ds.svc.repoMigrations, applied); err != nil {
 		return err
 	}
 	var pending []repositoryMigration
-	for _, m := range repositoryMigrations {
+	for _, m := range ds.svc.repoMigrations {
 		if _, ok := applied[m.Version]; !ok {
 			pending = append(pending, m)
 		}

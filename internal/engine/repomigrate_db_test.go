@@ -382,10 +382,11 @@ func TestAReadOnlyOpenRefusesARepositoryWithAPendingMigration(t *testing.T) {
 	}
 }
 
-// THE IMPORT PATH. A repository directory from another installation is folded
-// at boot under whatever of its closure this binary admits, and its ledger
-// stays behind in the source database, so the migration runs at the imported
-// repository's first open, over rows the source never migrated. The refs
+// THE IMPORT PATH. A repository's archive from another installation is folded
+// at boot under whatever of its closure this binary admits, and a source that
+// never ran the migration names none in its archive's ledger, so the
+// migration runs at the restored repository's first open, over rows the
+// source never migrated. The refs
 // index and the search bands were derived during the import under a registry
 // that could not admit the bare closure, so the migration re-derives them: the
 // imported repository's projections equal the source's, and a search finds
@@ -393,7 +394,7 @@ func TestAReadOnlyOpenRefusesARepositoryWithAPendingMigration(t *testing.T) {
 func TestRepositoryMigrationRunsOnAnImportedDirectory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, _ := newDatasetWithDSN(t)
+	svc, ds, dsn := newDatasetWithDSN(t)
 	repo := testdb.Repository(t)
 	docs := []map[string]any{
 		vocabulary.PackageManifest(rmPackage, 1),
@@ -436,6 +437,9 @@ func TestRepositoryMigrationRunsOnAnImportedDirectory(t *testing.T) {
 	}
 	id := repositoryIDOf(t, ds)
 	root := engine.DataRootOf(svc)
+	// The source never ran the migrations, so the archive its last pass
+	// writes names none.
+	rmClearLedger(t, dsn, repo)
 	_ = svc.Close()
 
 	// The copy, under a database that has never seen it.

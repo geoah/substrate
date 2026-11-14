@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -123,6 +124,10 @@ func archiveManifestFixture(t *testing.T) Manifest {
 		Spool:        []string{SpoolObjectName(SpoolFileName(1, "fire1"), pass)},
 		MissingBlobs: []string{"blob-sha256-" + strings.Repeat("a", 64)},
 		PendingBlobs: []string{"blob-sha256-" + strings.Repeat("b", 64)},
+		RepositoryMigrations: []RepositoryMigration{
+			{Version: 1, Name: "qualify_bare_declaration_names", AppliedAt: time.Date(2026, 11, 13, 9, 0, 1, 0, time.UTC)},
+			{Version: 7, Name: "start_paged_drains_over", AppliedAt: time.Date(2026, 11, 13, 9, 0, 2, 0, time.UTC)},
+		},
 	}
 }
 
@@ -138,7 +143,7 @@ func TestArchiveManifest(t *testing.T) {
 	}
 	if back.Head != 3 || back.HeadSum != m.HeadSum || back.ID != testRepoID || back.Epoch != 9 || back.Archive != m.Archive || back.Pass != m.Pass ||
 		len(back.Pieces) != 2 || back.Sealed["secret:abc"] != m.Sealed["secret:abc"] || len(back.Spool) != 1 ||
-		len(back.MissingBlobs) != 1 || len(back.PendingBlobs) != 1 {
+		len(back.MissingBlobs) != 1 || len(back.PendingBlobs) != 1 || !slices.Equal(back.RepositoryMigrations, m.RepositoryMigrations) {
 		t.Fatalf("decoded %+v", back)
 	}
 	chain, err := back.Chain()
@@ -160,20 +165,31 @@ func TestArchiveManifest(t *testing.T) {
 	gap.Pieces = []ArchivePiece{m.Pieces[1]}
 	otherDialect := m
 	otherDialect.Pieces = []ArchivePiece{m.Pieces[0], {Name: strings.Replace(m.Pieces[1].Name, "/1/", "/2/", 1), Sum: m.Pieces[1].Sum}}
-	for name, bad := range map[string]Manifest{"pieces short of the head": short, "a gap at seq 1": gap, "a piece in another dialect": otherDialect} {
+	unordered := m
+	unordered.RepositoryMigrations = []RepositoryMigration{m.RepositoryMigrations[1], m.RepositoryMigrations[0]}
+	untimed := m
+	untimed.RepositoryMigrations = []RepositoryMigration{{Version: 1, Name: "qualify_bare_declaration_names"}}
+	for name, bad := range map[string]Manifest{
+		"pieces short of the head": short, "a gap at seq 1": gap, "a piece in another dialect": otherDialect,
+		"migrations out of order": unordered, "a migration with no time": untimed,
+	} {
 		if _, err := EncodeArchiveManifest(bad); !errors.Is(err, ErrManifestFormat) {
 			t.Errorf("%s: written (%v)", name, err)
 		}
 	}
 	for name, raw := range map[string]string{
-		"no head":                        strings.Replace(string(data), `"head": 3,`, ``, 1),
-		"a head, no sum":                 strings.Replace(string(data), `"headSum": "`+m.HeadSum+`"`, `"headSum": ""`, 1),
-		"an unknown key":                 strings.Replace(string(data), `"head": 3`, `"head": 3, "tail": 1`, 1),
-		"format 2, a head":               strings.Replace(string(data), `"format": 3`, `"format": 2`, 1),
-		"no epoch":                       strings.Replace(string(data), `"epoch": 9`, `"epoch": 0`, 1),
-		"no archive":                     strings.Replace(string(data), `"archive": "`+m.Archive+`",`, ``, 1),
-		"a sealed object of another ref": strings.Replace(string(data), `"secret:abc": "sealed/secret-abc.`, `"secret:abc": "sealed/secret-abd.`, 1),
-		"a blob with a dot":              strings.Replace(string(data), strings.Repeat("a", 64), strings.Repeat("a", 63)+".", 1),
+		"no head":                         strings.Replace(string(data), `"head": 3,`, ``, 1),
+		"a head, no sum":                  strings.Replace(string(data), `"headSum": "`+m.HeadSum+`"`, `"headSum": ""`, 1),
+		"an unknown key":                  strings.Replace(string(data), `"head": 3`, `"head": 3, "tail": 1`, 1),
+		"format 2, a head":                strings.Replace(string(data), `"format": 3`, `"format": 2`, 1),
+		"no epoch":                        strings.Replace(string(data), `"epoch": 9`, `"epoch": 0`, 1),
+		"no archive":                      strings.Replace(string(data), `"archive": "`+m.Archive+`",`, ``, 1),
+		"a sealed object of another ref":  strings.Replace(string(data), `"secret:abc": "sealed/secret-abc.`, `"secret:abc": "sealed/secret-abd.`, 1),
+		"a blob with a dot":               strings.Replace(string(data), strings.Repeat("a", 64), strings.Repeat("a", 63)+".", 1),
+		"migrations out of order":         strings.Replace(string(data), `"version": 7`, `"version": 1`, 1),
+		"a migration with no name":        strings.Replace(string(data), `"start_paged_drains_over"`, `""`, 1),
+		"a migration named in capitals":   strings.Replace(string(data), `"start_paged_drains_over"`, `"Start_Paged"`, 1),
+		"a migration with an unknown key": strings.Replace(string(data), `"version": 7`, `"version": 7, "by": "x"`, 1),
 	} {
 		if _, err := DecodeArchiveManifest([]byte(raw), testRepoID); err == nil {
 			t.Errorf("%s: accepted", name)

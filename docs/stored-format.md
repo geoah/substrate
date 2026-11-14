@@ -25,8 +25,8 @@ Three rules hold everywhere below:
   the two dialects only go up, and a server refuses an archive that names a
   number above its own.
 - **The test vectors are the format written down**
-  (`internal/changelogfile/testdata/vectors.json`). A vector never changes once
-  it is there.
+  (`internal/changelogfile/testdata/vectors.json`): lines, numbers and a
+  manifest. A vector never changes once it is there.
 
 ## The archive
 
@@ -106,15 +106,19 @@ not a recovery point.
 | `pendingBlobs` | The digests of the blobs the records at `head` hold that the pass had not copied yet: a pass copies a bounded amount, 1 GiB, and publishes. Absent when none is. |
 | `epoch` | The manifest's place among its archive's manifests, the number its name carries; 1 or more. |
 | `identities` | The sign-in of each person who may open the repository, sorted by `id`: `id`, `name`, the person's data key wrapped under the host's credential key (`dek`, base64, with `dekKeyId`), the password's hash (`hash`) and the second factor (`totp`, absent for a person without one) sealed under that key and bound to the id, and `createdAt` and `updatedAt`, which moves when the factors change. An export carries the person who took it alone. Absent when there is none ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). |
+| `repositoryMigrations` | The [repository migrations](operations.md#upgrading-the-binary) the repository had run as of `head`, in version order: each one's `version`, its `name` and when it first ran, `appliedAt`, RFC 3339. A restore records them as run, so its first open runs only those the list lacks. A list naming a migration the binary does not carry is refused as a newer binary's, and one naming a migration under another name, or skipping one below its highest, as a ledger that no longer says what ran. Absent when none had run, and in a manifest whose `changelogDialect` is below 8, the first whose archive could carry it; one that names it there is refused as malformed ([decision 0321](decisions/0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md)). |
 
 The archive is complete at its `head` only when both `missingBlobs` and
 `pendingBlobs` are absent. A blob is selected by its digest: any object under
 `blobs/<digest>.` holds its bytes, held to the digest as it is read.
 
-`identities` joined format 3 without a new format number, because no release
-had carried format 3 before it did; a build of `main` from before it refuses
-a manifest that has the key, which matters only when going back from one
-build of `main` to an earlier one. A manifest without it, which is every
+`identities` and `repositoryMigrations` joined format 3 without a new format
+number, because no release had carried format 3 before they did; a build of
+`main` from before one of them refuses a manifest that has the key, which
+matters only when going back from one build of `main` to an earlier one. A
+manifest without `repositoryMigrations`, which is every archive written
+before it, restores as one always did: every repository migration runs
+again at the first open. A manifest without `identities`, which is every
 archive written before it, still holds the sign-in record of a release before
 identities among its history, and the boot makes the person from it, with the
 same password and second factor, as it does for a repository upgraded in place

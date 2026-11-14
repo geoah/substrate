@@ -423,8 +423,14 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 // boot import folds the directory into tables that hold nothing.
 func importIntoEmptyDatabase(t *testing.T, ds *dataset) *dataset {
 	t.Helper()
+	return importArchiveRoot(t, archiveCopyOf(t, ds))
+}
+
+// importArchiveRoot boots a server over an empty database on root's archive
+// and opens the repository it restores.
+func importArchiveRoot(t *testing.T, root string) *dataset {
+	t.Helper()
 	ctx := context.Background()
-	root := archiveCopyOf(t, ds)
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey),
 		WithKindsFS(SeedKinds))
 	if err != nil {
