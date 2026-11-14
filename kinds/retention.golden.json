@@ -151,6 +151,7 @@
   "substrate.reamde.dev/core/recordpatchpolicy": "all",
   "substrate.reamde.dev/core/recordpatchrequest": "all",
   "substrate.reamde.dev/core/recordsplit": "all",
+  "substrate.reamde.dev/core/release": "all",
   "substrate.reamde.dev/core/repository": "all",
   "substrate.reamde.dev/core/retention": "all",
   "substrate.reamde.dev/core/role": "all",

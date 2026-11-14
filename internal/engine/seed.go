@@ -318,7 +318,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// hold the identical registry.
 	ds.mu.Lock()
 	ds.reg = vocabulary.NewRegistry()
-	ds.reg.SetNames(ds.names)
+	ds.reg.SetNames(ds.answersTo)
 	ds.mu.Unlock()
 	if err := ds.loadStoredVocabulary(ctx); err != nil {
 		return err

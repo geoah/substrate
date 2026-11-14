@@ -145,6 +145,15 @@ type vocabularyBatch struct {
 	// changes, when set, receives the batch's committed changelog entries:
 	// the agent vocabulary tool stamps them on its tool row, as `write` does.
 	changes *[]changeEntry
+	// publish is a PUBLISH's move (publish.go, decision record 0289): each
+	// kind of the package in `~` to the kind of the same name under the
+	// authority it is published as. The batch carries their rows (move.go)
+	// where every other door refuses a move, and publishTo, the package it
+	// creates under that authority, is the one new package outside `~` a
+	// repository's hand writes. onMoves hears the planned move.
+	publish   map[string]string
+	publishTo string
+	onMoves   func(movesPlanned)
 }
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
@@ -706,6 +715,26 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// holds, so the hash a preview handed out is recomputed over the same
 		// records or refused: the work ceiling, then the confirmation a lossy
 		// plan needs (convert.go, decision 0067).
+		// A publish's move, planned under the locks this transaction holds:
+		// the rows it carries, in the order they are written, and what the
+		// store refuses it for (move.go).
+		if len(st.moves) > 0 {
+			planned, lines, err := planMoves(t, candidate, st.moves)
+			if err != nil {
+				return err
+			}
+			if lines = append(lines, moveGuards(current, carrying(planned.moves))...); len(lines) > 0 {
+				return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(lines, "; "))
+			}
+			grants, err := countGrants(t, movedTargets(st.moves))
+			if err != nil {
+				return err
+			}
+			st.conversions.moves, st.conversions.grantPatches = planned, grants
+			if b.onMoves != nil {
+				b.onMoves(planned)
+			}
+		}
 		plan, err := st.conversions.wire(t, ds.svc.conversionCeiling, true)
 		if err != nil {
 			return err
@@ -854,7 +883,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
-		final, err := droppedTypeGuards(t, st.droppedTypes)
+		final, err := droppedTypeGuards(t, append(append([]string(nil), st.droppedTypes...), st.carried...))
 		if err != nil {
 			return err
 		}
@@ -910,6 +939,10 @@ type vocabularyStage struct {
 	// (fold.go parkedSet.without), never nil.
 	parked       *parkedSet
 	droppedTypes []string
+	// carried are the kinds a publish removes and carries the rows of, and
+	// moves the move that carries them (publish.go).
+	carried []string
+	moves   []kindMove
 	// strandedMappings names the mappings another package declares FROM a kind
 	// this batch removes (record 49): uninstalling Linear while the
 	// repository's own mapping reads `linear/issue` is refused until the
@@ -1039,7 +1072,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 					}
 				}
 			}
-			if !ds.svc.foreignPackages {
+			if !ds.svc.foreignPackages && g != b.publishTo {
 				if err := authorizeNewPackage(*actor, stored, ds.name(), g); err != nil {
 					return nil, err
 				}
@@ -1156,6 +1189,29 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		}
 	}
 	sort.Strings(droppedTypes)
+	// A publish carries the rows of the kinds it removes, so they are counted
+	// after the move, by the dropped-kind count that decides
+	// (applyVocabularyBatchLocked), and not before it.
+	var carried []string
+	var moves []kindMove
+	if len(b.publish) > 0 {
+		var kept []string
+		for _, k := range droppedTypes {
+			if b.publish[k] != "" {
+				carried = append(carried, k)
+			} else {
+				kept = append(kept, k)
+			}
+		}
+		droppedTypes = kept
+		for _, from := range sortedKeys(b.publish) {
+			to, ok := candidate.ByIdentity(b.publish[from])
+			if !ok {
+				return nil, fmt.Errorf("substrate/engine: publish: %s does not declare %s", b.publishTo, b.publish[from])
+			}
+			moves = append(moves, kindMove{from: from, to: to})
+		}
+	}
 
 	// An index the engine cannot build is refused here, where the upgrade
 	// preview looks too, so the preview never admits a closure the install
@@ -1194,7 +1250,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// the looser contract stands — the dispatcher skips an unresolvable
 		// callable loudly.
 		droppedTypes:     droppedTypes,
-		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
+		carried:          carried,
+		moves:            moves,
+		strandedMappings: strandedMappingGuards(candidate, append(append([]string(nil), droppedTypes...), carried...)),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojections:    reprojections,
@@ -1203,7 +1261,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
-		narrowings:   classifyNarrowings(current, candidate, touched, nil),
+		narrowings:   classifyNarrowings(current, candidate, touched, b.publish),
 		moveRefusals: moveRefusals,
 		// A rename, a backfill, a remap and a null are neither: the
 		// transaction rewrites the live records (convert.go), and what refuses

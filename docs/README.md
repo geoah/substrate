@@ -79,6 +79,8 @@ API call that completes a task.
 - [Applets](applets.md) — small apps over your records that Moss builds when
   you ask, drawn as A2UI screens the substrate runs; experimental
 - [The bundles catalog](bundles-catalog.md)
+- [Publishing a package](publishing.md): one of your packages under a domain
+  you control, served for another server to install
 
 ## Tools and operations
 

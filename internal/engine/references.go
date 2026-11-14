@@ -260,7 +260,7 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	}
 	// A declaration's id is its identity, so a pointer at one under the
 	// repository's name points at the `~` one (decision record 0259).
-	target := eref{Kind: rt.Identity, ID: vocabulary.LocalizeID(rt.Identity, id, t.ds.names()...)}
+	target := eref{Kind: rt.Identity, ID: vocabulary.LocalizeID(rt.Identity, id, t.names()...)}
 	if !referenceAdmits(t.declarations(), p, rt) {
 		hopped, err := t.subjectHop(p, target, rt)
 		if err != nil {

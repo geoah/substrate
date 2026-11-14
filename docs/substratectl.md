@@ -26,8 +26,8 @@ substratectl export                       # the recovery export, the repository'
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
 `register`, `login`, `logout`, `rename`, `token`, `trigger`, `sync`, `function`, `bundle`,
-`takeover`, `catalog`, `add` (with its aliases `install` and `import`) and `export`. It needs a server and a token,
-and it can run anywhere.
+`takeover`, `catalog`, `add` (with its aliases `install` and `import`), `publish --as`,
+`release` and `export`. It needs a server and a token, and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
@@ -594,6 +594,41 @@ one-time proof, minted when none is pending. `substratectl domain verify`
 runs the check; it prints `verified` and the time, or the reason the check
 failed, and exits non-zero until the record passes, so a script can wait on
 DNS propagation. Both take `-o json` and `-o yaml`.
+
+## Publishing a package of your own
+
+```sh
+substratectl publish '~/recipes' --as ada.example.com        # the plan; changes nothing
+substratectl publish '~/recipes' --as ada.example.com --yes  # publish
+substratectl publish ada.example.com/recipes --release       # the next release
+```
+
+`substratectl publish <~/package> --as <authority>` publishes one of the
+repository's own packages under an authority whose DNS you control, so that
+another substrate can install it. Without `--yes` it prints the server's plan
+and changes nothing: the name the package takes, the kinds that move to it
+and how many records move with them, how many records elsewhere have a
+reference repointed, your other packages whose declarations follow, what
+blocks it, and the TXT record to publish at `_substrate.<authority>`, with
+whether DNS shows it yet. It exits 0 either way. With `--yes` the server
+publishes, once DNS shows the record and nothing blocks it, and the command
+prints the first release; otherwise it prints the server's refusal and exits
+non-zero. A publish is permanent: the package leaves `~` for good and keeps
+the published name, and it cannot be unpublished. Quote `~/package`, or the
+shell expands the `~`; an argument that arrives as `$HOME/<package>` is read
+as `~/<package>` again.
+
+`substratectl publish <authority>/<package> --release` writes the next
+release of a package the repository publishes: its declarations as they are
+now, at its next version, which substrates that installed it can take as an
+update. A package with nothing changed since its last release is refused, and
+so is one whose authority's `_substrate` record no longer names this
+repository's document. `substratectl release` is another command, the marks':
+it hands a record's pinned values back to sync, and each command's help names
+the other. `--as` and `--release` take `-o json` and `-o yaml`. `--as`,
+`--release` and `--check` are exclusive: `--check`, below, is for a package whose authority document
+you host yourself. [Publishing a package](publishing.md) says what a publish
+does and what a person sees.
 
 ## Check a package release
 

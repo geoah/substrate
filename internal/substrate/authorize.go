@@ -238,6 +238,9 @@ type AuthorizationPackagePublisher struct {
 	// Digest is the SHA-256 of the closure the row would install, which
 	// binds the approval to that closure (appsetup.Moved).
 	Digest string `json:"digest,omitempty"`
+	// MovedTo is the authority the publisher's document says it moved to
+	// (decision record 0293): shown, never followed.
+	MovedTo string `json:"movedTo,omitempty"`
 }
 
 // AuthorizationPackageStep is one package a requested one requires, with

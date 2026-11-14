@@ -1045,15 +1045,51 @@ func (r *Registry) Home() string {
 	return ""
 }
 
-// Localize is ref with this registry's repository names folded into `~`.
-func (r *Registry) Localize(ref string) string { return LocalizeRef(ref, r.Names()...) }
+// Localize is ref with this registry's repository names folded into `~`,
+// each but a name a package here is published under (Spellings).
+func (r *Registry) Localize(ref string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.localizeHeld(ref)
+}
 
 // localizeHeld is Localize for a caller already holding r.mu.
 func (r *Registry) localizeHeld(ref string) string {
 	if r.names == nil {
 		return ref
 	}
-	return LocalizeRef(ref, r.names()...)
+	return LocalizeRef(ref, r.spellingsHeld(r.names())...)
+}
+
+// Spellings are those of names that spell `~` in this registry: every
+// one but a name a package here is published under (decision record 0289).
+// A repository that publishes under its own name keeps that name for the
+// published package, so `ada.example.com/recipes/recipe` names the published
+// kind and never `~/recipes/recipe`; its other packages are written `~`.
+func (r *Registry) Spellings(names ...string) []string {
+	if r == nil {
+		return names
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.spellingsHeld(names)
+}
+
+func (r *Registry) spellingsHeld(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		published := false
+		for _, id := range r.order {
+			if g := r.packages[id]; g.Authority == n && !g.IsAuthority() {
+				published = true
+				break
+			}
+		}
+		if !published {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // NewRegistry returns an empty registry.

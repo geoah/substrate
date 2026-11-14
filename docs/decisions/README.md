@@ -440,7 +440,11 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
 | [0287](0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md) | A repository's name is an alias, and a former name holds for 90 days | accepted |
 | [0288](0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md) | A short name is completed under the configured public host, and a local name is for development | accepted |
+| [0289](0289-a-repository-publishes-a-package-by-moving-it-out-of-the-local-namespace-to-an-authority-it-proves.md) | A repository publishes a package by moving it out of the local namespace to an authority it proves | accepted |
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
+| [0291](0291-a-repositorys-server-serves-what-it-publishes-and-the-authoritys-record-naming-that-document-is-the-proof.md) | A repository's server serves what it publishes, and the authority's record naming that document is the proof | accepted |
+| [0292](0292-the-projects-name-is-permanent-and-its-packages-come-from-the-binary.md) | The project's name is permanent, and its packages come from the binary | accepted |
+| [0293](0293-a-publisher-that-moves-leaves-a-pointer-the-server-shows-and-never-follows.md) | A publisher that moves leaves a pointer the server shows and never follows | accepted |
 | [0294](0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md) | Every route is public, for an admin, or held to its rules | accepted |
 | [0295](0295-a-persons-token-is-held-to-that-persons-roles.md) | A person's token is held to that person's roles | accepted |
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |

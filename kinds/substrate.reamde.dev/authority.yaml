@@ -2,9 +2,13 @@
 # packages beneath it and declares no members of its own: the version, the
 # ownership and the quarantine all sit on the PACKAGE (decision record 0047).
 #
-# The name is a PLACEHOLDER for a name the publisher controls; a repository may
-# never claim an authority under it (engine validRepositoryAuthority), so
-# nothing a user declares can be mistaken for shipped vocabulary.
+# The name is the project's and it is permanent (decision record 0292): every
+# repository holds records of kinds under it, so it never changes. Its domain
+# is held by the project's maintainer, who keeps its DNS. A server takes every
+# package under it that its binary ships from the binary, whatever the name's
+# DNS says; a repository may never claim a name under it, as its own or as a
+# publisher (engine validRepositoryAuthority and publish.go), so nothing a
+# user declares can be mistaken for shipped vocabulary.
 kind: substrate.reamde.dev/core/authority
 metadata:
   id: substrate.reamde.dev

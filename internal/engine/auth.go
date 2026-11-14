@@ -1127,7 +1127,7 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 		for i, raw := range in.Scopes {
 			local[i] = raw
 			if s, err := scope.Parse(raw); err == nil {
-				local[i] = s.Localize(t.ds.names()...).String()
+				local[i] = s.Localize(t.names()...).String()
 			}
 		}
 		in.Scopes = local

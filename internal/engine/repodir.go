@@ -352,7 +352,7 @@ func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 		reg: vocabulary.NewRegistry(), watch: newBroadcaster(),
 		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
-	ds.reg.SetNames(ds.names)
+	ds.reg.SetNames(ds.answersTo)
 	return ds
 }
 

@@ -153,7 +153,7 @@ func scopeKind(kind string, registry map[string]substrate.KindInfo) scope.Kind {
 // sent, so the grant, which names the repository's own kinds under `~`, is
 // asked about the kind the engine would resolve (decision record 0259).
 func (s *scopedDataset) local(ref string) string {
-	return vocabulary.LocalizeRef(ref, s.inner.Repository().Names()...)
+	return vocabulary.LocalizeRef(ref, s.inner.Repository().LocalNames()...)
 }
 
 // reads reports whether the grant reads kind; a kind the registry does not
@@ -1434,6 +1434,29 @@ func (s *scopedDataset) admitBlobs(ctx context.Context) error {
 
 func (s *scopedDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errScope("the export")
+}
+
+// Publishing is the owner's decision (decision record 0289): an app's token
+// neither plans nor runs it. What the repository publishes is public, so the
+// releases read through.
+func (s *scopedDataset) PlanPublish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errScope("publishing a package")
+}
+
+func (s *scopedDataset) Publish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errScope("publishing a package")
+}
+
+func (s *scopedDataset) ReleasePackage(context.Context, substrate.Actor, string) (substrate.Release, error) {
+	return substrate.Release{}, errScope("releasing a package")
+}
+
+func (s *scopedDataset) Releases(ctx context.Context, authority string) ([]substrate.Release, error) {
+	return s.inner.Releases(ctx, authority)
+}
+
+func (s *scopedDataset) ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error) {
+	return s.inner.ReleaseClosure(ctx, pkg, version)
 }
 
 func (s *scopedDataset) DomainState(context.Context) (substrate.DomainState, error) {

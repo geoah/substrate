@@ -446,7 +446,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	// A request is held to the repository that claimed it by its id, which a
 	// rename does not move; the scopes fold every name it answers to.
-	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().Names()
+	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().LocalNames()
 	id := pathParam(r, "request")
 	req, err := h.authz.Claim(id, owner)
 	if err != nil {
@@ -517,7 +517,7 @@ type pageReads struct {
 
 // readForPage reads what the approval page's view of req needs of ds.
 func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Request) (pageReads, error) {
-	out := pageReads{names: ds.Repository().Names()}
+	out := pageReads{names: ds.Repository().LocalNames()}
 	var err error
 	if out.kinds, err = ds.Kinds(ctx); err != nil {
 		return out, err
@@ -759,7 +759,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ds := DatasetFrom(ctx)
-	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().Names()
+	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().LocalNames()
 	id := pathParam(r, "request")
 	actor := ActorFrom(ctx)
 	var selectedRows []substrate.AuthorizationSetup

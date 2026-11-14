@@ -1108,6 +1108,7 @@ them:
 | `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
 | `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
 | `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
+| `publishing` | `experimental` | Publishing one of the repository's own packages under an authority it proved: `POST /api/v1/packages/publish`, `POST /api/v1/packages/release` (a package's next release, not a record's `…/release`, which is the marks'), `GET /api/v1/packages/releases`, and the document and closures another server installs from under `/published/` ([publishing](publishing.md)). |
 
 Every entry lists the `rest` surface but two: `mcp` lists `mcp`, and
 `applets` lists both.

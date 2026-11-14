@@ -143,6 +143,7 @@ const WORDS = new Set([
   "recording",
   "recovery",
   "referral",
+  "release",
   "reminder",
   "report",
   "repository",

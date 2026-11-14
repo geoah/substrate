@@ -23,7 +23,10 @@ func (a *app) releaseCommand() *cobra.Command {
 		`Release pinned properties of a record: sync picks each value again among
 what its source records offer, at once. It works on a required property,
 which keeps its value where no source offers one, and it is recorded in the
-record's history.`)
+record's history.
+
+To write the next release of a package this repository publishes, use
+substratectl publish <authority>/<package> --release.`)
 }
 
 func (a *app) markCommand(action, short, long string) *cobra.Command {
