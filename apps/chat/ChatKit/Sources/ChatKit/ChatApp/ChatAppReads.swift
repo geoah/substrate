@@ -10,9 +10,10 @@ import SubstrateRuntime
 /// makes every kept part again and compares, which holds these lists to
 /// what the presenters read.
 extension ChatAppState {
-    /// Without what no part reads: the engine's own bookkeeping, and the
+    /// Without what no part reads: the engine's own bookkeeping, the
     /// drafts, which the tree carries from a conversation and never from
-    /// here.
+    /// here, and the list's own failure and its feed's reconnecting, which
+    /// the tree's top reads at every presentation and no kept part does.
     private var presented: ChatAppState {
         var state = self
         state.asks = []
@@ -33,6 +34,11 @@ extension ChatAppState {
         state.approvalsKnown = false
         state.leaving = false
         state.recoveryStarted = nil
+        state.listFailure = nil
+        state.feedReconnecting = false
+        state.renaming = [:]
+        state.agentsRevision = nil
+        state.continueUnserved = false
         return state
     }
 
@@ -53,7 +59,8 @@ extension ChatAppState {
         state.usage = []
         state.permission = nil
         state.route = nil
-        state.renameProblem = nil
+        state.renameFailure = nil
+        state.rowsFailed = [:]
         state.keyProblem = nil
         state.keySaved = Signal()
         state.answered = Signal()
@@ -67,10 +74,13 @@ extension ChatAppState {
 
     /// As one conversation's screen reads it: its thread's row and rows,
     /// the agents and what they run on, the cards and the owner's choices.
-    /// Of the transcripts, its own alone.
+    /// Of the transcripts, its own alone, and of the failures, a rename of
+    /// its thread and a read of its rows.
     func conversed(_ thread: String?) -> ChatAppState {
         var state = presented
         state.transcripts = thread.flatMap { id in transcripts[id].map { [id: $0] } } ?? [:]
+        state.renameFailure = renameFailure.flatMap { $0.thread == thread ? $0 : nil }
+        state.rowsFailed = thread.flatMap { id in rowsFailed[id].map { [id: $0] } } ?? [:]
         state.conversations = [:]
         state.scenes = [:]
         state.route = nil
@@ -90,6 +100,8 @@ extension ChatAppState {
         state.scenes = [:]
         state.cards = [:]
         state.route = nil
+        state.renameFailure = nil
+        state.rowsFailed = [:]
         state.seen = [:]
         state.chats = []
         state.automated = []
@@ -104,6 +116,8 @@ extension ChatAppState {
     var framed: ChatAppState {
         var state = presented
         state.transcripts = [:]
+        state.renameFailure = nil
+        state.rowsFailed = [:]
         state.cards = [:]
         state.guidance = Guidance()
         state.usage = []
