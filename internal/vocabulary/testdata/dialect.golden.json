@@ -48,6 +48,13 @@
       "tools",
       "toolsFrom"
     ],
+    "agentParamKeys": [
+      "engineGuidance",
+      "maxTokens",
+      "reasoningEffort",
+      "reasoningSummary",
+      "temperature"
+    ],
     "agentPermissionKeys": [
       "reads",
       "writes"
@@ -307,6 +314,10 @@
       "values",
       "writer"
     ],
+    "quantityBoundKeys": [
+      "unit",
+      "value"
+    ],
     "referencePropKeys": [
       "deprecated",
       "description",
@@ -328,6 +339,17 @@
       "type",
       "unique",
       "writer"
+    ],
+    "shippedRecordDataKeys": [
+      "properties"
+    ],
+    "shippedRecordKeys": [
+      "data",
+      "kind",
+      "metadata"
+    ],
+    "shippedRecordMetadataKeys": [
+      "id"
     ],
     "traitVariantKeys": [
       "name",
@@ -356,5 +378,12 @@
       "traits",
       "version"
     ]
+  },
+  "introducedAt": {
+    "packageDataKeys": {
+      "dialect": 3,
+      "interface": 3,
+      "stability": 3
+    }
   }
 }

@@ -84,11 +84,18 @@ type Bundle struct {
 	// dialect is the vocabulary dialect the closure's package header says it
 	// needs, 0 where it states none (decision 0268).
 	dialect int64
+	// needs is the dialect the keys of the closure's package need, 0 where
+	// every one is read by every dialect.
+	needs int64
 }
 
 // Dialect is the vocabulary dialect the closure's package header says it
 // needs, 0 where it states none: what a publisher lists beside the version.
 func (b *Bundle) Dialect() int64 { return b.dialect }
+
+// NeedsDialect is the dialect the keys of the closure's package need,
+// whatever its header states: the least a publisher may list beside it.
+func (b *Bundle) NeedsDialect() int64 { return b.needs }
 
 // Closure and ShippedRecord are the catalog's names for the two nested wire
 // shapes, so a caller reads catalog.Closure rather than the substrate

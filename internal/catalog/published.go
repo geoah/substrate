@@ -154,6 +154,12 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrNotPublished, id, err)
 	}
+	// A version listed below what its closure needs would send a server
+	// older than its keys to fetch it and stop on one, instead of passing it
+	// over to an older version. It is a broken release, refused as such.
+	if v.Dialect > 0 && int64(v.Dialect) < b.needs {
+		return nil, fmt.Errorf("%w: %s: version %d is listed at vocabulary dialect %d, and its closure needs dialect %d", ErrNotPublished, id, v.Version, v.Dialect, b.needs)
+	}
 	b.origin = &Origin{Authority: source.Document.Authority, Name: source.Document.Name, DocumentURL: source.DocURL, FromFile: source.FromFile, ClosureURL: v.Closure, SHA256: strings.ToLower(v.SHA256)}
 	for _, entry := range source.Document.Packages {
 		if entry.Package == b.Package {
@@ -239,7 +245,7 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	}
 	for _, g := range pkgs {
 		if g.Identity == id {
-			b.dialect = g.Dialect
+			b.dialect, b.needs = g.Dialect, g.NeedsDialect
 		}
 	}
 	if b.Version != version || version < 1 {

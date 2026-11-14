@@ -384,8 +384,20 @@ header's `stability`, `interface` and `dialect`; dialect 2 marked the seeded
 closure that brought `oneOf` reference properties and the `quantity` type.
 `internal/vocabulary/testdata/dialect.golden.json` records every key set
 under the number it was admitted at: a test refuses a key set that moved
-under an unchanged number, and `mise run dialect:check` holds the same
-against the base branch.
+under an unchanged number, and a closed check written inline instead of
+through a registered set in either of the two shapes one takes: a key a
+loop ranges over compared with `!=` to a word, in either order, or switched
+over with a word among its cases and a `default` for the rest. It does not
+see a check written with `==` alone, or a key read by name without a loop,
+which review holds. `mise run dialect:check` holds the same against the base
+branch. Each key that arrived after dialect 2 is listed beside the dialect
+it arrived in (`keyIntroducedAt` in `internal/vocabulary/dialect.go`), so the
+loader knows the least dialect a package's declarations and the records it
+ships beside them need: a step that adds a key adds its line there, at the
+number it raises the dialect to. The golden holds that table too, and the
+test and `dialect:check` refuse a key added without its line at the new
+number, a line whose number moved, and a line dropped while its key stays
+in its set.
 
 The number is read in three places:
 
@@ -406,8 +418,11 @@ The number is read in three places:
   ```
 
   A server that reads a lower dialect refuses the package, naming both
-  numbers. A header that states none stores nothing and needs nothing beyond
-  what the server reads.
+  numbers. A header may not state less than its declarations need, the
+  highest dialect any key they use arrived in; one that does is refused,
+  naming the key, so a server older than that key is never told the package
+  is written for it. `dialect` arrived in dialect 3 itself, so a header that
+  carries it states 3 or more. A header that states none stores nothing.
 - **A publisher's document.** Each version a publisher lists may carry the
   dialect its closure needs, beside its `closure` and `sha256`
   ([publishing a package](apps.md#publish-a-package)). The catalog installs
@@ -415,7 +430,9 @@ The number is read in three places:
   server reads, and a refresh passes over a version written for a newer one,
   so a publisher that adopts a new key leaves an older server installing the
   version before. A version that states no dialect is fetched, and passed
-  over the same way when its closure's header states a newer one.
+  over the same way when its closure's header states a newer one. A version
+  listed below what its closure needs is a broken release, refused as such,
+  since an older server would fetch it and stop on a key it does not know.
 
 **A repository is stamped with the dialect.** A repository is stamped at the
 binary's dialect when it is created, and one stamped lower is raised to it

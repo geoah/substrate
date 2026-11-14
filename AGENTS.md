@@ -530,7 +530,17 @@ first label.
   `internal/vocabulary/testdata/dialect.golden.json` records the key sets,
   `go test ./internal/vocabulary/ -run TestDialectKeysMatchTheGolden -update-dialect`
   refuses sets that moved under an unchanged number, and
-  `mise run dialect:check` holds the same against the base branch
+  `mise run dialect:check` holds the same against the base branch. A step
+  that adds a key also adds its line to `keyIntroducedAt`
+  (`internal/vocabulary/dialect.go`) at the dialect it raises the number to,
+  which is how a package header that states less than its keys need is
+  refused; the golden holds the table, and both checks refuse a key added
+  without its line, a line whose number moved and a line dropped while its
+  key stays. A closed key set is a
+  registered `…Keys` map, and the golden's test refuses one written inline
+  in the shapes it can see (a ranged key compared with `!=` to a word, or
+  switched over words with a `default`); an `==` chain or a lookup by name
+  it does not see
   ([0268](docs/decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
   could not be honored, and acted on by no server path. A kind's `purpose`

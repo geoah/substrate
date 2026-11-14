@@ -73,9 +73,11 @@ func checkPublication(ctx context.Context, reader *authority.Reader, id string, 
 		return entry, err
 	}
 	sum := sha256.Sum256(raw)
-	// The dialect the header states rides the entry, so a server older than
-	// it passes over this version before fetching it (decision 0268).
-	entry = authority.AuthorityPackageVersion{Version: int(version), Closure: closure, SHA256: hex.EncodeToString(sum[:]), Dialect: int(candidate.Dialect())}
+	// The dialect the closure needs rides the entry, the header's where it
+	// states more, so a server older than any key of it passes over this
+	// version before fetching it (decision 0268). A header that states less
+	// than its keys need is refused by the parse above.
+	entry = authority.AuthorityPackageVersion{Version: int(version), Closure: closure, SHA256: hex.EncodeToString(sum[:]), Dialect: int(max(candidate.Dialect(), candidate.NeedsDialect()))}
 	// Parsing the updated document holds the proposed entry to the same shape
 	// as the server, without fetching a file that has not been uploaded yet.
 	probe := authority.AuthorityDocument{Authority: candidate.Authority, Packages: []authority.AuthorityPackage{{Package: candidate.Package, Versions: []authority.AuthorityPackageVersion{entry}}}}

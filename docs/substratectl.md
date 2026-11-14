@@ -484,7 +484,10 @@ substratectl publish example.com/notes --check \
 ```
 
 This reads the authority's live document and prints the version entry to
-add, with the `dialect` the closure's header states, where it states one
+add, with the `dialect` the closure needs: the one its header states, or
+the highest any key of it arrived in where that is more, and none where the
+closure uses no key a dialect introduced. A header that states less than its
+keys need is refused, naming the key
 ([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)). `--document authority.json` reads a development document instead; its
 existing closure paths are relative to that file's directory.
 `--allow-narrowing` acknowledges removal or renaming from the newest listed
