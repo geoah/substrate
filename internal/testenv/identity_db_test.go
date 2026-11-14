@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testenv"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -196,7 +197,7 @@ func TestOnePersonInTwoRepositories(t *testing.T) {
 	// A person is in a repository while a person actor there names them:
 	// the operator's door writes the first person's actor in the second
 	// repository, then the server's index of it.
-	if err := e.Service.(engine.Operator).AddPerson(context.Background(), e.Repository, other.Repository); err != nil {
+	if err := e.Service.(engine.Operator).AddPerson(context.Background(), e.Repository, other.Repository, scope.RoleAdmin); err != nil {
 		t.Fatalf("give the first person the second repository: %v", err)
 	}
 

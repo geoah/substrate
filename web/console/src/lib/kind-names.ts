@@ -150,6 +150,7 @@ const WORDS = new Set([
   "result",
   "retention",
   "review",
+  "role",
   "run",
   "scratchpad",
   "secret",

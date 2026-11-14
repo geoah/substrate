@@ -354,6 +354,10 @@ func (a *assistantDataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, e
 	return a.inner.Tokens(ctx)
 }
 
+func (a *assistantDataset) PersonRoles(ctx context.Context) ([]substrate.RoleRules, error) {
+	return a.inner.PersonRoles(ctx)
+}
+
 func (a *assistantDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errAssistant("the export")
 }

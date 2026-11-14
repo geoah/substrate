@@ -13,6 +13,10 @@ export interface KindInfo {
   description?: string
   label?: { singular: string; plural: string }
   definition: Record<string, unknown>
+  /** The control class of a control kind (`triggers`, `policies`,
+   * `providers`, `settings`, `applets`, `declarations`, `actors`, `roles`),
+   * `sign-in` for sign-in material, absent for every other kind. */
+  control?: string
 }
 
 /** A kind reference split on its two slashes: the authority is the one

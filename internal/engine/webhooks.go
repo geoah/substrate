@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -590,6 +591,26 @@ func blobNameOf(filename string) string {
 		return ""
 	}
 	return base
+}
+
+// deliveryBehalf is ctx bound to the person the admitted request at seq acts
+// for, read from its delivery line: ctx unchanged for a request nobody's
+// token delivered. A read that fails is an error, so nothing runs for want
+// of it.
+func (ds *dataset) deliveryBehalf(ctx context.Context, seq int64) (context.Context, error) {
+	var behalf string
+	err := ds.db.QueryRowContext(ctx, `SELECT coalesce(on_behalf_of, '') FROM changelog WHERE seq = $1`, seq).Scan(&behalf)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && behalf == "" {
+		return ctx, nil
+	}
+	if err != nil {
+		return ctx, fmt.Errorf("substrate/engine: read whom webhook delivery %d acts for: %w", seq, err)
+	}
+	key, err := ds.actorKeyOfID(ctx, behalf)
+	if err != nil {
+		return ctx, err
+	}
+	return substrate.WithOnBehalfOf(ctx, key), nil
 }
 
 // fireEnvelope is the envelope a fire delivers: the one the caller built (a

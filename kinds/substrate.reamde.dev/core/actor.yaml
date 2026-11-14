@@ -50,6 +50,12 @@ data:
       type: string
       description: the sign-in this person signs in with, held by the server,
         for a person
+    roles:
+      type: reference
+      kind: substrate.reamde.dev/core/role
+      repeated: true
+      description: the roles this person holds, which say what they may read
+        and write, for a person; only an admin changes them
     # What the hand is, one link for each type that has one: the code that
     # runs for a function and an agent, the package for a package. An app is
     # named by its publisher.

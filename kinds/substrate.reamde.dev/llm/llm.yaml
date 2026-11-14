@@ -42,7 +42,9 @@ data:
   # (decision record 0254).
   # version 6: the package states its stability, `experimental` (decision
   # record 0256).
-  version: 6
+  # version 7: `heldTo` on a thread, a message, an ask and an approval,
+  # whose rules hold the work each stands for (decision record 0276).
+  version: 7
   # Moved out of `core` (2026-09-12), renaming each local name as it went:
   # `llmprovider` -> `provider`, `llmthread` -> `thread`, `llmmessage` ->
   # `message`, `llminteraction` -> `interaction`. The rename is required, not

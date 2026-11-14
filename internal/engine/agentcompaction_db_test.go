@@ -494,7 +494,17 @@ func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
 	// Two chat runs give the thread a history a compaction could fold.
 	res, _ := chat(t, ds, "", "q1"+hundred)
 	chat(t, ds, res.Thread, "q2"+hundred)
-	ds.continueThread(ctx, res.Thread, "")
+	// A resume starts from the resolution row that reports into the thread,
+	// and is held to whom that row names (heldto.go): here, nobody.
+	var resolution string
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		var err error
+		resolution, err = tx.putThreadSystemRowID(res.Thread, map[string]any{"event": "recordResolved"}, nil, map[string]any{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ds.continueThread(ctx, res.Thread, resolution)
 	mu.Lock()
 	defer mu.Unlock()
 	if streams != 2 || oneShots != 2 {

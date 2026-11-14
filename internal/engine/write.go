@@ -123,6 +123,9 @@ func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in sub
 			if err := refuseKeyOnDeclaration(ctx); err != nil {
 				return nil, err
 			}
+			if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
+				return nil, err
+			}
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
 	}
@@ -219,6 +222,9 @@ func (t *txn) putKind(ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Re
 
 func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, error) {
 	if err := t.forbidSystemKind(ty, substrate.OpPut); err != nil {
+		return nil, err
+	}
+	if err := t.authorizeWrite(ty); err != nil {
 		return nil, err
 	}
 	// Global lock order: the registry-dep/subject locks this type needs come
@@ -568,12 +574,20 @@ func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id str
 // agent's `write` accept goes through: the ceiling reaches applyEditDiff's
 // authorizeRequestOp, which fails closed without one.
 func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, ceiling *effectCeiling) (*substrate.Record, error) {
+	// A patch of a run's own record by a person or an app continues the
+	// run: admitted where that hand could have started it (run.go).
+	if err := ds.continuation(ctx, actor, typ, id); err != nil {
+		return nil, err
+	}
 	// A patch addressed at a schema record routes through admission: the
 	// merged declaration must still close (schemawrite.go). The addressed
 	// type says which rows are schema rows; no peek by bare id exists.
 	if ty, err := ds.resolveType(typ); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
 			if err := refuseKeyOnDeclaration(ctx); err != nil {
+				return nil, err
+			}
+			if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
 				return nil, err
 			}
 			existing, err := ds.Get(ctx, ty.Identity, id)
@@ -705,6 +719,9 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 			return nil, err
 		}
 	}
+	if err := t.authorizeWrite(ty); err != nil {
+		return nil, err
+	}
 	// Resolving a NOTIFYING machine is optimistic on the record's own
 	// version: a reviewer resolves the envelope they read, so a concurrent
 	// change cannot slip under the resolution. Generalized from the request
@@ -714,7 +731,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	// window and is bounded instead by the emit ceiling at acceptance.
 	for name := range states {
 		if m, ok := ty.Machines[name]; ok && machineNotifies(m) &&
-			in.IfVersion == nil && t.tier != substrate.TierBundle {
+			in.IfVersion == nil && !t.installedCode() {
 			return nil, fmt.Errorf("%w: resolving %s must carry ifVersion — the version you reviewed, so a concurrent change cannot slip under your resolution",
 				substrate.ErrConflict, name)
 		}
@@ -732,7 +749,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	// putGatedRequest), and is held the same way: the author's
 	// `confirmation: always` floor cites no policy, and a floor any agent
 	// with the right writes could accept would be no floor.
-	if ty.Identity == vocabulary.KindRecordPatchRequest && t.tier == substrate.TierBundle {
+	if ty.Identity == vocabulary.KindRecordPatchRequest && t.installedCode() {
 		if _, deciding := states[propDecision]; deciding && !t.policyDecision {
 			if _, gated := existing.Props["policy"]; gated {
 				return nil, fmt.Errorf("%w: a policy gated this request — its judge or the owner decides it, never installed code",
@@ -1324,7 +1341,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 	// External create of a bundle's config/account record is owner-only: the
 	// facility and connector never stand one up.
-	if err := t.checkBundleOwnerGate(sp.ty, create || sp.resurrect); err != nil {
+	if err := t.checkBundleOwnerGate(sp.ty); err != nil {
 		return nil, err
 	}
 	// Per-property ownership, enforced after the merged row is known: a
@@ -1334,6 +1351,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.checkPropertyOwnership(sp.ty, accepted); err != nil {
 		return nil, err
 	}
+	// Whose rules hold the run's work, which the engine writes after the
+	// hand's own checks: no hand names it (heldto.go).
+	accepted = t.stampHeldTo(sp, row, before, create, accepted)
 
 	title, err := t.deriveTitle(sp.ty, row)
 	if err != nil {
@@ -1682,12 +1702,11 @@ func hotColumnOf(row *erow, name string) *time.Time {
 	return nil
 }
 
-// checkBundleOwnerGate refuses an EXTERNAL create/resurrect of a bundle's
-// config or account record by a non-owner actor, and every write of one by an
-// app's token. Internal writes (facility teardown, purge, mirrors) bypass;
-// the owner's and installed code's patches are governed by per-property
-// ownership below, not this coarse gate.
-func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
+// checkBundleOwnerGate refuses every write of a bundle's config or account
+// record by an app's token. Who else may write one is the one check's
+// (authorizeWrite): they are control kinds of the settings class. Internal
+// writes (facility teardown, purge, mirrors) bypass.
+func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind) error {
 	if t.internal || !t.isBundleOwnerGated(ty) {
 		return nil
 	}
@@ -1695,40 +1714,36 @@ func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
 	// properties are the connection's settings, which the owner alone
 	// changes.
 	if t.scoped {
-		return fmt.Errorf("%w: an app's token does not write a %s: connections are owner-managed",
-			substrate.ErrForbidden, ty.Name)
-	}
-	if !creating {
-		return nil
-	}
-	if !t.ownerHand() {
-		return fmt.Errorf("%w: only the owner may create a %s — connections are owner-managed",
+		return fmt.Errorf("%w: an app's token does not write a %s: connections are managed by a person",
 			substrate.ErrForbidden, ty.Name)
 	}
 	return nil
 }
 
-// ownerHand reports whether this write is the owner's own: an owner-tier
-// actor with no app's token behind it. An app's token writes the kinds its
-// scopes reach at the owner tier, so property ownership treats it as the
-// owner, but the actions only the owner takes (revoking a token, creating or
-// deleting an account or a bundle input, adjusting a change request) refuse
-// it (decision 0194).
-func (t *txn) ownerHand() bool {
-	return t.tier == substrate.TierOwner && !t.scoped
+// installedCode reports whether this write is installed code's: a function's
+// or an agent's run, which the dispatcher marks as it applies the run's
+// effects (setEffectEmit), or any hand whose actor is a function, an agent
+// or a package.
+func (t *txn) installedCode() bool {
+	switch substrate.ActorTypeOf(t.actor) {
+	case substrate.ActorTypeFunction, substrate.ActorTypeAgent, substrate.ActorTypePackage:
+		return true
+	}
+	return t.effEmitSet
 }
 
 // refuseInstalledPolicyWrite refuses a policy write by installed code, by
 // whatever path it reaches the record: a function's effect, a function it
 // calls, an agent's write or function tool, a provider's sync, and a change
 // request any of them accepts, whose materialization writes in the same
-// transaction. Every one of them runs at the bundle tier (setEffectEmit, sync),
-// and every write lands through apply or softDeleteIf, so this is the one
-// place they all pass. A policy is a gate: one installed code could write is
-// one it could open. The owner accepting a request installed code proposed is
-// the owner's hand, and lands.
+// transaction. Every one of them is installed code's (installedCode: the
+// dispatcher's mark, or a function's, an agent's or a package's hand), and
+// every write lands through apply or softDeleteIf, so this is the one place
+// they all pass. A policy is a gate: one installed code could write is one it
+// could open. A person accepting a request installed code proposed is the
+// person's hand, and lands.
 func (t *txn) refuseInstalledPolicyWrite(kind string, op substrate.Op) error {
-	if kind != vocabulary.KindRecordPatchPolicy || t.tier != substrate.TierBundle {
+	if kind != vocabulary.KindRecordPatchPolicy || !t.installedCode() {
 		return nil
 	}
 	return fmt.Errorf("%w: %s is the owner's hand alone — installed code never writes the door's own rules, by any path (%s by %s)",
@@ -2175,8 +2190,11 @@ func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
 		return false, fmt.Errorf("%w: adjustedDiff is written only with the accept: the same write moves decision from proposed to accepted",
 			substrate.ErrValidation)
 	}
-	if !(t.ownerHand() || t.decidesOn(sp)) || t.policyDecision {
-		return false, fmt.Errorf("%w: only the owner adjusts a change request; installed code and the policy judge decide what was proposed",
+	// The write of the request already passed the one check, which only a
+	// hand that may write change requests passes; of those, a person adjusts,
+	// or an app deciding what its scope reaches.
+	if t.installedCode() || t.policyDecision || (t.scoped && !t.decidesOn(sp)) {
+		return false, fmt.Errorf("%w: a person adjusts a change request; installed code and the policy judge decide what was proposed",
 			substrate.ErrForbidden)
 	}
 	op := requestOp(sp.existing.Props)
@@ -2590,7 +2608,6 @@ func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) 
 func (t *txn) setEffectEmit(emit []string) {
 	t.effEmit = emit
 	t.effEmitSet = true
-	t.tier = substrate.TierBundle
 }
 
 // authorizeRequestOp bounds an bundle actor's ACCEPT to its effective emit
@@ -2606,7 +2623,7 @@ func (t *txn) authorizeRequestOp(op, targetKind string) error {
 	if t.scoped && !t.internal && !t.deciding {
 		return fmt.Errorf("%w: an app's token does not accept a change request", substrate.ErrForbidden)
 	}
-	if t.tier != substrate.TierBundle {
+	if !t.installedCode() {
 		return nil
 	}
 	if !t.effEmitSet {
@@ -2991,6 +3008,9 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 		if err := refuseKeyOnDeclaration(ctx); err != nil {
 			return nil, err
 		}
+		if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
+			return nil, err
+		}
 		existing, err := ds.Get(ctx, ty.Identity, id)
 		if err != nil {
 			return nil, err
@@ -3071,29 +3091,28 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	if !t.internal && systemKinds[ty.Identity] && ty.Identity != kindToken {
 		return nil, fmt.Errorf("%w: %s records are managed by the substrate", substrate.ErrForbidden, ty.Identity)
 	}
-	// Revoking is the owner's alone, whatever a grant names: the loader refuses
-	// the token kind in `permissions.writes`, and this holds a declaration that
-	// predates that refusal, and every other bundle-tier hand (a policy judge's
-	// accept, the agent write built-in), to the same answer.
-	if !t.internal && ty.Identity == kindToken && !t.ownerHand() {
-		if t.scoped {
-			return nil, fmt.Errorf("%w: only the owner may revoke a %s: an app's token revokes itself at /oauth/revoke",
-				substrate.ErrForbidden, ty.Identity)
+	// Revoking a token: a person revokes their own sign-ins; any other is
+	// the one check's, which a hand passes by holding `admin` or by a rule
+	// naming the kind, and which installed code passes only where its
+	// declaration names it, which the loader refuses. An app's token revokes
+	// itself at /oauth/revoke.
+	if !t.internal && ty.Identity == kindToken && t.scoped {
+		return nil, fmt.Errorf("%w: an app's token does not revoke a %s: it revokes itself at /oauth/revoke",
+			substrate.ErrForbidden, ty.Identity)
+	}
+	if !t.internal && t.scoped && t.isBundleOwnerGated(ty) {
+		return nil, fmt.Errorf("%w: an app's token does not delete a %s: connections are managed by a person",
+			substrate.ErrForbidden, ty.Name)
+	}
+	if ty.Identity != kindToken || !t.ownToken(row) {
+		if err := t.authorizeWrite(ty); err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
-			substrate.ErrForbidden, ty.Identity, handWords(t.actor), t.tier)
 	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen
 	// config/accounts when disabled (engine/bundles.go); purge is internal.
 	if err := t.checkBundleDelete(ty); err != nil {
 		return nil, err
-	}
-	// External delete of a bundle's config/account record is owner-only: the
-	// facility's finalizer teardown and purge run internally and bypass; a
-	// non-owner API actor may not tear down a connection.
-	if !t.internal && t.isBundleOwnerGated(ty) && !t.ownerHand() {
-		return nil, fmt.Errorf("%w: only the owner may delete a %s — connections are owner-managed",
-			substrate.ErrForbidden, ty.Name)
 	}
 	// Before the tombstone: it bumps the version, so a check after it would
 	// compare against the write it was meant to guard. An already-deleted row

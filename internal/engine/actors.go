@@ -277,43 +277,38 @@ func (c *actorCache) publish(ids map[string]bool, since uint64) {
 	}
 }
 
-// actingFor is ctx bound to whom the work a record stands for acts for
-// (decision 0270). Work that goes on after the request that started it has
-// returned (a background job, an approved call, a resumed turn, a thread's
-// title, a judge, and the settlement after a restart of each) acts for whoever
-// the line that created its own record names: the job's tool row, the
-// approval, the resolution that starts the turn, the request a judge decides.
-// Never the thread's first line: other turns, and other people, continue a
-// thread. The line names its onBehalfOf, or the person where the person's own
-// hand wrote it, or no one: unattended work, history from before the
-// conversion, and a record whose creating line is gone act for no one. A
+// actingFor is ctx bound to whom the work a record outside a run stands for
+// acts for (decision 0270): the request a judge decides acts for whoever the
+// line that created it names. A run's own records (a thread, a message, an
+// ask, an approval) say whose rules hold their work in their `heldTo`
+// (heldto.go heldBy). The line names its onBehalfOf, or the person where the
+// person's own hand wrote it, or no one: unattended work, history from before
+// the conversion, and a record whose creating line is gone act for no one. A
 // failed read is an error, so no work goes on as no one's for want of it.
 func (ds *dataset) actingFor(ctx context.Context, kind, id string) (context.Context, error) {
 	return ds.actingForLine(ctx, kind, id, `
-		SELECT actor, on_behalf_of FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`)
+		SELECT actor, on_behalf_of, principal, seq FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`)
 }
 
-// actingForRun is ctx bound to whom the run holding a thread acts for: the
-// line that gave the run the thread's lease, the thread's creation or the
-// claim that started its turn (a lease the run extends is written by the
-// run too, with the same links). A thread's settlement after its run is gone
-// is that run's work.
-func (ds *dataset) actingForRun(ctx context.Context, threadID string) (context.Context, error) {
-	return ds.actingForLine(ctx, typeThread, threadID, `
-		SELECT actor, on_behalf_of FROM changelog
-		WHERE kind = $1 AND record_id = $2 AND jsonb_path_exists(payload, '$.fold[*].delta.set.leaseUntil')
-		ORDER BY seq DESC LIMIT 1`)
-}
-
+// actingForLine binds ctx to whom the line query reads acts for, and to the
+// token that line carries, whose grant holds the work where it is an app's
+// (run.go). The work of a run's own records reads their `heldTo` instead
+// (heldto.go): this is for a record outside a run, such as a proposal a judge
+// decides.
 func (ds *dataset) actingForLine(ctx context.Context, kind, id, query string) (context.Context, error) {
-	var actor, behalf string
-	err := ds.db.QueryRowContext(ctx, query, kind, id).Scan(&actor, &behalf)
+	var actor, behalf, token string
+	var seq int64
+	err := ds.db.QueryRowContext(ctx, query, kind, id).Scan(&actor, &behalf, &token, &seq)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return substrate.WithOnBehalfOf(ctx, ""), nil
 	case err != nil:
 		return ctx, fmt.Errorf("read whom %s %s acts for: %w", kind, id, err)
-	case behalf != "":
+	}
+	if token != "" {
+		ctx = withRunHolders(ctx, nil, token)
+	}
+	if behalf != "" {
 		return substrate.WithOnBehalfOf(ctx, actorKeyIn(ctx, ds.db, behalf)), nil
 	}
 	// A person's own line acts for that person, whichever person of the
@@ -322,6 +317,23 @@ func (ds *dataset) actingForLine(ctx context.Context, kind, id, query string) (c
 		return substrate.WithOnBehalfOf(ctx, key), nil
 	}
 	return substrate.WithOnBehalfOf(ctx, ""), nil
+}
+
+// threadOf is the thread a record of a run belongs to: the thread itself, or
+// the one a message, an ask, an approval or a proposal names; "" for a record
+// of no run.
+func (ds *dataset) threadOf(ctx context.Context, kind, id string) (string, error) {
+	if kind == typeThread {
+		return id, nil
+	}
+	row, err := ds.loadRowDB(ctx, eref{Kind: kind, ID: id})
+	if err != nil {
+		return "", fmt.Errorf("read the thread of %s %s: %w", kind, id, err)
+	}
+	if row == nil {
+		return "", nil
+	}
+	return referenceID(row.Props[msgRelThread]), nil
 }
 
 // writeLinks are a write's three links, as the history line and the change
@@ -412,7 +424,7 @@ func handWords(key substrate.Actor) string {
 	s := string(c)
 	switch substrate.ActorTypeOf(c) {
 	case substrate.ActorTypePerson:
-		return "the owner"
+		return "the person"
 	case substrate.ActorTypeApp:
 		return "the app " + strings.TrimPrefix(s, substrate.AppActorPrefix)
 	case substrate.ActorTypeFunction, substrate.ActorTypeAgent:

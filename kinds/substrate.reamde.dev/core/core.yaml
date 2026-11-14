@@ -123,7 +123,10 @@ data:
   # below, it is not retired: a repository registered before keeps the kind
   # declared, emptied by its migration, and a fresh one never has it. A
   # person's actor names their identity (`identity`).
-  version: 61
+  # version 62: a person's actor holds roles (`roles`), each a record of the
+  # new `role` kind: what the person may read and write (decision record
+  # 0275).
+  version: 62
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands

@@ -217,7 +217,11 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	case errors.Is(err, substrate.ErrGuard):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):
-		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
+		p := substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
+		if errors.Is(err, substrate.ErrNotPermitted) {
+			p.Reason = substrate.ReasonNotPermitted
+		}
+		return http.StatusForbidden, p
 	case errors.Is(err, substrate.ErrTOTPRequired):
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeTOTPRequired, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):

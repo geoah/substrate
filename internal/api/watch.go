@@ -65,6 +65,15 @@ func setStreamHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Accel-Buffering", "no")
 }
 
+// framed reports whether a stream that ends on err says why in a terminal
+// frame: not when the client went (nobody reads it), and not when the
+// person's roles changed (errRolesChanged), which ends the stream as a drain
+// does, so the client reconnects from its cursor onto a view of its roles
+// now rather than stopping.
+func framed(err error) bool {
+	return !errors.Is(err, errClientGone) && !errors.Is(err, errRolesChanged)
+}
+
 // writeWatchError encodes that terminal frame. A client-gone encode error is
 // swallowed: there is no one left to tell.
 func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
@@ -249,7 +258,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 		}
 	}
 	if err := drain(); err != nil {
-		if !errors.Is(err, errClientGone) {
+		if framed(err) {
 			frame()
 			writeWatchError(enc, flusher, err)
 		}
@@ -279,12 +288,14 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			// one way it moves: the token is read again (from the cache a
 			// token write empties) before anything else is written.
 			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
-				frame()
-				writeWatchError(enc, flusher, err)
+				if framed(err) {
+					frame()
+					writeWatchError(enc, flusher, err)
+				}
 				return
 			}
 			if err := drain(); err != nil {
-				if !errors.Is(err, errClientGone) {
+				if framed(err) {
 					frame()
 					writeWatchError(enc, flusher, err)
 				}
@@ -294,8 +305,10 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			// An idle stream is read again too, so a revoked token's stream
 			// ends within a heartbeat rather than at its next row.
 			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
-				frame()
-				writeWatchError(enc, flusher, err)
+				if framed(err) {
+					frame()
+					writeWatchError(enc, flusher, err)
+				}
 				return
 			}
 			frame()

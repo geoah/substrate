@@ -83,8 +83,13 @@ type spooledWebhook struct {
 	Declared   []string  `json:"declared,omitempty"`
 	// Verified is set when the door checked the trigger's declared
 	// signature before it spooled the request (decision 0164).
-	Verified bool           `json:"signatureVerified,omitempty"`
-	Request  spooledRequest `json:"request"`
+	Verified bool `json:"signatureVerified,omitempty"`
+	// OnBehalfOf is the actor record id of the person an app's token
+	// delivered the request for (`webhook:`), whose roles hold its run; a
+	// keyed or signed request acts for nobody. A binary that does not read
+	// it runs the request for nobody, as a keyed one.
+	OnBehalfOf string         `json:"onBehalfOf,omitempty"`
+	Request    spooledRequest `json:"request"`
 }
 
 // spooledRequest is substrate.WebhookRequest less its query. Body and a
@@ -256,6 +261,7 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	}
 	entry := spooledWebhook{
 		Format: spoolFormat, Trigger: tr.ID, FireID: fid, ReceivedAt: at, After: after, Verified: verified,
+		OnBehalfOf: webhookBehalf(ctx, ds),
 		Request: spooledRequest{
 			Method: req.Method, ContentType: req.ContentType,
 			Headers: make(map[string]string, len(req.Headers)), Body: req.Body,
@@ -315,6 +321,16 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	e.writing = false
 	sp.mu.Unlock()
 	return name, fid, nil
+}
+
+// webhookBehalf is the actor record id of the person the door's request acts
+// for: set by the door for an app's token alone (substrate.WithWebhookGrant).
+func webhookBehalf(ctx context.Context, ds *dataset) string {
+	behalf := substrate.OnBehalfOfFrom(ctx)
+	if behalf == "" {
+		return ""
+	}
+	return actorID(ds.personActorFor(ctx, behalf))
 }
 
 // spooledNames is the spooled requests the drain may take, oldest first.
@@ -393,6 +409,15 @@ func (ds *dataset) drainSpooled(ctx context.Context, name string) (drainedWebhoo
 		return drainedWebhook{}, fmt.Errorf("%w: %s holds fire %s", errSpoolUnreadable, name, entry.FireID)
 	}
 	out := drainedWebhook{trigger: entry.Trigger}
+	if entry.OnBehalfOf != "" {
+		// The delivery's own line names the person (linksOf), and its run
+		// reads them back from it (deliverFire).
+		behalf, err := ds.actorKeyOfID(ctx, entry.OnBehalfOf)
+		if err != nil {
+			return drainedWebhook{}, err
+		}
+		ctx = substrate.WithOnBehalfOf(ctx, behalf)
+	}
 	// A read before the blobs are staged spares a recorded request their
 	// bytes; the admission reads again under the changelog lock.
 	recorded, err := ds.webhookRecorded(ctx, entry)

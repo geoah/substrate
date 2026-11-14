@@ -17,7 +17,7 @@ import (
 // so a refusal does not tell an app which functions exist. The function's
 // effects run under the function's own permissions, as a trigger's do, so
 // the scoped mark stops here (decision 0195 holds the same for a chat).
-func (s *scopedDataset) CallFunction(ctx context.Context, _ substrate.Actor, name string, args any) (any, int, error) {
+func (s *scopedDataset) CallFunction(ctx context.Context, actor substrate.Actor, name string, args any) (any, int, error) {
 	if !s.grant.CallsAny() {
 		return nil, 0, errScope("functions")
 	}
@@ -28,11 +28,11 @@ func (s *scopedDataset) CallFunction(ctx context.Context, _ substrate.Actor, nam
 	if !s.grant.Calls(name) {
 		return nil, 0, fmt.Errorf("%w: unknown function %q", substrate.ErrNotFound, name)
 	}
-	fn, err := s.inner.Get(ctx, kindFunction, name)
+	fn, err := s.declarations().Get(ctx, kindFunction, name)
 	if err != nil {
 		return nil, 0, err
 	}
-	reach, err := resolveReach(ctx, s.inner, fn)
+	reach, err := resolveReach(ctx, s.declarations(), fn)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -44,5 +44,5 @@ func (s *scopedDataset) CallFunction(ctx context.Context, _ substrate.Actor, nam
 		return nil, 0, fmt.Errorf("%w: an app's token calls %s only where its scopes cover what the function reaches, and they do not cover: %s",
 			substrate.ErrForbidden, name, strings.Join(uncovered, ", "))
 	}
-	return s.inner.CallFunction(substrate.WithoutScopes(ctx), s.actor, name, args)
+	return s.inner.CallFunction(substrate.WithoutScopes(ctx), s.writer(actor), name, args)
 }

@@ -1072,9 +1072,9 @@ them:
 | `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
 | `functions` | `stable` | The function call ([functions](functions.md)). |
 | `bundles` | `stable` | Bundle status and `bind`, and the catalog with its one `add` ([bundles](bundles.md)). |
-| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). Since revision 4 every token is held to its person's roles, a person who is not an admin reaches `/tokens` and `/identity` for their own, and `GET /identity` lists the roles held in each repository ([roles](auth.md#roles)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
-| `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). |
+| `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). Since revision 3 a kind's description says its `control` class ([roles](auth.md#roles)). |
 | `retention` | `experimental` | `GET /api/v1/retention`: how long each kind's history is kept, as declared, overridden and in effect ([retention](#retention)). |
 | `merge` | `beta` | `POST /api/v1/merge` and `POST /api/v1/split`. |
 | `connect` | `beta` | Connecting an account to its provider: `POST /api/v1/oauth/start` and the callback the provider redirects to. |
@@ -2402,14 +2402,17 @@ owner's (an app's grant and an assistant's read leave it out):
 An app always acts for the person. Installed code and the engine act for
 the person only when a person's request started them: a delivery the
 trigger pass fires acts for no one. Work that goes on after the request
-that started it returned acts for whom the line that created its own record
-names: a background job for its tool row's, an approved call for its
-approval's, a resumed turn for the resolution's that starts it, a thread's
-title for the thread's, a policy's judge for the request's it decides. A
-settlement after a restart is that work's too, and a thread's acts for the
-line that gave its run the lease. Where that line names no one (a trigger's
-run, or history from before actors were records), the work acts for no
-one.
+that started it returned acts for, and is held to, whom its own record's
+`heldTo` names
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)):
+a background job its tool row's, an approved call its approval's, a resumed
+turn the report's that starts it, a thread's title the thread's. A
+settlement after a restart is that work's too, and a run a restart cut
+short in its turn is the thread's. A policy's judge acts for whom the line
+that created the request it decides names. Where `heldTo` is empty (a
+trigger's run) the work acts for no one; where a record has none, it was
+written before this release, and its work is refused: the person asks
+again.
 
 **No request names its actor.** A full-access token writes as the person,
 and an app's token as its app; which client made a write is its token's.
@@ -2595,7 +2598,9 @@ path segment (`/webhooks/{repository}/{trigger}/{key}`), as `?key=` or as
 reach the server. An app's token that holds `webhook:<trigger>` stands in for
 the key as `Authorization: Bearer`, and is read again once the body has
 arrived; any other token there is read as a key
-([apps](apps.md#deliver-to-a-webhook)). When the trigger declares
+([apps](apps.md#deliver-to-a-webhook)). Its delivery acts for the token's
+person, and the callable's run is held to their roles, read when it runs;
+a token whose person holds no role in the repository is read as a key. When the trigger declares
 `source.webhook.signature`, the server verifies the provider's signature
 before it stores anything ([functions](functions.md#webhook-signatures)).
 
@@ -2668,7 +2673,7 @@ also answers `unavailable`, with a 30-second `Retry-After` and a message that
 names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has nine members: `observed_rederiving` on `unavailable`,
+set is closed and has ten members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
@@ -2701,6 +2706,10 @@ feature, answers a sign-in of a person who may open several repositories and
 named none: the refusal carries them in `repositories`, each with its `id`
 and `name`, and the same request naming one signs in
 ([logging in](auth.md#logging-in)).
+`not_permitted` on `forbidden`, since revision 5 of the `errors` feature,
+says a rule refused the request: the roles of the person it acts for, or the
+rules of the hand that writes for them, do not reach it, so another person,
+or the same one with another role, may make it ([roles](auth.md#roles)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2710,7 +2719,7 @@ removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
 The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `observed_rederiving`, `quota`,
+`in_doubt`, `key_refused`, `not_permitted`, `observed_rederiving`, `quota`,
 `repository_required`, `set_aside`, `stale_revision`.
 
 ```json

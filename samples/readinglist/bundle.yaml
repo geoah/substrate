@@ -28,7 +28,9 @@ metadata:
 data:
   authority: samples.substrate.reamde.dev
   package: readinglist
-  version: 14
+  # version 15: the curator reads the pages it proposes to save, since a
+  # proposal's target is a read (decision record 0276).
+  version: 15
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the package's schema members (every kind but the
@@ -352,6 +354,11 @@ data:
     maxToolCalls: 4
     depth: 3
   permissions:
+    # A proposal's target is a read: the curator reads the pages it proposes
+    # to save (decision record 0276).
+    reads:
+      kinds:
+        - samples.substrate.reamde.dev/readinglist/page
     writes:
       - substrate.reamde.dev/core/recordpatchrequest
       - samples.substrate.reamde.dev/readinglist/digest

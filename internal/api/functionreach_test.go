@@ -13,7 +13,7 @@ func TestMissingKindReachRequiresExactScope(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := uncoveredReach(grant, functionReach{reads: []string{missing}}, nil)
+		got := uncoveredReach(appReach{grant}, functionReach{reads: []string{missing}}, nil)
 		if (len(got) == 0) != (pattern == missing) {
 			t.Fatalf("%s covers missing kind: %v", pattern, got)
 		}

@@ -18,6 +18,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -100,10 +101,10 @@ func (t *txn) guardApproval(sp *applySpec) error {
 	switch target {
 	case approvalApproved, approvalDenied:
 		// An agent approving a call, its own or another's, would make "what
-		// did the owner allow" a record of the agent: installed code and
-		// agents run at bundle tier and never decide one.
-		if t.tier == substrate.TierBundle || t.approvalRun {
-			return fmt.Errorf("%w: an approval is decided by the owner, never by an agent or installed code", substrate.ErrForbidden)
+		// did the person allow" a record of the agent: installed code never
+		// decides one.
+		if t.installedCode() || t.approvalRun {
+			return fmt.Errorf("%w: an approval is decided by a person, never by an agent or installed code", substrate.ErrForbidden)
 		}
 		id := sp.id
 		ds := t.ds
@@ -162,7 +163,7 @@ func (l *agentLoop) dispatchApproval(ctx context.Context, c *toolRun, fn *vocabu
 	if root := l.rootThread(); root != l.threadID {
 		props["requestedIn"] = l.threadID
 	}
-	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	err = l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		t.changeSink = &c.changes
 		t.approvalLoop = true
@@ -204,12 +205,21 @@ func (ds *dataset) runApproval(bg context.Context, id string) {
 	if propString(row, "reportedAt") != "" {
 		return
 	}
-	// The approved call and its report act for whom the line that wrote the
-	// approval names. Unread, it is left unreported for the next open.
-	ctx, err = ds.actingFor(ctx, vocabulary.KindLLMApproval, id)
-	if err != nil {
+	// The approved call and its report are held to the approval's own
+	// holders: the turn that asked, and whoever approved it, whom the
+	// approval's write added (heldto.go). Unread, it is left unreported for
+	// the next open; one asked before this release is refused, and the
+	// agent hears it was not run.
+	held, err := ds.heldBy(ctx, vocabulary.KindLLMApproval, id)
+	askAgain := errors.Is(err, errAskAgain)
+	switch {
+	case askAgain:
+		ctx = substrate.WithOnBehalfOf(ctx, "")
+	case err != nil:
 		ds.svc.log.Warn("substrate: an approval was not settled", "approval", id, "error", err)
 		return
+	default:
+		ctx = held
 	}
 	actor := substrate.Actor(agentActorOf(ds, propRefID(row.Props["agent"])))
 	switch row.States[propApprovalState] {
@@ -220,7 +230,7 @@ func (ds *dataset) runApproval(bg context.Context, id string) {
 		// settles of one approval run its call once.
 		claimed := false
 		version := row.Version
-		err := ds.inTx(ctx, actor, false, func(t *txn) error {
+		err := ds.runRecordTx(ctx, actor, exemptConversation, func(t *txn) error {
 			t.approvalRun = true
 			_, err := t.patch(ref, substrate.PatchInput{
 				Properties: map[string]any{propApprovalState: approvalRunning}, IfVersion: &version,
@@ -229,6 +239,11 @@ func (ds *dataset) runApproval(bg context.Context, id string) {
 			return err
 		})
 		if err != nil || !claimed {
+			return
+		}
+		if askAgain {
+			out := toolError(errAskAgain.Error())
+			ds.reportApproval(ctx, row, actor, approvalFailed, &out, nil)
 			return
 		}
 		out, ok, changes := ds.runApprovedCall(ctx, row)
@@ -322,7 +337,7 @@ func (ds *dataset) reportApproval(ctx context.Context, row *erow, actor substrat
 		}
 	}
 	var systemRow string
-	err := ds.inTx(ctx, actor, false, func(t *txn) error {
+	err := ds.runRecordTx(ctx, actor, exemptConversation, func(t *txn) error {
 		t.approvalRun = true
 		if cur := row.States[propApprovalState]; state != cur && state != approvalDenied {
 			props[propApprovalState] = state
@@ -331,7 +346,7 @@ func (ds *dataset) reportApproval(ctx context.Context, row *erow, actor substrat
 			return err
 		}
 		var err error
-		systemRow, err = t.putThreadSystemRowID(thread, env, changes)
+		systemRow, err = t.putThreadSystemRowID(thread, env, changes, heldOf(row.Props[propHeldTo]))
 		return err
 	})
 	if err != nil {
@@ -385,9 +400,9 @@ func (ds *dataset) settleInterruptedApprovals(ctx context.Context) error {
 		if propString(row, "reportedAt") != "" {
 			continue
 		}
-		// The report is the approval's: it acts for whom the line that wrote
-		// the approval names, unless they are no longer there.
-		ctx, err := ds.settling(ds.actingFor(ctx, vocabulary.KindLLMApproval, row.ID))
+		// The report is the approval's: held to its holders, unless they are
+		// no longer there (heldto.go settlingHeld).
+		ctx, err := ds.settlingHeld(ctx, vocabulary.KindLLMApproval, row.ID)
 		if err != nil {
 			return fmt.Errorf("settle interrupted approval %s: %w", row.ID, err)
 		}

@@ -76,9 +76,9 @@ func matchedFunctions(s scope.Scope, fns []functionRow, requested []scope.Scope,
 			Reads: emptyNotNil(f.reach.reads), Writes: emptyNotNil(f.reach.writes),
 		}
 		if coverErr == nil {
-			row.Uncovered = uncoveredReach(covering, f.reach, registry)
+			row.Uncovered = uncoveredReach(appReach{covering}, f.reach, registry)
 		} else {
-			row.Uncovered = uncoveredReach(scope.Grant{}, f.reach, registry)
+			row.Uncovered = uncoveredReach(appReach{}, f.reach, registry)
 		}
 		row.Covered = len(row.Uncovered) == 0
 		out = append(out, row)

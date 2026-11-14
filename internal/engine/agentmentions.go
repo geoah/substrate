@@ -148,7 +148,7 @@ func (l *agentLoop) stampMentions(ctx context.Context, props map[string]any, rep
 	stored := make([]any, 0, len(mentions))
 	for i := range mentions {
 		m := &mentions[i]
-		if l.ag.Reads != nil && (queryScope{kinds: l.ag.Reads.Kinds}).allows(m.Kind) {
+		if ok, err := l.readsAllow(ctx, m.Kind); err == nil && ok {
 			if live, err := l.ds.recordLive(ctx, eref{Kind: m.Kind, ID: m.ID}); err == nil {
 				m.Missing = !live
 			}

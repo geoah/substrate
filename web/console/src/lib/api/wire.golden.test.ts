@@ -346,6 +346,7 @@ const kindInfo: Shape<KindInfo> = {
   description: true,
   label: false,
   definition: true,
+  control: false,
 }
 
 const kindLabel: Shape<KindLabel> = {
@@ -974,6 +975,7 @@ const identityInfo: Shape<IdentityInfo> = {
 const repositoryChoice: Shape<RepositoryChoice> = {
   id: true,
   name: true,
+  roles: false,
 }
 
 const totpEnrollment: Shape<TOTPEnrollment> = {

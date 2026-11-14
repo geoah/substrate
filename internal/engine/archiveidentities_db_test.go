@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -72,7 +73,7 @@ func TestARestoredPersonSignsInWithTheirLatestCopy(t *testing.T) {
 			svc, _ := newService(t, engine.WithArchiveInterval(time.Hour))
 			registerUser(t, svc, "ada.example.com")
 			bo, _, _ := registerUser(t, svc, "bo.example.com")
-			if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com"); err != nil {
+			if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com", scope.RoleAdmin); err != nil {
 				t.Fatal(err)
 			}
 			ada, boRepo := mustDataset(t, svc, "ada.example.com"), mustDataset(t, svc, "bo.example.com")
@@ -127,7 +128,7 @@ func TestARestoreLeavesAPersonTheDatabaseHeld(t *testing.T) {
 	svc, _ := newService(t, engine.WithArchiveInterval(time.Hour))
 	registerUser(t, svc, "ada.example.com")
 	bo, _, _ := registerUser(t, svc, "bo.example.com")
-	if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com"); err != nil {
+	if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com", scope.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	ada, boRepo := mustDataset(t, svc, "ada.example.com"), mustDataset(t, svc, "bo.example.com")
@@ -171,7 +172,7 @@ func TestAnExportCarriesThePersonWhoTookIt(t *testing.T) {
 	svc, _ := newService(t, engine.WithArchiveInterval(time.Hour))
 	ada, adaToken, adaSecret := registerUser(t, svc, "ada.example.com")
 	bo, boToken, _ := registerUser(t, svc, "bo.example.com")
-	if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com"); err != nil {
+	if err := svc.(engine.Operator).AddPerson(ctx, "bo.example.com", "ada.example.com", scope.RoleAdmin); err != nil {
 		t.Fatal(err)
 	}
 	ds := mustDataset(t, svc, "ada.example.com")

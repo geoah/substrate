@@ -245,10 +245,13 @@ func (l *agentLoop) startJob(tc llm.ToolCall, turn int, row string, started time
 
 // runJob is the job's goroutine: the call, then its end.
 func (ds *dataset) runJob(bg context.Context, j *agentJob, jl *agentLoop, p *pendingJob) {
-	// The job and its end act for whom the line that wrote its tool row
-	// names. Unread, nothing is written for no one: the row stays `working`,
-	// and the next open settles it as interrupted.
-	bg, err := ds.actingFor(bg, typeMessage, j.row)
+	if hook := ds.beforeJob; hook != nil {
+		hook()
+	}
+	// The job and its end are held to its tool row's `heldTo` (heldto.go),
+	// never the thread's. Unread, nothing is written for no one: the row
+	// stays `working`, and the next open settles it as interrupted.
+	bg, err := ds.heldBy(bg, typeMessage, j.row)
 	if err != nil {
 		ds.svc.log.Error("substrate: a background job did not start", "thread", j.thread, "call", j.callID, "error", err)
 		ds.spend.finish(jl.in.tally.spend)
@@ -329,7 +332,7 @@ func (ds *dataset) endJob(bg context.Context, j *agentJob, jl *agentLoop, run *t
 	var systemRow string
 	var rootCost float64
 	var rolled bool
-	err := ds.inTx(ctx, jl.actor, false, func(t *txn) error {
+	err := ds.runRecordTx(ctx, jl.actor, exemptConversation, func(t *txn) error {
 		rolled = false
 		t.causedBy = jl.in.causedBy
 		props := map[string]any{"job": jobProps(state, j.startedAt, finished)}
@@ -349,8 +352,15 @@ func (ds *dataset) endJob(bg context.Context, j *agentJob, jl *agentLoop, run *t
 			}
 			rootCost, rolled = cost, true
 		}
-		var err error
-		systemRow, err = t.putThreadSystemRowID(j.thread, env, run.changes)
+		tool, err := t.loadRow(eref{Kind: typeMessage, ID: j.row}, false)
+		if err != nil {
+			return err
+		}
+		var held map[string]any
+		if tool != nil {
+			held = heldOf(tool.Props[propHeldTo])
+		}
+		systemRow, err = t.putThreadSystemRowID(j.thread, env, run.changes, held)
 		return err
 	})
 	if tally.spend != nil {
@@ -668,9 +678,9 @@ func (ds *dataset) settleInterruptedJobs(ctx context.Context) error {
 		if callable, _ := f.props["callable"].(string); callable != "" {
 			env["callable"] = callable
 		}
-		// The settlement is the job's: it acts for whom the line that wrote
-		// the tool row names, unless they are no longer there.
-		jctx, err := ds.settling(ds.actingFor(ctx, typeMessage, f.id))
+		// The settlement is the job's: held to its tool row's holders, unless
+		// they are no longer there (heldto.go).
+		jctx, err := ds.settlingHeld(ctx, typeMessage, f.id)
 		if err != nil {
 			return fmt.Errorf("settle interrupted job %s: %w", f.id, err)
 		}
@@ -683,7 +693,7 @@ func (ds *dataset) settleInterruptedJobs(ctx context.Context) error {
 			if thread == "" {
 				return nil
 			}
-			_, err := t.putThreadSystemRowID(thread, env, nil)
+			_, err := t.putThreadSystemRowID(thread, env, nil, heldOf(f.props[propHeldTo]))
 			return err
 		})
 		if err != nil {

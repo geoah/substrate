@@ -372,17 +372,10 @@ func (s *syncStamp) durationMs(now time.Time) int64 {
 	return d
 }
 
-// asSyncWriter runs fn as the callable's own hand at the bundle tier — the
-// write context function dispatch builds (write.go setEffectEmit): the
-// dispatcher KNOWS it is stamping installed code's run, so the tier is
-// stated, never re-derived from the actor.
+// asSyncWriter runs fn as the callable's own hand: a function's actor, so
+// the write is installed code's (write.go installedCode), as a dispatch's is.
 func (t *txn) asSyncWriter(actor substrate.Actor, fn func() error) error {
-	return t.asActor(actor, func() error {
-		prev := t.tier
-		t.tier = substrate.TierBundle
-		defer func() { t.tier = prev }()
-		return fn()
-	})
+	return t.asActor(actor, fn)
 }
 
 // settleInterruptedSyncs is the open-time sweep: a record left at `running`

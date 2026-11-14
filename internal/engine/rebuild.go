@@ -176,7 +176,7 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	}
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{
-		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
+		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem,
 		now: nowUTC(), internal: true,
 	}
 	if err := t.rebuild(&report); err != nil {

@@ -44,7 +44,9 @@ func (l *agentLoop) dispatchEdit(ctx context.Context, c *toolRun, args map[strin
 	if kind == "" || id == "" || prop == "" {
 		return toolError("kind, id and property are required: edit addresses one text property of one record"), false
 	}
-	if !l.readsAllow(kind) {
+	if ok, err := l.readsAllow(ctx, kind); err != nil {
+		return toolError(err.Error()), false
+	} else if !ok {
 		return toolError(fmt.Sprintf("%s is not in agent %s's reads allowlist", kind, l.ag.Identity())), false
 	}
 	ty, err := l.ds.resolveType(kind)
@@ -233,10 +235,15 @@ func containerWord(p *vocabulary.Property) string {
 	return ""
 }
 
-// readsAllow holds a kind to the agent's reads allowlist, as `query` does.
-func (l *agentLoop) readsAllow(kind string) bool {
+// readsAllow holds a kind to the agent's reads allowlist and to what the run
+// may read (run.go), as `query` does.
+func (l *agentLoop) readsAllow(ctx context.Context, kind string) (bool, error) {
 	if l.ag.Reads == nil {
-		return false
+		return false, nil
 	}
-	return queryScope{kinds: l.ag.Reads.Kinds}.allows(kind)
+	scope, err := l.ds.heldScope(ctx, queryScope{kinds: l.ag.Reads.Kinds})
+	if err != nil {
+		return false, err
+	}
+	return scope.allows(kind), nil
 }

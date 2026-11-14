@@ -31,6 +31,12 @@ type KindInfo struct {
 	// survives here because a client reading a kind's shape is reading the same
 	// map it always was.
 	Definition map[string]any `json:"definition"`
+	// Control is the control class of a control kind (decision 0276):
+	// `triggers`, `policies`, `providers`, `settings`, `applets`,
+	// `declarations`, `actors` or `roles`, which a role's rule reaches only
+	// by naming the kind; `sign-in` for sign-in material, held the same way.
+	// Absent for every other kind.
+	Control string `json:"control,omitempty"`
 }
 
 // KindLabel is what a client calls one record of a kind and what it calls

@@ -27,6 +27,35 @@ data:
     - properties:
         - state
   properties:
+    # Whose rules hold the work this record stands for (decision record
+    # 0276), written by the engine alone: a run's thread at each turn's
+    # claim; a message, an ask or an approval as the run writes it; and each
+    # person or app that continues the work added as they do.
+    heldTo:
+      type: object
+      writer: system
+      description: whose rules hold the work this record stands for, written
+        by the engine; empty for work nobody asked for, which its agent's
+        declaration alone holds
+      fields:
+        onBehalfOf:
+          type: reference
+          kind: substrate.reamde.dev/core/actor
+          description: the person the work acts for; absent for work no person
+            started, such as a trigger's
+        continuedBy:
+          type: reference
+          kind: substrate.reamde.dev/core/actor
+          repeated: true
+          description: each person or app that continued the work, by answering,
+            approving or deciding it, whose rules hold it too
+        tokens:
+          type: reference
+          kind: substrate.reamde.dev/core/token
+          repeated: true
+          description: the tokens the work was started and continued with;
+            an app's token holds the work to its grant, and revoking it stops
+            the work
     # The conversation the owner is in: the call chain's root thread, where
     # the card shows and the outcome reports. Stamped by the loop alone.
     thread:

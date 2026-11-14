@@ -74,10 +74,10 @@ type gateWaiter struct {
 }
 
 // personFirst reports whether a write goes ahead of waiting background writers
-// at the write gate: a request's own write at the owner tier, or a write on a
-// context withForegroundWrites marked. Other internal writes and the
-// substrate's reserved hands (bundle:, function:, agent:, substrate) are
-// background whatever tier a declaration gives them.
+// at the write gate: a request's own write, a person's or an app's, or a
+// write on a context withForegroundWrites marked. Other internal writes and
+// the substrate's own hands (a package's, a function's, an agent's, the
+// system's) are background.
 func (ds *dataset) personFirst(ctx context.Context, actor substrate.Actor, internal bool) bool {
 	if foreground, _ := ctx.Value(foregroundWritesKey{}).(bool); foreground {
 		return true
@@ -87,7 +87,11 @@ func (ds *dataset) personFirst(ctx context.Context, actor substrate.Actor, inter
 	if internal || (substrate.ReservedActor(actor) && !substrate.IsAppActor(actor)) {
 		return false
 	}
-	return ds.actorTier(actor) == substrate.TierOwner
+	switch substrate.ActorTypeOf(actor) {
+	case substrate.ActorTypePerson, substrate.ActorTypeApp:
+		return true
+	}
+	return false
 }
 
 type foregroundWritesKey struct{}

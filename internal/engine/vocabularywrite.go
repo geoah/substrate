@@ -645,9 +645,6 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// touched package is re-admitted or removed by the batch, so none of
 		// them stays parked, and the fold's derivations here read it already.
 		t.writeParked = st.parked
-		// inTx resolved the tier against the live registry, before the
-		// candidate was set: an actor this closure declares resolves here.
-		t.tier = t.actorTier(actor)
 		// A whole-package teardown (bundle uninstall) removes the owned package's
 		// delivery wiring first — under the same lock, before the guards below —
 		// so dropping every callable never strands its own triggers. If a guard

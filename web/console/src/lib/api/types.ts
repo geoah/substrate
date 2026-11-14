@@ -57,7 +57,9 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * it started and serves it again only after its operator repairs it and
  * restarts the server. `repository_required` rides a `conflict` (409) on a
  * sign-in: the person opens several repositories and named none, and the
- * refusal lists them in `repositories` (decision 0274). */
+ * refusal lists them in `repositories` (decision 0274). `not_permitted` rides
+ * a `forbidden` (403): no rule of the roles the person holds allows it, where
+ * an app's scope refusal carries no reason (decision 0276). */
 export type ErrorReason =
   | "observed_rederiving"
   | "key_refused"
@@ -68,6 +70,7 @@ export type ErrorReason =
   | "first_attempt_landed"
   | "set_aside"
   | "repository_required"
+  | "not_permitted"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`
@@ -1037,6 +1040,10 @@ export interface KindInfo {
    * manifest that declares it (`authority`, `package`, `names`,
    * `properties`, …), key order lost to jsonb. */
   definition: Record<string, unknown>
+  /** The control class of a control kind (`triggers`, `policies`,
+   * `providers`, `settings`, `applets`, `declarations`, `actors`, `roles`),
+   * or `sign-in` for sign-in material; absent for every other kind. */
+  control?: string
 }
 
 /** One token record's metadata — never the hash, never the secret. A token
@@ -1549,6 +1556,8 @@ export interface IdentityInfo {
 export interface RepositoryChoice {
   id: string
   name: string
+  /** The roles the person holds there, on their own read of themselves. */
+  roles?: string[]
 }
 
 /** What an OAuth start answers: the provider consent URL to open. */

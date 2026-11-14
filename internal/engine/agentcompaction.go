@@ -828,7 +828,7 @@ func (l *agentLoop) extendLease(ctx context.Context, d time.Duration) error {
 	if !until.After(l.leaseAt) {
 		return nil
 	}
-	if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	if err := l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		_, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			"leaseUntil": until.Format(time.RFC3339Nano),

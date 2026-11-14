@@ -50,6 +50,12 @@ func (s *stubService) InstanceID() string { return stubInstanceID }
 // stubDataset is a repository that answers who it is and nothing else.
 type stubDataset struct{ substrate.Dataset }
 
+// PersonRoles answers every token's person as an admin: the handler's own
+// tests hold nobody to roles (the role tests run on the engine).
+func (stubDataset) PersonRoles(context.Context) ([]substrate.RoleRules, error) {
+	return []substrate.RoleRules{{ID: "admin"}}, nil
+}
+
 func (stubDataset) Repository() substrate.RepositoryInfo {
 	return substrate.RepositoryInfo{ID: stubRepository, Authority: stubRepository, State: "active"}
 }

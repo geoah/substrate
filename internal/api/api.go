@@ -356,7 +356,7 @@ func New(cfg Config) http.Handler {
 		// behind the ordinary bearer check. Revoking is a record delete either
 		// way — the same write the generic surface performs.
 		r.Group(func(r chi.Router) {
-			r.Use(h.requireAuth)
+			r.Use(h.requirePerson)
 			r.Post("/tokens", h.postMintToken)
 			r.Get("/tokens", h.getTokens)
 			r.Get("/identity", h.getIdentity)

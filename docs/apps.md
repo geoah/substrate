@@ -868,7 +868,10 @@ authorization detail puts it on a token. Under it:
   revoked, expired or full-access token, or one without the scope, answers
   the door's one `404`, as a wrong key does. The token is read again once
   the body has arrived, so one revoked or past its time meanwhile delivers
-  nothing. A signature the trigger declares is still checked, and the header
+  nothing. The delivery acts for the token's person: a token whose person
+  holds no role in the repository is read as a key, and the callable's run
+  is held to the person's roles, read when it runs, so a person made a
+  viewer delivers what the callable then may not write. A signature the trigger declares is still checked, and the header
   never reaches the callable. Revoking the app, or its access ending, ends
   its deliveries. Looking a bearer up is a database read anybody can ask
   for, so one that looks like a token and is none is charged to its
@@ -953,7 +956,12 @@ scope reaches:
 - an agent, through `agents:`, that reads a kind the token's own `read` and
   `write` scopes do not cover: a glob the agent reads is covered by a glob at
   least as wide, an `internal` kind by its exact scope alone, so an agent is
-  no channel to data the app could not read itself.
+  no channel to data the app could not read itself;
+- what an agent reads or writes in a turn the app drives, or a function it
+  calls, beyond the token's own scopes: the engine holds each read and each
+  write of that work to the grant as it stands, and a revoked token
+  refuses the rest of it
+  ([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
 
 ### Full access
 

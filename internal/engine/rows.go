@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // eref is one record's full storage identity: the (type, id) pair every
@@ -541,66 +540,6 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
-}
-
-// --- the write's tier ---
-//
-// A property's mark is marks.go's: pinned by the type of the hand that wrote
-// it, and nothing here decides it.
-
-// actorTier resolves the tier a hand writes at from what the hand is: the
-// person is the owner tier; the engine's own hand is machine; an app's token
-// writes at the owner tier, and the owner-only gates read txn.scoped beside
-// it; and a function or agent the registry declares is bundle.
-//
-// Any other hand splits two ways. A RESERVED one (the `substrate`
-// namespace, `bundle:`, `function:`, `agent:`, and the retired `connector:`
-// prefix) is one of the substrate's own writing hands — a package's install,
-// a callable whose declaration is gone, a facility like the OAuth door, a
-// dispatch mid-uninstall — and none of those is the owner's edit, so it
-// writes at the machine tier. Anything else writes at the owner tier. No
-// request names a hand (decision 0270), so nothing here escalates. The tier
-// decides what a write may touch; whether sync may replace a value is the
-// value's mark (marks.go), stored when it is written.
-//
-// Direct writes read their tier off the transaction (txn.tier,
-// set once at inTx and set to bundle explicitly by function/agent
-// dispatch); recompute writes at the machine tier (mapping.go). This function is also the facility seams'
-// (StartOAuth's owner-gate) resolution, outside any transaction.
-func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
-	return actorTierIn(ds.registry(), actor)
-}
-
-// actorTier resolves an actor's tier against the transaction's declarations:
-// inside a vocabulary apply that is the candidate, so a closure installed
-// under an actor it declares writes at the tier the closure declares on the
-// first install, not only on a re-install.
-func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
-	return actorTierIn(t.declarations(), actor)
-}
-
-func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier {
-	switch {
-	case substrate.IsPerson(substrate.CanonicalActor(actor)):
-		return substrate.TierOwner
-	// The engine's own hand is resolved before the registry, so a declaration
-	// cannot move it: `tier:` is data an installed bundle writes.
-	case actor == substrate.ActorSystem:
-		return substrate.TierMachine
-	// An app's token holds a property the way the owner's own client does
-	// (a stranger's client holds like the user, never like the machinery),
-	// and no declaration may move it either. What the owner alone may do is
-	// held apart by txn.scoped, not by the tier (decision 0194).
-	case substrate.IsAppActor(actor):
-		return substrate.TierOwner
-	}
-	if tier, ok := reg.ActorTier(string(actor)); ok {
-		return tier
-	}
-	if substrate.ReservedActor(actor) {
-		return substrate.TierMachine
-	}
-	return substrate.TierOwner
 }
 
 // --- embed queue ---

@@ -714,6 +714,3 @@ func (r *Registry) MappingsTo(to string) []*Mapping {
 	}
 	return out
 }
-
-// A write's tier is read from the write context's actor DATA;
-// Registry.ActorTier answers the declared-callable half of it.

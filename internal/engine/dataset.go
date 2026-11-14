@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -62,7 +63,7 @@ var systemKinds = map[string]bool{
 	kindKind: true, kindPackage: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
-	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true,
+	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true,
 	// Declared, empty and written by nothing in a repository from before
 	// decision 0264 (repomigration_0008_purge_the_recovery_key.go).
 	kindRecoveryKey: true,
@@ -254,6 +255,18 @@ type dataset struct {
 	// resolveProvider before the llm/provider row is read, so a test can
 	// commit a new key between a call's start and the read that pays for it.
 	beforeProviderRead func(id string)
+	// afterPinnedRead is set only by tests, before any loop runs: a hook a
+	// new snapshot passes between its pinned reads and its capture, so a
+	// test can change a role there.
+	afterPinnedRead func()
+	// beforeJob is set only by tests, before any loop runs: a hook a
+	// background job passes before it reads whose rules hold it, so a test
+	// can hold it while another turn claims its thread.
+	beforeJob func()
+	// beforeTitle is set only by tests, before any loop runs: a hook the
+	// title's background task passes before it does anything, so a test can
+	// hold it while another turn claims the thread.
+	beforeTitle func()
 	// skipThreadTitles, under mu, is set only by tests: it keeps a chat's
 	// first turn from spending a scripted completion on its title
 	// (agenttitle.go), which suites that script a model's queue turn by turn
@@ -385,10 +398,11 @@ func (ds *dataset) registry() *vocabulary.Registry {
 // --- type registry ---
 
 func (ds *dataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
-	types := ds.registry().Kinds()
+	reg := ds.registry()
+	types := reg.Kinds()
 	out := make([]substrate.KindInfo, 0, len(types))
 	for _, t := range types {
-		out = append(out, typeInfo(t))
+		out = append(out, typeInfoIn(reg, t))
 	}
 	return out, nil
 }
@@ -396,7 +410,7 @@ func (ds *dataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
 func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
 	reg := ds.registry()
 	if t, ok := reg.ByIdentity(ref); ok {
-		return typeInfo(t), nil
+		return typeInfoIn(reg, t), nil
 	}
 	if !vocabulary.Qualified(ref) {
 		// A bare name is a malformed reference, not a missing kind: the
@@ -433,6 +447,18 @@ func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	}
 	if !t.Label.Empty() {
 		info.Label = &substrate.KindLabel{Singular: t.Label.Singular, Plural: t.Label.Plural}
+	}
+	return info
+}
+
+// typeInfoIn is typeInfo with the kind's control class under reg's bundles.
+func typeInfoIn(reg *vocabulary.Registry, t *vocabulary.Kind) substrate.KindInfo {
+	info := typeInfo(t)
+	switch {
+	case vocabulary.SignInMaterial(t.Identity):
+		info.Control = vocabulary.ControlSignIn
+	default:
+		info.Control = string(controlClassIn(reg, t))
 	}
 	return info
 }
@@ -508,7 +534,8 @@ func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, err
 // minting, the hash lookup, the sealed material behind the credential — lives
 // in auth.go. There is no actor set on a token: a token without scopes has
 // full access to its repository, and an app's token is held to its scopes at
-// the API, with the owner-only gates here reading txn.scoped.
+// the API, with the gates an app's token alone meets here reading
+// txn.scoped.
 
 // jsonSafe round-trips a YAML-decoded definition through JSON so it stores
 // as jsonb and compares byte-identically on re-reconcile.
@@ -553,12 +580,6 @@ type txn struct {
 	// once Postgres answered it: sent and not committed is a commit in doubt.
 	commitSent, committed bool
 	actor                 substrate.Actor
-	// tier is the transaction's writing tier — the WRITE CONTEXT's standing,
-	// which decides what its writes may touch. Resolved once at inTx from the
-	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
-	// function/agent dispatch (setEffectEmit) — never inferred from the
-	// actor's spelling.
-	tier substrate.Tier
 	// ensuringActor is set while ensureLinks writes an actor record, so the
 	// record's own entry does not ask for it again.
 	ensuringActor bool
@@ -590,8 +611,7 @@ type txn struct {
 	// caused_by is what links that entry back to the write behind it.
 	principal string
 	// scoped is true when an app's token stands behind the request
-	// (substrate.ScopesFrom): its actor still resolves to the owner tier, so
-	// the owner-only gates read ownerHand, never the tier alone.
+	// (substrate.ScopesFrom): the gates an app's token alone meets read it.
 	scoped bool
 	// decides is the change request an app's token may decide under a
 	// `decide:` scope (substrate.DecisionFrom), "" otherwise; deciding is
@@ -711,6 +731,20 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// roles are the roles each person this transaction's check read holds
+	// (roles.go), read once per transaction.
+	roles map[substrate.Actor]scope.Roles
+	// exempt is the exemption this transaction writes under (run.go), ""
+	// for a write held as any is.
+	exempt exemptOp
+	// claiming is set by a turn's claim of its thread (agentloop.go
+	// claimThread): the one write that makes the thread's `heldTo` the
+	// turn's (heldto.go stampHeldTo). A hand's write of the lease does not.
+	claiming bool
+	// report is the holders of the item a report row reports, set while
+	// that row is written (agentdecision.go putThreadSystemRowID): the row
+	// carries them and never the writer's (heldto.go stampHeldTo).
+	report *reportHolders
 	// observed is what this transaction's observed point writes touched,
 	// recomputed once at its end (observedsettle.go settleObserved).
 	observed *observedTouch
@@ -788,7 +822,7 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	defer func() { _ = tx.Rollback() }()
 	_, scoped := substrate.ScopesFrom(ctx)
 	t := &txn{
-		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
+		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor,
 		principal: substrate.PrincipalFrom(ctx), onBehalfOf: substrate.OnBehalfOfFrom(ctx),
 		scoped: scoped, now: nowUTC(), internal: internal,
 		decides: substrate.DecisionFrom(ctx), actorEpoch: ds.actors.now(),
@@ -1088,9 +1122,9 @@ func (wc *writeCtx) release() {
 // material in the same commit is the substrate's. The tier
 // follows the actor, since it is resolved from the actor's data.
 func (t *txn) asActor(actor substrate.Actor, fn func() error) error {
-	prevActor, prevTier := t.actor, t.tier
-	t.actor, t.tier = actor, t.actorTier(actor)
-	defer func() { t.actor, t.tier = prevActor, prevTier }()
+	prevActor := t.actor
+	t.actor = actor
+	defer func() { t.actor = prevActor }()
 	return fn()
 }
 

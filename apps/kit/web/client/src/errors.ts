@@ -23,7 +23,8 @@ export class SubstrateError extends Error {
    * `in_doubt` (the write may have landed), `first_attempt_landed` (a
    * request repeated under an `Idempotency-Key` did not run, and the first
    * attempt's write stands), `first_attempt_running` (it did not run, and
-   * the first attempt may still land), `quota`, `key_refused`,
+   * the first attempt may still land), `not_permitted` (a rule of the
+   * person's roles refused it), `quota`, `key_refused`,
    * `observed_rederiving`, `set_aside` (the server found the repository
    * damaged when it started). */
   readonly reason?: string

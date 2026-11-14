@@ -22,6 +22,7 @@ const errorReasons: Record<ErrorReason, true> = {
   first_attempt_running: true,
   in_doubt: true,
   key_refused: true,
+  not_permitted: true,
   observed_rederiving: true,
   quota: true,
   repository_required: true,

@@ -396,6 +396,9 @@ def main(input, host):
 			},
 			"subagents": []any{crewPackage + "/scribe"},
 			"permissions": map[string]any{
+				// A proposal's target is a read (decision 0276): the agent
+				// reads the widgets it proposes changes to.
+				"reads":  map[string]any{"kinds": []any{crewPackage + "/widget"}},
 				"writes": []any{"samples.substrate.reamde.dev/tasks/task", vocabulary.KindRecordPatchRequest},
 			},
 		}),
@@ -407,6 +410,9 @@ def main(input, host):
 			"resume": "never",
 			"tools":  []any{map[string]any{"function": vocabulary.HostFunctionPropose}},
 			"permissions": map[string]any{
+				// A proposal's target is a read (decision 0276): the agent
+				// reads the widgets it proposes changes to.
+				"reads":  map[string]any{"kinds": []any{crewPackage + "/widget"}},
 				"writes": []any{vocabulary.KindRecordPatchRequest},
 			},
 		}),
@@ -459,6 +465,9 @@ def main(input, host):
 				map[string]any{"function": vocabulary.HostFunctionWrite},
 			},
 			"permissions": map[string]any{
+				// A proposal's target is a read (decision 0276): the agent
+				// reads the widgets it proposes changes to.
+				"reads":  map[string]any{"kinds": []any{crewPackage + "/widget"}},
 				"writes": []any{vocabulary.KindRecordPatchRequest, crewPackage + "/widget"},
 			},
 		}),
@@ -528,6 +537,9 @@ def main(input, host):
 				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
 			"permissions": map[string]any{
+				// A proposal's target is a read (decision 0276): the agent
+				// reads the widgets it proposes changes to.
+				"reads":  map[string]any{"kinds": []any{crewPackage + "/widget"}},
 				"writes": []any{"samples.substrate.reamde.dev/tasks/task", vocabulary.KindRecordPatchRequest},
 			},
 		}),

@@ -507,9 +507,12 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 {"error": {"code": "internal", "message": "…"}}
 ```
 
-A stream also ends cleanly, with no error frame, when the server shuts down:
+A stream also ends cleanly, with no error frame, when the server shuts down,
+and when the roles of the person its token acts for change, since it reads
+through the view those roles built
+([0295](decisions/0295-a-persons-token-is-held-to-that-persons-roles.md)):
 every row it sent is a row the client holds, so the client resumes with the
-`from` and `generation` it last read. A client that leaves a frame unread for
+`from` and `generation` it last read, on a view of the roles held now. A client that leaves a frame unread for
 60 seconds is disconnected.
 
 The changelog has a **horizon**: the oldest seq still resumable. Requesting `from=`

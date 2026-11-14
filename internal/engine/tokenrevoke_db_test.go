@@ -8,6 +8,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -61,7 +62,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 	err = ds.inTx(ctx, substrate.Actor(fn.Actor()), false, func(tx *txn) error {
 		return tx.applyEffects(fn.Caps.Emit, effects)
 	})
-	if !errors.Is(err, substrate.ErrForbidden) || !strings.Contains(err.Error(), "only the owner may revoke") {
+	if !errors.Is(err, substrate.ErrForbidden) || !strings.Contains(err.Error(), "may not write "+kindToken) {
 		t.Fatalf("a function's delete of a token must be refused forbidden, got %v", err)
 	}
 	mustAuthenticate(t, ds, secret, "after the function's delete")
@@ -87,7 +88,7 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 	}
 	for name, h := range hands {
 		_, err := ds.deleteBounded(ctx, h.actor, kindToken, tok.ID, substrate.DeleteInput{Purge: h.purge}, h.ceiling)
-		if !errors.Is(err, substrate.ErrForbidden) || !strings.Contains(err.Error(), "only the owner may revoke") {
+		if !errors.Is(err, substrate.ErrForbidden) || !strings.Contains(err.Error(), "may not write "+kindToken) {
 			t.Fatalf("%s: a bundle-tier delete of a token must be refused forbidden, got %v", name, err)
 		}
 		mustAuthenticate(t, ds, secret, "after "+name)
@@ -111,11 +112,13 @@ func TestOnlyTheOwnerRevokesAToken(t *testing.T) {
 	mustNotAuthenticate(t, ds, secret, "the first token")
 }
 
-// An agent with only the `propose` grant proposes a token's delete, and the
-// owner's judge-bearing policy over the token kind accepts it. The judge's
-// accept runs at the bundle tier, so it is refused and escalates into the
-// owner's review with the refusal as its note, and the token still signs in.
-// The owner's own accept of the same request then revokes it.
+// An agent with only the `propose` grant cannot propose a token's delete: a
+// proposal's target is a read, and no agent reads sign-in material. Nor can
+// a judge's accept revoke one: over a request to revoke a token, judged as
+// an agent's proposal is, the judge-bearing policy's accept is refused,
+// since a policy's decision writes no sign-in material, and escalates into
+// the owner's review with the refusal as its note, and the token still
+// signs in. The owner's own accept of the same request then revokes it.
 func TestAJudgedProposalCannotRevokeAToken(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -139,15 +142,30 @@ func TestAJudgedProposalCannotRevokeAToken(t *testing.T) {
 	fake.script("vjudge",
 		fakeTurn{content: `{"verdict":"accept","confidence":0.97,"rationale":"stale token"}`},
 	)
-	if _, err := ds.CallAgent(ctx, crewPackage+"/stoic", "revoke the laptop token"); err != nil {
+	res, err := ds.CallAgent(ctx, crewPackage+"/stoic", "revoke the laptop token")
+	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
+	if rows := toolRows(t, ds, res.Thread); len(rows) != 1 || !strings.Contains(fmt.Sprint(rows[0]["content"]), "not in the reads allowlist") {
+		t.Fatalf("an agent's proposal of a token's delete: %v, want refused as a read it may not make", rows)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindRecordPatchRequest, ID: fid("revoke-laptop"), Properties: map[string]any{
+		"op": "delete", "rationale": "stale",
+		"target": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(kindToken, tok.ID)},
+	}}); err != nil {
+		t.Fatalf("the request to revoke the token: %v", err)
+	}
 	req := onlyPatchRequest(t, ds)
+	verdict, rule, err := ds.policyVerdict(ctx, kindToken, policyOpDelete, crewPackage+"/stoic")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("the policy over tokens: %s %v", verdict, err)
+	}
+	ds.maybeJudge(req.ID, rule)
 	audit := judgedAnnotation(t, ds, req.ID)
 	if audit["outcome"] != judgedEscalated {
 		t.Fatalf("the judge's accept of a token delete must escalate, audit: %+v", audit)
 	}
-	if note, _ := audit["note"].(string); !strings.Contains(note, "only the owner may revoke") {
+	if note, _ := audit["note"].(string); !strings.Contains(note, "may not write "+kindToken) {
 		t.Fatalf("the escalation must carry the refusal, note: %q", note)
 	}
 	mustAuthenticate(t, ds, secret, "after the judged accept")

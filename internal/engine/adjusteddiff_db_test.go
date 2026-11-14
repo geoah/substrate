@@ -189,7 +189,7 @@ def main(input, host):
 `))
 	task, req := proposePatch(t, ds, map[string]any{"description": "proposed"})
 	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/adjuster", map[string]any{"request": req.ID})
-	wantRefusal(t, err, substrate.ErrForbidden, "only the owner adjusts")
+	wantRefusal(t, err, substrate.ErrForbidden, "a person adjusts")
 	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != nil {
 		t.Fatalf("the function's adjustment applied: %+v", got.Properties)
 	}

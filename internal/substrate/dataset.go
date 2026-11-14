@@ -117,6 +117,10 @@ type Dataset interface {
 	// is the same write either way.
 	MintToken(ctx context.Context, in MintTokenInput) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
+	// PersonRoles are the roles the person a request acts for holds in this
+	// repository, read on each request (decision 0275): none for a person
+	// whose actor is gone or disabled.
+	PersonRoles(ctx context.Context) ([]RoleRules, error)
 
 	// --- background loops and the operator's re-embed ---
 	// RunGC performs one owner-reference mark-and-collect sweep for
