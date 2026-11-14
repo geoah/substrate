@@ -236,8 +236,9 @@ function UserTurn({ turn }: { turn: TurnView }) {
       data-queued={waiting ? "" : undefined}
       className={cn(
         "max-w-[70%] self-end rounded-[14px_14px_4px_14px] bg-hover px-3.5 py-2 leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap",
+        // Its width is the column's that holds it and its mark.
         waiting &&
-          "border border-dashed border-border-strong bg-transparent text-muted-foreground"
+          "max-w-full border border-dashed border-border-strong bg-transparent text-muted-foreground"
       )}
     >
       {turn.content}
@@ -245,7 +246,12 @@ function UserTurn({ turn }: { turn: TurnView }) {
   )
   if (!turn.contextRecords?.length && !waiting) return bubble
   return (
-    <div className="flex flex-col items-end gap-1.5 self-end">
+    <div
+      className={cn(
+        "flex flex-col items-end gap-1.5 self-end",
+        waiting && "max-w-[70%]"
+      )}
+    >
       {turn.contextRecords?.length ? (
         <ContextChips records={turn.contextRecords} />
       ) : null}
