@@ -481,7 +481,14 @@ var errMessageIDTaken = errors.New("the messageId is taken")
 // message: a user row of the thread the request names (or, for a request
 // that opens a chat, the row that opened its thread), of the agent it
 // addresses, holding the text it sends. Anything else under the id is
-// refused, and the hand is held to the thread as a message into it is.
+// refused.
+//
+// The hand is held to the row's thread before anything about the row is
+// said, as a message into that thread is (mayContinue): a request that
+// names no thread, or names another, would otherwise learn from the refusal
+// which thread a guessed id is on, whose agent it went to and whether its
+// text matches. A hand that may not continue the thread is told only that
+// the id is taken, which a put at the id would tell it too.
 func (ds *dataset) sentMessage(ctx context.Context, actor substrate.Actor, ag *vocabulary.Agent, in substrate.ChatInput) (string, error) {
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: in.MessageID})
 	if err != nil {
@@ -491,14 +498,27 @@ func (ds *dataset) sentMessage(ctx context.Context, actor substrate.Actor, ag *v
 		return "", nil
 	}
 	taken := func(why string) (string, error) {
-		return "", fmt.Errorf("%w: %w: messageId %q %s: send the message under a new id", substrate.ErrConflict, errMessageIDTaken, in.MessageID, why)
-	}
-	if row.DeletedAt != nil {
-		return taken("names a deleted message")
+		if why != "" {
+			why = " " + why
+		}
+		return "", fmt.Errorf("%w: %w: messageId %q%s: send the message under a new id", substrate.ErrConflict, errMessageIDTaken, in.MessageID, why)
 	}
 	thread := referenceID(row.Props[msgRelThread])
-	if role, _ := row.Props["role"].(string); role != "user" || thread == "" {
-		return taken("names a record that is not a sent message")
+	if role, _ := row.Props["role"].(string); row.DeletedAt != nil || role != "user" || thread == "" {
+		return taken("")
+	}
+	trow, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: thread})
+	if err != nil {
+		return "", err
+	}
+	if trow == nil || trow.DeletedAt != nil {
+		return taken("")
+	}
+	if err := ds.mayContinue(ctx, actor, thread, false); err != nil {
+		if errors.Is(err, substrate.ErrForbidden) {
+			return taken("")
+		}
+		return "", err
 	}
 	switch {
 	case in.Thread != "" && in.Thread != thread:
@@ -510,23 +530,11 @@ func (ds *dataset) sentMessage(ctx context.Context, actor substrate.Actor, ag *v
 			return taken("is a message of thread " + thread + ", which it did not open")
 		}
 	}
-	if content, _ := row.Props["content"].(string); content != in.Message {
-		return taken("was sent with another text")
-	}
-	trow, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: thread})
-	if err != nil {
-		return "", err
-	}
-	if trow == nil || trow.DeletedAt != nil {
-		return taken("is a message of a deleted thread")
-	}
 	if agent := referenceID(trow.Props["agent"]); agent != ag.Identity() {
 		return taken("was sent to agent " + agent)
 	}
-	if in.Thread == "" {
-		if err := ds.mayContinue(ctx, actor, thread, false); err != nil {
-			return "", err
-		}
+	if content, _ := row.Props["content"].(string); content != in.Message {
+		return taken("was sent with another text")
 	}
 	return thread, nil
 }

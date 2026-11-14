@@ -28,15 +28,18 @@ vi.mock("@tanstack/react-router", () => ({
 }))
 
 type ChatOpts = {
+  agent: string
   thread?: string
   message: string
-  messageId: string
+  messageId?: string
   onEvent: (event: AgentEvent) => void
   onError?: (error: Error) => void
   onDone?: () => void
 }
 const calls: ChatOpts[] = []
-type ThreadOpts = Omit<ChatOpts, "message" | "messageId"> & { thread: string }
+type ThreadOpts = Omit<ChatOpts, "agent" | "message" | "messageId"> & {
+  thread: string
+}
 const attaches: ThreadOpts[] = []
 const continues: ThreadOpts[] = []
 const stops: string[] = []
@@ -65,6 +68,23 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
   }
 })
 
+// The revision of the `agents` feature the server under test says it has.
+let agentsRevision = 3
+vi.mock("@/lib/api/discovery", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/discovery")>()
+  const doc = () => ({
+    features: [{ name: "agents", revision: agentsRevision }],
+  })
+  return {
+    ...actual,
+    discoveryQueryOptions: {
+      queryKey: ["discovery", "server"],
+      queryFn: () => Promise.resolve(doc()),
+      initialData: doc,
+    },
+  }
+})
+
 import {
   agentRunsQueryOptions,
   conversationsQueryOptions,
@@ -89,6 +109,7 @@ afterEach(() => {
   calls.length = 0
   attaches.length = 0
   continues.length = 0
+  agentsRevision = 3
   stops.length = 0
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
@@ -1162,6 +1183,70 @@ describe("a send the server did not answer", () => {
     })
   })
 
+  it("sends an opening message again to no thread, though the page moved to another chat", async () => {
+    stubRows([])
+    mount()
+    type("first chat")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    for (let n = 2; n <= 1 + RESEND_DELAYS_MS.length; n++) {
+      await waitFor(() => expect(calls).toHaveLength(n))
+      act(() => lost())
+    }
+    await screen.findByRole("button", { name: "Send again" })
+    const firstId = calls[0].messageId
+    // Another message opens a chat of its own; the note comes along.
+    type("second chat")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    const second = calls.length - 1
+    act(() => {
+      calls[second].onEvent({ kind: "thread", thread: "t-b" })
+      calls[second].onEvent({
+        kind: "done",
+        result: { ...settled, thread: "t-b" },
+      })
+      calls[second].onDone?.()
+    })
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Send again" }))
+      expect(calls).toHaveLength(second + 2)
+    })
+    // The request it went out as: no thread, the same agent, the same id.
+    const replay = calls[second + 1]
+    expect(replay.thread).toBeUndefined()
+    expect(replay.agent).toBe("helper")
+    expect(replay.messageId).toBe(firstId)
+    expect(replay.message).toBe("first chat")
+  })
+
+  it("keeps the message and its id when the chat is left while it waits to go again", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const at = (thread: string) => (
+      <QueryClientProvider client={client}>
+        <Keyed thread={thread} />
+      </QueryClientProvider>
+    )
+    const view = render(at("t-8"))
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    type("lost one")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => lost())
+    // Left before the first wait is over: nothing went again.
+    view.rerender(at("t-9"))
+    await act(() => new Promise((r) => setTimeout(r, 120)))
+    expect(calls).toHaveLength(1)
+    view.rerender(at("t-8"))
+    const note = await screen.findByRole("alert")
+    expect(note.textContent).toContain("lost one")
+    fireEvent.click(screen.getByRole("button", { name: "Send again" }))
+    expect(calls).toHaveLength(2)
+    expect(calls[1].messageId).toBe(calls[0].messageId)
+    expect(calls[1].thread).toBe("t-8")
+  })
+
   it("sends nothing again from a chat that was left", async () => {
     stubRows([message("m0", 0, "user", "question")])
     const client = new QueryClient({
@@ -1231,6 +1316,49 @@ const settled = {
   totalTokens: 2,
   costUSD: 0,
 }
+
+describe("a server from before a message could name its id", () => {
+  beforeEach(() => {
+    agentsRevision = 2
+  })
+
+  it("sends without an id, and never sends again on its own", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-8")
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    type("one more thing")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    // The server refuses a body field it does not know.
+    expect(calls[0].messageId).toBeUndefined()
+    act(() =>
+      calls[0].onError?.(
+        new TransportError("the connection failed before the server answered")
+      )
+    )
+    const note = await screen.findByRole("alert")
+    expect(note.textContent).toContain("may not have arrived")
+    expect(note.textContent).toContain("Look for it in the chat")
+    expect(screen.queryByRole("button", { name: "Send again" })).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+    await act(() => new Promise((r) => setTimeout(r, 120)))
+    expect(calls).toHaveLength(1)
+  })
+
+  it("goes on by sending the words, since the server has no continue", async () => {
+    stubRows([])
+    const cut = runningThread("t-9")
+    cut.properties = { status: "stopped", reason: "stopped by its owner" }
+    mount("t-9", { threadRecord: cut })
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(continues).toHaveLength(0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].message).toBe("Continue where you left off.")
+    expect(calls[0].messageId).toBeUndefined()
+  })
+})
 
 /** A conversation the page remounts by thread, as the agents page does. */
 function Keyed({ thread }: { thread: string }) {
