@@ -7,7 +7,9 @@
  * opened is attached to, without the events its stored rows already hold.
  * A send is never dropped: one made before the previous turn hands over is
  * held, shown and sent once it can, a re-read that never lands releases the
- * composer after RELOAD_WAIT_MS, and a refusal puts the message back. */
+ * composer after RELOAD_WAIT_MS, and a refusal puts the message back. A send
+ * goes under an id of its own and an unanswered one is sent again under it;
+ * Continue and Try again continue the thread and send no message. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
@@ -19,7 +21,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import { useState, type ReactNode } from "react"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
@@ -28,12 +30,15 @@ vi.mock("@tanstack/react-router", () => ({
 type ChatOpts = {
   thread?: string
   message: string
+  messageId: string
   onEvent: (event: AgentEvent) => void
   onError?: (error: Error) => void
   onDone?: () => void
 }
 const calls: ChatOpts[] = []
-const attaches: (Omit<ChatOpts, "message"> & { thread: string })[] = []
+type ThreadOpts = Omit<ChatOpts, "message" | "messageId"> & { thread: string }
+const attaches: ThreadOpts[] = []
+const continues: ThreadOpts[] = []
 const stops: string[] = []
 let stopAnswer: () => Promise<unknown> = () => new Promise(() => {})
 
@@ -45,8 +50,12 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
       calls.push(opts)
       return { stop() {} }
     },
-    attachThread: (opts: (typeof attaches)[number]) => {
+    attachThread: (opts: ThreadOpts) => {
       attaches.push(opts)
+      return { stop() {} }
+    },
+    continueThread: (opts: ThreadOpts) => {
+      continues.push(opts)
       return { stop() {} }
     },
     stopThread: (thread: string) => {
@@ -65,18 +74,21 @@ import {
 } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
 import { TransportError } from "@/lib/api/agents"
-import { resetUnsent } from "@/lib/unsent-messages"
-import {
-  CONTINUE_MESSAGE,
-  Conversation,
-  RECONCILE_DELAY_MS,
-  RELOAD_WAIT_MS,
-} from "./conversation"
+import { RESEND_DELAYS_MS, resetUnsent } from "@/lib/unsent-messages"
+import { Conversation, RELOAD_WAIT_MS } from "./conversation"
+
+// The waits before an unanswered send goes again, shortened for the tests.
+const RESEND_WAITS = [...RESEND_DELAYS_MS]
+beforeEach(() => {
+  RESEND_DELAYS_MS.splice(0, RESEND_DELAYS_MS.length, 20, 20, 20)
+})
 
 afterEach(() => {
+  RESEND_DELAYS_MS.splice(0, RESEND_DELAYS_MS.length, ...RESEND_WAITS)
   cleanup()
   calls.length = 0
   attaches.length = 0
+  continues.length = 0
   stops.length = 0
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
@@ -465,14 +477,99 @@ describe("Conversation", () => {
     ).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
-    expect(calls).toHaveLength(1)
-    expect(calls[0].thread).toBe("t-9")
-    expect(calls[0].message).toBe(CONTINUE_MESSAGE)
+    // The thread is continued: no message is sent, so none is written.
+    expect(calls).toHaveLength(0)
+    expect(continues).toHaveLength(1)
+    expect(continues[0].thread).toBe("t-9")
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "half a thought"
     )
     // The turn it started is running: the note is gone.
     expect(screen.queryByText("Helper didn’t finish")).toBeNull()
+    // And it streams as a sent turn does, with no user message above it.
+    act(() => {
+      continues[0].onEvent({ kind: "thread", thread: "t-9" })
+      continues[0].onEvent({ kind: "delta", text: "and the rest", turn: 4 })
+    })
+    expect(screen.getByText("and the rest")).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Stop" })).not.toHaveLength(0)
+  })
+
+  it("offers Try again on a failed turn, which continues the thread", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const failed = runningThread("t-13")
+    failed.properties = { status: "error", reason: "llm: overloaded" }
+    mount("t-13", { threadRecord: failed })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(continues.map((c) => c.thread)).toEqual(["t-13"])
+    expect(calls).toHaveLength(0)
+    // The question is not written a second time.
+    expect(screen.getAllByText("question")).toHaveLength(1)
+  })
+
+  it("attaches to the turn when a continue finds the thread busy", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const cut = runningThread("t-14")
+    cut.properties = { status: "stopped", reason: "stopped by its owner" }
+    mount("t-14", { threadRecord: cut })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    act(() =>
+      continues[0].onError?.(
+        new ApiError(
+          "conflict",
+          "thread t-14 already has a running turn",
+          409,
+          [],
+          [],
+          undefined,
+          "thread_busy"
+        )
+      )
+    )
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    expect(attaches[0].thread).toBe("t-14")
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  it("says the server's words when a continue is refused", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const cut = runningThread("t-15")
+    cut.properties = { status: "stopped", reason: "stopped by its owner" }
+    mount("t-15", { threadRecord: cut })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    act(() =>
+      continues[0].onError?.(
+        new ApiError("guard", "spend cap reached: 512 of 500 cents", 403)
+      )
+    )
+    expect(screen.getByRole("alert").textContent).toContain(
+      "spend cap reached: 512 of 500 cents"
+    )
+    // The note and its button are back, to press again.
+    expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy()
+    await act(() => new Promise((r) => setTimeout(r, 50)))
+    expect(attaches).toHaveLength(0)
+  })
+
+  it("reads the thread again when a continue's answer is lost", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const cut = runningThread("t-16")
+    cut.properties = { status: "stopped", reason: "stopped by its owner" }
+    mount("t-16", { threadRecord: cut })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    act(() =>
+      continues[0].onError?.(
+        new TransportError("the connection failed before the server answered")
+      )
+    )
+    // Whether the turn started is the thread's to say: an attach asks it.
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    expect(continues).toHaveLength(1)
   })
 
   it("says a failure once, in the notice, when the thread stored it", async () => {
@@ -520,6 +617,7 @@ describe("Conversation", () => {
     ).toBe("Add an API key first")
     fireEvent.click(go)
     expect(calls).toHaveLength(0)
+    expect(continues).toHaveLength(0)
   })
 
   it("says nothing about a turn that finished", async () => {
@@ -883,147 +981,110 @@ describe("a late transcript read", () => {
   })
 })
 
-describe("a send whose delivery is unknown", () => {
-  let rows: ReturnType<typeof message>[] = []
-  // The thread record's status, or "fail" for a read the server refuses.
-  let threadStatus = "ok"
-  // The next transcript list read answers what the thread held when it was
-  // asked, but only after the delivery check has started.
-  let slowNext = false
-  function stubLiveRows() {
-    threadStatus = "ok"
-    slowNext = false
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).includes("/llm/thread/")) {
-          if (threadStatus === "fail") {
-            return new Response(
-              JSON.stringify({
-                error: { code: "internal", message: "db down" },
-              }),
-              { status: 500 }
-            )
-          }
-          const record = runningThread("t-8")
-          record.properties = { status: threadStatus }
-          return new Response(JSON.stringify(record), { status: 200 })
-        }
-        const snapshot = rows
-        if (slowNext) {
-          slowNext = false
-          await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 500))
-        }
-        return new Response(JSON.stringify({ records: snapshot }), {
-          status: 200,
-        })
-      })
-    )
-  }
-  const lost = (reason = "the connection failed before the server answered") =>
-    calls[0].onError?.(new TransportError(reason))
+describe("a send the server did not answer", () => {
+  const lost = (
+    at = calls.length - 1,
+    reason = "the connection failed before the server answered"
+  ) => calls[at].onError?.(new TransportError(reason))
 
-  async function sendThenLose(
-    text: string,
-    fail: () => void,
-    initial = [
+  async function sendThenLose(text: string, fail: () => void = () => lost()) {
+    stubRows([
       message("m1", 1, "assistant", "an answer"),
       message("m0", 0, "user", "question"),
-    ]
-  ) {
-    rows = initial
-    stubLiveRows()
+    ])
     mount("t-8")
     await waitFor(() => expect(screen.getByText("an answer")).toBeTruthy())
     type(text)
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     act(fail)
-    const note = screen.getByRole("alert")
-    expect(note.textContent).toContain("Checking whether it arrived")
-    expect(note.textContent).not.toContain("wasn’t sent")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   }
 
-  const settledCheck = { timeout: RECONCILE_DELAY_MS + 2000 }
-  const MAYBE = "may not have arrived"
-
-  /** Waits for the check to end with the message still unaccounted for:
-   * kept to copy, never put back, never called missing. */
-  async function expectStillUnknown(text: string) {
-    await waitFor(
-      () => expect(screen.getByRole("alert").textContent).toContain(MAYBE),
-      settledCheck
+  it("sends every message under an id of its own", async () => {
+    stubRows([])
+    mount("t-8")
+    await act(() => new Promise((r) => setTimeout(r, 0)))
+    type("first")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-8" })
+      calls[0].onEvent({
+        kind: "done",
+        result: { ...settled, thread: "t-8" },
+      })
+      calls[0].onDone?.()
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+      ).toBeTruthy()
     )
-    const note = screen.getByRole("alert")
-    expect(note.textContent).toContain(text)
-    expect(note.textContent).not.toContain("didn’t arrive")
-    expect(
-      screen.getByRole("button", { name: "Copy your message" })
-    ).toBeTruthy()
-  }
-
-  it("keeps the message to copy when the thread does not hold it", async () => {
-    await sendThenLose("one more thing", () => lost())
-    await expectStillUnknown("one more thing")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    type("second")
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }))
+      expect(calls).toHaveLength(2)
+    })
+    expect(calls[0].messageId).toMatch(/^[0-9a-f-]{32,36}$/)
+    expect(calls[1].messageId).not.toBe(calls[0].messageId)
   })
 
-  it("says nothing failed when admission comes after the check began", async () => {
-    await sendThenLose("one more thing", () => lost())
-    await expectStillUnknown("one more thing")
-    // The request was still waiting for admission when the thread was read.
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    threadStatus = "running"
-    await act(() => new Promise((r) => setTimeout(r, 100)))
-    expect(screen.queryByText(/didn’t arrive/)).toBeNull()
+  it("sends it again as it was, and keeps it on the page meanwhile", async () => {
+    await sendThenLose("one more thing")
+    // Nothing is taken back while it goes again, and nothing new is sent.
+    expect(screen.getByText("one more thing")).toBeTruthy()
+    expect(screen.getByText(/Sending your message again/)).toBeTruthy()
+    expect(screen.queryByRole("alert")).toBeNull()
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].messageId).toBe(calls[0].messageId)
+    expect(calls[1].message).toBe("one more thing")
+    expect(calls[1].thread).toBe("t-8")
+    // The second copy is answered: the page streams it as any send.
+    act(() => {
+      calls[1].onEvent({ kind: "thread", thread: "t-8" })
+      calls[1].onEvent({ kind: "delta", text: "here it is", turn: 3 })
+    })
+    expect(screen.getByText("here it is")).toBeTruthy()
+    expect(screen.queryByText(/Sending your message again/)).toBeNull()
   })
 
-  it("blocks a second send during the check and says why", async () => {
-    await sendThenLose("one more thing", () => lost())
+  it("reads the rows when the server already held the message and its turn settled", async () => {
+    await sendThenLose("one more thing")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    stubRows([
+      message("m3", 3, "assistant", "the reply it missed"),
+      message("m2", 2, "user", "one more thing"),
+      message("m1", 1, "assistant", "an answer"),
+      message("m0", 0, "user", "question"),
+    ])
+    // A repeat's whole answer: the thread, then the one idle line.
+    act(() => {
+      calls[1].onEvent({ kind: "thread", thread: "t-8" })
+      calls[1].onEvent({ kind: "idle", thread: "t-8", status: "ok" })
+      calls[1].onDone?.()
+    })
+    await waitFor(() =>
+      expect(screen.getByText("the reply it missed")).toBeTruthy()
+    )
+    expect(screen.getAllByText("one more thing")).toHaveLength(1)
+    expect(screen.queryByRole("alert")).toBeNull()
+    expect(calls).toHaveLength(2)
+    expect(attaches).toHaveLength(0)
+  })
+
+  it("blocks a second send while the first goes again, and says why", async () => {
+    await sendThenLose("one more thing")
     type("another")
-    expect(
-      screen.getByText("Checking whether your last message arrived")
-    ).toBeTruthy()
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", { name: "Send" }).disabled
-    ).toBe(true)
+    expect(screen.getByText("Sending your last message again")).toBeTruthy()
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" })
     expect(calls).toHaveLength(1)
-    await expectStillUnknown("one more thing")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].message).toBe("one more thing")
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "another"
     )
   })
 
-  it("does not take an identical earlier prompt for the lost one", async () => {
-    await sendThenLose("continue", () => lost(), [
-      message("m1", 1, "assistant", "an answer"),
-      message("m0", 0, "user", "continue"),
-    ])
-    await expectStillUnknown("continue")
-  })
-
-  it("does not take another tab's newer message for the lost one", async () => {
-    await sendThenLose("one more thing", () => lost())
-    rows = [message("m2", 2, "user", "from another tab"), ...rows]
-    await expectStillUnknown("one more thing")
-  })
-
-  it("clears the notice after a 504 when the thread holds the message", async () => {
-    await sendThenLose("one more thing", () =>
-      lost("the request ended with HTTP 504 and no answer from the server")
-    )
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    await waitFor(
-      () => expect(screen.queryByRole("alert")).toBeNull(),
-      settledCheck
-    )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
-    expect(calls).toHaveLength(1)
-  })
-
-  it("treats a 503 with the server's envelope as unknown, not as refused", async () => {
+  it("treats a 503 with the server's envelope as unanswered, not as refused", async () => {
     await sendThenLose("one more thing", () =>
       calls[0].onError?.(
         new ApiError(
@@ -1033,88 +1094,76 @@ describe("a send whose delivery is unknown", () => {
         )
       )
     )
-    // The shutdown came after the thread's claim stored the message.
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    await waitFor(
-      () => expect(screen.queryByRole("alert")).toBeNull(),
-      settledCheck
-    )
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].messageId).toBe(calls[0].messageId)
     expect(screen.queryByText(/wasn’t sent/)).toBeNull()
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
   })
 
-  it("attaches to the turn the check finds running, with no running record given", async () => {
-    await sendThenLose("one more thing", () => lost())
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    threadStatus = "running"
-    await waitFor(() => expect(attaches).toHaveLength(1), settledCheck)
-    expect(attaches[0].thread).toBe("t-8")
+  it("sends it again when the stream closes before any event", async () => {
+    await sendThenLose("one more thing", () => calls[0].onDone?.())
+    await waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1].messageId).toBe(calls[0].messageId)
+  })
+
+  it("gives the message back when the copy sent again is refused", async () => {
+    await sendThenLose("one more thing")
+    await waitFor(() => expect(calls).toHaveLength(2))
+    act(() =>
+      calls[1].onError?.(
+        new ApiError("guard", "spend cap reached: 512 of 500 cents", 403)
+      )
+    )
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Your message wasn’t sent"
+    )
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
+      "one more thing"
+    )
+    await act(() => new Promise((r) => setTimeout(r, 80)))
+    expect(calls).toHaveLength(2)
+  })
+
+  it("keeps the message with Send again once every copy went unanswered", async () => {
+    await sendThenLose("one more thing")
+    for (let n = 2; n <= 1 + RESEND_DELAYS_MS.length; n++) {
+      await waitFor(() => expect(calls).toHaveLength(n))
+      act(() => lost())
+    }
+    const note = await screen.findByRole("alert")
+    expect(note.textContent).toContain("may not have arrived")
+    expect(note.textContent).toContain("it cannot be sent twice")
+    expect(note.textContent).toContain("one more thing")
+    expect(
+      screen.getByRole("button", { name: "Copy your message" })
+    ).toBeTruthy()
+    // It is not put back in the box: typed again, it would go under a new
+    // id and could be sent twice.
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    await act(() => new Promise((r) => setTimeout(r, 80)))
+    const before = calls.length
+    expect(before).toBe(1 + RESEND_DELAYS_MS.length)
+
+    fireEvent.click(screen.getByRole("button", { name: "Send again" }))
+    expect(calls).toHaveLength(before + 1)
+    expect(calls[before].messageId).toBe(calls[0].messageId)
+    expect(calls[before].message).toBe("one more thing")
     expect(screen.queryByRole("alert")).toBeNull()
   })
 
-  it("keeps the message to copy when the check's read fails", async () => {
-    await sendThenLose("one more thing", () => lost())
-    threadStatus = "fail"
-    await expectStillUnknown("one more thing")
-  })
-
-  it("does not trust a transcript read that started before the message landed", async () => {
-    await sendThenLose("one more thing", () => {
-      slowNext = true
-      lost()
-    })
-    // The message lands after the slow read took its snapshot.
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    await waitFor(
-      () => expect(screen.queryByRole("alert")).toBeNull(),
-      settledCheck
-    )
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
-  })
-
-  it("does not draw an attached turn's stored rows over its live ones", async () => {
-    rows = [
-      message("m1", 1, "assistant", "an answer"),
-      message("m0", 0, "user", "question"),
-    ]
-    stubLiveRows()
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    const tree = (record?: SubstrateRecord) => (
-      <QueryClientProvider client={client}>
-        <Harness initialThread="t-8" threadRecord={record} />
-      </QueryClientProvider>
-    )
-    const view = render(tree())
-    await waitFor(() => expect(screen.getByText("an answer")).toBeTruthy())
-    type("one more thing")
+  it("sends a new chat's first message again under the same id, naming no thread", () => {
+    mount()
+    type("hello")
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     act(() => lost())
-    // The message landed and its turn runs: the page attaches to it.
-    rows = [message("m2", 2, "user", "one more thing"), ...rows]
-    threadStatus = "running"
-    view.rerender(tree(runningThread("t-8")))
-    await waitFor(() => expect(attaches).toHaveLength(1))
-    act(() => {
-      attaches[0].onEvent({ kind: "thread", thread: "t-8" })
-      attaches[0].onEvent({ kind: "delta", text: "live part", turn: 3 })
+    return waitFor(() => {
+      expect(calls).toHaveLength(2)
+      expect(calls[1].thread).toBeUndefined()
+      expect(calls[1].messageId).toBe(calls[0].messageId)
     })
-    // The turn stores its reply so far while the check is waiting.
-    rows = [message("m3", 3, "assistant", "live part"), ...rows]
-    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 500)))
-    expect(screen.getAllByText("live part")).toHaveLength(1)
-    expect(screen.queryByRole("alert")).toBeNull()
   })
 
-  it("checks the thread when the stream closes before any event", async () => {
-    await sendThenLose("one more thing", () => calls[0].onDone?.())
-    await expectStillUnknown("one more thing")
-  })
-
-  it("leaves the next chat's draft alone when the chat is left during a check", async () => {
-    rows = [message("m0", 0, "user", "question")]
-    stubLiveRows()
+  it("sends nothing again from a chat that was left", async () => {
+    stubRows([message("m0", 0, "user", "question")])
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
@@ -1133,16 +1182,16 @@ describe("a send whose delivery is unknown", () => {
       </QueryClientProvider>
     )
     type("for the other chat")
-    await act(() => new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS + 300)))
+    await act(() => new Promise((r) => setTimeout(r, 120)))
+    expect(calls).toHaveLength(1)
     expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe(
       "for the other chat"
     )
     expect(screen.queryByRole("alert")).toBeNull()
   })
 
-  it("keeps an unsent message across leaving a chat and coming back", async () => {
-    rows = []
-    stubLiveRows()
+  it("keeps an unanswered message across leaving a chat and coming back", async () => {
+    stubRows([])
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
@@ -1151,34 +1200,37 @@ describe("a send whose delivery is unknown", () => {
         <Keyed thread={thread} />
       </QueryClientProvider>
     )
-    // A new chat: no thread to check, so only the notice holds the text.
     const view = render(at(""))
     type("hello")
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     act(() => lost())
-    expect(screen.getByRole("alert").textContent).toContain("hello")
+    for (let n = 2; n <= 1 + RESEND_DELAYS_MS.length; n++) {
+      await waitFor(() => expect(calls).toHaveLength(n))
+      act(() => lost())
+    }
+    expect((await screen.findByRole("alert")).textContent).toContain("hello")
     view.rerender(at("t-9"))
     expect(screen.queryByRole("alert")).toBeNull()
     view.rerender(at(""))
     const note = screen.getByRole("alert")
-    expect(note.textContent).toContain(MAYBE)
+    expect(note.textContent).toContain("may not have arrived")
     expect(note.textContent).toContain("hello")
-    expect(
-      screen.getByRole("button", { name: "Copy your message" })
-    ).toBeTruthy()
-  })
-
-  it("points a new chat at the chat list and shows the message to copy", () => {
-    mount()
-    type("hello")
-    fireEvent.click(screen.getByRole("button", { name: "Send" }))
-    act(() => lost())
-    const note = screen.getByRole("alert")
-    expect(note.textContent).toContain("chat list")
-    expect(note.textContent).toContain("hello")
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox").value).toBe("")
+    expect(screen.getByRole("button", { name: "Send again" })).toBeTruthy()
   })
 })
+
+const settled = {
+  reply: "ok",
+  thread: "",
+  status: "ok",
+  effects: 0,
+  turns: 1,
+  toolCalls: 0,
+  promptTokens: 1,
+  completionTokens: 1,
+  totalTokens: 2,
+  costUSD: 0,
+}
 
 /** A conversation the page remounts by thread, as the agents page does. */
 function Keyed({ thread }: { thread: string }) {

@@ -73,6 +73,7 @@ describe("a stream whose token ended", () => {
       streamChat({
         agent: "a",
         message: "hi",
+        messageId: "m-1",
         onEvent: () => {},
         onError: resolve,
         onDone: () => resolve("settled"),

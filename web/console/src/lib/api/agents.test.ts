@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   attachThread,
+  continueThread,
   lastAssistantReply,
+  newMessageId,
   parseAgentEvent,
   policiesForAgent,
   providerEndpoint,
@@ -17,7 +19,7 @@ import {
   TransportError,
 } from "./agents"
 import type { AgentEvent } from "./agents"
-import type { SubstrateRecord } from "./types"
+import { ApiError, type SubstrateRecord } from "./types"
 
 /** An ndjson stream response the fake fetch hands back. */
 function ndjson(lines: string[]): Response {
@@ -48,6 +50,7 @@ function runStream(lines: string[]) {
       streamChat({
         agent: "a",
         message: "hi",
+        messageId: "m-1",
         onEvent: (e) => events.push(e),
         onError: (e) => {
           error = e.message
@@ -186,6 +189,7 @@ describe("streamChat post-200 failures", () => {
       streamChat({
         agent: "a",
         message: "hi",
+        messageId: "m-1",
         onEvent: () => {},
         onError: (e) => resolve(e.message),
         onDone: () => resolve("settled"),
@@ -205,6 +209,7 @@ describe("streamChat post-200 failures", () => {
       streamChat({
         agent: "a",
         message: "hi",
+        messageId: "m-1",
         onEvent: () => {},
         onError: (e) => resolve(e.message),
         onDone: () => resolve("settled"),
@@ -231,6 +236,7 @@ describe("streamChat post-200 failures", () => {
         streamChat({
           agent: "a",
           message: "hi",
+          messageId: "m-1",
           onEvent: () => {},
           onError: resolve,
           onDone: () => resolve(new Error("settled")),
@@ -279,6 +285,64 @@ describe("attaching to and stopping a thread's turn", () => {
     expect(url).toBe("/api/v1/substrate.reamde.dev/llm/thread/t%201/events")
     expect(init.method).toBe("GET")
     expect(init.body).toBeUndefined()
+  })
+
+  it("continues with a bodiless POST on the thread and reads the stream", async () => {
+    const fetchMock = vi.fn(async () =>
+      ndjson([
+        '{"kind":"thread","thread":"t-1"}',
+        '{"kind":"delta","text":"and the rest","turn":4}',
+        '{"kind":"done","result":{"reply":"and the rest","thread":"t-1","status":"ok"}}',
+      ])
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const events: AgentEvent[] = []
+    await new Promise<void>((resolve) => {
+      continueThread({
+        thread: "t-1",
+        onEvent: (e) => events.push(e),
+        onDone: resolve,
+      })
+    })
+    expect(events.map((e) => e.kind)).toEqual(["thread", "delta", "done"])
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe("/api/v1/substrate.reamde.dev/llm/thread/t-1/continue")
+    expect(init.method).toBe("POST")
+    // No message is sent, so none can be written.
+    expect(init.body).toBeUndefined()
+  })
+
+  it("hands a refused continue its reason", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: "conflict",
+                reason: "nothing_to_continue",
+                message: "the thread's last turn finished",
+              },
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } }
+          )
+      )
+    )
+    const err = await new Promise<Error>((resolve) => {
+      continueThread({ thread: "t-1", onEvent: () => {}, onError: resolve })
+    })
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).reason).toBe("nothing_to_continue")
+  })
+
+  it("mints a message id that is a legal record id", () => {
+    const a = newMessageId()
+    expect(a).toMatch(/^[0-9a-f][0-9a-f-]{31,35}$/)
+    expect(newMessageId()).not.toBe(a)
   })
 
   it("stops with a POST and resolves the settled result", async () => {

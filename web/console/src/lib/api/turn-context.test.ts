@@ -38,6 +38,7 @@ describe("the chat body", () => {
       streamChat({
         agent: "a",
         message: "what is due?",
+        messageId: "m-1",
         context: ["ada.example.com/tasks/task/q4"],
         onEvent: () => {},
         onDone: resolve,
@@ -47,6 +48,7 @@ describe("the chat body", () => {
     expect(body).toEqual({
       thread: "",
       message: "what is due?",
+      messageId: "m-1",
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       context: ["ada.example.com/tasks/task/q4"],
     })

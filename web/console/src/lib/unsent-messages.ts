@@ -9,16 +9,25 @@ import { useSyncExternalStore } from "react"
 
 import { getRepository } from "@/lib/api/session"
 
+/** How long the chat waits before each time it sends an unanswered message
+ * again, under the same `messageId`. After the last one the message is kept
+ * in a notice, with a button that sends it once more. */
+export const RESEND_DELAYS_MS = [1_000, 3_000, 8_000]
+
 /** What became of one send that started no turn. */
 export interface Unsent {
   id: number
-  /** `refused`: the server's own 4xx refusal, so nothing ran. `checking`
-   * and `unknown`: anything else (a connection failure, a gateway's answer,
-   * a 5xx), so the message may or may not have arrived. */
-  kind: "refused" | "checking" | "unknown"
+  /** `refused`: the server's own 4xx refusal, so nothing ran. `unanswered`:
+   * anything else (a connection failure, a gateway's answer, a 5xx) on the
+   * send and on each time it was sent again, so the message may or may not
+   * have arrived. */
+  kind: "refused" | "unanswered"
   /** The server's words, or what failed. */
   reason: string
   message: string
+  /** The id an unanswered message was sent under: sending it again under
+   * the same id cannot send it twice. */
+  messageId?: string
   /** The message was also put back into the composer. Its notice shows the
    * saved copy either way, because the composer may be cleared since. */
   restored: boolean
