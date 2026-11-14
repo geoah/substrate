@@ -16,7 +16,8 @@ import Testing
 /// written there as a PNG at an iPhone's width, in light and in dark: a
 /// settled reply with every block the transcript draws, at its whole height,
 /// and a reply caught as it is written, part way through an emphasis, a
-/// table and a fenced block.
+/// table and a fenced block; and a reply that links records, each a pill
+/// inside its line, in a paragraph, a list and a table.
 @MainActor
 @Suite struct GalleryTests {
     static let scene = "gallery"
@@ -28,26 +29,41 @@ import Testing
         return ChatFixtures.reply.distance(from: ChatFixtures.reply.startIndex, to: range.upperBound) + more
     }
 
-    /// The names, and where the stream stops for each; nil is the settled
-    /// reply.
-    static let pictures: [(name: String, stop: Int?)] = [
-        ("chat-reply", nil),
-        ("chat-streaming-emphasis", cut(after: "You have **three thi")),
-        ("chat-streaming-table", cut(after: "| Item | Owner | Due | State |")),
-        ("chat-streaming-fence", cut(after: "let due = try await client.list(")),
+    /// A reply that links records: each link is the record's pill, inside
+    /// the line it stands in.
+    static let linking = """
+        The [Q4 budget](substrate://ada.example.com/tasks/task/q4) is blocked on the actuals, and \
+        [Offsite agenda](substrate://ada.example.com/tasks/task/offsite) still has two sessions with no owner.
+
+        - [Reading list](substrate://ada.example.com/tasks/task/reading) is ready to send
+        - Ask [Grace Hopper](substrate://ada.example.com/people/person/grace) about the venue
+
+        | Item | Owner |
+        | --- | --- |
+        | [Q4 budget](substrate://ada.example.com/tasks/task/q4) | [Ada Lovelace](substrate://ada.example.com/people/person/ada) |
+        """
+
+    /// The names, the reply, and where the stream stops for each; nil is
+    /// the settled reply.
+    static let pictures: [(name: String, reply: String, stop: Int?)] = [
+        ("chat-reply", ChatFixtures.reply, nil),
+        ("chat-reply-pills", linking, nil),
+        ("chat-streaming-emphasis", ChatFixtures.reply, cut(after: "You have **three thi")),
+        ("chat-streaming-table", ChatFixtures.reply, cut(after: "| Item | Owner | Due | State |")),
+        ("chat-streaming-fence", ChatFixtures.reply, cut(after: "let due = try await client.list(")),
     ]
 
     /// A host on the fixture showing one chat, once its transcript is the
     /// one the picture is of.
-    func host(stop: Int?) async throws -> (ChatHost, ChildKey) {
+    func host(reply: String = ChatFixtures.reply, stop: Int?) async throws -> (ChatHost, ChildKey) {
         // The whole reply in one piece: where it stops is exact.
-        let server = FixtureServer(reply: ChatFixtures.reply, pace: .init(piece: 1, interval: .zero))
+        let server = FixtureServer(reply: reply, pace: .init(piece: 1, interval: .zero))
         let thread = stop == nil ? "t-reply" : "t-live"
         if let stop {
             server.empty(thread)
-            server.answer(with: ChatFixtures.reply, holdAfter: stop)
+            server.answer(with: reply, holdAfter: stop)
         } else {
-            server.seed(thread, message: Self.question, reply: ChatFixtures.reply)
+            server.seed(thread, message: Self.question, reply: reply)
         }
         let host = ChatHost(.fixture(server))
         host.send(.sceneAppeared(scene: Self.scene, restoring: nil))
@@ -90,6 +106,35 @@ import Testing
         .environment(host)
     }
 
+    @Test func aReplysRecordLinksAreItsPillsInTheRowsItIsLaidOutIn() async throws {
+        let (host, key) = try await host(reply: Self.linking, stop: nil)
+        guard case let .assistant(reply)? = host.conversation(key)?.turns.last?.body else {
+            Issue.record("The reply is not the last turn.")
+            return
+        }
+        // Each line of the rows the presenter made is cut into its pills
+        // by the text the row's view draws.
+        let lines = reply.blocks.rows.flatMap { row -> [String] in
+            switch row.block {
+            case let .paragraph(text): [text]
+            case let .list(_, _, items):
+                items.flatMap { item in
+                    item.blocks.compactMap { if case let .paragraph(text) = $0 { text } else { nil } }
+                }
+            case let .table(_, _, rows): rows.flatMap { $0 }
+            default: []
+            }
+        }
+        let named = lines.flatMap { inlinePieces(parseInline($0)) }.compactMap { piece -> String? in
+            if case let .record(reference, name) = piece { "\(reference.recordID): \(String(name.characters))" } else { nil }
+        }
+        #expect(
+            named == [
+                "q4: Q4 budget", "offsite: Offsite agenda", "reading: Reading list", "grace: Grace Hopper", "q4: Q4 budget",
+                "ada: Ada Lovelace",
+            ])
+    }
+
     @Test func aSettledReplyHoldsEveryBlock() async throws {
         let (host, key) = try await host(stop: nil)
         let blocks = Markdown.parse(try #require(Self.text(host, key)))
@@ -119,10 +164,11 @@ import Testing
         let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] ?? NSTemporaryDirectory())
         let writable = FileManager.default.isWritableFile(atPath: directory.path)
         for picture in Self.pictures {
-            let (host, key) = try await host(stop: picture.stop)
+            let (host, key) = try await host(reply: picture.reply, stop: picture.stop)
             // A settled reply at its whole height; a streaming one as a
             // phone shows it, held at its end.
-            let size = picture.stop == nil ? CGSize(width: OffscreenDrawing.phone.width, height: 960) : OffscreenDrawing.phone
+            let whole = CGSize(width: OffscreenDrawing.phone.width, height: picture.reply == ChatFixtures.reply ? 960 : 420)
+            let size = picture.stop == nil ? whole : OffscreenDrawing.phone
             for scheme in [ColorScheme.light, .dark] {
                 let name = "\(picture.name)-\(scheme == .dark ? "dark" : "light").png"
                 let png = try await OffscreenDrawing.png(view(host, key, streaming: picture.stop != nil), size: size, scheme: scheme)
