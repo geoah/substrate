@@ -59,7 +59,8 @@ failed, starts nothing: the stop is the later word, so 0169's rule stands,
 and a failure is not retried unasked. The message stays in the thread, and
 the person's next message or continue reads it. A continue now also takes up
 a thread that settled `ok` with a message unanswered. A message is not
-withdrawn: it is a record like any other, and is deleted as one.
+withdrawn once it is sent: a route that takes one back would race the call
+that reads it.
 
 **A turn that waits on the person** (a question, an approval) has settled,
 so a typed message is an ordinary send. It answers and dismisses nothing.
