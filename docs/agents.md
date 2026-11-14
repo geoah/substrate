@@ -1183,6 +1183,120 @@ retries or forgets it
 or until the next start, whose first trigger pass reruns it once
 ([decision 0151](decisions/0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)).
 
+### Read state
+
+How far a person has read a thread is a record of their own, so a reply read
+on one device is read on every other
+([decision 0311](decisions/0311-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md)).
+The kind is `substrate.reamde.dev/llm/threadmark`, one record per thread and
+person:
+
+```yaml
+kind: substrate.reamde.dev/llm/threadmark
+metadata:
+  id: 019a8c3e5b7f7d21b0c4e6f8a2d4c6e8.2k7m9p1r3t5v7x9z0b2d4f6h8j
+data:
+  properties:
+    thread:
+      ref: substrate.reamde.dev/llm/thread/019a8c3e5b7f7d21b0c4e6f8a2d4c6e8
+    readBy:
+      ref: substrate.reamde.dev/core/actor/2k7m9p1r3t5v7x9z0b2d4f6h8j
+    readThrough:
+      ref: substrate.reamde.dev/llm/message/019a8c3f04aa7b1e9d3c5a7f1b3d5f70
+    readAt: "2026-11-14T09:41:07.412Z"
+    markedUnread: false
+```
+
+| Property | Holds |
+| --- | --- |
+| `thread` | the thread this is about; fixed at the create |
+| `readBy` | the person's [actor](api.md#actors); filled in with the person the write acts for, and fixed at the create |
+| `readThrough` | the newest message of that thread the person has seen |
+| `readAt` | when the position was last taken, stamped by the server |
+| `markedUnread` | the person chose Mark as Unread |
+
+The id is `<thread id>.<actor id>`. A client that holds its person's actor
+id reads or puts the mark at that id. One that does not creates it with no
+id, and the server builds the id and fills in `readBy`:
+
+```http
+POST /api/v1/records
+{"kind": "substrate.reamde.dev/llm/threadmark",
+ "properties": {"thread": "019a8c3e5b7f7d21b0c4e6f8a2d4c6e8",
+                "readThrough": "019a8c3f04aa7b1e9d3c5a7f1b3d5f70"}}
+```
+
+It answers `201` with the mark when it created one and `200` when the mark
+was already there. A person's own marks of a page of threads are one list
+read. `me` stands for the actor of the person the request acts for
+([the filter grammar](api.md#the-filter-grammar)), so another person's marks
+of the same threads do not come back:
+
+```http
+GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/threadmark"],"properties":{"thread":{"in":["<thread id>","<thread id>"]},"readBy":{"eq":"me"}}}&first=100
+```
+
+The rules the server holds on every write of a mark:
+
+- **A person writes only their own.** A person's token and an app's token
+  write the mark of the person they act for. Another person's mark is
+  refused with `403 forbidden`, reason `not_permitted`, whatever roles the
+  writer holds, and so is its delete. An agent, a function and a package
+  write none.
+- **The position only moves forward.** A message's place in its thread is
+  its `turn`, then when its row was written. A write whose `readThrough`
+  names a message before the stored one keeps the stored position; if it
+  changes nothing else it lands nothing and is answered `200` with the
+  stored record. Two devices that race end on the later position whichever
+  commits first, so a client needs no conflict handling here.
+- **`readThrough` names a message of the mark's thread.** A message of
+  another thread, or one that does not exist, is `422 validation`.
+- **Mark as Unread is a flag.** Writing `markedUnread: true` never moves the
+  position. A later write whose `readThrough` is at or after the stored one
+  clears the flag, unless the same write sets it.
+- **`readAt` is the server's.** It is stamped when a write's position is
+  taken. A value a write sends is dropped, so a client may put back the
+  record it read.
+
+**The thread says what a mark is compared with.** Every settle stamps
+`lastMessage` on the thread: the newest message it held then, by `turn` and
+then by when it was written, and never a `summary` row. After a reply it is
+the reply. After a run that ended on tool calls it is the last tool row.
+After a call that failed before any reply it is the message that was sent,
+and after a resumed run it is that run's last row. A row written into a
+settled thread between runs (a decision's report, a finished background
+job's) does not move it until the run it starts settles.
+
+Unread is derived, never stored. A settled thread that holds a `lastMessage`
+is unread for a person when they have no mark of it, when their mark says
+`markedUnread`, or when its `lastMessage` is not their mark's `readThrough`.
+A running thread is working, not unread. So a client marks a chat read by
+writing the thread's `lastMessage` as `readThrough`, once the person has
+seen the end of the settled transcript.
+
+**The thread also counts what waits on a person.** `waitingOnPerson` is how
+many of the thread's pending [questions](#the-decision-loop), proposed
+changes and [calls needing approval](#approvals) are not resolved yet. The
+server counts them again in each write that creates, resolves or deletes
+one, so a list says a chat waits on somebody from the thread row alone.
+Absent reads as 0.
+
+A viewer may write their own mark: the shipped `viewer` role carries one
+`write` rule, over this kind ([roles](auth.md#roles)). An app reaches the
+marks of the threads its `agents:` scope reaches
+([apps](apps.md#talk-to-agents)). The kind keeps a week of history past each
+mark's latest state ([retention](api.md#retention)), since a mark moves at
+every reply its person reads.
+
+Threads from before this release are read already. At a repository's first
+open under a release that carries it, repository migration 14 gives every
+settled thread a chat list shows (every `mode` but `subagent` and `judge`)
+its `lastMessage` and its count, and each person of the repository a mark
+that reads through it. It writes one changelog line per thread and one per
+thread and person, in one transaction, before the repository serves: about
+20 seconds for 5,000 threads and four people on a laptop. After it, a
+thread nobody has a mark of has never been opened.
+
 ### The daily spend cap
 
 Two optional caps stop agent runs once they have spent a set amount in a
@@ -1748,7 +1862,9 @@ GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/thread"],"propert
 ```
 
 Each row's `title` is its heading and `lastReply` previews its last reply
-([threads](#threads-messages-and-cost)).
+([threads](#threads-messages-and-cost)). Its `lastMessage`, beside the
+person's mark of it, says whether it is unread, and `waitingOnPerson` whether
+it waits on somebody ([read state](#read-state)).
 
 **A chat turn runs detached from its client**
 ([decision 0169](decisions/0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md)).

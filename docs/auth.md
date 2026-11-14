@@ -441,7 +441,7 @@ on every request, so a role changed or taken away holds from the next one
 | --- | --- |
 | `admin` | everything: every kind, the control kinds and sign-in material included, and changing who may do what |
 | `editor` | read and write every kind that is not a control kind |
-| `viewer` | read every kind that is not a control kind |
+| `viewer` | read every kind that is not a control kind, and write their own [thread marks](agents.md#read-state), which say how far they have read each chat |
 
 The **control kinds** decide what code runs, what it may do, what the
 vocabulary is and who may do what

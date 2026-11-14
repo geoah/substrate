@@ -959,6 +959,18 @@ panel on the right.
   can talk to starts a chat, and one that only works for other agents says so. **Add agents** lists the shipped samples that bring
   agents, each with **Add**, the same add as
   [Add a collection](#add-a-collection)'s samples.
+- **Unread chats** carry a dot and a heavier name. A chat is unread when it
+  has settled and you have not read through its newest message, on any
+  device: how far you have read is a record of yours
+  ([read state](agents.md#read-state)), so a reply read in an app is read
+  here. Opening a chat reads it once it has been in front for a second.
+  Pointing at a chat offers **Mark as unread**, or **Mark as read** on an
+  unread one; a chat marked unread while it is open stays unread until you
+  leave it. A chat with a question, a suggested change or a call waiting for
+  you says **Waiting on you**. The console reads a chat when it is open and
+  its window is in front, and does not check that its last message is
+  scrolled into view. On a server from before marks, no chat reads as
+  unread.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
   the `llm/message` records the loop wrote, not from the browser's memory, so a
   reload shows the same conversation; while a run streams, the same turns fill

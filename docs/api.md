@@ -251,7 +251,10 @@ fixes `(kind, id)` in the URL. Letting `POST` upsert under a supplied id would
 make two doors to one write with two answers about what a repeat does. The
 status is `201` for a create and `200` for an update, the same rule `PUT`
 follows, and `Idempotency-Key` binds to it
-([idempotency](#idempotency-and-retries)).
+([idempotency](#idempotency-and-retries)). One kind's id is built rather
+than minted: a [thread mark](agents.md#read-state) is named for its thread
+and the person the write acts for, so a `POST` of one may find the mark
+there, and is then a write of it, answered `200`.
 
 A `PUT` that would CREATE a record of a kind whose ids are minted (its
 `ids.type`, [vocabulary](vocabulary.md#the-reserved-keys)), sent by a person,
@@ -729,7 +732,11 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   and is filtered by the PATH string it points at (not by the object the read
   serves) — a single reference as one indexed equality on that path, an index
   the engine builds for every kind's single references without a declaration,
-  a `repeated` one through the index the reverse read walks — and every
+  a `repeated` one through the index the reverse read walks; a reference
+  pinned to `substrate.reamde.dev/core/actor` also takes the word `me` in
+  `eq` and `in`, the actor of the person the request acts for
+  (`{"readBy": {"eq": "me"}}`, from revision 7 of `records`), which is `422`
+  on a read no token is behind — and every
   other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
@@ -1157,7 +1164,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 7 adds it, and the record's `erasure`, `kept` among its fields, on a permanent delete's reply). |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 7 adds it, and the record's `erasure`, `kept` among its fields, on a permanent delete's reply; revision 8 adds `me` in a filter on a reference to an actor). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |
