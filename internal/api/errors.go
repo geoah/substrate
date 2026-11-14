@@ -120,6 +120,11 @@ const keyRefusedRetryAfter = time.Minute
 // its own (a webhook's provider) waits minutes, not seconds.
 const setAsideRetryAfter = 5 * time.Minute
 
+// erasingRetryAfter is the Retry-After on a create at an id whose permanent
+// delete is still erasing what the record owned (substrate.ErrErasing): the
+// compaction pass that lifts it runs every few minutes.
+const erasingRetryAfter = time.Minute
+
 // writeUnavailable is the 503 emit: a transient condition the caller should
 // retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
@@ -230,6 +235,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonSetAside, Message: err.Error()}
 	case errors.Is(err, substrate.ErrObservedRederiving):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonObservedRederiving, Message: err.Error()}
+	case errors.Is(err, substrate.ErrErasing):
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonErasing, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Message: err.Error()}
 	default:
@@ -314,6 +321,9 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p 
 		// The start logged why, once; a line per refused request would bury it.
 		slog.Debug("request refused: the repository is set aside", attrs...)
 		retryAfter = setAsideRetryAfter
+	case errors.Is(err, substrate.ErrErasing):
+		slog.Info("request refused: the record at its id is still being erased", attrs...)
+		retryAfter = erasingRetryAfter
 	case clientCanceled(r.Context(), err):
 		slog.Debug("request canceled by the client", attrs...)
 	default:

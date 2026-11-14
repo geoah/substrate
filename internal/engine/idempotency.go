@@ -150,8 +150,11 @@ type idempotencyRow struct {
 	thread string
 	// locator names what a dropped outcome was about, so the refusal can
 	// point the client at it: the record path of a created, merged or split
-	// record whose outcome exceeded the cap. Empty otherwise.
+	// record whose outcome exceeded the cap, or of the record an erasure
+	// took it with. Empty otherwise.
 	locator string
+	// erased says an erasure dropped the outcome (erase.go).
+	erased bool
 }
 
 // replay decodes the stored outcome into out, or says why the row cannot
@@ -173,6 +176,10 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 	// `conflict` would take its write for rolled back, so the reason says
 	// which attempt the refusal is about.
 	if r.outcome == nil {
+		if r.erased {
+			return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request succeeded, and its outcome went when the history of %s was erased; read the record",
+				substrate.ErrConflict, substrate.ErrFirstAttemptLanded, key, r.locator)
+		}
 		if r.locator != "" {
 			return fmt.Errorf("%w: %w: Idempotency-Key %q: the first request succeeded and wrote %s, but its outcome exceeded the %d byte retention cap and was not stored; read the record",
 				substrate.ErrConflict, substrate.ErrFirstAttemptLanded, key, r.locator, idempotencyOutcomeCap)
@@ -189,7 +196,7 @@ func (r *idempotencyRow) replay(key, fingerprint string, out any) error {
 // idempotencySelectSQL reads the one LIVE row for a key: a row past its
 // expires_at is dead and reads as absent, whether or not the sweep has
 // reclaimed it yet.
-const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome, coalesce(thread, ''), coalesce(locator, '')
+const idempotencySelectSQL = `SELECT fingerprint, settled_at IS NOT NULL, outcome, coalesce(thread, ''), coalesce(locator, ''), erased
 	FROM idempotency_keys WHERE operation = $1 AND key = $2 AND expires_at > $3`
 
 type rowQuerier interface {
@@ -198,7 +205,7 @@ type rowQuerier interface {
 
 func idempotencyRead(ctx context.Context, q rowQuerier, op idempotentOp, key string, now time.Time) (*idempotencyRow, error) {
 	var r idempotencyRow
-	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key, now).Scan(&r.fingerprint, &r.settled, &r.outcome, &r.thread, &r.locator)
+	err := q.QueryRowContext(ctx, idempotencySelectSQL, string(op), key, now).Scan(&r.fingerprint, &r.settled, &r.outcome, &r.thread, &r.locator, &r.erased)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

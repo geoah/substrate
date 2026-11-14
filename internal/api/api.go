@@ -560,6 +560,7 @@ func (h *handler) mountResources(r chi.Router) {
 			// segments, so the record path above never shadows them.
 			r.Post("/{a1}/{a2}/{a3}/{a4}/pin", h.postPin)
 			r.Post("/{a1}/{a2}/{a3}/{a4}/release", h.postRelease)
+			r.Post("/{a1}/{a2}/{a3}/{a4}/forget", h.postForget)
 		})
 
 		r.Group(func(r chi.Router) {

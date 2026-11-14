@@ -188,8 +188,9 @@ func TestATemporaryFailureOfAFunctionThatMayRunAnAgentIsSetAside(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 	setOutage(t, ds, "down")
+	// The widget changes, and the sync puts its task back.
 	mustPut(t, ds, fnActor, substrate.PutInput{
-		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1"},
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1, changed"},
 	})
 	rows := passUntil(t, ds, "the delivery to park", func(rows []substrate.TriggerFailure) bool { return len(rows) == 1 })
 	if strings.HasPrefix(rows[0].LastError, "temporary") || !strings.Contains(rows[0].LastError, "the provider is down") {
@@ -212,8 +213,9 @@ func TestAPermanentFailureIsStillSetAside(t *testing.T) {
 	t.Parallel()
 	ds, clock := outageDataset(t, strings.Replace(outageSource,
 		`raise host.Temporary("the provider is down")`, `raise Exception("the body is broken")`, 1))
+	// The widget changes, and the sync puts its task back.
 	mustPut(t, ds, fnActor, substrate.PutInput{
-		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1"},
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1, changed"},
 	})
 	rows := passUntil(t, ds, "the delivery to park", func(rows []substrate.TriggerFailure) bool { return len(rows) == 1 })
 	if strings.HasPrefix(rows[0].LastError, "temporary") || !strings.Contains(rows[0].LastError, "the body is broken") {
@@ -308,5 +310,78 @@ func TestAWaitingRowWhoseFunctionMayNowRunAnAgentIsSetAside(t *testing.T) {
 	}
 	if !parkedAlert(t, ds) {
 		t.Fatal("a delivery set aside for a person raised no alert")
+	}
+}
+
+// A sync that puts a record back at an id whose permanent delete is still
+// erasing what the record owned meets the refusal (substrate.ErrErasing),
+// which waits for the walk as a temporary failure does: nobody retries it by
+// hand and no alert is raised, and the retry due after the compaction pass
+// has taken the closure delivers.
+func TestADeliveryRefusedWhileErasingGetsThroughOnItsOwn(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := &engine.TestClock{}
+	_, ds, dsn := newDatasetWithDSN(t, engine.WithTestRetryClock(clock.Now), engine.WithTestErasureBatch(1), engine.WithCompactionInterval(-1))
+	fn := pyFn("sync", map[string]any{"permissions": map[string]any{
+		"reads": map[string]any{"kinds": []any{gadgetType}},
+	}}, []any{taskType}, outageSource)
+	if err := enginetest.Install(ctx, ds, owner, fnConnector(
+		[]enginetest.Trigger{trigOn("sync", map[string]any{"kinds": []any{widgetType}})}, fn)); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	// The task the sync writes for w1, owning three logs, so the delete's
+	// one batch leaves two.
+	mustPut(t, ds, fnActor, substrate.PutInput{
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1"},
+	})
+	process(t, ds)
+	if !deliveredTask(t, ds) {
+		t.Fatal("the sync did not write its task")
+	}
+	id := "t-" + fid("w1")
+	for range 3 {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/tasklog", Properties: map[string]any{
+			"task": id, "status": "done", "at": "2026-09-01T09:00:00Z", "scheduledAt": "2026-09-01T09:00:00Z",
+		}})
+	}
+	gone, err := ds.Delete(ctx, owner, taskType, id, substrate.DeleteInput{Purge: true})
+	if err != nil || gone.Erasure == nil || !gone.Erasure.Pending {
+		t.Fatalf("the permanent delete answered %+v (%v), want what it owns still to go", gone, err)
+	}
+	// The widget changes, and the sync puts its task back.
+	mustPut(t, ds, fnActor, substrate.PutInput{
+		Kind: widgetType, ID: fid("w1"), Properties: map[string]any{"name": "w1, changed"},
+	})
+	rows := passUntil(t, ds, "the delivery to park", func(rows []substrate.TriggerFailure) bool { return len(rows) == 1 })
+	if !strings.HasPrefix(rows[0].LastError, "temporary, retried automatically at ") || !strings.Contains(rows[0].LastError, "being erased") {
+		t.Fatalf("the refused delivery parked as %q, want it waiting for its retry", rows[0].LastError)
+	}
+	if parkedAlert(t, ds) {
+		t.Fatal("a delivery the server retries by itself raised the parked alert")
+	}
+	db := rawDB(t, dsn)
+	for pass := 0; ; pass++ {
+		if _, err := ds.(passer).CompactionPass(ctx); err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		var owned bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM compaction_erasures WHERE owned)`).Scan(&owned); err != nil {
+			t.Fatal(err)
+		}
+		if !owned {
+			break
+		}
+		if pass == 5 {
+			t.Fatal("the closure still stands after six passes")
+		}
+	}
+	clock.Advance(15 * time.Second)
+	passUntil(t, ds, "the retry that delivers", func(rows []substrate.TriggerFailure) bool { return len(rows) == 0 })
+	if !deliveredTask(t, ds) {
+		t.Fatal("the row retired and the delivery's task is not there")
+	}
+	if parkedAlert(t, ds) {
+		t.Fatal("the parked alert was raised for a delivery nobody had to retry")
 	}
 }

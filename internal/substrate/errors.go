@@ -103,6 +103,15 @@ var (
 	// the API answers 503 with Retry-After, and the payload's reason is
 	// ReasonObservedRederiving so a client tells it from every other 503.
 	ErrObservedRederiving = fmt.Errorf("%w: the observed index this read selects is being re-derived", ErrUnavailable)
+	// ErrErasing refuses a create at an id whose permanent delete is still
+	// erasing what the record owned, at any level of it: the batches find
+	// what it owned by its id, so a record created there meanwhile would
+	// lose what it owns to them. The compaction pass lifts it with nobody
+	// acting, so it wraps ErrUnavailable: the API answers 503 with
+	// Retry-After and the reason ReasonErasing, and a delivery whose write
+	// meets it is retried over minutes like a temporary failure. The
+	// message names the deleted record and how many it still owns.
+	ErrErasing = fmt.Errorf("%w: the record at this id is being erased", ErrUnavailable)
 	// ErrAllowance refuses a call the operator would pay for (decision 0235)
 	// because the repository's allowance for the UTC day is used up, or would
 	// be by this call's reserved ceiling. The message names the site, the
@@ -158,6 +167,9 @@ var (
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
 const ReasonObservedRederiving = "observed_rederiving"
 
+// ReasonErasing is the ErrorPayload reason of ErrErasing.
+const ReasonErasing = "erasing"
+
 // ReasonQuota is the ErrorPayload reason of ErrAllowance.
 const ReasonQuota = "quota"
 
@@ -199,6 +211,7 @@ const (
 // (internal/api problemFor), and the console's union and docs/api.md are held
 // to it (internal/api errorreasons_test.go).
 var ErrorReasons = []string{
+	ReasonErasing,
 	ReasonFirstAttemptLanded,
 	ReasonFirstAttemptRunning,
 	ReasonInDoubt,
@@ -222,8 +235,8 @@ type ErrorEnvelope struct {
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
-// set: ReasonObservedRederiving, ReasonKeyRefused and ReasonSetAside on
-// `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
+// set: ReasonObservedRederiving, ReasonKeyRefused, ReasonSetAside and
+// ReasonErasing on `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
 // ReasonInDoubt on `internal` and `unavailable`, and
 // ReasonFirstAttemptRunning and ReasonFirstAttemptLanded on `conflict`.
 // A client that does not know a reason acts on the code.

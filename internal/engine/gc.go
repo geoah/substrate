@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -141,14 +142,21 @@ func (ds *dataset) sweepUnheldSealed(ctx context.Context) (int, error) {
 // ledger keeps a settled run only for minutes. The filter is in the victim
 // query, so a held row never fills a batch and the sweep cannot spin on it.
 // The CASE keeps the timestamp cast off every other kind's props.
+//
+// A tombstone a standing permanent delete's closure still has to erase is
+// that closure's (erase.go), and the victim query leaves it: the sweep would
+// collect it with a plain `collected` line and no intent, out of the
+// closure's reach, and its history would keep its values.
 func (ds *dataset) gcPass(ctx context.Context) (int, bool, error) {
+	kinds, props := cascadingRefsIn(ds.registry())
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, kind FROM records
-		WHERE deleted_at IS NOT NULL AND cardinality(finalizers) = 0
-		  AND NOT CASE WHEN kind = $2
-		    THEN coalesce((props->>'finishedAt')::timestamptz >= $3::timestamptz, false)
+		SELECT x.id, x.kind FROM records x
+		WHERE x.deleted_at IS NOT NULL AND cardinality(x.finalizers) = 0
+		  AND NOT CASE WHEN x.kind = $2
+		    THEN coalesce((x.props->>'finishedAt')::timestamptz >= $3::timestamptz, false)
 		    ELSE false END
-		ORDER BY deleted_at LIMIT $1`, gcBatch, typeThread, ds.spend.clock().UTC().Add(-spendWindow))
+		  AND NOT `+closureTakes(4)+`
+		ORDER BY x.deleted_at LIMIT $1`, gcBatch, typeThread, ds.spend.clock().UTC().Add(-spendWindow), kinds, props)
 	if err != nil {
 		return 0, false, err
 	}
@@ -201,6 +209,13 @@ func (ds *dataset) gcPass(ctx context.Context) (int, bool, error) {
 			if row.DeletedAt == nil || len(row.Finalizers) > 0 {
 				return nil
 			}
+			// A closure that began since the victim query takes it.
+			kinds, props := t.cascadingRefs()
+			var taken bool
+			if err := t.row(`SELECT `+closureTakes(3)+` FROM records x WHERE x.kind = $1 AND x.id = $2`,
+				ref.Kind, ref.ID, kinds, props).Scan(&taken); err != nil || taken {
+				return err
+			}
 			if err := t.cascadeOwned(ref); err != nil {
 				return err
 			}
@@ -228,6 +243,18 @@ func (ds *dataset) gcPass(ctx context.Context) (int, bool, error) {
 	return n, full, nil
 }
 
+// closureTakes says the record x is one a standing permanent delete's
+// closure has still to erase: its own cascading reference names a record an
+// owned intent stands for, by its id or by an id the intent kept. The
+// cascading kinds and properties are the parameters at arg and arg+1.
+func closureTakes(arg int) string {
+	return fmt.Sprintf(`EXISTS (
+	SELECT 1 FROM refs r JOIN compaction_erasures ce
+	  ON ce.owned AND ce.record_kind = r.dst_kind AND (r.dst = ce.record_id OR ce.former_ids ? r.dst)
+	WHERE r.src_kind = x.kind AND r.src = x.id AND r.path = ''
+	  AND (r.src_kind, r.property) IN (SELECT * FROM unnest($%d::text[], $%d::text[])))`, arg, arg+1)
+}
+
 // ownedChild is one record the cascade collects: its kind (typ) and id.
 type ownedChild struct{ id, typ string }
 
@@ -248,6 +275,10 @@ type ownedChild struct{ id, typ string }
 // hard-deletes the owner in the same transaction and a second pass would have
 // nothing left to walk from.
 func (t *txn) cascadeOwned(owner eref) error {
+	// An erasure takes what the record owns in its own batches (erase.go).
+	if t.noCascade {
+		return nil
+	}
 	children, err := t.cascadeChildren(owner)
 	if err != nil {
 		return err
@@ -289,6 +320,13 @@ func (t *txn) cascadeOwned(owner eref) error {
 // refuses the other shapes), which is why the path filter is exact rather than
 // a prefix: a pointer nested inside an object names no single owner.
 func (t *txn) cascadeChildren(owner eref) ([]ownedChild, error) {
+	return t.ownedBy(owner, false)
+}
+
+// ownedBy is cascadeChildren, the tombstoned children too where tombstoned
+// says so: an erasure takes what a record owns whether or not an earlier
+// delete already tombstoned it (erase.go).
+func (t *txn) ownedBy(owner eref, tombstoned bool) ([]ownedChild, error) {
 	ids, err := t.idsOf(owner)
 	if err != nil {
 		return nil, err
@@ -301,8 +339,8 @@ func (t *txn) cascadeChildren(owner eref) ([]ownedChild, error) {
 		SELECT r.property, r.src, r.src_kind FROM refs r
 		JOIN records x ON x.kind = r.src_kind AND x.id = r.src
 		WHERE r.dst_kind = $1 AND r.dst IN (SELECT jsonb_array_elements_text($2::jsonb))
-		  AND r.path = '' AND x.deleted_at IS NULL
-		ORDER BY r.src_kind, r.src, r.property`, owner.Kind, raw)
+		  AND r.path = '' AND ($3 OR x.deleted_at IS NULL)
+		ORDER BY r.src_kind, r.src, r.property`, owner.Kind, raw, tombstoned)
 	if err != nil {
 		return nil, err
 	}

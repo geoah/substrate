@@ -37,11 +37,20 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // DefaultCompactionInterval is how often a repository's compaction pass
 // runs when nothing says otherwise.
 const DefaultCompactionInterval = time.Hour
+
+// erasureFollowUp is how soon the next pass comes while a permanent
+// delete's closure waits on it (erase.go): a create at the deleted id is
+// refused until the closure is done (substrate.ErrErasing), and a delivery
+// that meets the refusal retries for about an hour, so the closure must not
+// wait an interval between passes.
+const erasureFollowUp = time.Minute
 
 // DefaultDeletionsKept is how long a deletion is remembered before the pass
 // forgets the record: the longest retention the shipped kinds state short of
@@ -56,6 +65,8 @@ const (
 	compactionInIndex    = "inside a batch of the index's derivation"
 	compactionInForget   = "inside a batch that forgets deletions"
 	compactionToForget   = "before a batch that forgets deletions takes the lock"
+	erasureBetween       = "after a permanent delete or a forget committed, before its erasure"
+	erasureBatchDone     = "after a batch of what an erased record owns committed"
 )
 
 // compactionFault is the pass's test seam: nil but in a test.
@@ -117,9 +128,11 @@ type CompactionPassReport struct {
 	Records int      `json:"records"`
 	Removed int      `json:"removed"`
 	// Forgotten is how many deleted records the pass forgot whole.
-	Forgotten int  `json:"forgotten"`
-	Finished  bool `json:"finished"`
-	Took      time.Duration
+	Forgotten int `json:"forgotten"`
+	// Erased is how many records' erasures the pass finished.
+	Erased   int  `json:"erased"`
+	Finished bool `json:"finished"`
+	Took     time.Duration
 }
 
 // CompactionPass runs one compaction pass over the repository, bounded by
@@ -151,6 +164,14 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 	indexed, err := ds.backfillForeign(ctx, func(ctx context.Context) error { return pace(ctx, 0) })
 	report.Indexed = indexed
 	if err != nil || !indexed {
+		return report, budgetEnded(err)
+	}
+	// What a call left of an erasure (erase.go): a crash between its two
+	// transactions, a hold that ended, a row written back.
+	erased, err := ds.eraseNow(ctx, nil, false, -1, pace)
+	report.Erased = len(erased.Erased)
+	if err != nil {
+		report.Took = time.Since(started)
 		return report, budgetEnded(err)
 	}
 	kinds, err := ds.compactionKinds(ctx)
@@ -385,9 +406,24 @@ type CompactionStatus struct {
 	HeldBy        *HorizonHold    `json:"heldBy,omitempty"`
 	Kinds         []CompactedKind `json:"kinds,omitempty"`
 	// Damaged is every line a reader found not to verify: nothing at or
-	// above the lowest is compacted until its row is written back from a
-	// whole copy (damage.go).
+	// above the lowest is compacted or erased until its row is written back
+	// from a whole copy (damage.go).
 	Damaged []int64 `json:"damaged,omitempty"`
+	// Erasures is every record whose history's erasure waits (erase.go):
+	// since when, up to which line, and whether its current state stays.
+	Erasures []WaitingErasure `json:"erasures,omitempty"`
+}
+
+// WaitingErasure is one record whose history waits to be erased.
+type WaitingErasure struct {
+	Kind  string    `json:"kind"`
+	ID    string    `json:"id"`
+	UpTo  int64     `json:"upTo"`
+	Live  bool      `json:"live"`
+	Since time.Time `json:"since"`
+	// Owned is how far the erasure of what the record owns stands, while
+	// it is still to go: how many went, and at least how many remain.
+	Owned *substrate.ErasureOwned `json:"owned,omitempty"`
 }
 
 // CompactedKind is one kind's compaction mark.
@@ -444,6 +480,21 @@ func (s *service) CompactionStatus(ctx context.Context, repository string) (Comp
 	}
 	if err := errors.Join(damaged.Err(), damaged.Close()); err != nil {
 		return st, err
+	}
+	pending, err := ds.pendingErasures(ctx, ds.db, nil)
+	if err != nil {
+		return st, err
+	}
+	for _, e := range pending {
+		w := WaitingErasure{Kind: e.Kind, ID: e.ID, UpTo: e.UpTo, Live: e.Live, Since: e.Since}
+		if e.Owned && !e.Live {
+			owned, err := ds.ownedProgress(ctx, eref{Kind: e.Kind, ID: e.ID})
+			if err != nil {
+				return st, err
+			}
+			w.Owned = &owned
+		}
+		st.Erasures = append(st.Erasures, w)
 	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT m.kind, m.upto, m.records, m.removed,
@@ -750,19 +801,33 @@ func (ds *dataset) startCompactor() {
 		cancel()
 		<-done
 	}
+	ds.compactionKick = make(chan struct{}, 1)
 	started := ds.spawn("compaction", func(bg context.Context) {
 		defer close(done)
 		stop := context.AfterFunc(bg, cancel)
 		defer stop()
-		tick := time.NewTicker(ds.svc.compactionInterval)
-		defer tick.Stop()
+		due := time.Now().Add(ds.svc.compactionInterval)
+		timer := time.NewTimer(ds.svc.compactionInterval)
+		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-tick.C:
+			case <-ds.compactionKick:
+				if time.Until(due) > erasureFollowUp {
+					due = time.Now().Add(erasureFollowUp)
+					timer.Reset(erasureFollowUp)
+				}
+				continue
+			case <-timer.C:
 			}
 			report, err := ds.CompactionPass(ctx)
+			next := ds.svc.compactionInterval
+			if ds.closuresWait(ctx) {
+				next = min(next, erasureFollowUp)
+			}
+			due = time.Now().Add(next)
+			timer.Reset(next)
 			switch {
 			case err != nil && ctx.Err() == nil:
 				ds.svc.log.Error("substrate: a compaction pass failed; the next one tries again",
@@ -777,6 +842,23 @@ func (ds *dataset) startCompactor() {
 	if !started {
 		close(done)
 	}
+}
+
+// kickCompactor brings the next pass within erasureFollowUp, for a closure
+// left to it; nothing where no pass runs.
+func (ds *dataset) kickCompactor() {
+	select {
+	case ds.compactionKick <- struct{}{}:
+	default:
+	}
+}
+
+// closuresWait reports whether a permanent delete's closure waits on the
+// pass; a read that fails reads as none, and the interval brings the pass.
+func (ds *dataset) closuresWait(ctx context.Context) bool {
+	var wait bool
+	err := ds.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM compaction_erasures WHERE owned)`).Scan(&wait)
+	return err == nil && wait
 }
 
 // stopCompactor ends the repository's passes; a batch in flight rolls back.

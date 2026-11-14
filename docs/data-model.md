@@ -683,7 +683,9 @@ objects, no state machines, no secrets, no nested references, and none on a
 keyed reference.
 
 **Ownership.** `onDelete: cascade` says the referent OWNS this record, so
-collecting the referent tombstones everything that names it. Absent, a
+collecting the referent tombstones everything that names it, and a
+permanent delete of the referent purges and erases it, in batches
+([the API](api.md#the-five-mutations)). Absent, a
 reference detaches: the value stays, and it dangles once the referent is
 purged. Cascade is declarable on a kind's own single-valued, top-level
 reference, pinned or not: a repeated or keyed pointer names no single owner,

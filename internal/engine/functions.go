@@ -958,7 +958,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		// meet the same outage. A paged drain that already
 		// committed pages (errPagedParked) also parks now: re-running it would
 		// only resume the same chain, so leave it to the parked-failure retry.
-		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
+		if runner.Deterministic(err) || temporaryFailure(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
@@ -2379,7 +2379,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, false, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
+		if runner.Deterministic(err) || temporaryFailure(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
 			errors.Is(err, errAgentThreadOpened) || errors.Is(err, errWebhookUnverified) || errors.Is(err, errAgentWebhookTooLarge) {
 			attempts = attempt + 1
 			break

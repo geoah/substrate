@@ -25,7 +25,9 @@ export class SubstrateError extends Error {
    * attempt's write stands), `first_attempt_running` (it did not run, and
    * the first attempt may still land), `quota`, `key_refused`,
    * `observed_rederiving`, `set_aside` (the server found the repository
-   * damaged when it started). */
+   * damaged when it started), `erasing` (a create at an id whose permanent
+   * delete is still erasing what the record owned; the same write gets
+   * through later). */
   readonly reason?: string
 
   constructor(

@@ -501,7 +501,13 @@ A delivery that fails is either temporary or the body's own:
   `requests`, the `TransportError` and `TimeoutException` of `httpx`), or an
   HTTP answer that means "try later", 408, 429, 502, 503 or 504, from
   `urllib.error.HTTPError` or any exception whose `response.status_code`
-  says so. A body that runs past its `timeout` is temporary too.
+  says so. A body that runs past its `timeout` is temporary too, and so is
+  a delivery whose write creates a record at an id a
+  [permanent delete](api.md#the-five-mutations) is still erasing what it
+  owned of: the substrate refuses it as `erasing` until the compaction pass
+  has taken those records. A function that may run an agent or call another
+  is never retried unattended (below), so that refusal parks it for a
+  person, with the reason and when to retry.
 
   ```python
   def main(input, host):

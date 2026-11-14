@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine"
@@ -82,13 +84,27 @@ func historyCount(t *testing.T, db *sql.DB) (n, head int64) {
 // to the live fold: a history with no state entry runs no new code.
 func TestACompactedHistoryReplaysToTheSameFold(t *testing.T) {
 	// Not parallel: WriteDeliveryHistory sets the engine's drain caps.
-	svc, ds, dsn := newDatasetWithDSN(t)
+	var stop atomic.Bool
+	svc, ds, dsn := newDatasetWithDSN(t, engine.WithTestCompactionFault(func(stage string) error {
+		if stage == engine.ErasureBetween && stop.Load() {
+			return errors.New("stopped between the forget and its erasure")
+		}
+		return nil
+	}))
 	writeSomeHistory(t, ds)
 	installPeopleSourcesWithDir(t, ds)
 	writeMappedHistory(t, ds)
 	writeObservedHistory(t, ds)
 	writeChangedDeclaration(t, ds)
 	engine.WriteDeliveryHistory(t, ds)
+	// An erasure that waits: a forget stopped between its transactions
+	// leaves its intent, which no compaction takes and the replay keeps.
+	forgotten := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "forgotten later"}})
+	stop.Store(true)
+	if _, err := ds.Forget(context.Background(), owner, forgotten.Kind, forgotten.ID, substrate.ForgetInput{}); err == nil {
+		t.Fatal("the forget was not stopped between its transactions")
+	}
+	stop.Store(false)
 	db := rawDB(t, dsn)
 
 	rebuild := func() {

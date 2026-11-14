@@ -952,7 +952,7 @@ func TestATriggerRewoundBeforeAForgettingBatchHoldsItBack(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var rewind atomic.Pointer[func()]
-	d := openInternalDataset(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+	d := openInternalDataset(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour), WithTestPurgeKeepsHistory(),
 		WithTestCompactionClock(func() time.Time { return time.Now().Add(2 * time.Hour) }),
 		WithTestCompactionFault(func(stage string) error {
 			if stage == compactionToForget {

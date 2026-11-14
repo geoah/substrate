@@ -1632,6 +1632,14 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	e.DeletedAt = &del
 	if r.URL.Query().Get("purge") == "true" {
 		delete(f.records, id)
+		// What the server's reply says of a record that owns more than its
+		// first batch reaches.
+		e.Erasure = &substrate.Erasure{
+			Kind: e.Kind, ID: e.ID, Pending: true,
+			Held:   "what it owns is still to go",
+			Purged: []string{"samples.substrate.reamde.dev/tasks/tasklog/l1"},
+			Owned:  &substrate.ErasureOwned{Remaining: 3, Purged: 1, Batch: 100},
+		}
 		writeJSON(w, http.StatusOK, e)
 		return
 	}

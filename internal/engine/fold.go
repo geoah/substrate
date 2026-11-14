@@ -123,6 +123,11 @@ const (
 	// effect: its cursor, fire state, parked failures and resume rows
 	// (Ledger).
 	foldLedger foldKind = "ledger"
+	// foldErase records that a record's history up to a line is to be
+	// erased (erase.go, decision 0304): Ref and ID name it, Seq the line, Live
+	// whether its current state stays. It carries no value, and the erasure
+	// that does it takes it off its line.
+	foldErase foldKind = "erase"
 )
 
 // rowDelta is one record's change as VALUES: what its columns became, against
@@ -268,6 +273,15 @@ type foldOp struct {
 	// State and Ledger carry a state entry (compact.go).
 	State  *recordState   `json:"state,omitempty"`
 	Ledger *triggerLedger `json:"ledger,omitempty"`
+	// Live says an erasure keeps the record's current state (erase).
+	Live bool `json:"live,omitempty"`
+	// Owned says an erasure takes everything the record owns with it, in
+	// the pass's batches (erase); OnBehalfOf above then names the hand the
+	// deleting line acted for, which the batches' lines act for too.
+	Owned bool `json:"owned,omitempty"`
+	// FormerIDs are the ids besides its own an owned record's batches find
+	// what it owns through, read before its purge took its former ids away.
+	FormerIDs []string `json:"formerIds,omitempty"`
 }
 
 // foldInt is an integer the ledger carries: a cursor seq, a failure id, a
@@ -525,6 +539,11 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 		return foldResult{changed: changed}, err
 	case foldState:
 		return t.applyState(op)
+	case foldErase:
+		if err := t.applyErase(op); err != nil {
+			return foldResult{}, err
+		}
+		return foldResult{changed: true}, nil
 	case foldLedger:
 		if err := t.applyLedger(op); err != nil {
 			return foldResult{}, err
@@ -538,6 +557,11 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 // produced. It is the write path's door to the records table: nothing else may
 // name it, so every record change is described before it is made.
 func (t *txn) foldRow(before, after *erow, force, resurrect bool) (foldResult, error) {
+	if before == nil {
+		if err := t.refuseWhileErasing(eref{Kind: after.Kind, ID: after.ID}); err != nil {
+			return foldResult{}, err
+		}
+	}
 	d := diffRow(before, after)
 	d.Force = force
 	d.Restored = resurrect
@@ -1485,7 +1509,7 @@ func nonNilMap(m map[string]any) map[string]any {
 // `deleted_at` are all the writing transaction's `now` — replaying under the
 // replay's own clock would reproduce the values and not the row.
 func (t *txn) foldEntry(ch substrate.Change) error {
-	t.now = ch.TS.UTC()
+	t.now, t.lineSeq = ch.TS.UTC(), ch.Seq
 	ops, err := foldOpsOf(ch)
 	if err != nil {
 		return err

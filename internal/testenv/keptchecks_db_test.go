@@ -80,6 +80,9 @@ var keptConversions = map[int]keptConversion{
 	// that may hold state entries and rewrites no line, since no history
 	// written before it holds one, so every record reads as it did.
 	6: {why: "state_entries rewrites no line: a history written before it holds no state entry"},
+	// conversion_0007_erasures: it raises the stamp to the dialect that may
+	// hold an erasure's intent and rewrites no line.
+	7: {why: "erasures rewrites no line: a history written before it holds no erase effect"},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.

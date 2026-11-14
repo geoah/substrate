@@ -399,9 +399,11 @@ time, so a writer that composes an id from a provider's key may delete and
 recreate at will.
 
 `DELETE ?purge=true` runs that purge in the delete itself, so a writer can
-start a record over: the tombstone lands if the record was live, what it owns
-through `onDelete: cascade` is tombstoned for the sweep, the row is
-hard-deleted, and the changelog records a `gc` entry with reason `purged`.
+start a record over: the row is hard-deleted, and the changelog keeps a `gc`
+entry with reason `purged` and no value, by the caller, where the record's
+history was. What it owns (every record whose own top-level reference to it
+declares `onDelete: cascade`, and what those own in turn) is purged and
+erased after it, in batches (below).
 The next `put` at the id creates a fresh record, and a mapping source
 resolves its subject again through the probes when that `put` leaves the
 subject slot out, which is how one identity is re-resolved after a mapping's
@@ -419,11 +421,52 @@ conflict` naming the canonical id, because the former id resolves to the
 winner. A declaration record answers `422 validation`: it leaves through
 admission
 ([decision record 0122](decisions/0122-a-delete-may-purge-so-a-put-starts-the-record-over.md)).
-Purging an account runs its whole `onDelete: cascade` inside the request,
-under the repository's write lock, and the mirrors it owns are only
-tombstoned: a sync within the sweep window restores them with their old
-properties and subjects, so purge those mirrors first when they must start
-over too. `purge` is a REST and `substratectl` option only: an agent's
+
+A purge also erases the record's history
+([decision record 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)):
+no value of it is left in the changelog, the records or the key store, and
+the archive holds none once its next pass has published. It reaches what the
+record owns, the change requests that target it, the records merged into it
+and each mapped target's copy of a value it derived
+([0305](decisions/0305-a-permanent-delete-reaches-what-the-record-owns-and-what-asks-to-change-it.md)),
+and leaves the `gc` line with no value. What the record owns goes in
+batches of 100 records, each one transaction, and each record a batch
+reaches is erased exactly as one deleted directly is: the delete runs one
+batch in all, so a record that owns fewer than 100, none of which owns
+anything in turn, is done in the request, and the compaction pass runs the
+rest ([operations](operations.md#the-compaction-pass)). Until its
+batch, an owned record stays as it is, read and written like any other; a
+write to it meanwhile is erased with it, and a record written meanwhile with
+a cascading reference to the deleted id is owned too and goes with them. A
+create at the deleted id, or at the id of an owned record that owns things
+in turn, or at one of its former ids, answers `503 unavailable` with the
+reason `erasing` until its batches are done, and the same request gets
+through after. The reply
+carries `erasure`: `purged` names, by record path, every other record the
+delete purged and erased with it; `owned`, while what the record owns is
+still to go, says how many went (`purged`), how many it still owns directly
+(`remaining`, a floor counted no further than a batch and one: what those
+own is counted as the batches reach them)
+and the batch size (`batch`); `pending` is false once the history and what
+it owns are erased, and while it is not, `waits` names each
+enabled trigger it waits for (one that has not been delivered the deletion
+and is delivering), `held` says what else holds it, and `damaged` names the
+line known not to verify it waits on until its row is written back. The
+compaction pass finishes what waits. A stored `Idempotency-Key` outcome of the
+record goes with it, and a retry under that key is told so. Out of reach: text
+another record quotes, a request already in the webhook spool, a provider's
+sync, and every copy taken before.
+
+`POST <record path>/forget` is the owner's: on a live record it erases the
+history before its current state, the same way
+([0306](decisions/0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md)),
+and waits for a parked failure or a drain on one of its lines; on a record
+whose erasure waits, it finishes it. `{"finish": true}` passes every trigger
+the erasure waits for. It answers the `erasure`.
+Purging an account takes the mirrors it owns in its batches, and an
+account connected again at the same id waits for them: its create answers
+`erasing` until the batches are done, and a sync's delivery that writes it
+is retried on its own. `purge` is a REST and `substratectl` option only: an agent's
 `write` tool and a function's `delete` effect always delete plainly, because
 a purge cannot be undone. It differs from the bundle lifecycle's `purge`
 ([bundles](bundles.md)), which tombstones a bundle's records for the sweep.
@@ -1066,7 +1109,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`). |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 6 adds it, and the record's `erasure` on a permanent delete's reply). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |
@@ -2669,7 +2712,7 @@ also answers `unavailable`, with a 30-second `Retry-After` and a message that
 names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has nine members: `observed_rederiving` on `unavailable`,
+set is closed and has ten members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
@@ -2679,6 +2722,11 @@ five-minute `Retry-After`, a repository the server found damaged when it
 started, which it serves again only once its
 operator repairs it and restarts the server
 ([a repository set aside](operations.md#a-repository-set-aside-at-start-up));
+`erasing` on `unavailable`, since revision 5 of the `errors` feature, with a
+one-minute `Retry-After`, a create at an id whose
+[permanent delete](#the-five-mutations) is still erasing what the record
+owned, which the message names with how many it still owns, and which the
+same request gets through once the compaction pass has taken them;
 `quota` on
 `guard`, an operator-paid call past the repository's allowance for the day;
 and `stale_revision` on `validation`, a write whose `revision` is below the
@@ -2710,9 +2758,9 @@ them is stale, and dropping that call drops the others too. A write that
 removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
 
-The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
-`in_doubt`, `key_refused`, `observed_rederiving`, `quota`,
-`repository_required`, `set_aside`, `stale_revision`.
+The closed set of reasons: `erasing`, `first_attempt_landed`,
+`first_attempt_running`, `in_doubt`, `key_refused`, `observed_rederiving`,
+`quota`, `repository_required`, `set_aside`, `stale_revision`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",

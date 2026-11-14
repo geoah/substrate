@@ -345,6 +345,7 @@ the marks it left.
 | `forget` | Drops every delivery row a deleted trigger owned | |
 | `state` | A [state entry](#state-entries): writes the record's row whole, its version and times included, states its annotations and its marks again (a mark only beside a value the row holds), and moves the unit graph's revision by `moves`; with no `row`, does what `purge` does | `version`; `state`: `row` (`title`, `states`, `at`, `endsAt`, `dueAt`, `props`, `labels`, `finalizers`, `kindVersion`, `version`, `createdAt`, `updatedAt`, `deletedAt`), `annotations` (`key`, `value`, `updatedAt`), `marks` (`property`, `pinned`, `setBy`, `onBehalfOf`, `derivedFrom`, `setAt`), `created`, `creator` (`actor`, `onBehalfOf`, `token`), `moves` |
 | `ledger` | A [state entry](#state-entries) of a trigger's delivery rows: drops them and writes the ones it carries | `ledger`: `cursor` (`seq`, `updatedAt`), `schedule` (`firedAt`, `updatedAt`), `failures` (as `park`'s `failure`), `pages` (as `page`'s `page`, and `updatedAt`) |
+| `erase` | The intent to [erase](#erasures) a record's history up to a line: notes it in `compaction_erasures`, and the erasure takes it off its line | `ref`, `id`, `seq` (the line its history is erased up to), `live` (its current state stays), `owned` (what it owns goes in the batches that follow; present only when true), `onBehalfOf` (the hand the deleting line acted for, which the batches' lines act for; present only with `owned`), `formerIds` (the ids besides its own the batches find what it owns through, which its purge takes the rows of; present only with `owned` and a former id) |
 
 Times inside an effect are RFC 3339. A number reads from any JSON spelling of
 it, because a piece holds the canonical one and Postgres prints its own.
@@ -401,12 +402,36 @@ snapshot read, from before the compaction, first. An archive taken before the
 compaction still holds it, and a restore of it is the history before the
 compaction.
 
+## Erasures
+
+A permanent delete, and a forget of a live record, erase a record's history
+([decision 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)).
+What remains to erase is part of what the delete commits: an `erase` effect
+for each record, on the transaction's last line, naming the record and the
+line its history is erased up to, and no value. The fold notes each in
+`compaction_erasures`, a fold table, so a rebuild, an import and a restore
+of any archive that holds the line know what remains. The erasure is a
+compaction in a transaction of its own that takes the effect off its line
+and the row out together, so in any one cut of the history a value an
+erasure names is never there without its intent, and an intent is never
+left once nothing it names is left. It is the one compaction that changes a
+fold table, and the history it leaves replays into the table it leaves. A
+purged record's history becomes one state with neither row nor value on its
+`gc` line, which stays and names the hand that deleted it; a live record's,
+one state with its current values. What a purged record owns is purged in
+batches after it
+([decision 0305](decisions/0305-a-permanent-delete-reaches-what-the-record-owns-and-what-asks-to-change-it.md)),
+each an ordinary transaction whose `gc` lines carry the `erase` effects of
+the records it purged, and the record's own effect, `owned`, stays in
+`compaction_erasures` until a batch finds nothing left.
+
 ## Dialects
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 6 today: dialect 6 added the [state entries](#state-entries),
-which a server of an earlier dialect cannot replay; dialect 5 is the line
+manifest, and it is 7 today: dialect 7 added the [`erase` effect](#erasures),
+and dialect 6 the [state entries](#state-entries), which a server of an
+earlier dialect cannot replay; dialect 5 is the line
 above, whose effects mark a property; dialect 4 is the line before it, which
 held a manager row and a tier for one and carries a record's `body` among its
 properties; dialect 3 is the line before that, whose actor, `onBehalfOf` and
@@ -433,6 +458,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | 4 | `move_body_into_properties` | Each `record` effect whose `delta` carries `body`: a value moves into `set` and a `""` into `del`, and the rest of the line stays, the payload's `properties` included, which named `body` already. A `delta.body` that is not a string (`null` included, which no release wrote), a `set` that is not an object, a `del` that is not a list, and a delta that also carries `body` in `set` or `del` stop the conversion, naming the line's seq ([0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)). |
 | 5 | `marks` | Every line's marks: a `manager` effect becomes a `mark`, or an `unmark` where it named no actor; a resync's manager rows and a merge's moved managers become marks; a recompute's payload `managers` goes; and a manager row on a property an earlier step took out of the line becomes no mark, as the paragraph below says ([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)). |
 | 6 | `state_entries` | No line: it raises the stamp to the dialect that may hold [state entries](#state-entries), which a history written before it does not. |
+| 7 | `erasures` | No line: it raises the stamp to the dialect that may hold an [`erase` effect](#erasures), which a history written before it does not. |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A

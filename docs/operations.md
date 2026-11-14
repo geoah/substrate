@@ -673,24 +673,76 @@ counts the ones that wait, how many passes a round of their retries takes,
 and whether the last pass finished or ran out of its budget.
 
 **While a line of the history is known not to verify, nothing is compacted
-at or above it, and the repair comes first.** A line is known once a reader
-that writes anyway meets it: `repository compact`, the pass's own reads,
-the pass's first derivation of its index, and the archive pass where it
-refuses the row (`repository verify` reads and writes nothing,
+or erased at or above it, and the repair comes first.** A line is known once
+a reader that writes anyway meets it: `repository compact`, the pass's own
+reads, the pass's first derivation of its index, an erasure, and the archive
+pass where it refuses the row (`repository verify` reads and writes nothing,
 and notes nothing). The note outlives the failure that found it. So one such
 line holds back the compaction of everything written after it, for every
-record. `repository history` names every noted seq, and each
+record, and a permanent delete made meanwhile deletes the record and holds
+its history's erasure, intent kept, with the reply naming the seq.
+`repository history` names every noted seq, and each
 pass held by one logs `substrate: a line of the history does not verify`
 once, with the seqs. Each pass reads each noted row once, and the first pass
 after the row is [written back](#the-archive) from a whole copy drops the
-note and goes on by itself.
+note and goes on by itself, the held erasures included.
 
 What stays open is damage no reader has met: a batch of the pass finds a
 record's lines by their `kind` and `record_id` columns and by the index of
 the effects a line carries for other records, so a line whose damage
 changed those is not among the lines of the record it was written for.
 Until some reader meets such a line, a batch can place a state above it
-without the effect it was written with. `repository verify --recanonicalize` reads every line and names it.
+without the effect it was written with, and an erasure can leave a value in
+it. `repository verify --recanonicalize` reads every line and names it.
+
+**A permanent delete erases the record's history** (a forget, the history
+before a live record's current state), in a transaction that follows the
+delete's own ([api](api.md#the-records-route),
+[decision 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)).
+What remains to erase is written into the history, so a crash, a rebuild or
+a restore between the two leaves it there, and each pass finishes what
+waits: a crash's leftover, a trigger that has delivered the deletion, a
+line written back. `repository history` names each waiting erasure and
+since when. The table holds no value of the record once it is done, and the
+archive once its next pass has published; a store whose versioning or
+retention lock keeps replaced objects keeps them, by its own policy. A
+restore starts an archive life of its own, and the life it read keeps what
+it held, as an export or a database backup taken before the delete does.
+
+**What a deleted record owns goes in batches of 100** (decision 0305). A
+batch is one transaction under the changelog lock a write waits for: it
+purges up to 100 records the deleted one owns directly, each as a record
+deleted directly is purged, and erases their histories. The delete runs one
+batch in all, so a record that owns fewer than 100, none of which owns
+anything in turn, is done in the request; the compaction pass runs the
+rest, and every deeper level, sleeping as long as each
+batch took and stopping at its two-minute budget, and while a closure waits
+the next pass comes a minute after the last one ends instead of at
+`SUBSTRATE_COMPACTION_INTERVAL`. The size is not a setting: a smaller batch
+leaves a large closure waiting more passes, and a larger one holds the lock
+longer. With the interval `off` no pass runs, and a closure moves only
+through the forget door below. A record a finalizer holds is tombstoned by
+the batch that meets it, and the closure waits for its release; the
+collector's sweep leaves a tombstone a standing closure has still to
+erase. `repository history` names each closure in
+progress with the record that owned it, how many went and how many it still
+owns directly, a floor, since what those own is counted only as the batches
+reach them.
+
+A record created again at the deleted id waits for its batches: an account
+connected again after its permanent delete, before the pass has taken its
+mirrors, is the case to expect. Its create answers `503 unavailable` with
+the reason `erasing` and a one-minute `Retry-After`, logged at INFO as
+`request refused: the record at its id is still being erased`, and a sync's
+delivery that writes it parks as a temporary failure, `temporary, retried
+automatically at …`, with no alert, and gets through on a retry once the
+batches are done. Nothing needs a person, but the owner can move it along:
+`POST <record path>/forget` on the deleted record runs one batch a call, and
+`{"finish": true}` also passes the triggers the erasure waits for. A
+delivery whose retries run out before the closure is done, about an hour,
+is set aside with the parked alert, as any other is, and so at once is one
+whose function may run an agent or call another, which is never run twice
+unattended: its parked error names the erasure and when to retry.
 
 The first archive pass that starts after a compaction writes again only the
 pieces holding a line it changed; one already running publishes the cut it
@@ -2701,10 +2753,12 @@ And today:
   repository, no sharing between two, and no query across two. What else
   reads a repository does so on its owner's token or approval: an app, an
   assistant, the owner's own functions and agents.
-- **No erasure at once.** A permanent delete leaves the values it removed in
-  history until the [compaction pass](#the-compaction-pass) reaches them:
-  past the kind's retention, or when it forgets the deletion after
-  `SUBSTRATE_DELETIONS_KEPT`.
+- **No erasure beyond the repository.** A permanent delete erases the
+  record's history and what it owns, the archive's copy once its next pass
+  has published, but not an export, a database backup or an archive
+  version a bucket keeps, a request already in the webhook spool, or text
+  another record quotes
+  ([decision 0305](decisions/0305-a-permanent-delete-reaches-what-the-record-owns-and-what-asks-to-change-it.md)).
 - **No bound on the archive's delay.** The server reports how far each
   archive is behind and goes on serving however far that is
   ([the archive](#the-archive)).

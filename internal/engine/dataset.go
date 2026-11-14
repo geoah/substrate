@@ -356,8 +356,10 @@ type dataset struct {
 	archive     *archiveState
 	archiveStop func()
 	// compactionStop ends the repository's compaction passes
-	// (compactpass.go).
+	// (compactpass.go), and compactionKick brings the next one within
+	// erasureFollowUp; nil where no pass runs.
 	compactionStop func()
+	compactionKick chan struct{}
 }
 
 func (ds *dataset) close() {
@@ -750,6 +752,20 @@ type txn struct {
 	// forgetHeld is the line of the lowest deletion a forgetting left
 	// because an effect that stays holds it, 0 for none (forgetRecords).
 	forgetHeld int64
+	// erasing marks a compaction that is an erasure (erase.go): a purged
+	// record's merge resync goes with it, its state with no value stays on
+	// its line, and a live record's that would leave values waits.
+	erasing bool
+	// noCascade leaves what a purged record owns to its erasure's batches
+	// (erase.go eraseOwnedBatch).
+	noCascade bool
+	// closuresChecked and closures memoize whether any permanent delete's
+	// closure stands, which every create asks (refuseWhileErasing); an
+	// owned intent the transaction folds asks again.
+	closuresChecked, closures bool
+	// lineSeq is the seq of the line a replay folds (foldEntry); a live
+	// write's effects fold before or join its newest line, t.maxSeq.
+	lineSeq int64
 	// held collects, while it is not nil, the records a compaction left
 	// part of because a hold that ends kept it: a line a parked failure or
 	// a drain names, the webhook spool (compactRecords).

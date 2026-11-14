@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -3008,8 +3009,16 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 
 func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, purge bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	input := keyedAddress{Kind: ref.Kind, ID: ref.ID, Input: substrate.DeleteInput{IfVersion: ifVersion, Purge: purge}}
-	return ds.recordTx(ctx, actor, internal, idemDelete, input, func(t *txn) (*substrate.Record, error) {
+	var erasing, copies []eref
+	rec, err := ds.recordTx(ctx, actor, internal, idemDelete, input, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
+		// A permanent delete goes the one path a closure's batch takes for
+		// each record it reaches (erase.go).
+		if purge && !ds.svc.purgeKeepsHistory {
+			e, erased, copied, err := t.purgeForErasure(ref, ifVersion)
+			erasing, copies = append(erased, copied...), copied
+			return e, err
+		}
 		e, err := t.softDeleteIf(ref, ifVersion)
 		if err != nil || !purge {
 			return e, err
@@ -3023,6 +3032,34 @@ func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref er
 		}
 		return e, t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
 	})
+	if err != nil || len(erasing) == 0 {
+		return rec, err
+	}
+	// The erasure follows the commit in the same call (erase.go); what it
+	// leaves, and a failure here, the history still names, and the pass
+	// finishes it.
+	if err := ds.compactionFault(erasureBetween); err != nil {
+		return nil, err
+	}
+	report, err := ds.eraseNow(ctx, erasing, false, 1, nil)
+	if err != nil {
+		ds.svc.log.Warn("substrate: a permanent delete's erasure is left to the compaction pass",
+			"repository", ds.info.ID, "kind", ref.Kind, "id", ref.ID, "error", err)
+	}
+	if rec != nil {
+		if status, err := ds.erasureOf(ctx, eref{Kind: rec.Kind, ID: rec.ID}, false, report); err == nil {
+			// What the delete purged with the record, so a caller knows
+			// what went: what it owned, the requests and merge records that
+			// named it, the records merged into it.
+			for _, r := range append(slices.Clone(erasing), report.Purged...) {
+				if r != (eref{Kind: rec.Kind, ID: rec.ID}) && !slices.Contains(copies, r) {
+					status.Purged = append(status.Purged, vocabulary.RecordPath(r.Kind, r.ID))
+				}
+			}
+			rec.Erasure = status
+		}
+	}
+	return rec, nil
 }
 
 // softDelete tombstones one record inside the caller's transaction — the
@@ -3147,8 +3184,7 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 // and the caller's transaction rolls the tombstone back with it.
 func (t *txn) purgeNow(ref eref, finalizers []string) error {
 	if len(finalizers) > 0 {
-		return fmt.Errorf("%w: record %s is held by finalizers %v; delete it without purge, wait for them to release, then purge",
-			substrate.ErrConflict, ref.ID, finalizers)
+		return purgeHeld{id: ref.ID, finalizers: finalizers}
 	}
 	if err := t.cascadeOwned(ref); err != nil {
 		return err

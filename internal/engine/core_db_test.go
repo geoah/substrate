@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -883,10 +884,24 @@ func TestPurgeThenPutStartsARecordOver(t *testing.T) {
 	if _, err := ds.Get(ctx, kind, fid("t1")); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the purged record still reads: %v", err)
 	}
+	// A permanent delete erases the record's history (decision 0304): what
+	// is left of it is the caller's purged `gc` line, with no value.
 	rows := changesSince(t, ds, before)
-	if len(rows) != 2 || rows[0].Op != substrate.OpDelete || rows[1].Op != substrate.OpGC ||
-		rows[1].Payload["reason"] != "purged" || rows[1].Actor != vocabulary.ActorID(owner) {
-		t.Fatalf("want a delete then a purged gc row by the caller, got %+v", rows)
+	if len(rows) != 1 || rows[0].Op != substrate.OpGC ||
+		rows[0].Payload["reason"] != "purged" || rows[0].Actor != vocabulary.ActorID(owner) {
+		t.Fatalf("want the purged gc row by the caller alone, got %+v", rows)
+	}
+	var history []substrate.Op
+	for _, c := range changesSince(t, ds, 0) {
+		if c.RecordID == fid("t1") {
+			history = append(history, c.Op)
+		}
+	}
+	if !slices.Equal(history, []substrate.Op{substrate.OpGC}) {
+		t.Fatalf("the purged record's history is %v, want its gc line alone", history)
+	}
+	if gone.Erasure == nil || gone.Erasure.Pending {
+		t.Fatalf("the purge's erasure is %+v, want it done", gone.Erasure)
 	}
 
 	fresh := mustPut(t, ds, owner, substrate.PutInput{Kind: kind, ID: fid("t1"), Properties: map[string]any{"name": "Sync"}})
@@ -986,27 +1001,67 @@ func TestPurgeRefusesAFormerID(t *testing.T) {
 	}
 }
 
-// A purge is the collector's pass run early, so what the record owns through
-// `onDelete: cascade` is tombstoned in the same transaction, for the sweep.
-func TestPurgeTombstonesCascadeChildren(t *testing.T) {
+// A permanent delete erases what the record owns (decision 0305): a record
+// whose reference to it declares `onDelete: cascade` is purged with it, its
+// history erased, its values nowhere, and the reply names it. A record that
+// points at it by a reference with no `onDelete` is not owned: it stays,
+// and so does its pointer, which dangles.
+func TestPurgeErasesOwnedChildrenAndLeavesReferrers(t *testing.T) {
 	t.Parallel()
+	for _, route := range []string{"a live child", "a child deleted first"} {
+		t.Run(route, func(t *testing.T) {
+			t.Parallel()
+			purgeErasesOwnedChildren(t, route == "a child deleted first")
+		})
+	}
+}
+
+// purgeErasesOwnedChildren purges a task that owns a log and that another
+// task points at, the log a tombstone already where deletedFirst says so.
+func purgeErasesOwnedChildren(t *testing.T, deletedFirst bool) {
 	ctx := context.Background()
-	_, ds := newVocabularyDataset(t, "tasks")
+	_, ds, dsn := newDatasetWithDSN(t)
+	importVocabulary(t, ds, "tasks")
+	const details = "erasable owned details"
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "Water plants"},
 	})
 	log := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/tasks/tasklog",
 		Properties: map[string]any{
-			"task": task.ID, "status": "done",
+			"task": task.ID, "status": "done", "details": details,
 			"at": "2026-09-01T09:00:00Z", "scheduledAt": "2026-09-01T09:00:00Z",
 		},
 	})
-	if _, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{Purge: true}); err != nil {
+	occurrence := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: task.Kind, Properties: map[string]any{"name": "Water plants, once more", "recurrenceOf": task.ID},
+	})
+	if deletedFirst {
+		if _, err := ds.Delete(ctx, owner, log.Kind, log.ID, substrate.DeleteInput{}); err != nil {
+			t.Fatalf("delete the child: %v", err)
+		}
+	}
+	gone, err := ds.Delete(ctx, owner, task.Kind, task.ID, substrate.DeleteInput{Purge: true})
+	if err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	if got := mustGet(t, ds, log.Kind, log.ID); got.DeletedAt == nil {
-		t.Fatal("the purge left its cascade child live")
+	if gone.Erasure == nil || gone.Erasure.Pending || !slices.Contains(gone.Erasure.Purged, vocabulary.RecordPath(log.Kind, log.ID)) {
+		t.Fatalf("the purge's erasure is %+v, want it done and naming %s", gone.Erasure, log.ID)
+	}
+	if _, err := ds.Get(ctx, log.Kind, log.ID); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the owned child still reads: %v", err)
+	}
+	db := rawDB(t, dsn)
+	var holding int
+	if err := db.QueryRow(`SELECT count(*) FROM changelog WHERE payload::text LIKE '%' || $1 || '%'`, details).Scan(&holding); err != nil || holding != 0 {
+		t.Fatalf("%d lines still hold the owned child's details (%v)", holding, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM changelog WHERE record_id = $1 AND op <> 'gc'`, log.ID).Scan(&holding); err != nil || holding != 0 {
+		t.Fatalf("the owned child keeps %d lines besides its gc line (%v)", holding, err)
+	}
+	kept := mustGet(t, ds, occurrence.Kind, occurrence.ID)
+	if kept.DeletedAt != nil || kept.Properties["recurrenceOf"] == nil {
+		t.Fatalf("the record that only points at the purged one is %+v, want it live with its pointer", kept)
 	}
 }
 

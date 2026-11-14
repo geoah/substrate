@@ -57,8 +57,12 @@ export type ErrorCode = ServerErrorCode | ClientErrorCode
  * it started and serves it again only after its operator repairs it and
  * restarts the server. `repository_required` rides a `conflict` (409) on a
  * sign-in: the person opens several repositories and named none, and the
- * refusal lists them in `repositories` (decision 0274). */
+ * refusal lists them in `repositories` (decision 0274). `erasing` rides an
+ * `unavailable` (503) on a create: a permanent delete at that id is still
+ * erasing what the record owned, and the same write gets through once the
+ * compaction pass has taken it. */
 export type ErrorReason =
+  | "erasing"
   | "observed_rederiving"
   | "key_refused"
   | "quota"
@@ -176,12 +180,47 @@ export interface SubstrateRecord {
    * "nothing maps onto this kind" and "nothing has linked yet" read the
    * same way they do on the server (decision 0088). */
   linkedFrom?: LinkedRecord[]
+  /** What remains of erasing the record's history, on a permanent delete's
+   * reply alone (decision 0304). */
+  erasure?: Erasure
   /** Set on an occurrence a window read COMPUTED from a series' rule rather
    * than read from a stored row: the series' kind, the id `<seriesId>_<slot>`,
    * the series' properties with the slot in its temporal columns and
    * `recurrenceOf`/`originalAt` filled, version 0. Writing the envelope back at
    * its id materializes it as an override. */
   computed?: boolean
+}
+
+/** Where erasing one record's history stands (decision 0304). */
+export interface Erasure {
+  kind: string
+  id: string
+  live: boolean
+  pending: boolean
+  since?: string
+  waits?: ErasureWait[]
+  held?: string
+  /** The line that does not verify the erasure is held on. */
+  damaged?: number
+  /** Every other record the permanent delete purged with this one, by path. */
+  purged?: string[]
+  /** How far the erasure of what the record owns stands, while it is still to go. */
+  owned?: ErasureOwned
+}
+
+/** How far the erasure of what a permanently deleted record owns stands. */
+export interface ErasureOwned {
+  /** At least this many remain: those it owns directly, more as deeper levels are reached. */
+  remaining: number
+  purged: number
+  batch: number
+}
+
+/** An enabled trigger an erasure waits for. */
+export interface ErasureWait {
+  trigger: string
+  cursor: number
+  since: string
 }
 
 /** One inbound mapping-owned link (`substrate.LinkedRecord`): a source record

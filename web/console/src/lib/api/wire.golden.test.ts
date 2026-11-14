@@ -150,6 +150,9 @@ import type {
   KindRetention,
   RetentionChange,
   LinkedRecord,
+  Erasure,
+  ErasureWait,
+  ErasureOwned,
   MintedToken,
   OAuthStarted,
   OccurrenceProblem,
@@ -239,10 +242,37 @@ const substrateRecord: Shape<SubstrateRecord> = {
   finalizers: false,
   marks: false,
   linkedFrom: false,
+  erasure: false,
   computed: false,
 }
 
 /** One inbound mapping-owned link, on a single-record read. */
+/** Where erasing a record's history stands (decision 0304). */
+const erasure: Shape<Erasure> = {
+  kind: true,
+  id: true,
+  live: true,
+  pending: true,
+  since: false,
+  waits: false,
+  held: false,
+  damaged: false,
+  purged: false,
+  owned: false,
+}
+
+const erasureOwned: Shape<ErasureOwned> = {
+  remaining: true,
+  purged: true,
+  batch: true,
+}
+
+const erasureWait: Shape<ErasureWait> = {
+  trigger: true,
+  cursor: true,
+  since: true,
+}
+
 const linkedRecord: Shape<LinkedRecord> = {
   ref: true,
   kind: true,
@@ -1477,6 +1507,9 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ProblemDetail: problemDetail,
   SubstrateRecord: substrateRecord,
   LinkedRecord: linkedRecord,
+  Erasure: erasure,
+  ErasureWait: erasureWait,
+  ErasureOwned: erasureOwned,
   Referencing: referencing,
   ReferenceSite: referenceSite,
   PropertyMark: propertyMark,

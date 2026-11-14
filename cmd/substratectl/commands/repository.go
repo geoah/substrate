@@ -412,7 +412,18 @@ compacted.`,
 				}
 			}
 			if len(status.Damaged) > 0 {
-				fmt.Fprintf(a.out, "seq %v found not to verify: nothing at or above seq %d is compacted until its row is written back from a whole copy; the next pass then goes on by itself\n", status.Damaged, status.Damaged[0])
+				fmt.Fprintf(a.out, "seq %v found not to verify: nothing at or above seq %d is compacted or erased until its row is written back from a whole copy; the next pass then goes on by itself\n", status.Damaged, status.Damaged[0])
+			}
+			for _, e := range status.Erasures {
+				what := "its history"
+				if e.Live {
+					what = "its history before its current state"
+				}
+				fmt.Fprintf(a.out, "the erasure of %s/%s (%s, up to seq %d) waits since %s, %s ago: the pass finishes it, and a forget with finish finishes it now\n",
+					e.Kind, e.ID, what, e.UpTo, e.Since.Format(time.RFC3339), time.Since(e.Since).Round(time.Second))
+				if o := e.Owned; o != nil {
+					fmt.Fprintf(a.out, "  what it owns: %d gone, at least %d to go (those it owns directly), in batches of %d; a create at its id answers erasing until they are done, and each forget takes one batch\n", o.Purged, o.Remaining, o.Batch)
+				}
 			}
 			if h := status.HeldBy; h != nil {
 				fmt.Fprintf(a.out, "held back by trigger %s, its cursor at seq %d since %s: no deletion past it is forgotten\n", h.Trigger, h.Seq, h.Since.Format(time.RFC3339))

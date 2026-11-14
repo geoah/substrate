@@ -74,6 +74,62 @@ type Record struct {
 	// targets, so a reader can tell "nothing maps onto this kind" from
 	// "nothing has linked yet" (decision 0088).
 	LinkedFrom []LinkedRecord `json:"linkedFrom,omitempty"`
+
+	// Erasure is what remains of erasing the record's history, on the reply
+	// of a permanent delete alone (decision 0304).
+	Erasure *Erasure `json:"erasure,omitempty"`
+}
+
+// Erasure is where erasing one record's history stands (decision 0304): a
+// permanent delete erases all of it, a forget all but the record's current
+// state. Pending is false once it is done; until then Waits names the
+// triggers it waits for and Held anything else that holds it.
+type Erasure struct {
+	Kind    string        `json:"kind"`
+	ID      string        `json:"id"`
+	Live    bool          `json:"live"`
+	Pending bool          `json:"pending"`
+	Since   *time.Time    `json:"since,omitempty"`
+	Waits   []ErasureWait `json:"waits,omitempty"`
+	Held    string        `json:"held,omitempty"`
+	// Damaged is the line that does not verify the erasure is held on: it
+	// waits for that row to be written back from a whole copy.
+	Damaged int64 `json:"damaged,omitempty"`
+	// Purged is every other record a permanent delete purged and erased
+	// with this one, by record path: what it owned that its first batch
+	// reached, the change requests and merge records that named it, the
+	// records merged into it.
+	Purged []string `json:"purged,omitempty"`
+	// Owned is how far the erasure of what the record owns stands, while
+	// it is still to go.
+	Owned *ErasureOwned `json:"owned,omitempty"`
+}
+
+// ErasureOwned is how far the erasure of what a permanently deleted record
+// owns stands: the compaction pass takes it in batches, and the records
+// stay as they are until their batch reaches them.
+type ErasureOwned struct {
+	// Remaining is AT LEAST how many records it still owns: those it owns
+	// directly; what they own in turn is counted as their batch reaches it.
+	Remaining int64 `json:"remaining"`
+	// Purged is how many went so far.
+	Purged int64 `json:"purged"`
+	// Batch is how many one transaction of the erasure takes.
+	Batch int `json:"batch"`
+}
+
+// ErasureWait is an enabled trigger an erasure waits for: it watches the
+// record's kind, has not yet been delivered the deletion, and is delivering.
+type ErasureWait struct {
+	Trigger string    `json:"trigger"`
+	Cursor  int64     `json:"cursor"`
+	Since   time.Time `json:"since"`
+}
+
+// ForgetInput is a forget's request: Finish passes every trigger the
+// erasure would wait for.
+type ForgetInput struct {
+	Finish bool `json:"finish,omitempty"`
 }
 
 // LinkedRecord is one inbound mapping-owned link: the source record, and

@@ -307,6 +307,14 @@ func (a *assistantDataset) Release(ctx context.Context, actor substrate.Actor, t
 	return withoutKey(rec), err
 }
 
+// Forget is the owner's alone, which the engine holds the assistant's hand to.
+func (a *assistantDataset) Forget(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.ForgetInput) (*substrate.Erasure, error) {
+	if err := refuseAuthWrite(typ); err != nil {
+		return nil, err
+	}
+	return a.inner.Forget(ctx, actor, typ, id, in)
+}
+
 func (a *assistantDataset) Merge(ctx context.Context, actor substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
 	if err := refuseAuthWrite(in.Kind); err != nil {
 		return nil, err

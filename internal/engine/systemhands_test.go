@@ -58,6 +58,7 @@ var systemHands = map[string]string{
 	"domain.go:StartDomainVerification":       "decides: a domain proof to publish",
 	"domain.go:MarkDomainVerified":            "decides: a domain proven",
 	"engine.go:createSeededRepositoryFor":     "carries: the registration's own records beside the seed, the system and person actors (the person's naming the identity the registration made) and the default providers it decides; held to the registration door's checks, into core kinds that declare no writer:",
+	"erase.go:eraseNow":                       "carries: the hand a permanent delete acted for onto the batches that purge what the record owned, which the engine decides; held to the delete's own check of that hand and to the intent its transaction wrote, into the gc lines alone",
 	"functions.go:parkAndAdvance":             "decides: a failed delivery parked and its cursor moved",
 	"functions.go:recordSkipAndAdvance":       "decides: a skipped run and its cursor",
 	"functions.go:skipClaimed":                "decides: a claimed delivery skipped",

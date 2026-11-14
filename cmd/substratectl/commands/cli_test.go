@@ -1710,14 +1710,22 @@ func TestDelete(t *testing.T) {
 }
 
 // --purge sends ?purge=true, so the server collects the record now and a
-// later put at the id is a fresh record (#585).
+// later put at the id is a fresh record (#585), and says what went with it
+// and what of the erasure waits.
 func TestDeletePurge(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
 	out, _ := h.mustRun("delete", "--purge", "samples.substrate.reamde.dev/tasks/task", "t9")
-	if !strings.Contains(out, "samples.substrate.reamde.dev/tasks/task/t9 purged") {
-		t.Fatalf("delete --purge output:\n%s", out)
+	for _, want := range []string{
+		"samples.substrate.reamde.dev/tasks/task/t9 purged",
+		"purged with it: samples.substrate.reamde.dev/tasks/tasklog/l1",
+		"what it owns: 1 gone, at least 3 to go, in batches of 100",
+		"erasure waits: what it owns is still to go",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("delete --purge output lacks %q:\n%s", want, out)
+		}
 	}
 	if h.fake.record("t9") != nil {
 		t.Fatal("the server was not asked to purge the record")

@@ -286,7 +286,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0119](0119-a-direct-call-of-a-networked-function-writes-a-run-row.md) | A direct call of a networked function writes a run row | accepted |
 | [0120](0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md) | A map rule reaches a mirror's subject through the target's pin | accepted |
 | [0121](0121-a-function-body-runs-an-agent-under-permissions-agents.md) | A function body runs an agent under `permissions.agents` | accepted |
-| [0122](0122-a-delete-may-purge-so-a-put-starts-the-record-over.md) | A delete may purge, so the next put starts the record over | accepted |
+| [0122](0122-a-delete-may-purge-so-a-put-starts-the-record-over.md) | A delete may purge, so the next put starts the record over | superseded |
 | [0123](0123-a-trigger-read-names-its-kinds.md) | A record trigger's changelog read names its kinds | accepted |
 | [0124](0124-a-decision-number-is-checked-against-every-live-branch-before-the-merge.md) | A decision number is checked against every live branch before the merge | accepted |
 | [0125](0125-a-provider-write-is-a-callable-that-writes-no-record.md) | A provider write is a callable that writes no record | accepted |
@@ -438,3 +438,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
 | [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
 | [0300](0300-a-paced-pass-compacts-what-is-past-each-kinds-retention-and-forgets-old-deletions.md) | A paced pass compacts what is past each kind's retention, and forgets old deletions | accepted |
+| [0304](0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md) | A permanent delete erases the record's history, and what remains to erase is in the history | accepted |
+| [0305](0305-a-permanent-delete-reaches-what-the-record-owns-and-what-asks-to-change-it.md) | A permanent delete reaches what the record owns and what asks to change it | accepted |
+| [0306](0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md) | A record has a forget door that erases its history before its current state | accepted |

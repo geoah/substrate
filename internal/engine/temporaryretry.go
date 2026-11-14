@@ -14,7 +14,9 @@ import (
 // A TEMPORARY FAILURE IS RETRIED OVER MINUTES (decision 0266). A delivery
 // whose body failed temporarily (runner.ErrTemporary: the body raised
 // host.Temporary, let a network error or a server's "try later" escape, or
-// ran out of time) is not tried again in the pass that met it. It parks at
+// ran out of time), or whose write the substrate refused while a permanent
+// delete still erases what the record at its id owned (substrate.ErrErasing),
+// is not tried again in the pass that met it. It parks at
 // once, its cursor or fire state moved past it as any park's is, under an
 // error that says when it is retried, and no alert is raised. A walk each
 // dispatcher pass runs every such row that is due, the way a retry by hand
@@ -51,13 +53,22 @@ const temporaryRetryMark = "temporary, retried automatically at "
 // (errAgentThreadOpened), and a function granted an agent, or a call to
 // another function, may run one on any attempt.
 func (ds *dataset) parkedError(tr *trigger, cause error, attempts int, now time.Time) (string, time.Time, bool) {
-	if !autoRetryable(tr) || errors.Is(cause, errAgentThreadOpened) || !runner.Temporary(cause) ||
+	if !autoRetryable(tr) || errors.Is(cause, errAgentThreadOpened) || !temporaryFailure(cause) ||
 		attempts < 1 || attempts > len(temporaryRetryGaps) {
 		return cause.Error(), now, false
 	}
 	at := ds.svc.retryNow().UTC()
 	due := at.Add(temporaryRetryGaps[attempts-1])
 	return temporaryRetryMark + due.Format(time.RFC3339) + ": " + cause.Error(), at, true
+}
+
+// temporaryFailure reports whether a delivery's failure is one a later
+// attempt may not meet: the body's own (runner.ErrTemporary), or a write
+// refused while a permanent delete still erases what the record at its id
+// owned (substrate.ErrErasing), which the compaction pass lifts with nobody
+// acting. Both park at once and wait for the walk.
+func temporaryFailure(err error) bool {
+	return runner.Temporary(err) || errors.Is(err, substrate.ErrErasing)
 }
 
 // autoRetryable reports whether the trigger's callable, as it stands, is one

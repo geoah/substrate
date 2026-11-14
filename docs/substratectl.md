@@ -362,8 +362,10 @@ the declared one. Nothing drops an entry by it yet.
   ([projection](projection.md#where-a-value-came-from-the-marks)).
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
   `--purge` collects the record now, so the next `apply` at the id is a fresh
-  record rather than a restore of the tombstone
-  ([api](api.md#the-five-mutations)); a record a finalizer holds refuses it.
+  record rather than a restore of the tombstone, and erases its history and
+  what it owns with it, the first 100 of those it owns in the command and
+  the rest through the compaction pass ([api](api.md#the-five-mutations));
+  a record a finalizer holds refuses it.
 
 A pointer at another record is a property, so `apply` and `patch` write it like
 any other value: `--prop project=infra7` against a pinned declaration, or the
