@@ -237,10 +237,12 @@ func proofWaitsOnTheLock(t *testing.T, ds *dataset) {
 	})
 }
 
-// eventually waits for cond, failing the test after five seconds.
+// eventually waits for cond, failing the test after two minutes: a deadline
+// only a hang reaches, since a loaded runner takes seconds over what a laptop
+// does at once.
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(2 * time.Minute)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("never: %s", what)
