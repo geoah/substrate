@@ -222,8 +222,8 @@ type AgentEvent struct {
 	Code string `json:"code,omitempty"`
 	// Cause rides the error event of a turn that failed: the cause its thread
 	// settled with (AgentCauses). An error event without one is the stream's
-	// own end (a token that no longer stands, a reader that fell behind, a
-	// fault of the server), and says nothing about the turn. RetryAfter is
+	// own end (a token that no longer stands, roles that changed, a fault of
+	// the server), and says nothing about the turn. RetryAfter is
 	// the whole seconds a provider asked to wait, beside a cause that names
 	// a wait.
 	Cause      string `json:"cause,omitempty"`

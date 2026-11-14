@@ -9,11 +9,13 @@ import { describe, expect, it } from "vitest"
 import {
   EMPTY_OVERLAY,
   liveBeyond,
+  liveCalls,
   pushCompacted,
   pushDelta,
   pushReasoning,
   pushToolStart,
   settleTool,
+  transcriptOf,
   type LiveOverlay,
 } from "./transcript"
 import type { SubstrateRecord } from "./types"
@@ -233,6 +235,7 @@ describe("the live turns the stored rows do not show yet", () => {
   })
 
   it("keeps a call that is still only live when its turn's text is stored", () => {
+    // The stored row is from a server that does not list the call on it.
     const shown = liveBeyond(overlay(), [
       row("m-1", 0, "user"),
       row("a-1", 1, "assistant"),
@@ -240,6 +243,31 @@ describe("the live turns the stored rows do not show yet", () => {
     expect(shown).toHaveLength(2)
     expect(shown[0].content).toBe("")
     expect(shown[0].tools.map((c) => c.id)).toEqual(["c1"])
+  })
+
+  it("shows a call once when its row is stored and its result is not: the row's card, with the stream's result", () => {
+    // The assistant row that made the call is stored; the tool is still
+    // running, so no result row exists when the page attaches again.
+    const rows = [
+      row("m-1", 0, "user"),
+      row("a-1", 1, "assistant", {
+        content: "Looking.",
+        toolCalls: [{ id: "c1", name: "query", arguments: "{}" }],
+      }),
+    ]
+    let live = stream(EMPTY_OVERLAY, 1, ["Looking."])
+    live = pushToolStart(live, call, 5)
+    const cards = (l: LiveOverlay) =>
+      [...transcriptOf(rows, liveCalls(l)), ...liveBeyond(l, rows)].flatMap(
+        (t) => t.tools
+      )
+    // Running: one card, the row's.
+    expect(cards(live).map((c) => [c.id, c.ok])).toEqual([["c1", undefined]])
+    // The stream settles it: still one card, now with the result.
+    live = settleTool(live, call, "[1, 2]", true, 6)
+    expect(cards(live).map((c) => [c.id, c.ok, c.output])).toEqual([
+      ["c1", true, "[1, 2]"],
+    ])
   })
 
   it("leaves a compaction to its summary row", () => {

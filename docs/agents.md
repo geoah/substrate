@@ -736,9 +736,13 @@ it streams, so [an attach](#calling-an-agent) to the thread shows it and a
 stop stops it, and a stop or a shutdown settles it `stopped` with what it
 streamed kept. It holds one of its person's chat turns while it runs, the
 person the resolution is held to. When that person's turns are all running
-the resume claims nothing and runs nothing, and the sweep runs it once one
-is free. A thread of any other mode (a triggered run, a call) resumes as it
-did, with no stream.
+the resume claims nothing and runs nothing: it waits, and starts when one of
+that person's turns settles, or at the next sweep, whatever status its
+thread settled with. The wait is in memory, like the turns: one that is
+waiting when the server stops is found again by the sweep only where the
+thread settled `ok` or `overbudget` before the resolution landed. A thread
+of any other mode (a triggered run, a call) resumes as it did, with no
+stream.
 
 ### Background jobs
 

@@ -1457,7 +1457,9 @@ func (l *agentLoop) stampCut(props map[string]any, cut string) {
 // logged, and the thread still settles.
 func (l *agentLoop) keepPartial(ctx context.Context, cut string) string {
 	text := l.partial.String()
-	if text == "" {
+	// Nothing but whitespace is no reply: a provider refuses an assistant
+	// message of it when the thread is next replayed.
+	if strings.TrimSpace(text) == "" {
 		return ""
 	}
 	props := l.reasoning.stamp(map[string]any{"role": "assistant", "content": text})
