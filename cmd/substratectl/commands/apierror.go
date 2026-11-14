@@ -109,7 +109,7 @@ func (e *apiError) hint() string {
 	}
 	switch {
 	case e.Reason == substrate.ReasonSetAside:
-		return "the server found this repository damaged when it started: it serves the others, writes nothing to this one, and serves it again once its operator repairs it and restarts the server"
+		return "the server found this repository damaged when it started or first opened it: it serves the others, writes nothing to this one, and serves it again once its operator repairs it and restarts the server"
 	case e.Status == 401 || e.Code == "auth":
 		return "run `substratectl login` to mint a new token"
 	case e.Status == 409 || e.Code == "conflict":

@@ -26,6 +26,7 @@ import (
 	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/testenv"
@@ -536,7 +537,7 @@ func newAsideLog() asideLog {
 }
 
 func (l asideLog) Handle(ctx context.Context, rec slog.Record) error {
-	if strings.HasPrefix(rec.Message, "substrate: repository set aside at start-up") {
+	if strings.HasPrefix(rec.Message, "substrate: repository set aside at ") {
 		rec.Attrs(func(a slog.Attr) bool {
 			if a.Key == "stage" {
 				l.mu.Lock()
@@ -611,6 +612,144 @@ func TestADamagedRepositoryIsSetAsideAndTheOthersServe(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A REPOSITORY WHOSE FIRST OPEN FAILS IS SET ASIDE TOO (decision 0326).
+// The newest repository migration is pending for one repository, as after an
+// upgrade that carries it, and fails at its first open, after the start,
+// beside two whole repositories. The two serve. The failed one is set aside
+// in all four places an operator or a client looks: the warning, at the
+// stage `first open`; the metric; `set aside` in the operator's list; and
+// `503` with the reason `set_aside`. Neither a second request, nor an open,
+// nor the loops' listing runs the migration again, and its transaction left
+// no ledger row. The next start runs it again and, once it passes, serves
+// the repository. Not parallel: the metric is the process's one gauge.
+func TestARepositoryWhoseFirstOpenFailsIsSetAsideAndTheOthersServe(t *testing.T) {
+	ctx := context.Background()
+	const cat = "cat.example.com"
+	w := newAsideWorld(t)
+	var version int
+	if err := w.db.QueryRow(`SELECT max(version) FROM repository_migrations WHERE repository = $1`, w.ids[cat]).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.db.Exec(`DELETE FROM repository_migrations WHERE repository = $1 AND version = $2`, w.ids[cat], version); err != nil {
+		t.Fatal(err)
+	}
+	ledgered := func() bool {
+		t.Helper()
+		var n int
+		if err := w.db.QueryRow(`SELECT count(*) FROM repository_migrations WHERE repository = $1 AND version = $2`, w.ids[cat], version).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n == 1
+	}
+	var mu sync.Mutex
+	runs, failing := 0, true
+	ran := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return runs
+	}
+	fault := engine.WithTestRepositoryMigrationFault(func(id string, v int) error {
+		if id != w.ids[cat] || v != version {
+			return nil
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		runs++
+		if failing {
+			return errors.New("the migration refuses the rows it meets")
+		}
+		return nil
+	})
+
+	log := newAsideLog()
+	e := w.start(t, engine.WithLogger(slog.New(log)), fault)
+	if got := log.list(); len(got) != 0 {
+		t.Errorf("the start set aside %v, want nothing before a first open", got)
+	}
+	for _, name := range asideNames[:2] {
+		w.serves(t, e, name, true)
+	}
+	u := e.WithToken(w.users[cat].Token)
+	status, raw, header := u.DoRaw(http.MethodGet, "/api/v1/records", nil, nil)
+	refusedSetAside(t, "its first open", status, raw, header)
+	if !strings.Contains(string(raw), "a repository migration failed") {
+		t.Errorf("the refusal does not name the step that failed: %s", raw)
+	}
+	if n := ran(); n != 1 {
+		t.Fatalf("the migration ran %d times at the first open, want once", n)
+	}
+	if got := log.list(); len(got) != 1 || got[0] != "first open" {
+		t.Errorf("the warnings name %v, want the repository alone at %q", got, "first open")
+	}
+	if got := setAsideGauge(t); got != 1 {
+		t.Errorf("substrate_repositories_set_aside = %v, want 1", got)
+	}
+	if st := w.listed(t, cat); st.State != engine.StateSetAside {
+		t.Errorf("the list shows the repository %q, want %q", st.State, engine.StateSetAside)
+	}
+	for _, name := range asideNames[:2] {
+		if st := w.listed(t, name); st.State != engine.StateServing {
+			t.Errorf("the list shows %s %q, want %q", name, st.State, engine.StateServing)
+		}
+	}
+	if ledgered() {
+		t.Error("the failed migration's ledger row was written")
+	}
+
+	status, raw, header = u.DoRaw(http.MethodGet, "/api/v1/records", nil, nil)
+	refusedSetAside(t, "a second request", status, raw, header)
+	if _, err := e.Service.Dataset(ctx, cat); !errors.Is(err, substrate.ErrSetAside) {
+		t.Errorf("an open of the set-aside repository: %v, want substrate.ErrSetAside", err)
+	}
+	repos, err := e.Service.Repositories(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range repos {
+		if r.Authority == cat {
+			t.Errorf("the loops' listing names the set-aside repository: %+v", r)
+		}
+	}
+	if n := ran(); n != 1 {
+		t.Errorf("the migration ran %d times, want once: the repository was opened again", n)
+	}
+	e.Stop()
+
+	mu.Lock()
+	failing = false
+	mu.Unlock()
+	e = w.start(t, fault)
+	for _, name := range asideNames {
+		w.serves(t, e, name, true)
+	}
+	if n := ran(); n != 2 {
+		t.Errorf("the migration ran %d times in all, want once more at the next start", n)
+	}
+	if !ledgered() {
+		t.Error("the migration that passed left no ledger row")
+	}
+	if st := w.listed(t, cat); st.State != engine.StateServing {
+		t.Errorf("the list shows the repository %q after the next start, want %q", st.State, engine.StateServing)
+	}
+}
+
+// setAsideGauge reads substrate_repositories_set_aside from the process's
+// registry.
+func setAsideGauge(t *testing.T) float64 {
+	t.Helper()
+	families, err := metrics.Registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range families {
+		if f.GetName() == "substrate_repositories_set_aside" && len(f.GetMetric()) == 1 {
+			return f.GetMetric()[0].GetGauge().GetValue()
+		}
+	}
+	t.Fatal("no substrate_repositories_set_aside in the registry")
+	return 0
 }
 
 // A directory from before repository ids, restored on a host whose key did

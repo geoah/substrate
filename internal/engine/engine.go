@@ -194,6 +194,9 @@ type options struct {
 	// rebuildBatch, so a small history spans more than one batch. The seams
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
+	// migrationFault is the repository migrations' test seam (seams.go
+	// WithTestRepositoryMigrationFault).
+	migrationFault func(repository string, version int) error
 	// replayPage and replayEnd run after each page of a replay and at its
 	// end, inside its transaction (seams.go WithTestReplay). Tests only.
 	replayPage func(seq int64, tx *sql.Tx)
@@ -888,6 +891,8 @@ type service struct {
 	// testImportFault and testImportBatch are the options' import seams
 	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
+	// testMigrationFault is options.migrationFault. Tests only.
+	testMigrationFault func(repository string, version int) error
 	// testReplayPage and testReplayEnd are options.replayPage and replayEnd.
 	testReplayPage func(seq int64, tx *sql.Tx)
 	testReplayEnd  func(tx *sql.Tx)
@@ -1228,6 +1233,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		opening:          map[string]chan struct{}{},
 
 		testImportFault:       o.importFault,
+		testMigrationFault:    o.migrationFault,
 		testReplayPage:        o.replayPage,
 		testReplayEnd:         o.replayEnd,
 		testReplaySQL:         o.replaySQL,
@@ -1723,6 +1729,12 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 	if cached != nil || err != nil {
 		return cached, err
 	}
+	// The open it waited for may have set the repository aside, and its
+	// ladder is not run again until the next start.
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		release()
+		return nil, err
+	}
 	// The row is read again under the slot: this open may have waited on a
 	// creation that failed and erased the repository it had begun, and that
 	// answer is not found, not the storage error the stale row would draw.
@@ -1893,8 +1905,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
 		ds.loadPeople,
-		ds.runLandedRepositoryMigrations(repo.Authority),
-		ds.loadStoredVocabulary,
+		setsAside("a repository migration", ds.runLandedRepositoryMigrations(repo.Authority)),
+		setsAside("the load of its stored vocabulary", ds.loadStoredVocabulary),
 		// The unit uses' rule before the seed: where the stored uses are
 		// behind it, the request it writes makes the use guard refuse a
 		// seed refresh that could take a unit from a value, rather than
@@ -1906,7 +1918,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// whose stored vocabulary predates the unit kinds is seeded right
 		// after the upgrade that declares them.
 		ds.ensureShippedUnits,
-		ds.upgradeShippedVocabulary,
+		setsAside("the upgrade of its shipped packages", ds.upgradeShippedVocabulary),
 		// After the upgrade, which declares the alert kind its clearing
 		// raises; a no-op unless an import left secrets behind.
 		ds.clearSecretsLeftBehind,
@@ -1941,6 +1953,10 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	} {
 		if err := step(ctx); err != nil {
 			ds.close()
+			var failed *openFailure
+			if errors.As(err, &failed) {
+				return nil, s.setAsideAtOpen(ctx, repo, failed.step, failed.err)
+			}
 			return nil, err
 		}
 	}

@@ -67,7 +67,7 @@ nothing stored can tell apart.
 
 It runs beside a live server: the engine opens read-only against the data
 root and applies no migration, and the queue rows it writes are not changelog
-entries. A repository the running server set aside at its start is refused,
+entries. A repository the running server set aside is refused,
 read from the writer leases as 'repository list' reads them, and gets no
 queue row.`,
 		Args: cobra.ExactArgs(1),
@@ -121,9 +121,10 @@ server's own head is the substrate_archive_* metrics.
 
 The state is read from the writer leases in pg_locks, beside a running
 server: serving when a server holds the repository's lease; set aside when
-a server holds others and not this one, because its start found it damaged
-(the server's log says why, and a restart after the repair serves it again),
-or because its start-up check has not reached it yet; stopped when no server
+a server holds others and not this one, because its start or its first open
+found it damaged (the server's log says why, and a restart after the repair
+serves it again), or because its start-up check has not reached it yet;
+stopped when no server
 holds any. With SUBSTRATE_DATA_ROOT set, a 0.x directory there with no row,
 and a repository the archive (SUBSTRATE_ARCHIVE, as the server runs with
 it) holds and the database has no row of, are listed too, with no creation

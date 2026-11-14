@@ -42,7 +42,7 @@ function describeError(err: unknown, codeAsked: boolean): string {
         : "The name or password is wrong. Check both and try again."
     }
     if (err.code === "unavailable" && err.reason === "set_aside") {
-      return "This repository is set aside: the server found it damaged when it started, so it serves the others and writes nothing to this one. It serves it again once its operator repairs it and restarts the server."
+      return "This repository is set aside: the server found it damaged when it started or first opened it, so it serves the others and writes nothing to this one. It serves it again once its operator repairs it and restarts the server."
     }
     return err.message
   }

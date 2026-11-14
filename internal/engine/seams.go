@@ -103,6 +103,15 @@ func WithTestImportFault(batch int, fn func(stage string) error) Option {
 	return func(o *options) { o.importFault, o.importBatch = fn, batch }
 }
 
+// WithTestRepositoryMigrationFault runs fn inside each repository
+// migration's transaction (repomigrate.go), after the migration's own writes
+// and before its ledger row, with the repository's id and the migration's
+// version. An error from fn fails that migration, and its transaction rolls
+// back, as a migration that refuses the rows it meets does.
+func WithTestRepositoryMigrationFault(fn func(repository string, version int) error) Option {
+	return func(o *options) { o.migrationFault = fn }
+}
+
 // WithTestReplay runs page after each page of every replay (rebuild.go
 // txn.rebuild) with the seq it reached, and end at the replay's end, both
 // inside its transaction and before it commits, so a test can act beside a

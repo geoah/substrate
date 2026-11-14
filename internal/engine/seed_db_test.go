@@ -602,11 +602,12 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	_, err = svc2.Dataset(ctx, testdb.Repository(t))
 	// What matters is the invariant below: no row lands that the surviving
 	// declaration rejects. Today the projection's refusal is how it holds, so the
-	// upgrade fails rather than writing such a row.
-	if err == nil {
-		t.Fatal("the upgrade admitted a row the declaration it kept does not declare")
+	// upgrade fails rather than writing such a row, which sets the repository
+	// aside at its first open (decision 0326) with the refusal as its cause.
+	if !errors.Is(err, substrate.ErrSetAside) || !strings.Contains(err.Error(), "the upgrade of its shipped packages failed") {
+		t.Fatalf("the upgrade admitted a row the declaration it kept does not declare: %v, want the repository set aside, naming the upgrade", err)
 	}
-	if !strings.Contains(err.Error(), "not declared") {
+	if err = engine.SetAsideCause(svc2, testdb.Repository(t)); err == nil || !strings.Contains(err.Error(), "not declared") {
 		t.Fatalf("the refusal must name the undeclared property: %v", err)
 	}
 

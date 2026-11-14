@@ -212,12 +212,14 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 			t.Fatalf("plant a null definition: %v", err)
 		}
 	}
+	// The refusal sets the repository aside at its first open (decision
+	// 0326), and the warning names it.
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	_, err = svc2.Dataset(ctx, testdb.Repository(t))
-	if err == nil {
-		t.Fatalf("%s: a store holding a `definition` must refuse the open", declKind)
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("%s: a store holding a `definition` must refuse the open, setting the repository aside: %v", declKind, err)
 	}
+	err = engine.SetAsideCause(svc2, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
 		t.Fatalf("%s: expected ErrDeclarationUntranslated, got %v", declKind, err)
 	}
@@ -269,8 +271,13 @@ func TestStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	}
 	_ = svc.Close()
 
+	// The refusal sets the repository aside at its first open (decision
+	// 0326), and the warning names it.
 	svc2 := open()
-	_, err = svc2.Dataset(ctx, testdb.Repository(t))
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("a null definition: %v, want the repository set aside", err)
+	}
+	err = engine.SetAsideCause(svc2, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
 		t.Fatalf("a null definition must refuse by name, got %v", err)
 	}
@@ -327,7 +334,10 @@ func TestStoreRefusesADeletedGrantSpelling(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := open()
-	_, err = svc2.Dataset(ctx, testdb.Repository(t))
+	if _, err := svc2.Dataset(ctx, testdb.Repository(t)); !errors.Is(err, substrate.ErrSetAside) {
+		t.Fatalf("an interim grant row: %v, want the repository set aside", err)
+	}
+	err = engine.SetAsideCause(svc2, testdb.Repository(t))
 	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
 		t.Fatalf("an interim grant row must refuse by name, got %v", err)
 	}

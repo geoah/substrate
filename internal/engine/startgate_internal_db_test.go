@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -645,5 +649,222 @@ func TestAPeoplePassTheDatabaseRefusesIsSetAsideAtItsPeople(t *testing.T) {
 	}
 	if _, err := s.Dataset(ctx, info.Authority); err != nil {
 		t.Fatalf("the repository, served: %v", err)
+	}
+}
+
+// A repository whose first open fails at its repository migrations is set
+// aside at its first open, after the start, beside a neighbor that serves
+// (decision 0326). The damage is a ledger row removed by hand below the
+// newest one: the migrations refuse to run one after its successors did.
+// The row put back, the next start serves it.
+func TestARepositoryWhoseMigrationsAreRefusedIsSetAsideAtItsFirstOpen(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	db := rawDBOf(t, w.dsn)
+	var name string
+	if err := db.QueryRow(`SELECT name FROM repository_migrations WHERE repository = $1 AND version = 1`, w.a.ID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM repository_migrations WHERE repository = $1 AND version = 1`, w.a.ID); err != nil {
+		t.Fatal(err)
+	}
+	s := w.start(t)
+	if r := s.setAsideOf(w.a.ID, ""); r != nil {
+		t.Fatalf("the start set A aside at %q, want nothing before its first open", r.stage)
+	}
+	w.wantAsideAndNeighborServing(t, s)
+	if r := s.setAsideOf(w.a.ID, ""); r == nil || r.stage != setAsideAtOpen || !strings.Contains(r.cause.Error(), "pending below the highest one") {
+		t.Fatalf("A is set aside as %+v, want at %q for the refused migrations", r, setAsideAtOpen)
+	}
+	// The refusal names the step, for a client and an operator command
+	// that cannot read the log.
+	if _, err := s.Dataset(ctx, w.a.Authority); err == nil || !strings.Contains(err.Error(), "when it first opened it (a repository migration failed)") {
+		t.Errorf("the refusal does not name the step that failed: %v", err)
+	}
+	_ = s.Close()
+
+	if _, err := db.Exec(`INSERT INTO repository_migrations (repository, version, name) VALUES ($1, 1, $2)`, w.a.ID, name); err != nil {
+		t.Fatal(err)
+	}
+	s = w.start(t)
+	if _, err := s.Dataset(ctx, w.a.Authority); err != nil {
+		t.Fatalf("A once its ledger is whole: %v", err)
+	}
+}
+
+// An open that was waiting for one that fails at a step that sets its
+// repository aside runs nothing of the ladder itself: it finds the
+// repository set aside and is refused, so the failed migration runs once.
+func TestAnOpenThatWaitedForAFailedFirstOpenRunsNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	var version int
+	db := rawDBOf(t, w.dsn)
+	if err := db.QueryRow(`SELECT max(version) FROM repository_migrations WHERE repository = $1`, w.a.ID).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM repository_migrations WHERE repository = $1 AND version = $2`, w.a.ID, version); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	runs := 0
+	reached, proceed := make(chan struct{}), make(chan struct{})
+	s := w.start(t, WithTestRepositoryMigrationFault(func(id string, v int) error {
+		if id != w.a.ID || v != version {
+			return nil
+		}
+		mu.Lock()
+		runs++
+		first := runs == 1
+		mu.Unlock()
+		if first {
+			close(reached)
+			<-proceed
+		}
+		return errors.New("the migration refuses the rows it meets")
+	}))
+	waiting := make(chan struct{}, 1)
+	s.testOpenWaits = func(id string) {
+		if id == w.a.ID {
+			select {
+			case waiting <- struct{}{}:
+			default:
+			}
+		}
+	}
+	opened := make(chan error, 2)
+	go func() {
+		_, err := s.Dataset(ctx, w.a.Authority)
+		opened <- err
+	}()
+	<-reached
+	go func() {
+		_, err := s.Dataset(ctx, w.a.Authority)
+		opened <- err
+	}()
+	<-waiting
+	close(proceed)
+	for range 2 {
+		if err := <-opened; !errors.Is(err, substrate.ErrSetAside) {
+			t.Errorf("an open of A: %v, want substrate.ErrSetAside", err)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if runs != 1 {
+		t.Errorf("the migration ran %d times, want once", runs)
+	}
+}
+
+// A first open that fails for no fault of the repository's sets nothing
+// aside (decision 0326): the newest repository migration is pending for A,
+// and its transaction meets a real lost connection (its backend terminated
+// while the maintenance pool answers), an injected serialization failure
+// (the seam returns the server's 40001), its request canceled, or a commit
+// whose answer the seam loses after Postgres committed. Each open answers
+// its own cause, A shows in none of the four places a set-aside repository
+// does, and the next open serves: it runs the migration again, or finds the
+// in-doubt commit landed.
+func TestAFirstOpenThatFailsForNoFaultOfItsOwnSetsNothingAside(t *testing.T) {
+	t.Parallel()
+	for _, c := range []string{"a lost connection", "an injected serialization failure", "a canceled request", "a commit in doubt"} {
+		t.Run(c, func(t *testing.T) {
+			t.Parallel()
+			w := newGateWorld(t)
+			db := rawDBOf(t, w.dsn)
+			var version int
+			if err := db.QueryRow(`SELECT max(version) FROM repository_migrations WHERE repository = $1`, w.a.ID).Scan(&version); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(`DELETE FROM repository_migrations WHERE repository = $1 AND version = $2`, w.a.ID, version); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var mu sync.Mutex
+			failed, armed := false, false
+			logs := &syncBuffer{}
+			s := w.start(t, WithLogger(slog.New(slog.NewTextHandler(logs, nil))), WithTestCommitFault(func(stage string) error {
+				mu.Lock()
+				defer mu.Unlock()
+				if stage != commitInDoubt || !armed {
+					return nil
+				}
+				armed = false
+				return errors.New("the commit's answer was lost")
+			}), WithTestRepositoryMigrationFault(func(id string, v int) error {
+				mu.Lock()
+				defer mu.Unlock()
+				if id != w.a.ID || v != version || failed {
+					return nil
+				}
+				failed = true
+				switch c {
+				case "a lost connection":
+					var n int
+					if err := db.QueryRow(`SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+						WHERE datname = current_database() AND pid <> pg_backend_pid() AND state = 'idle in transaction'`).Scan(&n); err != nil || n != 1 {
+						t.Errorf("terminate the migration's backend: %d terminated, %v", n, err)
+					}
+					return nil
+				case "an injected serialization failure":
+					return &pgconn.PgError{Severity: "ERROR", Code: "40001", Message: "could not serialize access due to concurrent update"}
+				case "a commit in doubt":
+					armed = true
+					return nil
+				default:
+					cancel()
+					return nil
+				}
+			}))
+			_, err := s.Dataset(ctx, w.a.Authority)
+			var (
+				pg        *pgconn.PgError
+				transport interface{ SafeToRetry() bool }
+			)
+			t.Logf("%s: the open answered %v", c, err)
+			cause := false
+			switch c {
+			case "a lost connection":
+				cause = (errors.As(err, &pg) && pg.Code == "57P01") || errors.As(err, &transport) ||
+					errors.Is(err, driver.ErrBadConn) || errors.Is(err, pgconn.ErrConnClosed)
+			case "an injected serialization failure":
+				cause = errors.As(err, &pg) && pg.Code == "40001"
+			case "a canceled request":
+				cause = errors.Is(err, context.Canceled)
+			case "a commit in doubt":
+				cause = errors.Is(err, substrate.ErrWriteInDoubt)
+			}
+			if !cause || errors.Is(err, substrate.ErrSetAside) || failureOf(err) != failureServer {
+				t.Fatalf("the first open: %v, want %s answered as the server's and nothing set aside", err, c)
+			}
+			if r := s.setAsideOf(w.a.ID, ""); r != nil {
+				t.Fatalf("A is set aside at %q for %v", r.stage, r.cause)
+			}
+			if n := s.aside.count(); n != 0 {
+				t.Errorf("substrate_repositories_set_aside reads %d, want 0", n)
+			}
+			if strings.Contains(logs.String(), "repository set aside") {
+				t.Errorf("a set-aside warning was logged:\n%s", logs.String())
+			}
+			states, err := RepositoryStates(context.Background(), db, w.root, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, st := range states {
+				if st.ID == w.a.ID && st.State != StateServing {
+					t.Errorf("the operator's list shows A %q, want %q", st.State, StateServing)
+				}
+			}
+			if _, err := s.Dataset(context.Background(), w.a.Authority); err != nil {
+				t.Fatalf("the next open: %v", err)
+			}
+			var n int
+			if err := db.QueryRow(`SELECT count(*) FROM repository_migrations WHERE repository = $1 AND version = $2`, w.a.ID, version).Scan(&n); err != nil || n != 1 {
+				t.Fatalf("the migration's ledger row after the next open: %d, %v", n, err)
+			}
+		})
 	}
 }

@@ -26,7 +26,7 @@ export class SubstrateError extends Error {
    * the first attempt may still land), `not_permitted` (a rule of the
    * person's roles refused it), `quota`, `key_refused`,
    * `observed_rederiving`, `set_aside` (the server found the repository
-   * damaged when it started). */
+   * damaged when it started, or when it first opened it). */
   readonly reason?: string
   /** On a `410 compacted`, the head and the history generation to start
    * over from, where the server gives them (an app's token gets neither). */

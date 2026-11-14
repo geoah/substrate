@@ -3,12 +3,19 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
+	"net"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -40,11 +47,26 @@ import (
 // served is served after a restart, and one left as it was is set aside
 // again with the same failure.
 //
+// A REPOSITORY WHOSE FIRST OPEN FAILS IS SET ASIDE TOO (decision 0326,
+// amending 0281). The open ladder runs after the start, at a repository's
+// first open in the process, so the server listens without waiting for
+// every repository's. A failure there of a step that reads or rewrites the
+// repository's own rows (setsAside), of a kind failureOf reads as the
+// repository's, sets it aside at setAsideAtOpen: the step's transaction has
+// rolled back, and from then on no request and no loop opens it, so the step
+// does not run again until the next start. A failure of any other kind
+// answers that open as it always did, and the next open tries again. A
+// commit whose answer was lost may have landed, which no rollback undoes; it
+// is the server's kind (ErrWriteInDoubt), sets nothing aside, and the next
+// open runs the step again, which a repository migration bears: it is
+// idempotent and leaves its ledger row once it commits.
+//
 // WHAT STILL STOPS THE START is a failure of the server's own, which no
 // repository's absence would cure: the start canceled, the database not
 // answering, another process holding a repository's writer lease (decision
-// 0083) or this one losing its own, and a start that set aside every
-// repository it found. The last is a server with nothing to serve, whose
+// 0083) or this one losing its own, any failure failureOf reads as the
+// server's (a connection lost, a serialization failure, the database
+// shutting down), and a start that set aside every repository it found. The last is a server with nothing to serve, whose
 // failures are likelier the host's (a full disk, a data root mounted wrong)
 // than each repository's, and it stops as the check always did, so a
 // deployment of one repository sees no change.
@@ -61,6 +83,7 @@ const (
 	setAsideAtRestore = "restore"        // an archive with no row, or the copy staged for a take (repodir.go reconcileArchive)
 	setAsideAtStore   = "archive store"  // the archive's store did not answer once the pass had written some of it: nothing of it is damaged (archivestore.go)
 	setAsideAtPeople  = "people"         // its people: the index derived from its actors, or its identity made from its sign-in record (identityboot.go)
+	setAsideAtOpen    = "first open"     // its first open, after the start: a repository migration, the load of its stored vocabulary or the shipped packages' upgrade (engine.go openNew)
 )
 
 // THE START'S ONE GATE. Every pass of the start that touches a repository
@@ -115,6 +138,47 @@ func copyPass(id, stage string, name func() string) passOver {
 	}}
 }
 
+// openFailure marks a failure of a step of the open ladder that sets its
+// repository aside (setsAside), with the step's name.
+type openFailure struct {
+	step string
+	err  error
+}
+
+func (e *openFailure) Error() string { return e.err.Error() }
+func (e *openFailure) Unwrap() error { return e.err }
+
+// setsAside marks a step of the open ladder whose failure may be the
+// repository's own, because it reads or rewrites the repository's rows: a
+// repository migration, the load of its stored vocabulary, the shipped
+// packages' upgrade. Only a failure failureOf reads as the repository's sets
+// it aside; any other, and a failure of another step, answers that open and
+// the next open runs the ladder again.
+func setsAside(name string, step func(context.Context) error) func(context.Context) error {
+	return func(ctx context.Context) error {
+		err := step(ctx)
+		if err != nil && ctx.Err() == nil && failureOf(err) == failureRepository {
+			return &openFailure{step: name, err: err}
+		}
+		return err
+	}
+}
+
+// setAsideAtOpen sets aside a repository whose first open failed at a step
+// that sets it aside, and answers the open with the refusal every later one
+// gets, its cause in the start's warning; a failure that is nobody's
+// (setAside) is answered as it was, and sets nothing aside. A read-only process sets nothing aside: it runs no
+// start, and the server beside it decides.
+func (s *service) setAsideAtOpen(ctx context.Context, repo Repository, step string, cause error) error {
+	if s.readOnly {
+		return cause
+	}
+	if err := s.setAside(ctx, &setAsideRepository{keys: []string{repo.ID}, authority: repo.Authority, stage: setAsideAtOpen, step: step, cause: cause}); err != nil {
+		return err
+	}
+	return s.refuseSetAside(repo.ID, repo.Authority)
+}
+
 // asideBefore reports whether the repository p names is aside already.
 func (s *service) asideBefore(p passOver) bool {
 	for _, k := range p.keys {
@@ -163,6 +227,10 @@ type setAsideRepository struct {
 	// that name is another repository until a data key says otherwise.
 	claim bool
 	stage string
+	// step is the step of the open ladder that failed, for a repository set
+	// aside at its first open: the refusal names it, so a client and an
+	// operator command learn which repair it needs without the log.
+	step  string
 	cause error
 }
 
@@ -235,8 +303,12 @@ func (s *service) refuseSetAside(id, authority string) error {
 	if name == "" {
 		name = r.keys[0]
 	}
-	return fmt.Errorf("%w: the server found %s damaged when it started, so it serves the others and writes nothing to this one until a restart finds it whole; the server's operator repairs it and restarts the server",
-		substrate.ErrSetAside, name)
+	when := "when it started"
+	if r.stage == setAsideAtOpen {
+		when = "when it first opened it (" + r.step + " failed)"
+	}
+	return fmt.Errorf("%w: the server found %s damaged %s, so it serves the others and writes nothing to this one until a restart finds it whole; the server's operator repairs it and restarts the server",
+		substrate.ErrSetAside, name, when)
 }
 
 // refuseBesideTheServersSetAside is the check a process opened beside a
@@ -318,8 +390,16 @@ func (s *service) setAside(ctx context.Context, r *setAsideRepository) error {
 	for _, key := range r.keys {
 		s.lease.release(key)
 	}
-	s.log.Warn("substrate: repository set aside at start-up; the server serves the others and never opens it until a restart finds it whole",
-		"repository", logSafeID(r.authority), "key", logSafeID(strings.Join(r.keys, ",")), "stage", r.stage, "error", r.cause.Error())
+	attrs := []any{"repository", logSafeID(r.authority), "key", logSafeID(strings.Join(r.keys, ",")), "stage", r.stage}
+	if r.step != "" {
+		attrs = append(attrs, "step", r.step)
+	}
+	attrs = append(attrs, "error", r.cause.Error())
+	if r.stage == setAsideAtOpen {
+		s.log.Warn("substrate: repository set aside at its first open; the server serves the others and never opens it again until a restart finds it whole", attrs...)
+	} else {
+		s.log.Warn("substrate: repository set aside at start-up; the server serves the others and never opens it until a restart finds it whole", attrs...)
+	}
 	return nil
 }
 
@@ -333,8 +413,178 @@ func serverFailure(ctx context.Context, err error) bool {
 	if storeDidNotAnswer(err) {
 		return false
 	}
+	return failureOf(err) == failureServer
+}
+
+// failureKind is what a failure of a step of the start or of a first open is
+// read as, by the kind of its error (failureOf, decision 0326).
+type failureKind int
+
+const (
+	// failureUnknown is an error whose kind does not tell, and the default:
+	// a plain error, database/sql's own untyped errors, pgx's plain protocol
+	// errors, a version conflict, no row, a statement the data fails (the
+	// classes 22 and 23, which a race with another session or a parameter
+	// the code built can raise as well), a database refusal of no class
+	// below, a file's error and the operating system's other numbers (EIO,
+	// ENOENT). The start sets its repository aside, as its passes read files
+	// whose damage has no kind of its own; a first open answers it and tries
+	// again at the next one, the lesser harm.
+	failureUnknown failureKind = iota
+	// failureServer may pass with nothing changed: the start or a request
+	// canceled, another writer or a lost lease, a connection lost, refused,
+	// reset or timed out (the network's numbers, bare or inside a file's
+	// error on a network mount), the host's limits (a full disk, a quota,
+	// open files, memory), a statement canceled, a serialization failure or
+	// a deadlock, a resource limit, the database shutting down, a commit
+	// whose answer was lost, and what says by name that it is not available
+	// yet or until a restart. It stops the start, and a first open answers
+	// it and tries again at the next one.
+	failureServer
+	// failureRepository cannot pass without a change to the repository or to
+	// the binary, and is named, never inferred: a ledger this binary cannot
+	// continue, a stored declaration in a shape or dialect this binary cannot
+	// read, a validation refusal (a stored closure that does not load, a
+	// shipped upgrade a row's values refuse), stored data that is corrupt,
+	// and a migration's own refusal, marked where it is returned
+	// (ownRefusal).
+	failureRepository
+)
+
+// failureOf reads err's kind. The server's kind is read first, so a refusal
+// that wraps a lost connection is the server's, and what matches nothing is
+// unknown.
+func failureOf(err error) failureKind {
+	var (
+		pg      *pgconn.PgError
+		refusal *migrationRefusal
+		path    *fs.PathError
+		errno   syscall.Errno
+		network net.Error
+	)
+	switch {
+	case serverKind(err):
+		return failureServer
+	case errors.As(err, &pg):
+		switch class := pg.Code[:min(2, len(pg.Code))]; class {
+		case "08", "40", "53", "57", "58", "XX":
+			return failureServer
+		}
+		return failureUnknown
+	case errors.Is(err, ErrRepositoryMigrationsNewer), errors.Is(err, errLedgerDiverges),
+		errors.Is(err, ErrDeclarationUntranslated), errors.Is(err, ErrVocabularyDialectNewer),
+		errors.Is(err, substrate.ErrValidation), errors.Is(err, substrate.ErrCorrupt),
+		errors.As(err, &refusal):
+		return failureRepository
+	// An operating system's error number satisfies net.Error too, so a file's
+	// is told before the network's.
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF),
+		errors.As(err, &path), errors.As(err, &errno):
+		return failureUnknown
+	case errors.As(err, &network):
+		return failureServer
+	}
+	return failureUnknown
+}
+
+// serverKind reports the errors failureOf reads as the server's by their
+// type or by their name, before anything else. pgx 5's transport errors that
+// carry a SafeToRetry method (its errors for a failed read or write, a
+// connection already busy or closed, a timeout, a context already done) are
+// read by that method; pgconn.ErrConnClosed is a plain exported sentinel,
+// read by name; a plain protocol error of pgx carries neither, and is
+// unknown. Through database/sql, pgx's driver answers a closed connection
+// with driver.ErrBadConn.
+func serverKind(err error) bool {
+	var (
+		connect   *pgconn.ConnectError
+		transport interface{ SafeToRetry() bool }
+		op        *net.OpError
+		errno     syscall.Errno
+	)
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, ErrRepositoryHasAnotherWriter) || errors.Is(err, ErrWriterLeaseLost)
+		errors.Is(err, ErrRepositoryHasAnotherWriter) || errors.Is(err, ErrWriterLeaseLost) ||
+		errors.Is(err, driver.ErrBadConn) || errors.Is(err, sql.ErrConnDone) || errors.Is(err, sql.ErrTxDone) ||
+		errors.Is(err, pgconn.ErrConnClosed) ||
+		errors.Is(err, substrate.ErrWriteInDoubt) || errors.Is(err, substrate.ErrUnavailable) ||
+		errors.Is(err, substrate.ErrRestartRequired) ||
+		errors.As(err, &connect) || errors.As(err, &transport) || errors.As(err, &op) ||
+		(errors.As(err, &errno) && slices.Contains(serverErrnos, errno))
+}
+
+// serverErrnos are the operating system's numbers that are the server's
+// wherever they appear, bare or inside a file's error (a network mount): the
+// network's, and the host's limits. A full disk is never one repository's
+// damage. EIO and ENOENT are not among them.
+var serverErrnos = []syscall.Errno{
+	syscall.ECONNRESET, syscall.EPIPE, syscall.ETIMEDOUT, syscall.ECONNREFUSED, syscall.ECONNABORTED,
+	syscall.ENETUNREACH, syscall.EHOSTUNREACH, syscall.ENETDOWN,
+	syscall.ENOSPC, syscall.EDQUOT, syscall.EMFILE, syscall.ENFILE, syscall.ENOMEM,
+}
+
+// migrationRefusal marks an error a repository migration's own code returned
+// refusing the rows it met (ownRefusal): the repository's, told where it is
+// returned and never by elimination.
+type migrationRefusal struct{ err error }
+
+func (e *migrationRefusal) Error() string { return e.err.Error() }
+func (e *migrationRefusal) Unwrap() error { return e.err }
+
+// ownRefusal marks err, returned by a repository migration, as the
+// migration's own refusal, unless its chain carries anything else: an error
+// of the database (a typed one, or database/sql's own untyped ones, each of
+// which begins "sql: " or "driver: "), of the network, of a file or of the
+// context, or one of the server's: a commit in doubt, not available yet or
+// until a restart, a version conflict, the writer lease. A migration whose
+// write met one of those is not refusing its rows.
+func ownRefusal(err error) error {
+	var (
+		pg      *pgconn.PgError
+		path    *fs.PathError
+		errno   syscall.Errno
+		network net.Error
+	)
+	if serverKind(err) || errors.As(err, &pg) || errors.As(err, &path) || errors.As(err, &errno) || errors.As(err, &network) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, substrate.ErrConflict) || errors.Is(err, sql.ErrNoRows) ||
+		anyInChain(err, databaseSQLLeaf) {
+		return err
+	}
+	return &migrationRefusal{err: err}
+}
+
+// databaseSQLLeaf reports an error at the end of a chain that database/sql or
+// its driver interface returned untyped ("sql: database is closed", "sql:
+// Rows are closed"), which only its words tell.
+func databaseSQLLeaf(err error) bool {
+	if _, ok := err.(interface{ Unwrap() error }); ok {
+		return false
+	}
+	if _, ok := err.(interface{ Unwrap() []error }); ok {
+		return false
+	}
+	msg := err.Error()
+	return strings.HasPrefix(msg, "sql: ") || strings.HasPrefix(msg, "driver: ")
+}
+
+// anyInChain reports whether f holds for err or anything it wraps, through
+// joined errors too.
+func anyInChain(err error, f func(error) bool) bool {
+	if err == nil {
+		return false
+	}
+	if f(err) {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, e := range joined.Unwrap() {
+			if anyInChain(e, f) {
+				return true
+			}
+		}
+		return false
+	}
+	return anyInChain(errors.Unwrap(err), f)
 }
 
 // directoryName is the name of the repository a directory under the data
