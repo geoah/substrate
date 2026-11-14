@@ -228,11 +228,11 @@ extension Conversation {
             state.turnFailure = failure
             return
         }
-        // The send emptied the composer, so whatever it holds now was typed
-        // since, the same words again included.
+        // The send emptied the composer, so whatever the conversation holds
+        // now was typed since, the same words again included. The field
+        // takes the text, and keeps after it what it has typed and not said.
         let typedSince = state.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n" + state.draft
-        state.draft = message + typedSince
-        state.draftRevision += 1
+        rewrite(&state, message + typedSince)
         state.chatFailure = failure
     }
 

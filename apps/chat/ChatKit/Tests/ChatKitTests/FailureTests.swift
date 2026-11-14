@@ -411,9 +411,9 @@ struct FailurePlaces {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
         let turns = TurnPresenter.present(stored, agent: nil, liveKey: nil, titles: [:])
         let live = ConversationLive(
-            thread: "t1", agent: helper, name: "Helper", draft: "", draftRevision: 0, turns: [], incomplete: false, liveKey: nil,
-            awaitingFirstEvent: false, phase: .idle, stopping: false, failures: ConversationFailures(), deleted: false, listenOnOpen: false,
-            blocked: nil, keyless: nil, online: true)
+            thread: "t1", agent: helper, name: "Helper", draft: "", draftRevision: 0, draftReplaced: "", draftBefore: "", turns: [],
+            incomplete: false, liveKey: nil, awaitingFirstEvent: false, phase: .idle, stopping: false, failures: ConversationFailures(),
+            deleted: false, listenOnOpen: false, blocked: nil, keyless: nil, online: true)
         let failures = app.failures(ChatAppState(), live: live, row: nil, stored: stored, turns: turns)
         // The unanswered message and the reply cut short, each at its turn,
         // with no button: only the newest turn can be tried again.
