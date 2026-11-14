@@ -381,4 +381,90 @@ describe("the watch's bound", () => {
       refusal: { code: "compacted", message: "the history was replaced" },
     })
   })
+
+  // A forgetting that lands while the stream is open, between two of its
+  // batches, raises the horizon past its cursor, and the server ends the
+  // stream with this frame as it writes it (internal/api
+  // changehorizon_db_test.go): the first refusal in the minute is a
+  // recovery. The refused cursor is never sent again, the stream opens at
+  // the head, and the collection is read again from its first page.
+  it("recovers a stream a forgetting overtook between two batches, and reads the list again", async () => {
+    const encoder = new TextEncoder()
+    const line = (value: unknown) =>
+      encoder.encode(JSON.stringify(value) + "\n")
+    let opened = 0
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      const first = ++opened === 1
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(line({ bookmark: first ? 3 : 9, generation: "g" }))
+          if (!first) return
+          controller.enqueue(
+            line({
+              seq: 4,
+              ts: new Date().toISOString(),
+              actor: "act-person",
+              op: "put",
+              kind: TASK,
+              recordId: "t1",
+            })
+          )
+          setTimeout(
+            () =>
+              controller.enqueue(
+                line({
+                  error: {
+                    code: "compacted",
+                    message:
+                      "the cursor cannot be resumed: seq 4 is below the repository's horizon 6: a deletion after it was forgotten; re-list and resume from the head",
+                    head: 9,
+                    generation: "g",
+                  },
+                })
+              ),
+            2_000
+          )
+        },
+      })
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "application/x-ndjson" },
+      })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    let lists = 0
+    const statuses: WatchStatus[] = []
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const hook = renderHook(
+      () => {
+        useQuery({
+          queryKey: ["records", "tasks"],
+          queryFn: () => Promise.resolve(++lists),
+        })
+        useLiveRecords([TASK], [["records", "tasks"]], (s) => statuses.push(s))
+      },
+      { wrapper }
+    )
+    // The first batch, and the list it read again, before the refusal.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500)
+    })
+    const before = lists
+    expect(fetchMock).toHaveBeenCalledOnce()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    hook.unmount()
+    const asked = (n: number) =>
+      new URL(String(fetchMock.mock.calls[n]?.[0]), "http://x").searchParams
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(asked(1).has("from")).toBe(false)
+    expect(statuses.filter((s) => s === "compacted")).toHaveLength(1)
+    expect(statuses).not.toContain("stopped")
+    expect(lists).toBeGreaterThan(before)
+    expect(unshownFailures()).toHaveLength(0)
+  })
 })

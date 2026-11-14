@@ -526,6 +526,14 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 {"error": {"code": "internal", "message": "…"}}
 ```
 
+A stream the [horizon](#frames-and-the-horizon) overtakes while it is open,
+because a forgetting moved it past the stream's position between two
+batches, ends with the `compacted` frame, carrying the `head` and
+`generation` a refused resume carries: each batch is read together with the
+horizon, and one below it is refused, never sent without the deletion that
+was forgotten. A forward page (`from=` without `watch`) is answered `410
+compacted` the same way, however late in the request the forgetting lands.
+
 A stream also ends cleanly, with no error frame, when the server shuts down,
 and when the roles of the person its token acts for change, since it reads
 through the view those roles built
