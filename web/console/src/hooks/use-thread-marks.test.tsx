@@ -146,6 +146,8 @@ function wrapper() {
 }
 
 const threads = [thread("t1", "m2"), thread("t2", "m5"), thread("t3", "m9")]
+/** The second chat open, as props a rerender may change to none. */
+const opened: { open: SubstrateRecord | undefined } = { open: threads[1] }
 
 describe("useThreadMarks", () => {
   it("says which chats are unread: no mark, a mark behind, and one marked so", async () => {
@@ -188,7 +190,10 @@ describe("useThreadMarks", () => {
     const { result, rerender } = renderHook(
       ({ open }: { open: SubstrateRecord | undefined }) =>
         useThreadMarks(threads, open),
-      { wrapper: wrapper(), initialProps: { open: threads[1] } }
+      {
+        wrapper: wrapper(),
+        initialProps: opened,
+      }
     )
     await waitFor(() => expect(result.current.supported).toBe(true))
     await act(() => vi.advanceTimersByTimeAsync(SEEN_MS + 50))
@@ -212,7 +217,10 @@ describe("useThreadMarks", () => {
     const { result, rerender } = renderHook(
       ({ open }: { open: SubstrateRecord | undefined }) =>
         useThreadMarks(threads, open),
-      { wrapper: wrapper(), initialProps: { open: threads[1] } }
+      {
+        wrapper: wrapper(),
+        initialProps: opened,
+      }
     )
     await waitFor(() => expect(result.current.supported).toBe(true))
     act(() => result.current.markUnread("t2"))

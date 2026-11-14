@@ -1194,15 +1194,15 @@ person:
 ```yaml
 kind: substrate.reamde.dev/llm/threadmark
 metadata:
-  id: 019a8c3e5b7f7d21b0c4e6f8a2d4c6e8.2k7m9p1r3t5v7x9z0b2d4f6h8j
+  id: 01m7dj2ybsebnbkvnx67dmknvv.6nk6ekkczdgh399nt2pqpccjz0
 data:
   properties:
     thread:
-      ref: substrate.reamde.dev/llm/thread/019a8c3e5b7f7d21b0c4e6f8a2d4c6e8
+      ref: substrate.reamde.dev/llm/thread/01m7dj2ybsebnbkvnx67dmknvv
     readBy:
-      ref: substrate.reamde.dev/core/actor/2k7m9p1r3t5v7x9z0b2d4f6h8j
+      ref: substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0
     readThrough:
-      ref: substrate.reamde.dev/llm/message/019a8c3f04aa7b1e9d3c5a7f1b3d5f70
+      ref: substrate.reamde.dev/llm/message/01m7dj2yrqekmrn868s52f6gj2
     readAt: "2026-11-14T09:41:07.412Z"
     markedUnread: false
 ```
@@ -1222,8 +1222,8 @@ id, and the server builds the id and fills in `readBy`:
 ```http
 POST /api/v1/records
 {"kind": "substrate.reamde.dev/llm/threadmark",
- "properties": {"thread": "019a8c3e5b7f7d21b0c4e6f8a2d4c6e8",
-                "readThrough": "019a8c3f04aa7b1e9d3c5a7f1b3d5f70"}}
+ "properties": {"thread": "01m7dj2ybsebnbkvnx67dmknvv",
+                "readThrough": "01m7dj2yrqekmrn868s52f6gj2"}}
 ```
 
 It answers `201` with the mark when it created one and `200` when the mark
