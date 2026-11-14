@@ -1,0 +1,226 @@
+#if DEBUG
+import ChatKit
+import Foundation
+import SubstrateKit
+
+/// A substrate that answers from ChatKit's fixtures, in the process: the
+/// chat list, each chat's rows, the change feed held open, and a turn that
+/// streams a reply at a model's pace and then stands in the rows. What a
+/// measurement runs against and a gallery draws from, so neither needs a
+/// server, a sign-in or a network.
+final class FixtureServer: HTTPTransport, @unchecked Sendable {
+    /// How a turn's reply is written: its text, the characters in each
+    /// piece, and how long the server waits between two.
+    struct Pace: Sendable {
+        var piece = 12
+        var interval: Duration = .milliseconds(30)
+
+        var perSecond: Int {
+            let parts = interval.components
+            return Int(Double(piece) / (Double(parts.seconds) + Double(parts.attoseconds) / 1e18))
+        }
+    }
+
+    private let lock = NSLock()
+    /// The rows each chat holds, and the turns answered in it since.
+    private var rows: [String: Int]
+    private var answered: [String: [(message: String, reply: String)]] = [:]
+    private var versions: [String: Int] = [:]
+    private var reply: String
+    private var pace: Pace
+    /// The stream stops after this many characters and waits there.
+    private var holdAfter: Int?
+
+    init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace()) {
+        rows = [ChatFixtures.long: 200, ChatFixtures.full: 500]
+        self.reply = reply
+        self.pace = pace
+    }
+
+    /// A chat that holds one settled turn: `message`, answered with `reply`.
+    func seed(_ thread: String, message: String, reply: String) {
+        lock.withLock {
+            rows[thread] = 0
+            answered[thread] = [(message, reply)]
+        }
+    }
+
+    /// A chat with nothing in it yet.
+    func empty(_ thread: String) {
+        lock.withLock { rows[thread] = 0 }
+    }
+
+    /// The next turn answers with `reply`, stopping part way where `holdAfter`
+    /// says so, for a picture of a reply caught as it is written.
+    func answer(with reply: String, holdAfter: Int? = nil) {
+        lock.withLock {
+            self.reply = reply
+            self.holdAfter = holdAfter
+        }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let stream = try await lines(for: request)
+        return (try await stream.body(limit: .max), stream.head)
+    }
+
+    func lines(for request: URLRequest) async throws -> LineStream {
+        let url = request.url ?? ChatFixtures.origin
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let path = components?.percentEncodedPath.removingPercentEncoding ?? url.path
+        let query = components?.query ?? ""
+        let method = request.httpMethod ?? "GET"
+        func head(_ status: Int, _ type: String = "application/json") -> HTTPURLResponse {
+            HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": type])!
+        }
+        func json(_ body: String, status: Int = 200) -> LineStream { LineStream(head: head(status), body: Data(body.utf8)) }
+        let missing = json(#"{"error":{"code":"not_found","message":"The fixture holds nothing there."}}"#, status: 404)
+
+        if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery) }
+        if path.hasSuffix("/api/v1/changes") {
+            // The bookmark, then nothing: the feed stays open and quiet.
+            let lines = AsyncThrowingStream<String, any Error> { continuation in
+                continuation.yield(#"{"bookmark":10,"generation":"g"}"#)
+                let task = Task {
+                    while !Task.isCancelled { try? await Task.sleep(for: .seconds(20)) }
+                    continuation.finish()
+                }
+                continuation.onTermination = { _ in task.cancel() }
+            }
+            return LineStream(head: head(200, "application/x-ndjson"), lines: lines)
+        }
+        if method == "POST", path.hasSuffix("/chat") {
+            let body = request.httpBody.flatMap { JSONValue.parse(String(decoding: $0, as: UTF8.self)) }
+            return LineStream(
+                head: head(200, "application/x-ndjson"),
+                lines: turn(thread: body?["thread"]?.string ?? "", message: body?["message"]?.string ?? ""))
+        }
+        if method == "GET", path.hasSuffix("/api/v1/records") {
+            if query.contains("llm/message") {
+                // Every chat has a subject, so no read asks for opening lines.
+                guard !query.contains(#""in""#), let thread = Self.named(in: query) else { return json(ChatFixtures.page([])) }
+                return json(transcript(thread))
+            }
+            if query.contains("llm/thread") { return json(query.contains(#""chat""#) ? ChatFixtures.threads() : ChatFixtures.page([])) }
+            if query.contains("core/agent") { return json(ChatFixtures.agents()) }
+            if query.contains("llm/provider") { return json(ChatFixtures.providers()) }
+            return json(ChatFixtures.page([]))
+        }
+        if method == "GET", let range = path.range(of: "/llm/thread/") {
+            let id = String(path[range.upperBound...])
+            guard !id.contains("/") else { return missing }
+            return json(ChatFixtures.thread(id, version: lock.withLock { versions[id] ?? 3 }))
+        }
+        return missing
+    }
+
+    /// The thread a transcript read names: the `eq` of its filter.
+    private static func named(in query: String) -> String? {
+        guard let start = query.range(of: #""eq":""#) else { return nil }
+        let rest = query[start.upperBound...]
+        return rest.firstIndex(of: "\"").map { String(rest[..<$0]) }
+    }
+
+    private func transcript(_ thread: String) -> String {
+        let (held, turns) = lock.withLock { (rows[thread] ?? 4, answered[thread] ?? []) }
+        guard let last = turns.last else { return ChatFixtures.transcript(thread, rows: held) }
+        // One answered turn is as far as a measurement goes in a chat.
+        return ChatFixtures.transcript(thread, rows: held + (turns.count - 1) * 2, message: last.message, reply: last.reply)
+    }
+
+    private func turn(thread: String, message: String) -> AsyncThrowingStream<String, any Error> {
+        let (text, pace, hold, held) = lock.withLock { (reply, self.pace, holdAfter, rows[thread] ?? 4) }
+        let lines = ChatFixtures.stream(thread: thread, text: text, turn: held + 1, piece: pace.piece)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                var written = 0
+                for line in lines {
+                    if let hold, written >= hold {
+                        while !Task.isCancelled { try? await Task.sleep(for: .seconds(20)) }
+                    }
+                    if Task.isCancelled { break }
+                    if line.hasPrefix(#"{"kind":"done""#) {
+                        // The rows hold the turn before the stream says so.
+                        self.lock.withLock {
+                            self.answered[thread, default: []].append((message, text))
+                            self.versions[thread] = (self.versions[thread] ?? 3) + 1
+                        }
+                    }
+                    continuation.yield(line)
+                    if line.hasPrefix(#"{"kind":"delta""#) {
+                        written += pace.piece
+                        try? await Task.sleep(for: pace.interval)
+                    }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// A released server's discovery document, with no app authorization:
+    /// the session is a password one.
+    private static let discovery = #"""
+        {"versions":[{"name":"v1","status":"served"}],
+         "server":{"version":"v0.123.1","build":"0123456789abcdef0123456789abcdef01234567"},
+         "changelog":{"horizon":0},"vocabulary":{"dialect":3},
+         "features":[{"name":"records","stability":"stable","revision":1,"surfaces":["rest"]}],
+         "registration":{"inviteRequired":false,"totpRequired":false}}
+        """#
+}
+
+/// A session kept in memory, for a fixture: nothing reaches the Keychain.
+final class MemorySessions: ImmediateSessionStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String: Data] = [:]
+    let location = "memory|" + UUID().uuidString
+
+    func read(account: String) -> StoredItem { lock.withLock { items[account].map(StoredItem.found) ?? .missing } }
+    func write(_ data: Data, account: String) throws { lock.withLock { items[account] = data } }
+    func delete(account: String) throws { lock.withLock { items[account] = nil } }
+}
+
+/// A network that is there, whatever the device's is.
+struct AlwaysOnline: Connectivity {
+    func current() async -> NetworkPath { NetworkPath(online: true) }
+    func paths() -> AsyncStream<NetworkPath> {
+        AsyncStream { continuation in continuation.yield(NetworkPath(online: true)) }
+    }
+}
+
+/// A folder of the fixture's own under the temporary directory.
+struct ScratchFolders: AppFolders {
+    let root: URL
+
+    init() {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("chat-fixture-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    func data() throws -> URL {
+        let url = root.appendingPathComponent("data", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    func cache() throws -> URL {
+        let url = root.appendingPathComponent("cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    var writingOptions: Data.WritingOptions { [] }
+}
+
+extension ChatHost.Parts {
+    /// A host signed in to the fixture: its session in memory, its folder a
+    /// scratch one, no notifications and no background work.
+    static func fixture(_ server: FixtureServer) -> ChatHost.Parts {
+        let storage = MemorySessions()
+        let session = Session(server: ChatFixtures.origin, repository: ChatFixtures.repository, secret: "fixture", tokenID: "fixture")
+        if let data = try? JSONEncoder().encode(session) { try? storage.write(data, account: "session") }
+        return ChatHost.Parts(
+            sessions: SessionStore(storage: storage), transport: server, folders: ScratchFolders(),
+            preferences: MemoryPreferenceStore(), notifications: nil, background: nil, connectivity: AlwaysOnline())
+    }
+}
+#endif

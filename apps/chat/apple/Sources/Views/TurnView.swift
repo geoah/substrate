@@ -25,6 +25,7 @@ struct TurnView: View, Equatable {
     }
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "Turn")
         switch turn.body {
         case let .user(user): UserTurnView(turn: user)
         case let .trigger(words):

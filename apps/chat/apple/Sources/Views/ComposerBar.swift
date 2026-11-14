@@ -27,6 +27,7 @@ struct ComposerBar: View {
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "Composer")
         VStack(spacing: 8) {
             if let keyless = composer.keyless {
                 KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }

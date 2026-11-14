@@ -50,6 +50,7 @@ struct ChatSplitView: View {
     private var current: ChildKey? { host.chats?.scenes[scene]?.current }
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "Split")
         NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
             ChatListView(scene: scene, showSettings: $showSettings)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 420)

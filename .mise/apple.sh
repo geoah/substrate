@@ -101,6 +101,39 @@ sim_chat() {
 	echo "apple: running on simulator $udid"
 }
 
+# Substrate Chat run against its own fixture and timed (apps/chat/DESIGN.md,
+# "Measuring"): the Debug configuration, which carries the fixture and the
+# driver a release does not, built with the optimizer on so the figures are
+# a release's, into a folder of its own so the build the tests use stays as
+# it is. The app prints its table and ends.
+measure_chat() {
+	local derived="build/dd-measure" which="${1:-all}"
+	local label="debug-optimized"
+	measured() {
+		xcodebuild -project "$PROJECT" -scheme SubstrateChat -derivedDataPath "$derived" -quiet -configuration Debug \
+			SWIFT_OPTIMIZATION_LEVEL=-O SWIFT_COMPILATION_MODE=wholemodule GCC_OPTIMIZATION_LEVEL=s ENABLE_TESTABILITY=NO "$@"
+	}
+	table() { sed -n '/measure:begin/,/measure:end/p' | sed '/measure:/d'; }
+	if [ "$which" = all ] || [ "$which" = mac ]; then
+		measured -destination 'platform=macOS' build
+		SUBSTRATE_CHAT_MEASURE="$label" "$derived/Build/Products/Debug/SubstrateChat.app/Contents/MacOS/SubstrateChat" \
+			-ApplePersistenceIgnoreState YES 2>/dev/null | table
+	fi
+	if [ "$which" = all ] || [ "$which" = sim ]; then
+		measured -destination 'generic/platform=iOS Simulator' build
+		local udid
+		udid="$(simulator_udid)"
+		if [ -z "$udid" ]; then
+			echo "apple: no iOS simulator is installed; add one in Xcode > Settings > Components" >&2
+			return 1
+		fi
+		xcrun simctl boot "$udid" 2>/dev/null || true
+		xcrun simctl install "$udid" "$derived/Build/Products/Debug-iphonesimulator/SubstrateChat.app"
+		SIMCTL_CHILD_SUBSTRATE_CHAT_MEASURE="$label" xcrun simctl launch --console-pty --terminate-running-process \
+			"$udid" dev.reamde.substrate.chat 2>/dev/null | tr -d '\r' | table
+	fi
+}
+
 build_device() {
 	xcb -destination 'generic/platform=iOS' -configuration Release build
 	echo "apple: $DERIVED/Build/Products/Release-iphoneos/Substrate.app"
@@ -640,6 +673,10 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		project
 		chat -destination 'platform=macOS' test
 		;;
+	measure:chat)
+		project
+		measure_chat "${2:-all}"
+		;;
 	install)
 		project
 		install_macos
@@ -662,7 +699,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 			exec "$APPLE_ROOT/.mise/apps.sh" site
 		;;
 	*)
-		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|test:kit|test:workouts|test:tasks|test:template|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
+		echo "usage: $0 project|build|build:macos|build:sim|build:device|build:sync|build:chat|build:workouts|build:tasks|sim:chat|test:chat|measure:chat|test:kit|test:workouts|test:tasks|test:template|install|sim|release|release:sync|release:chat|release:workouts|site [prerelease|stable]" >&2
 		exit 2
 		;;
 	esac

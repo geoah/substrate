@@ -1,5 +1,6 @@
 import Foundation
 import SubstrateCore
+import SubstrateRuntime
 
 /// The block structure of a reply. Inline spans (emphasis, code, links) stay
 /// as text here and are rendered by `AttributedString(markdown:)`, which
@@ -24,6 +25,13 @@ public struct MarkdownListItem: Hashable, Sendable {
 
 public enum MarkdownAlignment: Hashable, Sendable { case leading, center, trailing }
 
+public extension MeterPoint {
+    /// One parse of a reply's Markdown into blocks.
+    static let parse = MeterPoint("parse")
+    /// One line of inline Markdown made into styled text.
+    static let inline = MeterPoint("inline")
+}
+
 /// A small CommonMark-shaped block parser: what a model writes, read the way
 /// a person expects, and safe on a prefix of itself, because a streaming
 /// reply is parsed again with every flush. It never throws and never drops
@@ -34,11 +42,13 @@ public enum Markdown {
     public static let limit = 200_000
 
     public static func parse(_ text: String) -> [MarkdownBlock] {
-        if text.count > limit {
-            let head = String(text.prefix(limit))
-            return parse(lines: lines(head)) + [.paragraph(String(text.dropFirst(limit)))]
+        Meter.shared.time(.parse) {
+            if text.count > limit {
+                let head = String(text.prefix(limit))
+                return parse(lines: lines(head)) + [.paragraph(String(text.dropFirst(limit)))]
+            }
+            return parse(lines: lines(text))
         }
-        return parse(lines: lines(text))
     }
 
     private static func lines(_ text: String) -> [String] {

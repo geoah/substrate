@@ -757,6 +757,46 @@ may do and for how long; the app never sees the password.
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.
+- Pictures (`mise run apps:gallery`, into `build/gallery/apple/chat`): a
+  conversation's transcript drawn by the app's own rows through its own
+  runtime against the fixture's server (`GalleryTests`), in light and in
+  dark: a settled reply with every block at its whole height, and a reply
+  caught as it is written, part way through an emphasis, a table and a
+  fenced block. The tests run inside the app, which the Mac sandboxes, so
+  each picture is attached to the test's result and taken from there.
+
+### Measuring
+
+`mise run apple:measure:chat [mac|sim|all]` builds the app with the
+optimizer on and runs it with `SUBSTRATE_CHAT_MEASURE` set, which a debug
+build reads at launch (`apple/Sources/Measure`; a release carries none of
+it). The app then signs in to nothing: its session is in memory, its folder
+a scratch one, and its server is `FixtureServer`, which answers in the
+process from ChatKit's `ChatFixtures` (a list of 100 chats, a chat of 200
+turns, a chat of 500 rows, the change feed held open) and writes a 16 KB
+reply 400 characters a second. The scenario is the same every run: the
+reply streamed into the chat of 200 turns, then into the chat of 500 rows,
+then 200 characters typed into the composer through the field's own text
+system, 80 ms apart. It prints one table and ends. Above the table it says
+what opening each chat cost: how many turns' bodies ran (a lazy transcript
+runs the ones on screen, not 500) and the main thread's time.
+
+The figures come from the kit's `Meter` (see the kit's README), each a
+signpost as well, so the same run under Instruments draws them. A step is a
+flush of the stream, or a key typed:
+
+| Row | What it is |
+| --- | ---------- |
+| main thread | every pass of the main run loop from waking to waiting again, summed, per step; and the longest pass |
+| presenter | each controller's presenter, by its type: time per step, the longest run, and runs per step |
+| flush, publish | the tree presented and sent, on the runtime's executor; the half of a publish the model does on the main thread |
+| body evaluations | how often each view's `body` ran, per step: the list, a list row, the transcript, a turn, a reply's Markdown, a Markdown block, the composer |
+| Markdown | parses per step and what one took; lines of inline Markdown made into styled text |
+| key to drawn | from the key to the end of the run loop's pass it was pressed in, which has drawn it |
+
+The numbers are a machine's: the table's first line says which, and a
+simulator is not a device. The counts (runs, evaluations, parses per step)
+are the same on any machine.
 
 ## What the reviews changed
 

@@ -32,6 +32,7 @@ struct MarkdownView: View {
     var missing: Set<String> = []
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "Markdown")
         let blocks = live ? Markdown.parse(text) : MarkdownCache.parse(text)
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
@@ -82,7 +83,7 @@ func consolePath(_ url: URL) -> String? {
 func inline(_ text: String, missing: Set<String> = []) -> Text {
     let key = missing.isEmpty ? text : text + "\u{0}" + missing.sorted().joined(separator: "\u{0}")
     if let hit = MarkdownCache.inlines[key] { return hit }
-    let out = marked(parseInline(text, missing: missing))
+    let out = Meter.shared.time(.inline) { marked(parseInline(text, missing: missing)) }
     MarkdownCache.inlines[key] = out
     if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
     return out
@@ -190,6 +191,7 @@ private struct BlockView: View {
     let block: MarkdownBlock
 
     var body: some View {
+        let _ = Meter.shared.count(.body, "MarkdownBlock")
         switch block {
         case let .paragraph(text):
             inline(text, missing: missing)

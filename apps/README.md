@@ -931,6 +931,7 @@ by its number. The app draws its presentations and sends its commands.
 mise run apple:build:chat     # the Mac app and the iOS simulator app
 mise run apple:sim:chat       # the iOS app on a booted (or the first) iPhone simulator
 mise run apple:test:chat      # ChatKit's tests, then the app target's, on the Mac
+mise run apple:measure:chat   # what a streamed reply and typing cost, as a table: on the Mac and on a simulator
 mise run apps:release prerelease chat   # both platforms, signed and published under chat/
 ```
 
