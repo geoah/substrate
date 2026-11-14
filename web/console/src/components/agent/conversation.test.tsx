@@ -93,7 +93,7 @@ import {
   type AgentEvent,
 } from "@/lib/api/agents"
 import { ApiError, type SubstrateRecord } from "@/lib/api/types"
-import { TransportError } from "@/lib/api/agents"
+import { TransportError, TurnFailedError } from "@/lib/api/agents"
 import {
   ID_TAKEN_REFUSAL,
   RESEND_DELAYS_MS,
@@ -496,9 +496,8 @@ describe("Conversation", () => {
     }
     mount("t-9", { threadRecord: cut, initialDraft: "half a thought" })
     await act(() => new Promise((r) => setTimeout(r, 0)))
-    expect(screen.getByText("Helper didn’t finish")).toBeTruthy()
     expect(
-      screen.getByText("The server restarted while it was working.")
+      screen.getByText("The server restarted while Helper was working.")
     ).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
@@ -510,7 +509,9 @@ describe("Conversation", () => {
       "half a thought"
     )
     // The turn it started is running: the note is gone.
-    expect(screen.queryByText("Helper didn’t finish")).toBeNull()
+    expect(
+      screen.queryByText("The server restarted while Helper was working.")
+    ).toBeNull()
     // And it streams as a sent turn does, with no user message above it.
     act(() => {
       continues[0].onEvent({ kind: "thread", thread: "t-9" })
@@ -619,10 +620,99 @@ describe("Conversation", () => {
     rerender(view(failed))
     await waitFor(() =>
       expect(
-        screen.getByText("Helper ran into a problem and didn’t finish")
+        screen.getByText("Helper ran into a problem and didn’t finish.")
       ).toBeTruthy()
     )
     expect(screen.queryByText(/couldn’t answer/)).toBeNull()
+    // The server's words are there, folded under Details.
+    const details = screen.getByText("Details").closest("details")
+    expect(details?.open).toBe(false)
+    expect(details?.textContent).toContain("The server said: llm: overloaded")
+  })
+
+  it("says a failed turn by its cause, with one button, as soon as its stream reports it", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = (threadRecord: SubstrateRecord) => (
+      <QueryClientProvider client={client}>
+        <Harness initialThread="t-17" threadRecord={threadRecord} />
+      </QueryClientProvider>
+    )
+    const running = runningThread("t-17")
+    running.properties = { status: "running", provider: "anthropic" }
+    const { rerender } = render(view(running))
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    // The stream ends with the turn's failure, its cause on the event.
+    act(() =>
+      attaches[0].onError?.(
+        new TurnFailedError(
+          "agent helper: llm: POST …: 429 Too Many Requests",
+          "provider_rate_limited",
+          20
+        )
+      )
+    )
+    // Whether the turn settled is the thread's to say: an attach asks it.
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    act(() => {
+      attaches[1].onEvent({ kind: "idle", thread: "t-17", status: "error" })
+      attaches[1].onDone?.()
+    })
+    await waitFor(() =>
+      expect(screen.getByText("Anthropic is limiting requests.")).toBeTruthy()
+    )
+    expect(screen.getByText("Try again in 20 seconds.")).toBeTruthy()
+    expect(screen.queryByText(/couldn’t answer/)).toBeNull()
+    expect(screen.queryByText(/429/)?.closest("details")).toBeTruthy()
+    // The record catches up and says the same thing, once.
+    const failed = runningThread("t-17")
+    failed.properties = {
+      status: "error",
+      cause: "provider_rate_limited",
+      retryAfter: 20,
+      provider: "anthropic",
+      reason: "POST …: 429 Too Many Requests",
+    }
+    rerender(view(failed))
+    await waitFor(() =>
+      expect(
+        screen.getAllByText("Anthropic is limiting requests.")
+      ).toHaveLength(1)
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+    expect(continues.map((c) => c.thread)).toEqual(["t-17"])
+  })
+
+  it("offers the provider's card for a refused key, a new chat for one too long, and no retry for either", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    const refused = runningThread("t-18")
+    refused.properties = {
+      status: "error",
+      cause: "provider_key_refused",
+      provider: "anthropic",
+      reason: "Anthropic refused this key (401).",
+    }
+    const { unmount } = mount("t-18", { threadRecord: refused })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    expect(screen.getByText("Anthropic refused the API key.")).toBeTruthy()
+    expect(screen.getByText("Replace the key")).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+    unmount()
+
+    const long = runningThread("t-19")
+    long.properties = { status: "error", cause: "context_too_long" }
+    mount("t-19", { threadRecord: long })
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    expect(
+      screen.getByText("This chat is too long for the model.")
+    ).toBeTruthy()
+    expect(
+      screen.getAllByText("New chat").some((el) => el.tagName === "A")
+    ).toBe(true)
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+    expect(screen.queryByText("Details")).toBeNull()
   })
 
   it("holds Continue while the composer is blocked, and says why beside it", async () => {

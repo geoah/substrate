@@ -215,52 +215,66 @@ describe("agent runs", () => {
     })
   })
 
-  it("says why a chat's last turn didn't finish, in words, and nothing for one that did", () => {
-    const ended = (status: string, reason?: string) =>
-      rec(reason === undefined ? { status } : { status, reason })
+  it("says why a chat's last turn didn't finish, from its cause, and nothing for one that did", () => {
+    const ended = (status: string, more: Record<string, unknown> = {}) =>
+      rec({ status, provider: "anthropic", ...more })
+    // The words are lib/turn-outcome.ts's; this reads the record into it.
     expect(
       unfinishedTurn(
-        ended("stopped", "stopped: the server shut down during the turn"),
+        ended("error", {
+          cause: "provider_rate_limited",
+          retryAfter: 20,
+          reason: "POST …: 429 Too Many Requests",
+        }),
         "Moss"
       )
     ).toEqual({
       tone: "warn",
-      title: "Moss didn’t finish",
-      detail: "The server restarted while it was working.",
-      action: "Continue",
+      title: "Anthropic is limiting requests.",
+      detail: "Try again in 20 seconds.",
+      action: { kind: "continue", label: "Try again" },
+      said: "POST …: 429 Too Many Requests",
     })
-    expect(unfinishedTurn(ended("stopped", "stopped by api"), "Moss")).toEqual({
+    expect(
+      unfinishedTurn(ended("stopped", { cause: "shutdown" }), "Moss")?.title
+    ).toBe("The server restarted while Moss was working.")
+    // A thread from before causes reads by its status and its reason.
+    expect(
+      unfinishedTurn(ended("stopped", { reason: "stopped by api" }), "Moss")
+    ).toMatchObject({
       tone: "quiet",
-      title: "Moss was stopped before it finished",
-      action: "Continue",
+      title: "Moss was stopped before it finished.",
+      action: { kind: "continue", label: "Continue" },
     })
-    expect(
-      unfinishedTurn(ended("overbudget", "max turns reached (8)"), "Moss")
-        ?.detail
-    ).toBe("It used all 8 of its turns.")
-    expect(
-      unfinishedTurn(ended("overbudget", "max tool calls reached (32)"), "Moss")
-        ?.detail
-    ).toBe("It used all 32 of its tool calls.")
     expect(
       unfinishedTurn(
-        ended("overbudget", "deadline exceeded after a last turn"),
+        ended("overbudget", { reason: "max tool calls reached (32)" }),
         "Moss"
       )?.detail
-    ).toBe("It ran out of time.")
-    // A reason the console does not know is shown as the server wrote it.
+    ).toBe("It used all 32 of its tool calls.")
     expect(
-      unfinishedTurn(ended("overbudget", "a new cap (3)"), "Moss")?.detail
-    ).toBe("It reached a limit: a new cap (3)")
-    expect(
-      unfinishedTurn(ended("error", "llm: overloaded\nstack…"), "Moss")
+      unfinishedTurn(ended("error", { reason: "llm: overloaded" }), "Moss")
     ).toEqual({
       tone: "bad",
-      title: "Moss ran into a problem and didn’t finish",
-      detail: "What failed: llm: overloaded",
-      // A failed turn is tried again; one cut short is continued.
-      action: "Try again",
+      title: "Moss ran into a problem and didn’t finish.",
+      action: { kind: "continue", label: "Try again" },
+      said: "llm: overloaded",
     })
+    // The list's pill goes by the status, whatever the cause.
+    expect(
+      unfinishedTone(ended("error", { cause: "provider_rate_limited" }))
+    ).toBe("bad")
+    expect(unfinishedTone(ended("stopped", { cause: "shutdown" }))).toBe("warn")
+    expect(unfinishedTone(ended("stopped", { cause: "requested" }))).toBe(
+      "quiet"
+    )
+    expect(
+      unfinishedTone(
+        ended("stopped", {
+          reason: "stopped: the server shut down during the turn",
+        })
+      )
+    ).toBe("warn")
     for (const status of ["ok", "running"]) {
       expect(unfinishedTurn(ended(status), "Moss")).toBeUndefined()
       expect(unfinishedTone(ended(status))).toBeUndefined()

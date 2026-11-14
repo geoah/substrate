@@ -18,19 +18,29 @@ import golden from "./errorreasons.golden.json"
 import type { ErrorReason } from "./types"
 
 const errorReasons: Record<ErrorReason, true> = {
+  context_too_long: true,
   first_attempt_landed: true,
   first_attempt_running: true,
   in_doubt: true,
   key_refused: true,
   message_id_taken: true,
+  model_unavailable: true,
   not_permitted: true,
   nothing_to_continue: true,
   observed_rederiving: true,
+  provider_billing: true,
+  provider_key_missing: true,
+  provider_overloaded: true,
+  provider_rate_limited: true,
+  provider_rejected: true,
+  provider_unavailable: true,
   quota: true,
   repository_required: true,
   set_aside: true,
+  spend_cap: true,
   stale_revision: true,
   thread_busy: true,
+  turn_cap: true,
 }
 
 it("ErrorReason is exactly the server's closed set", () => {

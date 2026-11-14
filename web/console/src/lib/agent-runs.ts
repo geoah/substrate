@@ -11,6 +11,11 @@ import { readReference, type SubstrateRecord } from "@/lib/api/types"
 import { USD } from "@/lib/money"
 import { kindPatternWords } from "@/lib/tools"
 import { allowVerbs, policyIdOf, type PolicyOp } from "@/lib/agent-rules"
+import {
+  turnOutcome,
+  type SettledRun,
+  type TurnOutcome,
+} from "@/lib/turn-outcome"
 
 export type RunStatus = "running" | "ok" | "overbudget" | "error" | "stopped"
 
@@ -31,23 +36,20 @@ export function runFailed(thread: SubstrateRecord): boolean {
 }
 
 /** A chat turn that ended before it finished, said for the person reading
- * the chat. */
-export interface UnfinishedTurn {
-  /** `bad` for a failure, `warn` for a turn something else cut short,
-   * `quiet` for a stop somebody asked for. */
-  tone: "quiet" | "warn" | "bad"
-  /** What happened, naming the agent. */
-  title: string
-  /** Why, when the thread says. */
-  detail?: string
-  /** What going on is called: a failed turn is tried again, and one that
-   * was cut short is continued. Both continue the thread with no message. */
-  action: "Continue" | "Try again"
-}
+ * the chat (`lib/turn-outcome.ts`, the one place its words are chosen). */
+export type UnfinishedTurn = TurnOutcome
 
-/** The reason the loop settles a turn the server's shutdown ended with
- * (`reasonShutdown` in internal/engine/agentloop.go). */
-const SHUTDOWN_REASON = "stopped: the server shut down during the turn"
+/** What a thread's record says about how its last turn ended. */
+function settledRun(thread: SubstrateRecord): SettledRun {
+  const p = thread.properties
+  return {
+    status: runStatus(thread),
+    ...(typeof p.cause === "string" && { cause: p.cause }),
+    ...(typeof p.reason === "string" && { reason: p.reason }),
+    ...(typeof p.retryAfter === "number" && { retryAfter: p.retryAfter }),
+    ...(typeof p.provider === "string" && { provider: p.provider }),
+  }
+}
 
 /** How a thread's last turn ended when it didn't finish, as the tone its
  * notice and its pill take; undefined for one still running or one that
@@ -55,9 +57,14 @@ const SHUTDOWN_REASON = "stopped: the server shut down during the turn"
 export function unfinishedTone(
   thread: SubstrateRecord
 ): UnfinishedTurn["tone"] | undefined {
+  // By the status, not the cause: a chat list says Failed for every failure,
+  // whatever its notice goes on to say about it.
   switch (runStatus(thread)) {
     case "stopped":
-      return reasonLine(thread) === SHUTDOWN_REASON ? "warn" : "quiet"
+      return thread.properties.cause === "shutdown" ||
+        reasonLine(thread) === SHUTDOWN_REASON
+        ? "warn"
+        : "quiet"
     case "overbudget":
       return "warn"
     case "error":
@@ -67,57 +74,19 @@ export function unfinishedTone(
   }
 }
 
-/** Why a thread's last turn didn't finish, from its stored `status` and
- * `reason`; undefined for one still running or one that finished. The
- * reasons read here are the loop's own, and one this does not know is
- * shown as the loop wrote it. */
+/** The reason the loop settles a turn the server's shutdown ended with
+ * (`reasonShutdown` in internal/engine/agentloop.go), for a thread from
+ * before causes. */
+const SHUTDOWN_REASON = "stopped: the server shut down during the turn"
+
+/** Why a thread's last turn didn't finish, from its stored `status`,
+ * `cause` and `reason`; undefined for one still running or one that
+ * finished. */
 export function unfinishedTurn(
   thread: SubstrateRecord,
   name: string
 ): UnfinishedTurn | undefined {
-  const reason = reasonLine(thread) ?? ""
-  switch (runStatus(thread)) {
-    case "stopped":
-      return unfinishedTone(thread) === "warn"
-        ? {
-            tone: "warn",
-            title: `${name} didn’t finish`,
-            detail: "The server restarted while it was working.",
-            action: "Continue",
-          }
-        : {
-            tone: "quiet",
-            title: `${name} was stopped before it finished`,
-            action: "Continue",
-          }
-    case "overbudget":
-      return {
-        tone: "warn",
-        title: `${name} didn’t finish`,
-        detail: limitWords(reason),
-        action: "Continue",
-      }
-    case "error":
-      return {
-        tone: "bad",
-        title: `${name} ran into a problem and didn’t finish`,
-        ...(reason && { detail: `What failed: ${reason}` }),
-        action: "Try again",
-      }
-    default:
-      return undefined
-  }
-}
-
-/** An overbudget run's reason, in words (`deadlineReason` and the two
- * budget reasons in internal/engine/agentloop.go). */
-function limitWords(reason: string): string {
-  if (reason.startsWith("deadline exceeded")) return "It ran out of time."
-  const turns = /^max turns reached \((\d+)\)$/.exec(reason)
-  if (turns) return `It used all ${turns[1]} of its turns.`
-  const calls = /^max tool calls reached \((\d+)\)$/.exec(reason)
-  if (calls) return `It used all ${calls[1]} of its tool calls.`
-  return reason ? `It reached a limit: ${reason}` : "It reached a limit."
+  return turnOutcome(settledRun(thread), name)
 }
 
 const MODE_WORDS: Record<string, string> = {
