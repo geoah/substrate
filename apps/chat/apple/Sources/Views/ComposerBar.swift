@@ -91,7 +91,7 @@ struct ComposerBar: View {
         .onChange(of: text) { _, text in
             draft.typed(text) { [host, key] in host.send($0, to: key) }
         }
-        .onAppear { draftField?.flush = { say() } }
+        .onAppear { draftField?.flush = { host.send(draft.reports.tell(text), to: key) } }
         .onChange(of: focused) { _, focused in
             if !focused { say() }
         }
@@ -250,8 +250,7 @@ struct ComposerBar: View {
             if dictation.active { await toggleListening() }
             guard composer.canSend, !empty else { return }
             // The conversation sends what it holds: everything typed first.
-            draft.reports.typed(text, at: .now)
-            say()
+            host.send(draft.reports.tell(text), to: key)
             host.send(.send, to: key)
             sent += 1
         }
@@ -316,7 +315,7 @@ final class DraftTeller {
 final class DraftField {
     fileprivate var flush: () -> Void = {}
 
-    /// Tells the conversation what the field holds that it has not heard.
+    /// Tells the conversation what the field holds, whatever it heard last.
     func callAsFunction() { flush() }
 }
 

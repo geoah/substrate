@@ -20,7 +20,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case readUsage(Lease)
     case clearTranscripts(Lease)
     case saveState(Lease, CachedState)
-    case saveDrafts(Lease, [String: String])
+    /// `atOnce` writes with no wait for more: the app is leaving the front,
+    /// and may not be running by the end of one.
+    case saveDrafts(Lease, [String: String], atOnce: Bool)
     case savePreferences(Lease, ChatPreferences)
     case saveTranscript(Lease, thread: String, CachedTranscript)
     /// Rules 3 and 4 hold its answer as they hold a read's: it carries the
