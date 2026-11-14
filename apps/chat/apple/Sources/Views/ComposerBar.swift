@@ -22,7 +22,7 @@ struct ComposerBar: View {
     let onKey: (String) -> Void
     @Environment(\.draftField) private var draftField
     @State private var text = ""
-    @State private var reports = DraftReports()
+    @State private var draft = DraftTeller()
     @FocusState private var focused: Bool
     @State private var selection: TextSelection?
     @Namespace private var glass
@@ -85,17 +85,13 @@ struct ComposerBar: View {
         .frame(maxWidth: .infinity)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
         .onChange(of: composer.draftRevision, initial: true) { _, _ in
-            if let next = reports.take(composer, holding: text) { text = next }
+            if let next = draft.reports.take(composer, holding: text) { text = next }
             say()
         }
-        .onChange(of: text) { _, text in reports.typed(text, at: .now) }
-        .onAppear { draftField?.flush = { say() } }
-        .task(id: reports.due) {
-            guard let due = reports.due else { return }
-            try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
-            guard !Task.isCancelled, let command = reports.paused(at: .now) else { return }
-            host.send(command, to: key)
+        .onChange(of: text) { _, text in
+            draft.typed(text) { [host, key] in host.send($0, to: key) }
         }
+        .onAppear { draftField?.flush = { say() } }
         .onChange(of: focused) { _, focused in
             if !focused { say() }
         }
@@ -106,7 +102,7 @@ struct ComposerBar: View {
             // The chat left the screen: the tree carries the text for the
             // field that comes after. Its conversation may be gone before
             // it hears, so the list keeps the draft either way.
-            host.send(reports.leave(text), to: key)
+            host.send(draft.reports.leave(text), to: key)
             host.send(.keepDraft(key: key, thread: screen.thread, text: text))
         }
         .task {
@@ -254,7 +250,7 @@ struct ComposerBar: View {
             if dictation.active { await toggleListening() }
             guard composer.canSend, !empty else { return }
             // The conversation sends what it holds: everything typed first.
-            reports.typed(text, at: .now)
+            draft.reports.typed(text, at: .now)
             say()
             host.send(.send, to: key)
             sent += 1
@@ -264,7 +260,7 @@ struct ComposerBar: View {
     /// Tells the conversation what it has not heard of the field, now.
     @discardableResult
     private func say() -> Conversation.Command? {
-        guard let command = reports.say() else { return nil }
+        guard let command = draft.reports.say() else { return nil }
         host.send(command, to: key)
         return command
     }
@@ -278,6 +274,36 @@ struct ComposerBar: View {
             focused = false
             await dictation.start(localeID: host.chats?.settings.voiceLocale)
         }
+    }
+}
+
+/// What a field has told its conversation (`DraftReports`), and the one
+/// wait for the pause in the typing that tells it more. Not observed: a key
+/// changes it, and draws nothing for it.
+@MainActor
+final class DraftTeller {
+    var reports = DraftReports()
+    private var waiting: Task<Void, Never>?
+
+    /// The field's text changed: the conversation is told once the typing
+    /// rests, by the wait already under way where there is one.
+    func typed(_ text: String, tell: @escaping @MainActor (Conversation.Command) -> Void) {
+        reports.typed(text, at: .now)
+        guard waiting == nil, reports.due != nil else { return }
+        waiting = Task { [weak self] in
+            // Each key moves the instant later: wait again until it holds.
+            while let due = self?.reports.due {
+                let wait = due.timeIntervalSinceNow
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                if Task.isCancelled { return }
+                if let command = self?.reports.paused(at: .now) { tell(command) }
+            }
+            self?.waiting = nil
+        }
+    }
+
+    isolated deinit {
+        waiting?.cancel()
     }
 }
 
