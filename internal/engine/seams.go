@@ -448,6 +448,15 @@ func WithTestCompactionFault(fn func(stage string) error) Option {
 	return func(o *options) { o.compactionFault = fn }
 }
 
+// WithTestVerifyStoreRead runs fn before each read a verify makes of the
+// archive's store, named by its stage and the key or prefix it reads, after
+// the verify's snapshot, and at the end of each reading of the archive
+// (stage "settle"), before the record is read again: where a server writing
+// and archiving beside it may commit and publish. Tests only.
+func WithTestVerifyStoreRead(fn func(stage, key string)) Option {
+	return func(o *options) { o.verifyStoreRead = fn }
+}
+
 // WithTestCompactionBatches bounds the pass's batches at records and lines
 // in the place of compactionBatchRecords and compactionBatchLines, 0 keeping
 // the bound, and tells seen, when it is not nil, of every batch a pass

@@ -493,7 +493,15 @@ docker compose exec substrate sh -c \
 transaction whole, every checksum stamped), holds every line of the archive's
 pieces to the checksum the table stamped for its seq, opens every sealed
 value under the key, and hashes every blob against its digest. It takes no
-lease, so it is safe beside the running server. An archive behind the table
+lease, so it is safe beside the running server. Beside a server whose
+archive passes publish while it reads, it reads the archive again until a
+reading is not overtaken, reading only the pieces, blobs and sealed values
+it has not proved yet, so a later reading is the store's listings, the
+published manifest and what passes wrote since; damage it finds is
+reported whatever the passes did. Those listings grow with the archive. If
+a pass overtook every reading, it reports `not verified: a pass of the
+server beside it published under each of … readings`, which is a finding:
+run it again, and if that recurs, run it with the server stopped. An archive behind the table
 is not a finding: it is copied after the commits, and right after an upgrade
 from a release before the archive its first passes are still running. Once
 they finish, each repository's `archive:` line in `repository inspect` says

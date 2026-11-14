@@ -279,12 +279,6 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 		found(fmt.Sprintf("the table ends inside the transaction ending at seq %d", openTxn))
 	}
 
-	if s.archive != nil {
-		if err := s.verifyArchive(ctx, tx, repo, &report, found); err != nil {
-			return report, err
-		}
-	}
-
 	rows, err := readSealedTable(ctx, tx)
 	if err != nil {
 		return report, err
@@ -306,9 +300,177 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 	// there says nothing about whether they are ciphertext the DEK opens.
 	s.verifySealedOpen(repo, rows, &report, found)
 
+	// The archive last: its first reading is the verify's snapshot, which it
+	// ends before it reads the archive's record again (verifyArchiveSettled).
+	if s.archive != nil {
+		if err := s.verifyArchiveSettled(ctx, db, tx, repo, &report, found); err != nil {
+			return report, err
+		}
+	}
+
 	report.OK = len(report.Findings) == 0
 	report.Took = time.Since(started)
 	return report, nil
+}
+
+// verifyArchiveAttempts bounds how many readings verifyArchiveSettled makes
+// of the archive while a server's passes publish beside it.
+const verifyArchiveAttempts = 5
+
+// verifyArchiveSettled is verifyArchive over an archive no pass published to
+// while it was read. The archive's record is read in the snapshot, and the
+// store after it, while a server beside the verify may publish a manifest
+// and drop the one before: what the store then holds is a later copy than
+// the snapshot's record names, and would read as a manifest the database
+// did not publish, or a published one gone. So once the archive is read, the
+// record is read again outside the snapshot, and where a pass published
+// since (the epoch, the published or the pending manifest moved), the
+// findings a publish can explain (the store's listing, the manifests, an
+// object gone) are dropped and the archive is read again, in a snapshot
+// taken now, at most verifyArchiveAttempts times.
+//
+// What a reading proved about an object stands for the readings after it
+// (archiveProofs), so a later reading reads only the objects the earlier
+// ones did not: the listing, the manifest, the pieces and blobs a pass wrote
+// since, which is short enough that a pass seldom publishes under it, and a
+// verify settles beside a busy server. Damage found in an object is a
+// finding whether or not the record moved, since no publish explains it. An
+// archive that moved under every reading was held to no one snapshot of
+// the table, and that is a finding too: the verify is run again, or with
+// the server stopped.
+//
+// A verify holds one connection at a time (TestNoPathTakesASecondConnection
+// WhileHoldingOne): every reading ends its transaction before the record is
+// read again on the pool, and a further reading begins its own only then.
+// The first reading is in the verify's own snapshot, which it ends, so the
+// archive is the verify's last step.
+func (s *service) verifyArchiveSettled(ctx context.Context, db *sql.DB, tx *sql.Tx, repo Repository, report *VerifyReport, found func(string)) error {
+	atx, head := tx, report.Head
+	defer func() { _ = atx.Rollback() }()
+	proofs := newArchiveProofs()
+	for attempt := 1; ; attempt++ {
+		part := VerifyReport{Head: head}
+		var findings []string
+		// The record as the snapshot verifyArchive reads holds it.
+		rec, ok, err := readArchiveRecord(ctx, atx)
+		if err != nil {
+			return err
+		}
+		if err := s.verifyArchive(ctx, atx, repo, &part, func(f string) { findings = append(findings, f) }, proofs); err != nil {
+			return err
+		}
+		if err := atx.Rollback(); err != nil {
+			return err
+		}
+		s.storeRead("settle", "")
+		now, nowOK, err := readArchiveRecord(ctx, db)
+		if err != nil {
+			return err
+		}
+		moved := ok != nowOK || rec.archive != now.archive || rec.epoch != now.epoch || rec.published != now.published ||
+			!bytes.Equal(rec.pending, now.pending)
+		if !moved || attempt == verifyArchiveAttempts {
+			report.Archive, report.ArchiveID, report.ArchiveUnaccounted = part.Archive, part.ArchiveID, part.ArchiveUnaccounted
+			report.ArchiveHead, report.ArchivePieces, report.ArchiveBlobs = part.ArchiveHead, part.ArchivePieces, part.ArchiveBlobs
+			report.ArchiveUnverified = part.ArchiveUnverified
+			for _, d := range proofs.damages {
+				// Damage in an object the settled reading's manifest no longer
+				// selects, one a pass has since replaced, is not the archive
+				// as it stands.
+				if !moved && !proofs.selects(d) {
+					continue
+				}
+				found(d.finding)
+			}
+			if moved {
+				report.ArchiveUnverified = fmt.Sprintf("a pass of the server beside it published under each of %d readings of the archive, so it was held to no one snapshot of the table; run the verify again, or with the server stopped", attempt)
+				found("archive: not verified: " + report.ArchiveUnverified)
+				return nil
+			}
+			for _, f := range findings {
+				found(f)
+			}
+			return nil
+		}
+		next, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if err != nil {
+			return err
+		}
+		atx = next
+		if head, err = tableChangelogHead(ctx, atx); err != nil {
+			return err
+		}
+	}
+}
+
+// archiveProofs is what the readings of one verify proved about the
+// archive's objects. No name in an archive ever holds two contents: an
+// object's name carries the pass that put it, and a piece's and a sealed
+// value's carry their sum, a blob's its digest. So an object a reading held
+// whole is whole for every later reading of the same verify, and one it
+// found damaged is damaged. A piece's lines are held to the table too: a
+// line at or below a snapshot's head changes only where a compaction rewrote
+// it, and then its piece awaits a rewrite (archive_rewritten) and is held to
+// the table nowhere, in this reading or any other; and no seq is ever used
+// again, so the table gains no line inside a range a reading held. Lines one
+// snapshot held to the table are the lines of every later snapshot. What
+// lies between the piece before and a piece's first line is the chain's, not
+// the piece's, and every reading holds it to the table again (verifyArchive).
+type archiveProofs struct {
+	// whole is each object held whole, by key; lines each piece whose lines
+	// were held to the table besides, and first each piece's first line.
+	whole, lines map[string]bool
+	first        map[string]int64
+	// damaged is each object found damaged, by key, and damages their
+	// findings in the order found, reported whatever the record did.
+	damaged map[string]bool
+	damages []archiveDamage
+	// selected is what the latest reading's manifest selects, by key: its
+	// pieces, sealed values and spooled requests, and the blobs it listed
+	// when listedBlobs; nil until a reading read a manifest.
+	selected    map[string]bool
+	listedBlobs bool
+}
+
+// archiveDamage is one object's damage: its key, whether it is a blob, and
+// the finding.
+type archiveDamage struct {
+	key     string
+	blob    bool
+	finding string
+}
+
+func newArchiveProofs() *archiveProofs {
+	return &archiveProofs{whole: map[string]bool{}, lines: map[string]bool{}, first: map[string]int64{}, damaged: map[string]bool{}}
+}
+
+// damage records an object found damaged, once.
+func (p *archiveProofs) damage(key, finding string) { p.damageOf(key, false, finding) }
+
+func (p *archiveProofs) damageOf(key string, blob bool, finding string) {
+	if !p.damaged[key] {
+		p.damaged[key] = true
+		p.damages = append(p.damages, archiveDamage{key: key, blob: blob, finding: finding})
+	}
+}
+
+// selects reports whether the latest reading's manifest still selects the
+// damaged object: every damage counts where that reading read no manifest,
+// and a blob's where it listed no blobs.
+func (p *archiveProofs) selects(d archiveDamage) bool {
+	if p.selected == nil || (d.blob && !p.listedBlobs) {
+		return true
+	}
+	return p.selected[d.key]
+}
+
+// chainGapError is a line the table holds that no piece holds: a finding
+// about the chain one reading read, which a publish can explain, and never
+// about the bytes of the piece it was met in.
+type chainGapError struct{ seq int64 }
+
+func (e chainGapError) Error() string {
+	return fmt.Sprintf("seq %d is in the table and not in the archive", e.seq)
 }
 
 // verifyArchive holds the repository's archive to the table and to the
@@ -321,9 +483,12 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 // read, a manifest gone, an object that went while it was read and is gone
 // when read again, or lines in an earlier dialect than the table's, which
 // nothing here holds to the table's. It proves what the store holds when it
-// runs, and cannot prove that the store hides no other manifest.
-func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, report *VerifyReport, found func(string)) error {
+// runs, and cannot prove that the store hides no other manifest. An object
+// proofs holds whole is not read again, and one it holds damaged is not
+// either: damage goes to proofs, and found has what a reading found besides.
+func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, report *VerifyReport, found func(string), proofs *archiveProofs) error {
 	report.Archive = s.archive.String()
+	proofs.selected, proofs.listedBlobs = nil, false
 	unverified := func(reason string, finding bool) {
 		report.ArchiveUnverified = reason
 		if finding {
@@ -342,6 +507,7 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	if rec.stopped != "" {
 		found("archive: its passes stopped, and write nothing until an operator resolves it (`substratectl archive report`): " + rec.stopped)
 	}
+	s.storeRead("list", changelogfile.RepositoryPrefix(repo.ID))
 	listed, err := listArchives(ctx, s.archive, repo.ID)
 	if err != nil {
 		unverified(fmt.Sprintf("the store could not be read: %v", err), true)
@@ -353,15 +519,24 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	if newest := listed.newest(); newest > rec.archive {
 		found(fmt.Sprintf("archive: the store holds archive %s, newer than archive %s the database writes, and a boot with no rows would restore that one", newest, rec.archive))
 	}
+	// The manifest the record says is about to be published is the
+	// database's too, as a pass's rule 4 reads it (holdArchiveToRecord).
+	pendingName := ""
+	if rec.pending != nil {
+		if m, err := changelogfile.DecodeArchiveManifest(rec.pending, repo.ID); err == nil {
+			pendingName = changelogfile.ArchiveManifestName(m.Epoch, rec.pending)
+		}
+	}
 	if tops := listed[rec.archive].tops(); len(tops) > 1 {
 		found(fmt.Sprintf("archive: archive %s holds %d manifests of its highest epoch, and no boot chooses between them", rec.archive, len(tops)))
-	} else if len(tops) == 1 && tops[0] != rec.published {
+	} else if len(tops) == 1 && tops[0] != rec.published && tops[0] != pendingName {
 		found(fmt.Sprintf("archive: archive %s's newest manifest is %s, which the database did not publish", rec.archive, tops[0]))
 	}
 	if rec.published == "" {
 		unverified("the first manifest of archive "+rec.archive+" is still to be published", true)
 		return nil
 	}
+	s.storeRead("manifest", rec.published)
 	src, err := openArchiveManifest(ctx, s.archive, repo.ID, rec.archive, rec.published, false, nil)
 	switch {
 	case errors.Is(err, archive.ErrNotFound) && len(listed) == 0 && s.storeHoldsNothingOf(ctx, repo.ID):
@@ -375,6 +550,16 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 		return nil
 	}
 	report.ArchiveHead, report.ArchivePieces = src.Head(), len(src.chain)
+	proofs.selected = map[string]bool{}
+	for _, p := range src.chain {
+		proofs.selected[p.Key+"@"+src.sums[p.Key]] = true
+	}
+	for _, name := range src.manifest.Sealed {
+		proofs.selected[src.objectKey(name)] = true
+	}
+	for _, name := range src.manifest.Spool {
+		proofs.selected[src.objectKey(name)] = true
+	}
 	if src.Head() > report.Head {
 		found(fmt.Sprintf("archive: its head is seq %d, past the table's %d: it holds history the table does not", src.Head(), report.Head))
 		report.ArchiveUnverified = "it holds history the table does not"
@@ -383,6 +568,7 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	// Every object the manifest selects, read again once when it went
 	// while it was read.
 	read := func(key string) ([]byte, error) {
+		s.storeRead("object", key)
 		data, err := archive.ReadAll(ctx, s.archive, key)
 		if errors.Is(err, archive.ErrNotFound) {
 			data, err = archive.ReadAll(ctx, s.archive, key)
@@ -391,22 +577,36 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	}
 	for _, ref := range sortedKeys(src.manifest.Sealed) {
 		name := src.manifest.Sealed[ref]
-		sum, _, ok := changelogfile.ParseSealedObjectName(ref, name)
-		err := fmt.Errorf("%w: %q", changelogfile.ErrManifestFormat, name)
-		if ok {
-			var data []byte
-			if data, err = read(src.objectKey(name)); err == nil {
-				_, err = changelogfile.DecodeSealedVersion(ref, sum, data)
-			}
+		key := src.objectKey(name)
+		if proofs.whole[key] || proofs.damaged[key] {
+			continue
 		}
+		sum, _, ok := changelogfile.ParseSealedObjectName(ref, name)
+		if !ok {
+			found(fmt.Sprintf("archive: the sealed value %s the manifest selects: %v", ref, fmt.Errorf("%w: %q", changelogfile.ErrManifestFormat, name)))
+			continue
+		}
+		data, err := read(key)
 		if err != nil {
 			found(fmt.Sprintf("archive: the sealed value %s the manifest selects: %v", ref, err))
+			continue
 		}
+		if _, err := changelogfile.DecodeSealedVersion(ref, sum, data); err != nil {
+			proofs.damage(key, fmt.Sprintf("archive: the sealed value %s the manifest selects: %v", ref, err))
+			continue
+		}
+		proofs.whole[key] = true
 	}
 	for _, name := range src.manifest.Spool {
-		if _, err := read(src.objectKey(name)); err != nil {
-			found(fmt.Sprintf("archive: the spooled request %s the manifest selects: %v", name, err))
+		key := src.objectKey(name)
+		if proofs.whole[key] {
+			continue
 		}
+		if _, err := read(key); err != nil {
+			found(fmt.Sprintf("archive: the spooled request %s the manifest selects: %v", name, err))
+			continue
+		}
+		proofs.whole[key] = true
 	}
 	if missing := src.manifest.MissingBlobs; len(missing) > 0 {
 		found(fmt.Sprintf("archive: %d blob(s) the records hold are not in it, their bytes lost on this server: %s",
@@ -415,7 +615,7 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	if pending := src.manifest.PendingBlobs; len(pending) > 0 {
 		found(fmt.Sprintf("archive: %d blob(s) the records hold are not copied yet; the next passes copy them", len(pending)))
 	}
-	if err := s.verifyArchivedBlobs(ctx, tx, src, report, found); err != nil {
+	if err := s.verifyArchivedBlobs(ctx, tx, src, report, found, proofs); err != nil {
 		return err
 	}
 	if err := s.countUnaccounted(ctx, tx, src, report); err != nil {
@@ -455,6 +655,46 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			unverified(fmt.Sprintf("a compaction rewrote lines the archive's pieces hold, and the next archive pass writes those pieces again; the lines from seq %d on were not held to the table",
 				p.First), false)
 		}
+		// A piece is its key and the sum its manifest names.
+		key := p.Key + "@" + src.sums[p.Key]
+		if proofs.damaged[key] {
+			report.ArchiveUnverified = "a piece of its history is not the table's or not the one its manifest selects"
+			return nil
+		}
+		if proofs.whole[key] && (awaiting || proofs.lines[key]) {
+			// An earlier reading held it whole, and its lines to the table.
+			if !awaiting {
+				// Between the piece before and its first line the table
+				// holds no line, as the reading below holds it: the stamps
+				// already read first, then one probe of the table by seq.
+				first := proofs.first[key]
+				gap := int64(0)
+				if len(stamps) > 0 && stamps[0].entry.Seq < first {
+					gap = stamps[0].entry.Seq
+				} else if len(stamps) == 0 {
+					err := tx.QueryRowContext(ctx, `SELECT seq FROM changelog WHERE seq > $1 AND seq < $2 ORDER BY seq LIMIT 1`, tableRead, first).Scan(&gap)
+					if err != nil && !errors.Is(err, sql.ErrNoRows) {
+						return err
+					}
+				}
+				if gap > 0 {
+					found(fmt.Sprintf("archive: %s: %v", p.Key, chainGapError{gap}))
+					report.ArchiveUnverified = "a line of its history is not the table's"
+					return nil
+				}
+				// Its own range is the one the reading that proved it
+				// held, and the table gains no line in it: the next
+				// piece's lines meet the stamps after it.
+				for len(stamps) > 0 && stamps[0].entry.Seq <= p.Last {
+					stamps = stamps[1:]
+				}
+				if len(stamps) == 0 {
+					tableRead = max(tableRead, p.Last)
+				}
+			}
+			prog.tick(changelogfile.Position{Seq: p.Last})
+			continue
+		}
 		body, err := read(p.Key)
 		if err != nil {
 			found(fmt.Sprintf("archive: %s: %v", p.Key, err))
@@ -462,11 +702,16 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			return nil
 		}
 		if changelogfile.SumText(sha256.Sum256(body)) != src.sums[p.Key] {
-			found(fmt.Sprintf("archive: %s is not the piece its manifest selects", p.Key))
+			proofs.damage(key, fmt.Sprintf("archive: %s is not the piece its manifest selects", p.Key))
 			report.ArchiveUnverified = "a piece of its history is not the one its manifest selects"
 			return nil
 		}
+		var tableErr error
+		var firstLine int64
 		err = changelogfile.ReadPiece(bytes.NewReader(body), p.First, p.Last, func(e changelogfile.Entry, _ []byte, sum [32]byte) error {
+			if firstLine == 0 {
+				firstLine = e.Seq
+			}
 			if awaiting {
 				return nil
 			}
@@ -475,10 +720,11 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 					// The pieces cover the history whole: a line the table
 					// holds below this one is a line a piece must hold,
 					// gaps or not.
-					return fmt.Errorf("seq %d is in the table and not in the archive", stamps[0].entry.Seq)
+					return chainGapError{stamps[0].entry.Seq}
 				}
 				page, err := scanStampPage(ctx, tx, tableRead, verifyTableBatch)
 				if err != nil {
+					tableErr = err
 					return err
 				}
 				if len(page) == 0 {
@@ -495,14 +741,38 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			stamps = stamps[1:]
 			return nil
 		})
-		if err != nil {
+		if tableErr != nil {
+			return tableErr
+		}
+		// A line the table holds that no piece holds is the chain's, as this
+		// reading read it; a piece that does not parse, or a line of it that
+		// is not the table's or not in it, is the piece's for good.
+		var gap chainGapError
+		if errors.As(err, &gap) {
 			found(fmt.Sprintf("archive: %s: %v", p.Key, err))
 			report.ArchiveUnverified = "a line of its history is not the table's"
 			return nil
 		}
+		if err != nil {
+			proofs.damage(key, fmt.Sprintf("archive: %s: %v", p.Key, err))
+			report.ArchiveUnverified = "a line of its history is not the table's"
+			return nil
+		}
+		proofs.whole[key], proofs.first[key] = true, firstLine
+		if !awaiting {
+			proofs.lines[key] = true
+		}
 		prog.tick(changelogfile.Position{Seq: p.Last})
 	}
 	return nil
+}
+
+// storeRead runs the test's seam before a read verify makes of the store
+// (WithTestVerifyStoreRead).
+func (s *service) storeRead(stage, key string) {
+	if s.verifyStoreRead != nil {
+		s.verifyStoreRead(stage, key)
+	}
 }
 
 // storeHoldsNothingOf reports whether the store lists no object of the
@@ -519,8 +789,9 @@ func (s *service) storeHoldsNothingOf(ctx context.Context, id string) bool {
 // manifest. An archive behind the table is held only to what it holds,
 // because the records at its head are not the table's now. An object that
 // went while it was read is a drop a pass made, and is read past.
-func (s *service) verifyArchivedBlobs(ctx context.Context, tx dbx, src *archiveSource, report *VerifyReport, found func(string)) error {
+func (s *service) verifyArchivedBlobs(ctx context.Context, tx dbx, src *archiveSource, report *VerifyReport, found func(string), proofs *archiveProofs) error {
 	prefix := changelogfile.ArchivePrefix(src.repository, src.archive)
+	s.storeRead("blobs", prefix+changelogfile.BlobsSubdir+"/")
 	listed, err := s.archive.List(ctx, prefix+changelogfile.BlobsSubdir+"/")
 	if err != nil {
 		found(fmt.Sprintf("archive: not verified: the blobs cannot be listed: %v", err))
@@ -528,33 +799,43 @@ func (s *service) verifyArchivedBlobs(ctx context.Context, tx dbx, src *archiveS
 		return nil
 	}
 	held := make(map[string]bool, len(listed))
+	proofs.listedBlobs = true
 	for _, o := range listed {
 		digest, _, ok := changelogfile.ParseBlobObjectName(strings.TrimPrefix(o.Key, prefix))
 		if !ok {
 			continue
 		}
-		rc, err := s.archive.Get(ctx, o.Key)
-		if errors.Is(err, archive.ErrNotFound) {
+		proofs.selected[o.Key] = true
+		if proofs.damaged[o.Key] {
 			continue
 		}
-		if err != nil {
-			found(fmt.Sprintf("archive: blob %s: %v", o.Key, err))
-			continue
-		}
-		h := sha256.New()
-		_, err = io.Copy(h, rc)
-		_ = rc.Close()
-		switch {
-		case err != nil:
-			found(fmt.Sprintf("archive: blob %s does not read: %v", o.Key, err))
-		case substrate.BlobDigestPrefix+hex.EncodeToString(h.Sum(nil)) != digest:
-			found(fmt.Sprintf("archive: blob %s holds other bytes than its digest names", o.Key))
-		default:
-			if !held[digest] {
-				report.ArchiveBlobs++
+		if !proofs.whole[o.Key] {
+			s.storeRead("blob", o.Key)
+			rc, err := s.archive.Get(ctx, o.Key)
+			if errors.Is(err, archive.ErrNotFound) {
+				continue
 			}
-			held[digest] = true
+			if err != nil {
+				found(fmt.Sprintf("archive: blob %s: %v", o.Key, err))
+				continue
+			}
+			h := sha256.New()
+			_, err = io.Copy(h, rc)
+			_ = rc.Close()
+			if err != nil {
+				found(fmt.Sprintf("archive: blob %s does not read: %v", o.Key, err))
+				continue
+			}
+			if substrate.BlobDigestPrefix+hex.EncodeToString(h.Sum(nil)) != digest {
+				proofs.damageOf(o.Key, true, fmt.Sprintf("archive: blob %s holds other bytes than its digest names", o.Key))
+				continue
+			}
+			proofs.whole[o.Key] = true
 		}
+		if !held[digest] {
+			report.ArchiveBlobs++
+		}
+		held[digest] = true
 	}
 	if src.Head() != report.Head {
 		return nil
@@ -586,6 +867,7 @@ func (s *service) countUnaccounted(ctx context.Context, tx dbx, src *archiveSour
 	}
 	n := 0
 	for _, prefix := range []string{changelogfile.ArchivePrefix(src.repository, src.archive), changelogfile.ArchiveManifestsPrefix(src.repository, src.archive)} {
+		s.storeRead("unaccounted", prefix)
 		listed, err := s.archive.List(ctx, prefix)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errArchiveUnreadable, err)

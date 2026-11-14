@@ -45,6 +45,7 @@ var changeReads = map[string]string{
 	"compactpass.go:windowRecords":       "maintenance: the pass's records inside the window it compacts",
 	"verify.go:scanChecksumPage":         "maintenance: the verify and the conversion walk every line, the whole table",
 	"verify.go:scanStampPage":            "maintenance: the verify reads every line's stamp, the whole table",
+	"verify.go:verifyArchive":            "maintenance: the verify asks its own snapshot for a line between two pieces of the archive, below a piece it skips",
 	"webhookspool.go:webhookRecordedSQL": "maintenance: the webhook spool asks whether its own delivery entry stands above the seq the ledger recorded",
 }
 

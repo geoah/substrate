@@ -214,6 +214,9 @@ type options struct {
 	// carries (repomigrate.go), so a test boots as a binary of another
 	// release. Tests only.
 	repositoryMigrations []repositoryMigration
+	// verifyStoreRead runs before each read verify makes of the archive's
+	// store (seams.go WithTestVerifyStoreRead). Tests only.
+	verifyStoreRead func(stage, key string)
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
@@ -916,6 +919,9 @@ type service struct {
 	// repoMigrations is the repository migrations this service carries and
 	// runs (repomigrate.go): the binary's own, or a test's.
 	repoMigrations []repositoryMigration
+
+	// verifyStoreRead is the options' verify seam (verify.go). Tests only.
+	verifyStoreRead func(stage, key string)
 	// testCommitFault is the options' commit seam (dataset.go commit).
 	// Tests only.
 	testCommitFault func(stage string) error
@@ -1233,6 +1239,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		compactionNow:         o.compactionNow,
 		deletionsKept:         o.deletionsKept,
 		compactionFault:       o.compactionFault,
+		verifyStoreRead:       o.verifyStoreRead,
 		compactionBatches:     o.compactionBatches,
 		compactionBatch:       o.compactionBatch,
 		purgeKeepsHistory:     o.purgeKeepsHistory,
