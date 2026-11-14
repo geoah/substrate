@@ -206,8 +206,17 @@ func TestAPersonWritesOnlyTheirOwnMark(t *testing.T) {
 	if _, err := r.ds.Delete(bo, substrate.ActorPerson, typeThreadMark, adas, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrNotPermitted) {
 		t.Fatalf("a second person deleting the first's mark: %v, want refused by a rule", err)
 	}
-	if row := markRow(t, r.ds, adas); row.DeletedAt != nil || referenceTargetOf(row, propMarkReadThrough).ID != msgs[1] || row.Props[propMarkUnread] == true {
-		t.Fatalf("the first person's mark moved under another's hand: %v", row.Props)
+	// A pin or a release is a write on the record too, and moves its version.
+	version := markRow(t, r.ds, adas).Version
+	for what, act := range map[string]func(context.Context, substrate.Actor, string, string, substrate.MarkInput) (*substrate.Record, error){
+		"pinning": r.ds.Pin, "releasing": r.ds.Release,
+	} {
+		if _, err := act(bo, substrate.ActorPerson, typeThreadMark, adas, substrate.MarkInput{Properties: []string{propMarkReadThrough}}); !errors.Is(err, substrate.ErrNotPermitted) {
+			t.Fatalf("a second person %s a property of the first's mark: %v, want refused by a rule", what, err)
+		}
+	}
+	if row := markRow(t, r.ds, adas); row.DeletedAt != nil || referenceTargetOf(row, propMarkReadThrough).ID != msgs[1] || row.Props[propMarkUnread] == true || row.Version != version {
+		t.Fatalf("the first person's mark moved under another's hand: version %d, was %d, %v", row.Version, version, row.Props)
 	}
 	// Naming another person in a mark of one's own is refused too.
 	if _, err := r.ds.Put(bo, substrate.ActorPerson, substrate.PutInput{Kind: typeThreadMark, Properties: map[string]any{
@@ -225,6 +234,27 @@ func TestAPersonWritesOnlyTheirOwnMark(t *testing.T) {
 		if want := threadMarkID(thread, actorID(substrate.PersonActor(who))); rec.ID != want {
 			t.Fatalf("%s's mark is %s, want %s", who, rec.ID, want)
 		}
+	}
+	// `me` is the person a read acts for: a request's, and a run's that acts
+	// for a person once its request is over. A read that acts for nobody
+	// cannot say it.
+	mine := substrate.Query{Filter: substrate.Filter{Kinds: []string{typeThreadMark}, Properties: map[string]substrate.Cond{
+		propMarkThread: {Eq: thread}, propMarkReadBy: {Eq: substrate.FilterMe},
+	}}, First: 10}
+	for who, ctx := range map[string]context.Context{
+		r.boID: bo,
+		r.cyID: substrate.WithOnBehalfOf(context.Background(), substrate.PersonActor(r.cyID)),
+	} {
+		page, err := r.ds.List(ctx, mine)
+		if err != nil {
+			t.Fatalf("%s's own marks: %v", who, err)
+		}
+		if want := threadMarkID(thread, actorID(substrate.PersonActor(who))); len(page.Records) != 1 || page.Records[0].ID != want {
+			t.Fatalf("%s's own marks = %d records, want %s alone", who, len(page.Records), want)
+		}
+	}
+	if _, err := r.ds.List(context.Background(), mine); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("`me` on a read that acts for nobody: %v, want refused as validation", err)
 	}
 	if _, err := r.ds.Delete(cy, substrate.ActorPerson, typeThreadMark, threadMarkID(thread, actorID(substrate.PersonActor(r.cyID))), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("a viewer deleting their own mark: %v", err)

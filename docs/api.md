@@ -734,9 +734,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   the engine builds for every kind's single references without a declaration,
   a `repeated` one through the index the reverse read walks; a reference
   pinned to `substrate.reamde.dev/core/actor` also takes the word `me` in
-  `eq` and `in`, the actor of the person the request acts for
+  `eq` and `in`, the actor of the person the read acts for
   (`{"readBy": {"eq": "me"}}`, from revision 7 of `records`), which is `422`
-  on a read no token is behind — and every
+  on a read that acts for nobody, such as a trigger's — and every
   other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties

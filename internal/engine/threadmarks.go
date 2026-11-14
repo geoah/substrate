@@ -243,9 +243,11 @@ func (t *txn) prepareThreadMark(sp *applySpec) (bool, error) {
 	return held.ID != next.ID || cleared, nil
 }
 
-// guardThreadMarkDelete holds the delete of a mark to its own person, as a
-// write of it is held.
-func (t *txn) guardThreadMarkDelete(kind string, row *erow) error {
+// guardThreadMarkOwner holds what a hand does to a stored mark outside a
+// put or a patch (its delete, a pin or a release of one of its properties)
+// to the mark's own person, as a write of it is held. what says it in the
+// refusal.
+func (t *txn) guardThreadMarkOwner(kind string, row *erow, what string) error {
 	if kind != typeThreadMark || t.internal {
 		return nil
 	}
@@ -254,8 +256,8 @@ func (t *txn) guardThreadMarkDelete(kind string, row *erow) error {
 		return err
 	}
 	if referenceTargetOf(row, propMarkReadBy).ID != actorID(writer) {
-		return fmt.Errorf("%w: %w: %s may not delete this %s: it is another person's",
-			substrate.ErrForbidden, substrate.ErrNotPermitted, handWords(t.actor), typeThreadMark)
+		return fmt.Errorf("%w: %w: %s may not %s this %s: it is another person's",
+			substrate.ErrForbidden, substrate.ErrNotPermitted, handWords(t.actor), what, typeThreadMark)
 	}
 	return nil
 }
@@ -423,14 +425,19 @@ func (t *txn) countWaitingOnPerson(thread eref) error {
 	})
 }
 
-// personOfRequest is the actor of the person a request acts for: the one its
-// token names, or the repository's first for a token from before identities.
-// Work no token stands behind acts for nobody here.
-func (ds *dataset) personOfRequest(ctx context.Context) (substrate.Actor, bool) {
-	if substrate.IdentityFrom(ctx) == "" && substrate.PrincipalFrom(ctx) == "" {
-		return "", false
+// actingPerson is the actor of the person a read acts for: the one a
+// request's token names, the repository's first for a token from before
+// identities, or the person a run's work acts for once its request is over
+// (a resumed turn, a job), which its context carries with no token. Work
+// that acts for nobody, a trigger's, has none.
+func (ds *dataset) actingPerson(ctx context.Context) (substrate.Actor, bool) {
+	if substrate.IdentityFrom(ctx) != "" || substrate.PrincipalFrom(ctx) != "" {
+		return ds.personActorFor(ctx, substrate.ActorPerson), true
 	}
-	return ds.personActorFor(ctx, substrate.ActorPerson), true
+	if behalf := substrate.OnBehalfOfFrom(ctx); substrate.ActorTypeOf(behalf) == substrate.ActorTypePerson {
+		return ds.personActorFor(ctx, behalf), true
+	}
+	return "", false
 }
 
 // resolveMe rewrites, in a filter's property conditions, the value `me` on a
@@ -444,9 +451,9 @@ func (ds *dataset) resolveMe(ctx context.Context, types []*vocabulary.Kind, f su
 		if !condNames(c, filterMe) || !actorReference(types, name) {
 			continue
 		}
-		person, ok := ds.personOfRequest(ctx)
+		person, ok := ds.actingPerson(ctx)
 		if !ok {
-			return f, fmt.Errorf("%w: %s: `me` is the person a request acts for, and nobody's token is behind this read", substrate.ErrValidation, name)
+			return f, fmt.Errorf("%w: %s: `me` is the person a read acts for, and this one acts for nobody", substrate.ErrValidation, name)
 		}
 		path := vocabulary.RecordPath(kindActor, actorID(person))
 		if out == nil {

@@ -1241,8 +1241,8 @@ The rules the server holds on every write of a mark:
 - **A person writes only their own.** A person's token and an app's token
   write the mark of the person they act for. Another person's mark is
   refused with `403 forbidden`, reason `not_permitted`, whatever roles the
-  writer holds, and so is its delete. An agent, a function and a package
-  write none.
+  writer holds, and so are its delete and a pin or a release of one of its
+  properties. An agent, a function and a package write none.
 - **The position only moves forward.** A message's place in its thread is
   its `turn`, then when its row was written. A write whose `readThrough`
   names a message before the stored one keeps the stored position; if it
