@@ -117,7 +117,13 @@ func (s *service) keyRepositories(ctx context.Context) error {
 		if vocabulary.ValidRepositoryID(key) {
 			continue
 		}
-		tied := s.recordedRow(ctx, key, records[key])
+		// A read that fails is the server's failure, as a failed listing
+		// is: the start stops rather than set anything aside on a guess,
+		// and the next start reads again.
+		tied, err := s.recordedRow(ctx, key, records[key])
+		if err != nil {
+			return fmt.Errorf("substrate/engine: key repositories: read the repository the keying recorded the directory %s as: %w", key, err)
+		}
 		id := tied
 		keyed := false
 		pass := passOver{keys: []string{key}, authority: key, stage: setAsideAtID, entry: func(cause error) *setAsideRepository {
@@ -158,16 +164,27 @@ func (s *service) keyRepositories(ctx context.Context) error {
 
 // recordedRow is the id of the row the keying's record ties the directory
 // name to, or "": a record names an id whose row holds that name, or it is a
-// keying that never committed and ties nothing.
-func (s *service) recordedRow(ctx context.Context, name, id string) string {
+// keying that never committed and ties nothing. Only a read that finds no
+// such row, or finds it under another name, says the second; a read that
+// fails says neither, and is returned.
+func (s *service) recordedRow(ctx context.Context, name, id string) (string, error) {
 	if id == "" {
-		return ""
+		return "", nil
+	}
+	if err := s.keyingFault(keyingReadRecorded); err != nil {
+		return "", err
 	}
 	repo, err := s.repositoryByID(ctx, id)
-	if err != nil || repo.Authority != name {
-		return ""
+	if errors.Is(err, substrate.ErrNotFound) {
+		return "", nil
 	}
-	return repo.ID
+	if err != nil {
+		return "", err
+	}
+	if repo.Authority != name {
+		return "", nil
+	}
+	return repo.ID, nil
 }
 
 // keyRow moves one repository's rows from its name to a new id, in one
@@ -247,10 +264,10 @@ func (s *service) keyRow(ctx context.Context, repo Repository) error {
 func (s *service) keyDirectory(ctx context.Context, name, tied string) (string, error) {
 	dir, err := changelogfile.RepoDir(s.dataRoot, name)
 	if err != nil {
-		return "", err
+		return tied, err
 	}
 	if err := s.holdName(ctx, name); err != nil {
-		return "", err
+		return tied, err
 	}
 	m, err := changelogfile.ReadManifestToKey(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -397,10 +414,12 @@ func (s *service) recordKeying(name, id string) error {
 // The keying's steps the import's test seam names (testImportFault):
 // keyingAfterRow a row given its id, its directory not yet;
 // keyingAfterRename a directory given its id, its repository not yet
-// published under it.
+// published under it; keyingReadRecorded the read of the row a keying's
+// record names, which fails with the seam's error.
 const (
-	keyingAfterRow    = "after a row took its id"
-	keyingAfterRename = "after a directory took its id"
+	keyingAfterRow     = "after a row took its id"
+	keyingAfterRename  = "after a directory took its id"
+	keyingReadRecorded = "reading the row a keying's record names"
 )
 
 func (s *service) keyingFault(stage string) error {
