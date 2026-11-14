@@ -1189,7 +1189,7 @@ them:
 | `aggregate` | `experimental` | [The aggregate read](#the-aggregate-read), `aggregate=` on the records route. |
 | `embeddings` | `experimental` | The semantic arm of `q=`, its one door. |
 | `units` | `experimental` | `GET /api/v1/units` and `GET /api/v1/units/convert` ([units](#units-and-conversions)). |
-| `agents` | `experimental` | The agent chat and call routes, and a thread's `events`, `stop` and `continue` ([agents](agents.md)). |
+| `agents` | `experimental` | The agent chat and call routes, and a thread's `events`, `stop` and `continue` ([agents](agents.md)). Since revision 6 a message sent while a chat turn runs joins it ([a message while a turn runs](agents.md#a-message-while-a-turn-runs)). |
 | `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
 | `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
 | `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
@@ -2824,10 +2824,13 @@ the `errors` feature, are about the thread a chat message or a continue
 addresses: a turn is running on it, so the client attaches to that turn or
 stops it, or its last turn finished with a whole reply, so there is nothing
 for a continue to take up and the next message is what goes on
-([continue](agents.md#continue)).
-`message_id_taken` on `conflict`, at the same revision, is a chat message
-whose `messageId` names a record that is not this message: the same request
-meets the same answer, so the client sends the message under a new id
+([continue](agents.md#continue)). Since revision 6 of the `agents` feature a
+chat message that names its `messageId` is not refused `thread_busy` on a
+thread a chat turn runs on: it joins that turn
+([a message while a turn runs](agents.md#a-message-while-a-turn-runs)).
+`message_id_taken` on `conflict`, at the same revision of `errors`, is a chat
+message whose `messageId` names a record that is not this message: the same
+request meets the same answer, so the client sends the message under a new id
 ([a message with its own id](agents.md#a-message-with-its-own-id)).
 Since revision 7 of the `errors` feature an agent run names why it was
 refused or failed ([calling an agent](agents.md#calling-an-agent)):

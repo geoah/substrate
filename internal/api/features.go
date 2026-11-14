@@ -331,8 +331,12 @@ var featureTable = []feature{
 	// a chat thread's resumed run streams; a reader that fell behind gets a
 	// `lagged` event; an assistant message says how its reply was cut short,
 	// `cutBy`, and a continue takes up a thread that settled on a cut reply
-	// (decision 0317).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 5, surfaces: []string{surfaceREST}, routes: []string{
+	// (decision 0317). Revision 6: a message that names its id is admitted to
+	// a thread a chat turn runs on, where it was refused `thread_busy`; the
+	// stream says so with `messageQueued` and `messageTaken`; and a continue
+	// takes up a thread that settled with a message unanswered (decision
+	// 0318).
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 6, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",

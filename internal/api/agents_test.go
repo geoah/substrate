@@ -366,6 +366,43 @@ func TestAMessageIDThatNamesAnotherMessageIsRefusedAsTaken(t *testing.T) {
 	}
 }
 
+// A message sent to a thread a chat turn runs on is not refused (decision
+// 0318): the stream is that turn's, and it says when the message's row was
+// written and when the model was handed it, each naming the message.
+func TestAMessageIntoARunningThreadStreamsItsTurn(t *testing.T) {
+	at := 0
+	chat := &chatFake{events: []substrate.AgentEvent{
+		{Kind: substrate.AgentEventThread, Thread: "th1"},
+		{Kind: substrate.AgentEventMessageQueued, ID: "c41a7e9b02", Turn: 4, Text: "not that one"},
+		{Kind: substrate.AgentEventToolFinished, ID: "call_0", Tool: "query", Turn: 3},
+		{Kind: substrate.AgentEventMessageTaken, ID: "c41a7e9b02", Turn: 4},
+		{Kind: substrate.AgentEventDelta, Text: "The other one.", Turn: 5, At: &at},
+		{Kind: substrate.AgentEventDone, Result: &substrate.AgentResult{Thread: "th1", Status: "ok", Reply: "The other one."}},
+	}}
+	env := newStubEnv(t, chat)
+	rec := env.do(t, http.MethodPost, helperChatPath, stubToken, map[string]any{"thread": "th1", "message": "not that one", "messageId": "c41a7e9b02"})
+	wantStatus(t, rec, http.StatusOK)
+	lines := strings.Split(strings.TrimSpace(rec.Body.String()), "\n")
+	want := []string{
+		`{"kind":"thread","thread":"th1"}`,
+		`{"kind":"messageQueued","text":"not that one","id":"c41a7e9b02","turn":4}`,
+		`{"kind":"toolFinished","id":"call_0","tool":"query","turn":3}`,
+		`{"kind":"messageTaken","id":"c41a7e9b02","turn":4}`,
+		`{"kind":"delta","text":"The other one.","turn":5,"at":0}`,
+	}
+	if len(lines) != len(want)+1 {
+		t.Fatalf("the stream = %s", rec.Body.String())
+	}
+	for i, line := range want {
+		if lines[i] != line {
+			t.Fatalf("line %d = %s, want %s", i, lines[i], line)
+		}
+	}
+	if !strings.HasPrefix(lines[len(want)], `{"kind":"done","result":{`) {
+		t.Fatalf("the stream ended with %s, want the turn's done", lines[len(want)])
+	}
+}
+
 // callFake answers an agent call with err.
 type callFake struct {
 	stubSignals

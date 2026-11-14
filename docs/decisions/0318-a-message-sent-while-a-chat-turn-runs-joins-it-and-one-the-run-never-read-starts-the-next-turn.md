@@ -1,0 +1,131 @@
+---
+status: accepted
+date: 2026-11-14
+decision-makers: George Antoniadis
+---
+
+# 0318. A message sent while a chat turn runs joins it, and one the run never read starts the next turn
+
+## Context and Problem Statement
+
+[0169](0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md)
+gave a thread one turn at a time: a message sent while one runs is `409
+conflict` (`thread_busy`). So the one way to say "not that one" to an
+assistant that is working is to stop it, which ends the run, and a client
+must hold the composer shut until the turn settles. The plan is pull request
+#1363, section 6.
+
+## Considered Options
+
+- Keep the refusal, and let clients hold the message until the turn settles.
+- Admit the message and cancel the model call in flight, so it is read at
+  once.
+- Admit the message, write its row at once, and have the loop read it
+  before its next model call.
+- For a message the run never reads: go on inside the same run; or settle
+  the run and start a turn of the message's own.
+
+## Decision Outcome
+
+Chosen: write the row at once and read it at the run's next call, and start
+a new turn for a message the run never read. This amends 0169 and keeps its
+ground: one loop per thread, in the serving process. A client that holds the
+message loses it with the tab. Cancelling a call throws away the text and
+the tool calls it was producing.
+
+**Admission.** A chat send that names a `messageId`
+([0312](0312-a-chat-message-may-name-its-own-id-and-a-thread-is-continued-with-no-message.md)),
+into a thread a detached chat turn of its own agent runs on, writes the
+user row under that id and is answered with that turn's stream, as an attach
+is. A message with no id is still refused: the row is written before any
+turn is known to read it, so it must be one a repeat can be told from. A
+running sub-agent's thread, a call's and a triggered run's refuse as before.
+The message takes no chat-turn slot and passes no spend check: it adds no
+run. Its sender is held to `mayContinue` as before, and is added to whom the
+rest of the run is held to
+([0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
+
+**Where it is read.** Before each model call, after the tool results of the
+last one. A call in flight is not touched. A message adds no call and moves
+no budget: a steered run is one run under its turn, tool-call and deadline
+budgets. The run's last turn under a deadline reads none.
+
+**A message the run never read** (sent during the final answer, or when a
+budget ended the run) starts the next turn itself where the run settled `ok`
+or `overbudget`: a new run, with budgets of its own, held to the message's
+sender. Going on inside the first run would let messages hold one run, its
+slot and its lifecycle lock open without end. A run that was stopped, or
+failed, starts nothing: the stop is the later word, so 0169's rule stands,
+and a failure is not retried unasked. The message stays in the thread, and
+the person's next message or continue reads it. A continue now also takes up
+a thread that settled `ok` with a message unanswered. A message is not
+withdrawn: it is a record like any other, and is deleted as one.
+
+**A turn that waits on the person** (a question, an approval) has settled,
+so a typed message is an ordinary send. It answers and dismisses nothing.
+
+**Order.** A message's ordinal and its place in the loop's queue are taken
+in one step, and so are a call's reading of the queue and its reply's
+ordinal. So a call read a message exactly when the message's `turn` is below
+that call's reply's. Rows are replayed in creation order, and the message's
+row is created before the reply that was streaming, so replay moves a user
+row behind every row created after it under a smaller ordinal. The result of
+a call under way when the message was sent may carry a larger ordinal than
+the message; replay already puts each result right after its call.
+Compaction plans over the rows in replay order, so a summary covers a
+message where the model read it.
+
+**The stream.** Two events: `messageQueued` (the row is written: `id`,
+`turn`, `text`) and `messageTaken` (a model call now reads it). The plan's
+signal, an event whose `turn` is past the message's, is not sound: a tool
+event of the call that did not read it can carry a larger ordinal.
+
+**The revision** is `agents` 6. Below it a client must not send to a running
+thread. At it, a client built for 3 to 5 that does so gets a stream where it
+expected `409`: it reads it as the answer to a repeated send, which is the
+same shape. A client that sends no id sees no change.
+
+### Consequences
+
+- Good, because a person corrects a run without ending it, and the message
+  is in the repository's history from the moment it is sent.
+- Good, because a queued message cannot run twice or be lost: it is a row
+  under an id its sender chose, in a thread whose status says what happened.
+- Bad, because the next turn is started from memory. A restart between a
+  run's settle and that turn leaves an `ok` thread with an unanswered
+  message until the person continues it. So does a refusal of that turn (a
+  spend cap, a key removed), which is logged and not written to the thread.
+- Bad, because a client that follows a queued message past the run's `done`
+  must attach again: the next turn is another stream.
+- Bad, because a message sent in the moments a run is settling waits for
+  that settle before its own turn's stream opens.
+- Bad, because ordinal order and replay order differ for one row shape (a
+  tool result after the message), and the replay rule is one more thing a
+  reader of stored rows must apply.
+
+### Confirmation
+
+`internal/engine/agentqueue_db_test.go`:
+`TestAMessageSentWhileATurnRunsIsReadAtTheNextCall`,
+`TestSeveralQueuedMessagesAreReadInOrder`,
+`TestARepeatedMessageIDOnARunningThreadWritesNothing`,
+`TestAStopKeepsAQueuedMessageForThePersonsNextWord`,
+`TestAFailedRunKeepsAQueuedMessage`,
+`TestAQueuedMessageStartsTheNextTurnWhenABudgetEndsTheRun`,
+`TestAQueuedMessageHoldsAcrossARestart`,
+`TestOnlyAChatTurnTakesAMessageAndOnlyOneThatNamesItsID`,
+`TestAQueuedMessageTakesNoSlotAndItsTurnWaitsForOne`,
+`TestContinueTakesUpAMessageNoTurnAnswered`,
+`TestAMessageToAThreadWaitingOnAnAnswerStartsATurnAndLeavesTheQuestion`;
+`TestReplayReadsAQueuedMessageWhereTheModelDid` in
+`internal/engine/agentqueue_test.go`;
+`TestASteeredConversationIsOneEachWireAccepts` in
+`internal/llm/steered_test.go`; the wire is
+`TestAMessageIntoARunningThreadStreamsItsTurn` in
+`internal/api/agents_test.go`.
+
+## More Information
+
+Revisit with 0169 when a repository may be served by more than one process,
+and when a sweep can find a settled thread with an unanswered message at a
+cost a repository of many threads can pay.

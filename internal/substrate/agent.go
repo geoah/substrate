@@ -183,6 +183,15 @@ const (
 	// client attaches again. It is not a failure of the turn, so it is not an
 	// error event.
 	AgentEventLagged = "lagged"
+
+	// AgentEventMessageQueued and AgentEventMessageTaken follow a message a
+	// person sent while the turn ran (decision 0318). Queued says its row is
+	// written: ID is the message record's id, Turn the row's ordinal and Text
+	// what it says, so every client attached to the turn can show it.
+	// Taken says the model is now being called with it. A message that gets
+	// no taken event before the stream ends was not read by this run.
+	AgentEventMessageQueued = "messageQueued"
+	AgentEventMessageTaken  = "messageTaken"
 )
 
 // AgentEvent is one streamed loop event (the chat transport; ndjson on the
@@ -191,13 +200,15 @@ type AgentEvent struct {
 	Kind string `json:"kind"`
 	// Thread rides the first event: the thread id, minted or continued.
 	Thread string `json:"thread,omitempty"`
-	// Text is a streamed content delta, or a reasoning piece.
+	// Text is a streamed content delta, a reasoning piece, or on a
+	// messageQueued event what the message says.
 	Text string `json:"text,omitempty"`
 	// Tool/Args/OK shape the tool lifecycle events, and ID is the tool call
 	// they belong to: a turn may dispatch the same tool twice, so the NAME
 	// cannot pair a started event with its finished one — only the id can.
 	// It is the same id the `llm/message` transcript keys its tool rows by
 	// (`toolCallId`), so a live card and its replayed row are the same card.
+	// On messageQueued and messageTaken it is the message record's id.
 	ID   string `json:"id,omitempty"`
 	Tool string `json:"tool,omitempty"`
 	// Callable rides both tool events: the identity behind the Tool alias, in
@@ -233,10 +244,11 @@ type AgentEvent struct {
 	// the new summary row covers.
 	TokensBefore int `json:"tokensBefore,omitempty"`
 	Covered      int `json:"covered,omitempty"`
-	// Turn rides delta, toolStarted and toolFinished: the `turn` ordinal the
-	// `llm/message` row for the event carries or will carry. A client that
-	// attaches after reading the rows drops every replayed event at or below
-	// the highest turn it holds.
+	// Turn rides delta, reasoning, toolStarted, toolFinished, messageQueued
+	// and messageTaken: the `turn` ordinal the `llm/message` row for the
+	// event carries or will carry. A client that attaches after reading the
+	// rows drops each replayed delta, reasoning piece and tool event whose
+	// ordinal a row it holds carries.
 	Turn int `json:"turn,omitempty"`
 	// At rides delta and reasoning (decision 0317): how many Unicode code
 	// points of this turn's text of that kind came before this piece, so a
@@ -271,7 +283,9 @@ type ChatInput struct {
 	// 0312): the engine writes the user row under it, and a request that
 	// repeats it writes nothing and runs nothing, so a send whose answer was
 	// lost is sent again as it was. Any legal record id; absent, the server
-	// mints one and the send cannot be repeated safely.
+	// mints one and the send cannot be repeated safely. Only a message that
+	// names its id is admitted to a thread a chat turn runs on (decision
+	// 0318); one without is refused as busy.
 	MessageID string `json:"messageId,omitempty"`
 	// Timezone is the client's IANA zone (`Europe/London`). Empty falls
 	// back to the repository's `substrate.reamde.dev/llm/timezone` setting,
