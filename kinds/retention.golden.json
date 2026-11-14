@@ -176,6 +176,7 @@
   "substrate.reamde.dev/llm/model": "all",
   "substrate.reamde.dev/llm/provider": "all",
   "substrate.reamde.dev/llm/thread": "all",
+  "substrate.reamde.dev/llm/threadmark": "P7D",
   "substrate.reamde.dev/observations/metric": "all",
   "substrate.reamde.dev/observations/observation": "all",
   "substrate.reamde.dev/observations/source": "all",

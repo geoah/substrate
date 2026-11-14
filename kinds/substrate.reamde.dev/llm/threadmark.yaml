@@ -1,0 +1,67 @@
+# how far one person has read one thread, and what they did with it (decision
+# record 0311). The thread is the engine's row and says what the run did;
+# this is the person's, so reading a chat moves neither the thread's version
+# nor its place in a list. One record per thread and person, under the id
+# `<thread id>.<actor id>`, which the engine builds for a create that names
+# none (engine/threadmarks.go).
+#
+# The engine holds every write of one: a person, or an app acting for them,
+# writes only their own; `thread` and `readBy` are fixed at the create;
+# `readThrough` names a message of that thread and never moves back to an
+# earlier one; and `readAt` is stamped, never taken from the write. Unread is
+# derived by whoever lists threads: a settled thread is unread when
+# `markedUnread` is set, when its `lastMessage` is not `readThrough`, or when
+# the person has no mark of it.
+#
+# `pinned` and `archived` are meant for this record later.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/threadmark
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    How far one person has read one thread: the newest message they have
+    seen, when, and whether they marked the thread unread. Each person has
+    their own for a thread, and it follows them to every device.
+  purpose: internal
+  # The id is `<thread id>.<actor id>`, a name the engine checks against the
+  # two references, so a client reads a mark without a search.
+  ids:
+    type: named
+  # A mark moves at every reply its person reads. What it says now is what
+  # matters; a week of its moves is kept past that (decision record 0282).
+  retention: P7D
+  names:
+    singular: threadmark
+  displayTemplate: "{thread}"
+  properties:
+    thread:
+      type: reference
+      kind: substrate.reamde.dev/llm/thread
+      required: true
+      inverse: marks
+      inverseDescription: how far each person has read this thread
+      description: the thread this is about; fixed when the record is created
+    readBy:
+      type: reference
+      kind: substrate.reamde.dev/core/actor
+      required: true
+      description: the person whose reading this records; filled in with the
+        person the write acts for, and fixed when the record is created
+    readThrough:
+      type: reference
+      kind: substrate.reamde.dev/llm/message
+      description: the newest message of the thread the person has seen; a
+        write that names an earlier message leaves it where it is
+    # Stamped when a write's position is taken; a value a write sends is
+    # dropped, so a late write is never refused for it.
+    readAt:
+      type: datetime
+      managed: true
+      description: when the person last read through `readThrough`, stamped
+        by the engine
+    markedUnread:
+      type: bool
+      description: true while the person has marked the thread unread; the
+        next write of `readThrough` at or after the stored one clears it

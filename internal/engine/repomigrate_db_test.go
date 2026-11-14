@@ -46,6 +46,7 @@ var rmEvery = map[int]string{
 	12: "move_the_sign_in_out_of_the_repository",
 	13: "give_every_person_admin",
 	14: "look_again_at_kept_deletions",
+	15: "mark_existing_threads_read",
 }
 
 // rmOpen opens the engine over one database and one data root, so a reopen
