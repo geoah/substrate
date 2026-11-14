@@ -37,7 +37,7 @@ import (
 const agentModeJudge = "judge"
 
 func migrateMarkExistingThreadsRead(t *txn) (string, error) {
-	people, err := t.livePersonActorIDs()
+	people, err := t.livePersonActors()
 	if err != nil {
 		return "", err
 	}
@@ -79,7 +79,8 @@ func migrateMarkExistingThreadsRead(t *txn) (string, error) {
 		if last == "" {
 			continue
 		}
-		for _, person := range people {
+		for _, p := range people {
+			person := p.id
 			id := threadMarkID(th.id, person)
 			if !vocabulary.ValidID(id) {
 				continue
@@ -95,7 +96,8 @@ func migrateMarkExistingThreadsRead(t *txn) (string, error) {
 				propMarkReadBy:      referenceValueOf(vocabulary.RecordPath(kindActor, person)),
 				propMarkReadThrough: referenceValueOf(vocabulary.RecordPath(typeMessage, last)),
 				propMarkReadAt:      t.now.Format(time.RFC3339Nano),
-			}, true, th.title); err != nil {
+				// The title the kind's template renders: whose mark, of what.
+			}, true, p.title+": "+th.title); err != nil {
 				return "", err
 			}
 			marks++
@@ -139,23 +141,26 @@ func (t *txn) migrateSet(ref eref, set map[string]any) error {
 	return t.appendChange(substrate.ActorSystem, substrate.OpPatch, ref.ID, ref.Kind, map[string]any{"properties": sortedKeys(set)})
 }
 
-// livePersonActorIDs are the ids of the actors of the people in the
-// repository: live person actors that are not disabled.
-func (t *txn) livePersonActorIDs() ([]string, error) {
-	rows, err := t.query(`SELECT id FROM records
+// migratedPerson is one person's actor as the migration reads it.
+type migratedPerson struct{ id, title string }
+
+// livePersonActors are the actors of the people in the repository: live
+// person actors that are not disabled.
+func (t *txn) livePersonActors() ([]migratedPerson, error) {
+	rows, err := t.query(`SELECT id, title FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND props->>'type' = $2
 		AND COALESCE(props->>'disabled', '') <> 'true' ORDER BY id`, kindActor, substrate.ActorTypePerson)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []string
+	var out []migratedPerson
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var p migratedPerson
+		if err := rows.Scan(&p.id, &p.title); err != nil {
 			return nil, err
 		}
-		out = append(out, id)
+		out = append(out, p)
 	}
 	return out, rows.Err()
 }

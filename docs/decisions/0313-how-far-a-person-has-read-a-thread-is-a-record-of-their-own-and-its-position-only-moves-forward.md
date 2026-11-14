@@ -67,9 +67,10 @@ write.
   for being late.
 - **Unread is derived.** The thread gains `lastMessage`, the newest message
   it held when it last settled (the highest `turn`, never a `summary` row),
-  stamped by the engine on every write that settles a thread. A settled
-  thread is unread when the mark says `markedUnread`, or its `lastMessage`
-  is not the mark's `readThrough`, or there is no mark. No count is stored.
+  stamped by the engine on every write that settles a thread, whichever
+  path makes it. A settled thread is unread when the mark says
+  `markedUnread`, or when it holds a `lastMessage` that is not the mark's
+  `readThrough` or that nobody has a mark for. No count is stored.
 - **What waits on a person is counted on the thread**: `waitingOnPerson`,
   the thread's pending `llm/interaction`, proposed `core/recordpatchrequest`
   and pending `llm/approval` records, counted again by the engine in each
@@ -95,9 +96,11 @@ write.
   [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
 - **Existing threads are read.** Repository migration 14
   ([0099](0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md))
-  gives every thread a chat list shows (every `mode` but `subagent` and
-  `judge`) its `lastMessage` and its count, and each person a mark that
-  reads through it.
+  gives every settled thread a chat list shows (every `mode` but `subagent`
+  and `judge`) that holds no `lastMessage` its newest message and its count,
+  and each person a mark that reads through it. A thread that already holds
+  one settled under this release, and is given no mark, so a second run
+  reads nothing for a person that they never opened.
 
 A fixed exemption for the write would have been a fourth operation outside
 the one check, where a rule on a shipped role is the mechanism roles already
@@ -115,7 +118,8 @@ are.
   a kind is the unit of permission (0275), and nothing hides one person's
   mark from another who reads `llm/threadmark`.
 - Bad, because the migration writes a line per thread and a line per thread
-  and person at the first open, in one transaction.
+  and person at the first open, in one transaction: 25,005 lines and about
+  20 seconds for 5,000 threads and four people where it was measured.
 - Bad, because `me` is a word in the filter grammar that only a request with
   a token behind it can say.
 - Bad, because a role a repository writes later must name the mark kind for
