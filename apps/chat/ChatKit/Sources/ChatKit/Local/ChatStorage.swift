@@ -54,6 +54,10 @@ public final class ChatStorage: @unchecked Sendable {
     /// a lease's check and its step are one: opening, retiring, clearing,
     /// pruning, touching, every write.
     private let files = NSLock()
+    /// The drafts' writes asked for, under `lock`, and the last to land,
+    /// under `files`.
+    private var draftsAsked = 0
+    private var draftsWritten = 0
     private var held: [String: Holding] = [:]
     private var tail: Task<Void, Never>?
     private var opens = 0
@@ -324,7 +328,30 @@ public final class ChatStorage: @unchecked Sendable {
 
     func save(_ state: CachedState, _ lease: Lease) { write(state, "state.json", .root, lease) }
 
-    func save(drafts: [String: String], _ lease: Lease) { write(drafts, "drafts.json", .root, lease) }
+    /// The drafts are written in the order they were asked to be, never
+    /// the order their writes came to run in: a write may be asked for with
+    /// no wait while the one before it is still on its way, and an older
+    /// one that lands after a newer is dropped. `ticket` is the write's
+    /// place in that order, taken when it was asked for (`draftsTicket()`);
+    /// without one the write is the newest.
+    func save(drafts: [String: String], _ lease: Lease, ticket: Int? = nil) {
+        let ticket = ticket ?? draftsTicket()
+        guard let data = try? JSONEncoder().encode(drafts) else { return }
+        _ = whileHeld(lease) { holding -> Bool? in
+            guard ticket > draftsWritten else { return false }
+            try holding.folder?.write(data, to: "drafts.json", in: .root)
+            draftsWritten = ticket
+            return true
+        }
+    }
+
+    /// A place in the order the drafts are written in.
+    func draftsTicket() -> Int {
+        lock.withLock {
+            draftsAsked += 1
+            return draftsAsked
+        }
+    }
 
     func save(_ transcript: CachedTranscript, thread: String, _ lease: Lease) {
         write(transcript, Self.transcriptName(thread), .cache, lease)

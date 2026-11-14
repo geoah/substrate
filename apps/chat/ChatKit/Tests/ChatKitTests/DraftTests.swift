@@ -230,6 +230,47 @@ struct DraftTests {
         try await rig.harness.until { _ in rig.storage.drafts(lease)["t1"] == "Told late" }
     }
 
+    @Test func whatAFieldSaysBetweenTheTwoWordsOfLeavingIsWrittenAtOnce() async throws {
+        let rig = ChatRig(platform: .ios)
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("In between", at: start)
+        // Inactive comes before background, and the field's word between
+        // them: it must not wait for the second, which may never be heard.
+        await rig.harness.send(.phase(.inactive))
+        try await tell(rig, key, field.reports.say())
+        let lease = try await rig.lease()
+        try await rig.harness.until { _ in rig.storage.drafts(lease)["t1"] == "In between" }
+        // In front again, a draft waits for more, as before.
+        await rig.harness.send(.phase(.active))
+        field.type(", and after", at: start)
+        let mark = await rig.harness.effectsStarted
+        try await tell(rig, key, field.reports.say())
+        #expect(await rig.harness.state.drafts["t1"] == "In between, and after")
+        #expect(rig.storage.drafts(lease)["t1"] == "In between")
+        try await rig.harness.untilIdle(since: mark, advancing: 1)
+        #expect(rig.storage.drafts(lease)["t1"] == "In between, and after")
+    }
+
+    @Test func anOlderWriteOfTheDraftsThatLandsAfterANewerIsDropped() async throws {
+        let rig = ChatRig()
+        try await rig.signIn()
+        let lease = try await rig.lease()
+        // Asked for in this order, as two writes with no wait are; run in
+        // the other.
+        let older = rig.storage.draftsTicket()
+        let newer = rig.storage.draftsTicket()
+        rig.storage.save(drafts: ["t1": "the whole sentence"], lease, ticket: newer)
+        rig.storage.save(drafts: ["t1": "the whole sen"], lease, ticket: older)
+        #expect(rig.storage.drafts(lease)["t1"] == "the whole sentence")
+        // A write asked for after both lands.
+        rig.storage.save(drafts: [:], lease)
+        #expect(rig.storage.drafts(lease).isEmpty)
+    }
+
     @Test func twoWindowsOnOneChatEachSendWhatTheirOwnFieldShows() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
         try await rig.signIn()

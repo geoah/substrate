@@ -168,6 +168,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var scenes: [String: Scene] = [:]
     var route: ChatRoute?
     var appActive = true
+    /// The app is leaving the front or has left it: from the first word of
+    /// it (inactive comes before background) until it is in front again.
+    /// What a field says meanwhile is written with no wait.
+    var leaving = false
 
     var feedBatch: Set<WatchKey> = []
     var feedApplying: Set<WatchKey>?

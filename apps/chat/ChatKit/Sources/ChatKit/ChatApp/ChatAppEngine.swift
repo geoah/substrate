@@ -390,10 +390,12 @@ extension ChatApp {
         switch phase {
         case .active:
             state.appActive = true
+            state.leaving = false
             guard state.session != nil else { break }
             refresh(&state)
             for key in state.conversations.keys { state.conversations[key]?.resumeNudge += 1 }
         case .inactive:
+            state.leaving = true
             // Asked for while the app is still in front, as iOS requires of
             // a continued processing task: inactive comes before background.
             for (key, entry) in state.conversations where entry.streaming && entry.continuing == nil {
@@ -403,6 +405,7 @@ extension ChatApp {
             }
         case .background:
             state.appActive = false
+            state.leaving = true
             if let disk = state.disk { state.asks.append(.scheduleRefresh(disk)) }
             state.asks.append(.badge(state.unreadCount))
             if pausesWhenAway {

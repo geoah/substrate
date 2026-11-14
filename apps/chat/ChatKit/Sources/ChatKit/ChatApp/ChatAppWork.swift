@@ -94,9 +94,13 @@ extension ChatApp {
                 return nil
             }
         case let .saveDrafts(lease, drafts, atOnce):
+            // Its place among the drafts' writes, taken now, in the order
+            // the effects were asked: one with no wait may come to run
+            // after the one that follows it.
+            let ticket = storage.draftsTicket()
             return .once {
                 if !atOnce { guard await pause(0.6) else { return nil } }
-                storage.save(drafts: drafts, lease)
+                storage.save(drafts: drafts, lease, ticket: ticket)
                 return nil
             }
         case let .savePreferences(lease, chosen):
