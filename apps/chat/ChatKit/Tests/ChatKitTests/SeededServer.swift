@@ -801,7 +801,12 @@ final class SeededServer: @unchecked Sendable {
                 let same = row.role == "user" && row.content == text && (named.isEmpty ? row.turn == 0 : named == thread)
                 guard same else {
                     note("an id refused as taken")
-                    return refuse(409, "conflict", "substrate: version conflict: the messageId is taken: messageId \"\(id)\": send the message under a new id")
+                    // A server at `errors` 6 names the reason and one
+                    // before it does not: by the seed, so the app's reading
+                    // of the reason and of the words are both run.
+                    return refuse(
+                        409, "conflict", reason: seed % 2 == 0 ? "message_id_taken" : nil,
+                        "substrate: version conflict: the messageId is taken: messageId \"\(id)\": send the message under a new id")
                 }
                 // Nothing written, nothing run: the `thread` event, then
                 // what an attach answers.

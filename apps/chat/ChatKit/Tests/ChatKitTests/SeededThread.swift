@@ -30,7 +30,10 @@ import Musl
 /// The jobs are taken through the runtime's `swift_task_enqueueGlobal_hook`,
 /// which the test process sets once and which passes every job enqueued
 /// from any other thread on to the pool untouched, so no other test sees
-/// it.
+/// it. The hook is the Swift runtime's own and no public API. A runtime
+/// that has dropped the symbol, or kept it and stopped calling it, cannot
+/// order a seeded run, and `run` throws `Unordered` there: the tests that
+/// need it fail with its sentence, and none passes on the pool instead.
 final class SeededThread: SerialExecutor, @unchecked Sendable {
     private typealias Original = @convention(thin) (UnownedJob) -> Void
     private typealias Hook = @convention(thin) (UnownedJob, Original) -> Void
@@ -41,8 +44,13 @@ final class SeededThread: SerialExecutor, @unchecked Sendable {
         return key
     }()
 
-    /// False where the runtime has no hook to set: a seeded run cannot be
-    /// made deterministic there, and refuses to run.
+    /// Why a seeded run could not be made: this runtime does not hand a
+    /// thread the jobs enqueued from it.
+    struct Unordered: Error, CustomStringConvertible {
+        var description: String
+    }
+
+    /// False where the runtime has no hook to set.
     private static let hooked: Bool = {
         guard let symbol = dlsym(dlopen(nil, RTLD_NOW), "swift_task_enqueueGlobal_hook") else { return false }
         _ = key
@@ -63,22 +71,42 @@ final class SeededThread: SerialExecutor, @unchecked Sendable {
     private var entering: UnsafeContinuation<Void, Never>?
     private var idling: UnsafeContinuation<Void, Never>?
     private var leaving: UnsafeContinuation<Void, Never>?
+    private var abandoned = false
 
     private init() {}
 
+    /// What every `Unordered` ends with.
+    private static let consequence =
+        "Without the hook the order of a run's concurrent work is the scheduler's, and a seed would not replay. "
+        + "The seeded suite cannot run on this toolchain until SeededThread takes its jobs another way."
+
     /// Runs `body` on a thread of its own, in the task that called: what it
     /// starts runs there too, in the order it was started. Returns on the
-    /// pool, once everything `body` left runnable has run.
-    static func run<Value>(_ body: () async -> Value) async -> Value {
-        precondition(hooked, "this Swift runtime has no swift_task_enqueueGlobal_hook: a seeded run cannot be ordered here")
+    /// pool, once everything `body` left runnable has run. Throws
+    /// `Unordered`, and runs nothing, where the runtime will not order it.
+    static func run<Value>(_ body: () async -> Value) async throws -> Value {
+        guard hooked else {
+            throw Unordered(
+                description: "This Swift runtime has no swift_task_enqueueGlobal_hook, which a seeded run takes its jobs through. " + consequence)
+        }
         precondition(current == nil, "a seeded run is not started from inside another")
         let thread = SeededThread()
         thread.start()
         // Resumed from the new thread, so this task's next job is enqueued
         // from it and is the thread's first. A continuation resumed before
         // its task has let go of the thread it is on goes on where it is,
-        // with no enqueue at all, so the task asks until it has moved.
+        // with no enqueue at all, so the task asks until it has moved. A
+        // task that has not moved after this many askings never will: the
+        // hook is set and the runtime does not call it.
+        var asked = 0
         while current !== thread {
+            guard asked < 10_000 else {
+                thread.abandon()
+                throw Unordered(
+                    description: "This Swift runtime has swift_task_enqueueGlobal_hook and does not call it: a task resumed from a seeded "
+                        + "thread \(asked) times never ran on it. " + consequence)
+            }
+            asked += 1
             await withUnsafeContinuation { (entered: UnsafeContinuation<Void, Never>) in
                 thread.condition.lock()
                 thread.entering = entered
@@ -122,12 +150,24 @@ final class SeededThread: SerialExecutor, @unchecked Sendable {
         condition.unlock()
     }
 
+    /// Ends a thread no task ever moved onto.
+    private func abandon() {
+        condition.lock()
+        abandoned = true
+        condition.signal()
+        condition.unlock()
+    }
+
     private func start() {
         let thread = Thread { [self] in
             pthread_setspecific(Self.key, Unmanaged.passUnretained(self).toOpaque())
             while true {
                 condition.lock()
-                while next == jobs.count, entering == nil, idling == nil, leaving == nil { condition.wait() }
+                while next == jobs.count, entering == nil, idling == nil, leaving == nil, !abandoned { condition.wait() }
+                if abandoned {
+                    condition.unlock()
+                    return
+                }
                 if next < jobs.count {
                     let job = jobs[next]
                     next += 1
