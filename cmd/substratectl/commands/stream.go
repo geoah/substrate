@@ -89,7 +89,10 @@ func streamError(p substrate.ErrorPayload, opened bool, cursor int64, generation
 		Generation:     p.Generation,
 		Headline:       "the server ended the watch stream with an error (" + p.Code + ")",
 	}
-	if opened {
+	// A position the server can no longer resume is not resumed again: the
+	// hint is the code's own (re-list, then resume from the head the frame
+	// names), never the refused cursor.
+	if opened && p.Code != "compacted" {
 		ae.Hint = "resume with " + resumeFlags(cursor, generation)
 	}
 	return ae

@@ -7,9 +7,10 @@
  * record path the view's reference holds, never an id resolved against some
  * metric kind: two metric kinds may hold one id. */
 
+import { walkPages } from "@/lib/api/compacted"
 import type { AggregateRead } from "@/lib/api/observations"
 import { CORE_AUTHORITY, CORE_PACKAGE } from "@/lib/api/http"
-import type { ListParams } from "@/lib/api/records"
+import type { FirstPageParams, ListParams } from "@/lib/api/records"
 import {
   readReference,
   type Aggregate,
@@ -77,7 +78,7 @@ export function kindDeclarationPath(identity: string): string {
 }
 
 /** The list read of the views of one kind. */
-export function recordViewsParams(identity: string): ListParams {
+export function recordViewsParams(identity: string): FirstPageParams {
   return {
     kinds: [RECORD_VIEW_KIND],
     first: 20,
@@ -1462,16 +1463,18 @@ export async function fetchChartSummaries(
   params: ListParams,
   fetchPage: (p: ListParams) => Promise<Page>
 ): Promise<SummaryPages> {
-  const out: SummaryPages = { records: [], included: {}, truncated: false }
-  let after: string | undefined
-  for (let n = 0; n < CHART_SUMMARIES_PAGES; n++) {
-    const page = await fetchPage(after ? { ...params, after } : params)
+  const { pages, complete } = await walkPages(
+    `summaries ${JSON.stringify(params)}`,
+    (after: string | undefined) =>
+      fetchPage(after ? { ...params, after } : params),
+    (page) => page.cursor || undefined,
+    CHART_SUMMARIES_PAGES
+  )
+  const out: SummaryPages = { records: [], included: {}, truncated: !complete }
+  for (const page of pages) {
     out.records.push(...page.records)
     Object.assign(out.included, page.included ?? {})
-    after = page.cursor
-    if (!after) return out
   }
-  out.truncated = true
   return out
 }
 
@@ -2262,7 +2265,7 @@ export function tableParams(
   block: TableBlock,
   record: SubstrateRecord,
   listedKind?: KindInfo
-): ListParams | { problem: string } {
+): FirstPageParams | { problem: string } {
   const properties: Record<string, Cond> = {}
   if (block.via) {
     properties[block.via] = { eq: `${record.kind}/${record.id}` }
@@ -2324,9 +2327,9 @@ export const TILE_HISTORY = 100
  * whom the table's own read is. Undefined where no listed result names a
  * metric and a time. */
 export function tileHistoryParams(
-  table: ListParams,
+  table: FirstPageParams,
   listed: readonly SubstrateRecord[]
-): ListParams | undefined {
+): FirstPageParams | undefined {
   const metrics = new Set<string>()
   let earliest: number | undefined
   for (const r of listed) {
@@ -2674,7 +2677,7 @@ export function spansListParams(
   b: Bound,
   spans: SpansBlock,
   source?: string
-): ListParams {
+): FirstPageParams {
   const narrow = narrowing(b, spans.sources)
   if (source !== undefined) {
     narrow.source = source ? { eq: source } : { exists: false }

@@ -1410,7 +1410,8 @@ func TestAHeldLongRecordStaysHeldUntilItIsFinished(t *testing.T) {
 // the deletion period, is compacted in steps up to its purge and then
 // forgotten, with every pass stopped after one step, no transaction reading
 // more than twice the bound of it. The horizon reaches its purge's line only
-// once it is gone, so a reader below that line is refused only then.
+// once it is gone, so a read of the changes after a seq below that line is
+// refused only then.
 func TestForgettingALongDeletionIsHeldToTheBound(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1447,7 +1448,12 @@ func TestForgettingALongDeletionIsHeldToTheBound(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return head.Horizon > purge-1
+		below := head.Horizon > purge-1
+		_, err = b.d.Changes(ctx, purge-1, substrate.ChangeFilter{Kinds: []string{ledgerTask}}, 10)
+		if stale := errors.Is(err, substrate.ErrStaleHistory); stale != below || (err != nil && !stale) {
+			t.Fatalf("a read after seq %d answered %v with the horizon at %d", purge-1, err, head.Horizon)
+		}
+		return below
 	}
 	if refused() {
 		t.Fatal("a reader below the purge is refused before any pass")

@@ -130,13 +130,7 @@ func escapeLike(s string) string {
 // values it also derives each affected record's before and after property
 // values (decision 0135).
 func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, limit int, values bool) ([]substrate.Change, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	rows, err := ds.db.QueryContext(ctx, `
-		SELECT `+changeColumns+` FROM changelog
-		WHERE `+strings.Join(b.where, " AND ")+`
-		ORDER BY `+order+` LIMIT `+b.arg(limit), b.args...)
+	rows, err := changeRows(ctx, ds.db, b, order, limit)
 	if err != nil {
 		return nil, err
 	}

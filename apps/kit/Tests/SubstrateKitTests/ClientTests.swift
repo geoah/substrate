@@ -143,6 +143,117 @@ import FoundationNetworking
         #expect(posts.sent("POST", "/api/v1/records").count == 1)
     }
 
+    /// One list page of tasks, as the server answers it.
+    func page(_ ids: [String], cursor: String?, head: Int, generation: String) -> String {
+        let rows = ids.map { #"{"id":"\#($0)","kind":"a.example.com/tasks/task","properties":{},"version":1}"# }.joined(separator: ",")
+        return #"{"records":[\#(rows)],"cursor":\#(cursor.map { "\"\($0)\"" } ?? "null"),"head":\#(head),"generation":"\#(generation)"}"#
+    }
+
+    func compacted(head: Int, generation: String) -> String {
+        #"{"error":{"code":"compacted","message":"the cursor's history was replaced: list again from the first page","head":\#(head),"generation":"\#(generation)"}}"#
+    }
+
+    /// The `after` each list request carried, nil for a first page.
+    func afters(_ stub: StubTransport) -> [String?] {
+        stub.sent("GET", "/api/v1/records").map { request in
+            request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "after" }?.value }
+        }
+    }
+
+    @Test func aWalkToldCompactedOnAContinuationListsAgainFromTheFirstPageAlone() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/records", json: page(["a", "b"], cursor: "p1", head: 7, generation: "g1"))
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        // The history the walk starts over in: b is gone, c is new.
+        stub.on("GET", "/api/v1/records", json: page(["a", "c"], cursor: "q1", head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["d"], cursor: nil, head: 9, generation: "g2"))
+        let all = try await client(stub).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 2))
+        // Nothing read before the restart is kept, and nothing is read twice.
+        #expect(all.records.map(\.id) == ["a", "c", "d"])
+        #expect(all.head == 9 && all.generation == "g2")
+        #expect(all.cursor == nil)
+        #expect(afters(stub) == [nil, "p1", nil, "q1"])
+    }
+
+    @Test func aWalkToldCompactedAgainAfterItsRestartThrowsIt() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/records", json: page(["a"], cursor: "p1", head: 7, generation: "g1"))
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["a"], cursor: "q1", head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 11, generation: "g3"))
+        do {
+            _ = try await client(stub).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 1))
+            Issue.record("a walk refused twice answered")
+        } catch let error as ServerError {
+            #expect(error.isCompacted)
+            #expect(error.head == 11 && error.generation == "g3")
+        }
+        // One restart, then the refusal.
+        #expect(afters(stub) == [nil, "p1", nil, "q1"])
+    }
+
+    /// A walk begun from a cursor the caller saved, refused on its first
+    /// read, starts over from the list's first page rather than failing.
+    @Test func aWalkFromASavedCursorRefusedAtOnceListsFromTheFirstPage() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["a"], cursor: "q1", head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["b"], cursor: nil, head: 9, generation: "g2"))
+        let all = try await client(stub).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 1, after: "saved"))
+        #expect(all.records.map(\.id) == ["a", "b"])
+        #expect(all.head == 9 && all.cursor == nil)
+        #expect(afters(stub) == ["saved", nil, "q1"])
+    }
+
+    /// The restart of a walk begun from a saved cursor is the list's first
+    /// page, never the saved cursor, which the same history refuses again.
+    @Test func aWalkFromASavedCursorRefusedLaterListsFromTheFirstPageNotTheSavedCursor() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/records", json: page(["a"], cursor: "p1", head: 7, generation: "g1"))
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["c"], cursor: "q1", head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["d"], cursor: nil, head: 9, generation: "g2"))
+        let all = try await client(stub).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 1, after: "saved"))
+        #expect(all.records.map(\.id) == ["c", "d"])
+        #expect(all.head == 9 && all.generation == "g2")
+        #expect(afters(stub) == ["saved", "p1", nil, "q1"])
+    }
+
+    @Test func aWalkFromASavedCursorRefusedAgainAfterItsRestartThrowsIt() async throws {
+        let stub = StubTransport()
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", json: page(["a"], cursor: "q1", head: 9, generation: "g2"))
+        stub.on("GET", "/api/v1/records", status: 410, json: compacted(head: 11, generation: "g3"))
+        do {
+            _ = try await client(stub).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 1, after: "saved"))
+            Issue.record("a walk refused twice answered")
+        } catch let error as ServerError {
+            #expect(error.isCompacted)
+            #expect(error.head == 11 && error.generation == "g3")
+        }
+        // The saved cursor refused, the restart, then the refusal.
+        #expect(afters(stub) == ["saved", nil, "q1"])
+    }
+
+    @Test func anyOtherRefusalOfAWalkIsThrownAsItIs() async throws {
+        // A continuation refused as a fresh request would be (another filter
+        // or order) is the caller's to see, not a restart.
+        let refused = StubTransport()
+        refused.on("GET", "/api/v1/records", json: page(["a"], cursor: "p1", head: 7, generation: "g1"))
+        refused.on(
+            "GET", "/api/v1/records", status: 422, json: #"{"error":{"code":"validation","message":"the cursor was minted for another filter"}}"#)
+        await #expect(throws: ServerError(status: 422, code: "validation", message: "the cursor was minted for another filter")) {
+            try await client(refused).listAll(ListQuery(kinds: ["a.example.com/tasks/task"], first: 1))
+        }
+        #expect(afters(refused) == [nil, "p1"])
+
+        // A first page with no `after` has no position to drop.
+        let first = StubTransport()
+        first.on("GET", "/api/v1/records", status: 410, json: compacted(head: 9, generation: "g2"))
+        await #expect(throws: ServerError.self) { try await client(first).listAll(ListQuery(kinds: ["a.example.com/tasks/task"])) }
+        #expect(afters(first) == [nil])
+    }
+
     @Test func aRefusalBecomesTheErrorThatSaysWhatItMeans() async throws {
         let stub = StubTransport()
         stub.on("GET", "/api/v1/a/expired", status: 401, json: #"{"error":{"code":"unauthorized","message":"token expired"}}"#)

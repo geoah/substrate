@@ -83,7 +83,7 @@ func (s *Stepper) SetArgs(args map[string]any) { s.args = args }
 func (s *Stepper) Step(ctx context.Context, resume any) ([]StepEffect, any, map[string]any, error) {
 	s.n++
 	s.last = nil
-	effects, out, more, err := s.ds.runCallableRaw(ctx, s.fn, runner.Input{
+	effects, out, more, _, err := s.ds.runCallableRaw(ctx, s.fn, runner.Input{
 		Mode:           runner.ModeCall,
 		Config:         s.cfg,
 		Envelope:       s.env,

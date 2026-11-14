@@ -49,6 +49,43 @@ struct LegacyCache {
         try await rig.harness.until { _ in rig.server.count("/api/v1/changes", query: "from=10&generation=g") == 1 }
     }
 
+    /// The cursor the earlier build kept, once refused, is never sent
+    /// again, even by a launch that finds the record cache without a cursor
+    /// of its own: here the read again's watch was refused too, so none was
+    /// kept, and the app closed before it saved the list again.
+    @Test func theCursorAnEarlierBuildKeptIsNotSentAgainAtTheNextLaunch() async throws {
+        let fixture = try #require(Bundle.module.url(forResource: "Fixtures/legacy", withExtension: nil))
+        let base = temporaryFolder("chat")
+        let name = ChatStorage.hash(identity)
+        try FileManager.default.copyItem(at: fixture.appendingPathComponent(name), to: base.appendingPathComponent(name))
+        // An app token's lists carry no head: the watch resumes from the
+        // cursor the disk kept.
+        let headless: [ChatServer.Route] = [
+            .init(method: "GET", path: "/api/v1/records", query: "core/agent", answer: .json(200, #"{"records":[\#(agentJSON(helper))]}"#)),
+            .init(method: "GET", path: "/api/v1/records", answer: .json(200, #"{"records":[]}"#)),
+        ]
+        let signedIn = LinkSnapshot(phase: .signedIn, server: origin, repository: repository, online: true)
+
+        let first = ChatRig(
+            [
+                .init(method: "GET", path: "/api/v1/changes", query: "from=7&generation=old", answer: .json(410, compactedJSON)),
+                .init(method: "GET", path: "/api/v1/changes", answer: .stream([compactedJSON])),
+            ] + headless + baseRoutes(), base: base)
+        await first.runtime.linkChanged(signedIn)
+        try await first.harness.until(timeout: .seconds(20)) { await $0.state.feedProblem != nil }
+        #expect(first.server.count("/api/v1/changes", query: "from=7&generation=old") == 1)
+        #expect(await first.storage.records(try await first.lease())?.cursor == nil)
+        await first.runtime.close()
+
+        let again = ChatRig(headless + baseRoutes(), base: base)
+        await again.runtime.linkChanged(signedIn)
+        try await again.harness.until(timeout: .seconds(20)) { harness in
+            await harness.state.watching && again.server.count("/api/v1/changes") > 0
+        }
+        // Opened at the live head instead.
+        #expect(again.server.count("/api/v1/changes", query: "from=") == 0)
+    }
+
     @Test func theChoicesAreReadWhereEveryBuildKeptThem() throws {
         let defaults = try #require(UserDefaults(suiteName: "chat-test-\(UUID().uuidString)"))
         let prefix = "chat.\(ChatStorage.hash(identity))."

@@ -115,6 +115,11 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var refreshError: String?
     var feedProblem: String?
     var watching = false
+    /// When the last read again for a `compacted` watch started: another
+    /// refusal within a minute of it is a failure shown as one, never
+    /// another refresh (`WatchFollower.recovers`). Nothing but the minute
+    /// passing lets the next one start.
+    var recoveryStarted: Date?
 
     var agents: [Record] = []
     var providers: [String: Record] = [:]

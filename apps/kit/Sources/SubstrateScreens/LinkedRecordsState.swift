@@ -24,6 +24,11 @@ public struct LinkedRecordsState: Codable, Equatable, Sendable {
     public var loaded = false
     /// Where the watch resumes, nil before it ever opened.
     public var cursor: WatchCursor?
+    /// When the last read again for a `compacted` watch started: another
+    /// refusal within a minute of it is a failure shown as one, never
+    /// another read (`WatchFollower.recovers`). Nothing but the minute
+    /// passing lets the next one start.
+    public var recoveryStarted: Date?
     public var phase: ReadPhase = .idle
     /// Records whose read again failed (the network went), as `kind/id`:
     /// read at the next chance, so a write that landed is never shown laid

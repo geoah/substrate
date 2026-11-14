@@ -3,9 +3,10 @@
  * column follows the thread rows while one of its chats runs, from the list's
  * own head, so a chat that settles between the list read and the stream
  * opening loses the mark too, and so does one that settles while the page
- * recovers from a head the server no longer holds, however many times it
- * does; nothing is watched when none runs. The watch is the real hook over a
- * fake server, not a stand-in. */
+ * recovers from a head the server no longer holds. It recovers once: a
+ * refusal of the stream it opened again ends the watch. Nothing is watched
+ * when none runs. The watch is the real hook over a fake server, not a
+ * stand-in. */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
@@ -29,6 +30,8 @@ vi.mock("@/components/agent/thread-list", () => ({
     </ul>
   ),
 }))
+
+import { forgetRecoveries } from "@/lib/api/compacted"
 
 import { AgentsPage } from "./agents"
 
@@ -189,6 +192,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  forgetRecoveries()
 })
 
 function renderPage() {
@@ -243,31 +247,25 @@ describe("AgentsPage chat list", () => {
     await waitFor(() => expect(server.streams).toEqual([]))
   })
 
-  it("recovers again when the replacement's reconnect is refused, and hears a chat that settled in between", async () => {
+  it("ends the watch when the stream it opened again is refused too, and lists no more", async () => {
     // The list's head is refused, so the page follows from the server's head
-    // and lists again. That stream then ends, and the chat settles while no
-    // stream is open. The reconnect resumes from the stream's own bookmark,
-    // which the server refuses too, so the page recovers a second time, and
-    // that recovery's re-read is the one that finds the chat settled.
+    // and lists again. That stream then ends, and its reconnect resumes from
+    // its own bookmark, which this server refuses too: the watch's bound
+    // makes that a failure, never a second recovery, so a server that keeps
+    // refusing gets two streams and two list reads.
     vi.useFakeTimers({ shouldAdvanceTime: true })
     server.lost = true
     server.afterList = (n) => {
-      if (n !== 2) return
-      endStreams()
-      settle()
+      if (n === 2) endStreams()
     }
     renderPage()
     expect(await screen.findByText("t-1: running")).toBeTruthy()
     // The reconnect waits out the stream's retry delay.
     while (server.watches.length < 3) await vi.advanceTimersByTimeAsync(500)
-    expect(
-      await screen.findByText("t-1: ok", {}, { timeout: 3000 })
-    ).toBeTruthy()
-    expect(server.watches.map((w) => w.from)).toEqual(["1", null, "1", null])
-    // Settled, so nothing runs and no stream is left open, after one re-read
-    // per recovery.
-    await waitFor(() => expect(server.streams).toEqual([]))
-    expect(server.lists).toBe(3)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(server.watches.map((w) => w.from)).toEqual(["1", null, "1"])
+    expect(server.lists).toBe(2)
+    expect(server.streams).toEqual([])
   })
 
   it("watches nothing when no listed chat runs", async () => {
