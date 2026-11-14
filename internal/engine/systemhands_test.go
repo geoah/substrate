@@ -31,6 +31,7 @@ var systemHands = map[string]string{
 	"actors.go:ensureLinks":                   "decides: the actor records of a write's hands, the system's first",
 	"actors.go:ensureActor":                   "decides: one actor record the engine keeps",
 	"actors.go:disableActor":                  "decides: an app's actor record disabled when its last token goes",
+	"actorfill.go:fillActorRecords":           "decides: the actor records a repository links and holds none of, written at an open",
 	"addonconsent.go:CompleteAppAddon":        "carries: the person's approval of an app's add-on onto the app's token record; held to the person's own unscoped hand, into a core kind that declares no writer:",
 	"agentjobs.go:settleInterruptedJobs":      "decides: an agent job cut short by a stop",
 	"agents.go:claimAgentDelivery":            "decides: an agent delivery's claim",

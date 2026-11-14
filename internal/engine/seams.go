@@ -93,6 +93,14 @@ func WithTestImportFault(batch int, fn func(stage string) error) Option {
 	return func(o *options) { o.importFault, o.importBatch = fn, batch }
 }
 
+// WithTestActorFillOff skips the open's actor fill (actorfill.go), so a
+// test can hold a repository as a binary from before the fill left it: the
+// actor records its history links and migration 9 never wrote still
+// missing, and no mark.
+func WithTestActorFillOff() Option {
+	return func(o *options) { o.noActorFill = true }
+}
+
 // WithTestEraseFault runs fn at each durable step of a repository's
 // deletion (repositories.go eraseRepositoryOn); an error stops the deletion
 // there, as a process killed there would.
