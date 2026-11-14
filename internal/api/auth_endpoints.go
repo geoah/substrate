@@ -8,9 +8,9 @@ package api
 // Registration and the credential changes are the substrate's only
 // unauthenticated write paths, so all four share one posture:
 //
-//   - a per-IP, per-repository and GLOBAL rate limit (h.authRate), so a
+//   - a per-IP, per-name and GLOBAL rate limit (h.authRate), so a
 //     distributed attempt costs what a single one does;
-//   - one answer for every failure — an unknown repository, a wrong password
+//   - one answer for every failure — an unknown identity, a wrong password
 //     and a wrong code are indistinguishable, which is why the engine does
 //     the same argon2id and HMAC work on all three. The one other answer,
 //     totp_required, comes only after the password verified;
@@ -35,7 +35,7 @@ import (
 
 type registerBeginRequest struct {
 	InviteCode string `json:"inviteCode"`
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
 }
 
 // loginRequest is the wire struct internal/substrate declares, so a client
@@ -43,20 +43,32 @@ type registerBeginRequest struct {
 type loginRequest = substrate.LoginRequest
 
 type passwordRequest struct {
-	Repository  string `json:"repository"`
+	Identity    string `json:"identity"`
 	Password    string `json:"password"`
 	TOTPCode    string `json:"totpCode"`
 	NewPassword string `json:"newPassword"`
+	// SignOutEverywhere ends every token the person holds once the password
+	// changed (postSignOutEverywhere), in the same request, because the code
+	// it carries is spent once.
+	SignOutEverywhere bool `json:"signOutEverywhere,omitempty"`
+}
+
+// signOutRequest is the sign out everywhere: the identity and its two
+// current factors, nothing else.
+type signOutRequest struct {
+	Identity string `json:"identity"`
+	Password string `json:"password"`
+	TOTPCode string `json:"totpCode"`
 }
 
 type totpBeginRequest struct {
-	Repository string `json:"repository"`
-	Password   string `json:"password"`
-	TOTPCode   string `json:"totpCode"`
+	Identity string `json:"identity"`
+	Password string `json:"password"`
+	TOTPCode string `json:"totpCode"`
 }
 
 type totpRequest struct {
-	Repository    string `json:"repository"`
+	Identity      string `json:"identity"`
 	Password      string `json:"password"`
 	TOTPCode      string `json:"totpCode"`
 	NewTOTPSecret string `json:"newTotpSecret"`
@@ -73,16 +85,67 @@ type mintRequest struct {
 	Scopes    []string   `json:"scopes,omitempty"`
 }
 
+// deleteRequest is the deletion of a repository: the identity, its two
+// current factors and the repository to erase.
+type deleteRequest struct {
+	Identity   string `json:"identity"`
+	Repository string `json:"repository"`
+	Password   string `json:"password"`
+	TOTPCode   string `json:"totpCode"`
+}
+
 // --- the shared gate ---
 
-// repositoryOf resolves the repository name a caller sent into the authority
-// it means: the name itself when it carries a dot, else that label under the
-// host the request reached (`ada` -> `ada.example.com`). The HTTP layer is the
-// one place that knows the host, so every door resolves here and the engine
-// sees a concrete authority or refuses. An empty name stays empty, so the
-// engine's own refusal is what the caller reads.
-func repositoryOf(r *http.Request, name string) string {
-	return vocabulary.RepositoryAuthority(strings.TrimSpace(name), r.Host)
+// repositoryOf resolves the name a caller sent for an existing repository
+// (vocabulary.NameRule.Lookup): the name itself when it carries a dot, else
+// that label under the public URL's host, or the request's where none is
+// configured. The HTTP layer is the one place that knows either, so every
+// door resolves here and the engine sees a whole name or refuses. An empty
+// name stays empty, so the engine's own refusal is what the caller reads.
+func (h *handler) repositoryOf(r *http.Request, name string) string {
+	return h.names.Lookup(name, r.Host)
+}
+
+// newRepositoryName is the name a new repository typed as typed takes
+// (vocabulary.NameRule.New), for a registration and a rename's new name, and
+// the name a registering person takes by the same rule. A refusal has
+// already been written.
+func (h *handler) newRepositoryName(w http.ResponseWriter, typed string) (string, bool) {
+	name, err := h.names.New(typed)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeValidation, err.Error())
+		return "", false
+	}
+	return name, true
+}
+
+// identityOf resolves the sign-in name a caller sent the way repositoryOf
+// resolves a repository's: a sign-in name has the same DNS-style form, and a
+// short one is completed under the same host (decision record 0288).
+func (h *handler) identityOf(r *http.Request, name string) string {
+	return h.names.Lookup(name, r.Host)
+}
+
+// repositoryKeyOf resolves a repository a caller names by its name or its
+// id: an id is taken as it is, a name as repositoryOf takes it.
+func (h *handler) repositoryKeyOf(r *http.Request, name string) string {
+	if name = strings.TrimSpace(name); vocabulary.ValidRepositoryID(name) {
+		return name
+	}
+	return h.repositoryOf(r, name)
+}
+
+// namesAPerson refuses a request that names no identity: a sign-in and every
+// credential change name the person (decision 0274), and a request that
+// still names only a repository is a client from before it, told what
+// replaced the field.
+func namesAPerson(w http.ResponseWriter, identity, door string) bool {
+	if identity != "" {
+		return true
+	}
+	writeError(w, http.StatusBadRequest, codeBadRequest,
+		door+" names a person: send `identity`, the name the person signs in with; a repository is no longer a sign-in name")
+	return false
 }
 
 // authGate rate-limits one unauthenticated auth request. A refusal has already
@@ -136,7 +199,7 @@ func writeAuthFailure(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	if errors.Is(err, substrate.ErrAuth) {
-		writeError(w, http.StatusUnauthorized, codeAuth, "invalid repository, password or code")
+		writeError(w, http.StatusUnauthorized, codeAuth, "invalid identity, password or code")
 		return
 	}
 	writeSubstrateError(w, r, err)
@@ -152,21 +215,29 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costPaired)
+	// The pace and the invite come first, keyed by the name as a lookup
+	// reads it; the name the person takes is completed after them.
+	if !namesAPerson(w, h.identityOf(r, req.Identity), "registration") {
+		return
+	}
+	ok := h.authGate(w, r, h.identityOf(r, req.Identity), costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
 		return
 	}
-	enrollment, err := h.svc.BeginRegistration(r.Context(), repository)
+	identity, named := h.newRepositoryName(w, req.Identity)
+	if !named {
+		return
+	}
+	enrollment, err := h.svc.BeginRegistration(r.Context(), identity)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
 	// Enroll proves the shared invite code and NOTHING about the named
-	// repository — the engine authenticates nobody here, and it writes
+	// identity — the engine authenticates nobody here, and it writes
 	// nothing.
 	writeJSON(w, http.StatusOK, enrollment)
 }
@@ -178,59 +249,78 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costPaired)
+	// The pace and the invite come first, keyed by the name as a lookup
+	// reads it; the name the person takes is completed after them.
+	if !namesAPerson(w, h.identityOf(r, req.Identity), "registration") {
+		return
+	}
+	ok := h.authGate(w, r, h.identityOf(r, req.Identity), costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
 		return
 	}
+	identity, named := h.newRepositoryName(w, req.Identity)
+	if !named {
+		return
+	}
+	repository := identity
+	if strings.TrimSpace(req.Repository) != "" {
+		if repository, named = h.newRepositoryName(w, req.Repository); !named {
+			return
+		}
+	}
 	res, err := h.svc.Register(r.Context(), substrate.RegisterInput{
-		Repository:        repository,
-		Password:          req.Password,
-		TOTPSecret:        req.TOTPSecret,
-		TOTPCode:          req.TOTPCode,
-		SkipTOTP:          req.SkipTOTP,
-		Label:             req.Label,
-		RecoveryPublicKey: req.RecoveryPublicKey,
+		Identity:   identity,
+		Repository: repository,
+		Password:   req.Password,
+		TOTPSecret: req.TOTPSecret,
+		TOTPCode:   req.TOTPCode,
+		SkipTOTP:   req.SkipTOTP,
+		Label:      req.Label,
 	})
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, substrate.Registered{
-		MintedToken: substrate.MintedToken{
-			Token: res.Token, Secret: res.Secret, Repository: res.Repository,
-		},
-		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
+		MintedToken: substrate.MintedToken(res),
 	})
 }
 
 // --- login ---
 
-// postLogin mints a token record and hands back its secret once. There is no
-// session beside it: the console holds a token like every other client.
+// postLogin signs a person in: it names the identity, proves the factors,
+// picks the repository and mints a token record there, handing back its
+// secret once. There is no session beside it: the console holds a token like
+// every other client. A person in several repositories who names none is
+// answered 409 with the repositories to pick from, and their code is not
+// spent, so the same request sent again with `repository` signs in.
 func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	req.Repository = repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, req.Repository, costRequest)
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a sign-in") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
 	if !ok {
 		return
 	}
-	info, secret, err := h.svc.Login(r.Context(), substrate.LoginInput(req))
+	minted, err := h.svc.Login(r.Context(), substrate.LoginInput{
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository),
+		Password: req.Password, TOTPCode: req.TOTPCode, Label: req.Label,
+	})
 	if err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
-	// The repository is echoed as the door RESOLVED it, so a client that sent
-	// a bare label stores the authority rather than the label it typed.
-	writeJSON(w, http.StatusCreated, substrate.MintedToken{
-		Token: info, Secret: secret, Repository: req.Repository,
-	})
+	// The names are echoed as the door RESOLVED them, so a client that sent a
+	// bare label stores the name rather than the label it typed.
+	writeJSON(w, http.StatusCreated, minted)
 }
 
 // --- the credential changes (the password-factor rule) ---
@@ -242,34 +332,104 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costRequest)
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a password change") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
 	if !ok {
 		return
 	}
 	if !h.factorsPresented(w, req.Password) {
 		return
 	}
-	err := h.svc.ChangePassword(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
-	}, req.NewPassword)
+	in := substrate.LoginInput{Identity: identity, Password: req.Password, TOTPCode: req.TOTPCode}
+	if req.SignOutEverywhere {
+		if req.NewPassword == "" {
+			writeError(w, http.StatusUnprocessableEntity, codeValidation, "newPassword is required")
+			return
+		}
+		ended, err := h.svc.SignOutEverywhere(r.Context(), in, req.NewPassword)
+		if errors.Is(err, substrate.ErrSignOutIncomplete) {
+			writeSignOutIncomplete(w, r, err)
+			return
+		}
+		if err != nil {
+			writeAuthFailure(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, substrate.SessionCredential{Identity: identity, SignedOut: &ended})
+		return
+	}
+	if err := h.svc.ChangePassword(r.Context(), in, req.NewPassword); err != nil {
+		writeAuthFailure(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.SessionCredential{Identity: identity})
+}
+
+// writeSignOutIncomplete answers a password change whose sign out everywhere
+// did not finish with which half landed and the way on, whatever the cause
+// (which the log keeps). A write in doubt keeps its status and reason
+// (decision 0271), and its message never says the password changed, since it
+// may not have.
+func writeSignOutIncomplete(w http.ResponseWriter, r *http.Request, err error) {
+	status, p := http.StatusInternalServerError, substrate.ErrorPayload{
+		Code:    codeInternal,
+		Message: "the password changed, and signing out everywhere did not finish: sign out everywhere again with the new password",
+	}
+	if errors.Is(err, substrate.ErrWriteInDoubt) {
+		status, p = inDoubtProblem(err)
+		p.Message = "the password may have changed, and signing out everywhere may not have finished: sign out everywhere again, with the new password or, if it is refused, the old one"
+	}
+	writeProblem(w, r, err, status, p)
+}
+
+// postSignOutEverywhere ends every token the person holds: every sign-in,
+// every token minted from one, every assistant's and every app's, so a
+// leaked token and whatever it minted or approved stop at once, open streams
+// included. It takes both current factors in the body, like the credential
+// changes: it is how a person gets their account back from a leaked token,
+// so a token is no evidence for it.
+func (h *handler) postSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
+	var req signOutRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a sign out everywhere") {
+		return
+	}
+	if !h.authGate(w, r, identity, costRequest) {
+		return
+	}
+	if !h.factorsPresented(w, req.Password) {
+		return
+	}
+	ended, err := h.svc.SignOutEverywhere(r.Context(), substrate.LoginInput{
+		Identity: identity, Password: req.Password, TOTPCode: req.TOTPCode,
+	}, "")
 	if err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
+	writeJSON(w, http.StatusOK, substrate.SessionCredential{Identity: identity, SignedOut: &ended})
 }
 
-// postDeleteRepository erases the repository whole and frees its name. Like
-// the credential changes it takes both current factors in the body, so a
-// leaked bearer token cannot delete the repository it reaches.
+// postDeleteRepository erases the repository it names whole and frees its
+// name. Like the credential changes it takes the person's two current
+// factors in the body, so a leaked bearer token cannot delete the repository
+// it reaches.
 func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
-	var req loginRequest
+	var req deleteRequest
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costRequest)
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "deleting a repository") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
 	if !ok {
 		return
 	}
@@ -277,13 +437,48 @@ func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.svc.DeleteRepository(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository), Password: req.Password, TOTPCode: req.TOTPCode,
 	})
 	if err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// postRenameRepository gives the repository a new name (decision record
+// 0287). Like the delete, the person's identity and both current factors
+// travel in the body, so a leaked token cannot do it, and only an admin of
+// the repository renames it. The answer names the repository's id, its new
+// name and every former name it still answers to, until when.
+func (h *handler) postRenameRepository(w http.ResponseWriter, r *http.Request) {
+	var req substrate.RenameRepositoryRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a rename") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
+	if !ok {
+		return
+	}
+	if !h.factorsPresented(w, req.Password) {
+		return
+	}
+	name, named := h.newRepositoryName(w, req.Name)
+	if !named {
+		return
+	}
+	names, err := h.svc.RenameRepository(r.Context(), substrate.LoginInput{
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository), Password: req.Password, TOTPCode: req.TOTPCode,
+	}, name)
+	if err != nil {
+		writeAuthFailure(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, names)
 }
 
 // postTOTPBegin verifies the current factors and issues a candidate seed,
@@ -293,8 +488,11 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costRequest)
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a second factor's enrollment") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
 	if !ok {
 		return
 	}
@@ -302,7 +500,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	enrollment, err := h.svc.BeginTOTPReenrollment(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
+		Identity: identity, Password: req.Password, TOTPCode: req.TOTPCode,
 	})
 	if err != nil {
 		writeAuthFailure(w, r, err)
@@ -318,8 +516,11 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	ok := h.authGate(w, r, repository, costRequest)
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a second factor's enrollment") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
 	if !ok {
 		return
 	}
@@ -327,13 +528,13 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.svc.ReenrollTOTP(r.Context(), substrate.LoginInput{
-		Repository: repository, Password: req.Password, TOTPCode: req.TOTPCode,
+		Identity: identity, Password: req.Password, TOTPCode: req.TOTPCode,
 	}, req.NewTOTPSecret, req.NewTOTPCode)
 	if err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, substrate.SessionCredential{Repository: repository})
+	writeJSON(w, http.StatusOK, substrate.SessionCredential{Identity: identity})
 }
 
 // factorsPresented enforces the password-factor rule at the door (ruling
@@ -381,6 +582,30 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, substrate.MintedToken{Token: info, Secret: secret})
+}
+
+// getIdentity answers the person the request's token acts for: their sign-in
+// name, whether they have a second factor and the repositories they may
+// open. An app's scoped token is refused, since it reaches what its scopes
+// name and a person's sign-in is none of them; a token no person stands
+// behind finds none.
+func (h *handler) getIdentity(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if _, scoped := substrate.ScopesFrom(ctx); scoped {
+		writeError(w, http.StatusForbidden, codeForbidden, "an app's token does not read the person's sign-in")
+		return
+	}
+	id := substrate.IdentityFrom(ctx)
+	if id == "" {
+		writeError(w, http.StatusNotFound, codeNotFound, "this token acts for no person")
+		return
+	}
+	info, err := h.svc.Identity(ctx, id)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {

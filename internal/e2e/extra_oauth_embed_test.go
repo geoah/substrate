@@ -198,11 +198,11 @@ func xhOAuthDocs(base string) []map[string]any {
 			"names":  map[string]any{"singular": "mailaccount"},
 			"traits": []string{"substrate.reamde.dev/core/accountconfig"},
 			"properties": map[string]any{
-				"tokenRef":      map[string]any{"type": "secret", "writer": "oauth", "description": "the stored grant"},
-				"tokenStatus":   map[string]any{"type": "string", "writer": "oauth", "description": "the grant's last reported state"},
-				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth", "description": "the scopes the grant covers"},
-				"address":       map[string]any{"type": "email", "writer": "owner", "description": "the mailbox"},
-				"enabledMail":   map[string]any{"type": "bool", "writer": "owner", "description": "whether mail is synced"},
+				"tokenRef":      map[string]any{"type": "secret", "writer": "system", "description": "the stored grant"},
+				"tokenStatus":   map[string]any{"type": "string", "writer": "system", "description": "the grant's last reported state"},
+				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system", "description": "the scopes the grant covers"},
+				"address":       map[string]any{"type": "email", "writer": "person", "description": "the mailbox"},
+				"enabledMail":   map[string]any{"type": "bool", "writer": "person", "description": "whether mail is synced"},
 			},
 		}),
 	}

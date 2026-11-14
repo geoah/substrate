@@ -65,6 +65,15 @@ func setStreamHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Accel-Buffering", "no")
 }
 
+// framed reports whether a stream that ends on err says why in a terminal
+// frame: not when the client went (nobody reads it), and not when the
+// person's roles changed (errRolesChanged), which ends the stream as a drain
+// does, so the client reconnects from its cursor onto a view of its roles
+// now rather than stopping.
+func framed(err error) bool {
+	return !errors.Is(err, errClientGone) && !errors.Is(err, errRolesChanged)
+}
+
 // writeWatchError encodes that terminal frame. A client-gone encode error is
 // swallowed: there is no one left to tell.
 func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
@@ -163,7 +172,9 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 // resumes from the last seq it read. Each frame has streamWriteDeadline to
 // reach the client.
 func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter, annotate bool) {
-	ctx := r.Context()
+	// The stream follows the tail, so the dataset may answer it and every
+	// other stream of the repository from one read per change.
+	ctx := substrate.WithTailRead(r.Context())
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, codeInternal, "streaming unsupported")
@@ -185,6 +196,13 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	from := rs.from
 	if !rs.hasFrom {
 		from = rs.head.Seq
+	}
+	// A stream reads its token before its first byte, afresh: one revoked
+	// while the cursor was resolved is an ordinary refusal, not a 200 with a
+	// bookmark and a terminal frame.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		writeSubstrateError(w, r, err)
+		return
 	}
 
 	setStreamHeaders(w)
@@ -240,7 +258,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 		}
 	}
 	if err := drain(); err != nil {
-		if !errors.Is(err, errClientGone) {
+		if framed(err) {
 			frame()
 			writeWatchError(enc, flusher, err)
 		}
@@ -260,8 +278,24 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if !open {
 				return
 			}
+			// A signal and the drain can be ready at once, and select picks
+			// either: a draining stream sends no batch more.
+			if h.isDraining() {
+				flusher.Flush()
+				return
+			}
+			// The changelog moved, and a revoke or a sign out everywhere is
+			// one way it moves: the token is read again (from the cache a
+			// token write empties) before anything else is written.
+			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+				if framed(err) {
+					frame()
+					writeWatchError(enc, flusher, err)
+				}
+				return
+			}
 			if err := drain(); err != nil {
-				if !errors.Is(err, errClientGone) {
+				if framed(err) {
 					frame()
 					writeWatchError(enc, flusher, err)
 				}
@@ -271,8 +305,10 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			// An idle stream is read again too, so a revoked token's stream
 			// ends within a heartbeat rather than at its next row.
 			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
-				frame()
-				writeWatchError(enc, flusher, err)
+				if framed(err) {
+					frame()
+					writeWatchError(enc, flusher, err)
+				}
 				return
 			}
 			frame()
@@ -406,12 +442,8 @@ func parseChangeFilter(r *http.Request) (substrate.ChangeFilter, error) {
 	}
 	f.Kinds = append(f.Kinds, splitList(v["kinds"])...)
 	f.ExcludeKinds = append(f.ExcludeKinds, splitList(v["excludeKinds"])...)
-	for _, a := range splitList(v["actors"]) {
-		f.Actors = append(f.Actors, substrate.Actor(a))
-	}
-	for _, a := range splitList(v["excludeActors"]) {
-		f.ExcludeActors = append(f.ExcludeActors, substrate.Actor(a))
-	}
+	f.Actors = append(f.Actors, splitList(v["actors"])...)
+	f.ExcludeActors = append(f.ExcludeActors, splitList(v["excludeActors"])...)
 	for _, o := range splitList(v["ops"]) {
 		f.Ops = append(f.Ops, substrate.Op(o))
 	}

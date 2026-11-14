@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -88,7 +89,15 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 		if int64(v.Version) <= held {
 			break
 		}
+		// A version written for a newer dialect is not this server's to
+		// install; the newest it can read is the upgrade (decision 0268).
+		if !readableVersion(v) {
+			continue
+		}
 		b, err := c.readClosure(ctx, id, source, v)
+		if errors.Is(err, ErrNewerDialect) {
+			continue
+		}
 		if err != nil {
 			return result, err
 		}
@@ -104,6 +113,17 @@ func (c *Catalog) RefreshPackage(ctx context.Context, ds substrate.Dataset, id s
 		if plan.ReviewRequired || len(plan.Blockers) > 0 {
 			result.Outcome = "upgrade-needs-review"
 			result.Reason = "the publisher's changes need your review"
+			if n := len(plan.RetentionShortens); n > 0 {
+				first := plan.RetentionShortens[0]
+				result.Reason = fmt.Sprintf("it keeps the history of %d kind(s) for less time, %s from %s to %s first; the publisher's changes need your review",
+					n, first.Kind, first.From, first.To)
+			}
+			// What blocks the release is its reason, in the install's own
+			// words: a requirement written against a function interface this
+			// server does not run says so here too (decision record 0265).
+			if len(plan.Blockers) > 0 {
+				result.Reason = strings.Join(plan.Blockers, "; ")
+			}
 			return result, nil
 		}
 		if _, err := c.installed(ctx, b, ds, nil); err != nil {
@@ -159,6 +179,13 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 	}
 	plan.CandidateVersion = b.Version
 	plan.CandidateDigest = b.origin.SHA256
+	// A rename is refused whatever the repository holds; the preview names
+	// it once, where the engine's own dry run did not.
+	for _, refusal := range b.RenameRefusals() {
+		if !slices.Contains(plan.Blockers, refusal) {
+			plan.Blockers = append(plan.Blockers, refusal)
+		}
+	}
 	old, err := c.heldClosure(ctx, b, ds)
 	if err != nil {
 		plan.Blockers = append(plan.Blockers, err.Error())
@@ -167,8 +194,16 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 	}
 	narrows, additive := CompareClosures(old, b)
 	// Code whose reach grows past the held closure's waits for the owner
-	// (decision 0215), whatever else the comparison concludes.
-	plan.ReviewRequired = !additive || len(ReachGrows(old.Reach(), b.Reach())) > 0
+	// (decision 0215), whatever else the comparison concludes, and so does
+	// history kept for less time, which the plan compares by each kind's
+	// effective retention (decision 0282).
+	plan.ReviewRequired = !additive || len(ReachGrows(old.Reach(), b.Reach())) > 0 || len(plan.RetentionShortens) > 0
+	// A kind the held version published is not the publisher's to remove:
+	// no review takes such a release (installed refuses it).
+	for _, kind := range RemovedKinds(old, b) {
+		plan.Blockers = append(plan.Blockers, removedKindRefusal(b, kind))
+		plan.ReviewRequired = true
+	}
 	if narrows {
 		tokens, err := ds.Tokens(ctx)
 		if err != nil {
@@ -184,6 +219,12 @@ func (c *Catalog) publishedUpgrade(ctx context.Context, b *Bundle, ds substrate.
 		}
 	}
 	return plan, nil
+}
+
+// removedKindRefusal says why a release that drops a published kind is not
+// taken.
+func removedKindRefusal(b *Bundle, kind string) string {
+	return fmt.Sprintf("version %d removes %s, a kind the publisher published; a published kind stays declared (deprecated: true), so this release is not taken", b.Version, kind)
 }
 
 // BuildHolders names only live builds that explicitly recorded a lower floor.
@@ -231,6 +272,12 @@ func CompareClosures(old, next *Bundle) (narrows, additive bool) {
 		if _, ok := before[key]; !ok && mstr(doc, "kind") != vocabulary.PackageCore+"/kind" {
 			additive = false
 		}
+		// A new kind that names another in movedFrom is a rename, which a
+		// published package may not make (decision 0269): never additive,
+		// whether or not a repository holds the kind it names.
+		if _, ok := before[key]; !ok && mstr(mmap(doc, "data"), "movedFrom") != "" {
+			additive = false
+		}
 	}
 	return narrows, additive && !narrows
 }
@@ -242,9 +289,14 @@ func closureMembers(b *Bundle) map[string]map[string]any {
 		for k, v := range d {
 			copyDoc[k] = v
 		}
+		// A retention is compared apart, by what each kind keeps rather than
+		// by its spelling or by where it is stated (the plan's
+		// RetentionShortens): a key added, changed or removed is no change of
+		// its own, and history kept for less time needs review however it
+		// came about.
 		data := map[string]any{}
 		for k, v := range mmap(d, "data") {
-			if k != "version" {
+			if k != "version" && k != "retention" {
 				data[k] = v
 			}
 		}

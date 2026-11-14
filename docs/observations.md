@@ -299,10 +299,10 @@ because what the read drops reveals what the links hold.
 ## Writing an observation by hand
 
 The `observation` kind is seeded, and the `health/body_mass` metric ships
-with the `health` catalogue, so install that first:
+with the `health` catalogue, so add that first:
 
 ```bash
-bin/substratectl install substrate.reamde.dev/health
+bin/substratectl add substrate.reamde.dev/health
 ```
 
 A weighing entered by hand:
@@ -488,15 +488,15 @@ a rewrite that changes no point writes nothing.
 Three first-party packages under `substrate.reamde.dev` each ship one
 domain's shared metrics, kinds, units and functions
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-They are not seeded: the catalog serves them, and a repository installs one
-when it wants it, through the door a provider takes
-(`bin/substratectl install substrate.reamde.dev/labs`, or
-`POST /api/v1/catalog/{id}/install`). Like a provider, each lands under the
+They are not seeded: the catalog serves them, and a repository adds one
+when it wants it, through the route a provider takes
+(`bin/substratectl add substrate.reamde.dev/labs`, or
+`POST /api/v1/catalog/{id}/add`). Like a provider, each lands under the
 authority that publishes it, is published (you write its records, never its
 declarations) and upgrades from the catalog
-([the two doors](bundles.md#the-two-doors)). An install first installs every
+([adding a package](bundles.md#adding-a-package)). Adding one first adds every
 published package the bundle requires and the repository lacks, so
-installing `labs`, or the Apple Health or WHOOP provider, installs `health`.
+adding `labs`, or the Apple Health or WHOOP provider, adds `health`.
 
 | Package | Ships |
 | --- | --- |
@@ -769,16 +769,16 @@ provider sent it, which keeps a later re-read of the provider honest.
 
 Before [decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)
 these kinds shipped as the samples `observations`, `health`, `healthapple`
-and `healthwhoop`. A repository that imported them holds its rows under its
-own authority (`ada.example.com/observations/observation`), and nothing
+and `healthwhoop`. A repository that copied them holds its rows in its
+local namespace (`~/observations/observation`), and nothing
 moves them to the first-party kinds. The move, by hand:
 
 1. Take a recovery export, `bin/substratectl export > before.tar`.
 2. Disable the old `healthapple`, `healthwhoop` and `health` packages, so
    nothing writes the old kinds: `bin/substratectl bundle disable
-   ada.example.com/healthwhoop`, and the same for the others.
-3. Install the providers again, which upgrades them (`bin/substratectl
-   install providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
+   '~/healthwhoop'`, and the same for the others.
+3. Add the providers again, which upgrades them (`bin/substratectl
+   add providers.substrate.reamde.dev/whoop`, `…/applehealth`), and,
    for lab results, `substrate.reamde.dev/labs`. Each brings `health`. The
    upgrade creates the provider's adapter trigger, which starts at the changelog's
    start, so every mirror row the repository holds is converted into the
@@ -797,7 +797,7 @@ moves them to the first-party kinds. The move, by hand:
    purge the old observations, traces and lab results first (`delete
    --purge`), then purge (`bundle purge --yes`) and uninstall each old
    package, the adapters before `health` and `health` before `observations`.
-   The old record views (`ada.example.com/health/sleep` and the rest) are
+   The old record views (`~/health/sleep` and the rest) are
    records of the console's `recordview` kind, which no purge of those
    packages reaches: delete them.
 
@@ -877,8 +877,8 @@ A kind that starts or stops binding `observed` has every row derived again by th
 the commit that changed it, the one that re-derives the search index
 ([operations](operations.md#upgrading-the-binary)). A metric record whose
 `rollups` change has the rows of its streams derived again by the same
-pass. `repository rebuild` and the boot import of a repository directory
-clear the tables and queue every observed kind for the pass instead of
+pass. `repository rebuild` and the boot's import of a history from an
+archive or a 0.x directory clear the tables and queue every observed kind for the pass instead of
 deriving inside the replay, so the replay holds the repository's write lock
 for the records alone; `repository reindex --observed` queues the same work
 on a running index ([operations](operations.md#operator-recovery)). While

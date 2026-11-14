@@ -16,9 +16,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/blobbytes"
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -43,6 +43,10 @@ import (
 // (internal/config: DATABASE_URL). substratectl reads the same variable so that an
 // operator on the box needs no second configuration.
 const dsnEnv = "DATABASE_URL"
+
+// dataRootEnv names the data root the server keeps every repository's
+// directory under (internal/config: SUBSTRATE_DATA_ROOT).
+const dataRootEnv = "SUBSTRATE_DATA_ROOT"
 
 // credentialKeyEnv seals the sealed store. `user reset` WRITES sealed material,
 // so substratectl must hold the same key the server runs with or the new rows land
@@ -85,20 +89,35 @@ func (a *app) openEngineExclusive(ctx context.Context) (engine.Operator, error) 
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv), false)
 }
 
-// openEngineWrite opens the substrate engine for a command that WRITES sealed
-// material (user reset). The credential key is REQUIRED, with no escape: a
-// keyless engine would store the password hash and the TOTP seed under a
-// plain-marked DEK wrap the server later accepts. The refusal is here, before
-// a password is typed, rather than at the write. Like openEngineExclusive it
-// needs the server stopped.
+// openEngineWrite opens the substrate engine for a command that must open
+// every sealed file under the key (repository snapshot). The credential key is
+// REQUIRED, with no escape. Like openEngineExclusive it needs the server
+// stopped.
 func (a *app) openEngineWrite(ctx context.Context) (engine.Operator, error) {
 	credKey := os.Getenv(credentialKeyEnv)
 	if credKey == "" {
 		return nil, fmt.Errorf(
-			"refusing to reset: set %s to the key the server runs with. The reset writes sealed material, and without the key it would land under a plain-marked wrap",
+			"refusing: set %s to the key the server runs with; this command opens sealed material under it",
 			credentialKeyEnv)
 	}
 	return a.openEngineWithKey(ctx, credKey, false)
+}
+
+// openEngineSignIn opens the substrate engine for the write that touches no
+// repository, a person's sign-in (user reset, decision 0274): beside a
+// running server, as openEngineReadOnly does, since no directory is written.
+// The credential key is REQUIRED, with no escape: the new password hash and
+// seed are sealed under it, and a keyless engine would seal them under a
+// plain-marked wrap the server later accepts. The refusal is here, before a
+// password is typed, rather than at the write.
+func (a *app) openEngineSignIn(ctx context.Context) (engine.Operator, error) {
+	credKey := os.Getenv(credentialKeyEnv)
+	if credKey == "" {
+		return nil, fmt.Errorf(
+			"refusing to reset: set %s to the key the server runs with. The reset seals the new factors under it, and without the key they would land under a plain-marked wrap",
+			credentialKeyEnv)
+	}
+	return a.openEngineWithKey(ctx, credKey, true)
 }
 
 // openEngineWithKey is the shared opener the three hats route through.
@@ -124,24 +143,46 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string, readOnly bo
 		return nil, err
 	}
 	// The blob store the server runs with, off the same data root:
-	// `repository verify` reads every stored blob's bytes and `repository
-	// snapshot` copies them.
+	// `repository verify` reads every stored blob's bytes.
 	store, err := blobbytes.NewFS(data.Root)
+	if err != nil {
+		return nil, err
+	}
+	// The archive the server writes, from the same variables: `repository
+	// verify` holds it to the table, and a command that opens as the
+	// repositories' writer restores from it as the server's boot does. An
+	// operator process runs no archive pass.
+	archived, err := config.LoadArchive()
+	if err != nil {
+		return nil, err
+	}
+	archiveStore, err := archived.Store(data.Root)
 	if err != nil {
 		return nil, err
 	}
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr, plus the progress
-	// lines a long walk (verify, rebuild, snapshot) prints every thirty
+	// lines a long walk (verify, rebuild) prints every thirty
 	// seconds, which are what tells the person waiting that it is moving.
 	log := slog.New(operatorHandler{slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelInfo})})
 	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
 		engine.WithDataRoot(data.Root),
-		engine.WithChangelogSegmentBytes(data.ChangelogSegmentBytes),
 		engine.WithCredentialKey(credKey),
 		engine.WithBlobStore(store),
 		engine.WithLogger(log),
+	}
+	opts = append(opts, engine.WithArchive(archiveStore))
+	// The repositories the operator accepted restoring without their secrets,
+	// read as the server reads them: a command that opens as the writer
+	// restores and takes archives as the server's start does, and a listing
+	// the server honors must not be refused here.
+	listed, err := config.LoadImportWithoutSecrets()
+	if err != nil {
+		return nil, err
+	}
+	if len(listed) > 0 {
+		opts = append(opts, engine.WithImportWithoutSecrets(listed...))
 	}
 	if readOnly {
 		opts = append(opts, engine.WithDirectoryReadOnly())
@@ -173,17 +214,15 @@ func (h operatorHandler) WithGroup(name string) slog.Handler {
 	return operatorHandler{h.Handler.WithGroup(name)}
 }
 
-// lockHint says what a writer-lock refusal means to the person at the
+// lockHint says what a writer-lease refusal means to the person at the
 // terminal: the server is running, and this command needs it stopped, while
-// the read-only commands do not. Two refusals say it — the data root's flock
-// (changelogfile.ErrLocked) and the database's writer lease
-// (engine.ErrRepositoryHasAnotherWriter), which is the one a command run
-// against a data root of its own meets.
+// the read-only commands do not. The database's writer lease
+// (engine.ErrRepositoryHasAnotherWriter) is the one exclusion left.
 func lockHint(err error) error {
-	if err == nil || !(errors.Is(err, changelogfile.ErrLocked) || errors.Is(err, engine.ErrRepositoryHasAnotherWriter)) {
+	if err == nil || !errors.Is(err, engine.ErrRepositoryHasAnotherWriter) {
 		return err
 	}
-	return fmt.Errorf("%w\n(a server is running against this data root: `repository inspect` and `repository verify` run beside it; `repository rebuild`, `repository rotate-generation`, `repository snapshot`, `repository rewrap` and `user reset` need it stopped first)", err)
+	return fmt.Errorf("%w\n(a server is running against this database: `repository inspect` and `repository verify` run beside it; `repository rebuild` and `repository rotate-generation` need it stopped first)", err)
 }
 
 // controlPlane opens a plain connection for the ONE control-plane table
@@ -213,20 +252,36 @@ type repositoryRow struct {
 	DEKKeyID  string
 	HasDEK    bool
 	PlainWrap bool
+	// ArchivedSeq, ArchivedAt and ArchiveStore are the mark the server's
+	// last archive pass left on the row (decision 0262): the seq its archive
+	// holds every line up to, when, and in which store. ArchivedAt is zero
+	// before the first pass. ArchiveMissing is how many blobs the records at
+	// that seq hold whose bytes the archive lacks, because the server had
+	// lost them.
+	ArchivedSeq    int64
+	ArchivedAt     time.Time
+	ArchiveStore   string
+	ArchiveMissing int
 }
 
 // repositoryRowColumns is the column list scanRepositoryRow reads, in order.
 // The wrap's first byte is its framing; 112 is 'p', the plain marker.
 const repositoryRowColumns = `id, authority, created_at, dek_key_id,
-	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112`
+	dek IS NOT NULL, dek IS NOT NULL AND get_byte(dek, 0) = 112,
+	archived_seq, archived_at, archive_store, archive_missing`
 
 func scanRepositoryRow(scan func(dest ...any) error) (repositoryRow, error) {
 	var r repositoryRow
-	var keyID sql.NullString
-	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap); err != nil {
+	var keyID, store sql.NullString
+	var archivedAt sql.NullTime
+	if err := scan(&r.ID, &r.Authority, &r.CreatedAt, &keyID, &r.HasDEK, &r.PlainWrap,
+		&r.ArchivedSeq, &archivedAt, &store, &r.ArchiveMissing); err != nil {
 		return repositoryRow{}, err
 	}
-	r.DEKKeyID = keyID.String
+	r.DEKKeyID, r.ArchiveStore = keyID.String, store.String
+	if archivedAt.Valid {
+		r.ArchivedAt = archivedAt.Time.UTC()
+	}
 	r.CreatedAt = r.CreatedAt.UTC()
 	return r, nil
 }
@@ -249,9 +304,41 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 	return out, rows.Err()
 }
 
+// repositorySignIns are the names of the people who may open each repository,
+// by repository id.
+func repositorySignIns(ctx context.Context, db *sql.DB) (map[string][]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT l.repository_id, i.name FROM identity_repositories l
+		JOIN identities i ON i.id = l.identity ORDER BY i.name`)
+	if err != nil {
+		return nil, controlPlaneError(err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string][]string{}
+	for rows.Next() {
+		var repository, name string
+		if err := rows.Scan(&repository, &name); err != nil {
+			return nil, err
+		}
+		out[repository] = append(out[repository], name)
+	}
+	return out, rows.Err()
+}
+
+// repositoryRowByID finds a repository by its id or by a name it answers to,
+// current or former (engine.RepositoryIDByName), which never look alike: an
+// id holds no dot (decision 0261).
 func repositoryRowByID(ctx context.Context, db *sql.DB, repository string) (repositoryRow, error) {
+	id := repository
+	if !vocabulary.ValidRepositoryID(repository) {
+		var err error
+		if id, err = engine.RepositoryIDByName(ctx, db, repository); errors.Is(err, substrate.ErrNotFound) {
+			return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
+		} else if err != nil {
+			return repositoryRow{}, controlPlaneError(err)
+		}
+	}
 	r, err := scanRepositoryRow(db.QueryRowContext(ctx,
-		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1`, repository).Scan)
+		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
 	}

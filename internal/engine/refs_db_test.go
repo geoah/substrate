@@ -458,7 +458,6 @@ func TestABatchWritesAgainstItsOwnCandidate(t *testing.T) {
 	)
 	closure := []map[string]any{
 		vocabulary.PackageManifest(candPackage, 0),
-		vocabulary.ActorManifest(candPackage, vocabulary.PackageActor(candPackage)),
 		vocabulary.BundleManifest(candPackage, map[string]any{
 			"description": "a closure whose data documents are held to its own candidate",
 			"installs": []any{
@@ -528,41 +527,4 @@ def main(input, host):
 		t.Fatalf("the mapping did not carry the name onto the minted subject: %v", got)
 	}
 	mustGet(t, ds, trigger, "on-widget")
-}
-
-// The tier of an actor the closure declares holds on the FIRST install. inTx
-// resolves the transaction's tier against the live registry before the batch
-// sets its candidate, so a closure installed under its own declared actor
-// wrote manager rows at the reserved-actor default (machine) until a
-// re-install; the apply now re-resolves the tier against the candidate.
-func TestAClosureActorsDeclaredTierHoldsOnFirstInstall(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	_, ds := newCoreDataset(t)
-	const (
-		pkg    = "keeper.example.substrate.reamde.dev/keeper"
-		widget = pkg + "/widget"
-		keeper = substrate.Actor("connector:keeper")
-	)
-	actorDoc := vocabulary.ActorManifest(pkg, string(keeper))
-	actorDoc["data"].(map[string]any)["tier"] = string(substrate.TierOwner)
-	closure := []map[string]any{
-		vocabulary.PackageManifest(pkg, 0),
-		actorDoc,
-		vocabulary.KindManifest(pkg,
-			map[string]any{"singular": "widget"},
-			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-	}
-	if _, err := ds.InstallBundleClosure(ctx, keeper, closure, []substrate.PutInput{
-		{Kind: widget, ID: fid("w1"), Properties: map[string]any{"name": "kept"}},
-	}, substrate.BundleInstall{}); err != nil {
-		t.Fatalf("install under the declared actor: %v", err)
-	}
-	m, ok := mustGet(t, ds, widget, fid("w1")).PropertyMeta["name"]
-	if !ok {
-		t.Fatal("the installed record carries no propertyMeta for name")
-	}
-	if m.Manager != string(keeper) || m.Tier != substrate.TierOwner {
-		t.Fatalf("name manager = %q at %q, want %q at %q on the first install", m.Manager, m.Tier, keeper, substrate.TierOwner)
-	}
 }

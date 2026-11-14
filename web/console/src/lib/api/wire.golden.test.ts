@@ -112,6 +112,12 @@ import type {
   BlobInfo,
   DomainCheck,
   DomainProof,
+  PublishInput,
+  PublishPlan,
+  Release,
+  ReleaseInput,
+  ReleasePlan,
+  Releases,
   SiteInfo,
   OperatorDefaults,
   OperatorInfo,
@@ -120,6 +126,7 @@ import type {
   OperatorDefault,
   BundleClosure,
   BundlePurged,
+  BundleFeature,
   BundleStatus,
   BundleUninstalled,
   BundleUpgrade,
@@ -146,6 +153,8 @@ import type {
   InputStatus,
   KindInfo,
   KindLabel,
+  KindRetention,
+  RetentionChange,
   LinkedRecord,
   MintedToken,
   OAuthStarted,
@@ -153,15 +162,21 @@ import type {
   OperationalList,
   Page,
   ProblemDetail,
+  MarkInput,
   PropertyAlternative,
   PropertyChange,
-  PropertyMeta,
+  PropertyMark,
   PutInput,
   RankedPage,
   RecordFilter,
+  RecordLink,
   ReferenceSite,
   Referencing,
   SessionCredential,
+  IdentityInfo,
+  RepositoryChoice,
+  RepositoryNames,
+  FormerName,
   SetupItem,
   ShippedRecord,
   Scores,
@@ -208,6 +223,7 @@ const errorPayload: Shape<ErrorPayload> = {
   problemDetails: false,
   head: false,
   generation: false,
+  repositories: false,
 }
 
 const problemDetail: Shape<ProblemDetail> = {
@@ -229,7 +245,7 @@ const substrateRecord: Shape<SubstrateRecord> = {
   updatedAt: true,
   deletedAt: false,
   finalizers: false,
-  propertyMeta: false,
+  marks: false,
   linkedFrom: false,
   computed: false,
 }
@@ -255,19 +271,29 @@ const referenceSite: Shape<ReferenceSite> = {
   path: false,
 }
 
-const propertyMeta: Shape<PropertyMeta> = {
-  manager: false,
-  tier: false,
-  updatedAt: false,
-  source: false,
+const propertyMark: Shape<PropertyMark> = {
+  pinned: false,
+  setBy: false,
+  onBehalfOf: false,
+  derivedFrom: false,
+  setAt: false,
   alternatives: false,
 }
 
 const propertyAlternative: Shape<PropertyAlternative> = {
-  actor: true,
+  derivedFrom: false,
   value: true,
   updatedAt: true,
-  source: false,
+}
+
+const recordLink: Shape<RecordLink> = {
+  ref: true,
+}
+
+/** The pin and release body. */
+const markInput: Shape<MarkInput> = {
+  properties: true,
+  ifVersion: false,
 }
 
 /** PutInput carries `kind`: `POST /records` reads it to place the record, and
@@ -328,11 +354,26 @@ const kindInfo: Shape<KindInfo> = {
   description: true,
   label: false,
   definition: true,
+  control: false,
 }
 
 const kindLabel: Shape<KindLabel> = {
   singular: true,
   plural: true,
+}
+
+const kindRetention: Shape<KindRetention> = {
+  kind: true,
+  declared: false,
+  override: false,
+  overrideId: false,
+  effective: true,
+}
+
+const retentionChange: Shape<RetentionChange> = {
+  kind: true,
+  from: true,
+  to: true,
 }
 
 const blobInfo: Shape<BlobInfo> = {
@@ -355,6 +396,52 @@ const domainCheck: Shape<DomainCheck> = {
   verifiedAt: false,
   reason: false,
 }
+
+/** Publishing one of the repository's own packages (publish.ts). */
+const publishInput: Shape<PublishInput> = {
+  package: true,
+  authority: true,
+  confirm: false,
+}
+
+const publishPlan: Shape<PublishPlan> = {
+  package: true,
+  published: true,
+  kinds: true,
+  packages: true,
+  records: true,
+  references: true,
+  blockers: true,
+  texts: true,
+  name: true,
+  record: true,
+  documentURL: true,
+  proven: true,
+  reason: false,
+  release: false,
+}
+
+const releaseInput: Shape<ReleaseInput> = { package: true, confirm: false }
+
+const releasePlan: Shape<ReleasePlan> = {
+  package: true,
+  version: true,
+  previous: true,
+  sha256: true,
+  declarations: true,
+  blockers: true,
+  release: false,
+}
+
+const release: Shape<Release> = {
+  package: true,
+  version: true,
+  sha256: true,
+  dialect: false,
+  releasedAt: true,
+}
+
+const releases: Shape<Releases> = { items: true }
 
 const siteInfo: Shape<SiteInfo> = {
   name: true,
@@ -403,6 +490,8 @@ const change: Shape<Change> = {
   seq: true,
   ts: true,
   actor: true,
+  onBehalfOf: false,
+  token: false,
   op: true,
   recordId: true,
   kind: true,
@@ -417,6 +506,7 @@ const affectedRecord: Shape<AffectedRecord> = {
   id: true,
   version: false,
   deleted: false,
+  state: false,
   properties: false,
 }
 
@@ -461,7 +551,8 @@ const changeRun: Shape<ChangeRun> = {
   oldestSeq: true,
   newestTs: true,
   oldestTs: true,
-  principalName: false,
+  token: false,
+  tokenName: false,
 }
 
 const changeRunPage: Shape<ChangeRunPage> = {
@@ -680,6 +771,7 @@ const tokenInfo: Shape<TokenInfo> = {
   appSoftwareVersion: false,
   appCheckedAt: false,
   appAddons: false,
+  identity: false,
 }
 
 const appAddon: Shape<AppAddon> = {
@@ -716,7 +808,7 @@ const authorizationApp: Shape<AuthorizationApp> = {
   name: false,
   uri: false,
   uriHostDiffers: false,
-  actor: true,
+  appearsAs: true,
   verified: true,
   publisher: true,
 }
@@ -801,7 +893,7 @@ const authorizationPackage: Shape<AuthorizationPackage> = {
   settings: false,
   id: true,
   description: false,
-  tier: false,
+  keptBy: false,
   required: true,
   held: false,
   shipped: false,
@@ -819,6 +911,7 @@ const authorizationPackagePublisher: Shape<AuthorizationPackagePublisher> = {
   documentUrl: true,
   fromFile: false,
   digest: false,
+  movedTo: false,
 }
 
 const authorizationPackageStep: Shape<AuthorizationPackageStep> = {
@@ -924,6 +1017,21 @@ const mintedToken: Shape<MintedToken> = {
   token: true,
   secret: true,
   repository: false,
+  identity: false,
+}
+
+/** A person (`GET /identity`) and a repository they may open. */
+const identityInfo: Shape<IdentityInfo> = {
+  id: true,
+  name: true,
+  secondFactor: true,
+  repositories: true,
+}
+
+const repositoryChoice: Shape<RepositoryChoice> = {
+  id: true,
+  name: true,
+  roles: false,
 }
 
 const totpEnrollment: Shape<TOTPEnrollment> = {
@@ -932,33 +1040,42 @@ const totpEnrollment: Shape<TOTPEnrollment> = {
 }
 
 /** Registration (auth.ts): the request the door decodes and its answer, which
- * is the mint plus the repository and the recovery material. */
+ * is the mint with the repository it created. */
 const registerInput: Shape<RegisterInput> = {
   inviteCode: true,
-  repository: true,
+  identity: true,
+  repository: false,
   password: true,
   totpSecret: true,
   totpCode: true,
   skipTotp: false,
   label: false,
-  recoveryPublicKey: false,
 }
 
-/** Login (auth.ts): the repository, the two factors and the token label. */
+/** Login (auth.ts): the person, the repository they pick, the two factors
+ * and the token label. */
 const loginRequest: Shape<LoginRequest> = {
-  repository: true,
+  identity: true,
+  repository: false,
   password: true,
   totpCode: true,
   label: false,
 }
 
-const sessionCredential: Shape<SessionCredential> = { repository: true }
-
-const registerResult: Shape<RegisterResult> = {
-  ...mintedToken,
-  recoveryKey: false,
-  recoveryPublicKey: false,
+const sessionCredential: Shape<SessionCredential> = {
+  identity: true,
+  signedOut: false,
 }
+
+const formerName: Shape<FormerName> = { name: true, until: true }
+
+const repositoryNames: Shape<RepositoryNames> = {
+  id: true,
+  name: true,
+  formerNames: true,
+}
+
+const registerResult: Shape<RegisterResult> = mintedToken
 
 /** The agent chat stream (agents.ts). */
 const agentResult: Shape<AgentResult> = {
@@ -1006,6 +1123,7 @@ const agentEvent: Shape<AgentEvent> = {
   covered: false,
   result: false,
   error: false,
+  code: false,
   turn: false,
   status: false,
   job: false,
@@ -1021,7 +1139,7 @@ const catalogBundle: Shape<CatalogBundle> = {
   package: true,
   description: true,
   version: true,
-  tier: true,
+  keptBy: true,
   provider: false,
   brings: false,
   addonFor: false,
@@ -1088,6 +1206,7 @@ const bundleStatus: Shape<BundleStatus> = {
   enabled: true,
   inputs: false,
   setup: false,
+  features: false,
   accounts: true,
   functions: true,
   kinds: true,
@@ -1101,6 +1220,12 @@ const bundleStatus: Shape<BundleStatus> = {
   shippedVersion: false,
   provider: false,
   addonFor: false,
+}
+
+const bundleFeature: Shape<BundleFeature> = {
+  toggle: true,
+  scopes: true,
+  access: true,
 }
 
 const inputStatus: Shape<InputStatus> = {
@@ -1158,6 +1283,7 @@ const bundleUpgrade: Shape<BundleUpgrade> = {
   holders: false,
   reviewRequired: false,
   codeChanges: false,
+  retentionShortens: false,
   candidateVersion: false,
   candidateDigest: false,
   ...conversionPlan,
@@ -1417,17 +1543,27 @@ const mirrors: Record<string, Record<string, boolean>> = {
   LinkedRecord: linkedRecord,
   Referencing: referencing,
   ReferenceSite: referenceSite,
-  PropertyMeta: propertyMeta,
+  PropertyMark: propertyMark,
   PropertyAlternative: propertyAlternative,
+  RecordLink: recordLink,
+  MarkInput: markInput,
   PutInput: putInput,
   RecordPatch: recordPatch,
   Cond: cond,
   RecordFilter: recordFilter,
   KindInfo: kindInfo,
   KindLabel: kindLabel,
+  KindRetention: kindRetention,
+  RetentionChange: retentionChange,
   BlobInfo: blobInfo,
   DomainProof: domainProof,
   DomainCheck: domainCheck,
+  PublishInput: publishInput,
+  PublishPlan: publishPlan,
+  ReleaseInput: releaseInput,
+  ReleasePlan: releasePlan,
+  Release: release,
+  Releases: releases,
   SiteInfo: siteInfo,
   OperatorDefaults: operatorDefaults,
   OperatorInfo: operatorInfo,
@@ -1539,6 +1675,10 @@ const mirrors: Record<string, Record<string, boolean>> = {
   RegisterResult: registerResult,
   LoginRequest: loginRequest,
   SessionCredential: sessionCredential,
+  IdentityInfo: identityInfo,
+  RepositoryChoice: repositoryChoice,
+  RepositoryNames: repositoryNames,
+  FormerName: formerName,
   AgentResult: agentResult,
   AgentMention: agentMention,
   AgentEvent: agentEvent,
@@ -1550,6 +1690,7 @@ const mirrors: Record<string, Record<string, boolean>> = {
   ShippedRecord: shippedRecord,
   SuggestedMapping: suggestedMapping,
   BundleStatus: bundleStatus,
+  BundleFeature: bundleFeature,
   InputStatus: inputStatus,
   SetupItem: setupItem,
   BundleUpgrade: bundleUpgrade,
@@ -1596,9 +1737,12 @@ const mirrors: Record<string, Record<string, boolean>> = {
  * struct in `internal/substrate`, each with the reason. Everything else they
  * export must be in the golden. */
 const notOnTheWire: Record<string, string> = {
+  // actors.ts
+  ActorInfo:
+    "the console's reading of one actor record, built from a record's properties; the record itself is the SubstrateRecord the golden pins",
   // types.ts
   BundleInstallRequest:
-    "the body of the catalog's install and import doors, declared in internal/api (catalogTakeRequest) and out of the golden's reach",
+    "the body of the catalog's add route, declared in internal/api (catalogAddRequest) and out of the golden's reach",
   EnumValue:
     "one element of a property declaration's `values`, declared in internal/vocabulary and out of the golden's reach",
   // discovery.ts
@@ -1624,10 +1768,11 @@ const notOnTheWire: Record<string, string> = {
   InteractionNotice: "a view the console folds from llm/message records",
   DeliveryNotice: "a view the console folds from llm/message records",
   JobNotice: "a view the console folds from llm/message records",
+  ApprovalNotice: "a view the console folds from llm/message records",
+  ApprovalView: "a view the console folds from an llm/approval record",
+  ApprovalArgument: "one argument of an llm/approval, folded for the card",
   LiveOverlay: "the chat stream's events folded client-side, never serialized",
   // actors.ts
-  ActorMirrors: "client-side actor resolution state",
-  ResolvedActor: "client-side actor resolution state",
   // bundles.ts
   TraitRecords: "a bounded read's result the console derives from a Page",
   // changes.ts

@@ -1,7 +1,8 @@
 ---
-status: proposed
-date: 2026-11-02
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0231
 ---
 
 # 0211. The console groups collections by package

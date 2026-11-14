@@ -1,4 +1,5 @@
 import { ActorRef } from "@/components/identity/actor-ref"
+import { isSystemActor } from "@/lib/actor-directory"
 import type { ChangeRow } from "@/lib/api/types"
 import { changeSources } from "@/lib/changelog"
 
@@ -6,7 +7,7 @@ export function ChangeActor({ row }: { row: ChangeRow }) {
   const sources = changeSources(row)
   const initiated = row.payload?.triggeredBy
   const mapped = row.payload?.mechanism === "mapping" || sources.length > 0
-  if (row.actor !== "substrate") return <ActorRef actor={row.actor} />
+  if (!isSystemActor(row.actor)) return <ActorRef actor={row.actor} />
   if (!mapped)
     return (
       <div className="space-y-1">

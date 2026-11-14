@@ -48,7 +48,7 @@ func TestResumeNeverWithholdsTheContinuation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-stoic"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestResumeNeverWithholdsTheContinuation(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -83,7 +83,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-selfish"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 	}
 	// The request names run 1's thread, exactly as a propose from that thread
 	// would have stamped it.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: "req-self",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
@@ -130,7 +130,7 @@ func TestSettleRecheckConsumesMidTurnResolutions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-mid"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestSettleRecheckConsumesMidTurnResolutions(t *testing.T) {
 	}()
 	<-arrived
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -188,7 +188,7 @@ func TestSweepResumesDroppedResolutions(t *testing.T) {
 	// A resolution row lands AFTER the thread settled, with no resume — the
 	// restart-drop shape. The sweep is what finds it.
 	env, _ := json.Marshal(map[string]any{"event": "recordResolved", "record": "x/y/z", "state": "done"})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeMessage,
 		Properties: map[string]any{
 			"role": msgRoleSystem, "content": string(env), "turn": 99, "thread": res.Thread,
@@ -224,7 +224,7 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-moved"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -241,13 +241,13 @@ func TestConflictedAcceptReportsBack(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	// The target moves under the pending request, so the accept's CAS fails.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewPackage+"/widget", fid("w-moved"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, crewPackage+"/widget", fid("w-moved"), substrate.PatchInput{
 		Properties: map[string]any{"name": "owner-took-it"},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err == nil {
 		t.Fatal("a stale accept landed")

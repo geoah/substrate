@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/changelogfile"
@@ -28,7 +30,7 @@ import (
 //	refs               the reverse projection of the records' reference values,
 //	                   re-derived by the same record effect that produces them
 //	annotations        written by the same entries
-//	property_managers  ditto — who last had a write accepted, per property
+//	property_marks     ditto — each property's mark (decision 0284)
 //	former_ids         ditto — merge's trail
 //	trigger_cursors, trigger_schedule, trigger_failures, paged_cursors
 //	                   the delivery ledger (delivery.go): every motion is an
@@ -75,11 +77,12 @@ import (
 //
 //   - sealed, A SIDE STORE: its payloads were never in the changelog and
 //     cannot be regenerated from it; the changelog only re-links the references.
-//     This is why the repository directory holds them beside the segments
-//     (repodir.go), as it holds the blob bytes.
+//     This is why the archive holds them beside the pieces (archive.go), as it
+//     holds the blob bytes.
 //   - embeddings, embed_queue — DERIVED FROM THE RECORDS, not from the changelog,
 //     and expensive: the vectors of a reproduced row are still that row's, so
-//     they are kept rather than re-bought from the provider.
+//     they are kept rather than re-bought from the provider. Those of a
+//     record the replay left no row of go (dropOrphanVectors).
 //   - oauth_flows, RUNTIME STATE: a consent flow in flight is a nonce and a
 //     PKCE verifier with an expiry, which has no meaning in the changelog; an
 //     interrupted flow is started again.
@@ -123,29 +126,173 @@ type RebuildReport struct {
 // the delivery ledger's four (delivery.go). Nothing here is referenced by
 // anything else.
 var foldTables = append([]string{
-	"refs", "former_ids", "annotations", "property_managers", "records",
+	"refs", "former_ids", "annotations", "property_marks", "records",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest",
 	"unit_graph", "unit_uses",
 }, deliveryTables...)
+
+// planEveryStatement has the transaction plan each statement against the
+// tables as they stand when it runs (plan_cache_mode = force_custom_plan, for
+// this transaction only). A transaction that replays a history, or fills fold
+// tables wholesale, runs the same few prepared statements once a line, and
+// Postgres keeps a generic plan after a statement's fifth execution. One made
+// while a table was still empty, as every fold table is at the start of an
+// import, is a scan of the whole table, and nothing the transaction does
+// invalidates it: its own rows are invisible to autovacuum. Held to such a
+// plan, each line read every row the replay had written, and the replay was
+// quadratic in the history. Planned each time, a statement costs the same at
+// line N as at line 1, up to the depth of an index; the planning costs a
+// fraction of a millisecond.
+func (t *txn) planEveryStatement() error {
+	_, err := t.exec(`SET LOCAL plan_cache_mode = force_custom_plan`)
+	return err
+}
+
+// emptyStatisticsPages is the fewest pages a fold table or one of its
+// indexes holds before statistics that call it empty are reset before a
+// replay (resetEmptyStatistics).
+const emptyStatisticsPages = 8
+
+// statisticsLockTimeout bounds how long the reset before a replay and the
+// ANALYZE after it wait for a table's lock: an autovacuum gives way within
+// seconds, and a holder that does not is not the start's to wait for.
+const statisticsLockTimeout = 10 * time.Minute
+
+// resetEmptyStatistics vacuums and analyzes, before a replay's transaction
+// begins, every fold table that holds pages while its statistics, or one of
+// its indexes', say it holds no rows (reltuples <= 0: analyzed while empty,
+// or never analyzed). The planner believes such a relation empty: every index
+// narrowed by `repository` alone then prices as a one-row probe, and a key
+// lookup may take one that walks every entry it holds, dead ones included
+// (issue 1393). The engine leaves two such states behind itself: a build
+// from before one-transaction refolds that committed the first of its two
+// replays (a fold table emptied over the pages its old rows still fill), and
+// a kind's own index, built empty when the kind was declared and filled since
+// without an ANALYZE.
+//
+// Speed is what it protects, not the fold, so nothing it meets stops a
+// replay: it says what it is about to do before it waits, its wait for a
+// table's lock is bounded (statisticsStatement), and a reset that could not
+// run is a warning naming the table and the command to run by hand, after
+// which the replay goes ahead. A table this process has reset is not reset
+// again by it; one that still reads as empty after its reset is empty, and
+// is said so once.
+func (s *service) resetEmptyStatistics(ctx context.Context, repository string) {
+	rows, err := s.admin.QueryContext(ctx, `
+		SELECT DISTINCT t.relname, r.relname, r.reltuples, pg_relation_size(r.oid) / current_setting('block_size')::int
+		FROM pg_class t
+		LEFT JOIN pg_index i ON i.indrelid = t.oid
+		JOIN pg_class r ON r.oid = t.oid OR r.oid = i.indexrelid
+		WHERE t.relnamespace = current_schema()::regnamespace AND t.relkind = 'r'
+			AND t.relname = ANY (string_to_array($1, ','))
+			AND pg_relation_size(r.oid) / current_setting('block_size')::int >= $2
+			AND r.reltuples <= 0`,
+		strings.Join(foldTables, ","), emptyStatisticsPages)
+	if err != nil {
+		s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+			"repository", repository, "err", err)
+		return
+	}
+	type relation struct {
+		table, name string
+		tuples      float64
+		pages       int64
+	}
+	var empty []relation
+	for rows.Next() {
+		var r relation
+		if err := rows.Scan(&r.table, &r.name, &r.tuples, &r.pages); err != nil {
+			_ = rows.Close()
+			s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+				"repository", repository, "err", err)
+			return
+		}
+		empty = append(empty, r)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		s.log.Warn("substrate: could not read the fold tables' statistics before a replay; the replay goes ahead and may be slow",
+			"repository", repository, "err", err)
+		return
+	}
+	for _, r := range empty {
+		s.statsMu.Lock()
+		done := s.statsReset[r.table]
+		s.statsReset[r.table] = true
+		s.statsMu.Unlock()
+		if done {
+			continue
+		}
+		s.log.Info("substrate: vacuuming a fold table whose statistics say it is empty before a replay; the replay waits for it",
+			"repository", repository, "table", r.table, "relation", r.name, "rows", r.tuples, "pages", r.pages)
+		began := time.Now()
+		if err := s.statisticsStatement(ctx, `VACUUM (ANALYZE) `+r.table); err != nil {
+			s.log.Warn("substrate: could not vacuum a fold table whose statistics say it is empty; the replay goes ahead and may be slow, "+
+				"so run the command once the table is free and the next replay is not",
+				"repository", repository, "table", r.table, "command", "VACUUM (ANALYZE) "+r.table, "err", err)
+			continue
+		}
+		s.log.Info("substrate: vacuumed a fold table whose statistics said it was empty before a replay",
+			"repository", repository, "table", r.table, "took", time.Since(began).Round(time.Millisecond))
+		var tuples float64
+		if err := s.admin.QueryRowContext(ctx, `SELECT reltuples FROM pg_class WHERE oid = $1::regclass`, r.name).Scan(&tuples); err == nil && tuples <= 0 {
+			s.log.Info("substrate: a fold table's statistics still say it is empty after its vacuum: it is",
+				"repository", repository, "table", r.table, "relation", r.name)
+		}
+	}
+}
+
+// statisticsStatement runs one VACUUM or ANALYZE as the engine's own user,
+// which owns the tables, on a connection of its own, its wait for a table's
+// lock bounded by the service's statisticsLockTimeout.
+func (s *service) statisticsStatement(ctx context.Context, stmt string) error {
+	conn, err := s.admin.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET lock_timeout = %d`, s.statisticsLockTimeout.Milliseconds())); err != nil {
+		return err
+	}
+	defer func() { _, _ = conn.ExecContext(context.WithoutCancel(ctx), `RESET lock_timeout`) }()
+	_, err = conn.ExecContext(ctx, stmt)
+	return err
+}
+
+// analyzeFold brings the fold tables' statistics to what a replay just
+// committed, so a plan the next statement on them caches (the live requests
+// once the server listens, the second replay of an import) is made against
+// the tables as they are, not as they were before it: empty, for an import.
+// It runs as the engine's own user, which owns the tables: a repository's
+// role may not ANALYZE, and its transaction cannot change to the owner's
+// without its writes after it running as the owner. Statistics are no part
+// of the fold, so a failure, a lock it waited for past its bound included,
+// is logged and autovacuum brings them up later.
+func (s *service) analyzeFold(ctx context.Context, repository string) {
+	began := time.Now()
+	if err := s.statisticsStatement(ctx, `ANALYZE `+strings.Join(foldTables, ", ")); err != nil {
+		s.log.Warn("substrate: could not analyze the fold tables after a replay; autovacuum brings their statistics up later",
+			"repository", repository, "err", err)
+		return
+	}
+	s.log.Info("substrate: analyzed the fold tables after a replay",
+		"repository", repository, "took", time.Since(began).Round(time.Millisecond))
+}
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
 // cursor while it writes, so the changelog is read a page at a time by seq.
 const rebuildBatch = 500
 
 // RebuildRepository clears one repository's fold and replays its whole
-// changelog into it FROM THE SEGMENT FILES under the data root, so the
-// directory alone is proven to reproduce the fold. The repository's own
-// advisory lock is held for the duration, so no write can interleave, and the
-// whole rebuild is ONE transaction: a rebuild either replaces the fold or
-// leaves it exactly as it was. Before the replay the files are held to the
-// table (repodir.go): the heads must be equal and the common tail must agree,
-// or the rebuild refuses rather than fold a history the table does not index.
+// changelog table into it, so the history alone is proven to reproduce the
+// fold. The repository's own advisory lock is held for the duration, so no
+// write can interleave, and the whole rebuild is ONE transaction: a rebuild
+// either replaces the fold or leaves it exactly as it was.
 func (s *service) RebuildRepository(ctx context.Context, repository string) (RebuildReport, error) {
 	started := time.Now()
 	if s.readOnly {
 		return RebuildReport{}, ErrDirectoryReadOnly
 	}
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return RebuildReport{}, err
 	}
@@ -153,10 +300,8 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err != nil {
 		return RebuildReport{}, err
 	}
+	s.resetEmptyStatistics(ctx, ds.scope.Repository)
 	report := RebuildReport{Repository: repo.ID}
-	if err := ds.directoryErr(); err != nil {
-		return report, err
-	}
 	// The replay re-derives every row's `fts` itself, so the open's reindex
 	// stops first: its pages would skip every row the replay's delete holds and
 	// then wait on each one alone. A rebuild that fails leaves the version
@@ -181,22 +326,13 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	}
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{
-		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
+		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem,
 		now: nowUTC(), internal: true,
 	}
-	// The changelog lock first, then the writer mutex: the order inTx takes
-	// them. With both held no committed transaction is still on its way to
-	// the file, so the file is at the table's head or something is wrong.
-	if err := t.lockKey(changelogLockKey); err != nil {
+	if err := t.rebuild(&report); err != nil {
 		return report, err
 	}
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	log, err := ds.replayLog(ctx, t.tx)
-	if err != nil {
-		return report, err
-	}
-	if err := t.rebuild(log, &report); err != nil {
+	if err := dropOrphanVectors(ctx, t.tx); err != nil {
 		return report, err
 	}
 	// Every row was just folded under this binary's rules (fold.go foldFTS).
@@ -212,44 +348,32 @@ func (s *service) RebuildRepository(ctx context.Context, repository string) (Reb
 	if err != nil {
 		return report, err
 	}
+	// No token-cache fence (tokencache.go): a rebuild runs in the operator's
+	// process, which opens the engine as the repository's only writer with
+	// the server stopped and serves nothing from its cache. The repository's
+	// entries go after all, so the claim costs nothing if it is ever wrong.
 	if err := tx.Commit(); err != nil {
 		return report, err
 	}
+	s.tokens.forget(repo.ID)
+	s.analyzeFold(ctx, ds.scope.Repository)
 	rebuilt = true
 	if owed > 0 {
 		ds.kickIndexReprojection()
+	}
+	// The replay brought the person actors back from the history, and the
+	// index follows them before anything else is admitted (people.go).
+	if err := s.derivePeople(ctx, repo.ID); err != nil {
+		return report, err
 	}
 	report.Took = time.Since(started)
 	return report, nil
 }
 
-// replayLog opens the repository's changelog files for a replay, read-only
-// because the dataset's writer has the active segment open, and holds them
-// to the table: equal heads and an agreeing tail, or a named refusal.
-func (ds *dataset) replayLog(ctx context.Context, q dbx) (*changelogfile.Log, error) {
-	tableHead, err := tableChangelogHead(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrChangelogDiverged, err)
-	}
-	switch {
-	case log.Head() > tableHead:
-		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileAhead, log.Head(), tableHead)
-	case log.Head() < tableHead:
-		return nil, fmt.Errorf("%w: file head %d, table head %d", ErrChangelogFileBehind, log.Head(), tableHead)
-	}
-	if err := compareTails(ctx, q, log, tableHead); err != nil {
-		return nil, err
-	}
-	return log, nil
-}
-
-// rebuild clears the fold tables and replays every entry of log through the
-// fold, in seq order and in pages.
-func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
+// rebuild clears the fold tables and replays every entry of the changelog
+// table through the fold, in seq order and in pages, inside the
+// transaction that clears them.
+func (t *txn) rebuild(report *RebuildReport) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
@@ -260,6 +384,9 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// that must not run on a stale claim, and it refuses here, before the fold
 	// tables are cleared.
 	if err := t.refuseNewerChangelogDialect(); err != nil {
+		return err
+	}
+	if err := t.planEveryStatement(); err != nil {
 		return err
 	}
 	if err := t.keepPagedCursors(); err != nil {
@@ -282,11 +409,13 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	// held another history), so the cache forgets the repository.
 	t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
 	defer t.ds.svc.unitGraphs.forget(t.ds.scope.Repository)
-	// One cursor across every page, so each segment is read once (issue 745).
-	cur := log.Cursor(0)
-	defer func() { _ = cur.Close() }()
+	head, err := tableChangelogHead(t.ctx, t.tx)
+	if err != nil {
+		return err
+	}
+	cur := &tableCursor{ctx: t.ctx, q: t.tx}
 	prog := t.ds.svc.progress("replaying the changelog into the fold",
-		"repository", t.ds.scope.Repository, "head", log.Head())
+		"repository", t.ds.scope.Repository, "head", head)
 	for {
 		entries, err := cur.Next(rebuildBatch)
 		if err != nil {
@@ -310,7 +439,10 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 			report.Entries++
 			report.Head = ch.Seq
 		}
-		prog.tick(cur.Position())
+		prog.tick(changelogfile.Position{Seq: report.Head})
+		if f := t.ds.svc.testReplayPage; f != nil {
+			f(report.Head, t.tx)
+		}
 	}
 	if err := t.dropKeptCursors(); err != nil {
 		return err
@@ -323,7 +455,13 @@ func (t *txn) rebuild(log *changelogfile.Log, report *RebuildReport) error {
 	if err := t.rederiveOffers(); err != nil {
 		return err
 	}
-	return t.row(`SELECT count(*) FROM records`).Scan(&report.Records)
+	if err := t.row(`SELECT count(*) FROM records`).Scan(&report.Records); err != nil {
+		return err
+	}
+	if f := t.ds.svc.testReplayEnd; f != nil {
+		f(t.tx)
+	}
+	return nil
 }
 
 // keepPagedCursors copies every resume cursor paged_cursors holds into a
@@ -400,8 +538,8 @@ func (t *txn) rederiveOffers() error {
 // recomputeMappingTargets is the vocabulary apply's half of recompute. For
 // every target kind whose mapping set the batch changed: the properties the
 // LIVE mappings supplied and the candidate's no longer do are released on
-// every live record where the machine tier holds them (value and manager row,
-// a required property kept), the kind's offers go, and each record recomputes
+// every live record where nothing pinned them (value and mark, a required
+// property kept), the kind's offers go, and each record recomputes
 // against the candidate for whatever still maps. Offers AND values: the values
 // a removed or narrowed mapping's sources projected are changelog entries a
 // rebuild keeps, so only a recompute in this transaction leaves nothing for a
@@ -438,7 +576,7 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 		}
 		for _, id := range ids {
 			ref := eref{Kind: kind, ID: id}
-			if err := t.releaseMachineManaged(ref, sortedKeys(removed)); err != nil {
+			if err := t.releaseUnpinned(ref, sortedKeys(removed)); err != nil {
 				return fmt.Errorf("substrate/engine: release %s %s after its mappings changed: %w", kind, id, err)
 			}
 			if !mapped {
@@ -447,78 +585,6 @@ func (t *txn) recomputeMappingTargets(live, cand *vocabulary.Registry) error {
 			if err := t.recompute(ref); err != nil {
 				return fmt.Errorf("substrate/engine: recompute %s %s after its mappings changed: %w", kind, id, err)
 			}
-		}
-	}
-	return nil
-}
-
-// recomputeDemotedActors is the vocabulary apply's other half of recompute.
-// An actor the candidate declares at the machine tier no longer holds what it
-// wrote above the machine tier (heldTierIn, record 0113), and no source write
-// may ever arrive to let recompute take it back. Every record where such an
-// actor still has a row stored above the machine tier recomputes here,
-// against the candidate, so the values this commit publishes are the ones the
-// published closure yields on.
-//
-// Two sets of actors qualify: one the live declarations did not put at the
-// machine tier (the transition), and one declared at the machine tier by a
-// package this batch touches, whatever its live tier. The second is how a
-// repository whose actor was declared at the machine tier before record 0113
-// releases now: re-applying the package that declares it recomputes what the
-// actor still holds, instead of each record waiting for its next source
-// write. The `tier <> machine` filter keeps a re-apply cheap once the stored
-// rows have moved.
-func (t *txn) recomputeDemotedActors(live, cand *vocabulary.Registry, touched map[string]bool) error {
-	var demoted []string
-	for _, actor := range cand.Actors() {
-		if heldTierIn(cand, actor, substrate.TierOwner) != substrate.TierMachine {
-			continue
-		}
-		pkg, _ := cand.ActorPackage(actor)
-		if tier, ok := live.ActorTier(actor); ok && tier == substrate.TierMachine && !touched[pkg] {
-			continue
-		}
-		demoted = append(demoted, actor)
-	}
-	if len(demoted) == 0 {
-		return nil
-	}
-	seen := map[string]bool{}
-	var refs []eref
-	for _, actor := range demoted {
-		rows, err := t.query(`
-			SELECT DISTINCT record_kind, record_id FROM property_managers
-			WHERE actor = $1 AND tier <> $2 ORDER BY record_kind, record_id`,
-			actor, string(substrate.TierMachine))
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var ref eref
-			if err := rows.Scan(&ref.Kind, &ref.ID); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			if !seen[ref.key()] {
-				seen[ref.key()] = true
-				refs = append(refs, ref)
-			}
-		}
-		_ = rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-	}
-	if len(refs) > 0 {
-		t.ds.logApply("recomputing the records held by actors declared at the machine tier",
-			"actors", len(demoted), "records", len(refs))
-	}
-	for _, ref := range refs {
-		if len(cand.MappingsTo(ref.Kind)) == 0 {
-			continue
-		}
-		if err := t.recompute(ref); err != nil {
-			return fmt.Errorf("substrate/engine: recompute %s %s after its manager was declared at the machine tier: %w", ref.Kind, ref.ID, err)
 		}
 	}
 	return nil
@@ -579,7 +645,7 @@ func (t *txn) liveIDsOf(kind string) ([]string, error) {
 // would round an integer past 2^53 into a value the changelog never held.
 func changeOfEntry(e changelogfile.Entry) (substrate.Change, error) {
 	ch := substrate.Change{
-		Seq: e.Seq, TS: e.TS.UTC(), Actor: substrate.Actor(e.Actor), Op: substrate.Op(e.Op),
+		Seq: e.Seq, TS: e.TS.UTC(), Actor: e.Actor, OnBehalfOf: e.OnBehalfOf, Token: lineToken(e), Op: substrate.Op(e.Op),
 		RecordID: e.RecordID, Kind: e.Kind,
 	}
 	if len(e.Payload) > 0 {
@@ -602,7 +668,7 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 	out := map[string]any{}
 	queries := map[string]string{
 		"records": `SELECT to_jsonb(r) - 'repository' FROM (
-				SELECT kind, id, title, body, states, at, ends_at, due_at, props, labels,
+				SELECT kind, id, title, states, at, ends_at, due_at, props, labels,
 					version, kind_version, created_at, updated_at, deleted_at, finalizers
 				FROM records ORDER BY kind, id) r`,
 		"fts": `SELECT to_jsonb(f) FROM (
@@ -613,18 +679,17 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 		"annotations": `SELECT to_jsonb(a) FROM (
 				SELECT record_kind, record_id, key, value, updated_at
 				FROM annotations ORDER BY record_kind, record_id, key) a`,
-		"property_managers": `SELECT to_jsonb(m) FROM (
-				SELECT record_kind, record_id, property, actor, tier, principal, updated_at
-				FROM property_managers ORDER BY record_kind, record_id, property) m`,
+		"property_marks": `SELECT to_jsonb(m) FROM (
+				SELECT record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at
+				FROM property_marks ORDER BY record_kind, record_id, property) m`,
 		"former_ids": `SELECT to_jsonb(f) FROM (
 				SELECT record_kind, former_id, record_id, created_at
 				FROM former_ids ORDER BY record_kind, former_id) f`,
-		// Whole, updated_at and source included: a row's stamp and its
-		// source are its source record's (mapping.go syncOffers), so a
-		// rebuild derives them too.
+		// Whole, updated_at included: a row's stamp is its source record's
+		// (mapping.go syncOffers), so a rebuild derives it too.
 		"property_offers": `SELECT to_jsonb(o) FROM (
-				SELECT record_kind, record_id, property, actor, value, updated_at, source
-				FROM property_offers ORDER BY record_kind, record_id, property, actor) o`,
+				SELECT record_kind, record_id, property, source, value, updated_at
+				FROM property_offers ORDER BY record_kind, record_id, property, source) o`,
 		// The delivery ledger's three replayable tables. trigger_cursors is
 		// left out: its scan position is written outside the ledger
 		// (functions.go advanceCursor), so a rebuild reproduces the

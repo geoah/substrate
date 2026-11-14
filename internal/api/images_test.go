@@ -7,20 +7,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 // newImageEnv is a test env whose image proxy reaches a local TLS server,
-// which the confined client the server runs with would refuse.
+// which the confined client the server runs with would refuse. The proxy
+// reads nothing of the repository, so the stub's token is all it needs.
 func newImageEnv(t *testing.T, upstream *httptest.Server) *testEnv {
 	t.Helper()
-	svc := newFakeService()
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	return &testEnv{
-		svc:   svc,
-		h:     New(Config{Service: svc, Now: clock.now, InviteCode: testInviteCode, ImageClient: upstream.Client()}),
-		clock: clock,
-	}
+	return newStubEnv(t, nil, func(c *Config) { c.ImageClient = upstream.Client() })
 }
 
 var pngBytes = []byte("\x89PNG\r\n\x1a\nnot really a png")
@@ -53,10 +47,9 @@ func imagePath(u string) string { return "/api/v1/images?url=" + url.QueryEscape
 func TestTheImageProxyServesAnImageItsHostServes(t *testing.T) {
 	up := imageUpstream(t)
 	env := newImageEnv(t, up)
-	tok := env.svc.token(fakeRepository)
 
 	for _, p := range []string{"/cover.png", "/moved.png"} {
-		rec := env.do(t, http.MethodGet, imagePath(up.URL+p), tok, nil)
+		rec := env.do(t, http.MethodGet, imagePath(up.URL+p), stubToken, nil)
 		wantStatus(t, rec, http.StatusOK)
 		if rec.Header().Get("Content-Type") != "image/png" || !bytes.Equal(rec.Body.Bytes(), pngBytes) {
 			t.Fatalf("%s: %q %q", p, rec.Header().Get("Content-Type"), rec.Body.String())
@@ -75,13 +68,12 @@ func TestTheImageProxyServesAnImageItsHostServes(t *testing.T) {
 func TestTheImageProxyRefusesWhatIsNoImageItServes(t *testing.T) {
 	up := imageUpstream(t)
 	env := newImageEnv(t, up)
-	tok := env.svc.token(fakeRepository)
 
 	wantErrorCode(t, env.do(t, http.MethodGet, imagePath(up.URL+"/cover.png"), "", nil), http.StatusUnauthorized, codeAuth)
-	wantErrorCode(t, env.do(t, http.MethodGet, imagePath("http://example.com/cover.png"), tok, nil), http.StatusBadRequest, codeBadRequest)
-	wantErrorCode(t, env.do(t, http.MethodGet, imagePath("javascript:alert(1)"), tok, nil), http.StatusBadRequest, codeBadRequest)
+	wantErrorCode(t, env.do(t, http.MethodGet, imagePath("http://example.com/cover.png"), stubToken, nil), http.StatusBadRequest, codeBadRequest)
+	wantErrorCode(t, env.do(t, http.MethodGet, imagePath("javascript:alert(1)"), stubToken, nil), http.StatusBadRequest, codeBadRequest)
 	for _, p := range []string{"/drawing.svg", "/huge.png", "/missing.png"} {
-		wantErrorCode(t, env.do(t, http.MethodGet, imagePath(up.URL+p), tok, nil), http.StatusNotFound, codeNotFound)
+		wantErrorCode(t, env.do(t, http.MethodGet, imagePath(up.URL+p), stubToken, nil), http.StatusNotFound, codeNotFound)
 	}
 }
 
@@ -89,9 +81,8 @@ func TestTheImageProxyRefusesWhatIsNoImageItServes(t *testing.T) {
 // address, which a local test server is, is never dialed.
 func TestTheImageProxyReachesNoPrivateAddress(t *testing.T) {
 	up := imageUpstream(t)
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, imagePath(up.URL+"/cover.png"), tok, nil)
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, imagePath(up.URL+"/cover.png"), stubToken, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if !strings.Contains(rec.Body.String(), "could not be fetched") {
 		t.Fatalf("body: %s", rec.Body.String())

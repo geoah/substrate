@@ -17,8 +17,12 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-const (
-	tasksBundleID   = "samples.substrate.reamde.dev/tasks"
+// tasksBundleID is the tasks sample as the catalog names it; tasksHeld and
+// tasksCollection name its copy, which bindSamples rebinds.
+const tasksBundleID = "samples.substrate.reamde.dev/tasks"
+
+var (
+	tasksHeld       = "samples.substrate.reamde.dev/tasks"
 	tasksCollection = "/api/v1/samples.substrate.reamde.dev/tasks/task"
 )
 
@@ -145,14 +149,14 @@ func caseAuth(c *C) {
 
 	// Register. With the factor enforced the suite enrolls a seed and proves
 	// it with a live code, exactly as an authenticator would.
-	reg := map[string]any{"inviteCode": r.invite, "repository": r.repository, "password": r.password}
+	reg := map[string]any{"inviteCode": r.invite, "identity": r.repository, "password": r.password}
 	if disc.Registration.TOTPRequired {
 		var enr struct {
 			TOTPSecret string `json:"totpSecret"`
 		}
 		c.paceAuth()
 		status, raw = c.doAs("", http.MethodPost, "/register/enroll",
-			map[string]string{"inviteCode": r.invite, "repository": r.repository}, &enr)
+			map[string]string{"inviteCode": r.invite, "identity": r.repository}, &enr)
 		c.requiref(status == http.StatusOK, "register/enroll answered %d: %s", status, raw)
 		step := engine.TOTPStep(time.Now())
 		code, err := engine.TOTPCode(enr.TOTPSecret, step)
@@ -169,8 +173,7 @@ func caseAuth(c *C) {
 			ID    string `json:"id"`
 			Label string `json:"label"`
 		} `json:"token"`
-		Secret      string `json:"secret"`
-		RecoveryKey string `json:"recoveryKey"`
+		Secret string `json:"secret"`
 		// Repository is the authority the label resolved to: what the
 		// operator hat addresses, where the door took the bare label.
 		Repository string `json:"repository"`
@@ -181,12 +184,21 @@ func caseAuth(c *C) {
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, &regOut)
 	c.requiref(status == http.StatusCreated, "register answered %d, want 201%s", status, redacted(status, raw))
 	c.requiref(strings.HasPrefix(regOut.Secret, "substrate_tok_"), "token secret has the wrong shape")
-	c.requiref(regOut.RecoveryKey != "", "register minted no recovery key (none was supplied)")
+	// A registration hands over no key (decision record 0264): the data key
+	// is wrapped under the host's credential key alone. Only the field names
+	// are read, so the secret beside them never reaches the report.
+	var regFields map[string]json.RawMessage
+	c.requiref(json.Unmarshal(raw, &regFields) == nil, "register answered a body that is not a JSON object")
+	for _, field := range []string{"recoveryKey", "recoveryPublicKey"} {
+		_, answered := regFields[field]
+		c.requiref(!answered, "register answered `%s`; a registration has no key step", field)
+	}
 	r.token, r.tokenID = regOut.Secret, regOut.Token.ID
 	c.requiref(regOut.Repository != "", "register echoed no repository authority")
 	r.authority = regOut.Repository
+	bindSamples()
 	r.rep.Repository, r.rep.Password = r.repository, r.password
-	c.stepf("registered `%s`: repository created, first token `%s` minted, recovery key returned once (not kept)", r.repository, regOut.Token.ID)
+	c.stepf("registered `%s`: repository created, first token `%s` minted, and no key beside it", r.repository, regOut.Token.ID)
 
 	// The minted token opens the repository; no token opens nothing.
 	var toks struct {
@@ -201,16 +213,16 @@ func caseAuth(c *C) {
 	status, _ = c.doAs("", http.MethodGet, "/tokens", nil, nil)
 	c.requiref(status == http.StatusUnauthorized, "GET /tokens without a bearer answered %d, want 401", status)
 
-	// A taken repository name refuses; registration is one-shot per repository,
-	// and the refusal names the authority the name resolved to.
+	// A taken name refuses; registration is one-shot per name, and the
+	// refusal names the name the label resolved to.
 	c.paceAuth()
 	status, raw = c.doAs("", http.MethodPost, "/register", reg, nil)
-	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already owned"),
-		"re-registering %q answered %d, want a 422 naming the taken authority: %s", r.repository, status, raw)
-	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already owned")
+	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "already another person's"),
+		"re-registering %q answered %d, want a 422 naming the taken name: %s", r.repository, status, raw)
+	c.stepf("a second registration of `%s` was refused: 422, %q", r.repository, "already another person's")
 
 	// Login mints a second token that works.
-	login := map[string]any{"repository": r.repository, "password": r.password, "label": "e2e-login"}
+	login := map[string]any{"identity": r.repository, "password": r.password, "label": "e2e-login"}
 	if disc.Registration.TOTPRequired {
 		login["totpCode"] = r.nextTOTPCode(c)
 	}
@@ -227,8 +239,17 @@ func caseAuth(c *C) {
 	c.requiref(status == http.StatusOK, "the login token answered %d on GET /tokens, want 200", status)
 	c.stepf("login minted token `%s` and it authenticates", loginOut.Token.ID)
 
+	// A sign-in names a person (decision 0274): a body from before that names
+	// only a repository is told which field replaced it.
+	c.paceAuth()
+	status, raw = c.doAs("", http.MethodPost, "/login",
+		map[string]any{"repository": r.repository, "password": r.password}, nil)
+	c.requiref(status == http.StatusBadRequest && strings.Contains(string(raw), "`identity`"),
+		"a sign-in naming only a repository answered %d, want a 400 naming `identity`: %s", status, raw)
+	c.stepf("a sign-in naming only a repository was refused: 400, naming `identity`")
+
 	// A wrong password is one indistinguishable 401.
-	badLogin := map[string]any{"repository": r.repository, "password": "not-the-password"}
+	badLogin := map[string]any{"identity": r.repository, "password": "not-the-password"}
 	c.paceAuth()
 	status, _ = c.doAs("", http.MethodPost, "/login", badLogin, nil)
 	c.requiref(status == http.StatusUnauthorized, "a wrong password answered %d, want 401", status)
@@ -283,12 +304,12 @@ func caseRecords(c *C) {
 
 	// Dependency order is enforced: tasks requires people and scheduling, and
 	// installing it first is refused naming exactly what is missing.
-	status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(tasksBundleID)+"/install", nil, nil)
+	status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(tasksBundleID)+"/add", nil, nil)
 	c.requiref(status == http.StatusUnprocessableEntity &&
-		strings.Contains(string(raw), "samples.substrate.reamde.dev/people") &&
-		strings.Contains(string(raw), "samples.substrate.reamde.dev/scheduling"),
-		"an out-of-order install answered %d, want a 422 naming the missing requirements: %s", status, raw)
-	c.stepf("installing `%s` before its requirements was refused naming `people` and `scheduling`", tasksBundleID)
+		strings.Contains(string(raw), "/people") &&
+		strings.Contains(string(raw), "/scheduling"),
+		"an out-of-order add answered %d, want a 422 naming the missing requirements: %s", status, raw)
+	c.stepf("adding `%s` before its requirements was refused naming `people` and `scheduling`", tasksBundleID)
 
 	type bundleStatus struct {
 		Installed bool `json:"installed"`
@@ -301,11 +322,11 @@ func caseRecords(c *C) {
 		tasksBundleID,
 	} {
 		bundle = bundleStatus{}
-		status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/install", nil, &bundle)
-		c.requiref(status == http.StatusOK, "installing %s answered %d: %s", id, status, raw)
-		c.requiref(bundle.Installed, "the install of %s did not end installed: %s", id, raw)
+		status, raw = c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, &bundle)
+		c.requiref(status == http.StatusOK, "adding %s answered %d: %s", id, status, raw)
+		c.requiref(bundle.Installed, "adding %s did not end installed: %s", id, raw)
 	}
-	c.stepf("installed `people`, `scheduling` and `%s` in requirement order; the last admitted %d kinds", tasksBundleID, bundle.Kinds)
+	c.stepf("added `people`, `scheduling` and `%s` in requirement order, as copies in the repository's own namespace, ~; the last admitted %d kinds", tasksBundleID, bundle.Kinds)
 
 	// Create: 201, version 1, the declared default and the initial state land.
 	var created record
@@ -400,7 +421,7 @@ func caseChangelog(c *C) {
 	}
 	taskWrites := 0
 	for _, row := range rows {
-		if row.Kind == "samples.substrate.reamde.dev/tasks/task" {
+		if row.Kind == taskKind {
 			taskWrites++
 		}
 	}
@@ -654,7 +675,7 @@ func (r *run) appendix() {
 	if err := r.fetch(listOf(tasksCollection), &tasks); err != nil {
 		fmt.Fprintf(&b, "Reading the tasks failed: %v\n\n", err)
 	} else {
-		b.WriteString("### Tasks (`samples.substrate.reamde.dev/tasks/task`)\n\n")
+		b.WriteString("### Tasks (`" + taskKind + "`)\n\n")
 		b.WriteString("| id | name | status | version |\n| --- | --- | --- | --- |\n")
 		for _, rec := range tasks.Records {
 			fmt.Fprintf(&b, "| `%s` | %s | %s | %d |\n", rec.ID, rec.prop("name"), rec.prop("status"), rec.Version)

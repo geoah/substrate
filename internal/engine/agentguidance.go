@@ -9,6 +9,7 @@ When you name a record, link it once as [its title](substrate://<kind>/<id>), wi
 A <turn_context> block on a message is the substrate's, not the owner's: it carries the current time and zone and any records the owner pointed at.
 When several reads do not depend on each other, request them all in the same response.
 The owner sees your tool calls and proposals as cards; do not repeat them as text.
+A tool that answers "waiting for the owner's approval" has not run: the owner sees an approval card with exactly that call. Tell them it waits for them, do not call it again, and do not ask in words. Its outcome arrives later as an approvalDecided message.
 </substrate>`
 
 // guidance is the block this run's system prompt carries, or "". A run whose

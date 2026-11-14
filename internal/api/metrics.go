@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -57,4 +58,19 @@ func metricMethod(method string) string {
 		return method
 	}
 	return "other"
+}
+
+// countMCPToolCall records one MCP tool call under the repository whose token
+// made it. The door authenticated before any tool ran, so the dataset is
+// always there.
+func countMCPToolCall(ctx context.Context, tool string, failed bool) {
+	ds := DatasetFrom(ctx)
+	if ds == nil {
+		return
+	}
+	outcome := "ok"
+	if failed {
+		outcome = "error"
+	}
+	metrics.MCPToolCalls.WithLabelValues(metrics.Repository(ds.Repository().ID), tool, outcome).Inc()
 }

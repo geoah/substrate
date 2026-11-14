@@ -24,6 +24,9 @@ const kindFunction = corePackage + "/function"
 // kindPackageRow is the declaration kind a package row is.
 const kindPackageRow = corePackage + "/package"
 
+// kindDeclarationRow is the kind whose rows are kind declarations.
+const kindDeclarationRow = corePackage + "/kind"
+
 // functionReach is one function's resolved reach: the kinds, or globs over
 // kinds, it reads and writes, sorted and unique.
 type functionReach struct {
@@ -54,15 +57,15 @@ func resolveReach(ctx context.Context, ds reach.Reader, rec *substrate.Record) (
 // the registry holds is held to its declaration (scopeKind): its purpose,
 // which a glob never reaches when internal, and the traits it binds. A
 // missing kind needs an exact scope because its purpose is unknown.
-func uncoveredReach(g scope.Grant, reach functionReach, registry map[string]substrate.KindInfo) []string {
+func uncoveredReach(g viewReach, reach functionReach, registry map[string]substrate.KindInfo) []string {
 	var out []string
 	for _, k := range reach.reads {
-		if !g.ReachCovered(scope.Read, k, scopeKind(k, registry), internalKinds(registry)...) {
+		if !g.Covers(scope.Read, k, scopeKind(k, registry), registry) {
 			out = append(out, "read "+k)
 		}
 	}
 	for _, k := range reach.writes {
-		if !g.ReachCovered(scope.Write, k, scopeKind(k, registry), internalKinds(registry)...) {
+		if !g.Covers(scope.Write, k, scopeKind(k, registry), registry) {
 			out = append(out, "write "+k)
 		}
 	}

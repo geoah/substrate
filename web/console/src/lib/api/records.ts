@@ -1,6 +1,6 @@
 /** Record reads and writes: keyset-paged lists off the one records route
  * (server-side filter/sort), a filtered set's size, the ranked read, single-
- * record reads (the only wire surface carrying `propertyMeta`), the reverse
+ * record reads (the only wire surface carrying `marks`), the reverse
  * read (what points at a record), and the change feed filtered to one record.
  *
  * EVERY LIST IS `GET /api/v1/records`. The kind is not in the path: it is
@@ -32,6 +32,7 @@ import {
 import { ApiError } from "./types"
 import type {
   ChangeRow,
+  MarkInput,
   Page,
   PutInput,
   RankedPage,
@@ -756,6 +757,25 @@ export async function patchRecord(
   )
   releaseHeldBlobs(patch.properties)
   return saved
+}
+
+/** Pin or release properties of one record (decision 0284): `POST
+ * /{authority}/{package}/{name}/{id}/pin` keeps their values against sync,
+ * `…/release` hands them back to it. The answer is the record with its
+ * marks. */
+export async function markRecord(
+  action: "pin" | "release",
+  authority: string,
+  pkg: string,
+  name: string,
+  id: string,
+  input: MarkInput
+): Promise<SubstrateRecord> {
+  return request<SubstrateRecord>(
+    "POST",
+    `${collectionPath(authority, pkg, name)}/${seg(id)}/${action}`,
+    input
+  )
 }
 
 // ── the reverse read: what points at a record ───────────────────────────────

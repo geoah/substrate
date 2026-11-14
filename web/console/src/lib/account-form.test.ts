@@ -6,7 +6,11 @@
 import { describe, expect, it } from "vitest"
 
 import type { KindInfo } from "@/lib/api/types"
-import { accountFormGroups } from "./account-form"
+import {
+  accountFormGroups,
+  ungrantedToggles,
+  writeToggles,
+} from "./account-form"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
 function kind(traits: string[], props: Record<string, unknown>): KindInfo {
@@ -23,32 +27,36 @@ function kind(traits: string[], props: Record<string, unknown>): KindInfo {
 }
 
 const GOOGLE_LIKE = {
-  tokenRef: { type: "secret", writer: "oauth" },
-  tokenStatus: { type: "string", writer: "oauth" },
-  email: { type: "email", writer: "oauth" },
-  address: { type: "reference", kind: "emailaddress", writer: "connector" },
-  enabledContacts: { type: "bool", writer: "owner", displayName: "Contacts" },
-  enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+  tokenRef: { type: "secret", writer: "system" },
+  tokenStatus: { type: "string", writer: "system" },
+  email: { type: "email", writer: "system" },
+  address: {
+    type: "reference",
+    kind: "emailaddress",
+    writer: ["function", "agent"],
+  },
+  enabledContacts: { type: "bool", writer: "person", displayName: "Contacts" },
+  enabledGmail: { type: "bool", writer: "person", displayName: "Gmail" },
   syncFrequency: {
     type: "enum",
     values: ["off", "hourly", "daily"],
     required: true,
     default: "daily",
-    writer: "owner",
+    writer: "person",
   },
   backfillDepth: {
     type: "enum",
     values: ["none", "last30d", "all"],
     required: true,
     default: "last30d",
-    writer: "owner",
+    writer: "person",
   },
-  syncRequestedAt: { type: "datetime", writer: "owner" },
-  syncPaused: { type: "bool", writer: "owner" },
-  syncState: { type: "string", writer: "connector" },
+  syncRequestedAt: { type: "datetime", writer: "person" },
+  syncPaused: { type: "bool", writer: "person" },
+  syncState: { type: "string", writer: ["function", "agent"] },
   contactsResume: {
     type: "object",
-    writer: "connector",
+    writer: ["function", "agent"],
     fields: { pageToken: { type: "string" } },
   },
 }
@@ -90,5 +98,71 @@ describe("accountFormGroups", () => {
     const names = g.all.map((f) => f.name)
     expect(names).toContain("syncRequestedAt")
     expect(names).toContain("syncPaused")
+  })
+})
+
+describe("the switches that let agents act", () => {
+  const props = {
+    ...GOOGLE_LIKE,
+    enabledGmailWrite: {
+      type: "bool",
+      writer: "person",
+      displayName: "Gmail sending",
+    },
+  }
+  const features = [
+    {
+      toggle: "enabledContacts",
+      scopes: ["contacts.readonly"],
+      access: "read",
+    },
+    { toggle: "enabledGmail", scopes: ["gmail.readonly"], access: "read" },
+    {
+      toggle: "enabledGmailWrite",
+      scopes: ["gmail.modify", "userinfo.email"],
+      access: "write",
+    },
+  ]
+
+  it("stand apart from what the account brings in", () => {
+    const g = accountFormGroups(
+      SHIPPED_UNITS,
+      kind(["accountconfig", "sync"], props),
+      writeToggles(features)
+    )
+    expect(g.toggles.map((f) => f.name)).toEqual([
+      "enabledContacts",
+      "enabledGmail",
+    ])
+    expect(g.permissions.map((f) => f.name)).toEqual(["enabledGmailWrite"])
+    expect(g.all.map((f) => f.name)).toContain("enabledGmailWrite")
+  })
+
+  it("are things to bring in when the bundle marks none", () => {
+    const g = accountFormGroups(
+      SHIPPED_UNITS,
+      kind(["accountconfig", "sync"], props)
+    )
+    expect(g.permissions).toEqual([])
+    expect(g.toggles.map((f) => f.name)).toContain("enabledGmailWrite")
+  })
+
+  it("name the switches an account has on that its sign-in does not cover", () => {
+    const on = { enabledGmail: true, enabledGmailWrite: true }
+    expect(ungrantedToggles(on, ["gmail.readonly"], features)).toEqual([
+      "enabledGmailWrite",
+    ])
+    expect(
+      ungrantedToggles(
+        on,
+        ["gmail.readonly", "gmail.modify", "userinfo.email"],
+        features
+      )
+    ).toEqual([])
+    // A switch that is off asks for nothing, granted or not.
+    expect(ungrantedToggles({ enabledGmail: true }, [], features)).toEqual([
+      "enabledGmail",
+    ])
+    expect(ungrantedToggles({}, [], features)).toEqual([])
   })
 })

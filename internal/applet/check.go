@@ -44,7 +44,7 @@ var modelRoots = []string{"applet", "ui", "params", "data", "counts"}
 // not starting with a digit. A hyphen is the commonest refusal.
 var componentID = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var kindRef = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/[a-z][a-z0-9]*/[a-z][a-z0-9]*$`)
+var kindRef = regexp.MustCompile(`^(~|[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+)/[a-z][a-z0-9]*/[a-z][a-z0-9]*$`)
 
 // Check holds a parsed applet to the A2UI catalog and to the repository's
 // kinds and functions: every problem a write of it is refused with, as

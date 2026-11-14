@@ -133,6 +133,13 @@ func routeVerdict(rule *policyRule, verdict judgeVerdict, jerr error) (outcome, 
 // the read version and a decided request is left alone — so a duplicate
 // invocation converges.
 func (ds *dataset) judgeRequest(ctx context.Context, requestID string, rule *policyRule) {
+	// The judge's work is the request's: it acts for whom the line that wrote
+	// the request names.
+	ctx, err := ds.actingFor(ctx, vocabulary.KindRecordPatchRequest, requestID)
+	if err != nil {
+		ds.svc.log.Warn("substrate: judge: whom the request acts for was not read", "request", requestID, "error", err)
+		return
+	}
 	req, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, requestID)
 	if err != nil {
 		// A canceled context is the shutdown, not a request that went missing:

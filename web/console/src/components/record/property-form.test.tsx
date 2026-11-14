@@ -61,7 +61,7 @@ const providerKind: KindInfo = {
         states: ["draft", "live"],
         initial: "draft",
       },
-      tokenRef: { type: "secret", writer: "oauth" },
+      tokenRef: { type: "secret", writer: "system" },
     },
   },
 }
@@ -212,7 +212,7 @@ describe("the form lens", () => {
     expect((url as HTMLInputElement).value).toBe("")
   })
 
-  it("never offers a host-managed property (writer: oauth)", () => {
+  it("never offers a host-managed property (writer: system)", () => {
     renderForm(templateYAML(SHIPPED_UNITS, providerKind))
     expect(screen.queryByLabelText(/Token ref/)).toBeNull()
   })

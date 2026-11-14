@@ -289,7 +289,7 @@ func (t *txn) noteProviderKey(ref eref, before, after any) {
 	if was == "" || was == is {
 		return
 	}
-	svc, k := t.ds.svc, ownKeyID(t.ds.Repository().ID, ref.ID, was)
+	svc, k := t.ds.svc, ownKeyID(t.ds.info.ID, ref.ID, was)
 	t.afterCommit = append(t.afterCommit, func() { svc.keyRefusals.replaced(k) })
 }
 

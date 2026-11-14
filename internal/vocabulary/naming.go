@@ -20,8 +20,9 @@ const (
 	wordRE      = `[a-z][a-z0-9]*`
 	camelRE     = `[a-z][a-zA-Z0-9]*`
 	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or
-	// an authority, a package and a name split by the two slashes.
-	kindRefRE = `(` + authorityRE + `/` + wordRE + `/)?` + wordRE
+	// an authority (a DNS name, or `~` for the repository's own), a package
+	// and a name split by the two slashes.
+	kindRefRE = `((~|` + authorityRE + `)/` + wordRE + `/)?` + wordRE
 	// The two halves of a label/annotation key, kept apart so the validator
 	// and the diagnosis (MetaKeyProblem) read one grammar: a refusal that
 	// names a rule the checker does not enforce is worse than a vague one.
@@ -49,17 +50,6 @@ var (
 	reAuthority = regexp.MustCompile("^" + authorityRE + "$")
 	reWord      = regexp.MustCompile("^" + wordRE + "$")
 	reCamel     = regexp.MustCompile("^" + camelRE + "$")
-	// An actor is one of the closed domain's names: a bare word (`console`,
-	// `substratectl`, `api`, `substrate`) or a prefixed machine hand carrying
-	// the full authority and the package — `bundle:<authority>:<package>`,
-	// `function:<authority>:<package>:<name>`,
-	// `agent:<authority>:<package>:<name>` (records 0025 and 0047). The first
-	// segment after the prefix admits dots so an authority fits, the second is
-	// the package, and the optional third is the callable's local name. The
-	// retired `connector:<label>` spelling still matches, because a repository
-	// written before 0025 has actor declarations carrying it and they must
-	// keep loading.
-	reActor = regexp.MustCompile(`^` + wordRE + `(:[a-z][a-z0-9.-]*)?(:` + wordRE + `)?(:` + camelRE + `)?$`)
 	// A namespaced label/annotation key is "<actor>/<name>", and an actor may
 	// carry the domain's colons and an authority's dots
 	// (`function:web.bundles.example.com:harvest/synced`).
@@ -78,7 +68,11 @@ var (
 	// encoded, so a client writes `%2F` and the API decodes it once
 	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire
 	// is percent-decoded twice.
-	reID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
+	//
+	// A declaration of the repository's own is named under `~`
+	// (`~/tasks/task`), so an id may also open with `~/` (decision record
+	// 0259); the alphabet itself is unchanged.
+	reID = regexp.MustCompile(`^(~/)?[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
 )
 
 // MaxIDLen caps a writer-supplied id: long enough for any encoded provider
@@ -87,6 +81,11 @@ const MaxIDLen = 128
 
 // ValidAuthority reports whether s is a legal DNS-style authority name.
 func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
+
+// ValidKindAuthority reports whether s may be the authority a package, a kind,
+// a trait, a function or an agent is named under: a DNS name, or Local for
+// the repository's own.
+func ValidKindAuthority(s string) bool { return s == Local || ValidAuthority(s) }
 
 // ValidName reports whether s is a legal kind name.
 func ValidName(s string) bool { return reWord.MatchString(s) }
@@ -103,9 +102,6 @@ func ValidCamel(s string) bool { return reCamel.MatchString(s) }
 // ValidValue reports whether s is a legal enum or state VALUE. Values are
 // data, not names: they stay lowercase words.
 func ValidValue(s string) bool { return reWord.MatchString(s) }
-
-// ValidActor reports whether s is a legal actor name (see reActor).
-func ValidActor(s string) bool { return reActor.MatchString(s) }
 
 // ValidMetaKey reports whether s is a legal namespaced label/annotation key.
 func ValidMetaKey(s string) bool { return reMetaKey.MatchString(s) }
@@ -203,31 +199,103 @@ func ValidRepositoryAuthority(s string) bool {
 	return true
 }
 
-// RepositoryAuthority resolves the repository name a caller typed into the
-// authority that name means. A name carrying a dot IS the authority
-// (`ada.example.com`); a bare label is completed under the host the request
-// reached (`ada` -> `ada.example.com`), the way a handle sits under its
-// server. host is the request's Host header, so a port and a trailing dot are
-// stripped and the case folded. The result is NOT validated here: a host that
-// is no DNS name (an IPv6 literal) yields a string the caller refuses with
-// the same message as any other bad authority, and a bare label under no host
-// yields "".
-func RepositoryAuthority(name, host string) string {
-	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
-	if name == "" {
-		return ""
+// NameRule turns the name a person types into a repository's name (decision
+// record 0288). A name carrying a dot is the name (`ada.example.com`). A bare
+// label is completed under the server's configured public host, the host of
+// SUBSTRATE_PUBLIC_URL (`ada` -> `ada.substrate.example.com`), never under
+// whatever address a request arrived at, which a caller chooses. A name under
+// `localhost` or an IP address is refused for a new repository outside
+// development, which is a server whose public host is itself one of those.
+type NameRule struct {
+	// Host is the configured public host, lower case, no port; "" when the
+	// server has no public URL.
+	Host string
+	// Development says the public host is `localhost` or a loopback address,
+	// where names under it are the only ones that work.
+	Development bool
+}
+
+// NameRuleFor is the rule of a server whose public URL is publicURL ("" for
+// none).
+func NameRuleFor(publicURL string) NameRule {
+	if publicURL == "" {
+		return NameRule{}
 	}
-	if strings.Contains(name, ".") {
-		return name
+	host := publicURL
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
 	}
+	host, _, _ = strings.Cut(host, "/")
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	if host == "" {
+	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+	ip := net.ParseIP(host)
+	return NameRule{Host: host, Development: host == "localhost" || strings.HasSuffix(host, ".localhost") || (ip != nil && ip.IsLoopback())}
+}
+
+// normalizeTyped is a typed name trimmed, lower-cased and without a trailing
+// dot.
+func normalizeTyped(typed string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(typed)), ".")
+}
+
+// New is the name a new repository typed as typed takes, at a registration
+// or as a rename's new name, or why it takes none. The result is not held to
+// the authority grammar here; the engine refuses a bad one in its own words.
+func (r NameRule) New(typed string) (string, error) {
+	name := normalizeTyped(typed)
+	if name == "" {
+		return "", nil
+	}
+	if !strings.Contains(name, ".") {
+		if r.Host == "" {
+			return "", fmt.Errorf("%q is a short name, and this server has no public URL to complete it under: type the whole name, such as %s.example.com (or the operator sets SUBSTRATE_PUBLIC_URL)", name, name)
+		}
+		name += "." + r.Host
+	}
+	if !r.Development && LocalName(name) {
+		return "", fmt.Errorf("%s is under localhost or an IP address, which names no repository outside development: choose a name under a domain, such as %s.example.com", name, strings.Split(name, ".")[0])
+	}
+	return name, nil
+}
+
+// Lookup is the name an existing repository typed as typed has, for a door
+// that finds one (a sign-in, a delete, a rename's current name, an app's
+// sign-in hint): a short name is completed under the configured public host,
+// or under the host the request reached, host, where none is configured, as
+// it was named before 0288. A name is never refused here: a repository named
+// under `localhost` before the rule is still found, and can be renamed.
+func (r NameRule) Lookup(typed, host string) string {
+	name := normalizeTyped(typed)
+	if name == "" || strings.Contains(name, ".") {
+		return name
+	}
+	under := r.Host
+	if under == "" {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		under = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	}
+	if under == "" {
 		return ""
 	}
-	return name + "." + host
+	return name + "." + under
+}
+
+// LocalName reports whether name sits under `localhost` or is, or ends in, an
+// IP address: a name only one machine's resolver gives meaning to.
+func LocalName(name string) bool {
+	name = normalizeTyped(name)
+	if name == "localhost" || strings.HasSuffix(name, ".localhost") || net.ParseIP(name) != nil {
+		return true
+	}
+	labels := strings.Split(name, ".")
+	if len(labels) >= 4 && net.ParseIP(strings.Join(labels[len(labels)-4:], ".")).To4() != nil {
+		return true
+	}
+	return false
 }
 
 // MetaKeyProblem says why key is NOT a legal label/annotation key, naming the

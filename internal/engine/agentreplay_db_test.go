@@ -24,11 +24,11 @@ func chatTwice(t *testing.T, agent, model string) map[string]any {
 		fakeTurn{content: "annotated t-recalled"},
 		fakeTurn{content: "it was t-recalled"},
 	)
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/"+agent, substrate.ChatInput{Message: "annotate something"}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/"+agent, substrate.ChatInput{Message: "annotate something"}, nil)
 	if err != nil || first.Status != threadOK {
 		t.Fatalf("first message: %+v, %v", first, err)
 	}
-	next, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/"+agent, substrate.ChatInput{Thread: first.Thread, Message: "which id was it?"}, nil)
+	next, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/"+agent, substrate.ChatInput{Thread: first.Thread, Message: "which id was it?"}, nil)
 	if err != nil || next.Status != threadOK {
 		t.Fatalf("follow-up: %+v, %v", next, err)
 	}
@@ -83,11 +83,11 @@ func TestAFollowUpRepeatsThePreviousRequestAsItsPrefix(t *testing.T) {
 		fakeTurn{content: "done"},
 		fakeTurn{content: "again"},
 	)
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/recaller", substrate.ChatInput{Message: "go"}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/recaller", substrate.ChatInput{Message: "go"}, nil)
 	if err != nil {
 		t.Fatalf("first message: %v", err)
 	}
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/recaller", substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/recaller", substrate.ChatInput{Thread: first.Thread, Message: "more"}, nil); err != nil {
 		t.Fatalf("follow-up: %v", err)
 	}
 	reqs := fake.requestsOf("recall")

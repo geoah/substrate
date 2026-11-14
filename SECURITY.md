@@ -33,22 +33,26 @@ unless you ask it not to.
   `substrate_app` role.
 - **Authentication bypass.** Registering without the invite code, logging in
   without the password, or without the TOTP code of an account that has a
-  second factor, using or forging a token that was not issued to you, or
-  changing a credential without the current password and, where the account
-  has a second factor, its TOTP code in the request body.
+  second factor, using or forging a token that was not issued to you,
+  changing a credential or signing out everywhere without the current
+  password and, where the account has a second factor, its TOTP code in the
+  request body, or a token that still works, or a stream that still runs,
+  after it was revoked or its person signed out everywhere.
 - **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value or a
   provider OAuth token reaching a response, a log line, another repository, or a
   record a token can read. A secret-typed property reads back `<redacted>`
-  everywhere; anything else is a finding. The registration response is the one
-  deliberate disclosure, handing back a server-minted recovery key exactly
-  once, so that key reaching any other call is a finding too.
+  everywhere; anything else is a finding.
 - **Sandbox escape under `SUBSTRATE_SANDBOX=enforce`.** A function body
   reaching the filesystem, the network or another process past what
   [the sandbox](docs/functions.md#the-sandbox) says it may.
 - **Remote code execution and SQL injection**, anywhere.
-- **A damaged entry that verifies.** A changelog line or row that
-  `repository verify` accepts although its bytes do not produce its checksum,
-  or a segment file the boot check opens although its sidecar does not match.
+- **A damaged entry that verifies.** A changelog row that `repository verify
+  --recanonicalize` accepts although its stored columns do not produce the
+  checksum stamped on it; a line of the archive that `repository verify` or a
+  restore accepts although its bytes do not produce its `sum`, or although its
+  `sum` is not the checksum the table stamped for its seq; or an archive whose
+  manifest's `headSum` is not the table's line at its head that an archive
+  pass writes over rather than refuses.
 
 ## Not a finding
 
@@ -64,20 +68,28 @@ unless you ask it not to.
   and `SUBSTRATE_INSECURE_DISABLE_TOTP` in particular makes a password the
   whole credential on purpose.
 - **What the host operator can do.** The operator holds the database, the
-  data root and the credential key. The changelog is not signed and its
-  checksums catch corruption, not an operator who rewrites a line and its
-  checksum together
-  ([the checksum](docs/changelog.md#the-checksum-and-the-segment-files)).
+  data root, the archive and the credential key. The changelog is not signed
+  and its checksums catch corruption, not an operator who rewrites a line and
+  its checksum together
+  ([the checksum](docs/changelog.md#the-checksum-and-the-archive)).
   Operator commands run on the box, over the DSN, by design.
 - **A token doing what a token may.** A token without scopes has full access
   to its own repository (an app's token reaches only the scopes its owner
   approved, [apps](docs/apps.md)): there are no roles, every authenticated request
   presents the token and neither factor, `POST /tokens` mints another token from
   an existing one with no password and no code (the authenticated twin of
-  login), and function bodies a user installs run with the user's data in reach.
-- **Documented absences.** No sharing, no second user reading your repository,
-  no erasure or retention policy, one replica only. Each is written down in
-  [running a substrate](docs/operations.md) as a decision.
+  login), a sign-in token does not expire, and function bodies a user installs
+  run with the user's data in reach. Revoking a leaked token does not end what
+  it minted or approved meanwhile; signing out everywhere ends every token the
+  person holds ([users and tokens](docs/auth.md#signing-out-everywhere)).
+- **Documented absences.** What the server does not do is listed in
+  [running a substrate](docs/operations.md#what-it-does-not-do): no evidence
+  against the host operator that history was not altered, one server process
+  per database, no going back to an older server, and no server for people
+  who do not know its operator, which hold for every 1.x release
+  ([stability](docs/stability.md)); and today one sign-in per repository with
+  no sharing, and no erasure or retention. A report that one of them is
+  missing tells us nothing new.
 - Findings from a scanner with no reachable attack behind them: a missing
   hardening header, a TLS setting on a proxy this repository does not ship, a
   dependency advisory the code never calls.

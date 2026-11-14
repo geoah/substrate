@@ -117,3 +117,26 @@ func TestOfferedToolNameIsPackageAndName(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// A function's `approval: required` holds an agent's call of it for the
+// owner (decision record 0254); absent holds nothing, and any other word is
+// refused naming the one there is.
+func TestFunctionApproval(t *testing.T) {
+	for fnData, want := range map[string]bool{
+		"  effect: irreversible\n  approval: required\n": true,
+		"  effect: irreversible\n":                       false,
+	} {
+		r, err := loadAgAuthority(t, offerAuthority(fnData, ""))
+		if err != nil {
+			t.Fatalf("load %q: %v", fnData, err)
+		}
+		fn, _ := r.ResolveFunction("ag.example.com/ag/todayFeed")
+		if fn.RequiresApproval() != want {
+			t.Fatalf("%q: RequiresApproval = %v, want %v", fnData, fn.RequiresApproval(), want)
+		}
+	}
+	_, err := loadAgAuthority(t, offerAuthority("  approval: always\n", ""))
+	if err == nil || !strings.Contains(err.Error(), `data.approval: "always" — "required", or absent for none`) {
+		t.Fatalf("approval: always: err = %v", err)
+	}
+}

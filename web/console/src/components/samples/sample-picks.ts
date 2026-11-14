@@ -57,7 +57,7 @@ function primaryKinds(
 
 /** The samples that add a collection, by package display name. `rows` are
  * the merged catalog rows, so a sample's closure already names its kinds
- * under this repository's authority. */
+ * under `~`, where they land. */
 export function collectionSamples(
   rows: readonly BundleRow[],
   registry: readonly KindInfo[]
@@ -65,7 +65,7 @@ export function collectionSamples(
   const byIdentity = new Map(registry.map((k) => [k.identity, k]))
   const out: SamplePick[] = []
   for (const row of rows) {
-    if (row.tier !== "sample") continue
+    if (row.keptBy !== "repository") continue
     const members = primaryKinds(row, byIdentity)
     if (members.length) out.push({ row, members })
   }
@@ -96,7 +96,7 @@ export function callableSamples(
 ): SamplePick[] {
   const out: SamplePick[] = []
   for (const row of rows) {
-    if (row.tier !== "sample") continue
+    if (row.keptBy !== "repository") continue
     const members = listed(row.catalog?.closure[plane])
     if (members.length) out.push({ row, members })
   }

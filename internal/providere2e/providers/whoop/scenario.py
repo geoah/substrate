@@ -912,7 +912,7 @@ def main():
         ok(not held.get("syncError"),
            "a throttled run files NO syncError — nothing failed (%s)"
            % (held.get("syncError") or "unset"))
-        ok("rate limited" in str(held.get("syncMessage") or ""),
+        ok("slow down" in str(held.get("syncMessage") or ""),
            "the message says what happened (%s)" % held.get("syncMessage"))
         # WAIT THE HOLD OUT, deliberately and from the account's own stamp:
         # `_held` refuses every way in while it stands, so a request stamped
@@ -942,6 +942,10 @@ def main():
         ok(str(bad.get("syncError") or "") == str(bad.get("syncMessage") or ""),
            "the message and the error are the same sentence — a console shows "
            "one line and it is this one (%s)" % bad.get("syncMessage"))
+        ok(str(bad.get("syncError") or "").startswith(
+            "WHOOP had a problem on its side"),
+           "and its first line is a sentence the owner reads, the status "
+           "folded behind it (%s)" % bad.get("syncError"))
         ok(str(bad.get("syncStatus") or "").startswith("erroring:"),
            "and the legacy syncStatus string says it too, unchanged: the "
            "trait is ADDITIVE and a reader of the old shape keeps working "

@@ -86,6 +86,14 @@ var repositoryMigrations = []repositoryMigration{
 	{Version: 3, Name: "name_units_by_unit_records", Run: migrateNameUnitsByUnitRecords},
 	{Version: 4, Name: "name_applet_runtimes", Run: migrateNameAppletRuntimes},
 	{Version: 5, Name: "remove_reply_relay_contacts", Run: migrateRemoveReplyRelayContacts},
+	{Version: 6, Name: "key_the_repository_record_by_its_id", Run: migrateKeyTheRepositoryRecordByItsID},
+	{Version: 7, Name: "start_paged_drains_over", Run: migrateStartPagedDrainsOver},
+	{Version: 8, Name: "purge_the_recovery_key", Run: migratePurgeTheRecoveryKey},
+	{Version: 9, Name: "link_actors", Run: migrateLinkActors},
+	{Version: 10, Name: "name_writers_by_actor_type", Run: migrateNameWritersByActorType},
+	{Version: 11, Name: "drop_a_body_its_kind_does_not_declare", Run: migrateDropABodyItsKindDoesNotDeclare},
+	{Version: 12, Name: "move_the_sign_in_out_of_the_repository", Run: migrateMoveTheSignInOutOfTheRepository},
+	{Version: 13, Name: "give_every_person_admin", Run: migrateGiveEveryPersonAdmin},
 }
 
 // ErrRepositoryMigrationsNewer is the per-repository downgrade refusal beside
@@ -93,6 +101,20 @@ var repositoryMigrations = []repositoryMigration{
 // binary does not carry, so a newer binary migrated it, and an older one does
 // not know what that code changed.
 var ErrRepositoryMigrationsNewer = errors.New("substrate/engine: the repository recorded migrations this binary does not carry")
+
+// runLandedRepositoryMigrations is runRepositoryMigrations for an open. Its
+// one exception to the rule that a dataset holds no name (namescache.go):
+// migration 6, landed and frozen, finds the repository's record under the
+// name it was written with by reading `ds.info.Authority`, so the field holds
+// the name the open read from the row while the migrations run, and nothing
+// after them. The dataset is not published yet, so nothing else reads it.
+func (ds *dataset) runLandedRepositoryMigrations(name string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		ds.info.Authority = name
+		defer func() { ds.info.Authority = "" }()
+		return ds.runRepositoryMigrations(ctx)
+	}
+}
 
 // runRepositoryMigrations runs the pending migrations for this repository, in
 // order, and refuses a ledger that diverges from what the binary carries.

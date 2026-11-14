@@ -8,11 +8,11 @@ export from a GP system, a hospital portal or a phone's health records maps
 onto it field by field
 ([decision 0193](decisions/0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md)).
 
-It is installed like the other catalogues
-(`bin/substratectl install substrate.reamde.dev/clinical`, or
-`POST /api/v1/catalog/{id}/install`), lands published under
+It is added like the other catalogues
+(`bin/substratectl add substrate.reamde.dev/clinical`, or
+`POST /api/v1/catalog/{id}/add`), lands published under
 `substrate.reamde.dev`, and requires `labs`, which requires `health`: one
-install brings all three ([the well-known catalogues](observations.md#the-well-known-catalogues)).
+add brings all three ([the well-known catalogues](observations.md#the-well-known-catalogues)).
 
 ## The kinds
 

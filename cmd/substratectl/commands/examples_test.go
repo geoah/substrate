@@ -126,10 +126,6 @@ func shellWords(line string) ([]string, error) {
 // and server-side for `trigger run` and `watch --kinds`, where the fake
 // refuses a bare kind as the server does and notes the refusal.
 func TestHelpExamplesNameKindsInFull(t *testing.T) {
-	// Nothing on PATH: a register example that got as far as the recovery
-	// key must not reach a signed-in 1Password on the developer's machine.
-	t.Setenv("PATH", t.TempDir())
-
 	examples := helpExamples(newApp("test").rootCommand())
 	// The walk must find the examples it is here for, or the loop below
 	// passes having run nothing.
@@ -193,7 +189,6 @@ func bareNameRefusal(t *testing.T, line string) (string, error) {
 // before it answers, and by the server on the watch stream after it has
 // answered 200.
 func TestBareNameRefusalIsCaughtOnEverySide(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
 	for _, tc := range []struct {
 		line    string
 		refused bool

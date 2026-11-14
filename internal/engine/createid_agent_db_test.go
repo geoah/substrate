@@ -78,7 +78,7 @@ func TestAGatedCreateMintsItsTargetAndTheAcceptLandsIt(t *testing.T) {
 	if req.Properties["op"] != "create" || !vocabulary.MintedID(target) {
 		t.Fatalf("request: %+v", req.Properties)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -111,7 +111,7 @@ func TestAProposedCreateTakesAMintedTarget(t *testing.T) {
 	if !vocabulary.MintedID(target) {
 		t.Fatalf("request target = %q", target)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -120,7 +120,7 @@ func TestAProposedCreateTakesAMintedTarget(t *testing.T) {
 		t.Fatalf("the accepted create did not land: %+v %v", got, err)
 	}
 	// A person writing a create request names the target under the same rule.
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest,
 		Properties: map[string]any{
 			"op": "create", "targetKind": crewPackage + "/widget", "targetId": "w-by-hand",
@@ -144,7 +144,7 @@ func TestAProposedCreateTakesAMintedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a function's create request under a composed id: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, composed.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, composed.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &composed.Version,
 	}); err != nil {
 		t.Fatalf("accept the function's request: %v", err)

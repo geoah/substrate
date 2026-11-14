@@ -3,12 +3,15 @@ package commands
 import (
 	"archive/tar"
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // handleExport streams the seeded archive under the seeded file name, the
@@ -23,36 +26,66 @@ func (f *fakeSubstrate) handleExport(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(f.exportTar)
 }
 
-// exportArchive builds an archive in the server's layout: the manifest, one
-// finished segment with its sidecar, the active one, a sealed file, a blob
-// and, when complete is set, snapshot.json last.
+// exportID is the repository id the fixture archive is laid out under.
+const exportID = "rnd-01jbx9m2qz7k4c5v8n3w6t1hrd"
+
+// exportArchive builds an archive in the server's layout: a blob, a sealed
+// file, two pieces of history and, when complete is set, the manifest last.
 func exportArchive(t *testing.T, complete bool) []byte {
+	t.Helper()
+	return exportArchiveSealing(t, complete, 0)
+}
+
+// exportArchiveSealing is exportArchive whose manifest selects sealed more
+// sealed values, so it grows as a repository's does.
+func exportArchiveSealing(t *testing.T, complete bool, sealed int) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	root := "repositories/ada.example.com/"
+	const pass = "0123456789abcdef"
+	archiveID := "a" + strings.Repeat("0", 15) + "1" + strings.Repeat("9", 8)
+	root := "repositories/" + exportID + "/" + archiveID + "/"
+	manifests := "repositories/" + exportID + "/manifests/" + archiveID + "/"
 	write := func(name, body string) {
-		if err := tw.WriteHeader(&tar.Header{Name: root + name, Mode: 0o600, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := tw.Write([]byte(body)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, dir := range []string{"repositories/", root, root + "changelog/", root + "blobs/", root + "sealed/"} {
+	for _, dir := range []string{"repositories/", "repositories/" + exportID + "/", root, root + "changelog/", root + "changelog/1/", root + "blobs/", root + "sealed/", manifests} {
 		if err := tw.WriteHeader(&tar.Header{Name: dir, Mode: 0o700, Typeflag: tar.TypeDir}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	write("repository.json", `{"format":2,"repository":"ada","authority":"ada.example.com"}`+"\n")
-	write("changelog/000000000000001.ndjson", "{}\n{}\n")
-	write("changelog/000000000000001.ndjson.sha256", strings.Repeat("0", 64)+"\n")
-	write("changelog/000000000000003.ndjson", "{}\n")
-	write("sealed/secret-abc.json", `{"ref":"secret:abc"}`+"\n")
-	write("blobs/blob-sha256-"+strings.Repeat("a", 64), "attachment bytes")
+	var cd, ab [32]byte
+	copy(cd[:], bytes.Repeat([]byte{0xcd}, 32))
+	copy(ab[:], bytes.Repeat([]byte{0xab}, 32))
+	pieces := []changelogfile.ArchivePiece{
+		{Name: changelogfile.PieceObjectName(1, 1, 40, pass, ab), Sum: changelogfile.SumText(ab), Size: 3},
+		{Name: changelogfile.PieceObjectName(1, 41, 42, pass, ab), Sum: changelogfile.SumText(ab), Size: 3},
+	}
+	write(root+changelogfile.BlobObjectName("blob-sha256-"+strings.Repeat("a", 64), pass), "attachment bytes")
+	write(root+changelogfile.SealedObjectName("secret:abc", cd, pass), `{"ref":"secret:abc"}`+"\n")
+	for _, p := range pieces {
+		write(root+p.Name, "{}\n")
+	}
 	if complete {
-		write("snapshot.json", `{"format":1,"takenAt":"2026-09-08T10:00:00Z","head":42,"headHash":"`+
-			strings.Repeat("ab", 32)+`","sealedFiles":1,"blobStore":"fs","blobs":["blob-sha256-`+strings.Repeat("a", 64)+`"]}`+"\n")
+		selected := map[string]string{"secret:abc": changelogfile.SealedObjectName("secret:abc", cd, pass)}
+		for i := range sealed {
+			ref := fmt.Sprintf("secret:%032x", i)
+			selected[ref] = changelogfile.SealedObjectName(ref, ab, pass)
+		}
+		m, err := changelogfile.EncodeArchiveManifest(changelogfile.Manifest{
+			Format: changelogfile.ManifestFormatArchive, ID: exportID, Authority: "ada.example.com", Archive: archiveID, Pass: pass,
+			ChangelogDialect: 1, VocabularyDialect: 3, Head: 42, HeadSum: "sha256:" + strings.Repeat("ab", 32),
+			Epoch: 7, Pieces: pieces, Sealed: selected,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(manifests+changelogfile.ArchiveManifestName(7, m), string(m))
 	}
 	if err := tw.Close(); err != nil {
 		t.Fatal(err)
@@ -62,7 +95,7 @@ func exportArchive(t *testing.T, complete bool) []byte {
 
 // The archive lands byte for byte under the server's file name, the request
 // carried the bearer token and nothing else, and the report reads the point
-// off snapshot.json.
+// off the manifest.
 func TestExportWritesTheArchiveAndPrintsThePoint(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -88,7 +121,7 @@ func TestExportWritesTheArchiveAndPrintsThePoint(t *testing.T) {
 	for _, want := range []string{
 		"export of ada.example.com: " + strconv.Itoa(len(got)) + " bytes written to ada.example.com-42.tar",
 		"point:     seq 42, checksum " + strings.Repeat("ab", 32),
-		"changelog: 2 segment(s)",
+		"changelog: 2 piece(s)",
 		"sealed:    1 file(s)",
 		"blobs:     1 (16 bytes)",
 	} {
@@ -115,15 +148,15 @@ func TestExportWritesTheArchiveAndPrintsThePoint(t *testing.T) {
 	}
 }
 
-// An archive the connection cut short has no snapshot.json at its end: the
-// command refuses it, names the file, and leaves nothing behind.
+// An archive the connection cut short has no manifest at its end: the command
+// refuses it, names the file, and leaves nothing behind.
 func TestExportRefusesAnArchiveThatEndedEarly(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.exportTar = exportArchive(t, false)
 	target := filepath.Join(t.TempDir(), "cut.tar")
 	_, _, err := h.run("export", "-o", target)
-	if err == nil || !strings.Contains(err.Error(), "ended before snapshot.json") {
+	if err == nil || !strings.Contains(err.Error(), "ended before its manifest") {
 		t.Fatalf("an incomplete archive must be refused, got %v", err)
 	}
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
@@ -131,13 +164,14 @@ func TestExportRefusesAnArchiveThatEndedEarly(t *testing.T) {
 	}
 }
 
-// A snapshot.json anywhere but the layout's root is a blob or a stray, not
-// the completion marker: an archive ending in one is still incomplete.
-func TestExportAcceptsSnapshotOnlyAtTheLayoutRoot(t *testing.T) {
+// A manifest's name anywhere but the repository's manifests/ is a blob or a
+// stray, not the completion marker: an archive ending in one is still
+// incomplete.
+func TestExportAcceptsTheManifestOnlyUnderManifests(t *testing.T) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	for _, name := range []string{"repositories/ada.example.com/repository.json", "repositories/ada.example.com/blobs/snapshot.json"} {
-		body := `{"format":1,"head":7}`
+	for _, name := range []string{"repositories/" + exportID + "/" + "a" + strings.Repeat("0", 15) + "1" + strings.Repeat("9", 8) + "/blobs/" + changelogfile.ArchiveManifestName(7, []byte("x"))} {
+		body := `{"format":3,"head":7}`
 		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 			t.Fatal(err)
 		}
@@ -146,8 +180,8 @@ func TestExportAcceptsSnapshotOnlyAtTheLayoutRoot(t *testing.T) {
 		}
 	}
 	_ = tw.Close()
-	if _, err := readExport(&buf); err == nil || !strings.Contains(err.Error(), "ended before snapshot.json") {
-		t.Fatalf("a nested snapshot.json must not complete the archive, got %v", err)
+	if _, err := readExport(&buf); err == nil || !strings.Contains(err.Error(), "ended before its manifest") {
+		t.Fatalf("a manifest's name outside manifests/ must not complete the archive, got %v", err)
 	}
 }
 
@@ -164,5 +198,24 @@ func TestExportRefusesAnArchiveThatClimbsOut(t *testing.T) {
 	}
 	if name := attachmentName(`attachment; filename="../x.tar"`); name != "" {
 		t.Fatalf("a climbing file name must be dropped, got %q", name)
+	}
+}
+
+// A manifest grows with the repository's sealed values; one past the old
+// 1 MiB bound (twenty thousand of them) is a valid export the client keeps.
+func TestExportKeepsAnArchiveWhoseManifestIsLarge(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.exportTar = exportArchiveSealing(t, true, 20000)
+	h.fake.exportName = "ada.example.com-42.tar"
+	dir := t.TempDir()
+	t.Chdir(dir)
+	out, _ := h.mustRun("export")
+	got, err := os.ReadFile(filepath.Join(dir, "ada.example.com-42.tar"))
+	if err != nil || !bytes.Equal(got, h.fake.exportTar) {
+		t.Fatalf("the archive with a large manifest was not kept (%v)", err)
+	}
+	if !strings.Contains(out, "point:     seq 42") {
+		t.Fatalf("report:\n%s", out)
 	}
 }

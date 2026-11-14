@@ -113,7 +113,7 @@ func newRun(t *testing.T, base string) *run {
 	// The repository name is fresh per run because registration is one-shot
 	// and the repository is left behind on purpose; base36 nanoseconds keep
 	// it a legal DNS label and two runs in the same second apart. It is a
-	// bare label, which the door completes under its own host.
+	// bare label, which the door completes under the server's public host.
 	repository := "e2e" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	timeout := requestTimeout(t)
 	return &run{

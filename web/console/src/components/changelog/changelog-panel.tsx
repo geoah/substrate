@@ -16,7 +16,7 @@ import { DataTableFilters } from "@/components/data-table/data-table-filters"
 import { ChangelogTable } from "@/components/changelog/changelog-table"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { actorMirrorsQueryOptions, actorNames } from "@/lib/api/actors"
+import { actorsQueryOptions } from "@/lib/api/actors"
 import type { WatchStatus } from "@/lib/api/changes"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { decodeFilters, encodeFilter } from "@/lib/filters"
@@ -97,8 +97,8 @@ export function ChangelogPanel({
 
   const registry = useQuery(kindsQueryOptions)
   const mirrors = useQuery({
-    ...actorMirrorsQueryOptions,
-    select: actorNames,
+    ...actorsQueryOptions,
+    select: (actors) => actors.map((a) => a.id).sort(),
   })
 
   const filters = useMemo(() => decodeFilters(filterTokens), [filterTokens])

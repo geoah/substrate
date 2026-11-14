@@ -22,7 +22,7 @@ import (
 // blockingBlobDS is a blob-capable dataset whose PutBlob blocks until released,
 // recording the peak number of concurrent in-flight uploads.
 type blockingBlobDS struct {
-	*fakeDataset
+	stubDataset
 	inflight int32
 	maxSeen  int32
 	started  chan struct{}
@@ -53,9 +53,8 @@ func (b *blockingBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobIn
 
 func TestBlobPutIsConcurrencyBounded(t *testing.T) {
 	ds := &blockingBlobDS{
-		fakeDataset: newFakeDataset(fakeRepository),
-		started:     make(chan struct{}, 64),
-		release:     make(chan struct{}),
+		started: make(chan struct{}, 64),
+		release: make(chan struct{}),
 	}
 	h := &handler{}
 
@@ -65,7 +64,7 @@ func TestBlobPutIsConcurrencyBounded(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+			ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 			req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/blobs",
 				strings.NewReader("payload")).WithContext(ctx)
 			req.Header.Set("Content-Type", "text/plain")

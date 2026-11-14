@@ -30,14 +30,14 @@ import (
 // the segment writer appends exactly those bytes (prepareLines), so what
 // was checked before commit is what lands after it.
 type pendingEntry struct {
-	Seq   int64
-	TS    time.Time
-	Actor string
-	// Principal is the verified token id behind the write, beside the actor
-	// the caller asserted. Empty where no token stood behind the entry (the
-	// seed, the boot upgrade, a background worker, registration and login),
-	// and 'invalid' on the history written before real ones were stamped.
-	Principal  string
+	Seq int64
+	TS  time.Time
+	// Actor, OnBehalfOf and Token are the write's three links (decision
+	// 0270): the ids of the actor record that wrote it, of the one it acted
+	// for, and of the token behind it, the last two empty where there is none.
+	Actor      string
+	OnBehalfOf string
+	Token      string
 	Op         string
 	RecordID   string
 	Kind       string
@@ -58,7 +58,7 @@ type pendingEntry struct {
 // fileEntry is the pending entry in the shape the file format encodes.
 func (e pendingEntry) fileEntry() changelogfile.Entry {
 	return changelogfile.Entry{
-		Seq: e.Seq, TS: e.TS, Actor: e.Actor, Principal: e.Principal,
+		Seq: e.Seq, TS: e.TS, Actor: e.Actor, OnBehalfOf: e.OnBehalfOf, Token: e.Token,
 		Op: e.Op, RecordID: e.RecordID, Kind: e.Kind,
 		CausedBy: e.CausedBy, CausedByOK: e.CausedByOK,
 		Txn:     e.Txn,

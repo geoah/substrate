@@ -437,6 +437,7 @@ ci = set(tasks["ci"]["depends"])
 covered = {
     "ci:go": "ci:coverage",
     "ci:engine": "ci:coverage",
+    "ci:db:api": "ci:coverage",
     "ci:db:catalog": "ci:coverage",
     "ci:db:providertest": "ci:coverage",
     "ci:db:rest": "ci:coverage",

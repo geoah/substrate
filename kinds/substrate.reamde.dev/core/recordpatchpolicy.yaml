@@ -21,9 +21,9 @@
 # The judge half (judge/criteria/context/expandReferents/autoAccept/
 # autoRefuse/mode) is LIVE: the engine runs the named agent over what the
 # policy gated and decides only between the thresholds (engine/judge.go).
-# ALPHA at v1, like the agent vocabulary (core.yaml's marker, ruling A12): it
-# may change or leave without a v1 break. The selector/action half is the
-# stable contract.
+# EXPERIMENTAL, like the agent kind (core.yaml's marker, docs/stability.md):
+# core's `stable` label does not cover this half, which may change or go in
+# any release. The selector/action half is what the label covers.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/core/recordpatchpolicy
@@ -127,7 +127,7 @@ data:
         or bounce
     # The judge: an agent (tool-less, its structured verdict is its whole
     # contract) the ENGINE runs over gated requests, deciding only between the
-    # thresholds below. ALPHA at v1 with everything under it through `mode` —
+    # thresholds below. EXPERIMENTAL with everything under it through `mode` —
     # see the marker at the top of this file.
     #
     # THE ENGINE STATES THE REPLY SHAPE, not the policy author: every judge run

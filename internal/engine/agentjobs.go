@@ -245,6 +245,20 @@ func (l *agentLoop) startJob(tc llm.ToolCall, turn int, row string, started time
 
 // runJob is the job's goroutine: the call, then its end.
 func (ds *dataset) runJob(bg context.Context, j *agentJob, jl *agentLoop, p *pendingJob) {
+	if hook := ds.beforeJob; hook != nil {
+		hook()
+	}
+	// The job and its end are held to its tool row's `heldTo` (heldto.go),
+	// never the thread's. Unread, nothing is written for no one: the row
+	// stays `working`, and the next open settles it as interrupted.
+	bg, err := ds.heldBy(bg, typeMessage, j.row)
+	if err != nil {
+		ds.svc.log.Error("substrate: a background job did not start", "thread", j.thread, "call", j.callID, "error", err)
+		ds.spend.finish(jl.in.tally.spend)
+		ds.jobs.remove(j)
+		close(j.done)
+		return
+	}
 	jctx, cancel := context.WithCancel(bg)
 	defer cancel()
 	j.hub.setRun(jctx, cancel)
@@ -318,7 +332,7 @@ func (ds *dataset) endJob(bg context.Context, j *agentJob, jl *agentLoop, run *t
 	var systemRow string
 	var rootCost float64
 	var rolled bool
-	err := ds.inTx(ctx, jl.actor, false, func(t *txn) error {
+	err := ds.runRecordTx(ctx, jl.actor, exemptConversation, func(t *txn) error {
 		rolled = false
 		t.causedBy = jl.in.causedBy
 		props := map[string]any{"job": jobProps(state, j.startedAt, finished)}
@@ -338,8 +352,15 @@ func (ds *dataset) endJob(bg context.Context, j *agentJob, jl *agentLoop, run *t
 			}
 			rootCost, rolled = cost, true
 		}
-		var err error
-		systemRow, err = t.putThreadSystemRowID(j.thread, env, run.changes)
+		tool, err := t.loadRow(eref{Kind: typeMessage, ID: j.row}, false)
+		if err != nil {
+			return err
+		}
+		var held map[string]any
+		if tool != nil {
+			held = heldOf(tool.Props[propHeldTo])
+		}
+		systemRow, err = t.putThreadSystemRowID(j.thread, env, run.changes, held)
 		return err
 	})
 	if tally.spend != nil {
@@ -404,7 +425,7 @@ func (ds *dataset) deliverJob(j *agentJob, content string) {
 		if l, _ := v.(*agentLoop); l != nil {
 			if !l.postJob(jobDelivery{row: j.systemRow, content: content}) {
 				// The loop is past its settle-time re-check.
-				ds.resumeNotifiedThread(j.thread, "")
+				ds.resumeNotifiedThread(j.thread, "", j.systemRow)
 				return
 			}
 			if l.hub != nil {
@@ -417,7 +438,7 @@ func (ds *dataset) deliverJob(j *agentJob, content string) {
 			return
 		}
 	}
-	ds.resumeNotifiedThread(j.thread, "")
+	ds.resumeNotifiedThread(j.thread, "", j.systemRow)
 }
 
 // postJob queues a delivery for the loop's next batch, and reports false
@@ -432,9 +453,10 @@ func (l *agentLoop) postJob(d jobDelivery) bool {
 	return true
 }
 
-// closeJobs closes the inbox and reports whether it held a row the run never
-// handed the model. A job that ends after it is delivered as a resume.
-func (l *agentLoop) closeJobs() bool {
+// closeJobs closes the inbox and answers the first row it held that the run
+// never handed the model, "" when none. A job that ends after it is
+// delivered as a resume.
+func (l *agentLoop) closeJobs() string {
 	l.jobMu.Lock()
 	defer l.jobMu.Unlock()
 	l.jobsClosed = true
@@ -442,10 +464,10 @@ func (l *agentLoop) closeJobs() bool {
 	for _, id := range l.consumed {
 		seen[id] = true
 	}
-	left := false
+	left := ""
 	for _, d := range l.jobInbox {
-		if !seen[d.row] {
-			left = true
+		if !seen[d.row] && left == "" {
+			left = d.row
 		}
 	}
 	l.jobInbox = nil
@@ -656,7 +678,13 @@ func (ds *dataset) settleInterruptedJobs(ctx context.Context) error {
 		if callable, _ := f.props["callable"].(string); callable != "" {
 			env["callable"] = callable
 		}
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// The settlement is the job's: held to its tool row's holders, unless
+		// they are no longer there (heldto.go).
+		jctx, err := ds.settlingHeld(ctx, typeMessage, f.id)
+		if err != nil {
+			return fmt.Errorf("settle interrupted job %s: %w", f.id, err)
+		}
+		err = ds.inTx(jctx, substrate.ActorSystem, true, func(t *txn) error {
 			if _, err := t.patch(eref{Kind: typeMessage, ID: f.id}, substrate.PatchInput{Properties: map[string]any{
 				"job": jobProps(jobFailed, started, t.now),
 			}}); err != nil {
@@ -665,7 +693,7 @@ func (ds *dataset) settleInterruptedJobs(ctx context.Context) error {
 			if thread == "" {
 				return nil
 			}
-			_, err := t.putThreadSystemRowID(thread, env, nil)
+			_, err := t.putThreadSystemRowID(thread, env, nil, heldOf(f.props[propHeldTo]))
 			return err
 		})
 		if err != nil {

@@ -7,6 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
+	"sync/atomic"
 )
 
 // MaxLineBytes caps one line. A reader that met a longer one would either
@@ -40,15 +43,6 @@ type segment struct {
 	// later open handed this Log (OpenOptions.Verified) can hold the sidecar
 	// to it without reading the segment.
 	digest string
-	// unread is a finished segment taken on its sidecar's word
-	// (OpenOptions.TrustSidecars): digest is the sidecar's claim, which no
-	// read of the bytes has held them to yet (Log.DigestUnread).
-	unread bool
-	// known is a finished segment taken on the digest the caller vouched for
-	// (OpenOptions.Known), and lastSum is its last line's sum, so a caller
-	// can start comparing lines after the run of them (Log.KnownHead).
-	known   bool
-	lastSum [32]byte
 }
 
 // Log is a changelog directory as Open found it: a snapshot. Head and the
@@ -108,27 +102,6 @@ type OpenOptions struct {
 	// ReadOnly opens as OpenReadOnly does: an incomplete tail is counted and
 	// left in place, and the Log cannot back a Writer.
 	ReadOnly bool
-	// Verified is a Log this process opened earlier over the same
-	// directory. A finished segment it holds as finished, under the same
-	// name, size and modification time, is taken as checked without
-	// reading it again: a finished segment never changes, so the digest
-	// that Log checked is still its digest, and the sidecar is held to that
-	// digest instead. Every other finished segment is digested and the
-	// active segment is always scanned, so what Verified does not vouch for
-	// is checked as Open checks it. A Log over another directory vouches
-	// for nothing.
-	Verified *Log
-	// Known vouches for finished segments by name: a segment of that name
-	// whose size is the Known size and whose sidecar holds the Known digest
-	// is taken as checked, reading only its first and last lines (unread.go).
-	// Any other size or digest under a Known name is ErrSegmentDigest. A
-	// snapshot hands the segments its base holds (SharedFinished).
-	Known map[string]KnownSegment
-	// TrustSidecars takes every finished segment neither Verified nor Known
-	// vouches for on its own sidecar's word, reading only its first and last
-	// lines, and leaves the digest owed: Log.DigestUnread reads them. Without
-	// it every such segment is digested before the open returns.
-	TrustSidecars bool
 	// Progress, when not nil, is called after each segment is checked, in
 	// seq order.
 	Progress func(OpenProgress)
@@ -143,13 +116,6 @@ type OpenProgress struct {
 	// Finished is whether it is a finished segment, checked against its
 	// sidecar, rather than the active one, scanned line by line.
 	Finished bool
-	// Reused is whether OpenOptions.Verified vouched for it, so none of its
-	// bytes were read.
-	Reused bool
-	// Digested is whether every byte of a finished segment was hashed here,
-	// rather than its first and last lines alone (OpenOptions.Known and
-	// TrustSidecars) or nothing (Reused).
-	Digested bool
 	// Segments and Bytes are how many segments, and how many of their
 	// bytes, are checked so far, this one included; the totals are the
 	// directory's.
@@ -159,8 +125,8 @@ type OpenProgress struct {
 	TotalBytes    int64
 }
 
-// OpenWith is Open, or OpenReadOnly when opts.ReadOnly is set, with the
-// options' reuse of an earlier check and progress reports. The segments are
+// OpenWith is Open, or OpenReadOnly when opts.ReadOnly is set, with progress
+// reports. The segments are
 // checked in parallel, as many at once as GOMAXPROCS allows, and held to each
 // other in seq order.
 func OpenWith(dir string, opts OpenOptions) (*Log, error) {
@@ -172,11 +138,10 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 	for _, s := range list {
 		totalBytes += s.Size
 	}
-	vouched := opts.Verified.finishedByName(dir)
 	l := &Log{dir: dir, repaired: !opts.ReadOnly}
 	var prevLast, checkedBytes int64
-	err = inSegmentOrder(len(list), func(i int, lc *lineChecker) segmentCheck {
-		return openSegmentCheck(dir, list, i, vouched, opts, lc)
+	err = inSegmentOrder(len(list), func(i int, _ *lineChecker) segmentCheck {
+		return openSegmentCheck(dir, list, i)
 	}, func(i int, c segmentCheck) error {
 		s := list[i]
 		if s.First != prevLast+1 {
@@ -200,8 +165,7 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 		checkedBytes += s.Size
 		if opts.Progress != nil {
 			opts.Progress(OpenProgress{
-				Segment: s.Name, Finished: s.Finished, Reused: c.reused,
-				Digested: s.Finished && !c.reused && !seg.unread && !seg.known,
+				Segment: s.Name, Finished: s.Finished,
 				Segments: i + 1, TotalSegments: len(list),
 				Bytes: checkedBytes, TotalBytes: totalBytes,
 			})
@@ -216,11 +180,9 @@ func OpenWith(dir string, opts OpenOptions) (*Log, error) {
 }
 
 // openSegmentCheck is what an open checks of segment i of a listing: a
-// finished segment against its sidecar, unless the Verified Log vouches for
-// it, opts.Known holds its digest or opts.TrustSidecars takes the sidecar's
-// word, and the active one line by line. The cut of an incomplete tail is the
-// caller's, in seq order.
-func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segment, opts OpenOptions, lc *lineChecker) segmentCheck {
+// finished segment against its sidecar, and the active one line by line. The
+// cut of an incomplete tail is the caller's, in seq order.
+func openSegmentCheck(dir string, list []Segment, i int) segmentCheck {
 	s := list[i]
 	seg := segment{Segment: s, end: s.Size}
 	if !s.Finished {
@@ -231,53 +193,8 @@ func openSegmentCheck(dir string, list []Segment, i int, vouched map[string]segm
 		seg.last, seg.end = last, end
 		return segmentCheck{seg: seg, cut: cut, err: err}
 	}
-	if known, ok := vouched[s.Name]; ok && known.Size == s.Size && known.ModTime.Equal(s.ModTime) {
-		want, err := readSidecar(dir, s.Name)
-		if err != nil {
-			return segmentCheck{err: err}
-		}
-		if want != known.digest {
-			return segmentCheck{err: fmt.Errorf("%w: %s", ErrSegmentDigest, s.Name)}
-		}
-		seg.last, seg.digest = known.last, known.digest
-		seg.unread, seg.known, seg.lastSum = known.unread, known.known, known.lastSum
-		return segmentCheck{seg: seg, reused: true}
-	}
-	// The last segment listed is digested whole even when it is finished:
-	// no segment after it says where it ends, so a finished segment that
-	// lost its last transactions with its sidecar kept would pass its first
-	// and last lines and open as a shorter history.
-	last := i == len(list)-1
-	if known, ok := opts.Known[s.Name]; ok && !last {
-		seg, err := checkKnown(dir, seg, known, lc)
-		return segmentCheck{seg: seg, err: err}
-	}
-	if opts.TrustSidecars && !last {
-		want, err := readSidecar(dir, s.Name)
-		if err != nil {
-			return segmentCheck{err: err}
-		}
-		seg, err := checkEndLines(dir, seg, lc)
-		seg.digest, seg.unread = want, true
-		return segmentCheck{seg: seg, err: err}
-	}
 	seg, err := checkFinished(dir, seg)
 	return segmentCheck{seg: seg, err: err}
-}
-
-// checkKnown holds a finished segment to the size and digest a caller
-// vouched for and reads its first and last lines (checkEndLines).
-func checkKnown(dir string, seg segment, known KnownSegment, lc *lineChecker) (segment, error) {
-	want, err := readSidecar(dir, seg.Name)
-	if err != nil {
-		return seg, err
-	}
-	if want != known.Digest || seg.Size != known.Size {
-		return seg, fmt.Errorf("%w: %s is not the segment the caller vouched for", ErrSegmentDigest, seg.Name)
-	}
-	seg, err = checkEndLines(dir, seg, lc)
-	seg.digest, seg.known = known.Digest, true
-	return seg, err
 }
 
 // checkFinished digests a finished segment and holds it to its sidecar: the
@@ -308,22 +225,6 @@ func holdToSidecar(dir string, seg segment, d digest) (segment, error) {
 	}
 	seg.last, seg.digest = seg.First+d.lines-1, d.hex
 	return seg, nil
-}
-
-// finishedByName is the finished segments a Log checked, by name, for an
-// open of dir it is handed as OpenOptions.Verified; none for a nil Log or one
-// over another directory.
-func (l *Log) finishedByName(dir string) map[string]segment {
-	if l == nil || filepath.Clean(l.dir) != filepath.Clean(dir) {
-		return nil
-	}
-	out := make(map[string]segment, len(l.segments))
-	for _, seg := range l.segments {
-		if seg.Finished && seg.digest != "" {
-			out[seg.Name] = seg
-		}
-	}
-	return out
 }
 
 // scanActive checks every complete line of the active segment: its checksum,
@@ -377,18 +278,11 @@ func scanActive(path, name string, first int64) (last, end, cut int64, err error
 	return last, end, cut, nil
 }
 
-// truncateLocked cuts path to size bytes under the directory's writer lock, so
-// a live writer's active segment is never cut from under it. scanned is the
-// file's length when the tail was judged incomplete: a writer that committed
-// or aborted the tail and let go of the lock between that scan and this lock
-// moved the length, and a cut at the stale offset would drop history, so a
-// file that is no longer that long is refused with ErrLogStale.
-func truncateLocked(dir, path string, size, scanned int64) error {
-	lock, err := lockDir(dir)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.release() }()
+// truncateLocked cuts path to size bytes. scanned is the file's length when
+// the tail was judged incomplete: a file that is no longer that long was
+// written to since, and a cut at the stale offset would drop history, so it
+// is refused with ErrLogStale.
+func truncateLocked(_, path string, size, scanned int64) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -558,4 +452,59 @@ func (lr *lineReader) next() (line []byte, start int64, complete bool, err error
 			return nil, start, false, err
 		}
 	}
+}
+
+// segmentCheck is what checking one segment found.
+type segmentCheck struct {
+	// seg is the segment as a Log indexes it: its last seq, its end and,
+	// when finished, its digest.
+	seg segment
+	// cut is how many complete lines the active segment's incomplete tail
+	// holds (Log.TruncatedEntries).
+	cut int64
+	err error
+}
+
+// inSegmentOrder runs check over segments 0..n-1 on up to GOMAXPROCS
+// goroutines, each with a lineChecker of its own, and hands every result to
+// each on the calling goroutine in index order. The first error each returns
+// stops it: no segment after it is started, the ones already running finish,
+// and the error is returned.
+func inSegmentOrder(n int, check func(i int, lc *lineChecker) segmentCheck, each func(i int, c segmentCheck) error) error {
+	if n == 0 {
+		return nil
+	}
+	results := make([]segmentCheck, n)
+	done := make([]chan struct{}, n)
+	for i := range done {
+		done[i] = make(chan struct{})
+	}
+	var next atomic.Int64
+	var stopped atomic.Bool
+	var wg sync.WaitGroup
+	for range min(runtime.GOMAXPROCS(0), n) {
+		wg.Go(func() {
+			lc := newLineChecker()
+			for {
+				i := int(next.Add(1) - 1)
+				if i >= n {
+					return
+				}
+				if !stopped.Load() {
+					results[i] = check(i, lc)
+				}
+				close(done[i])
+			}
+		})
+	}
+	var err error
+	for i := range n {
+		<-done[i]
+		if err = each(i, results[i]); err != nil {
+			stopped.Store(true)
+			break
+		}
+	}
+	wg.Wait()
+	return err
 }

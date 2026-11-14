@@ -19,11 +19,11 @@ import (
 const aliasPackage = "alias.test.dev/alias"
 
 // The callables the rows must name, spelled out rather than derived: the
-// spelling is the contract a reader joins on.
+// record path is the contract a reader joins on (decision 0270).
 const (
-	aliasCountCallable = "function:alias.test.dev:alias:count"
-	aliasRightCallable = "agent:alias.test.dev:alias:right"
-	aliasQueryCallable = "function:substrate.reamde.dev:core:query"
+	aliasCountCallable = "substrate.reamde.dev/core/function/alias.test.dev/alias/count"
+	aliasRightCallable = "substrate.reamde.dev/core/agent/alias.test.dev/alias/right"
+	aliasQueryCallable = "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query"
 )
 
 // provisionAliasAgents installs one function and two agents that alias it
@@ -33,7 +33,7 @@ func provisionAliasAgents(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "aliasllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-aliasllm",
@@ -80,7 +80,7 @@ def main(input, host):
 			},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the alias authority: %v", err)
 	}
 	return ds, fake
@@ -313,7 +313,7 @@ func TestToolEventsCarryTheCallable(t *testing.T) {
 		fakeTurn{content: "six"},
 	)
 	got := map[string][]string{}
-	if _, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, aliasPackage+"/right", substrate.ChatInput{Message: "measure gadget"}, func(ev substrate.AgentEvent) {
+	if _, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, aliasPackage+"/right", substrate.ChatInput{Message: "measure gadget"}, func(ev substrate.AgentEvent) {
 		if ev.Kind == substrate.AgentEventToolStarted || ev.Kind == substrate.AgentEventToolFinished {
 			got[ev.Tool] = append(got[ev.Tool], ev.Kind+"="+ev.Callable)
 		}

@@ -88,7 +88,7 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 	// continuation hands the envelope to the model as user content.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-loop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -124,7 +124,7 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 	}
 
 	// The owner accepts. The system message lands in the SAME transaction.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -212,7 +212,7 @@ func TestProposalRejectionReportsBack(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-kept"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -227,7 +227,7 @@ func TestProposalRejectionReportsBack(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "rejected"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("reject: %v", err)
@@ -332,7 +332,7 @@ func TestAdjustedAcceptReportsTheAppliedValues(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-adjusted"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -347,7 +347,7 @@ func TestAdjustedAcceptReportsTheAppliedValues(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{
 			"decision":     "accepted",
 			"adjustedDiff": map[string]any{"properties": map[string]any{"name": "best"}},

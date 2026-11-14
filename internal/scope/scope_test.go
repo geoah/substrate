@@ -39,7 +39,6 @@ func TestTheGrammarAdmitsThePatternsAndRefusesTheRest(t *testing.T) {
 		"read:substrate.reamde.dev/core/token",
 		"write:substrate.reamde.dev/core/credential",
 		"read:substrate.reamde.dev/core/secret",
-		"read:substrate.reamde.dev/core/recoverykey",
 		"write:substrate.reamde.dev/core/trigger",
 		"write:substrate.reamde.dev/core/*",
 		"write:substrate.reamde.dev/llm/provider",
@@ -80,20 +79,25 @@ func TestARequestDropsDuplicatesAndOfflineAccessAndNamesSomething(t *testing.T) 
 	}
 }
 
-func TestResolveCompletesTheHomeAuthorityOnly(t *testing.T) {
+// The repository's full name is another spelling of `~`, and a scope is
+// stored in the `~` one; every other authority stays as it is asked
+// (decision record 0259).
+func TestLocalizeFoldsTheRepositorysNameIntoTheLocalNamespaceOnly(t *testing.T) {
 	for in, want := range map[string]string{
-		"read:~/tasks/*":         "read:ada.example.com/tasks/*",
-		"write:~/*":              "write:ada.example.com/*",
-		"read:~/tasks/task":      "read:ada.example.com/tasks/task",
-		"read:b.example.com/x/*": "read:b.example.com/x/*",
-		"read:*":                 "read:*",
+		"read:ada.example.com/tasks/*":    "read:~/tasks/*",
+		"write:ada.example.com/*":         "write:~/*",
+		"read:ada.example.com/tasks/task": "read:~/tasks/task",
+		"read:~/tasks/*":                  "read:~/tasks/*",
+		"read:b.example.com/x/*":          "read:b.example.com/x/*",
+		"read:ada.example.com.evil/x/*":   "read:ada.example.com.evil/x/*",
+		"read:*":                          "read:*",
 	} {
 		s, err := Parse(in)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := s.Resolve("ada.example.com").String(); got != want {
-			t.Errorf("Resolve(%q) = %q, want %q", in, got, want)
+		if got := s.Localize("ada.example.com").String(); got != want {
+			t.Errorf("Localize(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -102,9 +106,11 @@ func TestAStoredGrantIsCanonicalResolvedAndNeverEmpty(t *testing.T) {
 	if err := CheckStored(nil); err != nil {
 		t.Fatalf("nil (full access) refused: %v", err)
 	}
+	if err := CheckStored([]string{"read:~/tasks/*", "write:~/tasks/task"}); err != nil {
+		t.Fatalf("a stored scope over the repository's own kinds refused: %v", err)
+	}
 	for _, bad := range [][]string{
 		{},
-		{"read:~/tasks/*"},
 		{""},
 		{"read:"},
 		{"read:substrate.reamde.dev/core/token"},
@@ -179,7 +185,7 @@ func TestAGrantReachesWhatItNamesAndNeverTheMachinery(t *testing.T) {
 	}
 	// The auth kinds are never reached, even read as if they were not
 	// internal: the guard is the kind, not the purpose.
-	for _, k := range []string{"token", "credential", "secret", "recoverykey"} {
+	for _, k := range []string{"token", "credential", "secret"} {
 		kind := "substrate.reamde.dev/core/" + k
 		if everything.Reads(Kind{Ref: kind, Internal: false}) || everything.Writes(Kind{Ref: kind, Internal: false}) {
 			t.Errorf("write:* reached the auth kind %s", kind)
@@ -235,11 +241,15 @@ func TestTheAgentVerbsTakeTheGrammarOverAgentIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Resolve("ada.example.com").String(); got != "decide:ada.example.com/chat/*" {
-		t.Errorf("Resolve = %q", got)
+	full, err := Parse("decide:ada.example.com/chat/*")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := CheckStored([]string{"agents:~/chat/*"}); err == nil {
-		t.Error("a stored agents scope still naming ~ was admitted")
+	if got := full.Localize("ada.example.com").String(); got != s.String() {
+		t.Errorf("Localize = %q, want %q", got, s)
+	}
+	if err := CheckStored([]string{"agents:~/chat/*"}); err != nil {
+		t.Errorf("a stored agents scope over the repository's own agents refused: %v", err)
 	}
 }
 

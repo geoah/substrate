@@ -10,6 +10,7 @@ import {
   asserted,
   emptyOutboxFile,
   entryKey,
+  isHeld,
   type LocalWrite,
   type OutboxEntry,
   type OutboxFile,
@@ -162,12 +163,12 @@ function revisionOf(properties: Record<string, unknown> | undefined): number {
   return NaN
 }
 
-function sendable(entries: readonly OutboxEntry[]): number {
+function sendable(entries: readonly OutboxEntry[], now: number): number {
   const held = new Set<string>()
   let count = 0
   for (const e of entries) {
     if (e.batch && held.has(e.batch)) continue
-    if (e.parked) {
+    if (e.parked || isHeld(e, now)) {
       if (e.batch) held.add(e.batch)
       continue
     }
@@ -199,6 +200,7 @@ export class Outbox {
   private generation = 0
   private failures = 0
   private timer?: ReturnType<typeof setTimeout>
+  private holdTimer?: ReturnType<typeof setTimeout>
   private closed = false
   private abort = new AbortController()
   private channel?: BroadcastChannel
@@ -241,19 +243,19 @@ export class Outbox {
     if (this.closed) return
     this.unsubscribe = this.connectivity.subscribe((event) => {
       if (event === "offline") {
-        if (sendable(this.file.entries))
+        if (sendable(this.file.entries, this.now()))
           this.setState({ type: "offline", words: "You're offline." })
         return
       }
       if (event === "online") this.failures = 0
-      if (sendable(this.file.entries)) void this.flush()
+      if (sendable(this.file.entries, this.now())) void this.flush()
     })
     if (this.shareName && typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel(this.shareName)
       this.channel.onmessage = () => this.reload()
     }
     this.emit()
-    if (sendable(this.file.entries)) this.soon()
+    if (sendable(this.file.entries, this.now())) this.soon()
   }
 
   /** Stops sending and listening, and resolves once the send in progress
@@ -263,6 +265,7 @@ export class Outbox {
     this.closed = true
     this.abort.abort()
     clearTimeout(this.timer)
+    clearTimeout(this.holdTimer)
     this.unsubscribe?.()
     this.channel?.close()
     await this.ready
@@ -307,7 +310,7 @@ export class Outbox {
       entries,
       waiting: entries.length,
       parked: entries.filter((e) => e.parked),
-      sendable: sendable(entries),
+      sendable: sendable(entries, this.now()),
       flushing: this.flushing,
       revision: this.revision,
       saveProblem: this.saveProblem,
@@ -318,7 +321,25 @@ export class Outbox {
 
   private emit(): void {
     this.snapshot = this.summarize()
+    this.armHold()
     for (const fn of this.listeners) fn()
+  }
+
+  /** Wakes at the first held write's moment: its readers show it made from
+   * then, and it is sent. */
+  private armHold(): void {
+    clearTimeout(this.holdTimer)
+    if (this.closed) return
+    const now = this.now()
+    let first: number | undefined
+    for (const e of this.file.entries)
+      if (isHeld(e, now) && (first === undefined || e.holdUntil! < first))
+        first = e.holdUntil
+    if (first === undefined) return
+    this.holdTimer = setTimeout(() => {
+      this.emit()
+      void this.flush()
+    }, first - now)
   }
 
   private setState(state: OutboxState): void {
@@ -358,7 +379,7 @@ export class Outbox {
    * nothing to send, refused with nothing parked, as after the last parked
    * write's Discard here or in another tab. Answers whether it moved. */
   private settleState(): boolean {
-    if (sendable(this.file.entries)) return false
+    if (sendable(this.file.entries, this.now())) return false
     if (this.state.type !== "offline" && this.state.type !== "refused")
       return false
     const next = this.rest()
@@ -381,6 +402,18 @@ export class Outbox {
       file.entries.push(...write.entries)
     })
     this.soon()
+  }
+
+  /** Takes back a write still waiting out its hold, as if never made, and
+   * answers whether it did: one whose moment passed may be on its way. */
+  async withdraw(id: string): Promise<boolean> {
+    let taken = false
+    await this.change((file) => {
+      const e = file.entries.find((x) => x.id === id)
+      taken = !!e && isHeld(e, this.now())
+      if (taken) file.entries = file.entries.filter((x) => x.id !== id)
+    })
+    return taken
   }
 
   /** Sends a parked write again. */
@@ -507,7 +540,7 @@ export class Outbox {
     await this.ready
     if (this.flushing || this.closed) return this.state
     clearTimeout(this.timer)
-    if (!sendable(this.file.entries)) {
+    if (!sendable(this.file.entries, this.now())) {
       if (this.settleState()) this.emit()
       return this.state
     }
@@ -654,9 +687,10 @@ export class Outbox {
    * earlier holds back. */
   private next(tried: Set<string>): OutboxEntry | undefined {
     const held = new Set<string>()
+    const now = this.now()
     for (const e of this.file.entries) {
       if (e.batch && held.has(e.batch)) continue
-      if (e.parked || tried.has(e.id)) {
+      if (e.parked || tried.has(e.id) || isHeld(e, now)) {
         if (e.batch) held.add(e.batch)
         continue
       }

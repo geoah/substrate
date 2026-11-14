@@ -226,7 +226,6 @@ func TestRetirementRefusesOnEveryDoor(t *testing.T) {
 		}
 		return append([]map[string]any{
 			header,
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.BundleManifest(pkg, map[string]any{"description": "mirror kinds", "installs": installs}),
 		}, members...)
 	}

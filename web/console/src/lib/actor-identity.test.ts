@@ -1,44 +1,48 @@
-import { describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it } from "vitest"
 
-import { actorIdentity, providerInfo, providerOfKind } from "./actor-identity"
+import {
+  actorIdentity,
+  agentIdentity,
+  functionIdentity,
+  providerInfo,
+  providerOfKind,
+} from "./actor-identity"
+import { ACTORS, seedActors } from "./actors.test-fixtures"
+
+beforeEach(() => seedActors())
 
 describe("actorIdentity", () => {
-  it("names a request-asserted actor You, with the door it came through", () => {
-    expect(actorIdentity("console")).toMatchObject({
+  it("names the person You", () => {
+    expect(actorIdentity(ACTORS.person.id)).toMatchObject({
+      actor: ACTORS.person.id,
       cls: "you",
       name: "You",
-      via: "this console",
-    })
-    expect(actorIdentity("substratectl").via).toBe("the command line")
-    expect(actorIdentity("nightly-script")).toMatchObject({
-      cls: "you",
-      via: "nightly-script",
     })
   })
 
-  it("names an app by its host, never as You", () => {
-    const id = actorIdentity("app:notes.example.org")
-    expect(id.cls).toBe("app")
-    expect(id.name).toBe("notes.example.org")
-    expect(actorIdentity("app:").cls).toBe("you")
+  it("names an app by its publisher, never as You", () => {
+    expect(actorIdentity(ACTORS.notesApp.id)).toMatchObject({
+      cls: "app",
+      name: "notes.example.org",
+    })
   })
 
   it("names an app on this device as one, never by a host", () => {
-    expect(actorIdentity("app:local")).toMatchObject({
+    expect(actorIdentity(ACTORS.localApp.id)).toMatchObject({
       cls: "app",
       name: "An app on this device",
     })
   })
 
   it("names the engine", () => {
-    expect(actorIdentity("substrate")).toMatchObject({
+    expect(actorIdentity(ACTORS.system.id)).toMatchObject({
       cls: "engine",
       name: "Substrate",
     })
   })
 
   it("names an agent by its own name and links its declaration", () => {
-    expect(actorIdentity("agent:ada.localhost:llm:substrate")).toMatchObject({
+    expect(actorIdentity(ACTORS.substrateAgent.id)).toMatchObject({
       cls: "agent",
       name: "Substrate",
       record: {
@@ -49,23 +53,11 @@ describe("actorIdentity", () => {
   })
 
   it.each([
-    [
-      "function:providers.substrate.reamde.dev:google:synccontacts",
-      "Google Contacts sync",
-    ],
-    [
-      "function:providers.substrate.reamde.dev:linear:linearsync",
-      "Linear sync",
-    ],
-    [
-      "function:providers.substrate.reamde.dev:beeper:messagessync",
-      "Beeper Messages sync",
-    ],
-    [
-      "function:providers.substrate.reamde.dev:github:githubsync",
-      "GitHub sync",
-    ],
-  ])("names a provider function %s as %s", (actor, name) => {
+    [ACTORS.googleContactsSync.id, "Google Contacts sync"],
+    [ACTORS.linearSync.id, "Linear sync"],
+    [ACTORS.beeperMessagesSync.id, "Beeper Messages sync"],
+    [ACTORS.githubSync.id, "GitHub sync"],
+  ])("names the provider function of %s as %s", (actor, name) => {
     const identity = actorIdentity(actor)
     expect(identity.cls).toBe("function")
     expect(identity.name).toBe(name)
@@ -73,35 +65,52 @@ describe("actorIdentity", () => {
   })
 
   it("names a repository's own function by its name", () => {
-    expect(actorIdentity("function:ada.localhost:notes:save")).toMatchObject({
+    expect(actorIdentity(ACTORS.notesSave.id)).toMatchObject({
       cls: "function",
       name: "save",
       provider: undefined,
     })
   })
 
-  it("names a provider bundle by the provider", () => {
-    expect(
-      actorIdentity("bundle:providers.substrate.reamde.dev:google")
-    ).toMatchObject({ cls: "bundle", name: "Google" })
+  it("names a provider's package by the provider", () => {
+    expect(actorIdentity(ACTORS.googlePackage.id)).toMatchObject({
+      cls: "bundle",
+      name: "Google",
+    })
   })
 
-  it("names any other bundle by its package's display name", () => {
-    expect(actorIdentity("bundle:ada.localhost:notes").name).toBe("Notes")
-    expect(actorIdentity("bundle:ada.localhost:readinglist").name).toBe(
+  it("names any other package by its display name, and core as the substrate", () => {
+    expect(actorIdentity(ACTORS.notesPackage.id).name).toBe("Notes")
+    expect(actorIdentity(ACTORS.readingListPackage.id).name).toBe(
       "Reading list"
     )
+    expect(actorIdentity(ACTORS.corePackage.id)).toMatchObject({
+      cls: "bundle",
+      name: "Substrate",
+    })
+  })
+
+  it("keeps an id it has not read, and never calls it You", () => {
+    const unknown = actorIdentity("act-unread")
+    expect(unknown.actor).toBe("act-unread")
+    expect(unknown.cls).not.toBe("you")
+  })
+
+  it("marks an actor whose code is gone", () => {
+    seedActors({ ...ACTORS.notesSave, id: "act-gone", disabled: true })
+    expect(actorIdentity("act-gone").disabled).toBe(true)
   })
 })
 
-it("names an authority-shaped actor as the bundle behind it, never You", () => {
-  expect(actorIdentity("providers.substrate.reamde.dev/github")).toMatchObject({
-    cls: "bundle",
-    name: "GitHub",
-  })
-  expect(actorIdentity("samples.substrate.reamde.dev")).toMatchObject({
-    cls: "bundle",
-    name: "samples.substrate.reamde.dev",
+describe("an identity from a callable's own identity", () => {
+  it("names an agent and a function without an actor record", () => {
+    expect(agentIdentity("ada.localhost/llm/substrateEditor").name).toBe(
+      "Substrate editor"
+    )
+    expect(
+      functionIdentity("providers.substrate.reamde.dev/google/synccontacts")
+        .name
+    ).toBe("Google Contacts sync")
   })
 })
 
@@ -126,13 +135,5 @@ describe("providers", () => {
     expect(providerOfKind("samples.substrate.reamde.dev/people/person")).toBe(
       undefined
     )
-  })
-})
-
-describe("a seeded package's bundle actor", () => {
-  it("reads bundle:core as the substrate, never as you", () => {
-    const core = actorIdentity("bundle:core")
-    expect(core.cls).toBe("bundle")
-    expect(core.name).toBe("Substrate")
   })
 })

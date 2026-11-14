@@ -33,10 +33,8 @@ const (
 	xvSparklePackage   = "sparkles"
 	xvSparklePkg       = xvSparkleAuthority + "/" + xvSparklePackage
 
-	xvNotesBundle    = "samples.substrate.reamde.dev/notes"
-	xvNoteCollection = "/api/v1/samples.substrate.reamde.dev/notes/note"
-	xvStatsFunction  = "samples.substrate.reamde.dev/notes/stats"
-	xvNoteKind       = "samples.substrate.reamde.dev/notes/note"
+	// xvNotesBundle is the notes sample as the catalog names it.
+	xvNotesBundle = "samples.substrate.reamde.dev/notes"
 
 	// The bundle BUN-04 works: a provider whose one input is a plain config
 	// record carrying a pasted token, so the whole bind flow runs without an
@@ -67,6 +65,15 @@ const (
 	xvPackageCollection = "/api/v1/substrate.reamde.dev/core/package"
 	xvBundleCollection  = "/api/v1/substrate.reamde.dev/core/bundle"
 	xvTraitCollection   = "/api/v1/substrate.reamde.dev/core/trait"
+)
+
+// The notes sample's copy, as this repository holds it: bindSamples rebinds
+// each.
+var (
+	xvNotesHeld      = "samples.substrate.reamde.dev/notes"
+	xvNoteCollection = "/api/v1/samples.substrate.reamde.dev/notes/note"
+	xvStatsFunction  = "samples.substrate.reamde.dev/notes/stats"
+	xvNoteKind       = "samples.substrate.reamde.dev/notes/note"
 )
 
 func init() {
@@ -366,7 +373,7 @@ func xvCaseKindReferenceID(c *C) {
 	c.requiref(declaration.Kind == "substrate.reamde.dev/core/kind",
 		"the declaration's kind is %q", declaration.Kind)
 	c.requiref(declaration.Properties["properties"] != nil &&
-		declaration.prop("authority") == "samples.substrate.reamde.dev" && declaration.prop("package") == "tasks",
+		declaration.prop("authority") == sampleHome() && declaration.prop("package") == "tasks",
 		"the declaration record does not carry the kind's definition: %v", declaration.Properties)
 	c.stepf("`GET %s` answered the declaration of `%s`: authority `%s`, package `%s`, its declared properties on the record",
 		encoded, declaration.ID, declaration.prop("authority"), declaration.prop("package"))
@@ -457,7 +464,7 @@ func (c *C) xvLifecycle(id, property string, value any) (int, []byte) {
 func (c *C) xvInstall(id string) xvBundleStatus {
 	c.t.Helper()
 	var st xvBundleStatus
-	status, raw := c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/install", nil, &st)
+	status, raw := c.do(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, &st)
 	c.requiref(status == http.StatusOK, "installing %s answered %d: %s", id, status, raw)
 	c.requiref(st.Installed, "the install of %s did not end installed: %s", id, raw)
 	return st
@@ -476,10 +483,10 @@ func (c *C) xvCallStats(text string) (int, []byte) {
 // no credential, and this case leaves it installed and enabled.
 func xvCaseBundleLifecycle(c *C) {
 	st := c.xvInstall(xvNotesBundle)
-	c.requiref(st.ID == xvNotesBundle, "the install answered the status of %q", st.ID)
+	c.requiref(st.ID == xvNotesHeld, "adding it answered the status of %q, not its copy %s", st.ID, xvNotesHeld)
 	c.requiref(st.Enabled, "the freshly installed bundle is not enabled: %+v", st)
 	c.requiref(!st.Quarantined, "the freshly installed bundle is quarantined: %s", st.QuarantineReason)
-	c.stepf("installed the throwaway bundle `%s`: %d kinds, %d functions, enabled and not quarantined", xvNotesBundle, st.Kinds, st.Functions)
+	c.stepf("installed the throwaway bundle `%s`: %d kinds, %d functions, enabled and not quarantined", xvNotesHeld, st.Kinds, st.Functions)
 
 	note := c.putRec(xvNoteCollection, eid("xv-note-one"), map[string]any{
 		"text": "The lifecycle case wrote this note.", "noteTitle": "Lifecycle", "words": 6, "characters": 35,
@@ -499,9 +506,9 @@ func xvCaseBundleLifecycle(c *C) {
 	c.stepf("wrote note `%s` and the bundle's function `%s` runs: 3 words, %d characters", note.ID, xvStatsFunction, int(out.Output.Characters))
 
 	// Disable stops EXECUTION, not data.
-	status, raw = c.xvLifecycle(xvNotesBundle, "disabled", true)
+	status, raw = c.xvLifecycle(xvNotesHeld, "disabled", true)
 	c.requiref(status == http.StatusOK, "disabling answered %d: %s", status, raw)
-	st = c.xvStatus(xvNotesBundle)
+	st = c.xvStatus(xvNotesHeld)
 	c.requiref(st.Installed && !st.Enabled, "after the disable the status is installed=%t enabled=%t", st.Installed, st.Enabled)
 
 	status, raw = c.xvCallStats("one two three")
@@ -519,33 +526,33 @@ func xvCaseBundleLifecycle(c *C) {
 	c.stepf("disabled: the function refuses with 403 `guard` (%q), while `%s` still writes and both notes still list. "+
 		"A disable stops execution, not data", ref.Message, quiet.ID)
 
-	status, raw = c.xvLifecycle(xvNotesBundle, "disabled", nil)
+	status, raw = c.xvLifecycle(xvNotesHeld, "disabled", nil)
 	c.requiref(status == http.StatusOK, "enabling answered %d: %s", status, raw)
-	c.requiref(c.xvStatus(xvNotesBundle).Enabled, "the bundle did not come back enabled")
+	c.requiref(c.xvStatus(xvNotesHeld).Enabled, "the bundle did not come back enabled")
 	status, _ = c.xvCallStats("one two three")
 	c.requiref(status == http.StatusOK, "the function still refuses after the enable: %d", status)
 	c.stepf("`disabled: null` enables again (the PATCH-null-deletes convention) and the function runs")
 
 	// The teardown order the guards enforce, both refusals first.
-	status, raw = c.xvLifecycle(xvNotesBundle, "uninstalled", true)
+	status, raw = c.xvLifecycle(xvNotesHeld, "uninstalled", true)
 	c.requiref(status == http.StatusForbidden, "uninstalling over live records answered %d, want 403: %s", status, raw)
 	ref = c.xvRefused(raw)
 	c.requiref(strings.Contains(ref.Message, xvNoteKind) && strings.Contains(ref.Message, "live records"),
 		"the refusal does not name the kind whose records stand in the way: %s", ref.Message)
 	c.stepf("uninstall while records live is refused 403 `guard`: %s", ref.Message)
 
-	status, raw = c.xvLifecycle(xvNotesBundle, "purging", true)
+	status, raw = c.xvLifecycle(xvNotesHeld, "purging", true)
 	c.requiref(status == http.StatusForbidden, "purging a live bundle answered %d, want 403: %s", status, raw)
 	ref = c.xvRefused(raw)
 	c.requiref(strings.Contains(ref.Message, "disable"), "the refusal does not name the disable a purge needs: %s", ref.Message)
 	c.stepf("purge while the bundle is live is refused 403 `guard`: %s", ref.Message)
 
-	status, raw = c.xvLifecycle(xvNotesBundle, "disabled", true)
+	status, raw = c.xvLifecycle(xvNotesHeld, "disabled", true)
 	c.requiref(status == http.StatusOK, "disabling before the purge answered %d: %s", status, raw)
 	var purge struct {
 		Purged int `json:"purged"`
 	}
-	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesBundle),
+	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesHeld),
 		map[string]any{"properties": map[string]any{"purging": true}}, &purge)
 	c.requiref(status == http.StatusOK, "purging answered %d: %s", status, raw)
 	c.requiref(purge.Purged == 2, "the purge counted %d records; this case wrote exactly 2, so any other count purged the wrong rows", purge.Purged)
@@ -563,12 +570,12 @@ func xvCaseBundleLifecycle(c *C) {
 	var uninstalled struct {
 		Uninstalled bool `json:"uninstalled"`
 	}
-	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesBundle),
+	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesHeld),
 		map[string]any{"properties": map[string]any{"uninstalled": true}}, &uninstalled)
 	c.requiref(status == http.StatusOK && uninstalled.Uninstalled, "uninstalling answered %d: %s", status, raw)
 	status, _ = c.do(http.MethodGet, listOf(xvNoteCollection), nil, nil)
 	c.requiref(status == http.StatusNotFound, "a list of the notes answered %d after the uninstall, want 404", status)
-	status, _ = c.do(http.MethodGet, xvBundleRecord(xvNotesBundle)+"/status", nil, nil)
+	status, _ = c.do(http.MethodGet, xvBundleRecord(xvNotesHeld)+"/status", nil, nil)
 	c.requiref(status == http.StatusNotFound, "the bundle status answered %d after the uninstall, want 404", status)
 	status, _ = c.xvCallStats("one two three")
 	c.requiref(status == http.StatusNotFound, "the bundle's function answered %d after the uninstall, want 404", status)
@@ -586,19 +593,19 @@ func xvCaseBundleLifecycle(c *C) {
 	c.stepf("reinstalled from the catalog: the closure is back and the notes list empty, and the bundle comes back DISABLED. " +
 		"The disable outlives the uninstall")
 
-	status, raw = c.xvLifecycle(xvNotesBundle, "disabled", false)
+	status, raw = c.xvLifecycle(xvNotesHeld, "disabled", false)
 	c.requiref(status == http.StatusOK, "re-enabling answered %d: %s", status, raw)
-	c.requiref(c.xvStatus(xvNotesBundle).Enabled, "the bundle is still disabled after `disabled: false`")
+	c.requiref(c.xvStatus(xvNotesHeld).Enabled, "the bundle is still disabled after `disabled: false`")
 
 	// The PATCH carries ONE lifecycle state and takes no precondition.
-	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesBundle),
+	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesHeld),
 		map[string]any{"properties": map[string]any{"disabled": true, "purging": true}}, nil)
 	c.requiref(status == http.StatusBadRequest, "a two-state PATCH answered %d, want 400: %s", status, raw)
-	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesBundle),
+	status, raw = c.do(http.MethodPatch, xvBundleRecord(xvNotesHeld),
 		map[string]any{"properties": map[string]any{"disabled": true}, "ifVersion": 1}, nil)
 	c.requiref(status == http.StatusBadRequest, "a PATCH with ifVersion answered %d, want 400: %s", status, raw)
 	c.requiref(strings.Contains(string(raw), "ifVersion"), "the refusal does not name ifVersion: %s", raw)
-	c.requiref(c.xvStatus(xvNotesBundle).Enabled, "a refused lifecycle PATCH disabled the bundle anyway")
+	c.requiref(c.xvStatus(xvNotesHeld).Enabled, "a refused lifecycle PATCH disabled the bundle anyway")
 	c.stepf("`disabled: false` enables too; two states in one PATCH is a 400, and `ifVersion` is refused rather than ignored, because the transition takes no compare-and-set. The bundle is left installed and enabled")
 }
 

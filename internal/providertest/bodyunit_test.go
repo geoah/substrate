@@ -49,6 +49,19 @@ func TestBodyHelpersGoogleGmail(t *testing.T) {
 	runBodyCases(t, bodyPython(t, dir), "py/test_google_gmail.py", dir)
 }
 
+// TestBodyHelpersGoogleTools runs internal/providertest/py/test_google_api.py
+// over the shipped google_api module the tools share: the origins a token
+// may go to, which account a call acts as, and the mail and calendar shapes
+// it builds.
+func TestBodyHelpersGoogleTools(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if written := writeModules(t, providersDir+"/google/bundle.yaml", dir); written != 1 {
+		t.Fatalf("wrote %d google modules, want google_api.py alone", written)
+	}
+	runBodyCases(t, bodyPython(t, dir), "py/test_google_api.py", dir)
+}
+
 // TestBodyHelpersBeeper runs internal/providertest/py/test_beeper_offline.py
 // over the shipped beeper messagessync body: which failures mean Beeper
 // Desktop is not reachable, and the throttled stamp that pauses the sync

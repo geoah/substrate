@@ -35,11 +35,13 @@
     "id": true,
     "kind": true,
     "properties": false,
+    "state": false,
     "version": false
   },
   "AgentEvent": {
     "args": false,
     "callable": false,
+    "code": false,
     "covered": false,
     "error": false,
     "id": false,
@@ -282,7 +284,7 @@
     "state": false
   },
   "AuthorizationApp": {
-    "actor": true,
+    "appearsAs": true,
     "clientId": true,
     "host": true,
     "local": true,
@@ -358,6 +360,7 @@
     "functions": false,
     "held": false,
     "id": true,
+    "keptBy": false,
     "kinds": false,
     "oauthHosts": false,
     "providerInputs": false,
@@ -367,7 +370,6 @@
     "requires": false,
     "settings": false,
     "shipped": false,
-    "tier": false,
     "triggers": false
   },
   "AuthorizationPackagePublisher": {
@@ -375,6 +377,7 @@
     "digest": false,
     "documentUrl": true,
     "fromFile": false,
+    "movedTo": false,
     "name": false
   },
   "AuthorizationPackageStep": {
@@ -533,6 +536,11 @@
     "id": true,
     "kind": true
   },
+  "BundleFeature": {
+    "access": true,
+    "scopes": true,
+    "toggle": true
+  },
   "BundlePurged": {
     "purged": true
   },
@@ -541,6 +549,7 @@
     "addonFor": false,
     "authority": true,
     "enabled": true,
+    "features": false,
     "functions": true,
     "id": true,
     "inputs": false,
@@ -575,6 +584,7 @@
     "holders": false,
     "lossy": true,
     "planHash": false,
+    "retentionShortens": false,
     "reviewRequired": false,
     "steps": false,
     "to": false,
@@ -601,6 +611,7 @@
     "description": true,
     "id": true,
     "inputs": false,
+    "keptBy": true,
     "modified": false,
     "name": true,
     "oauthHosts": false,
@@ -612,7 +623,6 @@
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,
-    "tier": true,
     "version": true
   },
   "CatalogInput": {
@@ -629,6 +639,7 @@
     "id": true,
     "inputs": false,
     "installed": true,
+    "keptBy": true,
     "modified": false,
     "name": true,
     "oauthHosts": false,
@@ -640,7 +651,6 @@
     "requires": false,
     "requiresAtLeast": false,
     "suggestedMappings": false,
-    "tier": true,
     "upgrade": false,
     "version": true
   },
@@ -649,10 +659,12 @@
     "affected": false,
     "hash": false,
     "kind": true,
+    "onBehalfOf": false,
     "op": true,
     "payload": false,
     "recordId": true,
     "seq": true,
+    "token": false,
     "ts": true
   },
   "ChangePage": {
@@ -666,10 +678,12 @@
     "affected": false,
     "hash": false,
     "kind": true,
+    "onBehalfOf": false,
     "op": true,
     "payload": false,
     "recordId": true,
     "seq": true,
+    "token": false,
     "triggers": false,
     "ts": true
   },
@@ -681,9 +695,10 @@
     "newestTs": true,
     "oldestSeq": true,
     "oldestTs": true,
-    "principalName": false,
     "recordId": false,
     "records": true,
+    "token": false,
+    "tokenName": false,
     "verb": true
   },
   "ChangeRunPage": {
@@ -760,11 +775,22 @@
     "message": true,
     "problemDetails": false,
     "problems": false,
-    "reason": false
+    "reason": false,
+    "repositories": false
+  },
+  "FormerName": {
+    "name": true,
+    "until": true
   },
   "FunctionCalled": {
     "effects": true,
     "output": true
+  },
+  "IdentityInfo": {
+    "id": true,
+    "name": true,
+    "repositories": true,
+    "secondFactor": true
   },
   "InputStatus": {
     "description": false,
@@ -775,6 +801,7 @@
   },
   "KindInfo": {
     "authority": true,
+    "control": false,
     "definition": true,
     "description": true,
     "identity": true,
@@ -788,6 +815,13 @@
     "plural": true,
     "singular": true
   },
+  "KindRetention": {
+    "declared": false,
+    "effective": true,
+    "kind": true,
+    "override": false,
+    "overrideId": false
+  },
   "LinkedRecord": {
     "kind": true,
     "mapping": true,
@@ -796,12 +830,18 @@
     "title": false
   },
   "LoginRequest": {
+    "identity": true,
     "label": false,
     "password": true,
-    "repository": true,
+    "repository": false,
     "totpCode": true
   },
+  "MarkInput": {
+    "ifVersion": false,
+    "properties": true
+  },
   "MintedToken": {
+    "identity": false,
     "repository": false,
     "secret": true,
     "token": true
@@ -863,8 +903,7 @@
     "path": true
   },
   "PropertyAlternative": {
-    "actor": true,
-    "source": false,
+    "derivedFrom": false,
     "updatedAt": true,
     "value": true
   },
@@ -875,12 +914,34 @@
     "name": true,
     "renamedFrom": false
   },
-  "PropertyMeta": {
+  "PropertyMark": {
     "alternatives": false,
-    "manager": false,
-    "source": false,
-    "tier": false,
-    "updatedAt": false
+    "derivedFrom": false,
+    "onBehalfOf": false,
+    "pinned": false,
+    "setAt": false,
+    "setBy": false
+  },
+  "PublishInput": {
+    "authority": true,
+    "confirm": false,
+    "package": true
+  },
+  "PublishPlan": {
+    "blockers": true,
+    "documentURL": true,
+    "kinds": true,
+    "name": true,
+    "package": true,
+    "packages": true,
+    "proven": true,
+    "published": true,
+    "reason": false,
+    "record": true,
+    "records": true,
+    "references": true,
+    "release": false,
+    "texts": true
   },
   "PutInput": {
     "annotations": false,
@@ -910,6 +971,9 @@
     "referencing": false,
     "search": false
   },
+  "RecordLink": {
+    "ref": true
+  },
   "RecordPatch": {
     "addFinalizers": false,
     "annotations": false,
@@ -928,21 +992,48 @@
     "refs": false
   },
   "RegisterInput": {
+    "identity": true,
     "inviteCode": true,
     "label": false,
     "password": true,
-    "recoveryPublicKey": false,
-    "repository": true,
+    "repository": false,
     "skipTotp": false,
     "totpCode": true,
     "totpSecret": true
   },
   "RegisterResult": {
-    "recoveryKey": false,
-    "recoveryPublicKey": false,
+    "identity": false,
     "repository": false,
     "secret": true,
     "token": true
+  },
+  "Release": {
+    "dialect": false,
+    "package": true,
+    "releasedAt": true,
+    "sha256": true,
+    "version": true
+  },
+  "ReleaseInput": {
+    "confirm": false,
+    "package": true
+  },
+  "ReleasePlan": {
+    "blockers": true,
+    "declarations": true,
+    "package": true,
+    "previous": true,
+    "release": false,
+    "sha256": true,
+    "version": true
+  },
+  "Releases": {
+    "items": true
+  },
+  "RepositoryChoice": {
+    "id": true,
+    "name": true,
+    "roles": false
   },
   "RepositoryConversion": {
     "expr": false,
@@ -952,6 +1043,11 @@
     "inverse": false,
     "offset": false,
     "to": true
+  },
+  "RepositoryNames": {
+    "formerNames": true,
+    "id": true,
+    "name": true
   },
   "RepositoryUnit": {
     "aliases": true,
@@ -965,12 +1061,18 @@
     "symbol": true,
     "turn": false
   },
+  "RetentionChange": {
+    "from": true,
+    "kind": true,
+    "to": true
+  },
   "Scores": {
     "lexical": false,
     "semantic": false
   },
   "SessionCredential": {
-    "repository": true
+    "identity": true,
+    "signedOut": false
   },
   "SetupItem": {
     "code": true,
@@ -1007,8 +1109,8 @@
     "kindVersion": false,
     "labels": true,
     "linkedFrom": false,
+    "marks": false,
     "properties": true,
-    "propertyMeta": false,
     "updatedAt": true,
     "version": true
   },
@@ -1078,6 +1180,7 @@
     "createdAt": true,
     "expiresAt": false,
     "id": true,
+    "identity": false,
     "label": true,
     "retired": false,
     "scopes": false

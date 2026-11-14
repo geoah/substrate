@@ -36,7 +36,7 @@ func TestAPutAtVersionZeroNeverResurrectsATombstone(t *testing.T) {
 	ds := accountDataset(t)
 	zero := int64(0)
 	put := func(address string) (*substrate.Record, error) {
-		return ds.Put(ctx, substrate.ActorConsole, substrate.PutInput{
+		return ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: mbAccountType, ID: fid("phone-1"), Properties: map[string]any{"address": address}, IfVersion: &zero,
 		})
 	}
@@ -105,7 +105,7 @@ func TestConcurrentPutsAtVersionZeroCreateOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, errs[i] = ds.Put(ctx, substrate.ActorConsole, substrate.PutInput{
+			_, errs[i] = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 				Kind: mbAccountType, ID: fid("phone-2"), IfVersion: &zero,
 				Properties: map[string]any{"address": fmt.Sprintf("device%d@example.com", i)},
 			})

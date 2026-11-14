@@ -1,110 +1,22 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 const peopleV1 = "/api/v1/samples.substrate.reamde.dev/people/person"
 
-// A reference is written like every other property: one put carries the
-// pointer, and a second put drops it by writing null. There is no link verb
-// and no unlink verb, so a put is the whole mutation surface for a pointer.
-func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 1,
-		Properties: map[string]any{"name": "Sam"},
-	}
-
-	rec := env.do(t, http.MethodPut, peopleV1+"/p1", tok, map[string]any{
-		"properties": map[string]any{"name": "Sam", "manager": "samples.substrate.reamde.dev/people/person/p2"},
-	})
-	wantStatus(t, rec, http.StatusOK)
-	e := decodeJSON[substrate.Record](t, rec)
-	// The put sent the bare path (write-time shorthand) and the read serves
-	// the object it normalized to (0044).
-	manager, _ := e.Properties["manager"].(map[string]any)
-	if manager["ref"] != "samples.substrate.reamde.dev/people/person/p2" {
-		t.Fatalf("after the put, properties = %+v", e.Properties)
-	}
-
-	rec = env.do(t, http.MethodPatch, peopleV1+"/p1", tok, map[string]any{
-		"properties": map[string]any{"manager": nil},
-	})
-	wantStatus(t, rec, http.StatusOK)
-	if got := ds.lastPatch.Properties["manager"]; got != nil {
-		t.Fatalf("the patch must carry the null that drops the pointer, got %v", got)
-	}
-}
-
-// A patch addressed to a tombstone answers 404 and writes nothing; a put
-// at the same path is what restores the record. The refusal itself is the
-// engine's (TestPatchOnATombstoneIsNotFound in internal/engine); this pins the
-// fake's copy of it and the route's mapping of ErrNotFound to 404.
-func TestRESTPatchOnATombstoneIsNotFound(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	gone := time.Unix(10, 0).UTC()
-	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 2,
-		Properties: map[string]any{"name": "Sam"}, DeletedAt: &gone,
-	}
-
-	rec := env.do(t, http.MethodPatch, peopleV1+"/p1", tok, map[string]any{
-		"properties": map[string]any{"name": "Renamed"},
-	})
-	wantStatus(t, rec, http.StatusNotFound)
-	if e := ds.records["p1"]; e.Version != 2 || e.Properties["name"] != "Sam" {
-		t.Fatalf("the refused patch changed the tombstone: %+v", e)
-	}
-}
-
 // The edge routes are GONE, not tombstoned: no route binds
 // `…/{id}/edges/{rel}` in either method, so the path is the router's 404.
 func TestRESTEdgeRoutesAreGone(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{ID: "p1", Kind: "samples.substrate.reamde.dev/people/person"}
-
+	env := newStubEnv(t, newStubKinds(personKind))
 	for _, method := range []string{http.MethodPost, http.MethodDelete} {
-		rec := env.do(t, method, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
-		wantStatus(t, rec, http.StatusNotFound)
-	}
-}
-
-// `edges` no longer names a sub-resource, so it is no longer a reserved record
-// id: a record may be called `edges` and read back at its own path.
-func TestRESTSubResourceWordsAreOrdinaryRecordIDs(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-
-	rec := env.do(t, http.MethodPut, peopleV1+"/edges", tok, map[string]any{
-		"properties": map[string]any{"name": "Sam"},
-	})
-	wantStatus(t, rec, http.StatusCreated)
-	rec = env.do(t, http.MethodGet, peopleV1+"/edges", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if e := decodeJSON[substrate.Record](t, rec); e.ID != "edges" {
-		t.Fatalf("record = %+v", e)
-	}
-
-	// So is `incoming`: the reverse read is a filter arm of /records, not a
-	// sub-resource, so no record id is reserved for it.
-	rec = env.do(t, http.MethodPut, peopleV1+"/incoming", tok, map[string]any{"properties": map[string]any{"name": "In"}})
-	wantStatus(t, rec, http.StatusCreated)
-	rec = env.do(t, http.MethodGet, peopleV1+"/incoming", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if e := decodeJSON[substrate.Record](t, rec); e.ID != "incoming" {
-		t.Fatalf("record = %+v", e)
+		rec := env.do(t, method, peopleV1+"/p1/edges/member_of", stubToken, map[string]any{"id": "org1"})
+		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	}
 }
 
@@ -112,10 +24,11 @@ func TestRESTSubResourceWordsAreOrdinaryRecordIDs(t *testing.T) {
 // key AND what replaced it: the strict decode is what stops a pointer write
 // from landing under a spelling nothing reads, and a raw HTTP client has no
 // substratectl to tell it where the data goes now. Both write verbs, because
-// only one of them was pinned and the two decode the same body.
+// only one of them was pinned and the two decode the same body. The stub
+// has no Put and no Patch, so a body that reached the dataset would be a 500.
 func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, newStubKinds(personKind))
+	tok := stubToken
 	edges := map[string]any{"member_of": []any{map[string]any{"id": "org1"}}}
 
 	for _, method := range []string{http.MethodPut, http.MethodPatch} {
@@ -138,8 +51,8 @@ func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 // filter key: `data.properties` is where a record's pointers go, and a caller
 // narrowing a list is not writing a record.
 func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 	rec := env.do(t, http.MethodGet, recordsPath+`?filter={"edges":{"member_of":"org1"}}`, tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
@@ -151,183 +64,11 @@ func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
 	}
 }
 
-// TestTriggerVerbsLiveUnderCore is ruling A8's verb placement: the trigger
-// verbs answer AT the resource, and trigger records are CORE's. The fake holds
-// no trigger, so the status read answers an empty list, which is the trigger
-// handler answering (an unknown path would be 404).
-func TestTriggerVerbsLiveUnderCore(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-
-	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if body := rec.Body.String(); body != "{\"items\":[]}\n" {
-		t.Fatalf("body = %s, want an empty items list", body)
-	}
-	if w := rec.Header().Get("Warning"); w != "" {
-		t.Fatalf("the resource path must not carry a deprecation Warning: %q", w)
-	}
-
-	// The folded-away authority (automation.substrate.reamde.dev, folded into
-	// core 2026-08-12) is not a route: it is the router's 404, never a second
-	// spelling of the verbs.
-	rec = env.do(t, http.MethodGet, "/api/v1/automation.substrate.reamde.dev/triggers/status", tok, nil)
-	wantStatus(t, rec, http.StatusNotFound)
-}
-
-// TestSyncStatusLivesAtTheRoot: the synchronization read spans every kind
-// binding the `sync` trait, so it sits at the version root beside /records
-// and /catalog, and an empty repository answers the empty list envelope.
-func TestSyncStatusLivesAtTheRoot(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-
-	rec := env.do(t, http.MethodGet, "/api/v1/sync/status", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if body := rec.Body.String(); body != "{\"items\":[]}\n" {
-		t.Fatalf("body = %s, want an empty items list", body)
-	}
-	// No bearer, no answer: the read is the repository's own.
-	rec = env.do(t, http.MethodGet, "/api/v1/sync/status", "", nil)
-	wantStatus(t, rec, http.StatusUnauthorized)
-}
-
-// TestStatusReadsCarryTheLatestParkedReason: both status reads put the
-// newest parked delivery's reason and instant beside the parked count, so a
-// list says why runs failed without reading each trigger's `…/parked`.
-func TestStatusReadsCarryTheLatestParkedReason(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	at := time.Date(2026, 9, 27, 9, 0, 0, 0, time.UTC)
-	since, lastOK := at.Add(-2*time.Hour), at.Add(-3*time.Hour)
-	scheduled := substrate.TriggerStatus{
-		ID: "github-scheduled", Kind: substrate.TriggerKindSchedule, Enabled: true,
-		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
-		Health: substrate.HealthFailing, FailingSince: &since, LastOkAt: &lastOK,
-	}
-	ds.triggerStatuses = []substrate.TriggerStatus{scheduled}
-	ds.syncStatuses = []substrate.SyncStatus{{
-		Kind: "providers.substrate.reamde.dev/github/account", ID: "geoah", State: substrate.SyncStateOK,
-		Parked: 93, LastParkedError: "RuntimeError: GitHub answered 401", LastParkedAt: &at,
-		Health: substrate.HealthFailing, FailingSince: &since, LastOkAt: &lastOK,
-		Triggers: []substrate.TriggerStatus{},
-	}}
-
-	for _, path := range []string{"/api/v1/sync/status", "/api/v1/substrate.reamde.dev/core/trigger/status"} {
-		rec := env.do(t, http.MethodGet, path, tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-		var body struct {
-			Items []struct {
-				Parked          int64  `json:"parked"`
-				LastParkedError string `json:"lastParkedError"`
-				LastParkedAt    string `json:"lastParkedAt"`
-				Health          string `json:"health"`
-				FailingSince    string `json:"failingSince"`
-				LastOkAt        string `json:"lastOkAt"`
-			} `json:"items"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatalf("%s: decode: %v", path, err)
-		}
-		if len(body.Items) != 1 {
-			t.Fatalf("%s: items = %s, want one", path, rec.Body.String())
-		}
-		got := body.Items[0]
-		if got.Parked != 93 || got.LastParkedError != "RuntimeError: GitHub answered 401" || got.LastParkedAt != "2026-09-27T09:00:00Z" {
-			t.Fatalf("%s: item = %+v, want the count, the reason and when", path, got)
-		}
-		if got.Health != substrate.HealthFailing || got.FailingSince != "2026-09-27T07:00:00Z" || got.LastOkAt != "2026-09-27T06:00:00Z" {
-			t.Fatalf("%s: item = %+v, want failing since 07:00, last ok 06:00", path, got)
-		}
-	}
-}
-
-// TestSyncStatusCarriesTheSignIn: a sync status row carries the account's
-// OAuth sign-in, so a refused grant reads as one on the status alone; a row
-// with no sign-in leaves all three keys out.
-func TestSyncStatusCarriesTheSignIn(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	at := time.Date(2026, 10, 8, 9, 0, 0, 0, time.UTC)
-	ds.syncStatuses = []substrate.SyncStatus{
-		{
-			Kind: "providers.substrate.reamde.dev/whoop/account", ID: "geoah", State: substrate.SyncStateErroring,
-			TokenStatus: "erroring", TokenError: `provider answered 400, error code "invalid_grant"`, TokenErrorAt: &at,
-			Health: substrate.HealthOK, Triggers: []substrate.TriggerStatus{},
-		},
-		{
-			Kind: "providers.substrate.reamde.dev/slack/workspace", ID: "work", State: substrate.SyncStateOK,
-			Health: substrate.HealthOK, Triggers: []substrate.TriggerStatus{},
-		},
-	}
-
-	rec := env.do(t, http.MethodGet, "/api/v1/sync/status", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	var body struct {
-		Items []map[string]any `json:"items"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(body.Items) != 2 {
-		t.Fatalf("items = %s, want two", rec.Body.String())
-	}
-	refused := body.Items[0]
-	if refused["tokenStatus"] != "erroring" || refused["tokenError"] != `provider answered 400, error code "invalid_grant"` || refused["tokenErrorAt"] != "2026-10-08T09:00:00Z" {
-		t.Fatalf("refused row = %v, want the sign-in's status, reason and when", refused)
-	}
-	for _, key := range []string{"tokenStatus", "tokenError", "tokenErrorAt"} {
-		if v, ok := body.Items[1][key]; ok {
-			t.Fatalf("a row with no sign-in carries %s = %v", key, v)
-		}
-	}
-}
-
-// TestStatusReadsCarryHealth: a healthy row says `ok` and leaves
-// failingSince out, and a row that never delivered leaves lastOkAt out too.
-func TestStatusReadsCarryHealth(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	lastOK := time.Date(2026, 9, 27, 6, 0, 0, 0, time.UTC)
-	ds.triggerStatuses = []substrate.TriggerStatus{
-		{ID: "delivered", Kind: substrate.TriggerKindRecord, Enabled: true, Health: substrate.HealthOK, LastOkAt: &lastOK},
-		{ID: "never", Kind: substrate.TriggerKindRecord, Enabled: true, Health: substrate.HealthOK},
-	}
-	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/core/trigger/status", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	var body struct {
-		Items []map[string]any `json:"items"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(body.Items) != 2 {
-		t.Fatalf("items = %s, want two", rec.Body.String())
-	}
-	for _, item := range body.Items {
-		if item["health"] != substrate.HealthOK {
-			t.Fatalf("%v: health = %v, want ok", item["id"], item["health"])
-		}
-		if _, ok := item["failingSince"]; ok {
-			t.Fatalf("%v: a healthy row carries failingSince %v", item["id"], item["failingSince"])
-		}
-	}
-	if body.Items[0]["lastOkAt"] != "2026-09-27T06:00:00Z" {
-		t.Fatalf("delivered: lastOkAt = %v", body.Items[0]["lastOkAt"])
-	}
-	if _, ok := body.Items[1]["lastOkAt"]; ok {
-		t.Fatalf("never: a trigger that never delivered carries lastOkAt %v", body.Items[1]["lastOkAt"])
-	}
-}
-
 // TestWatchRejectsListParams is ruling A8's unsupported-param rule: a param a
 // mode does not honor is a bad_request naming it, not a silent success.
 func TestWatchRejectsListParams(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 	rec := env.do(t, http.MethodGet, recordsOf(t, personKind, "watch=1", "orderBy=at:desc"), tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "orderBy") {

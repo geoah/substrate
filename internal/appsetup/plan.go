@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/scope"
@@ -74,6 +75,16 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat Catalog, details []subs
 	if len(details) == 0 {
 		return []substrate.AuthorizationSetup{}, "", nil
 	}
+	// A detail may name the owner's own package or kind by the repository's
+	// full name, which is another spelling of `~` (decision record 0259).
+	names := ds.Repository().LocalNames()
+	local := make([]substrate.AuthorizationDetail, len(details))
+	for i, d := range details {
+		d.Package = vocabulary.LocalizeRef(d.Package, names...)
+		d.Kind = vocabulary.LocalizeRef(d.Kind, names...)
+		local[i] = d
+	}
+	details = local
 	p := &planner{
 		ds: ds, cat: cat, opts: opts, statuses: map[string]*substrate.BundleStatus{},
 		kinds: map[string]substrate.KindInfo{}, packages: map[string]*substrate.AuthorizationSetup{},
@@ -309,7 +320,7 @@ func (p *planner) ownedBlock(ctx context.Context, id string) (*packageProblem, e
 func (p *planner) packageBlock(ctx context.Context, b *catalog.Bundle, id string, need int64) (*packageProblem, error) {
 	st := p.statuses[id]
 	switch {
-	case b.Tier == substrate.TierSample:
+	case b.KeptBy == substrate.KeptByRepository:
 		return sample(), nil
 	case st != nil && st.Quarantined:
 		return quarantined(id), nil
@@ -350,7 +361,7 @@ func (p *planner) packageRow(ctx context.Context, d substrate.AuthorizationDetai
 	if b != nil {
 		// Shipped is the version approving would install: the binary's, or
 		// the newest the publisher lists at the floor or later.
-		info.Description, info.Tier, info.Shipped, info.Publisher = b.Description, b.Tier, b.Version, publisherOf(b)
+		info.Description, info.KeptBy, info.Shipped, info.Publisher = b.Description, b.KeptBy, b.Version, publisherOf(b)
 		info.OAuthHosts = slices.Clone(b.OAuthHosts)
 		if origin := b.Origin(); origin != nil {
 			info.AddonFor = origin.AddonFor
@@ -465,7 +476,7 @@ func (p *planner) publishedChain(ctx context.Context, b *catalog.Bundle, actionO
 			if dep != nil {
 				step.Description, step.Shipped, step.Publisher = dep.Description, dep.Version, publisherOf(dep)
 				switch {
-				case dep.Tier == substrate.TierSample:
+				case dep.KeptBy == substrate.KeptByRepository:
 					problem = sample()
 				default:
 					if problem, err = p.stepBlock(ctx, dep, floor); err != nil {
@@ -541,8 +552,13 @@ func (p *planner) binaryChain(ctx context.Context, b *catalog.Bundle, steps []*c
 	for _, u := range unmet {
 		step := substrate.AuthorizationPackageStep{ID: u.ID, Action: p.stepAction(u.ID), Held: p.held(u.ID)}
 		problem := notShipped()
-		if u.Bundle != nil {
+		switch {
+		case u.Bundle != nil:
 			step.Description, step.Shipped, problem = u.Bundle.Description, u.Bundle.Version, sample()
+		case u.Err != nil:
+			// Its document gave no closure, and says why: an interface this
+			// server does not run, a version under the floor.
+			problem = notPublished(u.Err)
 		}
 		blocks(&step, problem)
 		out = append(out, step)
@@ -676,9 +692,10 @@ func (p *planner) stepBlock(ctx context.Context, dep *catalog.Bundle, floor int6
 }
 
 // upgradeBlock is why upgrading an installed package cannot run from the
-// approval page: what its preview would refuse on, or a conversion that loses
-// data or discards edits, which only its provider page confirms. A preview
-// that fails blocks it too, as it costs a catalog entry its offer.
+// approval page: what its preview would refuse on, a conversion that loses
+// data or discards edits, or history some kind keeps for less time, which
+// only its provider page confirms. A preview that fails blocks it too, as it
+// costs a catalog entry its offer.
 func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem, error) {
 	up, err := p.cat.Upgrade(ctx, id, p.ds, p.statuses[id])
 	if err != nil {
@@ -695,6 +712,8 @@ func (p *planner) upgradeBlock(ctx context.Context, id string) (*packageProblem,
 		return upgradeRefused(id), nil
 	case up.Lossy || up.DiscardsEdits:
 		return upgradeConfirm(id), nil
+	case len(up.RetentionShortens) > 0:
+		return upgradeShortensHistory(id), nil
 	}
 	return nil, nil
 }
@@ -816,24 +835,43 @@ func accountPropertyProblem(d substrate.AuthorizationDetail, def map[string]any)
 		if managed, _ := pd["managed"].(bool); managed {
 			return fmt.Sprintf("The %s property is the server's to write.", name)
 		}
-		// `owner` is the one restriction an approval meets: the set up
-		// writes as the owner.
-		if w, _ := pd["writer"].(string); w != "" && w != vocabulary.WriterOwner {
-			return fmt.Sprintf("The %s property is written by %s alone.", name, writerWords(w))
+		// A person is the one writer an approval meets: the set up writes as
+		// the person who approves it.
+		if writers := declaredWriters(pd["writer"]); writers != nil && !slices.Contains(writers, substrate.ActorTypePerson) {
+			return fmt.Sprintf("The %s property is written by %s alone.", name, writerWords(writers))
 		}
 	}
 	return ""
 }
 
-// writerWords names a property's writer role in the owner's words.
-func writerWords(writer string) string {
-	switch writer {
-	case vocabulary.WriterOAuth:
+// declaredWriters reads a stored declaration's `writer:`, one type of actor
+// or a list of them, as the list; nil where it declares none.
+func declaredWriters(raw any) []string {
+	switch v := raw.(type) {
+	case string:
+		return []string{v}
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, w := range v {
+			if s, ok := w.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// writerWords names the types of actor a property is written by in a
+// person's words.
+func writerWords(writers []string) string {
+	switch {
+	case slices.Equal(writers, []string{substrate.ActorTypeSystem}):
 		return "the provider's sign-in"
-	case vocabulary.WriterConnector:
+	case !slices.Contains(writers, substrate.ActorTypePerson) && (slices.Contains(writers, substrate.ActorTypeFunction) || slices.Contains(writers, substrate.ActorTypeAgent)):
 		return "the provider's sync"
 	}
-	return "the " + writer
+	return "the " + strings.Join(writers, " or ")
 }
 
 func (p *planner) webhookRow(ctx context.Context, d substrate.AuthorizationDetail) (substrate.AuthorizationSetup, error) {

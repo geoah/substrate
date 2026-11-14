@@ -660,7 +660,7 @@ func TestWhoopAdapterRecoveryWithoutCycleIDKeepsItsIDs(t *testing.T) {
 	}
 
 	// The night gone, the recovery spans its cycle, at the same ids.
-	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopSleepKind, whoopRow("sleep", whoopRescoredNight), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(t.Context(), substrate.ActorPerson, whoopSleepKind, whoopRow("sleep", whoopRescoredNight), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	healthDrain(t, ds)
@@ -678,7 +678,7 @@ func TestWhoopAdapterRecoveryWithoutCycleIDKeepsItsIDs(t *testing.T) {
 
 	// The cycle row gone as well, the night's next delivery finds no cycle
 	// id: the recovery's outputs go, as a recovery's without a span do.
-	if _, err := ds.Delete(t.Context(), substrate.ActorAPI, whoopCycleKind, whoopRow("cycle", whoopExampleCycle), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(t.Context(), substrate.ActorPerson, whoopCycleKind, whoopRow("cycle", whoopExampleCycle), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	healthDrain(t, ds)
@@ -810,7 +810,7 @@ func TestWhoopAdapterConvertsRecoveriesSyncedBeforeCycleIDs(t *testing.T) {
 	}
 	whoopSync(t, ds, fake, noCycles(whoopProps(nil)))
 	for _, row := range listLive(t, ds, whoopRecoveryKind) {
-		if _, err := ds.Patch(t.Context(), substrate.ActorAPI, whoopRecoveryKind, row.ID,
+		if _, err := ds.Patch(t.Context(), substrate.ActorPerson, whoopRecoveryKind, row.ID,
 			substrate.PatchInput{Properties: map[string]any{"cycleId": nil}}); err != nil {
 			t.Fatal(err)
 		}

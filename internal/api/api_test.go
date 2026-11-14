@@ -30,8 +30,9 @@ func (c *testClock) advance(d time.Duration) {
 	c.t = c.t.Add(d)
 }
 
+// testEnv is a handler and the clock it reads: newStubEnv's, or the one a
+// dbEnv embeds.
 type testEnv struct {
-	svc   *fakeService
 	h     http.Handler
 	clock *testClock
 }
@@ -40,17 +41,6 @@ type testEnv struct {
 // registration is OFF without one, so a test that wants the door shut builds
 // its own env instead.
 const testInviteCode = "let-me-in"
-
-func newTestEnv(t *testing.T) *testEnv {
-	t.Helper()
-	svc := newFakeService()
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	return &testEnv{
-		svc:   svc,
-		h:     New(Config{Service: svc, Now: clock.now, InviteCode: testInviteCode}),
-		clock: clock,
-	}
-}
 
 // do issues a request; token "" means unauthenticated.
 func (e *testEnv) do(t *testing.T, method, path, token string, body any, headers ...string) *httptest.ResponseRecorder {
@@ -108,7 +98,7 @@ func wantErrorCode(t *testing.T, rec *httptest.ResponseRecorder, status int, cod
 }
 
 func TestHealthzDoesNotTouchTheService(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnvOn(t, &stubService{})
 	rec := env.do(t, http.MethodGet, "/healthz", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 }

@@ -19,6 +19,8 @@ import {
   titleEditor,
   titleProperty,
   type PropSpec,
+  personWritable,
+  writersOf,
 } from "./record-schema"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
 
@@ -86,7 +88,7 @@ const wideKind: KindInfo = {
         states: ["proposed", "open", "done"],
         initial: "open",
       },
-      hidden: { type: "string", writer: "oauth" },
+      hidden: { type: "string", writer: "system" },
       code: { type: "string", pattern: "^[a-z]{3}$" },
       attachment: { type: "blobref" },
       attachments: { type: "blobref", repeated: true },
@@ -136,7 +138,7 @@ describe("propSpecs", () => {
   })
 
   it("carries the declaration's extras: writer, range, pattern, states, to", () => {
-    expect(spec(wideKind, "hidden").writer).toBe("oauth")
+    expect(spec(wideKind, "hidden").writer).toEqual(["system"])
     expect(spec(wideKind, "calls").min).toBe(1)
     expect(spec(wideKind, "code").pattern).toBe("^[a-z]{3}$")
     expect(spec(wideKind, "status").states).toEqual([
@@ -748,5 +750,19 @@ describe("titleProperty", () => {
     expect(titleEditor(templated("{stamped}", props))).toBeUndefined()
     // Before the declaration is read, nothing is offered.
     expect(titleEditor(undefined)).toBeUndefined()
+  })
+})
+
+describe("writer", () => {
+  it("reads one type of actor or a list, and a person writes what names person or nothing", () => {
+    expect(writersOf("system")).toEqual(["system"])
+    expect(writersOf(["function", "agent"])).toEqual(["function", "agent"])
+    expect(writersOf(undefined)).toBeUndefined()
+    const of = (writer?: string[]) => ({ name: "p", writer }) as PropSpec
+    expect(personWritable(of(undefined))).toBe(true)
+    expect(personWritable(of(["person"]))).toBe(true)
+    expect(personWritable(of(["person", "app"]))).toBe(true)
+    expect(personWritable(of(["system"]))).toBe(false)
+    expect(personWritable(of(["function", "agent"]))).toBe(false)
   })
 })

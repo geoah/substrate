@@ -23,7 +23,7 @@ func TestAGlobGrantReachesNoInternalKind(t *testing.T) {
 	ctx := context.Background()
 	ds, fake, _ := openMossDataset(t)
 	fake.script(mossModel, fakeTurn{content: "hello"})
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "hi"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestAGlobGrantReachesNoInternalKind(t *testing.T) {
 		fakeTurn{content: "done"},
 		fakeTurn{content: "resumed"},
 	)
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Thread: res.Thread, Message: "tidy up"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Thread: res.Thread, Message: "tidy up"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	rows := toolRows(t, ds, res.Thread)
@@ -67,7 +67,7 @@ func TestAGlobGrantReachesNoInternalKind(t *testing.T) {
 		t.Fatalf("the provider row moved: %+v, %v", got, err)
 	}
 	// The next turn reads the snapshot the engine took, not the forged one.
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Thread: res.Thread, Message: "again"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Thread: res.Thread, Message: "again"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	reqs := fake.requestsOf(mossModel)
@@ -125,16 +125,16 @@ func TestAnAgentsDeclarationWriteConvertsNoRecord(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake, repo := openMossDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docMaps(gardenDocs(repo))); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docMaps(gardenDocs(repo))); err != nil {
 		t.Fatal(err)
 	}
 	plant := repo + "/garden/plant"
-	fern, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: plant, Properties: map[string]any{"name": "Fern", "waterEveryDays": 7}})
+	fern, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: plant, Properties: map[string]any{"name": "Fern", "waterEveryDays": 7}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	shaper := repo + "/garden/shaper"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{vocabulary.AgentManifest(repo+"/garden", "shaper", map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{vocabulary.AgentManifest(repo+"/garden", "shaper", map[string]any{
 		"description": "shapes the garden", "prompt": "Shape the garden.", "provider": "anthropic", "model": mossModel,
 		"tools":       []any{map[string]any{"function": vocabulary.HostFunctionWrite}},
 		"permissions": map[string]any{"writes": []any{kindKind}},

@@ -137,7 +137,7 @@ function provider(
       authority: PROV,
       package: pkg,
       installed,
-      tier: "published",
+      keptBy: "publisher",
       status: installed
         ? {
             id,
@@ -160,7 +160,7 @@ function provider(
         package: pkg,
         description: over.description ?? "",
         version: 1,
-        tier: "published",
+        keptBy: "publisher",
         provider: true,
         brings,
         installed,
@@ -311,7 +311,11 @@ beforeEach(() => {
       }
       if (url === "/.well-known/substrate/server.json")
         return Response.json({
-          features: features.map((name) => ({ name, stability: "beta" })),
+          features: features.map((name) => ({
+            name,
+            stability: "experimental",
+            revision: 1,
+          })),
         })
       if (url === "/api/v1/substrate.reamde.dev/core/bundle/status")
         return Response.json({ items: statuses })

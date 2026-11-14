@@ -540,7 +540,7 @@ def main():
             ok(all(n > 0 for n in prefixes),
                "a capped comments page still wrote its prefix as rows (%s) "
                "and the account's status names it" % prefixes)
-            ok("short:" in str(acct.get("syncStatus") or ""),
+            ok("left unchanged" in str(acct.get("syncStatus") or ""),
                "the run says which connection it could not finish (%s)"
                % acct.get("syncStatus"))
     else:
@@ -643,10 +643,10 @@ def main():
                          "status": [429], "headers": {"Retry-After": "1"}}])
             limited = force_sync(api, akind, aid, drained=False)
             status = str(limited.get("syncStatus") or "")
-            ok(status.startswith("erroring") and "rate limited" in status,
+            ok(status.startswith("erroring") and "slow down" in status,
                "a 429 stops the walk and SAYS so (%s)" % status[:90])
             trait_ok(limited, "throttled", "after an injected 429")
-            ok("rate limited" in str(limited.get("syncError") or ""),
+            ok("slow down" in str(limited.get("syncError") or ""),
                "syncError carries the cause (%s)"
                % str(limited.get("syncError"))[:70])
             ok(bool(limited.get("syncErrorAt")), "and syncErrorAt says when")
@@ -667,9 +667,11 @@ def main():
             ok(status.startswith("erroring"),
                "a 500 is a break, not a wait (%s)" % status[:90])
             trait_ok(broken, "erroring", "after an injected 500")
-            ok("500" in str(broken.get("syncError") or ""),
-               "syncError names the status (%s)"
-               % str(broken.get("syncError"))[:70])
+            said = str(broken.get("syncError") or "")
+            ok(said.startswith("Linear had a problem on its side"),
+               "syncError opens with a sentence for the owner (%s)" % said[:70])
+            ok("500" in said,
+               "and names the status (%s)" % said[:90])
 
             set_faults(api, mock_url, [])
             healed = force_sync(api, akind, aid)

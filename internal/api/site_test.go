@@ -61,7 +61,7 @@ func consoleDir(t *testing.T) string {
 func siteHandler(t *testing.T, s *site.Site) http.Handler {
 	t.Helper()
 	return New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  consoleDir(t),
 		Site:    s,
@@ -236,7 +236,9 @@ func TestDiscoveryOmitsWhatTheSiteDoesNotSet(t *testing.T) {
 func TestDiscoveryOmitsSiteWithoutOne(t *testing.T) {
 	rec := serve(siteHandler(t, nil), http.MethodGet, "/.well-known/substrate/server.json", nil)
 	wantStatus(t, rec, http.StatusOK)
-	if strings.Contains(rec.Body.String(), `"site"`) {
+	// The key, not the word: the `site` feature is listed with or without
+	// one, as its name.
+	if strings.Contains(rec.Body.String(), `"site":`) {
 		t.Fatalf("body = %s, want no site key", rec.Body.String())
 	}
 }
@@ -253,7 +255,7 @@ func TestSiteBrandsTheConsoleShell(t *testing.T) {
 	}
 	branded := func(s *site.Site) http.Handler {
 		return New(Config{
-			Service: newFakeService(),
+			Service: &stubService{},
 			Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 			WebDir:  dir,
 			Site:    s,

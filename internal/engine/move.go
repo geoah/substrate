@@ -6,23 +6,32 @@ package engine
 //
 // A declaration carrying `movedFrom` whose named kind the repository still
 // declares carries that kind's live rows onto it: same id, same properties,
-// states, labels, annotations, body, temporal columns, property managers and
-// sealed material, with every reference at a moving kind repointed. The old
-// rows are tombstoned and the old kind is left declared and empty; nothing is
-// pruned and no name is retired (record 0055).
+// states, labels, annotations, temporal columns, marks and sealed material,
+// with every reference at a moving kind repointed. The old rows are
+// tombstoned and the old kind is left declared and empty; nothing is pruned
+// and no name is retired (record 0055).
 //
-// HONORED ON THE BOOT UPGRADE OF THE SEEDED PACKAGES, AND NOWHERE ELSE. The
-// key is reserved by name everywhere (record 0020) and stored wherever it is
-// written, but only the shipped tree's own upgrade performs the move: the apply
-// door refuses a batch that would imply one (vocabularywrite.go), because it
-// publishes its candidate registry before the rewrite runs and because a move
-// is the substrate's own hand reaching past the write path's admission rules,
-// which is a license no repository token holds.
+// HONORED ON THE BOOT UPGRADE OF THE SEEDED PACKAGES, AND CARRIED BY A
+// PUBLISH. The key is reserved by name everywhere (record 0020) and stored
+// wherever it is written, but only the shipped tree's own upgrade performs a
+// move the key declares: the apply door refuses a batch that would imply one
+// (vocabularywrite.go), because it publishes its candidate registry before
+// the rewrite runs and because a move is the substrate's own hand reaching
+// past the write path's admission rules, which is a license no repository
+// token holds. The one other mover is a publish (publish.go, record 0289),
+// which carries a package's records out of `~` with no key at all, for a
+// person who holds admin, under its own guards.
+//
+// WHAT A MOVE SETS OFF: nothing. Both lines it writes for a carried record
+// say so (`movedFrom` on the put, `movedTo` on the tombstone), as a repoint
+// line says `repointed`, and no trigger delivers any of them
+// (functions.go movedLine, record 0298). A carried record keeps its merge
+// trail (a `former` effect per id) and its vectors.
 //
 // WHAT IT REFUSES, as plan blockers the boot reports and skips on:
-//   - a property set that is not identical to the old kind's, in either
-//     direction (the rows travel with their properties untouched and under
-//     their own names);
+//   - a property the old kind declares and the new one does not, and a
+//     required one only the new kind declares (the rows travel with their
+//     properties untouched and under their own names);
 //   - ANY destination row at a moving id, live or tombstoned, so the write path
 //     never merges into a standing record and never resurrects a dead one;
 //   - an old kind that is a mapping source or declares a `subject:` reference,
@@ -30,6 +39,10 @@ package engine
 //   - a reference declaration left pinned at the old kind;
 //   - a REQUIRED `mustExist` cycle among the rows being carried, which no order
 //     of writes satisfies.
+//
+// The first and the third are asked only while the old kind holds live rows
+// (decision record 0257): an old kind left declared and empty, as every
+// repository that predates a shipped move keeps one, carries nothing.
 //
 // IDEMPOTENT: the move is classified from the LIVE rows, so a second boot finds
 // none and plans nothing.
@@ -120,22 +133,26 @@ func movedTargets(moves []kindMove) map[string]string {
 	return out
 }
 
-// userDoorMoveGuards is the apply door's whole answer to `movedFrom`: the key
-// is stored, and any move it would imply is refused. See the file header.
+// userDoorMoveGuards is the answer to `movedFrom` at every door but the boot
+// upgrade of the shipped packages: the apply door, a catalog install, import
+// and upgrade, a publisher's refresh and an app's approval all stage through
+// stageVocabularyBatch, and any move the batch would imply is refused. A
+// publisher may not rename a kind (decision 0269): other repositories hold
+// records of it under its name, so the refusal says what to do instead. See
+// the file header.
 func userDoorMoveGuards(moves []kindMove) []string {
 	var problems []string
 	for _, m := range moves {
-		problems = append(problems, fmt.Sprintf(
-			"kind %s: data.movedFrom names %s, which this repository still declares: movedFrom is honored for the shipped vocabulary only in this build, so the key is stored and no records move",
-			m.to.Identity, m.from))
+		problems = append(problems, vocabulary.KindRenameRefusal(m.to.Identity, m.from))
 	}
 	return problems
 }
 
-// moveGuards is everything a move is refused for that needs no live row: the
-// shapes the two declarations cannot reconcile, the sets of moves that cannot
+// moveGuards is everything a move is refused for that the declarations
+// decide: the shapes the two cannot reconcile, the sets of moves that cannot
 // be ordered at all, and the old kinds whose recompute would write under the
-// move's admission bypass.
+// move's admission bypass. It is asked about the moves that carry rows alone
+// (carrying).
 func moveGuards(current *vocabulary.Registry, moves []kindMove) []string {
 	var problems []string
 	seen := map[string]string{}
@@ -165,6 +182,18 @@ func moveGuards(current *vocabulary.Registry, moves []kindMove) []string {
 		problems = append(problems, mappingMoveGuards(current, m, old)...)
 	}
 	return problems
+}
+
+// carrying is the moves whose old kind holds a live row to carry, resolved by
+// planMoves under the door's reader.
+func carrying(moves []kindMove) []kindMove {
+	var out []kindMove
+	for _, m := range moves {
+		if len(m.ids) > 0 {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // mappingMoveGuards refuses a move out of a kind the mapping graph touches. A
@@ -208,6 +237,15 @@ func planMoves(q sqlReader, candidate *vocabulary.Registry, moves []kindMove) (m
 		if err != nil {
 			return out, nil, err
 		}
+		// A tombstone a hold keeps (a merge's loser, under the merge's
+		// finalizer) moves too, as a tombstone: the merge's record points at
+		// it, and a split brings it back under the kind it now has.
+		held, err := heldIDs(q, out.moves[i].from)
+		if err != nil {
+			return out, nil, err
+		}
+		ids = append(ids, held...)
+		sort.Strings(ids)
 		out.moves[i].ids = ids
 		// ANY row at the destination id, live or tombstoned. A live one would
 		// be merged into; a tombstoned one would be resurrected, and both are
@@ -470,6 +508,24 @@ func countMoves(p movesPlanned, grants int64) ([]substrate.ConversionStep, int64
 	return steps, work
 }
 
+// countCarriedOverrides counts the writes carrying the retention overrides of
+// the kinds whose rows a move carries (carryRetentionOverride): two for each
+// override, the most it writes, and part of the work the ceiling bounds.
+func countCarriedOverrides(q sqlReader, moves []kindMove) (int64, error) {
+	var total int64
+	for _, m := range carrying(moves) {
+		var n int64
+		if err := q.row(`SELECT count(*) FROM records
+			WHERE kind = $1 AND deleted_at IS NULL AND props->$2->>$3 = $4`,
+			kindRetention, propRetentionAppliesTo, vocabulary.ReferenceValueKey,
+			vocabulary.RecordPath(kindKind, m.from)).Scan(&n); err != nil {
+			return 0, err
+		}
+		total += 2 * min(n, 1)
+	}
+	return total, nil
+}
+
 // countGrants counts the agent and function declarations whose kind grants the
 // move rewrites: a patch each, and part of the work the ceiling bounds.
 func countGrants(q sqlReader, targets map[string]string) (int64, error) {
@@ -498,6 +554,9 @@ func (t *txn) moveRecords(candidate *vocabulary.Registry, p movesPlanned) (int64
 	if p.empty() {
 		return 0, nil
 	}
+	if err := t.planEveryStatement(); err != nil {
+		return 0, err
+	}
 	prev := t.writeReg
 	t.writeReg = candidate
 	defer func() { t.writeReg = prev }()
@@ -524,7 +583,10 @@ func (t *txn) moveRecords(candidate *vocabulary.Registry, p movesPlanned) (int64
 		total++
 	}
 	for _, d := range later {
-		if _, err := t.patch(d.ref, substrate.PatchInput{Properties: d.props}); err != nil {
+		if err := t.repointWith(movedTargets(p.moves), func() error {
+			_, err := t.patch(d.ref, substrate.PatchInput{Properties: d.props})
+			return err
+		}); err != nil {
 			return total, fmt.Errorf("substrate/engine: write the deferred references of %s: %w",
 				vocabulary.RecordPath(d.ref.Kind, d.ref.ID), err)
 		}
@@ -543,6 +605,12 @@ func (t *txn) moveRecords(candidate *vocabulary.Registry, p movesPlanned) (int64
 		if err := t.repointGrants(m.from, m.to.Identity); err != nil {
 			return total, fmt.Errorf("substrate/engine: repoint the grants naming %s: %w", m.from, err)
 		}
+		if len(m.ids) == 0 {
+			continue
+		}
+		if err := t.carryRetentionOverride(m.from, m.to.Identity); err != nil {
+			return total, fmt.Errorf("substrate/engine: carry the retention override of %s: %w", m.from, err)
+		}
 	}
 	return total, nil
 }
@@ -553,10 +621,15 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 	m := r.move
 	from := eref{Kind: m.from, ID: r.id}
 	row, err := t.loadRow(from, true)
-	if err != nil || row == nil || row.DeletedAt != nil {
+	if err != nil || row == nil {
 		return nil, err
 	}
-	managers, err := t.managersOf(from)
+	// A tombstone moves only while a hold keeps it (planMoves heldIDs).
+	heldTombstone := row.DeletedAt != nil
+	if heldTombstone && len(row.Finalizers) == 0 {
+		return nil, nil
+	}
+	marks, err := t.marksOf(from)
 	if err != nil {
 		return nil, err
 	}
@@ -598,12 +671,9 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 		}
 		props[k] = v
 	}
-	// `body` and the temporal columns are columns on the row rather than keys
-	// under props, and a state is neither: all three travel as the declared
-	// properties they are, or the moved record arrives without them.
-	if row.Body != "" {
-		props["body"] = row.Body
-	}
+	// The temporal columns are columns on the row rather than keys under
+	// props, and a state is neither: both travel as the declared properties
+	// they are, or the moved record arrives without them.
 	for name, v := range map[string]*time.Time{"at": row.At, "endsAt": row.EndsAt, "dueAt": row.DueAt} {
 		if v != nil {
 			props[name] = v.UTC().Format(time.RFC3339Nano)
@@ -618,26 +688,37 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 	if err := t.putMovedRow(m, to, props, row.Labels, annotations); err != nil {
 		return nil, fmt.Errorf("write %s as %s: %w", vocabulary.RecordPath(m.from, r.id), m.to.Identity, err)
 	}
-	// The managers follow the values, deferred ones included: who last wrote a
-	// property, at which tier and behind which token, is a fact about the value
-	// and not about the hand that carried it, so a hand edit still outranks a
-	// later sync on the moved row.
-	for _, name := range sortedKeys(managers) {
-		mr := managers[name]
+	// The marks follow the values, deferred ones included: who wrote a
+	// property, whether it is pinned and what it came from are facts about the
+	// value and not about the hand that carried it, so a pinned value still
+	// holds against a later sync on the moved row.
+	for _, name := range sortedKeys(marks) {
 		if _, carried := props[name]; !carried {
 			if _, deferred := held[name]; !deferred {
 				continue
 			}
 		}
-		if err := t.setManagerAs(to, name, substrate.Actor(mr.actor), mr.stored, mr.principal); err != nil {
+		if err := t.setMark(to, name, marks[name]); err != nil {
 			return nil, err
 		}
+	}
+	// The ids it was merged from, so an address or a reference through one
+	// still reaches it: a trail is keyed by kind, and the purge of the old
+	// row takes the old kind's trail with it.
+	if err := t.carryFormerIDs(from, to); err != nil {
+		return nil, err
+	}
+	if err := t.carryVectors(from, to); err != nil {
+		return nil, err
 	}
 	// The old sealed rows go with the old record: the move re-sealed their
 	// plaintext under the new owner, so leaving them would keep a second copy
 	// of a secret nothing reads.
 	if err := t.dropSealedOf(from); err != nil {
 		return nil, err
+	}
+	if heldTombstone {
+		return held, t.carryHeldTombstone(from, to, row.Finalizers)
 	}
 	if _, err := t.tombstone(from, ""); err != nil {
 		return nil, err
@@ -653,6 +734,115 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 	return held, t.afterTombstone(from)
 }
 
+// repointWith runs write with its lines naming the names it moves
+// (`repointed`), so nothing that reacts to a change takes it for one.
+func (t *txn) repointWith(moved map[string]string, write func() error) error {
+	prev := t.repointing
+	t.repointing = moved
+	defer func() { t.repointing = prev }()
+	return write()
+}
+
+// carryHeldTombstone ends the carry of a tombstone a hold keeps: the record
+// written under to takes its holds and is tombstoned again, its line naming
+// where it came from, and the old row, which the holds kept from the sweep,
+// is purged, its line naming where it went. Neither line sets off a trigger
+// (functions.go movedLine).
+func (t *txn) carryHeldTombstone(from, to eref, finalizers []string) error {
+	row, err := t.loadRow(to, true)
+	if err != nil {
+		return err
+	}
+	if row == nil {
+		return fmt.Errorf("the carried record %s is not there", vocabulary.RecordPath(to.Kind, to.ID))
+	}
+	before := row.clone()
+	row.Finalizers = append([]string(nil), finalizers...)
+	if _, err := t.foldRow(before, row, false, false); err != nil {
+		return err
+	}
+	if _, err := t.tombstone(to, ""); err != nil {
+		return err
+	}
+	if err := t.appendChange(t.actor, substrate.OpDelete, to.ID, to.Kind, map[string]any{
+		"finalizers": finalizers, "movedFrom": from.Kind,
+	}); err != nil {
+		return err
+	}
+	if err := t.hardDelete(from); err != nil {
+		return err
+	}
+	return t.appendChange(t.actor, substrate.OpGC, from.ID, from.Kind, map[string]any{
+		"reason": "moved", "movedTo": to.Kind,
+	})
+}
+
+// heldIDs are the tombstones of kind a hold keeps (a merge's loser), which a
+// move carries as tombstones.
+func heldIDs(q sqlReader, kind string) ([]string, error) {
+	rows, err := q.query(`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NOT NULL AND cardinality(finalizers) > 0 ORDER BY id`, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// carryFormerIDs writes the merge trail of from under to, as the fold's own
+// effect, so a rebuild gives it back.
+func (t *txn) carryFormerIDs(from, to eref) error {
+	rows, err := t.query(`SELECT former_id FROM former_ids WHERE record_kind = $1 AND record_id = $2 ORDER BY former_id`,
+		from.Kind, from.ID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := t.recordFormerID(to.Kind, id, to.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// carryVectors moves from's vectors and its place in the embedding queue to
+// to. They are derived from the record's text, which the move carries
+// unchanged, so the record is not embedded again. Both are derived storage,
+// outside the fold, as the conversion's carry of a vector's key is
+// (localnamespace.go carryLocal).
+func (t *txn) carryVectors(from, to eref) error {
+	for _, table := range []string{"embeddings", "embed_queue"} {
+		if _, err := t.exec(`UPDATE `+table+` SET record_kind = $3 WHERE record_kind = $1 AND record_id = $2`,
+			from.Kind, from.ID, to.Kind); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // putMovedRow is the one write the move's admission bypass covers, and it
 // covers NOTHING ELSE: the flag is set immediately before the put and cleared
 // immediately after, so the deferred patches, the repoints and the grant
@@ -663,10 +853,10 @@ func (t *txn) moveRecord(r movedRow, targets map[string]string, moving map[strin
 // record was admitted once already, under the old kind, so carrying it is not a
 // second authorship.
 func (t *txn) putMovedRow(m *kindMove, to eref, props, labels, annotations map[string]any) error {
-	prevInternal, prevAsk, prevMoving := t.internal, t.interactionThread, t.movingRecords
-	t.internal, t.interactionThread, t.movingRecords = true, true, true
+	prevInternal, prevAsk, prevMoving, prevFrom := t.internal, t.interactionThread, t.movingRecords, t.movedFrom
+	t.internal, t.interactionThread, t.movingRecords, t.movedFrom = true, true, true, m.from
 	defer func() {
-		t.internal, t.interactionThread, t.movingRecords = prevInternal, prevAsk, prevMoving
+		t.internal, t.interactionThread, t.movingRecords, t.movedFrom = prevInternal, prevAsk, prevMoving, prevFrom
 	}()
 	_, err := t.putKind(m.to, substrate.PutInput{
 		Kind: to.Kind, ID: to.ID, Properties: props, Labels: labels, Annotations: annotations,

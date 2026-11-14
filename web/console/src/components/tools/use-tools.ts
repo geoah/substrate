@@ -15,8 +15,6 @@ import {
   toolUsageQueryOptions,
 } from "@/lib/api/functions"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import { repositoryQueryOptions } from "@/lib/api/repository"
-import { getRepository } from "@/lib/api/session"
 import {
   syncStatusesQueryOptions,
   triggerRecordsQueryOptions,
@@ -72,18 +70,15 @@ export function useTools(only?: string): ToolsModel {
   const kinds = useQuery(kindsQueryOptions)
   const syncs = useQuery(syncStatusesQueryOptions)
   const runs = useQuery(recentTriggerRunsQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
-  const authority = repository.data?.authority || getRepository()
 
   const tools = useMemo(
     () =>
       buildTools(
         functions.data ?? [],
         agents.data?.records ?? [],
-        triggers.data ?? [],
-        authority
+        triggers.data ?? []
       ),
-    [functions.data, agents.data, triggers.data, authority]
+    [functions.data, agents.data, triggers.data]
   )
   const names = useMemo(
     () => tools.flatMap((t) => t.uses.map((u) => u.name)),
@@ -176,7 +171,5 @@ export function useTools(only?: string): ToolsModel {
 /** An agent record's display name, the actor mark's. */
 export { agentName }
 
-/** An agent record id as its actor string. */
-export function agentActor(id: string): string {
-  return `agent:${id.split("/").join(":")}`
-}
+/** The id of the actor record an agent writes as, from its record id. */
+export { agentActor } from "@/lib/agent-chat"

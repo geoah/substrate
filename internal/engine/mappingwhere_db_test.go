@@ -29,7 +29,6 @@ func prManifest() enginetest.Manifest {
 		Name: "pr", Authority: prPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(prPackage, 1),
-			vocabulary.ActorManifest(prPackage, string(prsync)),
 			vocabulary.KindManifest(prPackage,
 				map[string]any{"singular": "pullrequest"},
 				map[string]any{

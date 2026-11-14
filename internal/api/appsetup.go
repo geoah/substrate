@@ -46,13 +46,13 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 	// or read the request, so nothing more may land for it.
 	ctx, cancel := context.WithTimeout(ctx, req.Expires.Sub(h.now()))
 	defer cancel()
-	authority := ds.Repository().Authority
+	owner := ds.Repository().ID
 	stop := func(failure *substrate.AuthorizationFailure, moved bool) {
 		end := h.authz.Fail
 		if moved {
 			end = h.authz.Replan
 		}
-		if err := end(req.ID, authority, failure); err != nil {
+		if err := end(req.ID, owner, failure); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 		}
 	}
@@ -66,7 +66,7 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		}
 	}()
 	out := h.setups.Run(ctx, ds, actor, req.Details, approved, opts, run, func(progress []string) bool {
-		if err := h.authz.Progress(req.ID, authority, progress); err != nil {
+		if err := h.authz.Progress(req.ID, owner, progress); err != nil {
 			slog.Warn("authorize: a set up outlived its request", "request", req.ID, "error", err)
 			return false
 		}
@@ -93,8 +93,8 @@ func (h *handler) runSetup(ctx context.Context, ds substrate.Dataset, actor subs
 		stop(&substrate.AuthorizationFailure{Message: "Everything is set up, and who publishes this app changed since the page loaded: " + why + ". Start again from the app, which reads who publishes it afresh."}, false)
 		return
 	}
-	_, _, err = h.authz.Finish(req.ID, authority, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
-		view := reads.view(req, *req.Document, authority, req.Setup, req.PlanHash)
+	_, _, err = h.authz.Finish(req.ID, owner, approve, func(req authorize.Request, code string) substrate.AuthorizationRequest {
+		view := reads.view(req, *req.Document, ds.Repository().Authority, req.Setup, req.PlanHash)
 		view.Next = withParams(req.RedirectURI, url.Values{"code": {code}}, req)
 		return view
 	})
@@ -221,7 +221,7 @@ func grantedDetails(ctx context.Context, ds substrate.Dataset, issuer, authority
 		case substrate.DetailWebhook:
 			out = append(out, substrate.AuthorizationDetail{
 				Type: d.Type, Trigger: d.Trigger,
-				URL: issuer + "/webhooks/" + url.PathEscape(authority) + "/" + url.PathEscape(d.Trigger),
+				URL: issuer + "/webhooks/" + url.PathEscape(ds.Repository().ID) + "/" + url.PathEscape(d.Trigger),
 			})
 		}
 	}
@@ -285,9 +285,16 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+	app, err := checkedByAnApp(ctx)
+	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
+	}
+	if app {
+		if err := DatasetFrom(ctx).RecordAppBuild(ctx, authorize.PackageFloors(details), softwareVersion); err != nil {
+			writeSubstrateError(w, r, err)
+			return
+		}
 	}
 	principal := substrate.PrincipalFrom(ctx)
 	if out, ok := h.checks.answer(principal, raw, h.now()); ok {
@@ -314,15 +321,47 @@ func (h *handler) postAuthorizationCheck(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, out)
 }
 
+// checkedByAnApp reports whether the request's token is an app's, the one
+// kind of token with a build for a check to record. A scoped app's token
+// carries its client id in the request, a full-access app's only on its
+// record. An owner's own token asks too and sees every row (docs/apps.md),
+// and has no build: recording one is refused for a token with no client id.
+// A token missing from the list was revoked after the request signed in, and
+// is refused as the build's record refuses it: it is nobody's to answer.
+func checkedByAnApp(ctx context.Context) (bool, error) {
+	if substrate.ClientIDFrom(ctx) != "" {
+		return true, nil
+	}
+	if _, scoped := substrate.ScopesFrom(ctx); scoped {
+		return false, nil
+	}
+	tokens, err := DatasetFrom(ctx).Tokens(ctx)
+	if err != nil {
+		return false, err
+	}
+	id := substrate.PrincipalFrom(ctx)
+	for _, t := range tokens {
+		if t.ID == id {
+			return t.ClientID != "", nil
+		}
+	}
+	return false, fmt.Errorf("%w: a live token is required", substrate.ErrForbidden)
+}
+
 // check plans a check's answer for the request's token.
 func (h *handler) check(ctx context.Context, requested []scope.Scope, details []substrate.AuthorizationDetail) (substrate.AuthorizationCheckResult, error) {
 	ds := DatasetFrom(ctx)
-	authority := ds.Repository().Authority
+	names := ds.Repository().LocalNames()
 	// The plan reads the repository whole; what the token may learn of it is
 	// cut below, row by row.
 	owner, grant, full := ds, scope.Grant{}, true
 	if sd, ok := ds.(*scopedDataset); ok {
-		owner, grant, full = sd.inner, sd.grant, false
+		// A person's view holds no app's grant: it is checked as one that
+		// grants nothing.
+		owner, full = sd.inner, false
+		if app, isApp := sd.grant.(appReach); isApp {
+			grant = app.Grant
+		}
 	}
 	var registry map[string]substrate.KindInfo
 	if !full {
@@ -337,7 +376,7 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	}
 	missing := []string{}
 	for _, s := range requested {
-		resolved := s.Resolve(authority)
+		resolved := s.Localize(names...)
 		if !full && !grant.Covers(resolved, scopeInternal(resolved, registry)) && !slices.Contains(missing, resolved.String()) {
 			missing = append(missing, resolved.String())
 		}
@@ -356,8 +395,12 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 			}
 		}
 	}
-	h.refreshBelowFloor(ctx, owner, details)
-	rows, _, err := appsetup.Plan(ctx, owner, h.packages, details, opts)
+	h.refreshBelowFloor(ctx, owner, details, opts.ActionOnly)
+	packages := h.packages
+	if packages != nil && len(opts.ActionOnly) > 0 {
+		packages = shippedOnly{Catalog: packages, shipped: h.catalog, withheld: opts.ActionOnly}
+	}
+	rows, _, err := appsetup.Plan(ctx, owner, packages, details, opts)
 	if err != nil {
 		return substrate.AuthorizationCheckResult{}, err
 	}
@@ -395,6 +438,33 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	return out, nil
 }
 
+// shippedOnly is the approval's catalog with each package in withheld, one
+// the token's scopes do not name, resolved through the binary's closures
+// alone. The check answers that row `unknown`, and resolving it through its
+// publisher's document would let an app with any access make the server fetch
+// a document for a package it does not reach. A package nothing resolves is
+// planned no further than its action.
+type shippedOnly struct {
+	appsetup.Catalog
+	shipped  *catalog.Catalog
+	withheld map[string]bool
+}
+
+func (c shippedOnly) ResolveFor(ctx context.Context, id string, atLeast int64, ds substrate.Dataset) (*catalog.Bundle, error) {
+	if c.withheld[id] && !c.ships(id) {
+		return nil, fmt.Errorf("%w: %s is not resolved for a token whose scopes do not name it", catalog.ErrNotPublished, id)
+	}
+	return c.Catalog.ResolveFor(ctx, id, atLeast, ds)
+}
+
+func (c shippedOnly) ships(id string) bool {
+	if c.shipped == nil {
+		return false
+	}
+	_, ok := c.shipped.ByID(id)
+	return ok
+}
+
 // checkRow cuts a planned row to what a check answers. A row the token may
 // see keeps its action, what blocks it, a package's versions and the package
 // a webhook delivers to; one it may not see is `unknown` and carries only
@@ -430,8 +500,11 @@ func checkRow(row substrate.AuthorizationSetup, visible bool) substrate.Authoriz
 // its publisher lists, where the catalog applies that on its own (decision
 // 0213): a kinds-only, additive upgrade lands now and the row answers
 // `none`. One the catalog cannot refresh is left for the plan to say what
-// it needs, with the reason in the log.
-func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail) {
+// it needs, with the reason in the log. A package in withheld, one the
+// token's scopes do not name, is not refreshed: an app may not make the
+// server fetch a publisher's document and upgrade a package it has nothing
+// to do with by naming it in a check.
+func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, details []substrate.AuthorizationDetail, withheld map[string]bool) {
 	floors := authorize.PackageFloors(details)
 	if h.refresher == nil || h.packages == nil || len(floors) == 0 {
 		return
@@ -446,7 +519,7 @@ func (h *handler) refreshBelowFloor(ctx context.Context, ds substrate.Dataset, d
 		held[statuses[i].ID] = appsetup.HeldRelease(&statuses[i])
 	}
 	for _, id := range slices.Sorted(maps.Keys(floors)) {
-		if held[id] == 0 || held[id] >= floors[id] {
+		if withheld[id] || held[id] == 0 || held[id] >= floors[id] {
 			continue
 		}
 		b, err := h.packages.ResolveFor(ctx, id, floors[id], ds)

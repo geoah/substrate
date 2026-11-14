@@ -1,5 +1,5 @@
-/** The recovery export (`GET /api/v1/export`, decision 0069): the
- * repository's directory as of one committed point, as a tar. The token is the
+/** The recovery export (`GET /api/v1/export`, decision 0278): the
+ * repository's archive as of one committed point, as one tar. The token is the
  * whole credential, as it is for every record the archive carries. */
 
 import { envelopeError, rootPath } from "./http"
@@ -15,7 +15,7 @@ export function exportFileName(disposition: string | null): string {
 
 /** Read the archive and hand it to the browser as a download. */
 export async function downloadExport(): Promise<string> {
-  const headers: Record<string, string> = { "X-Substrate-Actor": "console" }
+  const headers: Record<string, string> = {}
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
   const res = await fetch(rootPath("export"), { headers })

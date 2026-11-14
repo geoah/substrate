@@ -30,9 +30,10 @@ import (
 const idempotencyHeader = "Idempotency-Key"
 
 // idempotentContext is the request context with its Idempotency-Key bound.
-// Only the handlers whose effect the server assigns call it: the id-less
-// create, the function and agent calls, merge and split. Agent chat is a
-// stream with nothing to replay, so its handler never does.
+// The record writes call it (the id-less create, and the put, patch and
+// delete of a named record), and so do the function and agent calls, merge
+// and split. Agent chat is a stream with nothing to replay, so its handler
+// never does.
 func idempotentContext(r *http.Request) context.Context {
 	return substrate.WithIdempotencyKey(r.Context(), r.Header.Get(idempotencyHeader))
 }

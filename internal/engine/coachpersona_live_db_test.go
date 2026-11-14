@@ -111,7 +111,7 @@ func TestLiveCoachPersonas(t *testing.T) {
 	training, coachPkg := home+"/training", home+"/trainingcoach"
 	memory, routine, session, exercise := training+"/memory", training+"/routine", training+"/session", training+"/exercise"
 	agent := coachPkg + "/workoutCoach"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "anthropic", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "anthropic", Properties: map[string]any{
 		"wire": "anthropic", "baseURL": "https://api.anthropic.com/", "apiKey": key,
 		"pricing": []any{map[string]any{"model": liveAnthropicModel, "inputPer1M": "1", "outputPer1M": "5"}},
 	}}); err != nil {
@@ -143,7 +143,7 @@ func TestLiveCoachPersonas(t *testing.T) {
 	}
 	put := func(kind, id string, props map[string]any) *substrate.Record {
 		t.Helper()
-		rec, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props})
+		rec, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props})
 		if err != nil {
 			t.Fatal(err)
 		}

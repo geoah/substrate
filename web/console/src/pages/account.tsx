@@ -1,5 +1,6 @@
-/** The account, as Settings shows it: the repository name, the two
- * credential changes and the delete, all under the password-factor rule.
+/** The account, as Settings shows it: the repository name, the person's
+ * sign-in name, the two credential changes and the delete, all under the
+ * password-factor rule.
  *
  * These endpoints do not accept a bearer token at all: the current password,
  * and the code where the account has a second factor, travel in the body, and
@@ -7,9 +8,12 @@
  * the data, never the account. So both forms ask for the password even though
  * you are plainly signed in.
  *
- * Live tokens SURVIVE a password change: a token is data access, the credential
- * is the account. Signing a browser or a script out is the Signed in section's
- * job. */
+ * Live tokens SURVIVE a password change unless it also signs out everywhere:
+ * a token is data access, the credential is the account. Signing one browser
+ * or script out is the Signed in section's job, and signing out everywhere
+ * (every token, this browser's included, decision 0272) is its last row and
+ * the password change's option, offered where the server lists `auth` at
+ * revision 2. */
 
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -35,20 +39,74 @@ import {
   CODE_DIGITS,
   changePassword,
   deleteRepository,
+  identityQueryOptions,
   normalizeCode,
+  renameRepository,
+  signOutEverywhere,
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { useAuthPolicy } from "@/lib/api/discovery"
+import {
+  discoveryQueryOptions,
+  doorNamesAPerson,
+  hasFeature,
+  useAuthPolicy,
+} from "@/lib/api/discovery"
 import { recordQueryOptions } from "@/lib/api/records"
-import { clearSession, getRepository } from "@/lib/api/session"
+import {
+  clearSession,
+  getIdentityName,
+  getRepository,
+  setRepository,
+} from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 8
 
-/** The credential record. Its TOTP ref, redacted on every read, is there
- * exactly while the account has a second factor (decision 0237). */
+/** The `auth` revision that added signing out everywhere: the route, and the
+ * password change's option. */
+const SIGN_OUT_EVERYWHERE_REVISION = 2
+
+/** The `auth` revision that added renaming the repository (decision 0287). */
+const RENAME_REVISION = 5
+
+/** Whether the server can rename the repository. A console bundled in an app
+ * may talk to an older one. */
+function useRenameOffered(): boolean {
+  const discovery = useQuery(discoveryQueryOptions)
+  return hasFeature(discovery.data, "auth", RENAME_REVISION)
+}
+
+/** Whether the server can sign the person out everywhere. A console bundled
+ * in an app may talk to an older one. */
+function useSignOutEverywhereOffered(): boolean {
+  const discovery = useQuery(discoveryQueryOptions)
+  return hasFeature(discovery.data, "auth", SIGN_OUT_EVERYWHERE_REVISION)
+}
+
+/** After a sign out everywhere this browser's token is gone too: forget it
+ * and go to the sign-in page. */
+function useSignedOutEverywhere(): (ended: number | undefined) => void {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  return (ended) => {
+    clearSession()
+    queryClient.clear()
+    toast.add({
+      type: "success",
+      title:
+        ended === undefined
+          ? "Signed out everywhere."
+          : `Signed out everywhere: ${ended} ${ended === 1 ? "sign-in" : "sign-ins"} ended.`,
+    })
+    void navigate({ to: "/login", replace: true })
+  }
+}
+
+/** A server from before identities (decision 0274) keeps the sign-in as the
+ * repository's credential record, whose TOTP ref, redacted on every read, is
+ * there exactly while the account has a second factor (decision 0237). */
 const credentialQuery = recordQueryOptions(
   "substrate.reamde.dev",
   "core",
@@ -56,17 +114,33 @@ const credentialQuery = recordQueryOptions(
   "self"
 )
 
+/** The name the person signs in with: their identity's, where the server
+ * reads it, else what the session kept. An app's sign-in keeps no name, so
+ * the read is what an app shell has. */
+function useIdentityName(): string {
+  const person = useQuery({
+    ...identityQueryOptions,
+    enabled: doorNamesAPerson(),
+  })
+  return person.data?.name ?? getIdentityName() ?? ""
+}
+
 /** Whether signing in and the credential changes owe a code: the door verifies
- * one and this account has a factor. Until the credential read answers, the
- * strict answer stands, so a code field is never hidden from an account that
- * owes one. */
+ * one and the person has a factor, which their identity says, or on a server
+ * from before identities, their repository's credential record. Until the
+ * read answers, the strict answer stands, so a code field is never hidden
+ * from an account that owes one. */
 function useCodeOwed(): boolean {
+  // The policy's read is also what doorNamesAPerson follows, and its answer
+  // renders this again.
   const { totpRequired } = useAuthPolicy()
-  const credential = useQuery(credentialQuery)
-  const hasFactor = credential.data
-    ? credential.data.properties.totpRef !== undefined
-    : true
-  return totpRequired && hasFactor
+  const personDoor = doorNamesAPerson()
+  const person = useQuery({ ...identityQueryOptions, enabled: personDoor })
+  const credential = useQuery({ ...credentialQuery, enabled: !personDoor })
+  const secondFactor = personDoor
+    ? person.data?.secondFactor
+    : credential.data && credential.data.properties.totpRef !== undefined
+  return totpRequired && (secondFactor ?? true)
 }
 
 function describe(err: unknown): string {
@@ -101,15 +175,17 @@ async function copy(value: string) {
 }
 
 /** The account rows: the repository name, then `afterName` (Settings puts
- * Verify domain there, beside the mark it clears), the password and the
- * second factor. */
+ * Verify domain there, beside the mark it clears), the name the person signs
+ * in with, the password and the second factor. */
 export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
-  const repository = getRepository() ?? ""
+  const [repository, setName] = useState(getRepository() ?? "")
+  const identity = useIdentityName()
   const { totpRequired } = useAuthPolicy()
   const codeOwed = useCodeOwed()
+  const renameOffered = useRenameOffered()
   const [technical] = useTechnicalDetails()
-  const [open, setOpen] = useState<"password" | "totp" | null>(null)
-  const toggle = (which: "password" | "totp") =>
+  const [open, setOpen] = useState<"password" | "totp" | "rename" | null>(null)
+  const toggle = (which: "password" | "totp" | "rename") =>
     setOpen((o) => (o === which ? null : which))
 
   return (
@@ -123,17 +199,64 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
             <UnverifiedMark />
           </span>
         }
-        description="The name you sign in with. It’s also the address of your data."
+        description={
+          renameOffered
+            ? "Your Substrate’s address: the home of your data and of the kinds you declare. Renaming keeps the old name working for 90 days."
+            : "Your Substrate’s address: the home of your data and of the kinds you declare."
+        }
         control={
           repository ? (
-            <CopyButton value={repository} label="Copy your repository name" />
+            <span className="inline-flex items-center gap-2">
+              <CopyButton
+                value={repository}
+                label="Copy your repository name"
+              />
+              {renameOffered && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-expanded={open === "rename"}
+                  onClick={() => toggle("rename")}
+                >
+                  {open === "rename" ? "Cancel" : "Rename…"}
+                </Button>
+              )}
+            </span>
+          ) : undefined
+        }
+      >
+        {open === "rename" && (
+          <RenameRepositoryForm
+            identity={identity}
+            repository={repository}
+            codeOwed={codeOwed}
+            onDone={(name) => {
+              setName(name)
+              setOpen(null)
+            }}
+          />
+        )}
+      </SettingRow>
+      {afterName}
+      <SettingRow
+        title={
+          <span className="[overflow-wrap:anywhere]">
+            {identity || "unknown"}
+          </span>
+        }
+        description="The name you sign in with."
+        control={
+          identity ? (
+            <CopyButton
+              value={identity}
+              label="Copy the name you sign in with"
+            />
           ) : undefined
         }
       />
-      {afterName}
       <SettingRow
         title="Password"
-        description={`Changing it needs your current password${codeOwed ? " and a code" : ""}. Browsers and scripts you signed in stay signed in.`}
+        description={`Changing it needs your current password${codeOwed ? " and a code" : ""}. Browsers, scripts and apps stay signed in unless you also sign out everywhere.`}
         control={
           <Button
             variant="outline"
@@ -147,7 +270,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
       >
         {open === "password" && (
           <PasswordForm
-            repository={repository}
+            identity={identity}
             codeOwed={codeOwed}
             onDone={() => setOpen(null)}
           />
@@ -178,7 +301,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
         >
           {open === "totp" && (
             <TotpForm
-              repository={repository}
+              identity={identity}
               enabling={!codeOwed}
               onDone={() => setOpen(null)}
             />
@@ -209,6 +332,7 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
 /** The danger zone's one row: deleting the repository for good. */
 export function DeleteRepositoryRow() {
   const repository = getRepository() ?? ""
+  const identity = useIdentityName()
   const codeOwed = useCodeOwed()
   const [open, setOpen] = useState(false)
   return (
@@ -227,16 +351,283 @@ export function DeleteRepositoryRow() {
       }
     >
       {open && (
-        <DeleteRepositoryForm repository={repository} codeOwed={codeOwed} />
+        <DeleteRepositoryForm
+          identity={identity}
+          repository={repository}
+          codeOwed={codeOwed}
+        />
       )}
     </SettingRow>
   )
 }
 
+/** Settings' last Signed in row: one action that ends every token the
+ * person holds, this browser's included. Offered where the server lists
+ * `auth` at revision 2. */
+export function SignOutEverywhereRow() {
+  const identity = useIdentityName()
+  const codeOwed = useCodeOwed()
+  const offered = useSignOutEverywhereOffered()
+  const [open, setOpen] = useState(false)
+  if (!offered) return null
+  return (
+    <SettingRow
+      title="Sign out everywhere"
+      description="Ends every sign-in, every token you made, and every app’s and assistant’s access, this browser included. Use it if a sign-in may have leaked."
+      control={
+        <Button
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? "Cancel" : "Sign out everywhere…"}
+        </Button>
+      }
+    >
+      {open && (
+        <SignOutEverywhereForm identity={identity} codeOwed={codeOwed} />
+      )}
+    </SettingRow>
+  )
+}
+
+function SignOutEverywhereForm({
+  identity,
+  codeOwed,
+}: {
+  identity: string
+  codeOwed: boolean
+}) {
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setBusy] = useState(false)
+  const signedOut = useSignedOutEverywhere()
+
+  const canSubmit =
+    identity !== "" &&
+    password.length > 0 &&
+    (!codeOwed || normalizeCode(code) !== null)
+
+  async function submit() {
+    const normalized = codeOwed ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
+    setError(null)
+    setBusy(true)
+    try {
+      const answer = await signOutEverywhere(identity, password, normalized)
+      signedOut(answer.signedOut)
+    } catch (err) {
+      setError(describe(err))
+      setCode("")
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form
+      aria-label="Sign out everywhere"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="out-password">Current password</FieldLabel>
+          <Input
+            id="out-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {codeOwed && (
+          <Field>
+            <FieldLabel htmlFor="out-code">Current code</FieldLabel>
+            <Input
+              id="out-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <Button type="submit" disabled={!canSubmit || isBusy}>
+            {isBusy && <Spinner />}
+            Sign out everywhere
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
+  )
+}
+
+/** The rename: the new name, completed under the server's name host as at
+ * registration, and the person's current factors; only an admin of the
+ * repository renames it, which the server says to anyone else. The old name
+ * keeps resolving for 90 days, which the toast says, and this browser's token
+ * and session stay: a rename moves neither the token nor the data, only the
+ * name. */
+function RenameRepositoryForm({
+  identity,
+  repository,
+  codeOwed,
+  onDone,
+}: {
+  identity: string
+  repository: string
+  codeOwed: boolean
+  onDone: (name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { nameHost } = useAuthPolicy()
+  const [name, setName] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setBusy] = useState(false)
+
+  const typed = name.trim().toLowerCase().replace(/\.$/, "")
+  const preview =
+    typed && !typed.includes(".") && nameHost ? `${typed}.${nameHost}` : typed
+  const canSubmit =
+    identity !== "" &&
+    typed.length > 0 &&
+    preview !== repository &&
+    password.length > 0 &&
+    (!codeOwed || normalizeCode(code) !== null)
+
+  async function submit() {
+    const normalized = codeOwed ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
+    setError(null)
+    setBusy(true)
+    let renamed
+    try {
+      renamed = await renameRepository(
+        identity,
+        repository,
+        password,
+        normalized,
+        typed
+      )
+    } catch (err) {
+      setError(describe(err))
+      setCode("")
+      setBusy(false)
+      return
+    }
+    setRepository(renamed.name)
+    await queryClient.invalidateQueries()
+    const held = renamed.formerNames.find((f) => f.name === repository)
+    toast.add({
+      type: "success",
+      title: `Renamed to ${renamed.name}.`,
+      description: held
+        ? `${repository} keeps working until ${new Date(held.until).toLocaleDateString()}.`
+        : undefined,
+    })
+    setBusy(false)
+    onDone(renamed.name)
+  }
+
+  return (
+    <form
+      aria-label="Rename your Substrate"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="rename-name">New name</FieldLabel>
+          <Input
+            id="rename-name"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={nameHost ? `you.${nameHost}` : "you.example.com"}
+            className="font-mono"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <FieldDescription>
+            {preview && preview !== typed ? (
+              <>
+                Your name becomes{" "}
+                <span className="font-mono [overflow-wrap:anywhere] text-foreground">
+                  {preview}
+                </span>
+                .{" "}
+              </>
+            ) : null}
+            {repository} keeps working for 90 days, then anyone may register it.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="rename-password">Current password</FieldLabel>
+          <Input
+            id="rename-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {codeOwed && (
+          <Field>
+            <FieldLabel htmlFor="rename-code">Current code</FieldLabel>
+            <Input
+              id="rename-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <Button type="submit" disabled={!canSubmit || isBusy}>
+            {isBusy && <Spinner />}
+            Rename
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
+  )
+}
+
 function DeleteRepositoryForm({
+  identity,
   repository,
   codeOwed,
 }: {
+  identity: string
   repository: string
   codeOwed: boolean
 }) {
@@ -260,7 +651,7 @@ function DeleteRepositoryForm({
     setError(null)
     setBusy(true)
     try {
-      await deleteRepository(repository, password, normalized)
+      await deleteRepository(identity, repository, password, normalized)
     } catch (err) {
       setError(describe(err))
       setCode("")
@@ -353,11 +744,11 @@ function DeleteRepositoryForm({
 }
 
 function PasswordForm({
-  repository,
+  identity,
   codeOwed,
   onDone,
 }: {
-  repository: string
+  identity: string
   codeOwed: boolean
   onDone: () => void
 }) {
@@ -365,12 +756,15 @@ function PasswordForm({
   const [code, setCode] = useState("")
   const [next, setNext] = useState("")
   const [confirm, setConfirm] = useState("")
+  const [everywhere, setEverywhere] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
+  const offered = useSignOutEverywhereOffered()
+  const signedOut = useSignedOutEverywhere()
 
   const matches = next.length > 0 && next === confirm
   const canSubmit =
-    repository !== "" &&
+    identity !== "" &&
     password.length > 0 &&
     (!codeOwed || normalizeCode(code) !== null) &&
     next.length >= MIN_PASSWORD &&
@@ -382,7 +776,17 @@ function PasswordForm({
     setError(null)
     setBusy(true)
     try {
-      await changePassword(repository, password, normalized, next)
+      const answer = await changePassword(
+        identity,
+        password,
+        normalized,
+        next,
+        offered && everywhere
+      )
+      if (offered && everywhere) {
+        signedOut(answer.signedOut)
+        return
+      }
       toast.add({
         type: "success",
         title: "Password changed. You stay signed in everywhere.",
@@ -463,6 +867,29 @@ function PasswordForm({
             <FieldError errors={[{ message: "The two passwords differ." }]} />
           )}
         </Field>
+        {offered && (
+          <Field>
+            <div className="flex items-start gap-2">
+              <input
+                id="pw-everywhere"
+                type="checkbox"
+                checked={everywhere}
+                onChange={(e) => setEverywhere(e.target.checked)}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <div className="flex flex-col gap-0.5">
+                <FieldLabel htmlFor="pw-everywhere">
+                  Also sign out everywhere
+                </FieldLabel>
+                <FieldDescription>
+                  Ends every sign-in, every token you made, and every app’s and
+                  assistant’s access, this browser included. You sign in again
+                  with the new password.
+                </FieldDescription>
+              </div>
+            </div>
+          </Field>
+        )}
         <Field>
           <Button type="submit" disabled={!canSubmit || isBusy}>
             {isBusy && <Spinner />}
@@ -478,11 +905,11 @@ function PasswordForm({
  * account registered without: the same two calls, with no current code to
  * prove where there is none (decision 0237). */
 function TotpForm({
-  repository,
+  identity,
   enabling,
   onDone,
 }: {
-  repository: string
+  identity: string
   enabling: boolean
   onDone: () => void
 }) {
@@ -495,7 +922,7 @@ function TotpForm({
   const [isBusy, setBusy] = useState(false)
 
   const canBegin =
-    repository !== "" &&
+    identity !== "" &&
     password.length > 0 &&
     (enabling || normalizeCode(code) !== null)
 
@@ -505,7 +932,7 @@ function TotpForm({
     setError(null)
     setBusy(true)
     try {
-      setEnrollment(await totpEnroll(repository, password, normalized))
+      setEnrollment(await totpEnroll(identity, password, normalized))
     } catch (err) {
       setError(describe(err))
       setCode("")
@@ -522,7 +949,7 @@ function TotpForm({
     setBusy(true)
     try {
       await totpChange(
-        repository,
+        identity,
         password,
         normalizedCurrent,
         enrollment.totpSecret,
@@ -535,6 +962,9 @@ function TotpForm({
           : "Authenticator replaced. The old secret no longer works.",
       })
       void queryClient.invalidateQueries({ queryKey: credentialQuery.queryKey })
+      void queryClient.invalidateQueries({
+        queryKey: identityQueryOptions.queryKey,
+      })
       onDone()
     } catch (err) {
       setError(describe(err))

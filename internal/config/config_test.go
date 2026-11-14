@@ -47,8 +47,8 @@ func TestValidateCredentialKey(t *testing.T) {
 	if err := ValidateCredentialKey(good); err != nil {
 		t.Fatalf("ValidateCredentialKey rejected base64 of 32 bytes: %v", err)
 	}
-	data := Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes}
-	if err := (Config{Port: "8080", CredentialKey: good, Data: data, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	data := Data{Root: t.TempDir()}
+	if err := (Config{Port: "8080", CredentialKey: good, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("Config.Validate rejected a good key: %v", err)
 	}
 	if err := (Config{Port: "8080", CredentialKey: "", Data: data}).Validate(); err == nil {
@@ -63,9 +63,9 @@ func TestDataValidate(t *testing.T) {
 	t.Parallel()
 	abs := t.TempDir()
 	refused := map[string]Data{
-		"empty root":        {Root: "", ChangelogSegmentBytes: MinChangelogSegmentBytes},
-		"relative root":     {Root: "data", ChangelogSegmentBytes: MinChangelogSegmentBytes},
-		"dot-relative root": {Root: "./data", ChangelogSegmentBytes: MinChangelogSegmentBytes},
+		"empty root":        {Root: ""},
+		"relative root":     {Root: "data"},
+		"dot-relative root": {Root: "./data"},
 	}
 	for name, d := range refused {
 		err := d.Validate()
@@ -76,31 +76,21 @@ func TestDataValidate(t *testing.T) {
 			t.Fatalf("%s: refusal does not name the variable: %v", name, err)
 		}
 	}
-	small := Data{Root: abs, ChangelogSegmentBytes: MinChangelogSegmentBytes - 1}
-	err := small.Validate()
-	if err == nil {
-		t.Fatal("Validate accepted a segment size under 1 MiB")
-	}
-	if !strings.Contains(err.Error(), "SUBSTRATE_CHANGELOG_SEGMENT_BYTES") {
-		t.Fatalf("refusal does not name the variable: %v", err)
-	}
-	if err := (Data{Root: abs, ChangelogSegmentBytes: MinChangelogSegmentBytes}).Validate(); err != nil {
+	if err := (Data{Root: abs}).Validate(); err != nil {
 		t.Fatalf("Validate rejected an absolute root: %v", err)
 	}
-	if err := (Config{Data: Data{Root: "relative", ChangelogSegmentBytes: MinChangelogSegmentBytes}}).Validate(); err == nil ||
+	if err := (Config{Data: Data{Root: "relative"}}).Validate(); err == nil ||
 		!strings.Contains(err.Error(), "SUBSTRATE_DATA_ROOT") {
 		t.Fatalf("Config.Validate did not refuse a relative data root: %v", err)
 	}
 }
 
-// LoadData reads the environment: the root is required and the segment size
-// defaults to 256 MiB. Setenv, so not parallel.
+// LoadData reads the environment: the root is required. Setenv, so not
+// parallel.
 func TestLoadData(t *testing.T) {
 	// t.Setenv restores both at the end; the Unsetenv makes them absent
 	// rather than empty, which is the shape a fresh environment has.
-	t.Setenv("SUBSTRATE_CHANGELOG_SEGMENT_BYTES", "")
 	t.Setenv("SUBSTRATE_DATA_ROOT", "")
-	_ = os.Unsetenv("SUBSTRATE_CHANGELOG_SEGMENT_BYTES")
 	_ = os.Unsetenv("SUBSTRATE_DATA_ROOT")
 	if _, err := LoadData(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_DATA_ROOT") {
 		t.Fatalf("LoadData without a root: err = %v, want a refusal naming SUBSTRATE_DATA_ROOT", err)
@@ -118,13 +108,6 @@ func TestLoadData(t *testing.T) {
 	if d.Root != root {
 		t.Fatalf("Root = %q, want %q", d.Root, root)
 	}
-	if d.ChangelogSegmentBytes != 268435456 {
-		t.Fatalf("ChangelogSegmentBytes = %d, want the 256 MiB default", d.ChangelogSegmentBytes)
-	}
-	t.Setenv("SUBSTRATE_CHANGELOG_SEGMENT_BYTES", "4096")
-	if _, err := LoadData(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_CHANGELOG_SEGMENT_BYTES") {
-		t.Fatalf("LoadData with a 4 KiB segment: err = %v, want a refusal naming SUBSTRATE_CHANGELOG_SEGMENT_BYTES", err)
-	}
 }
 
 func mustRandom(t *testing.T, n int) []byte {
@@ -137,15 +120,15 @@ func mustRandom(t *testing.T, n int) []byte {
 }
 
 func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	for _, n := range []int{-1, 0, 1, MinRepositoryConnections - 1} {
-		if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: n}).Validate(); err == nil ||
+		if err := (Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: n}).Validate(); err == nil ||
 			!strings.Contains(err.Error(), "SUBSTRATE_REPOSITORY_CONNECTIONS") {
 			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_REPOSITORY_CONNECTIONS", n, err)
 		}
 	}
-	if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	if err := (Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: MinRepositoryConnections, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("the floor itself was refused: %v", err)
 	}
 }
@@ -154,15 +137,15 @@ func TestRepositoryConnectionsRefusesACapUnderTheFloor(t *testing.T) {
 // Validate refuses both before the boot reaches it and names the variable.
 func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 	t.Parallel()
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 	for _, d := range []time.Duration{0, -time.Second} {
-		err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: d}).Validate()
+		err := (Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: d}).Validate()
 		if err == nil || !strings.Contains(err.Error(), "SUBSTRATE_TRIGGER_INTERVAL") {
 			t.Fatalf("a tick of %s: err = %v, want a refusal naming SUBSTRATE_TRIGGER_INTERVAL", d, err)
 		}
 	}
-	if err := (Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
+	if err := (Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}).Validate(); err != nil {
 		t.Fatalf("a one-second tick was refused: %v", err)
 	}
 }
@@ -172,9 +155,9 @@ func TestTriggerIntervalRefusesZeroAndNegative(t *testing.T) {
 // never be reached, so Validate refuses both and names the variable.
 func TestTriggerLaneWorkersRefusesZeroAndAboveTheProcessCeiling(t *testing.T) {
 	t.Parallel()
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, HealthFailingAfter: time.Hour}
+	base := Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: time.Second, HealthFailingAfter: time.Hour}
 	for _, n := range []int{-1, 0, MaxTriggerLaneWorkers + 1} {
 		refused := base
 		refused.TriggerLaneWorkers = n
@@ -196,9 +179,9 @@ func TestTriggerLaneWorkersRefusesZeroAndAboveTheProcessCeiling(t *testing.T) {
 // means nothing: Validate refuses both and names the variable.
 func TestHealthFailingAfterRefusesZeroAndNegative(t *testing.T) {
 	t.Parallel()
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
+	base := Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4}
 	for _, d := range []time.Duration{0, -time.Minute} {
 		refused := base
 		refused.HealthFailingAfter = d
@@ -216,21 +199,21 @@ func TestHealthFailingAfterRefusesZeroAndNegative(t *testing.T) {
 // The digest's rate cap is bytes per second: zero removes it, and a
 // negative value or one under the floor (a unit mistake) is refused naming
 // the variable.
-func TestDigestBytesPerSecondRefusesANegativeOrTinyCap(t *testing.T) {
+func TestArchiveBytesPerSecondRefusesANegativeOrTinyCap(t *testing.T) {
 	t.Parallel()
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	key := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-	base := Config{Port: "8080", CredentialKey: key, Data: data, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}
-	for _, n := range []int64{-1, 8, MinDigestBytesPerSecond - 1} {
+	base := Config{Port: "8080", CredentialKey: key, Data: data, Archive: Archive{Interval: 10 * time.Second}, RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour}
+	for _, n := range []int64{-1, 8, MinArchiveBytesPerSecond - 1} {
 		refused := base
-		refused.DigestBytesPerSecond = n
-		if err := refused.Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_DIGEST_BYTES_PER_SECOND") {
-			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_DIGEST_BYTES_PER_SECOND", n, err)
+		refused.ArchiveBytesPerSecond = n
+		if err := refused.Validate(); err == nil || !strings.Contains(err.Error(), "SUBSTRATE_ARCHIVE_BYTES_PER_SECOND") {
+			t.Fatalf("a cap of %d: err = %v, want a refusal naming SUBSTRATE_ARCHIVE_BYTES_PER_SECOND", n, err)
 		}
 	}
-	for _, n := range []int64{0, MinDigestBytesPerSecond, 8 << 20} {
+	for _, n := range []int64{0, MinArchiveBytesPerSecond, 8 << 20} {
 		ok := base
-		ok.DigestBytesPerSecond = n
+		ok.ArchiveBytesPerSecond = n
 		if err := ok.Validate(); err != nil {
 			t.Fatalf("a cap of %d was refused: %v", n, err)
 		}
@@ -315,9 +298,10 @@ func TestLoadBindsLoopbackByDefault(t *testing.T) {
 // the variable, and admits every value that worked before.
 func TestValidateRefusesAPortLogLevelOrURLTheServerCannotUse(t *testing.T) {
 	t.Parallel()
-	data := Data{Root: "/srv/substrate", ChangelogSegmentBytes: MinChangelogSegmentBytes}
+	data := Data{Root: "/srv/substrate"}
 	base := Config{
 		Port: "8080", LogLevel: "info", CredentialKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", Data: data,
+		Archive:               Archive{Interval: 10 * time.Second},
 		RepositoryConnections: 16, TriggerInterval: time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour,
 	}
 	badURLs := []string{
@@ -451,7 +435,8 @@ func TestInsecureAuthorityDocsIsAListOfAuthorityAndPath(t *testing.T) {
 func TestTheDNSResolverIsHostAndPort(t *testing.T) {
 	good := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	base := Config{
-		Port: "8080", CredentialKey: good, Data: Data{Root: t.TempDir(), ChangelogSegmentBytes: MinChangelogSegmentBytes},
+		Port: "8080", CredentialKey: good, Data: Data{Root: t.TempDir()},
+		Archive:               Archive{Interval: 10 * time.Second},
 		RepositoryConnections: 16, TriggerInterval: 5 * time.Second, TriggerLaneWorkers: 4, HealthFailingAfter: time.Hour,
 	}
 	for value, ok := range map[string]bool{"": true, "127.0.0.1:53": true, "[::1]:5353": true, "dns.example.net:53": true, "127.0.0.1": false, ":53": false, "dns.example.net:": false} {

@@ -1,9 +1,12 @@
 /** The repository's packages as the console reads them: the core `package`
- * rows, one per `<authority>/<package>`, and the one fact on them the console
- * shows a person, who declared the package (decision 0109). A package an
- * agent declared is an app that agent made: its collections read "Made by
- * <agent>" and its package page gathers what it ships. */
+ * rows, one per `<authority>/<package>`, and the facts on them the console
+ * shows: who declared the package (decision 0109), the stability it
+ * states for its kinds, and the function interface its code is written
+ * against (decision 0265). A package an agent declared is an app that agent
+ * made: its collections read "Made by <agent>" and its package page gathers
+ * what it ships. */
 
+import { actorRefID } from "@/lib/api/actors"
 import { queryOptions } from "@tanstack/react-query"
 
 import { actorIdentity } from "@/lib/actor-identity"
@@ -20,9 +23,29 @@ export interface PackageRow {
   publishedFrom?: string
   /** `<authority>/<package>`, the row's id. */
   id: string
-  /** The actor whose transaction created the row; absent on a package
-   * created before the engine stamped it. */
+  /** The id of the actor record whose transaction created the row; absent
+   * on a package created before the engine stamped it. */
   declaredBy?: string
+  /** The label the package states for its kinds (`stable`, `beta`,
+   * `experimental`); absent where it states none. */
+  stability?: string
+  /** The function interface the package's code is written against; absent
+   * where it names none. */
+  functionInterface?: number
+}
+
+/** The stability to show for a package: the label it states, and
+ * `experimental` where it states none, since a package that promises nothing
+ * is read as promising the least. */
+export function packageStability(row: PackageRow): string {
+  return row.stability ?? "experimental"
+}
+
+/** The function interface to show for a package: the one it names, and 1
+ * where it names none, the interface every package was written against
+ * before the key existed. */
+export function packageInterface(row: PackageRow): number {
+  return row.functionInterface ?? 1
 }
 
 /** A page of `package` records → the rows, by id. */
@@ -31,13 +54,19 @@ export function packageRows(
 ): Map<string, PackageRow> {
   const out = new Map<string, PackageRow>()
   for (const record of page.records ?? []) {
-    const declaredBy = record.properties?.declaredBy
+    // declaredBy links the actor record of whoever declared the package
+    // (decision 0270).
+    const declaredBy = actorRefID(record.properties?.declaredBy)
+    const stability = record.properties?.stability
+    const functionInterface = record.properties?.interface
     out.set(record.id, {
       id: record.id,
       ...(typeof record.properties?.publishedFrom === "string"
         ? { publishedFrom: record.properties.publishedFrom }
         : {}),
-      ...(typeof declaredBy === "string" && declaredBy ? { declaredBy } : {}),
+      ...(declaredBy ? { declaredBy } : {}),
+      ...(typeof stability === "string" && stability ? { stability } : {}),
+      ...(typeof functionInterface === "number" ? { functionInterface } : {}),
     })
   }
   return out
@@ -67,9 +96,9 @@ export const packagesQueryOptions = queryOptions({
   staleTime: 5 * 60_000,
 })
 
-/** The agent actor that declared a package, when an agent did. A door
- * (`console`, `substratectl`), an app, a catalog's bundle or the substrate
- * declaring it is not an app someone's agent made. */
+/** The id of the agent actor that declared a package, when an agent did.
+ * The person, an app, a catalog's package or the substrate declaring it is
+ * not an app someone's agent made. */
 export function packageAgent(
   rows: ReadonlyMap<string, PackageRow> | undefined,
   packageId: string

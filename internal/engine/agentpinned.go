@@ -31,36 +31,40 @@ const (
 )
 
 // pinnedDigest names the `context` declaration a snapshot was taken under,
-// and whether it carries the owner's instructions, so a changed declaration
-// (or a snapshot an older binary stored without them) is a fresh snapshot
-// rather than a stale one. encoding/json writes map keys sorted, so equal
-// declarations digest equal.
-func pinnedDigest(ag *vocabulary.Agent, instructions bool) string {
+// whether it carries the owner's instructions, and what it was captured
+// under (captured, heldto.go capturedBy): whose work it was and what the
+// reads' own scope answered for each pinned kind. A changed declaration, a
+// snapshot an older binary stored, another person's or app's work, or a
+// scope that answers otherwise now is a fresh snapshot rather than a stale
+// one (decision 0276: the stored block is a read, held as every read is).
+// encoding/json writes map keys sorted, so equal declarations digest equal.
+func pinnedDigest(ag *vocabulary.Agent, instructions bool, captured string) string {
 	buf, _ := json.Marshal(ag.Definition["context"])
 	if instructions {
 		buf = append(buf, "\x00instructions"...)
 	}
+	buf = append(append(buf, "\x00held:"...), captured...)
 	sum := sha256.Sum256(buf)
 	return hex.EncodeToString(sum[:16])
 }
 
 // storedPinned answers the block a thread row holds when it was taken under
 // the agent's current declaration, and false otherwise.
-func storedPinned(ag *vocabulary.Agent, instructions bool, v any) (string, bool) {
+func storedPinned(ag *vocabulary.Agent, instructions bool, captured string, v any) (string, bool) {
 	m, _ := v.(map[string]any)
 	if m == nil {
 		return "", false
 	}
 	block, ok := m["block"].(string)
-	if !ok || m["digest"] != pinnedDigest(ag, instructions) {
+	if !ok || m["digest"] != pinnedDigest(ag, instructions, captured) {
 		return "", false
 	}
 	return block, true
 }
 
 // pinnedProps is the thread row's value for a snapshot.
-func pinnedProps(ag *vocabulary.Agent, instructions bool, block string, at time.Time) map[string]any {
-	return map[string]any{"block": block, "digest": pinnedDigest(ag, instructions), "takenAt": at.Format(time.RFC3339Nano)}
+func pinnedProps(ag *vocabulary.Agent, instructions bool, captured, block string, at time.Time) map[string]any {
+	return map[string]any{"block": block, "digest": pinnedDigest(ag, instructions, captured), "takenAt": at.Format(time.RFC3339Nano)}
 }
 
 // snapshots reports whether this run keeps a snapshot at all: an agent that
@@ -69,14 +73,38 @@ func (l *agentLoop) snapshots() bool {
 	return len(l.ag.Context.Pinned) > 0 || l.takesInstructions()
 }
 
-// takePinned evaluates the agent's pinned reads and renders the block. It
-// reports whether every read answered: a snapshot missing a read the agent
-// is entitled to is used for this run and never stored, so the next run
-// tries again instead of replaying the hole.
-func (ds *dataset) takePinned(ctx context.Context, ag *vocabulary.Agent) (string, bool) {
+// pinnedAnswer is the scope the agent's pinned reads run under, as it reads
+// now (heldScope: the agent's reads, and every person's and app's the work
+// is held to), and what it answers for each pinned kind, in declaration
+// order. The block is read under that scope, and replayed only while the
+// same function answers the same: there is no second account of what a
+// holder may read.
+func (ds *dataset) pinnedAnswer(ctx context.Context, ag *vocabulary.Agent) (queryScope, string, error) {
 	scope := queryScope{}
 	if ag.Reads != nil {
 		scope.kinds = ag.Reads.Kinds
+	}
+	scope, err := ds.heldScope(ctx, scope)
+	if err != nil {
+		return scope, "", err
+	}
+	var b strings.Builder
+	for _, pin := range ag.Context.Pinned {
+		fmt.Fprintf(&b, "%s=%t;", pin.Kind, ag.Reads != nil && scope.allows(pin.Kind))
+	}
+	return scope, b.String(), nil
+}
+
+// takePinned evaluates the agent's pinned reads and renders the block, with
+// what their scope answered (pinnedAnswer), taken once and used by the reads
+// themselves. It reports whether every read answered: a snapshot missing a
+// read the agent is entitled to is used for this run and never stored, so
+// the next run tries again instead of replaying the hole.
+func (ds *dataset) takePinned(ctx context.Context, ag *vocabulary.Agent) (string, string, bool) {
+	scope, answer, err := ds.pinnedAnswer(ctx, ag)
+	if err != nil {
+		ds.svc.log.Warn("substrate: an agent's pinned reads were skipped", "agent", ag.Identity(), "error", err)
+		return "", "", false
 	}
 	complete := true
 	sections := make([]pinnedSection, 0, len(ag.Context.Pinned))
@@ -90,7 +118,7 @@ func (ds *dataset) takePinned(ctx context.Context, ag *vocabulary.Agent) (string
 		}
 		sections = append(sections, pinnedSection{kind: pin.Kind, lines: lines})
 	}
-	return renderPinned(sections, ag.Context.MaxBytes), complete
+	return renderPinned(sections, ag.Context.MaxBytes), answer, complete
 }
 
 // readPinned runs one pinned read and renders each record as one JSON line.
@@ -218,27 +246,45 @@ func (l *agentLoop) openPinned(ctx context.Context) any {
 		}
 		parts = append(parts, block)
 	}
+	answer := ""
 	if len(l.ag.Context.Pinned) > 0 {
-		block, ok := l.ds.takePinned(ctx, l.ag)
+		block, read, ok := l.ds.takePinned(ctx, l.ag)
 		complete = complete && ok
+		answer = read
 		parts = append(parts, block)
+	}
+	if hook := l.ds.afterPinnedRead; hook != nil {
+		hook()
 	}
 	l.pinnedBlock = composeSystem(parts...)
 	if !complete {
 		return nil
 	}
-	return pinnedProps(l.ag, l.takesInstructions(), l.pinnedBlock, at)
+	// The block is stored under what its own reads' scope answered, not
+	// under a second read of the rules, which could answer otherwise.
+	return pinnedProps(l.ag, l.takesInstructions(), l.ds.capturedBy(ctx, l.actor, answer), l.pinnedBlock, at)
 }
 
 // continuePinned sets a continued thread's block: the stored one when it was
-// taken under the agent's current declaration, else a fresh snapshot, stored
-// on the row. The row holds none when a compaction cleared it or the thread
-// predates pinning.
+// taken under the agent's current declaration, for the same work, while its
+// reads' scope answers now (pinnedAnswer) what it answered then; else a
+// fresh snapshot, stored on the row. A scope that cannot be read now
+// replays nothing: the block is taken again, under what reads. The row
+// holds none when a compaction cleared it or the thread predates pinning.
 func (l *agentLoop) continuePinned(ctx context.Context, stored any) error {
 	if !l.snapshots() {
 		return nil
 	}
-	if block, ok := storedPinned(l.ag, l.takesInstructions(), stored); ok {
+	replay, answer := true, ""
+	if len(l.ag.Context.Pinned) > 0 {
+		_, now, err := l.ds.pinnedAnswer(ctx, l.ag)
+		if err != nil {
+			l.ds.svc.log.Warn("substrate: a pinned block was not replayed: its reads' scope was not read", "agent", l.ag.Identity(), "error", err)
+			replay = false
+		}
+		answer = now
+	}
+	if block, ok := storedPinned(l.ag, l.takesInstructions(), l.ds.capturedBy(ctx, l.actor, answer), stored); replay && ok {
 		l.pinnedBlock = block
 		return nil
 	}
@@ -246,7 +292,7 @@ func (l *agentLoop) continuePinned(ctx context.Context, stored any) error {
 	if props == nil {
 		return nil
 	}
-	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	return l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		_, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			propThreadPinned: props,
@@ -262,7 +308,7 @@ func (l *agentLoop) dropPinned(ctx context.Context) {
 	if !l.snapshots() {
 		return
 	}
-	if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	if err := l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		_, err := t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			propThreadPinned: nil,

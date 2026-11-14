@@ -349,7 +349,7 @@ function TechnicalFacts({
       {actor && (
         <Fact label="Its changes appear as">
           <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
-            {app.actor}
+            {app.appearsAs}
           </p>
           <p className="text-xs text-muted-foreground">
             Your history shows what this app changed under this name, never as
@@ -786,7 +786,7 @@ function Approval({
             </p>
             {technical && (
               <p className="font-mono text-[13px] [overflow-wrap:anywhere]">
-                {app.actor}
+                {app.appearsAs}
               </p>
             )}
             <p className="text-xs text-muted-foreground">

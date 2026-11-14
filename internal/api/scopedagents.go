@@ -17,14 +17,15 @@ import (
 // The rows an app's `agents:` and `decide:` scopes reach (decision 0195).
 // Those scopes name agents, not kinds, so what they make readable is decided
 // record by record: an agent row whose id matches, a thread whose agent
-// matches, that thread's messages and interactions, and the change requests
-// such a thread proposed. A kind a read or write scope reaches whole is
+// matches, that thread's messages, interactions and approvals (decision
+// 0254), and the change requests such a thread proposed. A kind a read or write scope reaches whole is
 // answered exactly as before; one the agent verbs alone reach is ROW-GATED.
 const (
 	kindAgent       = corePackage + "/agent"
 	kindThread      = llmPackage + "/thread"
 	kindMessage     = llmPackage + "/message"
 	kindInteraction = llmPackage + "/interaction"
+	kindApproval    = vocabulary.KindLLMApproval
 	kindRequest     = vocabulary.KindRecordPatchRequest
 )
 
@@ -38,7 +39,7 @@ const visibleCacheMax = 4096
 // rowKind reports whether the grant's agent verbs reach records of kind.
 func (s *scopedDataset) rowKind(kind string) bool {
 	switch kind {
-	case kindAgent, kindThread, kindMessage, kindInteraction:
+	case kindAgent, kindThread, kindMessage, kindInteraction, kindApproval:
 		return s.grant.Talks()
 	case kindRequest:
 		return s.grant.DecidesAny()
@@ -57,12 +58,13 @@ func (s *scopedDataset) rowGated(ctx context.Context, kind string) (bool, error)
 		return false, err
 	}
 	k, ok := reg[kind]
-	return ok && !s.grant.Reads(scope.KindOf(kind, k.Definition)), nil
+	return ok && !s.grant.Reads(scopeKindOf(kind, k)), nil
 }
 
 // reaches reports whether the grant reaches any record of kind, whole or row
 // by row: the kinds the kind reads (KindByRef, Kinds) answer for.
 func (s *scopedDataset) reaches(ctx context.Context, kind string) (bool, error) {
+	kind = s.local(kind)
 	if ok, err := s.reads(ctx, kind); err != nil || ok {
 		return ok, err
 	}
@@ -92,7 +94,7 @@ func (s *scopedDataset) rowVisible(ctx context.Context, rec *substrate.Record) (
 		return s.talksTo(ctx, rec.ID)
 	case kindThread:
 		return s.talksTo(ctx, referencedID(rec.Properties["agent"], kindAgent))
-	case kindMessage, kindInteraction:
+	case kindMessage, kindInteraction, kindApproval:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
 		if err != nil {
 			return false, err
@@ -289,7 +291,6 @@ func (s *scopedDataset) anyRowGated(ctx context.Context, kinds []string) (bool, 
 // answered 404, as the record itself would be.
 func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	kind := q.Filter.Kinds[0]
-	empty := &substrate.Page{Records: []*substrate.Record{}}
 	if q.Filter.Referencing != nil {
 		return nil, fmt.Errorf("%w: an app's token reads %s without a referencing filter", substrate.ErrForbidden, kind)
 	}
@@ -299,7 +300,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			return nil, err
 		}
 		if !any {
-			return empty, nil
+			return noneReached(q)
 		}
 	}
 	props := make(map[string]substrate.Cond, len(q.Filter.Properties)+1)
@@ -322,7 +323,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			ids = slices.DeleteFunc(slices.Clone(q.Filter.IDs), func(id string) bool { return !slices.Contains(talked, id) })
 		}
 		if len(ids) == 0 {
-			return empty, nil
+			return noneReached(q)
 		}
 		q.Filter.IDs = ids
 	case kindThread:
@@ -346,14 +347,14 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			return nil, err
 		}
 		if len(talked) == 0 {
-			return empty, nil
+			return noneReached(q)
 		}
 		in := make([]any, len(talked))
 		for i, a := range talked {
 			in[i] = vocabulary.RecordPath(kindAgent, a)
 		}
 		props["agent"] = substrate.Cond{In: in}
-	case kindMessage, kindInteraction, kindRequest:
+	case kindMessage, kindInteraction, kindApproval, kindRequest:
 		narrowed = "thread"
 		c, named := props["thread"]
 		if !named {
@@ -437,11 +438,12 @@ func (s *scopedDataset) requireRow(ctx context.Context, kind, id string) error {
 var rowPatchable = map[string][]string{
 	kindThread:      {"subject"},
 	kindInteraction: {"state", "answers"},
+	kindApproval:    {"state"},
 	kindRequest:     {"decision", "adjustedDiff"},
 }
 
 // patchRow is an app's patch of a row-gated kind.
-func (s *scopedDataset) patchRow(ctx context.Context, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
+func (s *scopedDataset) patchRow(ctx context.Context, actor substrate.Actor, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	// rowKind holds a kind only under the verb that reaches it, so a thread
 	// here is under agents and a request under decide.
 	allowed, ok := rowPatchable[kind]
@@ -466,7 +468,7 @@ func (s *scopedDataset) patchRow(ctx context.Context, kind, id string, in substr
 		// grant was held to it above (decision 0195).
 		ctx = substrate.WithDecision(ctx, vocabulary.RecordPath(kind, id))
 	}
-	rec, err := s.inner.Patch(ctx, s.actor, kind, id, in)
+	rec, err := s.inner.Patch(ctx, s.writer(actor), kind, id, in)
 	if err != nil {
 		return nil, err
 	}
@@ -496,25 +498,37 @@ func (s *scopedDataset) requireThread(ctx context.Context, thread string) error 
 // --- the change feed ---
 
 // changeFilter holds a feed filter to the grant: no text search and no
-// values, which read across kinds and into payloads, and the kinds narrowed
-// to the ones it reaches. ok is false when it reaches none.
+// values for an app's token, which read across kinds and into payloads, and
+// the kinds narrowed to the ones it reaches. A person searches and reads
+// values of the history of what their rules read whole, and a search is
+// narrowed to those kinds, since it matches a row's payload. ok is false
+// when it reaches none.
 func (s *scopedDataset) changeFilter(ctx context.Context, f substrate.ChangeFilter) (substrate.ChangeFilter, bool, error) {
-	if f.Q != "" {
+	if f.Q != "" && !s.person {
 		return f, false, errScope("a text search of the change feed, which reads across kinds")
 	}
-	if f.Values {
+	// A person reads the values of the history of what their rules read,
+	// as an admin does (heldRow); an app's token reads names alone.
+	if f.Values && !s.person {
 		return f, false, errScope("the change feed's values")
 	}
+	reaches := s.reaches
+	if f.Q != "" {
+		reaches = s.reads
+	}
 	if len(f.Kinds) > 0 {
+		kinds := make([]string, 0, len(f.Kinds))
 		for _, k := range f.Kinds {
-			ok, err := s.reaches(ctx, k)
+			ok, err := reaches(ctx, k)
 			if err != nil {
 				return f, false, err
 			}
 			if !ok {
 				return f, false, errUnknownKind(k)
 			}
+			kinds = append(kinds, s.local(k))
 		}
+		f.Kinds = kinds
 		return f, true, nil
 	}
 	reg, err := s.kinds(ctx)
@@ -523,7 +537,7 @@ func (s *scopedDataset) changeFilter(ctx context.Context, f substrate.ChangeFilt
 	}
 	var kinds []string
 	for id, k := range reg {
-		if s.grant.Reads(scope.KindOf(id, k.Definition)) || s.rowKind(id) {
+		if s.grant.Reads(scopeKindOf(id, k)) || (f.Q == "" && s.rowKind(id)) {
 			kinds = append(kinds, id)
 		}
 	}
@@ -549,7 +563,7 @@ func (s *scopedDataset) heldChanges(ctx context.Context, after int64, f substrat
 	last = after
 	for _, c := range batch {
 		last = c.Seq
-		row, show, err := s.heldRow(ctx, c)
+		row, show, err := s.heldRow(ctx, c, f.Values)
 		if err != nil {
 			return nil, 0, after, err
 		}
@@ -562,13 +576,25 @@ func (s *scopedDataset) heldChanges(ctx context.Context, after int64, f substrat
 
 // heldRow is one feed row as the grant reads it: whether its record is one
 // the grant reads, and the row carrying names alone, its affected records
-// cut to the ones the grant reads.
-func (s *scopedDataset) heldRow(ctx context.Context, c substrate.Change) (substrate.Change, bool, error) {
+// cut to the ones the grant reads. A person who asked for values reads the
+// values of a row whose kind their rules read whole.
+func (s *scopedDataset) heldRow(ctx context.Context, c substrate.Change, values bool) (substrate.Change, bool, error) {
 	show, err := s.recordVisible(ctx, c.Kind, c.RecordID)
 	if err != nil || !show {
 		return substrate.Change{}, false, err
 	}
-	row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
+	// The token is the owner's to read: an app's grant would learn other
+	// apps' token ids from it.
+	row := substrate.Change{Seq: c.Seq, TS: c.TS, Actor: c.Actor, OnBehalfOf: c.OnBehalfOf, Op: c.Op, RecordID: c.RecordID, Kind: c.Kind}
+	if values && s.person {
+		whole, err := s.reads(ctx, c.Kind)
+		if err != nil {
+			return substrate.Change{}, false, err
+		}
+		if whole {
+			row.Payload = withoutHeldToEffects(c.Payload)
+		}
+	}
 	for _, a := range c.Affected {
 		show, err := s.recordVisible(ctx, a.Kind, a.ID)
 		if err != nil {
@@ -600,7 +626,7 @@ func (s *scopedDataset) ChangesBefore(ctx context.Context, before int64, f subst
 			return nil, err
 		}
 		for _, c := range batch {
-			row, show, err := s.heldRow(ctx, c)
+			row, show, err := s.heldRow(ctx, c, f.Values)
 			if err != nil {
 				return nil, err
 			}
@@ -646,7 +672,8 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 	if err != nil || !ok {
 		return false, err
 	}
-	// A message, an interaction or a request never moves to another thread,
+	// A message, an interaction, an approval or a request never moves to
+	// another thread,
 	// so a row found readable stays readable for the rest of the watch.
 	s.mu.Lock()
 	if s.seen == nil || len(s.seen) >= visibleCacheMax {
@@ -665,6 +692,7 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 // could not read itself. An agent the repository does not hold is reached by
 // nothing.
 func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error) {
+	agent = s.local(agent)
 	if !s.grant.TalksTo(agent) {
 		return false, nil
 	}
@@ -691,9 +719,11 @@ func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error)
 // reads, including its tools and subagents transitively: each kind or glob
 // is covered by a read or write scope at least as wide
 // (scope.Grant.Covers). A kind the registry lacks, or declares internal, is
-// covered by its exact scope alone, as a glob never reaches one.
+// covered by its exact scope alone, as a glob never reaches one. What the
+// agent then reads and writes is held by the engine, read by read and write
+// by write, to the persons and the apps its turn works for (decision 0276).
 func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (bool, error) {
-	rec, err := s.inner.Get(ctx, kindAgent, agent)
+	rec, err := s.declarations().Get(ctx, kindAgent, agent)
 	if errors.Is(err, substrate.ErrNotFound) {
 		return false, nil
 	}
@@ -707,7 +737,7 @@ func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (boo
 	if err != nil {
 		return false, err
 	}
-	entries, err := reach.Callable(ctx, s.inner, rec)
+	entries, err := reach.Callable(ctx, s.declarations(), rec)
 	if err != nil {
 		return false, err
 	}
@@ -715,10 +745,59 @@ func (s *scopedDataset) coversAgentReads(ctx context.Context, agent string) (boo
 		if r.Write {
 			continue
 		}
-		if !s.grant.ReachCovered(scope.Read, r.Pattern, scopeKind(r.Pattern, reg), internalKinds(reg)...) {
+		if !s.grant.Covers(scope.Read, r.Pattern, scopeKind(r.Pattern, reg), reg) {
 			return false, nil
 		}
 	}
 
 	return true, nil
+}
+
+// withoutHeldToEffects is a feed row's payload without the `heldTo` a run's
+// record took in it (withoutHeldTo): every effect on one of those records
+// has the value taken out of what it set. The maps it changes are copies.
+func withoutHeldToEffects(payload map[string]any) map[string]any {
+	effects, ok := payload["fold"].([]any)
+	if !ok {
+		return payload
+	}
+	var out []any
+	changed := false
+	for _, e := range effects {
+		op, ok := e.(map[string]any)
+		delta, _ := op["delta"].(map[string]any)
+		set, _ := delta["set"].(map[string]any)
+		ref, _ := op["ref"].(string)
+		if _, held := set["heldTo"]; !ok || !held || !heldKinds[ref] {
+			out = append(out, e)
+			continue
+		}
+		nextSet := make(map[string]any, len(set))
+		for k, v := range set {
+			if k != "heldTo" {
+				nextSet[k] = v
+			}
+		}
+		nextDelta := make(map[string]any, len(delta))
+		for k, v := range delta {
+			nextDelta[k] = v
+		}
+		nextDelta["set"] = nextSet
+		nextOp := make(map[string]any, len(op))
+		for k, v := range op {
+			nextOp[k] = v
+		}
+		nextOp["delta"] = nextDelta
+		out = append(out, nextOp)
+		changed = true
+	}
+	if !changed {
+		return payload
+	}
+	next := make(map[string]any, len(payload))
+	for k, v := range payload {
+		next[k] = v
+	}
+	next["fold"] = out
+	return next
 }

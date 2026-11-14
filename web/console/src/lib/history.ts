@@ -3,12 +3,15 @@
  * Grace Hopper"), grouped under the day they happened. Pure, so the feed
  * component only renders. */
 
+import { actorIDOf } from "@/lib/actor-directory"
 import {
   actorIdentity,
   agentName,
+  functionIdentity,
   providerInfo,
   PROVIDERS_AUTHORITY,
 } from "@/lib/actor-identity"
+import type { ActorInfo } from "@/lib/api/actors"
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME, splitKind } from "@/lib/api/http"
 import type { RunSource } from "@/lib/api/changes"
 import type { ChangeRow, ChangeRun, KindInfo } from "@/lib/api/types"
@@ -69,7 +72,7 @@ export interface HistoryEntry {
   key: string
   actor: string
   /** Who, among the writers sharing the actor: the name of the token behind
-   * a run the server summarized ("Claude Code" for an `app:local` run). */
+   * a run the server summarized ("Claude Code" for a local app's run). */
   actorName?: string
   verb: string
   kind: string
@@ -167,7 +170,7 @@ export function runEntry(
   return {
     key: String(run.newestSeq),
     actor: run.actor,
-    actorName: run.principalName,
+    actorName: run.tokenName,
     verb: runVerb(run.verb),
     kind: run.kind,
     count: run.count,
@@ -396,53 +399,32 @@ export const HISTORY_LAYOUTS: readonly {
   { value: "table", label: "Table view" },
 ]
 
-/** What the views filter on: the actor names the repository knows, and the
- * declaration ids (`<authority>/<package>/<name>`, a bundle's
- * `<authority>/<package>`) the agent, function and bundle actors are
- * derived from (decision 0025). */
-export interface ViewActorSources {
-  actors: readonly string[]
-  agents: readonly string[]
-  functions: readonly string[]
-  bundles: readonly string[]
-}
-
-/** The doors a person writes through, always "you" whether or not the actor
- * mirror lists them yet. */
-const PERSON_DOORS = ["console", "substratectl", "api"]
-
-function colons(id: string): string {
-  return id.split("/").join(":")
-}
-
-/** The actors one view reads: undefined for everything, an empty list when the
- * repository has no actor of that sort (the feed is then empty without a
- * read, since an empty filter would mean every actor). */
+/** The actors one view reads, by the ids of their records: undefined for
+ * everything, an empty list when the repository has no actor of that sort
+ * (the feed is then empty without a read, since an empty filter would mean
+ * every actor). */
 export function viewActors(
   view: HistoryView,
-  sources: ViewActorSources
+  actors: readonly ActorInfo[]
 ): string[] | undefined {
+  const ids = (pred: (a: ActorInfo) => boolean) =>
+    actors
+      .filter(pred)
+      .map((a) => a.id)
+      .sort()
   switch (view) {
     case "everything":
       return undefined
     case "you":
-      return [
-        ...new Set([
-          ...PERSON_DOORS,
-          ...sources.actors.filter((a) => actorIdentity(a).cls === "you"),
-        ]),
-      ].sort()
+      return ids((a) => a.type === "person")
     case "agents":
-      return sources.agents.map((id) => `agent:${colons(id)}`).sort()
+      return ids((a) => a.type === "agent")
     case "providers":
-      return [
-        ...sources.functions
-          .filter((id) => id.startsWith(`${PROVIDERS_AUTHORITY}/`))
-          .map((id) => `function:${colons(id)}`),
-        ...sources.bundles
-          .filter((id) => id.startsWith(`${PROVIDERS_AUTHORITY}/`))
-          .map((id) => `bundle:${colons(id)}`),
-      ].sort()
+      return ids(
+        (a) =>
+          (a.type === "function" || a.type === "package") &&
+          (a.link ?? "").startsWith(`${PROVIDERS_AUTHORITY}/`)
+      )
   }
 }
 
@@ -525,8 +507,7 @@ function runCallable(
   const slash = rest.indexOf("/")
   const kind = rest.slice(0, slash)
   const id = rest.slice(slash + 1)
-  if (kind === "function")
-    return actorIdentity(`function:${id.split("/").join(":")}`).name
+  if (kind === "function") return functionIdentity(id).name
   if (kind === "agent") return `the agent ${agentName(id)}`
   return undefined
 }
@@ -598,7 +579,7 @@ export function systemPhrase(
   const n = entry.recordCount
   const one = n === 1 ? entry.records[0] : undefined
   const own = (identity: string) =>
-    entry.actor === `bundle:${identity.split("/").join(":")}`
+    entry.actor === actorIDOf("package", identity)
   switch (name) {
     case "bundle":
     case "package": {
@@ -654,7 +635,7 @@ export function systemPhrase(
     case "function":
       return {
         words: one
-          ? `${verb} the tool ${actorIdentity(`function:${one.split("/").join(":")}`).name}`
+          ? `${verb} the tool ${functionIdentity(one).name}`
           : `${verb} ${n.toLocaleString()} tools`,
         complete: true,
       }

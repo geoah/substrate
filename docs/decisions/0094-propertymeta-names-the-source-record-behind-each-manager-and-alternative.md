@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-19
 decision-makers: George Antoniadis
+amended-by: 0284
 ---
 
 # 0094. `propertyMeta` names the source record behind each manager and alternative

@@ -51,7 +51,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -267,11 +266,6 @@ func movedProperties(before, after kindLookup, ident string,
 	for _, n := range sortedKeys(names) {
 		if propertyShapeOf(a, n, propShape) == propertyShapeOf(b, n, propShape) {
 			continue
-		}
-		// `body` lives in its own column, never in `props`, so no property
-		// filter can name the rows that carry it.
-		if n == substrate.PropBody {
-			return nil, true, true
 		}
 		changed[n] = true
 		props = append(props, n)
@@ -872,15 +866,18 @@ var errRegistryUnsettled = errors.New("substrate/engine: the repository refuses 
 
 // lockSettledRegistry takes the shared registry-dependency lock a pass step
 // works under, then refuses the step while the directory latch is set
-// (errRegistryUnsettled). The latch is read under writerMu, which a commit
-// that publishes a registry holds from before its COMMIT until it has
-// published or latched, so a step that read a request that commit wrote
-// finds the registry published or the latch set, never between the two.
+// (errRegistryUnsettled). The latch is read under ds.mu, which a commit that
+// publishes a registry holds from before its COMMIT until it has published or
+// latched, so a step that read a request that commit wrote finds the
+// registry published or the latch set, never between the two.
 func (t *txn) lockSettledRegistry() error {
 	if err := t.lockRegistryDepShared(); err != nil {
 		return err
 	}
-	if err := t.ds.directoryErr(); err != nil {
+	t.ds.mu.RLock()
+	err := t.ds.unsettledErr()
+	t.ds.mu.RUnlock()
+	if err != nil {
 		return fmt.Errorf("%w: %w", errRegistryUnsettled, err)
 	}
 	return nil

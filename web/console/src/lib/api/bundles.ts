@@ -113,11 +113,10 @@ export function bindBundleInput(
  * install returns — into every cache that renders bundle state: the detail
  * status, the statuses list, and the installed flag of the catalog entry it
  * is a copy of. An imported sample's id is not its entry's, so the entry is
- * found by the copy's origin stamp (heldCopyOf); with no home authority
- * passed, an unstamped copy matches only the entry of its own id. Importing
- * one publisher's sample over another's of the same word replaces the copy
- * at that id, so the entry the old copy was taken from is not installed any
- * more, and its preview is of a copy that is gone. */
+ * found by the copy's origin stamp, or by the id it lands at (heldCopyOf).
+ * Importing one publisher's sample over another's of the same word replaces
+ * the copy at that id, so the entry the old copy was taken from is not
+ * installed any more, and its preview is of a copy that is gone. */
 export function seedBundleStatus(
   queryClient: QueryClient,
   status: BundleStatus
@@ -143,9 +142,9 @@ export function seedBundleStatus(
     catalogQueryOptions.queryKey,
     (prev) =>
       prev?.map((item) => {
-        if (heldCopyOf(item, [status], ""))
+        if (heldCopyOf(item, [status]))
           return { ...item, installed: status.installed }
-        if (before && heldCopyOf(item, [before], ""))
+        if (before && heldCopyOf(item, [before]))
           return { ...item, installed: false, upgrade: undefined }
         return item
       })

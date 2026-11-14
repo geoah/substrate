@@ -29,6 +29,7 @@ import {
 } from "@/lib/api/types"
 import { declaredProperties } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
+import { setByOf } from "@/lib/provenance"
 
 // ── the decision ────────────────────────────────────────────────────────────
 
@@ -350,7 +351,7 @@ export function deriveChangeRows(
       description: declared.find((p) => p.name === key)?.description,
       before,
       after,
-      manager: target?.propertyMeta?.[key]?.manager,
+      manager: setByOf(target?.marks?.[key]),
       effect,
     })
   }
@@ -409,7 +410,7 @@ export function reviewRows(
         !leftOut &&
         Boolean(target) &&
         (after === null ? !had : had && sameApplied(before, after)),
-      manager: target?.propertyMeta?.[key]?.manager,
+      manager: setByOf(target?.marks?.[key]),
     }
   })
 }
@@ -610,9 +611,9 @@ export function applyConflict(r: SubstrateRecord): ApplyConflict | undefined {
 
 // ── who and why ─────────────────────────────────────────────────────────────
 
-/** Properties only a PROPOSAL writes, so the manager of the first one present
- * is whoever proposed the change. `decision` is not among them: it is a state,
- * and states carry no manager row. Reads off `propertyMeta`, which ONLY the
+/** Properties only a PROPOSAL writes, so the hand that set the first one
+ * present is whoever proposed the change. `decision` is not among them: it is
+ * a state, and states carry no mark. Reads off `marks`, which ONLY the
  * single-record read carries. */
 const PROPOSAL_PROPERTIES = [
   "diff",
@@ -624,16 +625,16 @@ const PROPOSAL_PROPERTIES = [
 
 export function proposerOf(r: SubstrateRecord): string | undefined {
   for (const name of PROPOSAL_PROPERTIES) {
-    const manager = r.propertyMeta?.[name]?.manager
-    if (manager) return manager
+    const by = setByOf(r.marks?.[name])
+    if (by) return by
   }
   return undefined
 }
 
-/** `decidedAt` is STAMPED by the decision transition, so its manager is the
- * actor whose decision it was. */
+/** `decidedAt` is STAMPED by the decision transition, so the hand that set
+ * it is the actor whose decision it was. */
 export function deciderOf(r: SubstrateRecord): string | undefined {
-  return r.propertyMeta?.decidedAt?.manager
+  return setByOf(r.marks?.decidedAt)
 }
 
 export function rationaleOf(r: SubstrateRecord): string | undefined {

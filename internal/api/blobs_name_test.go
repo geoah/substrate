@@ -18,9 +18,11 @@ import (
 )
 
 // echoBlobDS is a blob store that remembers what the door told it and hands
-// the same manifest back on the read.
+// the same manifest back on the read: what the door decodes is shown by what
+// it hands the store. That the engine keeps the name and the type and says
+// them back is TestBlobNameRoundTripsThroughTheStore.
 type echoBlobDS struct {
-	*fakeDataset
+	stubDataset
 	got substrate.BlobUpload
 }
 
@@ -44,7 +46,7 @@ func (b *echoBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobInfo, 
 func putNamedBlob(t *testing.T, ds *echoBlobDS, target string, header map[string]string) *substrate.BlobInfo {
 	t.Helper()
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 	req := httptest.NewRequest(http.MethodPut, target, strings.NewReader("payload")).WithContext(ctx)
 	for k, v := range header {
 		req.Header.Set(k, v)
@@ -84,7 +86,7 @@ func TestBlobNameComesFromTheQueryOrTheDisposition(t *testing.T) {
 		{"junk disposition", base, map[string]string{"Content-Disposition": "!!!"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ds := &echoBlobDS{fakeDataset: newFakeDataset(fakeRepository)}
+			ds := &echoBlobDS{}
 			info := putNamedBlob(t, ds, tc.target, tc.header)
 			if ds.got.Name != tc.want {
 				t.Fatalf("store saw name %q, want %q", ds.got.Name, tc.want)
@@ -100,9 +102,9 @@ func TestBlobNameComesFromTheQueryOrTheDisposition(t *testing.T) {
 // none, and the read falls back to application/octet-stream rather than
 // claiming a type nobody declared.
 func TestBlobMediaTypeIsOptional(t *testing.T) {
-	ds := &echoBlobDS{fakeDataset: newFakeDataset(fakeRepository)}
+	ds := &echoBlobDS{}
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/blobs",
 		strings.NewReader("payload")).WithContext(ctx)
@@ -130,13 +132,13 @@ func TestBlobMediaTypeIsOptional(t *testing.T) {
 // A named blob says its name back on the read, escaped by the header's own
 // rules rather than by string concatenation.
 func TestBlobReadSaysItsName(t *testing.T) {
-	ds := &echoBlobDS{fakeDataset: newFakeDataset(fakeRepository)}
+	ds := &echoBlobDS{}
 	const name = `quarterly report".pdf`
 	putNamedBlob(t, ds, "/api/"+APIVersion+"/blobs?name="+url.QueryEscape(name),
 		map[string]string{"Content-Type": "application/pdf"})
 
 	h := &handler{}
-	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
+	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorPerson)
 	req := httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	h.getBlob(rec, req)

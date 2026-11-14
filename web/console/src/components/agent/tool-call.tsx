@@ -27,6 +27,7 @@ import {
   WrenchIcon,
 } from "lucide-react"
 
+import { ApprovalCard } from "@/components/agent/approval-card"
 import { ChangesList } from "@/components/agent/changes"
 import { InteractionCard } from "@/components/agent/interaction-card"
 import { MessageText } from "@/components/agent/message-text"
@@ -56,6 +57,7 @@ import { kindsQueryOptions } from "@/lib/api/kinds"
 import { kindByIdentity } from "@/lib/definition"
 import { recordTitleQueryOptions } from "@/lib/reference-titles"
 import {
+  approvalIdOf,
   interactionIdOf,
   requestIdOf,
   type ToolCallView,
@@ -255,6 +257,9 @@ function ToolCall({
   const proposed = requestIdOf(call)
   // An ask's interaction renders as the form card, the same live-state rule.
   const asked = interactionIdOf(call)
+  // A call held for the owner's approval did not run: its card says what
+  // would, and where it ended once decided (decision record 0254).
+  const approval = approvalIdOf(call)
   // A function whose result has a shape the console knows draws it under
   // the line, so its payload is not shown again as raw output. The host
   // functions and sub-agents have details of their own.
@@ -267,7 +272,7 @@ function ToolCall({
   const all = toolDetails(
     call,
     resolved,
-    [proposed, asked].filter((id): id is string => Boolean(id))
+    [proposed, asked, approval].filter((id): id is string => Boolean(id))
   ).filter((detail) => !(known && detail.type === "output"))
   // Several records, and the changes of a call whose line says something
   // else (a function's own words), show under the line; one record the line
@@ -300,6 +305,11 @@ function ToolCall({
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-warning">
           <HourglassIcon className="size-3.5" />
           Waiting for you
+        </span>
+      ) : approval ? (
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+          <HourglassIcon className="size-3.5" />
+          Asked for your approval
         </span>
       ) : failed ? (
         <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-destructive">
@@ -380,6 +390,7 @@ function ToolCall({
       )}
       {proposed && <ProposalCard id={proposed} />}
       {asked && <InteractionCard id={asked} />}
+      {approval && <ApprovalCard id={approval} />}
     </div>
   )
 }

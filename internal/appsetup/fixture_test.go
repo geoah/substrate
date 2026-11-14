@@ -126,10 +126,10 @@ func testCatalogWith(t *testing.T, more map[string]string) *catalog.Catalog {
   traits: [substrate.reamde.dev/core/accountconfig]
   properties:
     displayName: {type: string}
-    nickname: {type: string, writer: owner}
+    nickname: {type: string, writer: person}
     tokenRef: {type: secret}
     status: {type: string, managed: true}
-    tokenStatus: {type: string, writer: oauth}
+    tokenStatus: {type: string, writer: system}
 `),
 			kindDoc(appPkg+"/item", "  properties:\n    note: {type: string}\n"),
 			functionDoc(appPkg+"/ingest", "[item, example.com/base/*]"),

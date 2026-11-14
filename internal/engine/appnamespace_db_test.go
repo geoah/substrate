@@ -18,7 +18,7 @@ func TestAnAppKeepsWritingTheKeysItsTokenWroteBeforeItsActorMoved(t *testing.T) 
 	ds := openInternalDataset(t)
 	pkg := ds.Repository().Authority + "/notes"
 	kind := pkg + "/note"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.BundleManifest(pkg, map[string]any{"installs": []any{kind}}),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "note"}, map[string]any{"properties": map[string]any{

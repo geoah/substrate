@@ -110,7 +110,7 @@ struct ToolLineRecords {
         let presented = row(
             call(
                 "write", #"{"op":"patch","kind":"\#(widget)","id":"w1","input":{"properties":{"name":"w"}}}"#,
-                #"{"record":{"id":"w1","kind":"\#(widget)"}}"#, callable: "function:substrate.reamde.dev:core:write"))
+                #"{"record":{"id":"w1","kind":"\#(widget)"}}"#, callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write"))
         #expect(presented.summary == "Changed the name of a widget")
         #expect(presented.unnamed == UnnamedSubject(record: RecordReference(kind: widget, id: "w1"), before: "Changed the name of ", after: ""))
         #expect(presented.unnamed?.line(titled: "Sprocket") == "Changed the name of “Sprocket”")
@@ -119,7 +119,7 @@ struct ToolLineRecords {
         let named = row(
             call(
                 "write", #"{"op":"patch","kind":"\#(widget)","id":"w1","input":{"properties":{"name":"w"}}}"#,
-                #"{"record":{"id":"w1","kind":"\#(widget)"}}"#, callable: "function:substrate.reamde.dev:core:write"),
+                #"{"record":{"id":"w1","kind":"\#(widget)"}}"#, callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write"),
             titles: ["\(widget)/w1": "Sprocket"])
         #expect(named.summary == "Changed the name of “Sprocket”")
         #expect(named.unnamed == nil)
@@ -173,7 +173,7 @@ struct ToolLineRecords {
     @Test func aFunctionsOwnChangesShowUnderItsOwnWordsUnopened() {
         var scrape = call(
             "web_scrape", #"{"url":"https://example.com/"}"#, ##"{"output":{"document":"d1","url":"https://example.com/","content":"# Hi"},"effects":1}"##,
-            callable: "function:providers.example.com:web:scrape")
+            callable: "substrate.reamde.dev/core/function/providers.example.com/web/scrape")
         scrape.changes = [ChangeStamp(seq: 9, op: "put", kind: "providers.example.com/web/page", id: "d1")]
         let presented = row(scrape)
         #expect(presented.chips == [RecordChips(lead: "Saved", label: "Saved records", records: [chip("providers.example.com/web/page", "d1")], total: 1)])

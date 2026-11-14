@@ -78,6 +78,15 @@ trigger, a host call and the call API all address it with.
   [0198](decisions/0198-a-bundle-offers-its-functions-and-an-agent-takes-them-by-pattern.md)).
   An offered function declares its `effect`, and a host function is never
   offered.
+- Optional **`approval`** (`required`, the one value) holds an agent's call
+  of the function before the body runs: the call lands an `llm/approval`
+  for the owner to approve or decline in the chat, and runs only once they
+  approve it, exactly as asked ([approvals](agents.md#approvals),
+  [0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+  It is for calls that cannot be taken back and return no effect for
+  `confirmation` to hold, such as a send. A direct call, a trigger and a
+  host call outside an agent's chain run the body as before, and a host
+  call inside one is refused. A `host` function is refused the key.
 - Optional **`stream`** names the sync stream the function keeps, the key its
   code writes under the account's `syncStreams`, so `sync status` marks that
   stream `erroring` when a delivery of the function parks
@@ -140,11 +149,11 @@ what `writes` and `reads.kinds` reach to the scopes the owner approves
 The two KIND lists also take a glob — `*`, `<authority>/*` or
 `<authority>/<package>/*`, the spellings a trigger selector uses — which
 covers kinds the repository gains later, and never reaches
-`substrate.reamde.dev/core/token`, `/credential`, `/secret` or `/recoverykey`
+`substrate.reamde.dev/core/token`, `/credential` or `/secret`
 ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
-A `writes` entry that names `/token`, `/credential` or `/recoverykey`
-outright is refused at load: they are the owner's alone, and the engine
-refuses a token delete from a function whatever its grant says
+A `writes` entry that names `/token` or `/credential` outright is refused at
+load: they are the owner's alone, and the engine refuses a token delete from
+a function whatever its grant says
 ([auth](auth.md#tokens)).
 `call` and `agents` admit no glob: they name callables, not kinds.
 
@@ -286,7 +295,9 @@ change:
   op: update
   kind: providers.substrate.reamde.dev/github/account
   id: gh-acct-1
-  actor: bundle:providers.substrate.reamde.dev:github
+  actor: 6p9v4bajncg4dt8pjq5mznar32
+  actorType: package
+  actorPackage: providers.substrate.reamde.dev/github
   changed:
     - tokenStatus
 record:
@@ -300,7 +311,20 @@ repository:
 ```
 
 `change` says what moved (`op` is `create`, `update` or `delete`, and
-`changed` names the properties when the payload carries them). `record` is the
+`changed` names the properties when the payload carries them) and who moved
+it. `actor` is the id of the [actor record](api.md#actors) that wrote the
+change, and `onBehalfOf`, present only where it acted for someone, the id of
+the one it acted for. `actorType` is that actor's type (`person`, `app`,
+`function`, `agent`, `package` or `system`), and `actorPackage`, present for
+a function's, an agent's or a package's actor, is the package whose code or
+installs it is, as `<authority>/<package>`. The two let a `when:` guard tell
+a package's own code apart without reading a record:
+`change.actorType == "function" && change.actorPackage ==
+"providers.substrate.reamde.dev/google"` is the Google provider's sync
+functions, and its first-sync triggers skip their writes with
+`!("actorPackage" in change && change.actorPackage ==
+"providers.substrate.reamde.dev/google" && change.actorType == "function")`.
+`record` is the
 row's state **now**, not the old value, and is `null` after a delete, and its
 `properties` carry everything the record points at, each as an object holding
 the referent's path under `ref`. `version` is the row's edit counter as this
@@ -400,6 +424,114 @@ and the SDK refuses a bare `"task"` before the call leaves the body, exactly as
 the engine refuses one at the door
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 a full reference the registry cannot place is refused as an undeclared kind.
+
+## The interface
+
+A body is written against the **function interface**: the `input` it is
+handed ([the delivery envelope](#the-delivery-envelope) and the keys beside
+it) and the `host` object it reads and writes through ([the SDK](#the-sdk)).
+The interface is labelled `beta`
+([stability](stability.md#a-packages-code)): it is supported, and a break
+to it is announced one minor release ahead. A break is a new interface
+version.
+
+A package names the version its code is written against in its header, under
+`interface`
+([0265](decisions/0265-a-package-names-the-function-interface-its-code-is-written-against.md)):
+
+```yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ~/garden
+data:
+  authority: "~"
+  package: garden
+  interface: 1
+  version: 3
+```
+
+- **This server runs interface 1.** A header that names none reads as 1, the
+  interface every package was written against before the key existed, and
+  nothing is stored for it.
+- **A version the server does not run is refused** when the package is
+  loaded, at every door a package comes through (the apply door, an install,
+  an import, a publisher's refresh, an app's approval), naming the version
+  and the ones the server runs. Nothing of the package lands, so its code never fails
+  at its first delivery instead. The likely cause is a package written for a
+  newer server. A package that requires such a package is refused for that
+  reason too: its install names the requirement and the version before
+  anything lands, its upgrade preview lists the same line among what blocks
+  it, a refresh that leaves the release for review gives it as its reason,
+  and an app's set-up shows it on the requirement's step.
+- **Within one version the input only gains keys**, so a body ignores a key
+  it does not know. The keys a body reads, their JSON types and whether each
+  is always there are pinned in
+  `internal/engine/testdata/function_input.golden.json`, and the `config`
+  the engine resolves for a package's function (its inputs, settings and
+  accounts, with the `title` the engine adds to a record's properties) in
+  `internal/engine/testdata/function_config.golden.json`. A test fails when
+  either moves. A key renamed or removed, or a host call that changes, is a
+  new version; what a host call returns is held by review, not by a golden.
+
+**The Python release is part of the interface.** A release of the server
+supports the current Python release and the one before: today 3.14 and
+3.13. What holds that:
+
+- The published image carries Python 3.14, pinned as `python3~3.14` in the
+  `Dockerfile`, so a build that would ship another release fails.
+- The runner's host, `internal/runner/host.py`, and every body the binary
+  ships are linted for Python 3.9 (`.ruff.toml`), so none of them needs a
+  grammar newer than the release before.
+- The tests run bodies on one interpreter, the `python3` of the machine that
+  runs them. No test runs a body on 3.13.
+
+A server outside the image runs bodies on the `python3` on its `PATH`. A
+body whose PEP 723 block asks for a newer `requires-python` than that fails
+when it is registered, not at its first delivery.
+
+### When a delivery fails
+
+How a body says its failure is temporary is part of the interface
+([0266](decisions/0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md)).
+A delivery that fails is either temporary or the body's own:
+
+- **Temporary.** The body raises `host.Temporary`, or lets one of these
+  escape: a network error (`ConnectionError`, `TimeoutError`, a failed name
+  lookup, `urllib.error.URLError`, the `ConnectionError` and `Timeout` of
+  `requests`, the `TransportError` and `TimeoutException` of `httpx`), or an
+  HTTP answer that means "try later", 408, 429, 502, 503 or 504, from
+  `urllib.error.HTTPError` or any exception whose `response.status_code`
+  says so. A body that runs past its `timeout` is temporary too.
+
+  ```python
+  def main(input, host):
+      status, body = fetch_page()
+      if status == 503:
+          raise host.Temporary("the provider answered 503")
+  ```
+
+  The delivery parks at once, and the trigger's cursor moves past it as for
+  any park. Its error starts `temporary, retried automatically at <time>:`,
+  and no alert is raised. The server retries it at that time, and again
+  after each temporary failure, waiting 15 seconds, then 30, then 1, 2, 4,
+  8, 16 and 32 minutes: about an hour in all. A retry that delivers retires
+  the row, as a retry by hand does. Once the waits are spent, the row is set
+  aside for a person like any other park, and the alert is raised. Nothing
+  waits in the meantime: the parked row is the schedule, so a restart or a
+  restore picks it up.
+- **The body's own.** Any other exception. The delivery is tried twice more
+  within an eighth of a second, for a conflict that clears at once, then set
+  aside for a person under `…/parked`. A failure a retry would reproduce, a
+  read or a call outside the function's grants or a spent budget, is set
+  aside at once.
+
+Nothing that may run an agent is retried this way, because a retry would
+run the agent and its writes again: an agent trigger's deliveries settle
+through their own claims ([running an agent](#running-an-agent)), and a
+function granted `permissions.agents` or `permissions.call` has its temporary
+failure set aside for a person at once, like a failure of its own. A row
+already waiting is set aside the same way when its retry falls due, if its
+function has gained such a grant meanwhile.
 
 ## How the body runs
 
@@ -696,7 +828,7 @@ a function of the account kind's own package, the dispatcher writes the
 other half itself — `running` and the start before the body, `ok` and the
 duration with the body's last effects, `erroring` and the cause with a
 park — under the function's own actor, so the account's kind declares those
-properties `writer: connector` exactly as the ones the body writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
+properties `writer: [function, agent]` exactly as the ones the body writes ([decision 0085](decisions/0085-a-sync-is-a-core-trait-the-dispatcher-stamps.md)).
 
 ## The SDK
 
@@ -748,6 +880,7 @@ host.observed.reconcile(origins, outputs, *, owned, adapter=None, stored=None)
 host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
+raise host.Temporary(msg)                         # retried over minutes
 ```
 
 A body run as an agent's tool writes as the agent, and an agent creates a
@@ -1012,14 +1145,17 @@ It answers `{"written": n, "unchanged": n, "deleted": n}`, stamps `adapter`
 on every output where given, and takes `stored=` where the body has
 already read the records.
 
-The example is an adapter in a sample, so `home` is the sample's placeholder
-authority. The import rewrites every mention of it to the repository's own
-authority, inside the function's code as everywhere else, so the body names
-the kinds of the copy the repository holds
-([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md)).
+The example is an adapter in a sample, so its kinds are the copy's, in `~`,
+the repository's own namespace, in every repository that adds it. Adding the
+sample moves a kind reference its code spells whole under the sample's
+authority (`"samples.substrate.reamde.dev/observations/trace"`) to `~`, and
+nothing else in the code, so a body that builds a name from parts spells `~`
+itself
+([decision 0189](decisions/0189-the-observation-source-kind-stays-in-the-observations-sample.md),
+[decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 
 ```python
-home = "samples.substrate.reamde.dev"  # the import rewrites it
+home = "~"  # the copy's own namespace, in every repository
 device = "chest"
 docs = host.observed.trace(
     [(sample_time, sample["bpm"]) for sample in samples],
@@ -1222,14 +1358,23 @@ data:
   position a replay from 0 sets, so the trigger also delivers the matching
   changes written before it existed. It is read once, when the trigger is
   created: an edit never moves the cursor. An adapter sample declares it, so
-  importing the adapter after its provider has synced converts the rows
+  adding the adapter after its provider has synced converts the rows
   already there.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no
-  guard. Every occurrence fires once, oldest first: a trigger that missed
-  occurrences (the server down, the trigger disabled, a repository restored
-  to an older fire state) catches up at most ten per dispatcher pass, however
-  long the pass lasts, and none is coalesced away.
+  guard. Optional `missed` says what the trigger does with occurrences it
+  missed while the server was down, the trigger disabled or a repository
+  restored to an older fire state
+  ([0267](decisions/0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md)).
+  `latest`, the default, fires the newest due occurrence alone, and the fire
+  state moves over the ones before it: a sync that was off for a week runs
+  once, not 168 times. `all` fires every occurrence once, oldest first, at
+  most ten per dispatcher pass however long the pass lasts, and none is
+  coalesced away: the choice for a trigger whose every occurrence is work of
+  its own, such as a reminder per occurrence. A failed occurrence of an
+  `all` schedule stays parked when a later one settles, for its own retry. A
+  trigger an edit makes a schedule takes its fire state at that edit, as a
+  created one does, so its first fire is the next occurrence.
   The trigger's optional `arguments` property is a map of named arguments
   each fire, and each retry of a parked one, hands a function as
   `input["args"]`, so one function serves several schedules. The map is
@@ -1242,8 +1387,9 @@ data:
   drop `arguments`. A manual run (`POST .../run`) passes no `arguments`
   ([decision 0110](decisions/0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md)).
 - A **`webhook`** arm is a public endpoint: `POST
-  /webhooks/{authority}/{trigger}`, where `authority` is the repository's
-  authority and `trigger` the record's id,
+  /webhooks/{repository}/{trigger}`, where `repository` is the repository's
+  id, as the trigger's status gives it out, or its authority, and `trigger`
+  the record's id,
   delivers one fire carrying the request
   ([the delivery envelope](#the-delivery-envelope)), and an authenticated wake
   delivers one bare fire. All four of its fields are optional. `key`: absent, the
@@ -1252,6 +1398,19 @@ data:
   path segment, as `?key=`, or as `Authorization: Bearer`. `substratectl
   trigger status` prints the path; the key stays on the record
   ([decision 0045](decisions/0045-a-webhook-trigger-is-a-public-endpoint-with-an-optional-key.md)).
+  A webhook trigger a publisher shipped, one a builtin or published
+  package's install or upgrade wrote, is enabled only with a `key` or a
+  `signature`: a write that leaves it enabled with neither is refused,
+  naming the trigger and its package, and so is the console's Resume, a
+  patch of `enabled` alone. Such a package ships its webhook disabled and
+  keyless; the owner sets the key in the write that enables it, or approves
+  the app that sets it up, which writes both at once
+  ([apps](apps.md#ask-for-set-up)). An install of a package that ships one
+  enabled with neither is refused. The owner's own trigger, and one an
+  added sample shipped, keep the open endpoint. A trigger an older server
+  let its owner enable keyless stays as it was: the server logs it whenever
+  the repository opens, and the next write must key it or turn it off
+  ([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
   `headers` is the list of header names the callable reads, each matched
   case-insensitively by exact name (`^[A-Za-z0-9-]{1,64}$`, at most 32, no
   duplicates): a fire carries those and the ones that describe the body
@@ -1471,17 +1630,20 @@ delivery is retried like any other transient failure.
   External consumers get an at-least-once floor, made safe by the same id
   composition.
 - **No loops.** Every function-authored write records the change that caused
-  it, and a trigger never delivers writes carrying its own callable's actor.
-  That actor is `function:<authority>:<package>:<name>` (an agent's is
-  `agent:<authority>:<package>:<name>`), so two packages declaring a callable of
-  one name are two actors and neither reads as the other's echo. A function
+  it, and a trigger never delivers writes made by its own callable's
+  [actor record](api.md#actors). A function and an agent are each an actor
+  record of their own, linking the callable's record, so two packages
+  declaring a callable of one name are two actors and neither reads as the
+  other's echo. A function
   that grants agents under `permissions.agents` is not delivered those
   agents' writes either ([running an agent](#running-an-agent)). A causal chain deeper
   than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
   backoff; a deterministic trip like an allowlist or budget violation, an
   installation retired by a redeploy mid-delivery, or a failure after the body
-  ran an agent, parks on the first) and the trigger's cursor moves on. A false `when` is a skip, not a
+  ran an agent, parks on the first, and a temporary failure parks on the
+  first and is retried over minutes,
+  [when a delivery fails](#when-a-delivery-fails)) and the trigger's cursor moves on. A false `when` is a skip, not a
   failure, and so is a guarded write that yielded its version race — a race two
   triggers are designed to have is not an operator's problem
   ([two invocations over one record](#two-invocations-over-one-record)).
@@ -1520,7 +1682,7 @@ repository.
   case it answers `{"ran": 0}` and the walk in progress or a later pass
   delivers, a schedule checks its
   due occurrence.
-- `POST /webhooks/{authority}/{trigger}` is the public door: no bearer, the
+- `POST /webhooks/{repository}/{trigger}` is the public door: no bearer, the
   request in the envelope, `202` with `{"fire": id}` once the request is on
   disk in the repository's spool, and one `404` for every refusal (no such
   trigger, disabled, wrong key). The callable's output is never the
@@ -1575,7 +1737,7 @@ repository.
   delivery a hand is already retrying, and a retry by hand of one the rerun
   is running answers `409`. A disabled trigger, one whose callable does not
   resolve, or one whose agent is at a spend cap keeps its interrupted
-  delivery parked for a hand or the next start, and an operator's process (`repository rebuild`, `user reset`)
+  delivery parked for a hand or the next start, and an operator's process (`repository rebuild`)
   reruns nothing
   ([decision 0151](decisions/0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md)).
   `POST …/trigger/{id}/parked/{failureId}/retry` re-runs one, and `DELETE
@@ -1596,6 +1758,10 @@ repository.
   work the settled fire just did. A webhook request's park and an agent run
   a stop interrupted are never retired this way
   ([decision 0142](decisions/0142-a-schedule-fire-that-settles-retires-its-triggers-older-parked-fires.md)).
+  Nor is another occurrence's park, when the schedule states `missed: all`
+  as the settling occurrence commits, whatever it stated when that run
+  began: every occurrence of it is owed, so each failed one waits for its
+  own retry, the automatic one of a temporary failure or yours.
   A record trigger's park is retired only by a delivery that stamps a sync
   (the record's kind binds `sync` and the callable is a function of the
   kind's own package): when one settles ok, and the body left the record at
@@ -1619,8 +1785,8 @@ repository.
 `{"ran": n}`, the number of deliveries that applied effects (a `wake` of a
 record trigger that another walk holds answers 0), and a forget
 answers no body at all. Every settled
-dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row under the
-`substrate` actor, in the transaction that commits its effects and its cursor
+dispatched delivery writes a `substrate.reamde.dev/core/triggerrun` row as the
+`system` [actor](api.md#actors), in the transaction that commits its effects and its cursor
 or fire-state motion: the trigger, the callable, the mode, the seq or fire id,
 the status (`ok`, `skipped` or `parked`), the attempt count and the
 applied-effects summary. The callable lands twice from the one value —
@@ -1696,9 +1862,11 @@ the call API of a function that declares `permissions.network`, or whose
 `triggerrun` row with mode `call` and no `trigger`, because what such a body
 sends out (a message, a review) leaves nothing else in the repository
 ([decision 0119](decisions/0119-a-direct-call-of-a-networked-function-writes-a-run-row.md)).
-The row names the callable, the `caller` (the request's actor: `api`,
-`console`, `substratectl`), the `principal` (the id of the token that made the
-call), `startedAt` and `finishedAt`, the status, the applied-effects summary,
+The row names the callable, the `caller` (a reference to the
+[actor record](api.md#actors) that made the call: the person, or the app
+whose token it was), the `token` (the id of the token that made the call,
+which the deprecated `principal` held before), `startedAt` and `finishedAt`,
+the status, the applied-effects summary,
 `outputBytes`, and `output` itself when it encodes to at most 4096 bytes of
 JSON and carries no NUL (U+0000), which no row stores. A call that settles writes it in the transaction that commits its
 effects and its idempotency key, as `ok`. A call whose body ran and failed
@@ -1708,8 +1876,8 @@ the body started (provisioning, spawn). A call refused before its body runs
 (an unknown function, input outside `arguments:`, a disabled bundle) and the
 replay of a stored `Idempotency-Key` outcome write nothing. Call runs are
 never pruned. A function with no network grant still writes no row: its
-effects in the changelog are its whole trace, attributed to the token behind
-the call.
+effects in the changelog are its whole trace, made by the function on
+behalf of the person whose request called it.
 
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count
@@ -1724,6 +1892,10 @@ The trigger rows are ordinary records, so `get` / `apply` / `delete` edit
 them like anything else.
 
 ### Code from outside authorities
+
+Code from outside publishers is `experimental` at 1.0
+([stability](stability.md#a-packages-code)): how it is reviewed and confined
+below may change in any release, whatever the package's own label says.
 
 A package installed from an authority document carries `publishedFrom` on
 its package record. Its functions reach only exact DNS hosts and wildcard

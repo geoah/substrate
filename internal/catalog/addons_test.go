@@ -62,7 +62,7 @@ func TestProviderInstallReplansLiveWaitingAddons(t *testing.T) {
 		}
 		return InstallExpectations{addon: nil}, nil
 	})
-	result, _, err := cat.Install(context.Background(), substrate.ActorAPI, provider, ds)
+	result, _, err := cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestProviderInstallReplansLiveWaitingAddons(t *testing.T) {
 	// Revocation removes the token from Tokens; no queued job keeps its grant.
 	ds.tokens = nil
 	planned = nil
-	if _, _, err := cat.Install(context.Background(), substrate.ActorCLI, provider, ds); err != nil {
+	if _, _, err := cat.Install(context.Background(), substrate.ActorPerson, provider, ds); err != nil {
 		t.Fatal(err)
 	}
 	if len(planned) != 0 || ds.held[addon] != 0 {
@@ -80,7 +80,7 @@ func TestProviderInstallReplansLiveWaitingAddons(t *testing.T) {
 	}
 	ds.tokens = []substrate.TokenInfo{{ID: "live", Scopes: []string{"read:example.com/addon/*"}, AppAddons: waiting}}
 	blocked = false
-	result, _, err = cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+	result, _, err = cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestWaitingAddonRechecksConsentAfterPlanning(t *testing.T) {
 				}
 				return InstallExpectations{addon: nil}, nil
 			})
-			result, _, err := cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+			result, _, err := cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -155,7 +155,7 @@ func TestWaitingAddonBindsTheCheckedRootAndDependencies(t *testing.T) {
 				}
 				return expect, nil
 			})
-			result, _, err := cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+			result, _, err := cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -199,7 +199,7 @@ func TestInstalledAddonRetriesClearingWaitingApproval(t *testing.T) {
 		plans++
 		return InstallExpectations{addon: nil}, nil
 	})
-	result, _, err := cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+	result, _, err := cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestInstalledAddonRetriesClearingWaitingApproval(t *testing.T) {
 		t.Fatalf("completion failure: %+v", result.AddonResults)
 	}
 	ds.completeErr = nil
-	result, _, err = cat.Install(context.Background(), substrate.ActorConsole, provider, ds)
+	result, _, err = cat.Install(context.Background(), substrate.ActorPerson, provider, ds)
 	if err != nil {
 		t.Fatal(err)
 	}

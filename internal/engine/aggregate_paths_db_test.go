@@ -1574,7 +1574,7 @@ func TestAggregateIsUnavailableWhileTheIndexIsRederived(t *testing.T) {
 	if got := answered("nothing owed"); !slices.Equal(got, []bool{true, true}) {
 		t.Fatalf("with nothing owed: answered %v, want both", got)
 	}
-	repo := testdb.Repository(t)
+	repo := repositoryIDByName(t, f.svc, testdb.Repository(t))
 	if _, err := f.db.Exec(`INSERT INTO index_reprojections (repository, kind, refs, fts, observed) VALUES ($1, $2, false, false, true)`,
 		repo, f.trace); err != nil {
 		t.Fatalf("owe a re-derivation: %v", err)

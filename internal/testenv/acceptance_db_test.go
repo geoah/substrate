@@ -1,22 +1,21 @@
 package testenv_test
 
 // The release acceptance drill (#462, tracker #360): one repository holding
-// every state the release protects, stopped and snapshotted, restored into an
-// empty database on a host with another credential key through the recovery
-// key, and compared. The drill as a whole skips under -short and without a
-// database, like every database test; once it runs, no stage skips: a stage
-// that cannot run fails with its reason, and a state the restore does not
-// reproduce is a failing assertion, never a weakened one.
+// every state the release protects, stopped and its archive copied, restored
+// into an empty database under the credential key it was written under, and
+// compared. The drill as a whole skips under -short and without a database,
+// like every database test; once it runs, no stage skips: a stage that cannot
+// run fails with its reason, and a state the restore does not reproduce is a
+// failing assertion, never a weakened one.
 //
 // The doors are the real ones. Everything a client would do arrives over HTTP
 // with a token (records, vocabulary, the provider install, blobs, merges,
 // webhooks, function calls, search, the change feed); what the operator does
 // runs through the engine the way substratectl and the substrated loops do
-// (the trigger dispatcher pass, the embed drain, the GC sweep, `repository
-// snapshot`, `repository rewrap`, `repository verify`). docs/operations.md is
-// the procedure followed: "Backups" for the snapshot, "Restore without the
-// credential key" for the rewrap and the boot that imports, "Restore" for the
-// verify afterwards.
+// (the trigger dispatcher pass, the embed drain, the GC sweep, the archive's
+// copy, `repository verify`). docs/operations.md is the procedure followed:
+// "Backups" for the copy of the archive, the host key kept beside it and the
+// verify afterwards, and the boot that restores.
 
 import (
 	"bufio"
@@ -44,13 +43,12 @@ import (
 	"testing"
 	"time"
 
-	"filippo.io/age"
-
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/testenv"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
 
@@ -99,29 +97,32 @@ const (
 	seedAuthorityDir = "substrate.reamde.dev"
 
 	// sealedValues is how many sealed files the source repository holds: the
-	// login credential's two (password hash, TOTP seed), the embeddings
-	// provider's apiKey, the OAuth-shaped kind's three, the google provider
-	// input's clientSecret. Each is one secret reference on a live record.
-	sealedValues = 7
+	// embeddings provider's apiKey, the OAuth-shaped kind's three, the google
+	// provider input's clientSecret. Each is one secret reference on a live
+	// record; a person's sign-in is no part of the repository (decision 0274).
+	sealedValues = 5
 )
 
 // The drill's kinds: the rehomed samples, the installed provider and the
-// packages the drill declares itself.
+// packages the drill declares itself. A repository holds its own in its local
+// namespace, `~`, whatever its name (decision record 0259); the drill's
+// declarations spell them under the full name, which is another spelling of
+// it.
 var (
-	taskKind     = drillAuthority + "/tasks/task"
-	projectKind  = drillAuthority + "/tasks/project"
-	personKind   = drillAuthority + "/people/person"
-	widgetKind   = drillAuthority + "/auto/widget"
-	gadgetKind   = drillAuthority + "/auto/gadget"
-	flagKind     = drillAuthority + "/auto/flag"
-	echoKind     = drillAuthority + "/auto/echo"
-	subjectKind  = drillAuthority + "/crm/subject"
-	contactKind  = drillAuthority + "/dira/contact"
-	memberKind   = drillAuthority + "/dirb/member"
-	fileKind     = drillAuthority + "/attach/file"
-	oauthKind    = drillAuthority + "/creds/oauthclient"
+	taskKind     = "~/tasks/task"
+	projectKind  = "~/tasks/project"
+	personKind   = "~/people/person"
+	widgetKind   = "~/auto/widget"
+	gadgetKind   = "~/auto/gadget"
+	flagKind     = "~/auto/flag"
+	echoKind     = "~/auto/echo"
+	subjectKind  = "~/crm/subject"
+	contactKind  = "~/dira/contact"
+	memberKind   = "~/dirb/member"
+	fileKind     = "~/attach/file"
+	oauthKind    = "~/creds/oauthclient"
 	googleConfig = googlePkg + "/config"
-	secondTask   = secondAuthority + "/tasks/task"
+	secondTask   = "~/tasks/task"
 
 	// drillCollections is every collection the drill compares record by
 	// record.
@@ -129,7 +130,7 @@ var (
 		taskKind, projectKind, personKind, widgetKind, gadgetKind, flagKind, echoKind,
 		subjectKind, contactKind, memberKind, fileKind, oauthKind, googleConfig, googlePkg + "/account",
 		llmPkg + "/provider", corePkg + "/trigger", corePkg + "/recordmerge", corePkg + "/recordsplit",
-		corePkg + "/blob", corePkg + "/token", corePkg + "/credential", corePkg + "/recoverykey",
+		corePkg + "/blob", corePkg + "/token",
 		corePkg + "/repository", corePkg + "/triggerrun", corePkg + "/kind", corePkg + "/function",
 		corePkg + "/recordmapping", corePkg + "/package", corePkg + "/bundle",
 	}
@@ -515,8 +516,8 @@ data:
 
 // credsVocabulary is an OAuth-shaped credential the user declares: a client
 // id beside three sealed values, the shape a provider's input record and its
-// `accountconfig` account carry. The installed google provider is the
-// provider-tier counterpart.
+// `accountconfig` account carry. The installed google provider is its
+// published counterpart.
 const credsVocabulary = `
 kind: substrate.reamde.dev/core/package
 metadata:
@@ -655,7 +656,7 @@ type searchAnswer struct {
 // and the operator seams: what stage 1 records and stage 4 compares.
 type state struct {
 	// records is every record the collections hold, keyed "<kind>/<id>", as
-	// a single-record GET returns it (propertyMeta included), decoded so the
+	// a single-record GET returns it (marks included), decoded so the
 	// comparison is structural.
 	records map[string]any
 	// deleted is each collection's tombstone list, keyed by kind.
@@ -701,10 +702,9 @@ type drill struct {
 	clock *engine.TestClock
 	embed *fakeEmbed
 
-	identity, secondIdentity *age.X25519Identity
-	keyA, keyB               string
-	rootA, dsnA              string
-	dbs                      map[string]*sql.DB
+	keyA, keyB  string
+	rootA, dsnA string
+	dbs         map[string]*sql.DB
 
 	// The source substrate, its second user and the recorded state.
 	envA   *testenv.Env
@@ -724,13 +724,15 @@ type drill struct {
 	holdInvoked chan struct{}
 	runVersion  int64
 
-	// Stage 2: the snapshot root and the recorded points.
-	snapRoot   string
-	snapHead   int64
-	secondHead int64
-	secondFold []byte
+	// Stage 2: the snapshot root and the recorded points, and each
+	// repository's id, which names its directory in a copy.
+	snapRoot          string
+	snapHead          int64
+	secondHead        int64
+	secondFold        []byte
+	drillID, secondID string
 
-	// Stage 3: the rewrapped directory as it stood before the restore booted
+	// Stage 3: the copied directory as it stood before the restore booted
 	// (pristine, copied for stages 5 and 6), the restored substrate and what
 	// it reads.
 	pristine string
@@ -759,10 +761,10 @@ func TestReleaseAcceptanceDrill(t *testing.T) {
 	}{
 		{"01 build the source through the real doors", d.buildSource, nil},
 		{"02 stop and capture the committed recovery point", d.stopAndSnapshot, []string{"01"}},
-		{"03 restore under another credential key with the recovery key", d.restore, []string{"02"}},
+		{"03 restore under the credential key the snapshot was written under", d.restore, []string{"02"}},
 		{"04 compare the restored substrate and resume dispatch", d.compareAndResume, []string{"03"}},
 		{"05 interrupt the import at batch boundaries and resume", d.interruptedImport, []string{"03"}},
-		{"06 restore the second repository under both keys and refuse a newer manifest", d.secondRestore, []string{"02", "03"}},
+		{"06 restore the second repository under its key and without its secrets, and refuse a newer manifest", d.secondRestore, []string{"02", "03"}},
 		{"07 a cursor from the replaced history is reset", d.replacedHistoryCursor, []string{"03", "04"}},
 	}
 	for _, s := range stages {
@@ -816,13 +818,6 @@ func (d *drill) buildSource(t *testing.T) {
 // repository's history holds a shipped kind upgraded at boot.
 func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	tb := d.tb(t)
-	var err error
-	if d.identity, err = age.GenerateX25519Identity(); err != nil {
-		t.Fatal(err)
-	}
-	if d.secondIdentity, err = age.GenerateX25519Identity(); err != nil {
-		t.Fatal(err)
-	}
 	d.keyA, d.keyB = testenv.MintCredentialKey(), testenv.MintCredentialKey()
 	if d.keyA == d.keyB {
 		t.Fatal("the two host keys are one key")
@@ -835,7 +830,6 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	d.runVersion = shippedRun
 	first := testenv.Start(tb,
 		testenv.WithUser(drillAuthority, drillPassword),
-		testenv.WithRecoveryPublicKey(d.identity.Recipient().String()),
 		testenv.WithDSN(d.dsnA), testenv.WithDataRoot(d.rootA), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now), testenv.WithKindsDir(patched))
 	if first.Repository != drillAuthority {
@@ -869,14 +863,14 @@ func (d *drill) seedSource(t *testing.T) *testenv.Env {
 	return e
 }
 
-// seedVocabulary imports the samples (rehomed onto the repository's
-// authority), installs the google provider under its publisher's authority,
+// seedVocabulary imports the samples (rehomed into the repository's own
+// namespace), installs the google provider under its publisher's authority,
 // and declares the drill's own packages, editing one kind afterwards.
 func (d *drill) seedVocabulary(t *testing.T, e *testenv.Env) {
 	for _, id := range sampleImports {
-		e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
+		e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, nil)
 	}
-	e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googlePkg)+"/install", nil, nil)
+	e.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(googlePkg)+"/add", nil, nil)
 	e.ApplyVocabularyYAML(autoVocabulary)
 	e.ApplyVocabularyYAML(crmKind)
 	e.ApplyVocabularyYAML(mirrorVocabulary("dira", "contact", "synca"))
@@ -991,8 +985,8 @@ func (d *drill) writeMirrors(t *testing.T, e *testenv.Env) {
 	}
 	patchRecord(t, e, subjectKind, d.subjectID, map[string]any{"properties": map[string]any{"name": subjectHold, "note": "held by hand"}})
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
-		t.Errorf("subject name provenance = %v, want manager api with two alternatives", meta)
+	if alts, _ := meta["alternatives"].([]any); !pinnedByThePerson(meta) || len(alts) != 2 {
+		t.Errorf("subject name mark = %v, want the person's pin with two alternatives", meta)
 	}
 }
 
@@ -1085,10 +1079,10 @@ func (d *drill) parkAutomations(t *testing.T, e *testenv.Env) substrate.Dataset 
 // its snapshot on two hosts.
 func (d *drill) writeSecondRepository(t *testing.T, e *testenv.Env) {
 	ctx := context.Background()
-	d.second = e.RegisterUser(secondAuthority, secondPassword, d.secondIdentity.Recipient().String())
+	d.second = e.RegisterUser(secondAuthority, secondPassword)
 	l := d.second.For(t)
 	for _, id := range sampleImports {
-		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/import", nil, nil)
+		l.MustJSON(http.MethodPost, "/api/v1/catalog/"+url.PathEscape(id)+"/add", nil, nil)
 	}
 	for i, name := range []string{"first", "second", "third"} {
 		putRecord(t, l, secondTask, fmt.Sprintf("%026d", 100+i), map[string]any{
@@ -1131,9 +1125,9 @@ func (d *drill) holdWebhook(t *testing.T, e *testenv.Env) {
 
 // --- stage 2 --------------------------------------------------------------------
 
-// stopAndSnapshot stops the server the way a substrated exit does and takes
-// `repository snapshot` for both repositories with an operator's process, as
-// docs/operations.md "Backups" describes: the copy records its head.
+// stopAndSnapshot stops the server the way a substrated exit does and copies
+// its archive, as docs/operations.md "Backups" describes: the copy's
+// manifest records its head.
 func (d *drill) stopAndSnapshot(t *testing.T) {
 	ctx := context.Background()
 	d.envA.Stop()
@@ -1144,93 +1138,88 @@ func (d *drill) stopAndSnapshot(t *testing.T) {
 		t.Fatalf("open the operator's process: %v", err)
 	}
 	defer func() { _ = operator.Close() }()
+	repos, err := operator.Repositories(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range repos {
+		switch r.Authority {
+		case drillAuthority:
+			d.drillID = r.ID
+		case secondAuthority:
+			d.secondID = r.ID
+		}
+	}
+	if d.drillID == "" || d.secondID == "" {
+		t.Fatalf("the source holds %+v, want %s and %s", repos, drillAuthority, secondAuthority)
+	}
+	// The copy is the archive the stopped server left: a server's close runs
+	// one last pass, so the archive is at the head the source stopped at.
 	d.snapRoot = d.tb(t).TempDir()
-	report, err := operator.(engine.Operator).SnapshotRepository(ctx, drillAuthority, d.snapRoot)
+	copyTree(t, filepath.Join(d.rootA, "archive"), filepath.Join(d.snapRoot, "archive"))
+	head := func(id string) int64 {
+		m, _, err := changelogfile.ReadArchiveManifestDir(archiveDirOf(d.snapRoot, id))
+		if err != nil {
+			t.Fatalf("the archive of %s holds no manifest: %v", id, err)
+		}
+		return m.Head
+	}
+	d.snapHead, d.secondHead = head(d.drillID), head(d.secondID)
+	if d.snapHead != d.source.head {
+		t.Errorf("the archive's head is %d, the source stopped at %d", d.snapHead, d.source.head)
+	}
+	drill, _, err := changelogfile.ReadArchiveManifestDir(archiveDirOf(d.snapRoot, d.drillID))
 	if err != nil {
-		t.Fatalf("snapshot %s: %v", drillAuthority, err)
+		t.Fatal(err)
 	}
-	d.snapHead = report.Head
-	if report.Head != d.source.head || report.Repository != drillAuthority || report.BlobStore != "fs" || report.Blobs < 1 || report.SealedFiles != sealedValues {
-		t.Errorf("snapshot report = %+v, want head %d for %s under fs with the attachment and %d sealed files", report, d.source.head, drillAuthority, sealedValues)
+	if blobs, err := filepath.Glob(filepath.Join(archiveDirOf(d.snapRoot, d.drillID), drill.Archive, changelogfile.BlobsSubdir, d.blobDigest+".*")); err != nil || len(blobs) == 0 {
+		t.Errorf("the archive holds no bytes for %s: %v", d.blobDigest, err)
 	}
-	snap, err := changelogfile.ReadSnapshot(report.Directory)
-	if err != nil {
-		t.Fatalf("the copy carries no readable snapshot.json: %v", err)
+	sealed, err := os.ReadDir(filepath.Join(archiveDirOf(d.snapRoot, d.drillID), drill.Archive, changelogfile.SealedSubdir))
+	if err != nil || len(sealed) != sealedValues {
+		t.Errorf("the archive holds %d sealed values (%v), want %d", len(sealed), err, sealedValues)
 	}
-	if snap.Head != d.source.head || hex.EncodeToString(snap.HeadHash[:]) != report.HeadHash || snap.BlobStore != "fs" {
-		t.Errorf("recorded point = seq %d %x laid out for %q, want seq %d %s under fs in the directory", snap.Head, snap.HeadHash, snap.BlobStore, d.source.head, report.HeadHash)
-	}
-	if !slices.Contains(snap.Blobs, d.blobDigest) {
-		t.Errorf("snapshot.json lists %v, which lacks the attachment %s", snap.Blobs, d.blobDigest)
-	}
-	if _, err := os.Stat(filepath.Join(changelogfile.BlobsDir(report.Directory), d.blobDigest)); err != nil {
-		t.Errorf("the copy holds no bytes for %s: %v", d.blobDigest, err)
-	}
-
-	secondReport, err := operator.(engine.Operator).SnapshotRepository(ctx, secondAuthority, d.snapRoot)
-	if err != nil {
-		t.Fatalf("snapshot %s: %v", secondAuthority, err)
-	}
-	d.secondHead = secondReport.Head
-	if secondReport.Repository != secondAuthority {
-		t.Errorf("the second repository's snapshot report = %+v", secondReport)
-	}
-	t.Logf("snapshot: %s at seq %d (%d segments, %d sealed files, %d blobs); %s at seq %d",
-		drillAuthority, report.Head, report.Segments, report.SealedFiles, report.Blobs, secondAuthority, secondReport.Head)
+	t.Logf("archive: %s at seq %d; %s at seq %d", drillAuthority, d.snapHead, secondAuthority, d.secondHead)
 }
 
 // --- stage 3 --------------------------------------------------------------------
 
-// restore follows docs/operations.md "Restore without the credential key":
-// the copy is refused on a host whose key did not write it, `repository
-// rewrap` opens the DEK with the recovery key and rewrites the manifest under
-// the new host's key, the boot into an empty database imports the directory,
-// and `repository verify` opens every sealed file and hashes every blob.
+// restore follows docs/operations.md: the copy is refused on a host whose key
+// did not write it, naming the key and how to accept losing the secrets
+// (decision 0264); under the key that wrote it, the boot into an empty
+// database restores the archive, and `repository verify` opens every sealed
+// value and hashes every blob.
 func (d *drill) restore(t *testing.T) {
 	ctx := context.Background()
 	tb := d.tb(t)
 	dsnB := testdb.NewSchema(tb)
-	restoreRoot := copyRoot(tb, d.snapRoot, drillAuthority)
+	restoreRoot := copyRoot(tb, d.snapRoot, d.drillID)
 
-	// Without the rewrap the copy is inert on this host, and the refusal
-	// leaves no row behind on the very schema the restore then boots.
+	// Under another host's key the copy is inert, and the refusal leaves no
+	// row behind on the very schema the restore then boots.
 	if svc, err := engine.Open(ctx, dsnB, engine.WithKindsFS(kinds.Seed()),
 		engine.WithDataRoot(restoreRoot), engine.WithCredentialKey(d.keyB)); err == nil {
 		_ = svc.Close()
-		t.Fatal("the directory imported under a key it was not written under")
-	} else if !strings.Contains(err.Error(), "SUBSTRATE_CREDENTIAL_KEY") {
-		t.Errorf("the refusal does not name the variable: %v", err)
+		t.Fatal("the archive restored under a key it was not written under")
+	} else {
+		for _, want := range []string{"SUBSTRATE_CREDENTIAL_KEY", engine.ImportWithoutSecretsVar} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not name %s: %v", want, err)
+			}
+		}
 	}
 	if n := d.countRows(t, dsnB, "repositories"); n != 0 {
-		t.Errorf("the refused import left %d repositories row(s)", n)
+		t.Errorf("the refused restore left %d repositories row(s)", n)
 	}
-
-	dir, err := changelogfile.RepoDir(restoreRoot, drillAuthority)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wrong, err := age.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := engine.RewrapRepositoryDir(dir, wrong.String(), d.keyB); err == nil {
-		t.Error("a wrong identity rewrapped the directory")
-	}
-	report, err := engine.RewrapRepositoryDir(dir, d.identity.String(), d.keyB)
-	if err != nil {
-		t.Fatalf("rewrap: %v", err)
-	}
-	if report.Repository != drillAuthority || report.SealedFiles != sealedValues {
-		t.Errorf("rewrap report = %+v, want %s/%s with %d sealed files opened", report, drillAuthority, drillAuthority, sealedValues)
-	}
-	d.pristine = copyRoot(tb, restoreRoot, drillAuthority)
+	d.pristine = copyRoot(tb, restoreRoot, d.drillID)
 
 	// The boot that imports: the same empty schema, migrated from nothing, no
 	// registration. The restored substrate speaks with the source's token,
-	// which is a record the import brought back.
+	// which is a record the import brought back, once the operator's reset
+	// below gives the repository its person back.
 	d.envB = testenv.Start(tb,
 		testenv.WithUser(drillAuthority, drillPassword), testenv.WithoutRegistration(),
-		testenv.WithDSN(dsnB), testenv.WithDataRoot(restoreRoot), testenv.WithCredentialKey(d.keyB),
+		testenv.WithDSN(dsnB), testenv.WithDataRoot(restoreRoot), testenv.WithCredentialKey(d.keyA),
 		testenv.WithClock(d.clock.Now))
 	session := *d.envA.Session
 	d.envB.Session = &session
@@ -1239,27 +1228,36 @@ func (d *drill) restore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(repos) != 1 || repos[0].ID != drillAuthority {
+	if len(repos) != 1 || repos[0].ID != d.drillID || repos[0].Authority != drillAuthority {
 		t.Fatalf("the restored database holds %+v, want the one imported repository", repos)
 	}
 	verified, err := e.Service.(engine.Operator).VerifyRepository(ctx, drillAuthority)
 	if err != nil {
 		t.Fatalf("verify: %v", err)
 	}
-	if !verified.OK || verified.Head != d.snapHead || verified.FileHead != d.snapHead || len(verified.Findings) != 0 {
+	// The restore started a new archive (the archive's contract, rule 8),
+	// which no pass has published to yet: said, and no finding.
+	if !verified.OK || verified.Head != d.snapHead || verified.ArchiveHead != 0 || len(verified.Findings) != 0 ||
+		!strings.Contains(verified.ArchiveUnverified, "no pass has published") {
 		t.Errorf("the restored repository does not verify: %+v", verified)
 	}
-	if verified.Snapshot == nil || verified.Snapshot.Head != d.snapHead || verified.Snapshot.HeadHash != verified.HeadHash {
-		t.Errorf("verify did not report the recorded point: %+v (head %s)", verified.Snapshot, verified.HeadHash)
-	}
-	if verified.SealedFiles != sealedValues || verified.SealedOpened != sealedValues || verified.SecretRefs != sealedValues {
-		t.Errorf("verify: %d sealed files, %d opened under the new key, %d secret refs; want %d of each",
-			verified.SealedFiles, verified.SealedOpened, verified.SecretRefs, sealedValues)
+	if verified.SealedRows != sealedValues || verified.SealedOpened != sealedValues || verified.SecretRefs != sealedValues {
+		t.Errorf("verify: %d sealed rows, %d opened, %d secret refs; want %d of each",
+			verified.SealedRows, verified.SealedOpened, verified.SecretRefs, sealedValues)
 	}
 	if verified.Blobs < 1 {
 		t.Errorf("verify hashed %d blobs, want the attachment", verified.Blobs)
 	}
-	t.Logf("restore: imported %s at seq %d into an empty schema under a new key; verify opened %d sealed files and hashed %d blobs",
+	// A person's sign-in is no part of the repository's history, and the
+	// archive carries it beside the history (decision 0274): the restore into
+	// an empty database gives the repository its person back, so the
+	// source's token reads who it acts for. The source's factors sign in at
+	// the interrupted import below; a sign-in here would mint a token the
+	// comparison with the source does not expect.
+	if status, raw := e.Do(http.MethodGet, "/identity", nil); status != http.StatusOK {
+		t.Errorf("the source's token on the restore: %d %s, want its person", status, raw)
+	}
+	t.Logf("restore: restored %s at seq %d into an empty schema under its key; verify opened %d sealed values and hashed %d blobs",
 		drillAuthority, verified.Head, verified.SealedOpened, verified.Blobs)
 }
 
@@ -1384,8 +1382,8 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("task tombstones after the restore = %v", tombs)
 	}
 	meta := metaOf(t, getRecord(t, e, subjectKind, d.subjectID), d.subjectID, "name")
-	if alts, _ := meta["alternatives"].([]any); meta["manager"] != "api" || len(alts) != 2 {
-		t.Errorf("subject name provenance after the restore = %v, want the owner's hold over two offers", meta)
+	if alts, _ := meta["alternatives"].([]any); !pinnedByThePerson(meta) || len(alts) != 2 {
+		t.Errorf("subject name mark after the restore = %v, want the person's pin over two offers", meta)
 	}
 	file := getRecord(t, e, fileKind, idReport)
 	if data, _ := propOf(t, file, idReport, "data").(map[string]any); data["digest"] != d.blobDigest || data["status"] != "stored" {
@@ -1399,11 +1397,11 @@ func (d *drill) compareRestored(t *testing.T, e *testenv.Env, ds substrate.Datas
 		t.Errorf("attachment digest %s is not the bytes' %s", d.blobDigest, want)
 	}
 
-	// Authenticate with the original password and TOTP. The wrong password
+	// Authenticate with the password the reset gave back. The wrong password
 	// goes first, so its refusal is the password check's and not the login
-	// limiter's; the clock then moves one TOTP step, past the limiter's
-	// allowance too (it reads the same clock), so the registration's code is
-	// not replayed and the right password is admitted. The source's token
+	// limiter's; the clock moves one TOTP step before each attempt, past the
+	// limiter's allowance too (it reads the same clock), so no code is
+	// replayed and the right password is admitted. The source's token
 	// authenticated every read above.
 	d.clock.Advance(engine.TOTPPeriod)
 	status, raw := e.Login(drillAuthority, "not-the-password", e.TOTPCode())
@@ -1509,10 +1507,11 @@ func (d *drill) retryParked(t *testing.T, e *testenv.Env) {
 
 // --- stage 5 --------------------------------------------------------------------
 
-// interruptedImport boots the rewrapped copy into a fresh schema and kills
+// interruptedImport boots the copied directory into a fresh schema and kills
 // the boot at the import's durable steps (the progress-marker hook, #365):
 // after the first batch, after a later batch of the resumed boot, then after
-// the first fold pass; the fourth boot finishes. Each kill leaves exactly the
+// the third boot's last batch, every line in and nothing folded; the fourth
+// boot finishes. Each kill leaves exactly the
 // rows its batches committed, the unfinished import is refused to a reader
 // and reported by verify, and the boot that finishes reproduces the fold.
 // internal/engine/repodir_db_test.go TestAnInterruptedImportResumesAtTheNextBoot
@@ -1536,17 +1535,17 @@ func (d *drill) interruptedImport(t *testing.T) {
 	}{
 		{engine.ImportAfterBatch, 1, int64(batch)},
 		{engine.ImportAfterBatch, batches - 2, int64((batches - 1) * batch)},
-		{engine.ImportAfterFirstFold, 1, d.snapHead},
+		{engine.ImportAfterBatch, 1, d.snapHead},
 	}
 	if !(crashes[0].rows < crashes[1].rows && crashes[1].rows < crashes[2].rows) {
 		t.Fatalf("the kills do not land on three distinct boundaries: %d, %d, %d rows", crashes[0].rows, crashes[1].rows, crashes[2].rows)
 	}
-	root := copyRoot(t, d.pristine, drillAuthority)
+	root := copyRoot(t, d.pristine, d.drillID)
 	dsn := testdb.NewSchema(t)
 	open := func(opts ...engine.Option) (substrate.Service, error) {
 		return engine.Open(ctx, dsn, append([]engine.Option{
 			engine.WithKindsFS(kinds.Seed()), engine.WithDataRoot(root),
-			engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now),
+			engine.WithCredentialKey(d.keyA), engine.WithTestTOTPClock(d.clock.Now),
 		}, opts...)...)
 	}
 	for i, c := range crashes {
@@ -1589,7 +1588,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 			t.Fatalf("verify after boot %d: %v", i+1, err)
 		}
 		if report.OK || !slices.ContainsFunc(report.Findings, func(f string) bool {
-			return strings.Contains(f, "import of the repository directory has not completed")
+			return strings.Contains(f, "import of the repository's history has not completed")
 		}) {
 			t.Errorf("verify after boot %d does not name the unfinished import: %+v", i+1, report)
 		}
@@ -1627,7 +1626,7 @@ func (d *drill) interruptedImport(t *testing.T) {
 		t.Errorf("the resumed repository does not verify: %+v %v", report, err)
 	}
 	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := svc.Login(ctx, substrate.LoginInput{Repository: drillAuthority, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
+	if _, err := svc.Login(ctx, substrate.LoginInput{Identity: drillAuthority, Password: drillPassword, TOTPCode: d.envA.For(t).TOTPCode(), Label: "resumed"}); err != nil {
 		t.Errorf("login after the resumed import: %v", err)
 	}
 	t.Logf("interrupted import: %d batches of %d, killed at %d, %d and %d rows; the fourth boot finished it",
@@ -1636,19 +1635,17 @@ func (d *drill) interruptedImport(t *testing.T) {
 
 // --- stage 6 --------------------------------------------------------------------
 
-// secondRestore takes the second repository's snapshot back twice: once on a
-// host that still has the key it was written under, once through the rewrap
-// onto another host's key. Then a manifest above the binary's changelog
-// dialect is refused by name before any row lands.
+// secondRestore takes the second repository's archive back twice: once on a
+// host that still has the key it was written under, once on another host's,
+// which restores it without its secrets because the operator listed it
+// (decision 0264). Then a manifest above the binary's changelog dialect is
+// refused by name before any row lands.
 func (d *drill) secondRestore(t *testing.T) {
 	ctx := context.Background()
 
 	// The same-key restore: the boot imports the directory as it stands.
-	root := copyRoot(t, d.snapRoot, secondAuthority)
-	dir, err := changelogfile.RepoDir(root, secondAuthority)
-	if err != nil {
-		t.Fatal(err)
-	}
+	root := copyRoot(t, d.snapRoot, d.secondID)
+	dir := archiveDirOf(root, d.secondID)
 	dsn := testdb.NewSchema(t)
 	e := testenv.Start(t,
 		testenv.WithUser(secondAuthority, secondPassword), testenv.WithoutRegistration(),
@@ -1660,10 +1657,10 @@ func (d *drill) secondRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open the repository the boot imported from format 1: %v", err)
 	}
-	if imported, err := changelogfile.ReadManifest(dir); err != nil || imported.Format != changelogfile.ManifestFormat ||
+	if imported, _, err := changelogfile.ReadArchiveManifestDir(dir); err != nil || imported.Format != changelogfile.ManifestFormatArchive ||
 		imported.ChangelogDialect != engine.MaxChangelogDialect() {
 		t.Errorf("manifest after the import = %+v (%v), want format %d at changelog dialect %d",
-			imported, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
+			imported, err, changelogfile.ManifestFormatArchive, engine.MaxChangelogDialect())
 	}
 	fold, err := ds.(folded).FoldSnapshot(ctx)
 	if err != nil {
@@ -1697,63 +1694,64 @@ func (d *drill) secondRestore(t *testing.T) {
 		t.Errorf("changelog dialect after the first write = %d (%v), want %d", stamped, err, engine.MaxChangelogDialect())
 	}
 
-	// The other-key restore: `repository rewrap` reads the manifest, opens the
-	// DEK with the recovery key and rewrites the manifest under the new host's
-	// key; the boot then imports it. A second copy, because the imported one
-	// above now holds a row wrapped under the first key.
-	rewrapRoot := copyRoot(t, d.snapRoot, secondAuthority)
-	rewrapDir, err := changelogfile.RepoDir(rewrapRoot, secondAuthority)
+	// The other-key restore: the operator listed the repository, so the boot
+	// restores it under a new key and without its secrets. Its records and
+	// its history arrive; the login credential was one of the secrets, so the
+	// owner's sign-in is refused until a reset. A second copy, because the
+	// restored one above now holds a row wrapped under the first key.
+	otherRoot := copyRoot(t, d.snapRoot, d.secondID)
+	other, err := engine.Open(ctx, testdb.NewSchema(t), engine.WithKindsFS(kinds.Seed()),
+		engine.WithDataRoot(otherRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now),
+		engine.WithImportWithoutSecrets(secondAuthority))
+	if err != nil {
+		t.Fatalf("boot on the listed archive under another key: %v", err)
+	}
+	defer func() { _ = other.Close() }()
+	ods, err := other.Dataset(ctx, secondAuthority)
+	if err != nil {
+		t.Fatalf("open the repository restored without its secrets: %v", err)
+	}
+	ohead, err := ods.Head(ctx)
+	if err != nil || ohead.Seq <= d.secondHead {
+		t.Errorf("head after the restore without secrets = %d (%v), want past %d by the clearing writes", ohead.Seq, err, d.secondHead)
+	}
+	if rec, err := ods.Get(ctx, secondTask, secondL1); err != nil || rec.Labels["owner/second"] != true {
+		t.Errorf("l-1 did not arrive with its label: %+v (%v)", rec, err)
+	}
+	d.clock.Advance(engine.TOTPPeriod)
+	if _, err := other.Login(ctx, substrate.LoginInput{Identity: secondAuthority, Password: secondPassword, TOTPCode: d.second.For(t).TOTPCode(), Label: "without secrets"}); !errors.Is(err, substrate.ErrAuth) {
+		t.Errorf("login on the restore without secrets = %v, want refused", err)
+	}
+	// The person's factors were sealed under the first host's key as well,
+	// so they stayed behind with the secrets; the operator's reset gives the
+	// repository its person back under the id its tokens name.
+	seed := signInAgain(t, other, secondAuthority, secondPassword)
+	code, err := engine.TOTPCode(seed, engine.TOTPStep(d.clock.Now()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := engine.RewrapRepositoryDir(rewrapDir, d.secondIdentity.String(), d.keyB)
-	if err != nil {
-		t.Fatalf("rewrap the directory: %v", err)
-	}
-	if report.Repository != secondAuthority {
-		t.Errorf("rewrap report = %+v", report)
-	}
-	if rewrapped, err := changelogfile.ReadManifest(rewrapDir); err != nil || rewrapped.Format != changelogfile.ManifestFormat ||
-		rewrapped.ChangelogDialect != engine.MaxChangelogDialect() {
-		t.Errorf("the rewrapped manifest = %+v (%v), want format %d at changelog dialect %d",
-			rewrapped, err, changelogfile.ManifestFormat, engine.MaxChangelogDialect())
-	}
-	rewrapped, err := engine.Open(ctx, testdb.NewSchema(t), engine.WithKindsFS(kinds.Seed()),
-		engine.WithDataRoot(rewrapRoot), engine.WithCredentialKey(d.keyB), engine.WithTestTOTPClock(d.clock.Now))
-	if err != nil {
-		t.Fatalf("boot on the rewrapped directory: %v", err)
-	}
-	defer func() { _ = rewrapped.Close() }()
-	rds, err := rewrapped.Dataset(ctx, secondAuthority)
-	if err != nil {
-		t.Fatalf("open the rewrapped repository: %v", err)
-	}
-	if rfold, err := rds.(folded).FoldSnapshot(ctx); err != nil || !bytes.Equal(rfold, d.secondFold) {
-		t.Errorf("the fold restored from the rewrapped directory is not the source's (%v)\n%s", err, firstDifference(d.secondFold, rfold))
-	}
-	d.clock.Advance(engine.TOTPPeriod)
-	if _, _, err := rewrapped.Login(ctx, substrate.LoginInput{Repository: secondAuthority, Password: secondPassword, TOTPCode: d.second.For(t).TOTPCode(), Label: "rewrapped"}); err != nil {
-		t.Errorf("login on the rewrapped restore: %v", err)
+	if _, err := other.Login(ctx, substrate.LoginInput{Identity: secondAuthority, Password: secondPassword, TOTPCode: code, Label: "after the reset"}); err != nil {
+		t.Errorf("login after the reset on the restore without secrets: %v", err)
 	}
 
 	// A directory a NEWER binary wrote refuses the boot by name, before any
 	// row lands.
-	newerRoot := copyRoot(t, d.pristine, drillAuthority)
-	newerDir, err := changelogfile.RepoDir(newerRoot, drillAuthority)
+	newerRoot := copyRoot(t, d.pristine, d.drillID)
+	newerDir := archiveDirOf(newerRoot, d.drillID)
+	nm, _, err := changelogfile.ReadArchiveManifestDir(newerDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nm, err := changelogfile.ReadManifest(newerDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nm.ChangelogDialect = engine.MaxChangelogDialect() + 1
-	if err := changelogfile.WriteManifest(newerDir, nm); err != nil {
+	// The newest manifest names a dialect past this binary's; its pieces
+	// are never read, because the manifest is refused by what it names.
+	nm.ChangelogDialect, nm.Epoch = engine.MaxChangelogDialect()+1, nm.Epoch+1
+	nm.Head, nm.HeadSum, nm.Pieces = 0, "", nil
+	if _, err := changelogfile.WriteArchiveManifestDir(newerDir, nm); err != nil {
 		t.Fatal(err)
 	}
 	newerDSN := testdb.NewSchema(t)
 	svc, err := engine.Open(ctx, newerDSN, engine.WithKindsFS(kinds.Seed()),
-		engine.WithDataRoot(newerRoot), engine.WithCredentialKey(d.keyB))
+		engine.WithDataRoot(newerRoot), engine.WithCredentialKey(d.keyA))
 	if err == nil {
 		_ = svc.Close()
 		t.Fatal("a directory above the binary's changelog dialect imported")
@@ -2042,15 +2040,23 @@ func labelsOf(t *testing.T, rec map[string]any, id string) map[string]any {
 
 func metaOf(t *testing.T, rec map[string]any, id, prop string) map[string]any {
 	t.Helper()
-	all, ok := rec["propertyMeta"].(map[string]any)
+	all, ok := rec["marks"].(map[string]any)
 	if !ok {
-		t.Fatalf("record %s carries no propertyMeta: %v", id, rec["propertyMeta"])
+		t.Fatalf("record %s carries no marks: %v", id, rec["marks"])
 	}
 	meta, ok := all[prop].(map[string]any)
 	if !ok {
-		t.Fatalf("record %s has no provenance for %s: %v", id, prop, all)
+		t.Fatalf("record %s has no mark for %s: %v", id, prop, all)
 	}
 	return meta
+}
+
+// pinnedByThePerson reports whether a mark, as the wire carries it, is the
+// person's pin.
+func pinnedByThePerson(mark map[string]any) bool {
+	by, _ := mark["setBy"].(map[string]any)
+	return mark["pinned"] == true &&
+		by["ref"] == vocabulary.RecordPath("substrate.reamde.dev/core/actor", vocabulary.ActorID(substrate.ActorPerson))
 }
 
 // listRecords is one kind's records, live or tombstoned, in the list's own
@@ -2225,6 +2231,18 @@ func refID(v any) string {
 
 // scoped is the repository's own pool on one schema, opened once per DSN
 // and authority for the drill's lifetime.
+// signInAgain gives a repository restored without its person its person back
+// through the operator's reset, with the drill's password and a new seed, and
+// answers the seed.
+func signInAgain(t *testing.T, svc substrate.Service, name, password string) string {
+	t.Helper()
+	enrollment, err := svc.(engine.Operator).ResetUser(context.Background(), name, password, "")
+	if err != nil {
+		t.Fatalf("give the restored repository %s its person: %v", name, err)
+	}
+	return enrollment.Secret
+}
+
 func (d *drill) scoped(t *testing.T, dsn, authority string) *sql.DB {
 	t.Helper()
 	key := "scoped|" + authority + "|" + dsn
@@ -2304,26 +2322,30 @@ func drainEmbeds(t *testing.T, ds substrate.Dataset) {
 	t.Fatal("the embed queue did not drain in 50 passes")
 }
 
-// copyRoot copies one repository directory out of a data root into a fresh
-// root laid out the same way.
-func copyRoot(t testing.TB, srcRoot, authority string) string {
+// copyRoot copies one repository directory, named by the repository's id, out
+// of a data root into a fresh root laid out the same way.
+func copyRoot(t testing.TB, srcRoot, id string) string {
 	t.Helper()
-	src, err := changelogfile.RepoDir(srcRoot, authority)
-	if err != nil {
-		t.Fatal(err)
-	}
 	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, authority)
-	if err != nil {
-		t.Fatal(err)
-	}
+	copyTree(t, archiveDirOf(srcRoot, id), archiveDirOf(root, id))
+	return root
+}
+
+// archiveDirOf is repository id's directory in the archive a server under
+// root writes (<root>/archive), the default.
+func archiveDirOf(root, id string) string {
+	return filepath.Join(root, "archive", changelogfile.RepositoriesDir, id)
+}
+
+// copyTree copies a directory tree.
+func copyTree(t testing.TB, src, dst string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	return root
 }
 
 // patchedSeedTree copies the shipped seed (its authority document and its

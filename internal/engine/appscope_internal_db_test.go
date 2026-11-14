@@ -25,7 +25,6 @@ func TestADamagedGrantNeverReadsAsFullAccess(t *testing.T) {
 		"not a list": `"read:*"`,
 		"non-string": `[null]`,
 		"unparsed":   `["everything"]`,
-		"unresolved": `["read:~/tasks/*"]`,
 		"auth kind":  `["read:substrate.reamde.dev/core/token"]`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -46,28 +45,25 @@ func TestADamagedGrantNeverReadsAsFullAccess(t *testing.T) {
 			if _, err := ds.Tokens(ctx); !errors.Is(err, substrate.ErrCorrupt) {
 				t.Fatalf("the listing with a damaged grant = %v, want it refused as corrupt", err)
 			}
-			if _, err := ds.Delete(ctx, substrate.ActorAPI, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, tok.ID, substrate.DeleteInput{}); err != nil {
 				t.Fatalf("the owner revokes the damaged token: %v", err)
 			}
 		})
 	}
 }
 
-// An app's actor holds at the owner tier, however the registry reads, and
-// its request goes ahead of background writers at the write gate like the
-// owner's own; the owner-only actions stay shut through txn.scoped.
-func TestAnAppsActorHoldsAtTheOwnerTierAndWritesInTheForeground(t *testing.T) {
+// An app's request goes ahead of background writers at the write gate like
+// its person's own; what a person alone may do stays shut through
+// txn.scoped.
+func TestAnAppsWriteGoesInTheForeground(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := openCoreDataset(t)
 	app := substrate.AppActor("notes.example.org")
-	if got := ds.actorTier(app); got != substrate.TierOwner {
-		t.Fatalf("an app's actor resolves to the %s tier, want owner", got)
-	}
-	if !ds.ownerFirst(ctx, app, false) {
+	if !ds.personFirst(ctx, app, false) {
 		t.Fatal("an app's write waits behind background writers")
 	}
-	if ds.ownerFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
+	if ds.personFirst(ctx, substrate.Actor("function:x.example.com:p:f"), false) {
 		t.Fatal("installed code went ahead of background writers: the test proves nothing")
 	}
 }
@@ -98,7 +94,7 @@ func TestAnAppsSearchScoresAHitByItselfAlone(t *testing.T) {
 	ownerBefore, appBefore := score(ctx), score(app)
 	const hidden = "samples.substrate.reamde.dev/tasks/project"
 	for i := range 40 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: hidden, ID: fid(fmt.Sprintf("p%d", i)),
 			Properties: map[string]any{"name": "flight flight " + strings.Repeat("long hidden words ", 30)},
 		}); err != nil {
@@ -136,7 +132,7 @@ func TestAChatAnAppOpensIsItsMessageAndItsThreadToRename(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) == 0 || changes[0].Actor != actor {
+	if len(changes) == 0 || changes[0].Actor != actorID(actor) {
 		t.Fatalf("the first message row = %+v, want the user message under %s", changes, actor)
 	}
 	if _, err := ds.Patch(app, actor, typeThread, res.Thread, substrate.PatchInput{

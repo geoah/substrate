@@ -12,16 +12,15 @@ import (
 //
 // It is ONE interface, not a core plus optional extensions a consumer
 // type-asserts: a verb declared here is a verb every implementation owes,
-// which is the engine's dataset and the API's hand-written fake
-// (internal/api/fake_test.go). A consumer calls the method; no endpoint has a
-// "this deployment cannot" branch to take.
+// the engine's dataset and the API's scoped and assistant wrappers. A
+// consumer calls the method; no endpoint has a "this deployment cannot"
+// branch to take.
 //
-// THE WHOLE INTERFACE IS WHAT v1 FREEZES: a method here is part of the
-// library contract and moves under the rules the REST surface moves under
-// (decision 0053, additive within v1, a break announced). Every feature
-// discovery lists (stability.go) is served from here, which is why that list
-// is a literal, and a feature's own stability stamp is what says how far its
-// shape has settled.
+// The interface is this module's own seam and promises nothing outside it:
+// the package is internal, so a method moves whenever every implementation
+// moves with it. What a client builds on is the routes served from here, and
+// discovery lists them as features, each with its stability
+// (internal/api/features.go).
 type Dataset interface {
 	Repository() RepositoryInfo
 
@@ -34,6 +33,9 @@ type Dataset interface {
 	// the segments a request addresses spell the reference this resolves, with
 	// nothing to look up in between (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
+	// KindRetentions answers how long each declared kind's history is kept
+	// in the repository: declared, overridden and in effect (decision 0282).
+	KindRetentions(ctx context.Context) ([]KindRetention, error)
 
 	// --- units (decision 0186) ---
 	// Units answers the repository's unit and conversion records as one
@@ -61,6 +63,13 @@ type Dataset interface {
 	// preconditions; a zero one is unconditional.
 	Merge(ctx context.Context, actor Actor, in MergeInput) (*Record, error)
 	Split(ctx context.Context, actor Actor, in SplitInput) (*Record, error)
+	// Pin keeps each named property's current value: sync leaves it alone
+	// until it is released. Release hands each named property back to sync,
+	// which picks its value among the live offers. Both are recorded in
+	// history, both work on a required property, and both answer the record
+	// with its marks (decision 0284).
+	Pin(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
+	Release(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
 
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,
@@ -108,6 +117,10 @@ type Dataset interface {
 	// is the same write either way.
 	MintToken(ctx context.Context, in MintTokenInput) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
+	// PersonRoles are the roles the person a request acts for holds in this
+	// repository, read on each request (decision 0275): none for a person
+	// whose actor is gone or disabled.
+	PersonRoles(ctx context.Context) ([]RoleRules, error)
 
 	// --- background loops and the operator's re-embed ---
 	// RunGC performs one owner-reference mark-and-collect sweep for
@@ -281,6 +294,21 @@ type Dataset interface {
 	Export(ctx context.Context) (Export, error)
 
 	// --- domain verification (decision 0208) ---
+	// PlanPublish answers what publishing one of the repository's own
+	// packages under an authority would do, and what refuses it now,
+	// writing nothing; Publish does it, the caller having read the
+	// authority's proof (decision record 0289). ReleasePackage answers the
+	// next release of a package the repository publishes, and writes it
+	// when in.Confirm says so. Releases lists the
+	// releases under an authority, every one when it is empty, and
+	// ReleaseClosure is one release's closure, byte for byte (decision
+	// record 0291).
+	PlanPublish(ctx context.Context, actor Actor, in PublishInput) (PublishPlan, error)
+	Publish(ctx context.Context, actor Actor, in PublishInput) (PublishPlan, error)
+	ReleasePackage(ctx context.Context, actor Actor, in ReleaseInput) (ReleasePlan, error)
+	Releases(ctx context.Context, authority string) ([]Release, error)
+	ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error)
+
 	// DomainState reads the pending proof and the verified stamp off the
 	// repository record.
 	DomainState(ctx context.Context) (DomainState, error)

@@ -62,6 +62,12 @@ API call that completes a task.
 - [Users, tokens, and actors](auth.md)
 - [Authorizing apps](apps.md): how an app gets a token limited to the kinds the owner approves, with no registration
 - [The changelog and watch](changelog.md)
+- [The stored format](stored-format.md): the archive the server writes and
+  an export carries, line by line and effect by effect, and how an older one
+  is converted
+- [Stability](stability.md): what `stable`, `beta` and `experimental`
+  promise, where a package and a feature state their label, and what an
+  upgrade may change
 
 ## Bundles
 
@@ -69,10 +75,12 @@ API call that completes a task.
   vocabulary, or a provider, applied and removed as one unit
 - [Functions and the host SDK](functions.md)
 - [Agents](agents.md) — assistants that read your records and write back
-  through the same API; this part is alpha
+  through the same API; this part is experimental
 - [Applets](applets.md) — small apps over your records that Moss builds when
-  you ask, drawn as A2UI screens the substrate runs; alpha
+  you ask, drawn as A2UI screens the substrate runs; experimental
 - [The bundles catalog](bundles-catalog.md)
+- [Publishing a package](publishing.md): one of your packages under a domain
+  you control, served for another server to install
 
 ## Tools and operations
 

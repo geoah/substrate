@@ -383,9 +383,9 @@ handler tests for it to write the `idle` frame instead.
   line. `postThreadStop` calls `StopAgentTurn` and `writeJSON`.
   `heartbeatInterval` (`watch.go`) becomes a variable so a test can shorten
   it.
-- `internal/api/discovery.go`: no new feature; the routes belong to
-  `agents` (alpha). `discovery_errors_watch_test.go`'s roster gains the two
-  routes if it enumerates agent routes.
+- `internal/api/features.go`: no new feature; the routes belong to
+  `agents` (experimental). The feature table gains the two routes, and its
+  golden, `testdata/features.golden.json`, follows.
 - `kinds/substrate.reamde.dev/llm/thread.yaml`: `status` enum gains
   `stopped`; `reason` description mentions it; `version: 13`.
 - `web/console/src/lib/api/agents.ts`: `AgentEvent.kind` union gains

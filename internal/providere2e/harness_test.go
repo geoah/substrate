@@ -152,6 +152,10 @@ func startServer(t *testing.T) *server {
 		// enrolling an authenticator for a repository this run deletes would
 		// be friction with nothing behind it.
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=true",
+		// Its own loopback address, as `mise run dev` sets: the runner
+		// registers its repositories under `localhost`, which a server
+		// admits only in development (decision record 0288).
+		"SUBSTRATE_PUBLIC_URL="+srv.baseURL,
 		// The runner applies each provider's files rewired at its mock, under
 		// the provider's own authority, which a token may not create
 		// (decision 0210) and the catalog's install cannot rewire.

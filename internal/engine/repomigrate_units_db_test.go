@@ -216,8 +216,11 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	ctx := context.Background()
 	dsn, root := engine.MigratedDSN(t), t.TempDir()
 	repo := testdb.Repository(t)
-	observation := repo + "/observations/observation"
-	metric := repo + "/observations/metric"
+	// The samples' copies live in the repository's own namespace (decision
+	// record 0259), which is what binary N's rows read as once converted.
+	own := "~"
+	observation := own + "/observations/observation"
+	metric := own + "/observations/metric"
 
 	// Binary N: core before the unit graph, the samples as main imported
 	// them. This binary writes no value in a unit no unit record answers, so
@@ -239,19 +242,19 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		t.Fatalf("load the historical samples: %v", err)
 	}
 	for _, id := range []string{"samples.substrate.reamde.dev/observations", "samples.substrate.reamde.dev/health"} {
-		if _, _, err := c.Import(ctx, substrate.ActorAPI, id, ds); err != nil {
+		if _, _, err := c.Import(ctx, substrate.ActorPerson, id, ds); err != nil {
 			t.Fatalf("import %s on binary N: %v", id, err)
 		}
 	}
 	for _, d := range data {
-		if err := planter(t, ds).PlantRecord(ctx, rehome(repo, d.kind), d.id, rehomeValue(repo, d.props).(map[string]any)); err != nil {
+		if err := planter(t, ds).PlantRecord(ctx, rehome(own, d.kind), d.id, rehomeValue(own, d.props).(map[string]any)); err != nil {
 			t.Fatalf("plant %s %s: %v", d.kind, d.id, err)
 		}
 	}
 	// The kinds back as main stored them, `measures` and all, and each copy
 	// stamped as the unedited import it was.
 	for id, props := range measures {
-		kind := rehome(repo, id)
+		kind := rehome(own, id)
 		row := mustGet(t, ds, rmKind, kind).Properties
 		declared := row["properties"].(map[string]any)
 		for name, m := range props {
@@ -261,7 +264,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 			t.Fatalf("plant %s: %v", kind, err)
 		}
 	}
-	for _, pkg := range []string{repo + "/observations", repo + "/health"} {
+	for _, pkg := range []string{own + "/observations", own + "/health"} {
 		if err := ds.(interface {
 			StampOriginDigest(context.Context, string) error
 		}).StampOriginDigest(ctx, pkg); err != nil {
@@ -271,7 +274,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	// Two metrics of the owner's own: one in a unit no shipped unit answers
 	// but whose spelling is a valid id, one whose spelling is neither.
 	for _, m := range []struct{ id, unit, measure string }{{fid("test/flow"), "kg/h", "mass-flow"}, {fid("test/odd"), "{foo}", "count"}} {
-		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: metric, ID: m.id, Properties: map[string]any{"name": m.id, "form": "gauge"}})
+		mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: metric, ID: m.id, Properties: map[string]any{"name": m.id, "form": "gauge"}})
 		row := mustGet(t, ds, metric, m.id).Properties
 		row["unit"], row["measures"] = m.unit, m.measure
 		if err := planter(t, ds).PlantDeclarationRow(ctx, metric, m.id, row); err != nil {
@@ -319,7 +322,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, pkg := range []string{repo + "/observations", repo + "/health"} {
+	for _, pkg := range []string{own + "/observations", own + "/health"} {
 		var found bool
 		for _, st := range statuses {
 			if st.ID != pkg {
@@ -376,7 +379,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	}
 	// The metric left as written refuses a write until the owner points it
 	// at a unit record.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, metric, fid("test/odd"), substrate.PatchInput{Properties: map[string]any{"name": "odd"}}); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, metric, fid("test/odd"), substrate.PatchInput{Properties: map[string]any{"name": "odd"}}); !errors.Is(err, substrate.ErrValidation) {
 		t.Errorf("a write to the metric left with {foo}: err = %v, want a validation refusal", err)
 	}
 	if u, ok := unitByID(tab, "kg/h"); !ok || u.Name != "kg/h" {
@@ -404,7 +407,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		t.Errorf("observations above 70 kg = %s, want w1,w2 (72.40 kg and 160 lb)", got)
 	}
 	// A new value is admitted by its metric through the graph.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: fid("w3"), Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: observation, ID: fid("w3"), Properties: map[string]any{
 		"metric": map[string]any{"ref": metric + "/health/body_mass"}, "form": "gauge", "hold": "PT0S",
 		"value": map[string]any{"value": "71", "unit": "kg"},
 		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,
@@ -417,10 +420,10 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	if info, err := ds.KindByRef(ctx, kindObservation); err != nil || info.Source != vocabulary.SourceBuiltin {
 		t.Fatalf("the seeded %s after the open: %+v, %v", kindObservation, info, err)
 	}
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindMetric, ID: fid("health/body_mass"), Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: kindMetric, ID: fid("health/body_mass"), Properties: map[string]any{
 		"name": "Body mass", "unit": unitRef("kg"), "form": "gauge",
 	}})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: kindObservation, ID: fid("w3"), Properties: map[string]any{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: kindObservation, ID: fid("w3"), Properties: map[string]any{
 		"metric": map[string]any{"ref": kindMetric + "/" + fid("health/body_mass")}, "form": "gauge", "hold": "PT0S",
 		"value": map[string]any{"value": "71", "unit": "kg"},
 		"at":    "2026-10-08T06:41:12+03:00", "utcOffset": 180, "revision": 1,

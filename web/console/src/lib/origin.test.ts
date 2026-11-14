@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { providerInfo } from "@/lib/actor-identity"
 import { originOfActor, originOfKind, originWords } from "@/lib/origin"
+
+beforeEach(() => seedActors())
 
 describe("originWords", () => {
   it("says every origin in the one set of words", () => {
@@ -13,9 +16,9 @@ describe("originWords", () => {
     expect(originWords({ kind: "other", authority: "example.com" })).toBe(
       "From example.com"
     )
-    expect(
-      originWords(originOfActor("agent:ada.localhost:notes:notekeeper"))
-    ).toMatch(/^Made by /)
+    expect(originWords(originOfActor("act-agent-notes-notekeeper"))).toMatch(
+      /^Made by /
+    )
   })
 
   it("names the origin alone in a chip", () => {
@@ -28,12 +31,10 @@ describe("originWords", () => {
 
 describe("originOfActor", () => {
   it("reads the person, a provider's function and the engine", () => {
-    expect(originOfActor("console").kind).toBe("yours")
-    const google = originOfActor(
-      "function:providers.substrate.reamde.dev:google:synccontacts"
-    )
+    expect(originOfActor("act-person").kind).toBe("yours")
+    const google = originOfActor("act-fn-google-synccontacts")
     expect(google.kind).toBe("provider")
-    expect(originOfActor("substrate").kind).toBe("core")
+    expect(originOfActor("act-system").kind).toBe("core")
   })
 })
 

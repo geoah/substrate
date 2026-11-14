@@ -38,6 +38,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
+	id = vocabulary.LocalizeID(ty.Identity, id, ds.names()...)
 	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: ty.Identity, ID: id})
 	if err != nil {
 		return nil, err
@@ -54,11 +55,11 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
-	// Single-record reads carry property provenance, and the inbound links a
+	// Single-record reads carry the property marks, and the inbound links a
 	// recordmapping owns (linkedfrom.go). The GENERAL reverse read stays a
 	// List under Filter.Referencing: any record can be pointed at from
 	// anywhere, by any property, and that fan-in has to be paged.
-	if e.PropertyMeta, err = ds.propertyMeta(ctx, e); err != nil {
+	if e.Marks, err = ds.propertyMarks(ctx, e); err != nil {
 		return nil, err
 	}
 	if e.LinkedFrom, err = ds.linkedFrom(ctx, ds.db, e); err != nil {
@@ -90,134 +91,6 @@ func (ds *dataset) idsOf(ctx context.Context, x dbx, canonical eref) ([]string, 
 		ids = append(ids, former)
 	}
 	return ids, rows.Err()
-}
-
-// propertyMeta assembles one record's per-property provenance: the manager
-// ledger — actor AND tier, so a read can tell a bundle pin from an
-// owner's or from a machine row recompute may replace — and the live
-// mapping-projection offers whose value differs (JSON equality) from the
-// stored one, the ALTERNATIVES the console shows beside a held value. Every
-// offer names the source record it was read from, and the manager names one
-// too where the read can stand behind it: the manager holds at the machine
-// tier and its own actor's offer BACKS the stored value (record 0094). The
-// offer row is derived, so nothing here is a second copy of the changelog.
-func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[string]substrate.PropertyMeta, error) {
-	out := map[string]substrate.PropertyMeta{}
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT property, actor, tier, updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
-		e.Kind, e.ID)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var m substrate.PropertyMeta
-		var property string
-		if err := rows.Scan(&property, &m.Manager, &m.Tier, &m.UpdatedAt); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		m.UpdatedAt = m.UpdatedAt.UTC()
-		// The tier the row holds at, which is what recompute yields on
-		// (record 0113), not a stale reading of it.
-		m.Tier = heldTierIn(ds.registry(), m.Manager, m.Tier)
-		out[property] = m
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	// Which mapped properties are unions, so a machine-held union whose
-	// manager's offer is a subset of the stored items still names its source.
-	union := map[string]bool{}
-	for _, m := range ds.registry().MappingsTo(e.Kind) {
-		for name, rule := range m.Map {
-			if rule.Merge == vocabulary.MergeUnion {
-				union[name] = true
-			}
-		}
-	}
-	rows, err = ds.db.QueryContext(ctx, `
-		SELECT property, actor, value, updated_at, source FROM property_offers
-		WHERE record_kind = $1 AND record_id = $2 ORDER BY property, actor`, e.Kind, e.ID)
-	if err != nil {
-		return nil, err
-	}
-	// The offers are read whole before any is compared: a reference offer
-	// is compared through further reads (comparableReference), which must not
-	// need a second pool connection while this cursor holds the first.
-	type offerRow struct {
-		property, actor, source string
-		raw                     []byte
-		at                      time.Time
-	}
-	var offers []offerRow
-	for rows.Next() {
-		var o offerRow
-		if err := rows.Scan(&o.property, &o.actor, &o.raw, &o.at, &o.source); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		offers = append(offers, o)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	for _, o := range offers {
-		property, actor, source, at := o.property, o.actor, o.source, o.at
-		var value any
-		if len(o.raw) > 0 {
-			_ = json.Unmarshal(o.raw, &value)
-		}
-		// An offer's stored value bypasses recordOf, so a property that is
-		// sensitive TODAY redacts here too: a stale offer minted before a
-		// re-type must not hand out what the main value hides. Unresolvable
-		// kinds fail closed the same way.
-		stored, compared := e.Properties[property], value
-		if ty, err := ds.resolveType(e.Kind); err != nil || ty == nil {
-			value, compared = Redacted, Redacted
-		} else if p, ok := ty.Prop(property); ok && p.Sensitive() {
-			value, compared = Redacted, Redacted
-		} else if ok && p.Datatype == vocabulary.DatatypeReference {
-			// An offer spells a reference as its source wrote it, a mirror
-			// included; the stored value holds what the pin resolved it to.
-			// Both sides are read through the mirror's subject and the
-			// former-id trail before they are compared (#580).
-			if compared, err = ds.comparableReference(ctx, p, value); err != nil {
-				return nil, err
-			}
-			if stored, err = ds.comparableReference(ctx, p, stored); err != nil {
-				return nil, err
-			}
-		}
-		m := out[property]
-		// The manager's own offer standing behind a machine-held value is
-		// the one case the read can say which mirror the value came from.
-		// On a union the stored value is the union across every actor, so
-		// the holding actor's offer backs it as a subset; it is not an
-		// alternative to itself.
-		mine := m.Manager == actor && m.Tier == substrate.TierMachine
-		if mine && offerBacks(stored, compared, union[property]) {
-			if source != "" {
-				m.Source = source
-				out[property] = m
-			}
-			continue
-		}
-		if jsonEqual(compared, stored) {
-			continue
-		}
-		m.Alternatives = append(m.Alternatives, substrate.PropertyAlternative{
-			Actor: actor, Value: value, UpdatedAt: at.UTC(), Source: source,
-		})
-		out[property] = m
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return out, nil
 }
 
 // comparableReference is a reference value as the read compares it: each item
@@ -571,6 +444,16 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 	if b.units != nil {
 		signature += "|units@" + strconv.FormatInt(b.units.revision, 10)
 	}
+	// The request's own filter and orderBy, apart from what they resolve to:
+	// a cursor replayed under another request is the client's mistake, and
+	// one whose request now resolves to another order is not. A scoped view
+	// narrowed the filter to its grant before it reached here, which the
+	// signature above holds; the request is the filter the client sent.
+	asked := q.Filter
+	if f, ok := substrate.AskedFilterFrom(ctx); ok {
+		asked = f
+	}
+	request := requestSignature(q.OrderBy, asked)
 	first := q.First
 	if first <= 0 {
 		first = defaultPageSize
@@ -618,13 +501,22 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		if err != nil {
 			return nil, err
 		}
+		// Each refusal below but the request's own is the one list-again
+		// answer (substrate.ErrStaleHistory, a 410): the client did nothing
+		// wrong, and the only way on is the first page again.
+		if tok.V != keysetVersion {
+			return nil, fmt.Errorf("%w: the cursor was minted by another version of the server's paging; list again", substrate.ErrStaleHistory)
+		}
+		if tok.R != request {
+			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
+		}
 		if tok.O != signature {
 			was, _, _ := strings.Cut(tok.O, "|units@")
 			now, _, _ := strings.Cut(signature, "|units@")
 			if was == now {
-				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so start the walk again", substrate.ErrValidation)
+				return nil, fmt.Errorf("%w: the cursor was minted under another revision of the unit graph, which this filter or order converts through: a unit or a conversion changed, so list again", substrate.ErrStaleHistory)
 			}
-			return nil, fmt.Errorf("%w: cursor does not match this filter and orderBy", substrate.ErrValidation)
+			return nil, fmt.Errorf("%w: this filter and orderBy order the rows differently than when the cursor was minted, because a declaration changed; list again", substrate.ErrStaleHistory)
 		}
 		if len(tok.K) != len(terms) {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
@@ -729,7 +621,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 			// (decision 0194); the page it hands off to drops it too.
 			head = 0
 		}
-		page.Cursor = encodeKeyset(signature, got[len(got)-1].keys, head, page.Generation)
+		page.Cursor = encodeKeyset(request, signature, got[len(got)-1].keys, head, page.Generation)
 	}
 	pageRows := make([]*erow, len(got))
 	for i, s := range got {
@@ -982,7 +874,7 @@ func quantityOperand(c substrate.Cond) bool {
 var recordColumns = map[string]string{
 	substrate.PropAt: "at", substrate.PropEndsAt: "ends_at", substrate.PropDueAt: "due_at",
 	"createdAt": "created_at", "updatedAt": "updated_at", "deletedAt": "deleted_at",
-	"title": "title", "body": "body", "id": "id", "version": "version",
+	"title": "title", "id": "id", "version": "version",
 }
 
 // snakeColumns names the deleted spelling of every camelCase column, so a
@@ -1507,8 +1399,9 @@ func (ds *dataset) referenceFilterIDs(ctx context.Context, x dbx, path string) (
 // bare id when `kind:` pins a concrete kind to complete it (validate.go
 // coerceReference). Unpinned, a bare id names no kind and therefore no record —
 // it is refused rather than answered by a scan of every kind that might hold
-// the id, which containment on a flat string cannot express anyway.
-func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, error) {
+// the id, which containment on a flat string cannot express anyway. A path
+// under the repository's name, home, is the `~` one (decision record 0259).
+func referenceFilterPath(name string, p *vocabulary.Property, v any, names ...string) (string, error) {
 	s, ok := v.(string)
 	if !ok {
 		return "", fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
@@ -1517,7 +1410,7 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, er
 		return "", fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
 	}
 	if _, _, isPath := vocabulary.SplitRecordPath(s); isPath {
-		return s, nil
+		return vocabulary.LocalizePath(s, names...), nil
 	}
 	if p.To == "" || p.To == vocabulary.ToAny {
 		return "", fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
@@ -1615,7 +1508,7 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 		var listShape *vocabulary.Property
 		for _, v := range values {
 			for _, p := range shapes {
-				path, err := referenceFilterPath(name, p, v)
+				path, err := referenceFilterPath(name, p, v, ds.names()...)
 				if err != nil {
 					return "", err
 				}
@@ -1900,9 +1793,9 @@ func condColumn(b *builder, col string, c substrate.Cond) error {
 		b.add(expr + `::text LIKE ` + b.arg(likePrefix(c.Prefix)))
 	}
 	if c.Match != "" {
-		// The two text columns have words; an instant, a version or an id
-		// does not, and prefix is the string operator an id takes.
-		if col != "title" && col != "body" {
+		// The title column has words; an instant, a version or an id does
+		// not, and prefix is the string operator an id takes.
+		if col != "title" {
 			return fmt.Errorf("%w: %s is not a text property — match needs one, use eq, prefix or the comparison operators",
 				substrate.ErrValidation, col)
 		}
@@ -2138,7 +2031,7 @@ type orderTerm struct {
 // 389k rows, against 0.3 ms with the index).
 var nonNullColumns = map[string]bool{
 	"kind": true, "id": true, "created_at": true, "updated_at": true,
-	"title": true, "body": true, "version": true,
+	"title": true, "version": true,
 }
 
 // nonNull reports whether this term is a NOT NULL column, so its seek needs
@@ -2396,6 +2289,13 @@ func afterKey(b *builder, t orderTerm, v *string) string {
 // own new snapshot, or an insert during paging is lost. Zero (an empty
 // changelog first page) is omitted.
 type keyset struct {
+	// V is the token's version, keysetVersion when this server minted it. A
+	// token of another version cannot be read, and is the list-again refusal.
+	V int `json:"v,omitempty"`
+	// R is the request the walk was cut from (requestSignature), apart from
+	// the resolved order O: a mismatch on R is the client's, one on O alone
+	// is the server's.
+	R string    `json:"r,omitempty"`
 	O string    `json:"o"`
 	K []*string `json:"k"`
 	H int64     `json:"h,omitempty"`
@@ -2403,8 +2303,14 @@ type keyset struct {
 	G string `json:"g,omitempty"`
 }
 
-func encodeKeyset(order string, keys []*string, head int64, generation string) string {
-	raw, _ := json.Marshal(keyset{O: order, K: keys, H: head, G: generation})
+// keysetVersion is the version of the list continuation token this server
+// mints: the order its keys compare in, substrate.IdentityOrder. A token of
+// another version is refused as list again and never read as this one,
+// wherever it was kept (a client, a function's saved continuation).
+const keysetVersion = substrate.IdentityOrder
+
+func encodeKeyset(request, order string, keys []*string, head int64, generation string) string {
+	raw, _ := json.Marshal(keyset{V: keysetVersion, R: request, O: order, K: keys, H: head, G: generation})
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
@@ -2423,6 +2329,12 @@ func decodeKeyset(cur string) (*keyset, error) {
 // --- changelog ---
 
 func (ds *dataset) Changes(ctx context.Context, after int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error) {
+	if substrate.TailRead(ctx) {
+		if out, ok, err := ds.tailChanges(ctx, after, f, limit); ok || err != nil {
+			return out, err
+		}
+		ds.noteChangeRead()
+	}
 	b := &builder{}
 	b.add(`seq > ` + b.arg(after))
 	hideDeliveryEntries(b)

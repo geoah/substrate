@@ -26,8 +26,8 @@ changelog through that same fold code
 ([running a substrate](operations.md#operator-recovery)).
 
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
-plus sealed, as one unit**: the repository's directory under
-`SUBSTRATE_DATA_ROOT`, which holds all three
+plus sealed, as one unit**: the repository's archive, which the server writes
+behind the commits and which holds all three
 ([backups](operations.md#backups)).
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
@@ -36,9 +36,9 @@ remembered seq misses nothing. Nothing prunes or compacts today.
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
 Every entry carries a SHA-256 checksum of its own canonical line, in the
-segment file and in the table alike, and `repository verify` reports each
-seq whose bytes no longer produce it.
-[The checksum and the segment files](changelog.md#the-checksum-and-the-segment-files)
+table and in the archive alike, and `repository verify` reports each seq
+whose bytes no longer produce it.
+[The checksum and the archive](changelog.md#the-checksum-and-the-archive)
 says exactly what that does and does not prove.
 
 ## Records and identity
@@ -123,9 +123,8 @@ Three rules make the envelope predictable:
 
 - **`kind` is the record's kind reference**, and it is the only place the kind
   appears. Nothing splits it into parts.
-- **`data` carries one key, `properties`.** Everything authored, a declared
-  `body`, the temporal properties and every pointer at another record
-  included, lives there, so nothing needs a reserved list to
+- **`data` carries one key, `properties`.** Everything authored, the temporal
+  properties and every pointer at another record included, lives there, so nothing needs a reserved list to
   name a property. (`title` sits there too, on a kind that does not derive it
   from a [`displayTemplate`](vocabulary.md#admission); `task` derives it from
   `name`, which is why the example above writes that.)
@@ -140,14 +139,15 @@ accepted as shorthand and stored as the object. Against a declaration pinned
 to a kind, a bare id is accepted as the authored short form, because ids are
 unique per kind; under a `trait:` pin or no pin, the value carries the kind or
 it is refused. A declaration names its pin in full
-(`kind: ada.example.com/tasks/project`), the kind of the declaring package
+(`kind: ~/tasks/project`), the kind of the declaring package
 included: there is no bare-name shorthand, and `kind: project` is refused
 naming every full spelling the repository declares under that word
 ([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)). The
 shipped samples spell their pins at `people` as
-`kind: samples.substrate.reamde.dev/people/person`, which the import rehomes
-with the rest, so an imported sample points at the copy imported beside it
-even when the repository also holds the shipped copy verbatim.
+`kind: samples.substrate.reamde.dev/people/person`, which adding the sample
+moves into `~` with the rest, so an added sample points at the copy added
+beside it, `~/people/person`, even when the repository also holds the shipped
+copy verbatim.
 [References](#property-types) below has the rest.
 
 The envelope is the one canonical representation. The flat JSON that the
@@ -172,21 +172,26 @@ label; if it is a blob you only fetch, make it an annotation.
 
 A key is `<namespace>/<name>`, and both halves are lowercase: a letter first,
 then letters, digits, `_`, `.` and `-`, with `:` and `*` also allowed in the
-namespace so a machine hand's own actor name fits
+namespace so a machine hand's own namespace fits
 (`function:web.example.com:harvest/synced`). A key is not a property name, so
 camelCase is refused — `mneme/feedbackNote` is `mneme/feedbacknote` or
 `mneme/feedback-note` — and the refusal names the half and the character at
 fault rather than the shape.
 
-Which namespace a writer may use depends on its **actor**. A human hand — the
-console, `substratectl`, any request under a repository token, which is actor
-`api` — may write any well-formed key, and `owner/…` is the convention for the
-human's own opinions rather than a rule the server holds. Every other actor is
-bound to its own name as the namespace: a function writes under
+Which namespace a writer may use depends on its **actor**. The repository's
+person — any request under a full-access token, the console and
+`substratectl` included — and the substrate itself may write any well-formed
+key, and `owner/…` is the convention for the person's own opinions rather
+than a rule the server holds. Every other actor is bound to a namespace
+spelled from what it is: a function writes under
 `function:<authority>:<package>:<name>/…`, an agent under
-`agent:<authority>:<package>:<name>/…` and a bundle under
-`bundle:<authority>:<package>/…`, so one writer's state cannot be overwritten
-by another's, and a key outside it is refused as forbidden.
+`agent:<authority>:<package>:<name>/…`, a package's own hand under
+`bundle:<authority>:<package>/…` and an app under `app:` and its publisher
+(`app:example.org/…`, `app:local/…`), so one writer's state cannot be
+overwritten by another's, and a key outside it is refused as forbidden. The
+spelling names a key's namespace and nothing else: history, the change feed
+and every stored attribution link the writer's
+[actor record](api.md#actors) by its id.
 
 ## Kinds and references
 
@@ -196,8 +201,16 @@ A **kind** is what a record is, and it is named `<authority>/<package>/<name>`:
 **package** inside it
 ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)).
 
-An authority is a DNS name, and it says who publishes. A package is one word
-under it, and it is the unit that matters day to day: a declaration takes its
+An authority is a DNS name, and it says who publishes, or `~`, the
+repository's **local namespace**, which holds the packages the repository
+declares itself and the samples it adds
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). `~/tasks/task`
+is this repository's tasks kind whatever the repository is called, so the
+repository's name never enters its data, and `~` is the one authority without
+a dot and the one short form a kind reference has. Every input also accepts
+the repository's full name in its place (`ada.example.com/tasks/task`) and
+folds it into `~`; every reply says `~`. A package is one word
+under an authority, and it is the unit that matters day to day: a declaration takes its
 version from its package, a broken closure quarantines its package, and the
 package's `source` says who may change the declarations in it — shipped
 vocabulary is the substrate's to write, and an installed bundle's kinds belong
@@ -218,33 +231,33 @@ its own package: `samples.substrate.reamde.dev/people`,
 `samples.substrate.reamde.dev/scheduling` (the `occurrencelog` trait that
 `calendar` and `tasks` require; `recurring` is core's now), and the function
 and agent examples `notes`, `llm`, `readinglist` and `pebble`
-under the same authority (each a bundle you **import**); the substrate's
+under the same authority (each a bundle you **add** as a copy); the substrate's
 own machinery in `substrate.reamde.dev/core`, the agent runtime's data in
 `substrate.reamde.dev/llm`, the console's record views and collection views
 in `substrate.reamde.dev/console` and measured values in
 `substrate.reamde.dev/observations`, which are the four packages a new
 repository is seeded with; and the well-known catalogues
 `substrate.reamde.dev/health`, `labs` and `environment`, which a repository
-**installs** when it wants them
+**adds** when it wants them
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-An import lands the closure under your repository's own
-authority, so `samples.substrate.reamde.dev/tasks/task` becomes
-`ada.example.com/tasks/task` in a repository whose authority is
-`ada.example.com`. Registration also imports the `llm` sample and writes three
-keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the
+Adding a sample lands the closure in your repository's local namespace, so
+`samples.substrate.reamde.dev/tasks/task` becomes `~/tasks/task`, the same
+in every repository. Registration also writes three
+keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the `llm/model`
+records of the models they offer, the
 [shipped units](units.md#the-shipped-units) and the console package's shipped
 collection views, and nothing else. Packages namespace names; they never partition the data: a
 reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with those four packages and the `llm` sample when it was created, and
-everything else (the vocabulary above included) arrived as an import or an
-install you asked for; either way the declarations are rows in your repository, not a file
+seeded with those four packages when it was created, and
+everything else (the vocabulary above included) arrived as a catalog add or an
+apply you asked for; either way the declarations are rows in your repository, not a file
 the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`samples.substrate.reamde.dev/people/person`
-ships in the binary as the `people` sample and imports on request**, one
+ships in the binary as the `people` sample and is added on request**, one
 record per human, the target of every pointer that means "a person":
 
 ```yaml
@@ -351,7 +364,7 @@ are written and filtered the same way.
 | `email`            | refined `string`, RFC 5322 mailbox                          |
 | `url`              | refined `string`, absolute URL                              |
 | `phone`            | refined `string`, E.164 normalized                          |
-| `timezone`         | IANA zone name                                              |
+| `timezone`         | IANA zone name, spelled as the IANA database spells it, its aliases included (`US/Pacific`); `Local`, the empty string and any other spelling a host's own zone files load (`Europe/athens` on a case-insensitive disk, `posixrules`) are refused on write, because none names the same zone on every host. A value a record already holds is kept, a restore included |
 | `recurrence`       | RFC 5545 RRULE string                                       |
 | `enum`             | one of declared `values`                                    |
 | `state`            | a state machine: `states`, `initial`, `transitions`, stamps |
@@ -710,7 +723,8 @@ accepts that same object and uses only its `digest`, so a document read with
 the other keys are the manifest's own, and writing them changes nothing. A
 digest whose manifest is gone reads as the bare `{digest}` and is refused on
 write as before (`blob … is unknown`). The manifest is always a record in
-Postgres; the BYTES sit in the repository's directory under the data root
+Postgres; the BYTES sit in the repository's directory under the data root,
+and the archive holds a copy of them
 ([the blob store](operations.md#the-blob-store)).
 
 A blob's `name` and `mediaType` are both **optional and descriptive**. The

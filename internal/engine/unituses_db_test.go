@@ -49,11 +49,10 @@ func installGauges(t *testing.T, ds substrate.Dataset, packed bool) {
 	if packed {
 		data["traits"] = append(data["traits"].([]any), vocabulary.TraitObservedCore+"(packed)")
 	}
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "gauges", Authority: gaugesPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(gaugesPackage, 0),
-			vocabulary.ActorManifest(gaugesPackage, vocabulary.PackageActor(gaugesPackage)),
 			vocabulary.KindManifest(gaugesPackage, map[string]any{"singular": "gauge"}, data),
 		},
 	}); err != nil {
@@ -128,11 +127,11 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	}
 	installGauges(t, ds, false)
 	for _, g := range []struct{ id, unit string }{{fid("live"), "kg"}, {fid("gone"), "lb"}} {
-		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: gaugeKind, ID: g.id, Properties: map[string]any{
+		mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: gaugeKind, ID: g.id, Properties: map[string]any{
 			"unit": g.unit, "form": "gauge",
 		}})
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, gaugeKind, fid("gone"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, gaugeKind, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone a gauge: %v", err)
 	}
 	if got := unitUsesOf(t, foldOf(t, ds), gaugeKind); len(got) != 0 {
@@ -141,7 +140,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 
 	blocking.Store(true)
 	installGauges(t, ds, true)
-	_, err = ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
+	_, err = ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "still being derived") {
 		t.Errorf("split lb from kg while the uses are owed: err = %v, want a conflict naming the derivation", err)
 	}
@@ -153,7 +152,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	if got := unitUsesOf(t, fold, gaugeKind); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("the bound gauges' uses = %v, want %v", got, want)
 	}
-	_, err = ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
+	_, err = ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{})
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), gaugeKind) {
 		t.Errorf("split lb from kg once the uses are derived: err = %v, want a conflict naming %s", err, gaugeKind)
 	}
@@ -163,7 +162,7 @@ func TestABindingChangeRederivesTheUnitUses(t *testing.T) {
 	if got := unitUsesOf(t, fold, gaugeKind); len(got) != 0 {
 		t.Errorf("the unbound gauges' uses = %v, want none", got)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{}); err != nil {
 		t.Errorf("split lb from kg once nothing uses them: %v", err)
 	}
 }
@@ -211,7 +210,7 @@ func forgetUnitUses(t *testing.T, svc substrate.Service) {
 // naming what it must.
 func wantSplitRefused(t *testing.T, ds substrate.Dataset, conversion, naming string) {
 	t.Helper()
-	_, err := ds.Delete(context.Background(), substrate.ActorAPI, vocabulary.KindConversion, conversion, substrate.DeleteInput{})
+	_, err := ds.Delete(context.Background(), substrate.ActorPerson, vocabulary.KindConversion, conversion, substrate.DeleteInput{})
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), naming) {
 		t.Errorf("delete %s: err = %v, want a conflict naming %q", conversion, err, naming)
 	}
@@ -238,7 +237,7 @@ func TestAnOldRepositoryOpensWithTheSeedAndTheBackfill(t *testing.T) {
 			t.Fatalf("plant %s: %v", h.id, err)
 		}
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, hold, "ounces", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, hold, "ounces", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("tombstone a hold: %v", err)
 	}
 	if tab := unitsOf(t, ds); len(tab.Units) != 0 {
@@ -309,14 +308,14 @@ func TestTheSeedWaitsForTheUnitUses(t *testing.T) {
 	svc, ds, dsn, root := unitSeededRepository(t, true)
 	hold := installHolds(t, ds)
 	ctx := context.Background()
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindConversion, "lb-kg", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("the owner deletes lb-kg: %v", err)
 	}
 	mustPut(t, ds, substrate.ActorSystem, substrate.PutInput{Kind: vocabulary.KindConversion, ID: "oz-kg", Properties: map[string]any{
 		"to": map[string]any{"ref": vocabulary.KindUnit + "/lb"}, "factor": "0.0625",
 	}})
 	for _, h := range []struct{ id, unit string }{{fid("pounds"), "[lb_av]"}, {fid("ounces"), "[oz_av]"}} {
-		mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{Kind: hold, ID: h.id, Properties: map[string]any{
+		mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{Kind: hold, ID: h.id, Properties: map[string]any{
 			"weight": map[string]any{"value": "1", "unit": h.unit},
 		}})
 	}

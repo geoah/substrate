@@ -50,8 +50,8 @@ export function manifestOf(record: SubstrateRecord): Record<string, unknown> {
   if (record.deletedAt) status.deletedAt = record.deletedAt
   if (record.canonicalId) status.canonicalId = record.canonicalId
   if (record.formerIds?.length) status.formerIds = record.formerIds
-  if (record.propertyMeta && Object.keys(record.propertyMeta).length) {
-    status.properties = record.propertyMeta
+  if (record.marks && Object.keys(record.marks).length) {
+    status.properties = record.marks
   }
   // The source records a mapping links here: server-owned like the rest of
   // status, so the document stays apply-able.

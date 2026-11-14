@@ -40,7 +40,7 @@ func backgroundEffect(ctx context.Context, ds *dataset, n int, tag string) (time
 }
 
 func ownerSave(ctx context.Context, ds *dataset, name string) error {
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, Properties: map[string]any{"name": name},
 	})
 	return err

@@ -206,7 +206,7 @@ func checkDetail(d substrate.AuthorizationDetail) (string, error) {
 			return "", errors.New("a package detail names its package and version alone")
 		}
 		authority, pkg := vocabulary.SplitPackageRef(d.Package)
-		if authority == "" || !vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(pkg) {
+		if authority == "" || !vocabulary.ValidKindAuthority(authority) || !vocabulary.ValidPackage(pkg) {
 			return "", fmt.Errorf("package %q is not a package id, <authority>/<package>", d.Package)
 		}
 		if d.Version < 1 {
@@ -218,7 +218,7 @@ func checkDetail(d substrate.AuthorizationDetail) (string, error) {
 			return "", errors.New("an account detail names its kind, id and properties alone")
 		}
 		authority, pkg, name := vocabulary.SplitKindRef(d.Kind)
-		if authority == "" || !vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidName(name) {
+		if authority == "" || !vocabulary.ValidKindAuthority(authority) || !vocabulary.ValidPackage(pkg) || !vocabulary.ValidName(name) {
 			return "", fmt.Errorf("kind %q is not a kind named in full, <authority>/<package>/<name>", d.Kind)
 		}
 		// The auth kinds are core's, so this refuses them too.

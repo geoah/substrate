@@ -30,27 +30,15 @@ func hideDeliveryEntries(b *builder) {
 // buildChangeFilter appends a ChangeFilter's predicates; the caller owns the
 // seq bound and the ordering.
 func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error {
-	resolveTypes := func(names []string) ([]string, error) {
-		reg := ds.registry()
-		idents := make([]string, 0, len(names))
-		for _, name := range names {
-			t, err := reg.Resolve(name)
-			if err != nil {
-				return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-			}
-			idents = append(idents, t.Identity)
-		}
-		return idents, nil
-	}
 	if len(f.Kinds) > 0 {
-		idents, err := resolveTypes(f.Kinds)
+		idents, err := ds.resolveChangeKinds(f.Kinds)
 		if err != nil {
 			return err
 		}
 		b.add(`kind = ANY(` + b.textArray(idents) + `)`)
 	}
 	if len(f.ExcludeKinds) > 0 {
-		idents, err := resolveTypes(f.ExcludeKinds)
+		idents, err := ds.resolveChangeKinds(f.ExcludeKinds)
 		if err != nil {
 			return err
 		}
@@ -61,28 +49,20 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		for _, o := range f.Ops {
 			ops = append(ops, string(o))
 		}
-		b.add(`op = ANY(` + b.textArray(ops) + `)`)
+		b.add(`(` + changeOp + `) = ANY(` + b.textArray(ops) + `)`)
 	}
 	if len(f.ExcludeOps) > 0 {
 		ops := make([]string, 0, len(f.ExcludeOps))
 		for _, o := range f.ExcludeOps {
 			ops = append(ops, string(o))
 		}
-		b.add(`op <> ALL(` + b.textArray(ops) + `)`)
+		b.add(`(` + changeOp + `) <> ALL(` + b.textArray(ops) + `)`)
 	}
 	if len(f.Actors) > 0 {
-		actors := make([]string, 0, len(f.Actors))
-		for _, a := range f.Actors {
-			actors = append(actors, string(a))
-		}
-		b.add(`actor = ANY(` + b.textArray(actors) + `)`)
+		b.add(`actor = ANY(` + b.textArray(f.Actors) + `)`)
 	}
 	if len(f.ExcludeActors) > 0 {
-		actors := make([]string, 0, len(f.ExcludeActors))
-		for _, a := range f.ExcludeActors {
-			actors = append(actors, string(a))
-		}
-		b.add(`actor <> ALL(` + b.textArray(actors) + `)`)
+		b.add(`actor <> ALL(` + b.textArray(f.ExcludeActors) + `)`)
 	}
 	if f.RecordID != "" {
 		// A merge and a split each write ONE entry that changes two records:
@@ -119,6 +99,25 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 			` OR record_id ILIKE ` + p + ` OR payload::text ILIKE ` + p + `)`)
 	}
 	return nil
+}
+
+// resolveChangeKinds resolves a change filter's kind names to identities
+// through the registry in force, so the table's read and the tail's
+// (changetail.go) refuse and match the same names.
+func (ds *dataset) resolveChangeKinds(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	reg := ds.registry()
+	idents := make([]string, 0, len(names))
+	for _, name := range names {
+		t, err := reg.Resolve(name)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		idents = append(idents, t.Identity)
+	}
+	return idents, nil
 }
 
 // escapeLike makes a user string a literal LIKE operand.
@@ -216,6 +215,14 @@ func collectChangeEffects(rows *sql.Rows, keep bool) ([]substrate.Change, [][]fo
 // (write.go patchWith). It names its addressed record, live and without a
 // version, because the annotation moved none, and the client fetches it.
 // Every delete and collection entry carries the tombstone or purge this reads.
+//
+// A state entry (compact.go) names its record with the version it holds,
+// deleted where its row is tombstoned or gone, and marked a state. A put or
+// a patch whose state on the addressed record stands for the record's
+// creation, live, is read as a put (changeOp) and says it created, which
+// every reader of the verb takes as the creation (runner.OpOf): a trigger
+// that starts from the beginning meets each record once, created in its
+// latest state. A merge, a split or a delete keeps its verb.
 func projectAffected(c *substrate.Change) {
 	effects, _ := c.Payload[foldPayloadKey].([]any)
 	if _, held := c.Payload[foldPayloadKey]; held {
@@ -233,7 +240,7 @@ func projectAffected(c *substrate.Change) {
 		}
 		kind, _ := op["kind"].(string)
 		switch foldKind(kind) {
-		case foldRecord, foldTombstone, foldPurge:
+		case foldRecord, foldTombstone, foldPurge, foldState:
 		default:
 			continue
 		}
@@ -254,6 +261,21 @@ func projectAffected(c *substrate.Change) {
 			out[i].Version, out[i].Deleted = versionOf(op["version"]), true
 		case foldPurge:
 			out[i].Version, out[i].Deleted = 0, true
+		case foldState:
+			state, _ := op["state"].(map[string]any)
+			row, _ := state["row"].(map[string]any)
+			out[i].Version, out[i].Deleted, out[i].State = versionOf(op["version"]), row == nil || row["deletedAt"] != nil, true
+			created, _ := state["created"].(bool)
+			moved, _ := state["movedFrom"].(string)
+			// The read already names the operation (changeOp); the creation
+			// it stands for says so in the payload, but a kind move's carry,
+			// which is the same record arriving.
+			if created && moved == "" && !out[i].Deleted && ref == (eref{Kind: c.Kind, ID: c.RecordID}) && c.Op == substrate.OpPut {
+				if c.Payload == nil {
+					c.Payload = map[string]any{}
+				}
+				c.Payload["created"] = true
+			}
 		}
 	}
 	if len(out) == 0 {
@@ -338,7 +360,7 @@ func (ds *dataset) ChangeTriggers(ctx context.Context, changes []substrate.Chang
 		return nil, err
 	}
 	reg := ds.registry()
-	self := make([]map[substrate.Actor]bool, len(live))
+	self := make([]map[string]bool, len(live))
 	for i, lt := range live {
 		self[i] = lt.selfActors(reg)
 	}

@@ -23,11 +23,11 @@ func TestARefusedIDSaysTheFixOfTheHandThatChoseIt(t *testing.T) {
 		says  string
 		never string
 	}{
-		{"a person", &txn{actor: substrate.ActorAPI}, "POST /api/v1/records", "host.ids.minted"},
+		{"a person", &txn{actor: substrate.ActorPerson}, "POST /api/v1/records", "host.ids.minted"},
 		{"an agent", &txn{actor: agent}, "Leave the id out", "POST"},
 		{
 			"a function run as an agent's tool", &txn{actor: agent, effectBy: scrape},
-			"function providers.example.com/web/scrape runs as " + string(agent) + "'s tool", "POST",
+			"function providers.example.com/web/scrape runs as " + handWords(agent) + "'s tool", "POST",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

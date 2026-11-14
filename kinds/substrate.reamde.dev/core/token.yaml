@@ -11,7 +11,9 @@ data:
     owner approved and the app's client id. A token without scopes has full
     access to its repository; sessions are these records, login mints one,
     and revoking one is an ordinary record delete.
-  version: 12
+  # version 13: `identity`, the person the token acts for (decision record
+  # 0274).
+  version: 13
   purpose: internal
   names:
     singular: token
@@ -72,6 +74,14 @@ data:
       managed: true
       description: true when the approval sent the access to a program on
         the owner's device, through a loopback redirect
+    # The person's identity, held by the server beside the repositories
+    # (decision record 0274): the one that signed in, or the one behind the
+    # token that minted or approved this one.
+    identity:
+      type: string
+      managed: true
+      description: the id of the identity of the person the token acts for;
+        absent on a token no person stands behind
     # Deprecated and no longer read: retained so old token records remain
     # valid after the agent authorization detail was retired (decision 0214).
     agents:

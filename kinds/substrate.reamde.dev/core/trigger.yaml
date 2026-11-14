@@ -56,7 +56,9 @@ data:
   # `source.record.fromStart`, a cursor that starts at the changelog's start.
   # version 25: `source.webhook.signature.timestampUnit`, the unit of the
   # signed timestamp, required beside a `timestampHeader`.
-  version: 25
+  # version 26: `source.schedule.missed`, what a pass does with occurrences
+  # the trigger missed, `latest` or `all` (decision record 0267).
+  version: 26
   purpose: internal
   names:
     singular: trigger
@@ -138,6 +140,18 @@ data:
             startsAt:
               type: datetime
               description: the instant the recurrence counts from
+            # Absent reads as `latest`: a week offline runs one sync, not 168.
+            # A trigger whose every occurrence is work of its own, such as a
+            # reminder per occurrence, states `all`.
+            missed:
+              type: enum
+              values:
+                - latest
+                - all
+              description: what the trigger does with occurrences it missed
+                while the server was off or the trigger disabled; latest fires
+                the newest one alone, all fires each, oldest first; absent
+                reads as latest
         # A public endpoint. Every field is optional. `key`: absent, the
         # endpoint accepts every POST that reaches the server (a substrate
         # on a private network wants exactly that); present, a request must

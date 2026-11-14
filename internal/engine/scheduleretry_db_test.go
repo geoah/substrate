@@ -25,7 +25,7 @@ func TestAParkedScheduleFireRetriesByHand(t *testing.T) {
 	const pkg = "widgets.test.dev/widgets"
 	install := func(source string) {
 		t.Helper()
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 			vocabulary.FunctionManifest(pkg, "hourly", map[string]any{
 				"description": "mints one task per fire",
 				"runtime":     vocabulary.RuntimePython,
@@ -43,7 +43,7 @@ def main(input, host):
 	// Half an hour back: exactly one occurrence lies between the anchor and
 	// now once the fire state is rewound to it.
 	startsAt := nowUTC().Add(-30 * time.Minute).Truncate(time.Minute)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source": map[string]any{"schedule": map[string]any{

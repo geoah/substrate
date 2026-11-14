@@ -1,33 +1,34 @@
 # Agents
 
-**Agents are alpha and not part of the frozen v1 contract.** The `agent`
-kind, the agent-loop vocabulary (`llm/provider`, `llm/thread`, `llm/message`,
-`llm/interaction`), and the agent call and chat routes are all alpha and
-unfrozen at v1. They
-are marked alpha in the docs and in [API discovery](api.md#discovery),
-which lists the agent surface under the `agents` feature carrying the
-stability `alpha`, and they may change, or be superseded, without counting as
-a v1 wire break. Treat agents as a preview.
+**Agents are experimental.** The `agent` kind, the kinds of the
+`substrate.reamde.dev/llm` package an agent runs on (`llm/provider`,
+`llm/thread`, `llm/message`, `llm/interaction` and the rest), and the agent
+call and chat routes may change or go in any release
+([stability](stability.md)). The `llm` package states `experimental` in its
+header, [API discovery](api.md#discovery) lists the routes under the
+`agents` feature with the stability `experimental`, and the `agent` kind is
+one of the two parts of `core` that its `stable` label does not cover
+([outside the promise](stability.md#outside-the-promise-by-name)). The
+records an agent writes are data like any other and survive every upgrade.
 
 This page is about the agents a substrate runs. A program that uses a
 substrate from outside, with a token, reads
 [Using a substrate from an agent](for-agents.md) instead.
 
-The features of the supported REST surface (`triggers`, `functions`,
-`bundles`, `blobs`, `changefeed`) report `stable`: frozen for v1, additive
-only, so there is a frozen surface to retreat to. `export` and `search`
-report `beta`, and `embeddings` is the other `alpha` entry. Read
-[discovery](api.md#discovery) for what each value promises, and pin the
-server version where an alpha break would cost you.
+The records route, the changefeed, triggers and functions are `stable`
+features, so there is a steadier part of the API to build on beside agents.
+Read [discovery](api.md#discovery) for the whole list, and compare
+`server.version` with the release you tested against where a break to an
+experimental feature would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `substrate.reamde.dev/core/agent`), the
 call API, a sub-agent call, chat, and a function body that names it under
-`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its actor is
-`agent:<authority>:<package>:<name>`, its own machine hand, held apart from a
-function's so an agent and a function of one name in one package are two
-writers; its dispatch stamps the
+`permissions.agents` ([running an agent](functions.md#running-an-agent)). Its
+[actor record](api.md#actors) is of type `agent` and links the agent's
+record, its own machine hand, held apart from a function's so an agent and a
+function of one name in one package are two writers; its dispatch stamps the
 bundle tier on its writes, exactly like a function's. A
 bundled agent obeys its bundle's
 [lifecycle](bundles.md#install-and-lifecycle): while the bundle is
@@ -174,16 +175,16 @@ data:
   `<authority>/*` or `<authority>/<package>/*`
   ([0080](decisions/0080-a-kind-grant-may-glob-and-a-glob-never-reaches-auth-material.md)).
   A glob covers kinds the repository does not have yet, so an agent granted
-  `ada.example.com/*` keeps working as bundles are imported — which is the
-  point, and also the cost: importing one widens an existing grant, and a
+  `~/*` keeps working as samples are added — which is the
+  point, and also the cost: adding one widens an existing grant, and a
   misspelled glob matches nothing where a misspelled kind would have been
   refused at load. **A glob never reaches
-  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
-  `/recoverykey`.** Those four are granted only by an entry that spells one
-  out, so `*` means everything the owner has rather than everything including
-  the keys to the substrate. In `writes`, only `/secret` may be spelled out:
-  the loader refuses `/token`, `/credential` and `/recoverykey` there, because
-  they are the owner's alone ([auth](auth.md#tokens)). `permissions.call`
+  `substrate.reamde.dev/core/token`, `/credential` or `/secret`.** Those
+  three are granted only by an entry that spells one out, so `*` means
+  everything the owner has rather than everything including the keys to the
+  substrate. In `writes`, only `/secret` may be spelled out: the loader
+  refuses `/token` and `/credential` there, because they are the owner's
+  alone ([auth](auth.md#tokens)). `permissions.call`
   takes no glob: it names functions, not kinds.
 - optional **`context:`**, what the engine reads into the system prompt when
   a thread opens, without a tool call: `pinned`, a list of reads, and
@@ -366,7 +367,11 @@ entry could name only a function.
   names an existing `target` with its `kind` and a `diff` the accept applies;
   `create` names a `kind`, a stable `id` and a `diff` the accept mints
   create-if-absent; `delete` names an existing `target` with its `kind`, which
-  the accept tombstones.
+  the accept tombstones. Whether a `patch` or a `delete` target exists is a
+  read: the target's kind must be in the agent's `permissions.reads`, and
+  read by whoever the run works for, or the tool answers that it is not in
+  the reads allowlist, the same whether the record exists or not
+  ([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
   The diff is validated and normalised at propose time — the `properties`
   wrapper is required or a bare property map is coerced into it, and every
   property must be writable on the target kind — so a malformed proposal (a
@@ -407,7 +412,7 @@ entry could name only a function.
   a `refuse` or a `gate` refuses the whole batch, because a declaration is
   admission and no request holds one. The batch then meets every rule the
   apply door's does: a shipped or published package refuses, a new package
-  lands only under the repository's own authority, which the tool's card
+  lands only in the repository's local namespace, `~`, which the tool's card
   names, and a lossy plan refuses, since its confirmation is the owner's.
   The apply's changelog entries are stamped on the tool row as `changes`.
 - **`substrate.reamde.dev/core/edit`** changes long text without rewriting
@@ -453,12 +458,12 @@ opens the child thread.
 
 **Every tool row names its callable beside its alias.** `name` on a
 `toolCalls` entry and on the tool row is the name the model saw, which is the
-agent's alias. The engine also stamps `callable` on both: the identity behind
-the alias in the spelling the changelog's actor column uses
-([0025](decisions/0025-an-actor-carries-the-full-authority.md)),
-`function:<authority>:<package>:<name>` for a function tool and
-`agent:<authority>:<package>:<name>` for a sub-agent. A host function is a
-function record, so `query` is `function:substrate.reamde.dev:core:query`
+agent's alias. The engine also stamps `callable` on both: the record path of
+the function or agent behind the alias,
+`substrate.reamde.dev/core/function/<authority>/<package>/<name>` for a
+function tool and `substrate.reamde.dev/core/agent/<authority>/<package>/<name>`
+for a sub-agent. A host function is a function record, so `query` is
+`substrate.reamde.dev/core/function/substrate.reamde.dev/core/query`
 whatever an agent aliased it to. Two agents that alias one function
 differently write tool rows that list together on `callable`, and renaming
 an alias keeps the function's history. The chat stream's tool events carry
@@ -537,7 +542,10 @@ the agent nothing it did not hold. A judge takes no offered functions either:
 an agent with `toolsFrom` is refused as one, exactly as one with `tools:`.
 
 The shipped assistant, `substrate.reamde.dev/assistant/moss`, takes `*`,
-and the notes sample's `stats` function is offered as `notes_stats`. The console lists an agent's offered
+and the notes sample's `stats` function is offered as `notes_stats`. Its
+secretary, `substrate.reamde.dev/assistant/secretary`, takes
+`providers.substrate.reamde.dev/google/*` alone: a seeded agent loads before
+the provider is installed, and the pattern picks its tools up once it is. The console lists an agent's offered
 tools on its page.
 
 ## The engine's guidance
@@ -768,6 +776,51 @@ settles `failed` at the next open, with a toolCompleted row saying so, and the
 agent calls again if it still needs it. A background call from a sub-agent
 reports into the sub-agent's own thread.
 
+### Approvals
+
+A call that cannot be taken back waits for the owner
+([0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+A function declares `approval: required` ([functions](functions.md#the-manifest)),
+and an agent's call of it, from any agent and in any thread, lands an
+`llm/approval` instead of running. The record freezes the asking `agent`, the
+`function`, the `tool` name, the call's id and its `arguments`. Its `thread`
+is the conversation the owner is in: the root of a sub-agent chain, with the
+sub-agent's own thread in `requestedIn`. The tool answers the model at once
+with `{approval, status: "waiting for the owner's approval"}`, and the turn
+goes on or ends.
+
+The owner approves or declines it by moving `state` from `pending` to
+`approved` or `denied`, with `ifVersion` the version they read. Nothing else
+in the record may change, and an agent, a function, a bundle or the engine
+deciding one is refused. The console's chat shows the card under the tool
+row, or after the transcript for a sub-agent's call, and so does the Chat
+app. A client that speaks the API writes the same patch.
+
+```yaml
+kind: substrate.reamde.dev/llm/approval
+metadata:
+  id: 01h2xcejqtf2nbrexx3vqjhp42
+data:
+  properties:
+    state: approved
+```
+
+Once approved, the engine claims the record (`running`), runs the function
+under the asking agent's actor and the writes it was granted, and ends it
+`done` with `output` or `failed` with `error`. Then it writes one `system`
+row into the thread, `{event: "approvalDecided", approval, decision, tool,
+callable, agent, ok, output|error}`, and resumes the thread as a background
+job's end does, so the agent says what happened. A declined call writes the
+row with `decision: denied` and never runs. An approval a restart left
+`approved` or `running` is failed as interrupted at the next open and
+reported, never run again: the call may already have reached the provider.
+
+The hold is an agent's: the owner's direct call and a trigger wired straight
+to the function run the body, and a function body that calls one through the
+host inside an agent's chain is refused. Nothing yet lets an agent, trigger
+or workflow skip the wait; [the plan](plans/approvals.md) is standing
+approvals the owner grants by name.
+
 ## Sub-agents, budgets, and the emit ceiling
 
 Sub-agents are child invocations with their own budgets and a child thread
@@ -842,10 +895,8 @@ data:
 
 **`functions` gates what a function writes.** It lists function references,
 matched exactly against the function whose body returned the effect and
-against the root of its call chain, whose actor
-(`function:<authority>:<package>:<name>`,
-[0025](decisions/0025-an-actor-carries-the-full-authority.md)) the write lands
-under. The rule covers the function wherever it runs: a trigger delivery, a
+against the root of its call chain, whose [actor](api.md#actors) the write
+lands under. The rule covers the function wherever it runs: a trigger delivery, a
 schedule or webhook fire, each page of a drain, a direct call, and an agent's
 tool call, where `agents` can narrow it further. A run that no agent loop
 surrounds meets only the rules whose `functions` names it, so a rule without
@@ -1043,8 +1094,8 @@ PATCH /api/v1/substrate.reamde.dev/llm/thread/<id>
 {"properties": {"subject": "Trip to Berlin"}}
 ```
 
-The generated title is written only while the agent's actor still manages
-`subject` (`propertyMeta.subject.manager`), so a rename by anyone else holds,
+The generated title is written only while the agent's actor still set
+`subject` (`marks.subject.setBy`), so a rename by anyone else holds,
 whether it lands before or after the title call answers. A client that wants
 the title as it lands tails
 `GET /api/v1/changes?watch=1&kinds=substrate.reamde.dev/llm/thread`.
@@ -1321,7 +1372,7 @@ Moss runs once that row is keyed; every shipped sample agent names
 accepts, for the sample's lessons. The rows themselves set no reasoning
 default, because the accepted set belongs to the model and one row serves
 several. The LLM sample (**All data → Add a collection → Start from a
-sample**) ships the same three rows, so an import onto a repository that
+sample**) ships the same three rows, so adding it to a repository that
 deleted one brings it back. Key one, or write another row yourself as the document
 below. There are no `cheap`/`mid`/`strong` rows: a tier was a model id hiding
 behind a name, and the model is the agent's own word now.
@@ -1503,16 +1554,16 @@ provider works is a throwaway package of your own:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
-metadata: {id: smoke.example.com/smoke}
+metadata: {id: ~/smoke}
 data:
-  authority: smoke.example.com
+  authority: "~"
   package: smoke
   version: 1
 ---
 kind: substrate.reamde.dev/core/agent
-metadata: {id: smoke.example.com/smoke/echo}
+metadata: {id: ~/smoke/echo}
 data:
-  authority: smoke.example.com
+  authority: "~"
   package: smoke
   description: Smoke-test one provider.
   prompt: Reply with exactly OK.
@@ -1532,7 +1583,7 @@ so a run is the call API or the console's chat:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"input": "ping"}' \
-  http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/smoke.example.com%2Fsmoke%2Fecho/call
+  http://localhost:8080/api/v1/substrate.reamde.dev/core/agent/~%2Fsmoke%2Fecho/call
 ```
 
 The id carries two slashes, so the path segment spells each `%2F`. The answer
@@ -1566,13 +1617,16 @@ own `budgets.spendCentsPerDay`, nothing reads the app's token to admit it,
 and it stops when the owner pauses or removes the package. An app's token
 reaches it through `agents:` only when the app's own `read` and `write`
 scopes cover every kind the agent reads, which holds for every agent an
-app talks to, not only one an app brought.
+app talks to, not only one an app brought. What the agent then reads and
+writes in a turn the app drives is held, read by read and write by write,
+to the app's grant as it stands and to the person the app acts for
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
 
 ## Calling an agent
 
 `POST /api/v1/substrate.reamde.dev/core/agent/{name}/call` with `{"input": …}` runs the
 loop once. `{name}` is the agent's full id with each slash written `%2F`
-(`smoke.example.com%2Fsmoke%2Fecho`); a bare `echo` is `422 validation`
+(`~%2Fsmoke%2Fecho`); a bare `echo` is `422 validation`
 naming every agent declared under the word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)),
 and the chat route reads it the same way. The input becomes
@@ -1614,8 +1668,8 @@ second text part on the `openai` wire:
 ```text
 <turn_context>
 now: 2026-11-01T09:41:00+00:00 (Sunday), Europe/London
-about: substrate://ada.example.com/tasks/task/q4-budget
-  {"kind":"ada.example.com/tasks/task","properties":{…},"title":"Q4 budget"}
+about: substrate://~/tasks/task/q4-budget
+  {"kind":"~/tasks/task","properties":{…},"title":"Q4 budget"}
 </turn_context>
 ```
 
@@ -1683,7 +1737,10 @@ again by its id:
   later. An unknown thread is `404 not_found`.
 - `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` stops the running
   chat turn and answers `200` with its settled result once the settle
-  committed: `status: "stopped"`, `reason: "stopped by <actor>"`, and the
+  committed: `status: "stopped"`, a `reason` that says which type of
+  [actor](api.md#actors) stopped it (`"stopped by its owner"`,
+  `"stopped by an app"`, `"stopped by an agent"`, `"stopped by a function"`
+  or `"stopped by the substrate"`), and the
   text streamed so far as `reply`, which also lands as the turn's assistant
   message row. A sub-agent thread the turn was waiting on settles `stopped`
   with it. Every attached stream ends with the same `done`. With no chat
@@ -1701,9 +1758,11 @@ on its own: not a resolution that landed during the turn, not one that lands
 later, and not the resolution sweep. The owner's next message replays the
 resolution rows with the rest of the history.
 
-A repository runs at most 4 chat turns at once. One more is refused `409
-conflict` (`4 chat turns are already running in this repository: wait for
-one to finish, or stop one`) before anything is written.
+A person runs at most 4 chat turns at once, or the number the server sets
+(`SUBSTRATE_CHAT_TURNS_PER_PERSON`, [running a substrate](operations.md#configuration)).
+A person is the repository's sign-in today. One more is refused `409
+conflict` (`4 chat turns are already running for this person: wait for one
+to finish, or stop one`) before anything is written.
 
 `delta`, `reasoning`, `toolStarted` and `toolFinished` carry `turn`, the ordinal the
 matching `message` row carries or will carry. A thread's ordinals are unique:

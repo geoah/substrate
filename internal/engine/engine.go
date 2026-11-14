@@ -32,12 +32,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/archive"
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/operatordefaults"
 	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -53,8 +55,27 @@ type options struct {
 	oauthHTTP             *http.Client
 	credKey               string
 	dataRoot              string
-	// segmentBytes is the changelog segment size (WithChangelogSegmentBytes).
-	segmentBytes int64
+	// archive is where each repository's archive is written (WithArchive),
+	// nil for none; archiveInterval and archivePieceBytes tune its passes.
+	archive           archive.Store
+	archiveSet        bool
+	archiveCall       time.Duration
+	archiveIdle       time.Duration
+	archiveInterval   time.Duration
+	archivePieceBytes int64
+	archiveStepBytes  int64
+	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
+	archiveFault func(stage string) error
+	// shippedRefusal is the shipped upgrade's test seam
+	// (WithTestShippedUpgradeRefusal).
+	shippedRefusal func(repository string) []string
+	// endOfTxCheck is a test's refusal among a transaction's end-of-transaction
+	// checks (WithTestEndOfTransactionCheck).
+	endOfTxCheck func(declares func(pkg string) bool) error
+	// peopleFault is the start's people pass's test seam (identityboot.go).
+	peopleFault func(repository string) error
+	// rulesFault is the readers of the rules' test seam (ruleFault).
+	rulesFault func(what string) error
 	// repositoryConns caps the pool every repository shares
 	// (WithRepositoryConnections).
 	repositoryConns int
@@ -69,6 +90,9 @@ type options struct {
 	// laneWorkers is how many schedule fires one pass runs at once
 	// (WithTriggerLaneWorkers); scheduleLaneWorkers when zero.
 	laneWorkers int
+	// chatTurnsPerPerson is how many detached chat turns one person runs at
+	// once (WithChatTurnsPerPerson).
+	chatTurnsPerPerson int
 	// healthFailingAfter is how long a trigger's deliveries must all have
 	// parked before its failing alert opens (WithHealthFailingAfter); zero or
 	// less is DefaultHealthFailingAfter.
@@ -140,6 +164,8 @@ type options struct {
 	// their declarations at creation and as an open catch-up (recordseed.go).
 	seedRecords    bool
 	seedRecordsSet bool
+	// noActorFill skips the open's actor fill (WithTestActorFillOff).
+	noActorFill bool
 	// perRecordSeed seeds the units one put at a time instead of in one bulk
 	// run, the test seam that holds the two to one answer.
 	perRecordSeed bool
@@ -154,16 +180,60 @@ type options struct {
 	// rebuildBatch, so a small history spans more than one batch. The seams
 	// compile into the binary and are inert unless set.
 	importFault func(stage string) error
-	importBatch int
+	// replayPage and replayEnd run after each page of a replay and at its
+	// end, inside its transaction (seams.go WithTestReplay). Tests only.
+	replayPage func(seq int64, tx *sql.Tx)
+	replayEnd  func(tx *sql.Tx)
+	replaySQL  func(sqlText string)
+	// statisticsLockTimeout replaces the bound on the reset's and the
+	// ANALYZE's wait for a lock (seams.go WithTestStatisticsLockTimeout).
+	statisticsLockTimeout time.Duration
+	// beforeDirectories runs between the keying's rows and its directories.
+	// Tests only.
+	beforeDirectories func(s *service)
+	importBatch       int
+	eraseFault        func(stage string) error
+	// conversion replaces the conversion chain (conversion.go), so a test
+	// converts through a step no release carries. Tests only.
+	conversion []conversionStep
 	// commitFault is a write's test seam (export_test.go): a hook run at
 	// each durable step of commitAndMirror, around the manifest write that
 	// precedes the first append in a new changelog dialect and around the
 	// Postgres commit, so a test can fail a step or stop the process there.
 	// Tests only.
 	commitFault func(stage string) error
-	// snapshotFault is the snapshot's test seam (export_test.go): a hook run
-	// with the partial directory after each copy step (snapshot.go).
-	snapshotFault func(stage, dir string) error
+	// commitTx is the COMMIT's own test seam (dataset.go commitTx): it is
+	// handed the COMMIT and answers in its place, so a test can hold a
+	// COMMIT, or answer one before Postgres has. Tests only.
+	commitTx func(commit func() error) error
+	// tokenProof is the token cache's test seam (dataset.go settleTokens):
+	// run before each attempt to prove a doubted commit ended, and an error
+	// fails the attempt. Tests only.
+	tokenProof func() error
+	// tokenProofAttempt replaces how long one attempt at that proof waits.
+	// Tests only.
+	tokenProofAttempt time.Duration
+	// afterProof is the factor doors' test seam (auth.go afterProof): a hook
+	// run with the door's name once a request has proved the factors and
+	// before it acts. Tests only.
+	afterProof func(door string)
+	// afterTitleRounds is the title pass's test seam (localtitles.go): a
+	// hook run between its rounds and its writes. Tests only.
+	afterTitleRounds func()
+	// nameDoorsOpen lifts the early refusals of a name the repository holds a
+	// package under (repositorynames.go). Tests only.
+	nameDoorsOpen bool
+	// measureHook is the measured-value checks' test seam (measured.go): a
+	// hook run with the writing actor each time one of them does work.
+	// Tests only.
+	measureHook func(actor substrate.Actor, check string)
+	// changeReadHook is the change tail's test seam (seams.go
+	// WithTestChangeReadHook): a hook run with the repository each time a
+	// stream's Changes reads the changelog's rows. Tests only.
+	changeReadHook func(repository string)
+	// tailHeadHook runs once the change tail has read the head it opens at
+	// (changetail.go tailHead). Tests only.
+	tailHeadHook func()
 	// searchReindexBatch and searchReindexHook are the open-time reindex's
 	// test seams (export_test.go WithTestSearchReindex): a page size below
 	// searchReindexBatch, so a few rows span several pages, and a hook run
@@ -188,26 +258,18 @@ type options struct {
 	// (progress.go); the test seam WithTestProgressEvery lowers it so a
 	// short history reports at all.
 	progressEvery time.Duration
-	// digestHook is the directory check's test seam (export_test.go
-	// WithTestDigestHook): run with each finished segment an open of a
-	// repository's changelog directory reads and digests, and not with one
-	// an earlier check vouched for. Tests only.
-	digestHook func(repository, segment string)
-	// digestPaceHook is the background digest's test seam (export_test.go
-	// WithTestDigestPaceHook): run after each read the digest paces, with
-	// the repository and the bytes read so far. Tests only.
-	digestPaceHook func(repository string, bytes int64)
-	// digestBytesPerSecond caps the background digest's rate
-	// (WithDigestBytesPerSecond); zero is no cap.
-	digestBytesPerSecond int64
-	// digestYieldMax bounds the background digest's wait for invocations
-	// before each read (export_test.go WithTestDigestYieldMax); zero is
-	// digestYieldMax. Tests only.
-	digestYieldMax time.Duration
-	// operator is OpenOperator's: a substratectl process, which digests no
-	// changelog segment in the background (segmentdigest.go). Its commands
-	// end in seconds or read every line themselves, and the snapshot holds
-	// what it copies to the checks it runs.
+	// archivePaceHook is the archive passes' pacing seam (export_test.go
+	// WithTestArchivePaceHook): run after each copy a pass paces, with the
+	// repository and the bytes so far. Tests only.
+	archivePaceHook func(repository string, bytes int64)
+	// archiveBytesPerSecond caps the archive passes' rate
+	// (WithArchiveBytesPerSecond); zero is no cap.
+	archiveBytesPerSecond int64
+	// archiveYieldMax bounds a pass's wait for invocations (export_test.go
+	// WithTestArchiveYieldMax); zero is archiveYieldMax. Tests only.
+	archiveYieldMax time.Duration
+	// operator is OpenOperator's: a substratectl process, which writes no
+	// archive (archive.go).
 	operator bool
 	// invokeHook is the runner's test seam (seams.go WithTestInvokeHook): a
 	// hook run with a function's identity as its body is about to be invoked
@@ -216,9 +278,21 @@ type options struct {
 	invokeHook func(function string)
 	// foreignPackages lifts decision 0210 (WithInsecureForeignPackages).
 	foreignPackages bool
+	// withoutSecrets names the repositories imported without their secrets
+	// (lostsecrets.go WithImportWithoutSecrets).
+	withoutSecrets []string
+	// namesNow is the clock a former name lapses on (repositorynames.go);
+	// the wall clock when nil.
+	namesNow func() time.Time
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
+	// scheduleNow is the clock a schedule trigger's due occurrences are read
+	// on (seams.go WithTestScheduleClock); the wall clock when nil.
+	scheduleNow func() time.Time
+	// retryNow is the clock the walk of temporary failures reads a retry's
+	// due time on (seams.go WithTestRetryClock); the wall clock when nil.
+	retryNow func() time.Time
 	// now is the TOTP verifier's clock (seams.go WithTestTOTPClock); the wall
 	// clock when nil. A test that spends one window's codes advances it
 	// instead of sleeping through a real 30 second step.
@@ -278,19 +352,15 @@ func WithCredentialKey(key string) Option { return func(o *options) { o.credKey 
 // for somebody's data.
 func WithDataRoot(root string) Option { return func(o *options) { o.dataRoot = root } }
 
-// WithChangelogSegmentBytes sets the size past which a repository's active
-// changelog segment is finished and the next one opened
-// (SUBSTRATE_CHANGELOG_SEGMENT_BYTES). changelogfile.DefaultSegmentBytes
-// when not given or not positive.
-func WithChangelogSegmentBytes(n int64) Option { return func(o *options) { o.segmentBytes = n } }
-
-// WithDigestBytesPerSecond caps the rate at which the process hashes the
-// finished changelog segments behind its opens, over every repository it
-// has open (SUBSTRATE_DIGEST_BYTES_PER_SECOND, segmentdigest.go). Zero is
-// no cap; not given is DefaultDigestBytesPerSecond. The digests also pause
-// while any function body or agent loop runs, whatever the cap, for at most
-// 30 seconds before each read.
-func WithDigestBytesPerSecond(n int64) Option { return func(o *options) { o.digestBytesPerSecond = n } }
+// WithArchiveBytesPerSecond caps the rate at which the process's archive
+// passes copy, over every repository it writes
+// (SUBSTRATE_ARCHIVE_BYTES_PER_SECOND, archivepace.go). Zero is no cap; not
+// given is DefaultArchiveBytesPerSecond. The passes also pause while any
+// function body or agent loop runs, whatever the cap, for at most 30 seconds
+// at a time.
+func WithArchiveBytesPerSecond(n int64) Option {
+	return func(o *options) { o.archiveBytesPerSecond = n }
+}
 
 // WithRepositoryConnections caps the Postgres connections every repository
 // of the process shares (SUBSTRATE_REPOSITORY_CONNECTIONS). One repository
@@ -331,6 +401,11 @@ func WithOrphanCollection(grace time.Duration) Option {
 // no pass could ever run more than the process does.
 func WithTriggerLaneWorkers(n int) Option { return func(o *options) { o.laneWorkers = n } }
 
+// WithChatTurnsPerPerson sets how many detached chat turns one person runs at
+// once (SUBSTRATE_CHAT_TURNS_PER_PERSON, agents.go ChatAgent). Zero, or not
+// given, is maxRunningChatTurns.
+func WithChatTurnsPerPerson(n int) Option { return func(o *options) { o.chatTurnsPerPerson = n } }
+
 // WithHealthFailingAfter sets how long every delivery of a trigger must have
 // parked, since its newest ok run, before the dispatcher opens the trigger's
 // `trigger.failing/<trigger id>` alert (SUBSTRATE_HEALTH_FAILING_AFTER,
@@ -346,6 +421,24 @@ func WithHealthFailingAfter(d time.Duration) Option {
 func WithSearchBudget(d time.Duration) Option {
 	return func(o *options) { o.searchBudget = d }
 }
+
+// WithArchive writes each repository's archive to store, behind its commits
+// (archive.go). Without it the archive is <data root>/archive; nil writes
+// none.
+func WithArchive(store archive.Store) Option {
+	return func(o *options) { o.archive, o.archiveSet = store, true }
+}
+
+// WithArchiveTimeouts bounds every call to the archive's store (archive.
+// Bounded): call for a list, a delete or a get's response, idle for a body
+// that stops moving. The defaults are archive.DefaultCallTimeout and
+// archive.DefaultIdleTimeout.
+func WithArchiveTimeouts(call, idle time.Duration) Option {
+	return func(o *options) { o.archiveCall, o.archiveIdle = call, idle }
+}
+
+// WithArchiveInterval sets how often a repository's archive pass runs.
+func WithArchiveInterval(d time.Duration) Option { return func(o *options) { o.archiveInterval = d } }
 
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
@@ -531,8 +624,6 @@ type service struct {
 	// instanceID names this server to a domain's `_substrate` record
 	// (instance.go, decision 0208).
 	instanceID string
-	// segmentBytes is the size every changelog writer rotates at.
-	segmentBytes int64
 	// conversionCeiling is the most live records one declaration change may
 	// rewrite (convert.go admitConversion); zero or less is no ceiling.
 	conversionCeiling int64
@@ -542,6 +633,8 @@ type service struct {
 	// laneWorkers is how many schedule fires one pass's schedule lane runs
 	// at once (functions.go scheduleLane).
 	laneWorkers int
+	// chatTurnsPerPerson is the chat turns one person runs at once.
+	chatTurnsPerPerson int
 	// deliverySlots is the process-wide semaphore every dispatcher pass
 	// takes a slot of for each delivery it runs, record trigger walks and
 	// schedule fires alike (functions.go takeDeliverySlot), so the
@@ -552,10 +645,51 @@ type service struct {
 	healthFailingAfter time.Duration
 	// foreignPackages is options.foreignPackages.
 	foreignPackages bool
+	// withoutSecrets is options.withoutSecrets, by id and by name.
+	withoutSecrets map[string]bool
+	// testNamesNow is the clock a former name lapses on, or nil for the
+	// database's, run on the monotonic clock (namesNow).
+	testNamesNow func() time.Time
+	// namesBase is the database's clock when the service opened, and
+	// namesStart this process's monotonic reading at that moment: namesNow
+	// runs the one forward by the other.
+	namesBase, namesStart time.Time
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
+	// scheduleNow is the clock a schedule's due occurrences are read on
+	// (dataset.scheduleNow).
+	scheduleNow func() time.Time
+	// retryNow is the temporary-failure walk's clock (temporaryretry.go),
+	// never nil.
+	retryNow func() time.Time
 	// catchUpBatch is the page size of the table-to-file catch-up.
 	catchUpBatch int
+	// archive is the store each repository's archive goes to, nil for none
+	// (archive.go): written by a server's passes, read by its boot check and
+	// by an operator's verify. archiving is whether this process runs the
+	// passes: the server's, not an operator's or a read-only process's.
+	archive           archive.Store
+	archiving         bool
+	archiveInterval   time.Duration
+	archivePieceBytes int64
+	// archiveStepBytes bounds the blob bytes one pass copies, and
+	// archiveProcess is this process's id in the record's rows: an object
+	// no manifest selects is reused only by the process that put it.
+	archiveStepBytes int64
+	archiveProcess   string
+	// testArchiveFault is the options' archive pass seam (archive.go).
+	testArchiveFault func(stage string) error
+	// testShippedRefusal is the options' shipped upgrade seam (seed.go).
+	testShippedRefusal func(repository string) []string
+	// testEndOfTxCheck is the options' end-of-transaction seam (dataset.go
+	// inTxOn).
+	testEndOfTxCheck func(declares func(pkg string) bool) error
+	// testPeopleFault is the options' people pass seam (identityboot.go):
+	// an error fails that repository's pass.
+	testPeopleFault func(repository string) error
+	// testRulesFault is the options' seam at the readers of the rules
+	// (ruleFault).
+	testRulesFault func(what string) error
 	// valuesBudget is what one change read's before values may read.
 	valuesBudget int
 	// searchMatchMax replaces the search match caps; negative keeps them.
@@ -633,15 +767,25 @@ type service struct {
 	// seedRecords writes shippedRecords at creation and as an open catch-up
 	// (recordseed.go).
 	seedRecords bool
+	// noActorFill skips the open's actor fill, for a test that holds a
+	// repository as a binary from before it left it (actorfill.go).
+	noActorFill bool
 	// shippedRecords are the data records the shipped tree carries beside its
 	// declarations, in file order; none for a service built from a registry.
 	shippedRecords []vocabulary.ShippedRecord
+	// shippedModels are the model ids the shipped llm/model records name:
+	// public, so the usage series show them in clear (usagemetrics.go).
+	shippedModels map[string]bool
 	// bulkSeed writes a seed the repository holds none of in one bulk run
 	// (bulkwrite.go); off only under the test seam WithTestPerRecordSeed.
 	bulkSeed bool
 	// unitGraphs holds each repository's unit graphs by revision
 	// (unitgraph.go).
 	unitGraphs unitGraphCache
+	// tokens is the token lookups this process answered (tokencache.go),
+	// and proofs the waits that lift a doubted commit's fence (dataset.go).
+	tokens tokenCache
+	proofs tokenProofs
 	// bg counts and bounds every detached task the engine starts
 	// (background.go); Close drains it before any pool closes.
 	bg *background
@@ -661,27 +805,101 @@ type service struct {
 	// fail AFTER the seed transaction commits and BEFORE the control-plane row —
 	// the exact crash window the erase-and-sweep guarantees cover.
 	testFailAfterSeed func() error
-	// testCatchUpPrepared, when set (tests only), runs in a table-to-file
-	// catch-up between the writer's Prepare and its Commit (appendFromTable):
-	// the moment the active segment ends in a transaction without its final
-	// newline, which a changelogfile.Open reads as an incomplete tail.
-	testCatchUpPrepared func(repository string)
+	// testFailAfterRow, when set (tests only), fails a creation after its
+	// control-plane row and its person are written.
+	testFailAfterRow func() error
+	// testIndexFault, when set (tests only), runs before each attempt to
+	// write a person's index row after their actor committed (people.go
+	// indexPerson); an error fails that attempt.
+	testIndexFault func() error
+	// testPersonInDoubt, when set (tests only), is told what the index's
+	// reconciliation after an addition in doubt found: whether the live
+	// actor names the identity.
+	testPersonInDoubt func(named bool)
+	// testAfterErase, when set (tests only), runs once an erase has
+	// committed: a crash there must leave nothing the erase owed.
+	testAfterErase func(repository string)
+	// restoredCopies is, for each person a restore in this process wrote,
+	// the version of the factors it wrote (archiveidentities.go): a row
+	// still at that version is the restore's copy, which a later copy of
+	// the person replaces.
+	restoredMu     sync.Mutex
+	restoredCopies map[string]time.Time
 	// testOpenWaits, when set (tests only), runs when claimOpen finds the
 	// repository's slot held and is about to wait for it.
 	testOpenWaits func(repository string)
+	// names is every repository's names, by id (namescache.go): the one
+	// place in memory they are, and namesProofs its waiters for a COMMIT
+	// whose answer was lost. testNamesCommit, when set (tests only), commits
+	// a transaction that changes names in tx.Commit's place.
+	names           namesCache
+	namesProofs     namesProofs
+	testNamesCommit func(tx *sql.Tx) error
+	// testReconcileRead, when set (tests only), runs when a reconcile of a
+	// repository's record has read the name from its row.
+	testReconcileRead func(id, name string)
+	// testOpenRead, when set (tests only), runs when an open has read the
+	// repository's row under its slot and before it opens the dataset.
+	testOpenRead func(repository string)
 	// testImportFault and testImportBatch are the options' import seams
-	// (repodir.go importEntries, refoldFromFiles). Tests only.
+	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
-	testImportBatch int
-	// testCommitFault is the options' commit seam (dataset.go
-	// commitAndMirror, repodir.go writeManifestBeforeCommit). Tests only.
+	// testReplayPage and testReplayEnd are options.replayPage and replayEnd.
+	testReplayPage func(seq int64, tx *sql.Tx)
+	testReplayEnd  func(tx *sql.Tx)
+	testReplaySQL  func(sqlText string)
+	// statisticsLockTimeout bounds the reset's and the ANALYZE's wait for a
+	// table's lock (rebuild.go statisticsStatement), and statsReset is every
+	// fold table this process has reset before a replay, under statsMu.
+	statisticsLockTimeout time.Duration
+	statsMu               sync.Mutex
+	statsReset            map[string]bool
+	// testBeforeDirectories is options.beforeDirectories.
+	testBeforeDirectories func(s *service)
+	testImportBatch       int
+	// testEraseFault is the options' deletion seam (repositories.go
+	// eraseRepositoryOn). Tests only.
+	testEraseFault func(stage string) error
+	// keyingLeases are the writer leases the boot's keying took under
+	// repositories' names, held until the boot check has published each of
+	// those repositories under its id (repositoryid.go).
+	keyingLeases []string
+	// aside is every repository this process's start set aside, with why
+	// (setaside.go): open refuses each, and Repositories leaves them out.
+	aside setAsideSet
+	// conversion is the conversion chain this service runs, and maxDialect
+	// the changelog dialect it converts to and stamps (conversion.go): the
+	// binary's own, or a test's.
+	conversion []conversionStep
+	maxDialect int
+	// testCommitFault is the options' commit seam (dataset.go commit).
+	// Tests only.
 	testCommitFault func(stage string) error
+	// testCommitTx and testTokenProof are the options' COMMIT and token
+	// proof seams (dataset.go). Tests only.
+	testCommitTx          func(commit func() error) error
+	testTokenProof        func() error
+	testTokenProofAttempt time.Duration
+	// testAfterProof is the options' factor-door seam (auth.go). Tests only.
+	testAfterProof func(door string)
+	// testAfterTitleRounds is the options' title pass seam (localtitles.go).
+	// Tests only.
+	testAfterTitleRounds func()
+	// testNameDoorsOpen is the options' seam lifting the early refusals of a
+	// name the repository holds a package under. Tests only.
+	testNameDoorsOpen bool
+	// testMeasureHook is the options' measured-value seam (measured.go).
+	// Tests only.
+	testMeasureHook func(actor substrate.Actor, check string)
+	// testChangeReadHook is the options' change tail seam (changetail.go).
+	// Tests only.
+	testChangeReadHook func(repository string)
+	// testTailHeadHook is the options' tailHeadHook. Tests only.
+	testTailHeadHook func()
 	// testBulkFault and testSeedPath are the options' bulk seed seams
 	// (bulkwrite.go flushBulk, unitseed.go seedUnits). Tests only.
 	testBulkFault func(stage string) error
 	testSeedPath  func(repository, refusal string)
-	// testSnapshotFault is the options' snapshot seam (snapshot.go).
-	testSnapshotFault func(stage, dir string) error
 	// testInvokeHook is the options' runner seam (runner.go). Tests only.
 	testInvokeHook func(function string)
 	// searchReindexBatch and testSearchReindexHook are the options' reindex
@@ -701,35 +919,19 @@ type service struct {
 	// progressEvery is how often a long walk of a changelog reports where
 	// it is (progress.go).
 	progressEvery time.Duration
-	// testDigestHook is the options' directory check seam (progress.go
-	// checkProgress). Tests only.
-	testDigestHook func(repository, segment string)
-
-	// checkedMu guards checked: the changelog Log the boot check (or a
-	// creation, or a boot import) opened for each repository, kept for that
-	// repository's first open. Its finished segments are digested already,
-	// and a finished segment never changes, so the first open reads none of
-	// them again (repodir.go openDirectory, issue 761).
-	checkedMu sync.Mutex
-	checked   map[string]*changelogfile.Log
-	// digestUnread is whether a repository's open digests, in the
-	// background, the finished segments it took on their sidecars' word
-	// (segmentdigest.go): the server's, not an operator's or a read-only
-	// process's.
-	digestUnread bool
-	// digestBucket is the token bucket every repository's background digest
-	// draws from (segmentdigest.go digestPacer), at the configured bytes
-	// per second for the whole process; zero is no cap.
-	digestBucket digestBucket
+	// archiveBucket is the token bucket every repository's archive passes
+	// draw from (archivepace.go), at the configured bytes per second for the
+	// whole process; zero is no cap.
+	archiveBucket archiveBucket
 	// invocations counts the function bodies and agent loops in flight in
-	// this process, nested ones included (segmentdigest.go
-	// invocationStarted): what the background digest yields to.
+	// this process, nested ones included (archivepace.go invocationStarted):
+	// what an archive pass yields to.
 	invocations atomic.Int64
-	// digestYieldMax is the longest the background digest waits for
-	// invocations to return before one read (segmentdigest.go yield).
-	digestYieldMax time.Duration
-	// testDigestPaceHook is the options' digest pace hook. Tests only.
-	testDigestPaceHook func(repository string, bytes int64)
+	// archiveYieldMax is the longest a pass waits for invocations to return
+	// before it copies on (archivepace.go yield).
+	archiveYieldMax time.Duration
+	// testArchivePaceHook is the options' archive pace hook. Tests only.
+	testArchivePaceHook func(repository string, bytes int64)
 }
 
 // Open connects to Postgres, loads the schema files, ensures the two roles and
@@ -754,7 +956,7 @@ func OpenOperator(ctx context.Context, dsn string, opts ...Option) (Operator, er
 }
 
 func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
-	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, digestBytesPerSecond: DefaultDigestBytesPerSecond}
+	o := options{log: slog.Default(), now: nowUTC, webhookNow: nowUTC, progressEvery: progressEvery, archiveBytesPerSecond: DefaultArchiveBytesPerSecond}
 	for _, fn := range opts {
 		fn(&o)
 	}
@@ -795,11 +997,32 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if err != nil {
 		return nil, err
 	}
-	if o.segmentBytes <= 0 {
-		o.segmentBytes = changelogfile.DefaultSegmentBytes
-	}
 	if o.catchUpBatch <= 0 {
 		o.catchUpBatch = rebuildBatch
+	}
+	if o.archiveInterval <= 0 {
+		o.archiveInterval = DefaultArchiveInterval
+	}
+	// The archive is on by default, under the data root, as the server's
+	// SUBSTRATE_ARCHIVE is; WithArchive(nil) turns it off.
+	if !o.archiveSet && o.dataRoot != "" {
+		store, err := archive.NewDir(filepath.Join(o.dataRoot, "archive"))
+		if err != nil {
+			return nil, err
+		}
+		o.archive = store
+	}
+	// No call to the store waits on it forever: a store that accepts a
+	// connection and never answers fails a call, and the boot, a pass or a
+	// deletion goes on from there.
+	if o.archive != nil {
+		o.archive = markStoreFailures(archive.Bounded(o.archive, cmp.Or(o.archiveCall, archive.DefaultCallTimeout), cmp.Or(o.archiveIdle, archive.DefaultIdleTimeout)))
+	}
+	if o.archivePieceBytes <= 0 {
+		o.archivePieceBytes = DefaultArchivePieceBytes
+	}
+	if o.archiveStepBytes <= 0 {
+		o.archiveStepBytes = DefaultArchiveStepBytes
 	}
 	if o.valuesBudget <= 0 {
 		o.valuesBudget = valuesBudget
@@ -809,6 +1032,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	}
 	if o.healthNow == nil {
 		o.healthNow = time.Now
+	}
+	if o.scheduleNow == nil {
+		o.scheduleNow = time.Now
+	}
+	if o.retryNow == nil {
+		o.retryNow = time.Now
 	}
 	if !o.searchMatchMaxSet {
 		o.searchMatchMax = -1
@@ -830,6 +1059,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	}
 	if o.laneWorkers == 0 {
 		o.laneWorkers = scheduleLaneWorkers
+	}
+	if o.chatTurnsPerPerson == 0 {
+		o.chatTurnsPerPerson = maxRunningChatTurns
+	}
+	if o.chatTurnsPerPerson < 0 {
+		return nil, fmt.Errorf("substrate/engine: %d chat turns per person: at least 1, and 0 is the default of %d (WithChatTurnsPerPerson)", o.chatTurnsPerPerson, maxRunningChatTurns)
 	}
 	if o.laneWorkers < 0 || o.laneWorkers > TriggerDeliverySlots {
 		return nil, fmt.Errorf("substrate/engine: %d trigger lane workers: a lane runs at least 1 and at most the %d deliveries the whole process runs at once, and 0 is the default of %d (WithTriggerLaneWorkers)", o.laneWorkers, TriggerDeliverySlots, scheduleLaneWorkers)
@@ -871,6 +1106,11 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		}
 		o.blobs = fsBlobs
 	}
+	process, err := changelogfile.NewPassID()
+	if err != nil {
+		_ = admin.Close()
+		return nil, err
+	}
 	s := &service{
 		dsn:          dsn,
 		admin:        admin,
@@ -879,7 +1119,6 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		credKeyID:    hostKeyID(credKey),
 		dataRoot:     o.dataRoot,
 		instanceID:   instanceID,
-		segmentBytes: o.segmentBytes,
 		catchUpBatch: o.catchUpBatch,
 		valuesBudget: o.valuesBudget,
 		blobs:        o.blobs,
@@ -897,8 +1136,13 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
+		testNamesNow:       o.namesNow,
+		retryNow:           o.retryNow,
+		scheduleNow:        o.scheduleNow,
 		foreignPackages:    o.foreignPackages,
+		withoutSecrets:     lostSecretsList(o.withoutSecrets),
 		laneWorkers:        o.laneWorkers,
+		chatTurnsPerPerson: o.chatTurnsPerPerson,
 		deliverySlots:      make(chan struct{}, TriggerDeliverySlots),
 		totpDisabled:       o.insecureDisableTOTP,
 		operatorDefaults:   o.operatorDefaults,
@@ -912,34 +1156,69 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMProviders: o.seedLLMProviders,
 		seedUnits:        o.seedUnits,
 		seedRecords:      o.seedRecords,
+		noActorFill:      o.noActorFill,
 		shippedRecords:   shippedRecords,
+		shippedModels:    shippedModelIDs(shippedRecords),
 		bulkSeed:         !o.perRecordSeed,
 		log:              o.log,
 		bg:               newBackground(),
 		datasets:         map[string]*dataset{},
 		opening:          map[string]chan struct{}{},
 
-		testImportFault:   o.importFault,
-		testImportBatch:   o.importBatch,
-		testCommitFault:   o.commitFault,
-		testBulkFault:     o.bulkFault,
-		testSeedPath:      o.seedPath,
-		testSnapshotFault: o.snapshotFault,
-		progressEvery:     o.progressEvery,
-		testInvokeHook:    o.invokeHook,
-		testDigestHook:    o.digestHook,
-		checked:           map[string]*changelogfile.Log{},
-		digestUnread:      !o.operator && !o.dirReadOnly,
+		testImportFault:       o.importFault,
+		testReplayPage:        o.replayPage,
+		testReplayEnd:         o.replayEnd,
+		testReplaySQL:         o.replaySQL,
+		statisticsLockTimeout: cmp.Or(o.statisticsLockTimeout, statisticsLockTimeout),
+		statsReset:            map[string]bool{},
+		testBeforeDirectories: o.beforeDirectories,
+		testImportBatch:       o.importBatch,
+		testEraseFault:        o.eraseFault,
+		archive:               o.archive,
+		archiving:             o.archive != nil && !o.dirReadOnly && !o.operator,
+		archiveInterval:       o.archiveInterval,
+		archivePieceBytes:     o.archivePieceBytes,
+		archiveStepBytes:      o.archiveStepBytes,
+		archiveProcess:        process,
+		testArchiveFault:      o.archiveFault,
+		testShippedRefusal:    o.shippedRefusal,
+		testEndOfTxCheck:      o.endOfTxCheck,
+		testPeopleFault:       o.peopleFault,
+		testRulesFault:        o.rulesFault,
+		conversion:            conversionSteps,
+		maxDialect:            maxChangelogDialect,
+		testCommitFault:       o.commitFault,
+		testAfterProof:        o.afterProof,
+		testAfterTitleRounds:  o.afterTitleRounds,
+		testNameDoorsOpen:     o.nameDoorsOpen,
+		testCommitTx:          o.commitTx,
+		testTokenProof:        o.tokenProof,
+		testTokenProofAttempt: o.tokenProofAttempt,
+		proofs:                tokenProofs{slots: make(chan struct{}, tokenProofWaits)},
+		testMeasureHook:       o.measureHook,
+		testChangeReadHook:    o.changeReadHook,
+		testTailHeadHook:      o.tailHeadHook,
+		testBulkFault:         o.bulkFault,
+		testSeedPath:          o.seedPath,
+		progressEvery:         o.progressEvery,
+		testInvokeHook:        o.invokeHook,
 
-		digestBucket:       digestBucket{rate: o.digestBytesPerSecond},
-		digestYieldMax:     cmp.Or(o.digestYieldMax, digestYieldMax),
-		testDigestPaceHook: o.digestPaceHook,
+		archiveBucket:       archiveBucket{rate: o.archiveBytesPerSecond},
+		archiveYieldMax:     cmp.Or(o.archiveYieldMax, archiveYieldMax),
+		testArchivePaceHook: o.archivePaceHook,
 
 		searchReindexBatch:       o.searchReindexBatch,
 		testSearchReindexHook:    o.searchReindexHook,
 		testReprojectionHook:     o.reprojectionHook,
 		testReprojectionPageHook: o.reprojectionPageHook,
 		testInadmissible:         o.inadmissible,
+	}
+	if o.conversion != nil {
+		if err := checkConversionSteps(o.conversion); err != nil {
+			_ = admin.Close()
+			return nil, fmt.Errorf("substrate/engine: the conversion chain: %w", err)
+		}
+		s.conversion, s.maxDialect = o.conversion, chainDialect(o.conversion)
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -1026,6 +1305,15 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	maint.SetMaxIdleConns(5)
 	maint.SetConnMaxIdleTime(repositoryConnIdle)
 	s.maint = maint
+	// The clock a former name lapses on: the database's, read once and run
+	// forward on this process's monotonic clock, so a step of this machine's
+	// wall clock moves no hold (repositorynames.go namesNow).
+	if err := maint.QueryRowContext(ctx, `SELECT now()`).Scan(&s.namesBase); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, fmt.Errorf("substrate/engine: read the database's clock: %w", err)
+	}
+	s.namesBase, s.namesStart = s.namesBase.UTC(), time.Now()
 	repoConns := o.repositoryConns
 	if repoConns == 0 {
 		repoConns = DefaultRepositoryConnections
@@ -1045,6 +1333,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	s.unregisterMetrics = []func(){
 		metrics.RegisterDBStats("admin", admin),
 		metrics.RegisterDBStats("maint", maint),
+		metrics.RegisterSetAside(s.aside.count),
 		metrics.RegisterPoolStats("repositories", func() metrics.PoolStats {
 			st := repoPool.Stat()
 			return metrics.PoolStats{
@@ -1128,14 +1417,31 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// exists precisely to run beside the writer.
 	if !s.readOnly && !o.skipWriterLease {
 		s.lease = newWriterLease(maint, s.log)
+		if err := s.leaseEveryRepository(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 	}
 	// Every repository's directory against its rows, before anything is
 	// served (repodir.go): a crash left the file a transaction behind, a
 	// restore left a directory with no row, or a wiped data root left a row
-	// with no directory. A repository the two sides disagree on refuses the
-	// boot. A read-only process skips it: the check writes, and the server
-	// that owns the directories runs it at its own boot.
+	// with no directory. A repository the two sides disagree on is set
+	// aside (setaside.go). A read-only process skips it: the check writes,
+	// and the server that owns the directories runs it at its own boot.
 	if !s.readOnly {
+		// Every repository a release before ids left keyed by its name takes
+		// its id first, rows and directory (repositoryid.go), so the check
+		// below finds each directory under the key its row names.
+		if err := s.keyRepositories(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
 		if err := s.reconcileRepositories(ctx); err != nil {
 			s.lease.close()
 			repoPool.Close()
@@ -1143,6 +1449,28 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 			_ = admin.Close()
 			return nil, err
 		}
+		// Every repository a release before identities left with its sign-in
+		// as a record of its own gets an identity, from that record, before
+		// anyone signs in (identityboot.go).
+		if err := s.giveRepositoriesIdentities(ctx); err != nil {
+			s.lease.close()
+			repoPool.Close()
+			_ = maint.Close()
+			_ = admin.Close()
+			return nil, err
+		}
+		// Every row the keying moved and every directory it imported is
+		// published under its id now, so the names it held go.
+		s.releaseKeyingLeases()
+	}
+	// A start that set aside every repository it found has nothing to serve
+	// and stops as the check did before (setaside.go).
+	if err := s.finishSetAside(ctx); err != nil {
+		s.lease.close()
+		repoPool.Close()
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
 	}
 	return s, nil
 }
@@ -1151,7 +1479,9 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 // DEK wraps the store already carries. A host that starts with the WRONG key
 // otherwise listens, answers /healthz, and fails every repository open after
 // the fact, the shape a lost keys volume produces, where a fresh key is
-// minted over a database full of repositories nothing can now unwrap.
+// minted over a database full of repositories nothing can now unwrap. A wrap
+// that names this very key and does not open is one repository's damage, and
+// that repository is set aside (setaside.go).
 //
 // A KEYLESS service skips the check: a plain-marked wrap opens without a key,
 // and a sealed one refuses at the repository open, which is what leaves the
@@ -1161,45 +1491,66 @@ func (s *service) requireCredentialKeyOpens(ctx context.Context) error {
 	if len(s.credKey) == 0 {
 		return nil
 	}
+	type wrap struct {
+		repo    Repository
+		wrapped []byte
+		keyID   string
+	}
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, dek, dek_key_id FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
+		`SELECT id, authority, dek, dek_key_id FROM repositories WHERE dek IS NOT NULL ORDER BY id`)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = rows.Close() }()
-	var checked int
-	var failures []string
-	// A wrap that names THIS key and still does not open is damage, not a
-	// foreign database, and the advice for the two is opposite: the first
-	// must keep its key, the second must find another.
-	damaged := false
+	var wraps []wrap
 	for rows.Next() {
-		var id string
-		var wrapped []byte
+		var w wrap
 		var keyID sql.NullString
-		if err := rows.Scan(&id, &wrapped, &keyID); err != nil {
+		if err := rows.Scan(&w.repo.ID, &w.repo.Authority, &w.wrapped, &keyID); err != nil {
 			return err
 		}
-		checked++
-		if _, err := s.unwrapDEK(wrapped, id, keyID.String); err != nil {
-			failures = append(failures, err.Error())
-			if keyID.String == s.credKeyID {
-				damaged = true
-			}
-		}
+		w.keyID = keyID.String
+		wraps = append(wraps, w)
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if len(failures) == 0 {
-		return nil
+	// Whether the host holds the right key is the server's question, and it
+	// is asked of every wrap that names another key (or none) before any
+	// repository is looked at alone: one that does not open says this
+	// database was written under another key, and the start stops.
+	var failures []string
+	for _, w := range wraps {
+		if w.keyID == s.credKeyID {
+			continue
+		}
+		if _, err := s.unwrapDEK(w.wrapped, w.repo.ID, w.keyID); err != nil {
+			failures = append(failures, err.Error())
+		}
 	}
-	advice := "Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable"
-	if damaged {
-		advice = "A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row from a database dump or its directory from a copy (a copy re-wraps through its recovery key: `substratectl repository rewrap`)"
+	if len(failures) > 0 {
+		return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. Every repository DEK wraps under this one key, so this database was written under a different one. Restore the key the wraps name, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: no verb re-wraps a live repository's DEK under another host key, and every repository would be unopenable",
+			s.credKeyID, len(failures), len(wraps), strings.Join(failures, "; "))
 	}
-	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of %d of this database's %d repositories: %s. %s",
-		s.credKeyID, len(failures), checked, strings.Join(failures, "; "), advice)
+	// A wrap that names THIS key and still does not open is damage, not a
+	// foreign database, and the advice for the two is opposite: the first
+	// must keep its key, the second must find another. Damage is one
+	// repository's, so each such wrap is opened through the start's one gate.
+	for _, w := range wraps {
+		if w.keyID != s.credKeyID {
+			continue
+		}
+		if err := s.through(ctx, rowPass(w.repo, setAsideAtKey), func() error {
+			if _, err := s.unwrapDEK(w.wrapped, w.repo.ID, w.keyID); err != nil {
+				return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY (id %s) does not open the DEK of repository %s: %w. A wrap that names this very key and does not open is damaged, not foreign: the key is right, so keep it, and restore that repository's row in repositories from a database dump",
+					s.credKeyID, w.repo.label(), err)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) Close() error {
@@ -1215,7 +1566,7 @@ func (s *service) Close() error {
 		// reclaims them: the pool's idle TTL is ten minutes, and a server that
 		// exits first leaves them orphaned. Reconcile against an empty live set
 		// is "this repository runs nothing now", which is true once it closes.
-		runner.Shared.Reconcile(context.Background(), ds.Repository().ID, nil)
+		runner.Shared.Reconcile(context.Background(), ds.info.ID, nil)
 		ds.close()
 	}
 	// Emptied, so a second Close does not close one dataset twice: a test
@@ -1240,8 +1591,9 @@ func (s *service) Close() error {
 	return err
 }
 
-// Repositories lists every repository: the ledger is one table, and the
-// background loops enumerate through it.
+// Repositories lists every repository but the ones the start set aside: the
+// ledger is one table, and the background loops enumerate through it, so a
+// set-aside repository is one no loop reaches (setaside.go).
 func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo, error) {
 	repos, err := s.listRepositories(ctx)
 	if err != nil {
@@ -1249,6 +1601,9 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 	}
 	out := make([]substrate.RepositoryInfo, 0, len(repos))
 	for _, r := range repos {
+		if s.setAsideOf(r.ID, r.Authority) != nil {
+			continue
+		}
 		out = append(out, r.info())
 	}
 	return out, nil
@@ -1261,6 +1616,19 @@ func (s *service) Repositories(ctx context.Context) ([]substrate.RepositoryInfo,
 // plus a request are enough to make that happen — so the SECOND caller waits
 // for the first's answer instead of racing it.
 func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
+	if err := s.refuseSetAside(repo.ID, repo.Authority); err != nil {
+		return nil, err
+	}
+	if !vocabulary.ValidRepositoryID(repo.ID) {
+		return nil, fmt.Errorf("%w: repository %s", ErrRepositoryNotKeyed, repo.Authority)
+	}
+	// A repository whose deletion began is the deletion's (rule 7): a
+	// server finishes it at its next start.
+	if began, err := s.deletionBegan(ctx, repo.ID); err != nil {
+		return nil, err
+	} else if began {
+		return nil, ErrRepositoryBeingDeleted
+	}
 	cached, release, err := s.claimOpen(ctx, repo.ID)
 	if cached != nil || err != nil {
 		return cached, err
@@ -1272,6 +1640,9 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 	if err != nil {
 		release()
 		return nil, err
+	}
+	if s.testOpenRead != nil {
+		s.testOpenRead(repo.ID)
 	}
 	ds, err := s.openNew(ctx, fresh)
 	release()
@@ -1357,20 +1728,20 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	// The repository's DEK for the dataset's lifetime, unwrapped from the
 	// control-plane row.
 	keys, err := s.repoKeys(ctx, repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.label(), err)
 	}
 	dek := keys.dek
 	dir, err := s.repositoryDir(repo.ID)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	ds := &dataset{
 		svc:        s,
@@ -1378,6 +1749,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		dek:        dek,
 		scope:      sc,
 		dir:        dir,
+		archive:    newArchiveState(s.archiving),
 		generation: repo.HistoryGeneration,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
@@ -1386,8 +1758,11 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// version-keyed upgrade below, which APPENDS.
 		reg:   vocabulary.NewRegistry(),
 		watch: newBroadcaster(),
-		info:  repo.info(),
+		// The row's name is not kept: a dataset holds no name, and asks the
+		// names cache by id when it needs one (namescache.go).
+		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
+	ds.reg.SetNames(ds.answersTo)
 	// The lease before the directory: the open ladder appends (the dialect
 	// stamps, the shipped-vocabulary upgrade), so a process that is not this
 	// repository's writer must be refused before the first of them and not
@@ -1395,14 +1770,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// repository that had a row then; this covers the ones registered since.
 	if err := s.lease.acquire(ctx, repo.ID); err != nil {
 		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
-	// The directory before every step that writes: the writer opens at the
-	// file's head, which must be the table's, or the ladder's first append
-	// would land on a file that is not at the seq it claims (repodir.go).
-	if err := ds.openDirectory(ctx); err != nil {
+	// The history before every step that writes: a fold an import has not
+	// finished is not served, and the ladder's appends must not land on it
+	// (repodir.go).
+	if err := ds.openHistory(ctx); err != nil {
 		ds.close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
+		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.label(), err)
 	}
 	// The changelog dialect gate runs next, ahead of every step that writes:
 	// a binary that cannot replay this history must not extend it either. It
@@ -1420,18 +1795,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.close()
 		return nil, err
 	}
-	// The manifest, after both gates, the re-key and the vocabulary stamp, and
-	// before the first append: it says what the row and the stamps say, and
-	// the transaction that claims the changelog dialect rewrites it from what
-	// is remembered here (repodir.go writeManifestBeforeCommit).
-	if !s.readOnly {
-		m, err := s.ensureManifest(ctx, dir, repo, db)
-		if err != nil {
-			ds.close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.ID, err)
-		}
-		ds.manifest = m
-	}
 	// The repository migrations first (repomigrate.go): code this binary runs
 	// once per repository over the stored rows, before anything reads them
 	// back as vocabulary, because what one rewrites may be the very rows the
@@ -1439,7 +1802,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// the rows, and only then does the shipped-vocabulary upgrade append what
 	// a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
-		ds.runRepositoryMigrations,
+		ds.loadPeople,
+		ds.runLandedRepositoryMigrations(repo.Authority),
 		ds.loadStoredVocabulary,
 		// The unit uses' rule before the seed: where the stored uses are
 		// behind it, the request it writes makes the use guard refuse a
@@ -1453,14 +1817,34 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// after the upgrade that declares them.
 		ds.ensureShippedUnits,
 		ds.upgradeShippedVocabulary,
+		// After the upgrade, which declares the alert kind its clearing
+		// raises; a no-op unless an import left secrets behind.
+		ds.clearSecretsLeftBehind,
 		ds.checkSearchIndex,
 		ds.checkObservedIndex,
+		ds.loadObservedKinds,
 		ds.checkIndexReprojections,
 		ds.ensureDefaultProviders,
 		// The shipped records after the upgrade, which declares the kinds a
 		// newer binary's records are of (recordseed.go).
 		ds.ensureShippedRecords,
+		// The roles before the people, whose actors name them (roles.go).
+		ds.ensureShippedRoles,
+		// After the upgrade, which declares the identity a person's actor
+		// names and the person a token acts for (people.go).
+		ds.settlePeople,
+		// After the people pass, which writes the person's own (actorfill.go).
+		ds.fillActorRecords,
+		// The repository's own record and its first person's actor after a
+		// rename or an import under another name, once the people pass wrote
+		// the person's actor (repositorynames.go).
+		ds.reconcileRepositoryName,
+		// The titles a template rendered from a name the local namespace's
+		// conversion moved, once the stored vocabulary is loaded and the
+		// name is final (localtitles.go).
+		ds.renderLocalTitles,
 		ds.ensureTriggerCursors,
+		ds.reportOpenShippedWebhooks,
 		ds.settleInterruptedSyncs,
 		ds.settleInterruptedAgentRuns,
 		ds.clearDeadReservations,
@@ -1484,19 +1868,24 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// open (issue 719).
 	ds.startSearchReindex()
 	ds.startIndexReprojection()
-	ds.startSegmentDigest()
+	ds.startArchiver()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
 	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
 	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
-	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool() }
+	unregisterInventory := metrics.RegisterInventory(repo.ID, ds.inventory)
+	unregisterArchive := func() {}
+	if ds.archive != nil {
+		unregisterArchive = metrics.RegisterArchive(repo.ID, ds.archive.stats)
+	}
+	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory(); unregisterArchive() }
 	return ds, nil
 }
 
-// Dataset opens a repository's dataset by its id, the authority.
+// Dataset opens a repository's dataset by its id, or by its name.
 func (s *service) Dataset(ctx context.Context, repository string) (substrate.Dataset, error) {
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -1516,17 +1905,18 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 	return repo.info(), nil
 }
 
-// createSeededRepository is THE creation act. The repository's id IS its
-// authority (decision 0046): the control-plane row's primary key, every scope,
-// the DEK wrap's binding, the directory under the data root and the fs blob
-// path are all the one name the registration chose. Nothing is minted.
+// createSeededRepository is THE creation act. The repository takes the
+// authority the registration chose as its name, and a minted id as its key
+// (decision 0261): the control-plane row's primary key, every scope, the DEK
+// wrap's binding, the directory under the data root and the fs blob path.
 //
 // It is
 // the seed of the shipped vocabulary, the repository's own description of
-// itself, and whatever the caller adds — registration passes the sealed
-// material, the credential record and the first token — as ONE transaction in
+// itself, and whatever the caller adds — registration passes the recovery key
+// and the first token — as ONE transaction in
 // the new repository's changelog, followed by the `repositories` row that makes the
-// user exist.
+// user exist, and in the same control-plane transaction the person's identity
+// and the row that lets it open the repository.
 //
 // ATOMICITY. The two sides live in two pools by construction: the repository's
 // own rows are written by `substrate_app` under the repository's scope, and
@@ -1560,6 +1950,15 @@ func (s *service) CreateRepository(ctx context.Context, repository string) (subs
 // The cleanup is ownership-checked on top (eraseFailedCreation): a creation
 // that wrote no row erases nothing while a row holds the authority.
 func (s *service) createSeededRepository(ctx context.Context, authority string, extra func(*txn) error) (Repository, error) {
+	return s.createSeededRepositoryFor(ctx, authority, nil, extra)
+}
+
+// createSeededRepositoryFor is createSeededRepository with the person it is
+// created for: their identity, not yet written, is inserted with the
+// repository's control-plane row and allowed to open it, in the one
+// transaction that is the creation's commit point, so the person and the
+// repository exist together or not at all (decision 0274).
+func (s *service) createSeededRepositoryFor(ctx context.Context, authority string, person *identityRow, extra func(*txn) error) (Repository, error) {
 	var zero Repository
 	if err := validRepositoryAuthority(authority); err != nil {
 		return zero, err
@@ -1574,9 +1973,18 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// it does). The authority is checked BEFORE anything is written under it,
 	// because rows land in its scope, and a scope that already belongs to
 	// somebody would be somebody else's data.
-	if _, err := s.repositoryByIDOn(ctx, cp, authority); err == nil {
+	if _, err := s.repositoryByNameOn(ctx, cp, authority); err == nil {
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
+		return zero, err
+	}
+	// A directory the start set aside before it had a row still holds its
+	// name: the repair imports it under that name at the next start.
+	if s.aside.holdsName(authority) {
+		return zero, errAuthorityTaken(authority)
+	}
+	id, err := vocabulary.NewRepositoryID()
+	if err != nil {
 		return zero, err
 	}
 	// OPEN'S SLOT BEFORE THE ROW, held until the directory is written or the
@@ -1588,7 +1996,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// the open's flock and erases a repository the open already serves.
 	// The slot is taken before the lease, so a failure hands the lease back
 	// before a waiting open runs.
-	cached, releaseOpen, err := s.claimOpen(ctx, authority)
+	cached, releaseOpen, err := s.claimOpen(ctx, id)
 	if err != nil {
 		return zero, err
 	}
@@ -1604,7 +2012,7 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// repository that process is already serving. Taken here, an
 	// in-progress registration cannot be claimed by anybody, and
 	// reconcileRow's own ask below finds it held by this process.
-	leased, err := s.lease.acquireNew(ctx, authority)
+	leased, err := s.lease.acquireNew(ctx, id)
 	// A creation that fails releases only the lease IT took: this process is
 	// not the writer of a repository that does not exist. acquireNew reports
 	// false for one this process already held, which is never this
@@ -1613,17 +2021,17 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// replaced a dead one, whose predecessor's leases are not back yet.
 	defer func() {
 		if leased {
-			s.lease.release(authority)
+			s.lease.release(id)
 		}
 	}()
 	if err != nil {
 		return zero, err
 	}
-	repo := Repository{ID: authority, Authority: authority}
+	repo := Repository{ID: id, Authority: authority}
 	// A creation starts the graph revision at 0 again, so whatever this
-	// process cached under the name (a creation that failed) is not this
+	// process cached under the key (a creation that failed) is not this
 	// repository's (unitgraph.go).
-	s.unitGraphs.forget(authority)
+	s.unitGraphs.forget(id)
 	// The DEK is born with the repository: the seed transaction below already
 	// writes sealed material (the credential, at registration), and it seals
 	// under this key from the first byte. The control-plane row wraps it
@@ -1652,13 +2060,19 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
 		svc: s, db: db, dek: dek, scope: repo.scope(),
-		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
+		reg: repo.registry(s.base.Clone()), watch: newBroadcaster(),
+		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State}, creating: authority,
 	}
 	// inserted flips once the control-plane row is this creation's, and
 	// decides what a failure may erase (eraseFailedCreation).
 	inserted := false
 	fail := func(stage string, cause error) (Repository, error) {
-		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted); cerr != nil {
+		// The person was inserted with the row, and is this creation's alone.
+		var made string
+		if inserted && person != nil {
+			made = person.ID
+		}
+		if cerr := s.eraseFailedCreation(ctx, cp, repo.ID, inserted, made); cerr != nil {
 			s.log.Error("substrate: could not erase a half-made repository",
 				"repository", repo.ID, "stage", stage, "error", cerr)
 		}
@@ -1700,8 +2114,43 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		// The repository's own read-only description of itself. `lifecycle` is
 		// the state a creation is born into, so naming it is assertion, not
 		// transition.
+		// The repository's person and the system are actors from its
+		// creation (decision 0270); every other hand's record is written when
+		// it first writes.
+		if err := t.ensureActors(substrate.ActorSystem, substrate.ActorPerson); err != nil {
+			return err
+		}
+		// The roles, and the creator as the first admin (decision 0275).
+		if err := t.ensureShippedRoles(); err != nil {
+			return err
+		}
+		// The person the repository is created for is its first person, and
+		// that actor names their identity (people.go).
+		if person != nil {
+			if err := t.namePersonActor(substrate.ActorPerson, person.ID, authority); err != nil {
+				return err
+			}
+		}
+		if err := t.givePersonRoles(substrate.ActorPerson, scope.RoleAdmin); err != nil {
+			return err
+		}
 		if err := t.asActor(substrate.ActorSystem, func() error {
 			if err := t.seedDefaultProviders(); err != nil {
+				return err
+			}
+			// Born with its continuations in this binary's order: migration
+			// 7 finds the mark at the first open and writes nothing. The put
+			// below is the entry that carries it.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annContinuationOrder, substrate.IdentityOrder); err != nil {
+				return err
+			}
+			// Born holding the record of every hand it links, which each
+			// write ensures: the actor fill finds the mark and reads nothing.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annActorRecordsFilled, 1); err != nil {
+				return err
+			}
+			// Born under `~`: no title it renders spells its name.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annTitlesRenderedLocal, 1); err != nil {
 				return err
 			}
 			_, err := t.put(substrate.PutInput{
@@ -1730,48 +2179,47 @@ func (s *service) createSeededRepository(ctx context.Context, authority string, 
 		}
 	}
 
-	if err := s.insertRepositoryRow(ctx, cp, &repo); err != nil {
+	if _, err := s.insertRepositoryRow(ctx, cp, &repo, person); err != nil {
 		return fail("control-plane row", err)
 	}
 	inserted = true
-	// The directory, from the tables the seed just committed. A failure here
-	// is a failed registration like any other: the row is erased with the
-	// rows and the directory, so nothing half-made survives the call.
-	if _, err := s.reconcileRow(ctx, repo, false); err != nil {
-		return fail("directory", fmt.Errorf("substrate/engine: write the repository directory of %s: %w", authority, err))
+	if s.testFailAfterRow != nil {
+		if err := s.testFailAfterRow(); err != nil {
+			return fail("after the control-plane row", err)
+		}
 	}
 	// The repository exists, so the lease is this process's to keep.
 	leased = false
 	return repo, nil
 }
 
-// validRepositoryID is the grammar a repository id is held to at BOTH doors,
-// registration (validRepositoryAuthority) and the boot import of a directory
-// (repodir.go): the authority grammar every kind carries
-// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The authority is
-// the repository's id everywhere (decision record 0052), including the id of
-// its self-description record, and a record id is at most MaxIDLen bytes
-// where DNS would admit 253; a directory the import accepted past the cap
-// would be a repository whose self-description no write could address.
-func validRepositoryID(authority string) error {
+// validRepositoryName is the grammar a repository's name is held to at BOTH
+// doors, registration (validRepositoryAuthority) and the boot import of a
+// directory (repodir.go): the authority grammar every kind carries
+// (vocabulary.ValidRepositoryAuthority), capped at MaxIDLen. The name is the
+// id of the repository's own `core/authority` record, and a record id is at
+// most MaxIDLen bytes where DNS would admit 253; a directory the import
+// accepted past the cap would be a repository whose authority record no write
+// could address.
+func validRepositoryName(authority string) error {
 	switch {
 	case authority == "":
 		return fmt.Errorf("%w: a repository needs an authority: a hostname you control, such as ada.example.com", substrate.ErrValidation)
 	case !vocabulary.ValidRepositoryAuthority(authority):
 		return fmt.Errorf("%w: authority %q must be a lowercase DNS-style name with at least two labels (ada.example.com)", substrate.ErrValidation, authority)
 	case len(authority) > vocabulary.MaxIDLen:
-		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository id may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
+		return fmt.Errorf("%w: authority %q is longer than %d bytes, the most a repository's name may be", substrate.ErrValidation, authority, vocabulary.MaxIDLen)
 	}
 	return nil
 }
 
 // validRepositoryAuthority is the door a repository's own authority passes
-// through once, at creation: validRepositoryID, and one namespace refused on
+// through once, at creation: validRepositoryName, and one namespace refused on
 // top. `substrate.reamde.dev` and everything under it is where the shipped
 // vocabulary publishes, so a repository claiming a name there would be a
 // user-owned authority that reads as shipped.
 func validRepositoryAuthority(authority string) error {
-	if err := validRepositoryID(authority); err != nil {
+	if err := validRepositoryName(authority); err != nil {
 		return err
 	}
 	if authority == publisherAuthority || strings.HasSuffix(authority, "."+publisherAuthority) {

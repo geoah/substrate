@@ -58,7 +58,7 @@ func noteManifest(version int, linkProps bool) enginetest.Manifest {
 
 func installNotes(t *testing.T, ds substrate.Dataset, version int, linkProps bool) {
 	t.Helper()
-	if err := enginetest.Install(context.Background(), ds, substrate.ActorAPI,
+	if err := enginetest.Install(context.Background(), ds, substrate.ActorPerson,
 		noteManifest(version, linkProps)); err != nil {
 		t.Fatalf("install the note kind (version %d): %v", version, err)
 	}

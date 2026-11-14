@@ -1,6 +1,7 @@
 package substrate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -60,7 +61,7 @@ type Filter struct {
 	Deleted *bool `json:"deleted,omitempty"`
 	// Orphaned narrows to the mapping targets the engine has MARKED: a record
 	// of a kind some recordmapping targets, with no live source of its own
-	// left and nothing above the machine tier holding a property — the husk a
+	// left and nothing on it pinned — the husk a
 	// deleted or re-seeded source leaves behind. nil is every record, true
 	// only the marked ones, false only the unmarked. It is a derived reading
 	// of the present, so a re-linked record leaves the set on its next write
@@ -220,6 +221,16 @@ type Query struct {
 	Count bool `json:"count,omitempty"`
 }
 
+// IdentityOrder says which order the identity columns compare in: a
+// record's kind and id, and a repository id. 1 was the database's own
+// collation, its locale; 2 is byte order, since migration 0021. Every
+// continuation token the server mints whose position compares one of them
+// carries this as its version (the records list's, the window read's), and
+// a token carrying another is refused as list again (ErrStaleHistory): its
+// position was cut in another order, and resumed in this one it would pass
+// over rows that now sort before it.
+const IdentityOrder = 2
+
 // Page is a page of records plus continuation cursor ("" = exhausted).
 // Head is the changelog's highest committed seq at the snapshot this page was
 // read from, and Generation the history generation it belongs to: a client
@@ -270,4 +281,21 @@ type RankedPage struct {
 type Scores struct {
 	Lexical  float64 `json:"lexical,omitempty"`
 	Semantic float64 `json:"semantic,omitempty"`
+}
+
+type askedFilterKey struct{}
+
+// WithAskedFilter carries the filter a client sent, before a scoped view
+// narrows it to what its grant reads: a list cursor is bound to the client's
+// request, and what that request resolves to (the kinds the grant reads,
+// which a declaration can change between pages) is the server's to change,
+// answered list-again.
+func WithAskedFilter(ctx context.Context, f Filter) context.Context {
+	return context.WithValue(ctx, askedFilterKey{}, f)
+}
+
+// AskedFilterFrom is the filter WithAskedFilter carries.
+func AskedFilterFrom(ctx context.Context) (Filter, bool) {
+	f, ok := ctx.Value(askedFilterKey{}).(Filter)
+	return f, ok
 }

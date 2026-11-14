@@ -26,11 +26,11 @@ func TestBlobGCCollectsPendingManifestOrphan(t *testing.T) {
 	digest := substrate.BlobDigestPrefix + strings.Repeat("b", 64)
 	// A pending manifest with no bytes and no referrer (born pending; only the
 	// byte store may enter `stored`).
-	if _, err := ds.putInternal(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.putInternal(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: kindBlob, ID: digest,
 		Properties: map[string]any{
 			blobPropDigest:    digest,
-			blobPropCreatedBy: string(substrate.ActorAPI),
+			blobPropCreatedBy: string(substrate.ActorPerson),
 		},
 	}); err != nil {
 		t.Fatalf("create pending manifest: %v", err)

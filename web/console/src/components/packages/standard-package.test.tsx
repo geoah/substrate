@@ -35,7 +35,7 @@ function row(upgrade?: BundleUpgrade): BundleRow {
     authority: "substrate.reamde.dev",
     package: "clinical",
     installed: true,
-    tier: "published",
+    keptBy: "publisher",
     requires: [],
     upgrade,
     catalog: {
@@ -45,7 +45,7 @@ function row(upgrade?: BundleUpgrade): BundleRow {
       package: "clinical",
       description: "Your medical record.",
       version: 3,
-      tier: "published",
+      keptBy: "publisher",
       brings: ["collections"],
       installed: true,
       upgrade,

@@ -137,7 +137,7 @@ func TestReinstallKeepsAnEditedRecordView(t *testing.T) {
 	ctx := context.Background()
 	importVocabulary(t, c, ds, healthID)
 
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, healthView("workout"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, recordViewKind, healthView("workout"), substrate.PatchInput{
 		Properties: map[string]any{"name": "My runs"},
 	}); err != nil {
 		t.Fatalf("edit the workout view: %v", err)
@@ -148,7 +148,7 @@ func TestReinstallKeepsAnEditedRecordView(t *testing.T) {
 	}
 
 	// A deletion is the owner's too: the re-install does not bring the view back.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, healthView("workout"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, recordViewKind, healthView("workout"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the workout view: %v", err)
 	}
 	importVocabulary(t, c, ds, healthID)
@@ -217,7 +217,7 @@ func applyShippedViews(t *testing.T, ds substrate.Dataset, pkg string) {
 		} else if err != nil {
 			t.Fatalf("decode the shipped views: %v", err)
 		}
-		if _, err := ds.Put(context.Background(), substrate.ActorCLI, substrate.PutInput{
+		if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 			Kind: doc.Kind, ID: doc.Metadata.ID, Properties: doc.Data.Properties,
 		}); err != nil {
 			t.Fatalf("apply the shipped view %s: %v", doc.Metadata.ID, err)
@@ -238,7 +238,7 @@ func TestShippedRecordViewAppliedResetsAnEditedOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the imported sleep view: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, healthView("sleep"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, recordViewKind, healthView("sleep"), substrate.PatchInput{
 		Properties: map[string]any{"name": "My nights", "fold": []any{"score"}},
 	}); err != nil {
 		t.Fatalf("edit the sleep view: %v", err)
@@ -246,7 +246,7 @@ func TestShippedRecordViewAppliedResetsAnEditedOne(t *testing.T) {
 
 	// The lab report view ships no intro, so the owner's stands for a
 	// property the shipped file does not set.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, recordViewKind, labsView("labreport"), substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, recordViewKind, labsView("labreport"), substrate.PatchInput{
 		Properties: map[string]any{"intro": "My notes"},
 	}); err != nil {
 		t.Fatalf("edit the lab report view: %v", err)
@@ -276,7 +276,7 @@ func TestShippedRecordViewAppliedResetsAnEditedOne(t *testing.T) {
 	// Purging the view first makes the apply land the shipped view whole: a
 	// put at a tombstone restores it with its old properties, a put after a
 	// purge creates it fresh.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, recordViewKind, healthView("sleep"), substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, recordViewKind, healthView("sleep"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatalf("delete the sleep view: %v", err)
 	}
 	applyShippedViews(t, ds, healthID)

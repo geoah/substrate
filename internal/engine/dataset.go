@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -12,8 +13,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/geoah/substrate/internal/changelogfile"
+	"golang.org/x/sync/semaphore"
+
 	"github.com/geoah/substrate/internal/llm"
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -40,9 +43,10 @@ const (
 	// kindRepository is the repository's own self-description: one record, id
 	// `self`, saying which repository this is.
 	kindRepository = "substrate.reamde.dev/core/repository"
-	// kindToken and kindCredential (auth.go) are the two AUTH kinds: the
-	// generic surface refuses writes to both (forbidSystemKind) and only the
-	// auth paths write them. Revoking a token is the one exception — an
+	// kindToken (auth.go) is the AUTH kind, as kindCredential
+	// (identityboot.go) was until decision 0274: the generic surface refuses
+	// writes to both (forbidSystemKind) and only the auth paths write a
+	// token. Revoking a token is the one exception — an
 	// ordinary record delete, so every revoke path is the same write. It is
 	// the owner's alone: softDeleteIf refuses it below the owner tier.
 	kindToken       = "substrate.reamde.dev/core/token"
@@ -61,7 +65,10 @@ var systemKinds = map[string]bool{
 	kindKind: true, kindPackage: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
-	kindRepository: true, kindToken: true, kindCredential: true, kindRecoveryKey: true, kindActor: true,
+	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true, kindRelease: true,
+	// Declared, empty and written by nothing in a repository from before
+	// decision 0264 (repomigration_0008_purge_the_recovery_key.go).
+	kindRecoveryKey: true,
 	kindRecordMerge: true, kindRecordSplit: true,
 	// The blob manifest is byte-store-managed: the generic record
 	// API may not forge one, only the byte-store path writes it.
@@ -77,71 +84,57 @@ type dataset struct {
 	// scope is the repository the pool above is pinned to. It also keys the
 	// per-repository advisory locks (identity.go lockKey).
 	scope Scope
+	// people are the identities that may open the repository, read off the
+	// control plane at open (identities.go) and derived again from the
+	// person actors (people.go settlePeople). Open-time only.
+	people []string
+	// beforeIdentities is whether the repository was from before identities
+	// when this open began (people.go fromBeforeIdentities). Open-time only.
+	beforeIdentities bool
+	// firstPerson is the identity the first person's actor names, a string,
+	// "" while it names none: what a person's write is told apart by
+	// (personActorFor).
+	firstPerson atomic.Value
 	// dek is the repository's data-encryption key, unwrapped at open: every
 	// sealed-store payload seals under it. The control plane holds it
-	// wrapped under the host credential key; the repository's recoverykey
-	// record holds it wrapped to the user's age recipient.
+	// wrapped under the host credential key, and nothing else holds it.
 	dek   []byte
 	watch *broadcaster
+	// tail is the one reader of the changelog's tail the repository's
+	// streams share (changetail.go).
+	tail changeTail
+	// actors is the actor records this process has read standing in the
+	// repository (actors.go actorCache).
+	actors actorCache
+	// observedKinds is the kinds holding an observed segment (measured.go),
+	// so a record of any other kind leaves the fold without a probe.
+	observedKinds observedKinds
 	// generation is the repository's history generation (repositories.go),
 	// the marker every change cursor this dataset hands out is bound to. It
 	// is read once at open: the row changes it only when a boot imports the
 	// repository, and no dataset is open then.
 	generation string
 
-	// dir is the repository's directory under the data root (repodir.go):
-	// the manifest, the changelog segments, the blob bytes and the sealed
-	// mirror.
+	// dir is the repository's directory under the data root, which holds
+	// what Postgres does not: the blob bytes and the webhook spool
+	// (repodir.go).
 	dir string
-	// writer holds the changelog segments: a write prepares its lines through
-	// it before tx.Commit() and ends them after (commitAndMirror). It is nil
-	// on the creation dataset, whose directory is written from the tables
-	// once the control-plane row exists. writerMu serializes every use of it
-	// and of the sealed mirror; inTx takes it BEFORE tx.Commit() so file
-	// order is commit order, and after the changelog advisory lock, which is
-	// the order RebuildRepository takes them too.
-	writer   *changelogfile.Writer
-	writerMu sync.Mutex
 	// gate orders the writers that go through inTx into the changelog lock,
 	// an owner's write ahead of waiting background writers (writegate.go).
 	// It is given back once the changelog lock is held, so it comes before
-	// that lock and writerMu in the lock order and is never held with them.
+	// that lock in the lock order and is never held with it.
 	gate writeGate
-	// sealed is the sealed directory's writer, nil for the files themselves;
-	// a test seam sets one that fails (repodir.go sealedStore).
-	sealed sealedStore
-	// fileErr, under writerMu, is the latched refusal after a step that runs
-	// after the commit failed (ErrChangelogFileBehind): the directory is
-	// behind the tables and only the boot check repairs it. A finished
-	// segment the background digest found damaged latches it too
-	// (ErrChangelogDamaged). latchedErr holds the same error for a write's
-	// door (doorDirectoryErr), which reads it without writerMu: a write's
-	// first step must not wait out another write's commit, which holds
-	// writerMu across its fsyncs and the Postgres commit (#835). Both are
-	// written together, under writerMu, by setFileErr alone.
-	fileErr    error
-	latchedErr atomic.Pointer[error]
-	// unread is the Log openDirectory opened the writer over, whose finished
-	// segments taken on their sidecars' word the server digests after the
-	// open; digestCancel and digestDone, under digestMu, are that digest's
-	// (segmentdigest.go).
-	unread       *changelogfile.Log
-	digestMu     sync.Mutex
-	digestCancel context.CancelFunc
-	digestDone   chan struct{}
-	// commitInDoubt, under writerMu, is set when a commit with prepared lines
-	// reported failure, so the table may hold a transaction the file had cut
-	// (0062), and cleared by the next prepare that meets no gap or closes
-	// it. The next prepare catches the file up either way; the flag tells
-	// the gap that commit left from one another process's rows left, for
-	// the log line (repodir.go catchUpBeforePrepare).
-	commitInDoubt bool
-	// manifest, under writerMu, is the manifest the directory holds, as the
-	// open wrote or verified it (engine.go openNew). The transaction that
-	// claims the changelog dialect rewrites it from here BEFORE it appends
-	// (repodir.go writeManifestBeforeCommit), so the directory's record of
-	// what its segments require is never behind the segments.
-	manifest changelogfile.Manifest
+	// unsettled is the latched refusal after a commit that would have
+	// published a registry answered failure: it may have committed, and this
+	// process serves the declarations it replaced, so writes and the passes
+	// that derive under the registry are refused until a restart loads what
+	// Postgres holds (ErrRegistryUnsettled). It is set under mu, which that
+	// commit holds from before its COMMIT, so a reader under mu sees the
+	// registry published or the latch set, never between the two.
+	unsettled atomic.Pointer[error]
+	// testSealedFault, when set, refuses commitSealed's writes before they
+	// commit: a test's credential store that cannot be written. Tests only.
+	testSealedFault atomic.Pointer[func() error]
 
 	// changelogStamped remembers that this repository's changelog dialect is
 	// COMMITTED at this binary's maximum, so the stamp rides the first
@@ -173,10 +166,10 @@ type dataset struct {
 	// jobs is the background calls agent loops of this process started, by
 	// thread (agentjobs.go).
 	jobs agentJobs
-	// chatTurns counts the detached chat turns this process runs for the
-	// repository, from admission to settle (agents.go ChatAgent), against
-	// maxRunningChatTurns.
-	chatTurns atomic.Int32
+	// chatTurns counts the detached chat turns this process runs for each
+	// person of the repository, from admission to settle (agents.go
+	// ChatAgent), against the service's chatTurnsPerPerson.
+	chatTurns personSlots
 	// firing counts the schedule occurrences this process is delivering now,
 	// keyed by fireKey (functions.go startFire). A function fire writes no
 	// row until it settles or parks, so without it a status read shows an
@@ -199,6 +192,9 @@ type dataset struct {
 	// webhook requests runs (webhooks.go resumeWebhooks), so passes that
 	// come faster than a fire settles do not start a second walk.
 	resumingWebhooks atomic.Bool
+	// retryingTemporary is set while a dispatcher pass's walk of the
+	// temporary failures that are due runs (temporaryretry.go).
+	retryingTemporary atomic.Bool
 	// webhookReplays is the door's memory of the signatures it admitted
 	// (webhooksignature.go): memory only, so a restart clears it.
 	webhookReplays webhookReplays
@@ -239,7 +235,13 @@ type dataset struct {
 	// parkedSet): read by the fold's index derivations alone, and swapped
 	// with reg wherever reg is.
 	parked *parkedSet
-	info   substrate.RepositoryInfo
+	// info is the repository's id and state. It holds no name: the names
+	// are the names cache's, asked by id when needed (namescache.go).
+	info substrate.RepositoryInfo
+	// creating is the name a repository being created is registered under,
+	// set on the creation's dataset alone (createSeededRepository): no row
+	// holds it yet, so the cache cannot answer it, and nothing can rename it.
+	creating string
 	// beforePublish and beforeSignal, under mu, are set only by tests.
 	// beforePublish runs inside commitAndPublish, after the commit and before
 	// the swap, with mu held exclusively; beforeSignal runs after the publish
@@ -261,6 +263,18 @@ type dataset struct {
 	// resolveProvider before the llm/provider row is read, so a test can
 	// commit a new key between a call's start and the read that pays for it.
 	beforeProviderRead func(id string)
+	// afterPinnedRead is set only by tests, before any loop runs: a hook a
+	// new snapshot passes between its pinned reads and its capture, so a
+	// test can change a role there.
+	afterPinnedRead func()
+	// beforeJob is set only by tests, before any loop runs: a hook a
+	// background job passes before it reads whose rules hold it, so a test
+	// can hold it while another turn claims its thread.
+	beforeJob func()
+	// beforeTitle is set only by tests, before any loop runs: a hook the
+	// title's background task passes before it does anything, so a test can
+	// hold it while another turn claims the thread.
+	beforeTitle func()
 	// skipThreadTitles, under mu, is set only by tests: it keeps a chat's
 	// first turn from spending a scripted completion on its title
 	// (agenttitle.go), which suites that script a model's queue turn by turn
@@ -275,6 +289,14 @@ type dataset struct {
 	// failedSettleTimeout is set only by tests: the budget of the settle
 	// after a failed write (zero is agentFailedSettleTimeout).
 	failedSettleTimeout time.Duration
+	// spoolCopy pairs a copy of the webhook spool with the snapshot read
+	// after it: the archive pass and an export share it from before they
+	// read the spool until their snapshot is taken, and a compaction holds
+	// it alone until it commits. A compaction committed between the two
+	// could take the delivery entries naming a request the copy holds and
+	// the drain recorded since, and a server restored from the copy would
+	// fire that request again (webhookRecordedSQL).
+	spoolCopy spoolCut
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.
@@ -285,8 +307,13 @@ type dataset struct {
 	// archive's changelog ends before the collection that tombstoned the
 	// manifest, so the restore needs the bytes the stream has not reached
 	// yet (#1022). The orphan sweep deletes them once the hold is gone.
-	exportHeldMu sync.Mutex
-	exportHeld   map[string]bool
+	exportHeldMu  sync.Mutex
+	exportHeld    map[string]bool
+	exportHoldAll bool
+	// archiveHeld and archiveHoldAll are the archive pass's hold, the same
+	// rule under the same mutex (archive.go).
+	archiveHeld    map[string]bool
+	archiveHoldAll bool
 
 	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
 	// previous pass looked at, so a store with more objects than one batch is
@@ -321,10 +348,13 @@ type dataset struct {
 	// row that can no longer be written would otherwise warn on every agent
 	// write for the life of the process.
 	warnedPolicies sync.Map
-	// unregisterMetrics drops this pool's sql.DBStats collector and the
-	// webhook spool's gauges on close; nil on a dataset that never
-	// registered them (creation's seed dataset).
+	// unregisterMetrics drops this pool's sql.DBStats collector, the
+	// webhook spool's gauges and the usage inventory on close; nil on a
+	// dataset that never registered them (creation's seed dataset).
 	unregisterMetrics func()
+	// usage is the repository's last inventory reading for the usage gauges
+	// (usagemetrics.go).
+	usage usageInventory
 
 	// reindexFrom is the search index version the open found below this
 	// binary's (searchindex.go checkSearchIndex); zero when the index is
@@ -340,6 +370,10 @@ type dataset struct {
 	// which is reproject. An apply sets it while a rebuild may read it.
 	reprojectPending atomic.Bool
 	reproject        backgroundPass
+	// archive is the repository's archive as this process writes it, nil in
+	// a process that writes none (archive.go); archiveStop ends its passes.
+	archive     *archiveState
+	archiveStop func()
 }
 
 func (ds *dataset) close() {
@@ -347,13 +381,8 @@ func (ds *dataset) close() {
 	// through it.
 	ds.stopSearchReindex(true)
 	ds.stopIndexReprojection(true)
-	ds.stopSegmentDigest()
+	ds.stopArchiver()
 	ds.watch.close()
-	ds.writerMu.Lock()
-	if ds.writer != nil {
-		_ = ds.writer.Close()
-	}
-	ds.writerMu.Unlock()
 	if ds.unregisterMetrics != nil {
 		ds.unregisterMetrics()
 	}
@@ -362,8 +391,13 @@ func (ds *dataset) close() {
 
 func (ds *dataset) Repository() substrate.RepositoryInfo {
 	ds.mu.RLock()
-	defer ds.mu.RUnlock()
-	return ds.info
+	info := ds.info
+	ds.mu.RUnlock()
+	if names := ds.answersTo(); len(names) > 0 {
+		info.Authority, info.FormerNames = names[0], names[1:]
+	}
+	info.Spellings = ds.names()
+	return info
 }
 
 // Head is the changelog's highest committed seq and the history generation it
@@ -385,10 +419,11 @@ func (ds *dataset) registry() *vocabulary.Registry {
 // --- type registry ---
 
 func (ds *dataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
-	types := ds.registry().Kinds()
+	reg := ds.registry()
+	types := reg.Kinds()
 	out := make([]substrate.KindInfo, 0, len(types))
 	for _, t := range types {
-		out = append(out, typeInfo(t))
+		out = append(out, typeInfoIn(reg, t))
 	}
 	return out, nil
 }
@@ -396,7 +431,7 @@ func (ds *dataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
 func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
 	reg := ds.registry()
 	if t, ok := reg.ByIdentity(ref); ok {
-		return typeInfo(t), nil
+		return typeInfoIn(reg, t), nil
 	}
 	if !vocabulary.Qualified(ref) {
 		// A bare name is a malformed reference, not a missing kind: the
@@ -433,6 +468,18 @@ func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	}
 	if !t.Label.Empty() {
 		info.Label = &substrate.KindLabel{Singular: t.Label.Singular, Plural: t.Label.Plural}
+	}
+	return info
+}
+
+// typeInfoIn is typeInfo with the kind's control class under reg's bundles.
+func typeInfoIn(reg *vocabulary.Registry, t *vocabulary.Kind) substrate.KindInfo {
+	info := typeInfo(t)
+	switch {
+	case vocabulary.SignInMaterial(t.Identity):
+		info.Control = vocabulary.ControlSignIn
+	default:
+		info.Control = string(controlClassIn(reg, t))
 	}
 	return info
 }
@@ -508,7 +555,8 @@ func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, err
 // minting, the hash lookup, the sealed material behind the credential — lives
 // in auth.go. There is no actor set on a token: a token without scopes has
 // full access to its repository, and an app's token is held to its scopes at
-// the API, with the owner-only gates here reading txn.scoped.
+// the API, with the gates an app's token alone meets here reading
+// txn.scoped.
 
 // jsonSafe round-trips a YAML-decoded definition through JSON so it stores
 // as jsonb and compares byte-identically on re-reconcile.
@@ -543,19 +591,37 @@ type txn struct {
 	// rather than the actor it writes as.
 	effectBy *vocabulary.Function
 	// wc is the context tx was begun under (beginWrite): the request's until
-	// commitAndMirror starts, the commit budget's from then on. Nil on a
+	// commit starts, the commit budget's from then on. Nil on a
 	// transaction that commits some other way.
-	wc    *writeCtx
-	actor substrate.Actor
-	// tier is the transaction's manager tier — the WRITE CONTEXT's standing
-	// against mapping recompute. Resolved once at inTx from the
-	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
-	// function/agent dispatch (setEffectEmit) — never inferred from the
-	// actor's spelling.
-	tier substrate.Tier
+	wc *writeCtx
+	// tokensMoved is set when the transaction folded a token record, so the
+	// token cache fences its repository across the COMMIT (tokencache.go).
+	tokensMoved bool
+	// commitSent is set once the COMMIT is asked of Postgres, and committed
+	// once Postgres answered it: sent and not committed is a commit in doubt.
+	commitSent, committed bool
+	actor                 substrate.Actor
+	// ensuringActor is set while ensureLinks writes an actor record, so the
+	// record's own entry does not ask for it again.
+	ensuringActor bool
+	// actorsStanding is the id of every actor record this transaction read
+	// standing or wrote; they reach the dataset's cache only once it commits
+	// (actors.go actorLive), so a rollback leaves no record cached that the
+	// store does not hold. actorEpoch is the cache's invalidation count when
+	// the transaction began, before it read any actor record, and
+	// actorsDisabled the records it disabled, which it invalidates again once
+	// its commit is visible.
+	actorsStanding map[string]bool
+	actorEpoch     uint64
+	actorsDisabled []string
+	// onBehalfOf is the actor the request this transaction serves acts for
+	// (substrate.OnBehalfOfFrom): the person, behind installed code a
+	// person's request started (linksOf). Empty on the trigger pass's own
+	// context.
+	onBehalfOf substrate.Actor
 	// principal is the token id the door verified for the request this
 	// transaction serves (substrate.PrincipalFrom), stamped on every
-	// changelog entry it appends and every manager row it lands. Empty when
+	// changelog entry it appends as its token. Empty when
 	// no token stands behind the write — the seed, the boot upgrade, a
 	// background worker, registration and login — and never taken from the
 	// caller: the actor is asserted, the principal is resolved. It follows
@@ -566,8 +632,7 @@ type txn struct {
 	// caused_by is what links that entry back to the write behind it.
 	principal string
 	// scoped is true when an app's token stands behind the request
-	// (substrate.ScopesFrom): its actor still resolves to the owner tier, so
-	// the owner-only gates read ownerHand, never the tier alone.
+	// (substrate.ScopesFrom): the gates an app's token alone meets read it.
 	scoped bool
 	// decides is the change request an app's token may decide under a
 	// `decide:` scope (substrate.DecisionFrom), "" otherwise; deciding is
@@ -592,9 +657,6 @@ type txn struct {
 	// after settleFold has made the last payload final, and leaves the
 	// encoded lines here for the segment writer that runs after commit.
 	pending []pendingEntry
-	// sealedMirror is every sealed-table write and delete this transaction
-	// made, applied to the repository directory after commit (repodir.go).
-	sealedMirror []sealedMirrorOp
 	// changeSink, when set, receives this transaction's entries AFTER COMMIT
 	// (inTx) — the agent loop's per-dispatch collector. After commit, so a
 	// rolled-back write stamps nothing.
@@ -603,11 +665,6 @@ type txn struct {
 	// decision's thread resume, which must never run inside the transaction
 	// that recorded it.
 	afterCommit []func()
-	// claimsChangelogDialect marks the transaction that stamps the changelog
-	// dialect (changelogdialect.go stampChangelogDialect): its entries are the
-	// first in the file that the new dialect covers, so commitAndMirror
-	// rewrites the manifest before it commits or appends them.
-	claimsChangelogDialect bool
 	// publishReg is the registry this transaction's commit activates: the
 	// vocabulary apply's candidate (vocabularywrite.go). commitAndPublish
 	// swaps it in under ds.mu held from before the commit, so a writer the
@@ -623,6 +680,12 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// approvalLoop marks the agent loop's own landing of an approval, the one
+	// writer that creates one; approvalRun marks the engine's run of an
+	// approved call, the one writer of its run properties and of the
+	// running, done and failed states (approvals.go).
+	approvalLoop bool
+	approvalRun  bool
 	// migrating marks a repository migration's transaction (repomigrate.go):
 	// it folds before the stored vocabulary loads, so a row whose kind the
 	// registry does not yet hold keeps its derived indexes as they stand,
@@ -633,8 +696,22 @@ type txn struct {
 	// another (move.go, record 0078). The row was admitted once already, under
 	// the old kind, so the CREATION-only contracts (an interaction's batch, a
 	// change request's reviewed envelope) must not judge it a second time: it
-	// is the same record arriving, not a new one being authored.
+	// is the same record arriving, not a new one being authored. movedFrom
+	// is the kind it arrives from, which its line names (matchChanges).
 	movingRecords bool
+	movedFrom     string
+	// dryRun runs the transaction to where it would commit, and rolls it
+	// back there (vocabularyBatch.rollback).
+	dryRun bool
+	// fillingActors marks the open's fill of the actor records the history
+	// links (actorfill.go), which writes the record of a hand whose code is
+	// gone and disables it, where any other write is refused for that hand
+	// (ensureActor).
+	fillingActors bool
+	// repointing is set while a write only moves the names a record holds
+	// (old to new), which its line names as `repointed` (a publish's renames,
+	// a carried record's deferred references).
+	repointing map[string]string
 	// policyDecision marks the ENGINE's own judge-driven decision on a
 	// policy-gated request: the one bundle-tier hand the gated
 	// guard admits.
@@ -643,6 +720,10 @@ type txn struct {
 	// written into an entry (fold.go). appendChange drains it, so every entry
 	// carries the delta — with values — that a rebuild replays.
 	folded []foldOp
+	// takenOut holds, for the line being folded, each property a record
+	// effect took out of a row that held it, and whether the row holds it
+	// again (fold.go settleTakenOut).
+	takenOut map[eref]map[string]bool
 	// seqLocked records that this transaction already holds the changelog's
 	// ordering lock (taken once, on the first append).
 	seqLocked bool
@@ -663,21 +744,13 @@ type txn struct {
 	// a replay reads the registry the rebuild holds, which is the declaration
 	// the row ended up under.
 	writeReg *vocabulary.Registry
-	// recomputing marks a mapping recompute's own write: recompute
-	// never triggers recompute, and the manager ledger records the winning
-	// contributor's actor — recomputeManagers, per accepted property —
-	// instead of the transaction's, always at the machine tier (attribution
-	// never pins).
+	// recomputing marks a mapping recompute's own write: recompute never
+	// triggers recompute, and each property it writes is marked with the
+	// source records behind the value — recomputeSources, per property —
+	// and pinned by nothing (decision 0284).
 	recomputeInitiator substrate.Actor
 	recomputing        bool
-	recomputeManagers  map[string]substrate.Actor
-	// propTiers names properties of one record's write that stand at a tier
-	// other than the transaction's (propTier): each is held to its `writer:`
-	// role at that tier, and its manager row records it. The OAuth callback
-	// sets it for its one patch (oauth.go completeOAuth), so the facility's
-	// own fields, the connector's error pair it clears and the owner's sync
-	// request it stamps land in one changelog entry.
-	propTiers *propTiers
+	recomputeSources   map[string][]string
 	// causedBy is the changelog seq that caused this transaction's writes —
 	// set only when a function's effects apply, stamped onto every changelog
 	// row so the causal-depth walk can follow the chain.
@@ -693,6 +766,20 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// roles are the roles each person this transaction's check read holds
+	// (roles.go), read once per transaction.
+	roles map[substrate.Actor]scope.Roles
+	// exempt is the exemption this transaction writes under (run.go), ""
+	// for a write held as any is.
+	exempt exemptOp
+	// claiming is set by a turn's claim of its thread (agentloop.go
+	// claimThread): the one write that makes the thread's `heldTo` the
+	// turn's (heldto.go stampHeldTo). A hand's write of the lease does not.
+	claiming bool
+	// report is the holders of the item a report row reports, set while
+	// that row is written (agentdecision.go putThreadSystemRowID): the row
+	// carries them and never the writer's (heldto.go stampHeldTo).
+	report *reportHolders
 	// observed is what this transaction's observed point writes touched,
 	// recomputed once at its end (observedsettle.go settleObserved).
 	observed *observedTouch
@@ -703,6 +790,10 @@ type txn struct {
 	unitTouched bool
 	unitBefore  *unitGraphAt
 	unitLocal   *unitGraphAt
+	// unitMoves counts how far this transaction's folds moved the unit
+	// graph's revision: a compaction's capture reads it per effect it
+	// replays (compact.go).
+	unitMoves int
 	// metricValues and metricRecords are the observed values and the metrics
 	// the transaction folded, which its end holds
 	// to the metric rules (metricrules.go checkMetricValues).
@@ -739,17 +830,19 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := ds.svc.lease.err(); err != nil {
 		return err
 	}
-	// A directory that fell behind the tables refuses every write until a
-	// restart: the boot check is the one repair path (repodir.go).
-	if err := ds.doorDirectoryErr(); err != nil {
+	// A vocabulary commit whose answer was lost refuses every write until a
+	// restart loads the declarations Postgres holds (ErrRegistryUnsettled).
+	if err := ds.unsettledErr(); err != nil {
 		return err
 	}
+	// A person's write links their own actor (people.go).
+	actor = ds.personActorFor(ctx, actor)
 	// The write gate before the pool connection (writegate.go): a background
-	// writer waits there holding nothing while an owner write is on its way
+	// writer waits there holding nothing while a person's write is on its way
 	// to the changelog lock, and one background writer at a time goes on to
 	// it. The pass is given back once the lock is held, and on every exit
 	// before that.
-	pass, err := ds.gate.enter(ctx, ds.ownerFirst(ctx, actor, internal))
+	pass, err := ds.gate.enter(ctx, ds.personFirst(ctx, actor, internal))
 	if err != nil {
 		return err
 	}
@@ -768,9 +861,10 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	defer func() { _ = tx.Rollback() }()
 	_, scoped := substrate.ScopesFrom(ctx)
 	t := &txn{
-		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor, tier: ds.actorTier(actor),
-		principal: substrate.PrincipalFrom(ctx), scoped: scoped, now: nowUTC(), internal: internal,
-		decides: substrate.DecisionFrom(ctx),
+		ctx: ctx, ds: ds, tx: tx, wc: wc, actor: actor,
+		principal: substrate.PrincipalFrom(ctx), onBehalfOf: substrate.OnBehalfOfFrom(ctx),
+		scoped: scoped, now: nowUTC(), internal: internal,
+		decides: substrate.DecisionFrom(ctx), actorEpoch: ds.actors.now(),
 	}
 	// The changelog lock before anything else the transaction locks: the
 	// first key of the global order (rows.go changelogLockKey). The cost is
@@ -802,6 +896,14 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.checkMetricValues(); err != nil {
 		return err
 	}
+	if check := ds.svc.testEndOfTxCheck; check != nil {
+		if err := check(func(pkg string) bool {
+			_, ok := t.declarations().PackageByName(pkg)
+			return ok
+		}); err != nil {
+			return err
+		}
+	}
 	// The observed index's rollups and latest rows, from the points the
 	// transaction's folds left (observedindex.go).
 	if err := t.settleObserved(); err != nil {
@@ -816,7 +918,48 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if err := t.settleChecksums(); err != nil {
 		return err
 	}
-	if err := ds.commitAndMirror(tx, t); err != nil {
+	// The commit's own refusals, the writer's lease lost and the dataset
+	// latched unsettled, read here too so a dry run meets them; commit
+	// reads them again immediately before its COMMIT.
+	if err := ds.svc.lease.err(); err != nil {
+		return err
+	}
+	if err := ds.unsettledErr(); err != nil {
+		return err
+	}
+	// A dry run ends here, where it would commit, every check and settling
+	// above run as the commit would have them (vocabularyBatch.rollback).
+	if t.dryRun {
+		return errBatchRolledBack
+	}
+	// A transaction that moved a token fences its repository's tokens in the
+	// cache before its COMMIT, and the fence stands until the outcome is
+	// proved (tokencache.go): a lookup in between reads the table.
+	repository := ds.scope.Repository
+	if t.tokensMoved {
+		ds.svc.tokens.fence(repository)
+	}
+	err = ds.commit(tx, t)
+	if errors.Is(err, substrate.ErrWriteInDoubt) {
+		ds.commitDoubted()
+	}
+	if err == nil {
+		ds.settleActorCache(t)
+	}
+	if t.tokensMoved {
+		switch {
+		case t.committed:
+			ds.svc.tokens.unfence(repository)
+		case !t.commitSent:
+			// No COMMIT was sent: the rollback is the outcome, and it runs
+			// before the fence lifts.
+			_ = tx.Rollback()
+			ds.svc.tokens.unfence(repository)
+		default:
+			ds.svc.settleTokens(repository)
+		}
+	}
+	if err != nil {
 		return err
 	}
 	ds.mu.RLock()
@@ -831,172 +974,94 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	if t.changeSink != nil && len(t.entries) > 0 {
 		*t.changeSink = append(*t.changeSink, t.entries...)
 	}
+	// A replay re-derives history that was counted when it was written.
+	if !t.replaying {
+		ds.countChanges(t.pending)
+	}
 	for _, fn := range t.afterCommit {
 		fn()
 	}
 	return nil
 }
 
-// commitAndMirror commits the transaction with its changelog lines and sealed
-// files durable first
-// ([0062](../../docs/decisions/0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md)).
-// It runs under writerMu, taken BEFORE the commit because the changelog
-// advisory lock that orders appends is released at commit, so without it two
-// committed transactions could reach the writer in the other order. The
-// steps, each its own function in repodir.go:
-//
-//  0. the transaction that claims the changelog dialect rewrites the
-//     manifest (writeManifestBeforeCommit): its lines are the first the new
-//     dialect covers, and a manifest written after them would leave a window,
-//     a crash or a copy between the append and the rewrite, in which the
-//     directory understates what its segments require; a manifest that fails
-//     to write refuses the transaction with nothing to roll back;
-//  1. the sealed writes are staged: each payload written and fsynced to its
-//     pending file, the record's own file untouched;
-//  2. the changelog lines are prepared: written and fsynced without the last
-//     line's newline, so every reader cuts them as an unfinished transaction;
-//  3. Postgres commits, which is the commit point;
-//  4. the pending files are renamed into place, which makes them the records;
-//  5. the final newline lands, which makes the lines history in the file;
-//  6. the sealed deletes land.
-//
-// A failure before step 3 rolls the directory back (the pending files
-// discarded, the prepared bytes cut) and returns ErrDirectoryWrite with
-// nothing durable anywhere: the caller may retry. A changelog writer that
-// failed is the exception: it refuses every later prepare until a restart,
-// so that failure latches (prepareLines). A failure after step 3 is latched
-// (ErrChangelogFileBehind): the tables hold the write, the directory does not
-// yet, the caller gets the error, and every later write is refused until a
-// restart lets the boot check catch the directory up from the table; inTx's
-// after-commit work (the watch signal, the change sink, the afterCommit
-// hooks) does not run for that write, which the latch makes moot.
+// commit commits the transaction: Postgres alone confirms a write (decision
+// 0262), and the archive copies it after the fact (archive.go).
 //
 // The request's context cancels nothing from the top of this function on
 // (beginWrite): a client that disconnects while Postgres commits would
 // otherwise have the driver abandon a COMMIT the server may already have
-// applied. A commit that reports failure after committing all the same (a
-// connection lost at the answer, the commit budget spent) is rolled back
-// here like a failure and may have left the table ahead. With lines, the
-// next write catches the file up from the table before its own prepare
-// (catchUpBeforePrepare) and nothing latches. Without them nothing in the
-// table tells, so a sealed-only transaction latches at once, and so does one
-// that publishes a registry: the registry this process serves may be behind
-// the declarations the table holds, and only the open loads them again.
-// A crash at any point leaves the two stores to agree at the next open: an
-// unfinished tail is cut whole (0057), a pending file is dropped once the
-// records are written from the table, a table ahead of the file is appended
-// to it. An import into an empty database sees the same directory and takes
-// only what was committed in it: the lines with their newline, the records
-// under their own names.
-//
-// Sealed files before the lines and sealed deletes after them keep sealed/ a
-// superset of what the changelog references at every instant, so a copy that reads
-// sealed/ and then changelog/ never holds a line naming a file it missed. A
-// dataset with no writer (the creation dataset) commits and mirrors nothing;
-// its directory is written from the tables afterwards.
-func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
+// applied. A commit that reports failure may have committed all the same (a
+// connection lost at the answer, the commit budget spent); the next read
+// finds out which. One that would have published a registry latches the
+// dataset (ErrRegistryUnsettled), because the registry this process serves
+// may be behind the declarations the table holds, and only the open loads
+// them again.
+func (ds *dataset) commit(tx *sql.Tx, t *txn) error {
 	if err := t.wc.detach(); err != nil {
 		return err
 	}
-	// THE LEASE AGAIN. The check at the write's door (inTx, inRawTx) is as old
-	// as the write: this transaction may have waited for a pool connection,
-	// run a body of any length, and — below — waited out another
-	// transaction's whole commit for the changelog lock, and the heartbeat
-	// may have latched the refusal at any point in that. Each of these is one
-	// atomic load, and the last one is immediately before the commit, so the
-	// window between "this process is the writer" and "this write lands" is
-	// as narrow as it can be made without a round trip.
+	// The seam is where a test's process dies before the commit: the
+	// deferred rollback in inTx is what a crash does to the transaction.
+	if err := ds.svc.commitFault(commitBeforeCommit); err != nil {
+		return err
+	}
+	// THE LEASE AGAIN, and the latch. The checks at the write's door (inTx,
+	// inRawTx) are as old as the write: this transaction may have waited for
+	// a pool connection and run a body of any length, and the heartbeat may
+	// have latched the refusal at any point in that. Atomic loads,
+	// immediately before the commit.
 	if err := ds.svc.lease.err(); err != nil {
 		return err
 	}
-	if ds.writer == nil || (len(t.pending) == 0 && len(t.sealedMirror) == 0) {
-		return ds.commitAndPublish(tx, t)
-	}
-	ds.writerMu.Lock()
-	defer ds.writerMu.Unlock()
-	if ds.fileErr != nil {
-		return ds.fileErr
-	}
-	if err := ds.svc.lease.err(); err != nil {
+	if err := ds.unsettledErr(); err != nil {
 		return err
 	}
-	// Before the manifest and the stage: rows another process committed are
-	// appended first, so the lines below are the file's next and the sealed
-	// mirror is the table's before this transaction's files are staged.
-	if err := ds.catchUpBeforePrepare(t); err != nil {
-		return err
-	}
-	if t.claimsChangelogDialect {
-		if err := ds.writeManifestBeforeCommit(maxChangelogDialect); err != nil {
-			return err
-		}
-	}
-	writes, deletes := splitSealedOps(t.sealedMirror)
-	staged, err := ds.stageSealedBeforeCommit(writes)
-	if err != nil {
-		return err
-	}
-	prepared, err := ds.prepareLines(t.pending)
-	if err != nil {
-		ds.discardStaged(staged)
-		return err
-	}
-	// The seam is where a test's process dies: nothing below it runs, and
-	// the deferred rollback in inTx is what a crash does to the transaction.
-	if err := ds.svc.commitFault(commitAfterPrepare); err != nil {
-		return err
-	}
-	// The last look at the lease, with the lines prepared and the commit not
-	// yet run. Nothing has landed, so this is a plain refusal: the lines are
-	// cut and the staged files discarded, and it is NOT marked in doubt —
-	// that flag is for a commit that may have committed, and this one
-	// certainly did not.
-	if err := ds.svc.lease.err(); err != nil {
-		ds.abortLines(prepared)
-		ds.discardStaged(staged)
-		return err
-	}
-	err = ds.commitAndPublish(tx, t)
+	// Postgres alone confirms the write, so no work follows the COMMIT for
+	// the token cache's fence to cover (tokencache.go): the write is in doubt
+	// exactly when its COMMIT was sent and no answer came (the connection
+	// lost at the answer, the commit budget spent, or the seam that stands
+	// for either), and only the database proves which way it went
+	// (settleTokens).
+	t.commitSent = true
+	err := ds.commitAndPublish(tx, t)
 	if err == nil {
 		// The seam for a commit whose answer was lost after Postgres
 		// committed: the error path below runs as it would for one that
 		// rolled back.
 		err = ds.svc.commitFault(commitInDoubt)
 	}
+	t.committed = err == nil
 	if err != nil {
-		ds.abortLines(prepared)
-		ds.discardStaged(staged)
-		// A commit that errors may have committed. With lines, the next
-		// write's catch-up appends them from the table if it did
-		// (catchUpBeforePrepare), sealed files included, and the flag names
-		// the gap it closes. Without lines nothing would, so a sealed-only
-		// transaction latches here, whether it staged files the table may
-		// now hold or deleted rows whose files are still there, and the boot
-		// rewrites sealed/ from the table. A registry the commit would have
-		// published was not, and the next write would be held to the one it
-		// replaced, so that latches too.
-		switch {
-		case t.publishReg != nil:
-			ds.latchDirectoryErr(fmt.Errorf("commit of a vocabulary change failed and may have committed: %w", err))
-			return ds.fileErr
-		case prepared:
-			ds.commitInDoubt = true
-		case len(staged) > 0 || len(deletes) > 0:
-			ds.latchDirectoryErr(fmt.Errorf("commit of a sealed-only transaction failed and may have committed: %w", err))
-			return ds.fileErr
-		}
-		return err
+		return inDoubt(err)
 	}
-	if err := ds.svc.commitFault(commitAfterCommit); err != nil {
-		return err
+	return inDoubt(ds.svc.commitFault(commitAfterCommit))
+}
+
+// inDoubt marks an error a write answers once its COMMIT was sent, in the
+// commit phase or in a read after it (getAfterCommit): the write may have
+// landed, so its client is told it cannot conclude the write failed
+// (substrate.ErrWriteInDoubt, decision 0271). Every error before the COMMIT
+// rolled the write back and is not marked.
+func inDoubt(err error) error {
+	if err == nil {
+		return nil
 	}
-	if err := ds.commitStagedSealed(staged); err != nil {
-		return err
+	return fmt.Errorf("%w: %w", substrate.ErrWriteInDoubt, err)
+}
+
+// ErrRegistryUnsettled is the refusal every write meets after a commit that
+// would have published a registry answered failure: it may have committed,
+// and the registry this process serves may be behind the declarations the
+// table holds. It is an ErrRestartRequired, so the wire answers 503 and
+// names the restart.
+var ErrRegistryUnsettled = fmt.Errorf("%w: a vocabulary change's commit answered failure and may have committed; restart the server so the repository serves the declarations Postgres holds", substrate.ErrRestartRequired)
+
+// unsettledErr is the latched refusal (dataset.unsettled), nil when none.
+func (ds *dataset) unsettledErr() error {
+	if err := ds.unsettled.Load(); err != nil {
+		return *err
 	}
-	if err := ds.commitLines(prepared); err != nil {
-		return err
-	}
-	return ds.deleteSealedAfterCommit(deletes)
+	return nil
 }
 
 // commitAndPublish commits the transaction and, when it carries a registry to
@@ -1005,23 +1070,23 @@ func (ds *dataset) commitAndMirror(tx *sql.Tx, t *txn) error {
 // the commit, and that write's next act is ds.registry(), which takes ds.mu
 // shared: with the mutex held across the commit and the swap, the write reads
 // the published declaration and not the one the commit retired. A commit that
-// fails publishes nothing. ds.mu nests inside writerMu here, which is the
-// order the rebuild takes them (writerMu held, the fold's registry() inside),
-// and it is held for the commit alone, never for the file mirror.
+// fails publishes nothing and latches the dataset (ErrRegistryUnsettled).
 func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 	if t.publishReg == nil {
-		return tx.Commit()
+		return ds.svc.commitTx(tx)
 	}
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	if err := tx.Commit(); err != nil {
-		return err
+	err := ds.svc.commitTx(tx)
+	if err == nil {
+		// The seam for a commit whose answer was lost after Postgres
+		// committed, with the registry not yet published.
+		err = ds.svc.commitFault(commitUnpublished)
 	}
-	// The seam for a commit whose answer was lost after Postgres committed,
-	// with the registry not yet published: the error path in commitAndMirror
-	// runs as it would for a real one.
-	if err := ds.svc.commitFault(commitUnpublished); err != nil {
-		return err
+	if err != nil {
+		latched := fmt.Errorf("%w: %w", ErrRegistryUnsettled, err)
+		ds.unsettled.Store(&latched)
+		return latched
 	}
 	if ds.beforePublish != nil {
 		ds.beforePublish(t)
@@ -1034,13 +1099,11 @@ func (ds *dataset) commitAndPublish(tx *sql.Tx, t *txn) error {
 }
 
 // commitBudget bounds what a write's commit phase asks of Postgres, from the
-// top of commitAndMirror on, where the request's context no longer reaches
-// (beginWrite): the catch-up's reads and the COMMIT. When it runs out the
-// transaction's own context is canceled: a commit not yet sent rolls back,
-// and one in flight is in doubt, which the next write resolves (repodir.go
-// catchUpBeforePrepare). The wait for writerMu and the file steps take no
-// context, so the budget does not interrupt them. A commit phase takes
-// milliseconds; the budget is for a database that stopped answering.
+// top of commit on, where the request's context no longer reaches
+// (beginWrite). When it runs out the transaction's own context is canceled:
+// a commit not yet sent rolls back, and one in flight is in doubt. A commit
+// phase takes milliseconds; the budget is for a database that stopped
+// answering.
 const commitBudget = 30 * time.Second
 
 // writeCtx is the context a write's transaction is begun under: canceled
@@ -1061,7 +1124,7 @@ type writeCtx struct {
 }
 
 // beginWrite begins a transaction on db for a write that commits through
-// commitAndMirror. The caller defers release, AFTER its deferred rollback
+// commit. The caller defers release, AFTER its deferred rollback
 // is registered so the rollback runs first. Statements take the request's
 // own context as before, so a request that ends during the body still stops
 // it.
@@ -1113,15 +1176,6 @@ func (wc *writeCtx) release() {
 	wc.cancel()
 }
 
-// commitCtx is the context the commit phase's own reads run under: the
-// transaction's detached one where it has one.
-func (t *txn) commitCtx() context.Context {
-	if t.wc != nil {
-		return t.wc.ctx
-	}
-	return t.ctx
-}
-
 // asActor runs fn with the transaction attributed to another actor, then puts
 // the previous one back. One transaction can therefore hold entries from two
 // hands where the act genuinely has two — creation is the case that needs it:
@@ -1129,22 +1183,35 @@ func (t *txn) commitCtx() context.Context {
 // material in the same commit is the substrate's. The tier
 // follows the actor, since it is resolved from the actor's data.
 func (t *txn) asActor(actor substrate.Actor, fn func() error) error {
-	prevActor, prevTier := t.actor, t.tier
-	t.actor, t.tier = actor, t.actorTier(actor)
-	defer func() { t.actor, t.tier = prevActor, prevTier }()
+	prevActor := t.actor
+	t.actor = actor
+	defer func() { t.actor = prevActor }()
 	return fn()
 }
 
 func (t *txn) query(sqlText string, args ...any) (*sql.Rows, error) {
+	t.replayed(sqlText)
 	return t.tx.QueryContext(t.ctx, sqlText, args...)
 }
 
 func (t *txn) row(sqlText string, args ...any) *sql.Row {
+	t.replayed(sqlText)
 	return t.tx.QueryRowContext(t.ctx, sqlText, args...)
 }
 
 func (t *txn) exec(sqlText string, args ...any) (sql.Result, error) {
+	t.replayed(sqlText)
 	return t.tx.ExecContext(t.ctx, sqlText, args...)
+}
+
+// replayed hands a statement a replay runs to the test seam that lists them
+// (seams.go WithTestReplaySQL).
+func (t *txn) replayed(sqlText string) {
+	if t.replaying {
+		if f := t.ds.svc.testReplaySQL; f != nil {
+			f(sqlText)
+		}
+	}
 }
 
 // --- watch ---
@@ -1176,6 +1243,191 @@ func (b *broadcaster) signal(seq int64) {
 		return
 	}
 	b.timer = time.AfterFunc(300*time.Millisecond, b.flush)
+}
+
+// commitDoubted follows a commit whose answer was lost: it may have landed,
+// and it signaled nothing. The streams' window opens again at the table's
+// head (changetail.go), and the streams wake to read it.
+// commitTx sends a transaction's COMMIT, through the test seam that may
+// answer in its place.
+func (s *service) commitTx(tx *sql.Tx) error {
+	if s.testCommitTx != nil {
+		return s.testCommitTx(tx.Commit)
+	}
+	return tx.Commit()
+}
+
+// lockTokens takes, in a control-plane transaction that ends or changes the
+// tokens of a repository (or who they act for), that repository's changelog
+// lock, which every transaction moving a token holds: a COMMIT whose answer
+// is lost is proved ended by its release (settleTokens). A transaction that
+// touches several takes them in the order of their ids.
+func lockTokens(ctx context.Context, tx *sql.Tx, repository string) error {
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`,
+		Scope{Repository: repository}.lockKey(changelogLockKey))
+	return err
+}
+
+// commitFencingTokens commits a control-plane transaction under the token
+// cache's rule (tokencache.go): each repository whose tokens it ends or
+// changes is fenced before the COMMIT and stays fenced until the outcome is
+// proved, at once when the COMMIT answers, by settleTokens when it does not.
+// The transaction holds each repository's lock (lockTokens).
+func (s *service) commitFencingTokens(tx *sql.Tx, repositories ...string) error {
+	for _, r := range repositories {
+		s.tokens.fence(r)
+	}
+	err := s.commitTx(tx)
+	for _, r := range repositories {
+		if err != nil {
+			s.settleTokens(r)
+		} else {
+			s.tokens.unfence(r)
+		}
+	}
+	return err
+}
+
+// tokenProofAttempt bounds one wait for a doubted commit's changelog lock; a
+// wait that runs out proves nothing, and the next attempt follows.
+const tokenProofAttempt = time.Minute
+
+// tokenProofRetryMax caps the pause between two failed attempts.
+const tokenProofRetryMax = 5 * time.Second
+
+// tokenProofWaits bounds the proofs that hold a connection of the
+// maintenance pool at once, across repositories: the pool authenticates
+// every request too. A proof waiting for a slot drops nothing; its fences
+// stand until it gets one.
+const tokenProofWaits = 2
+
+// tokenProofs coalesces the proofs the token cache waits on: one waiter per
+// repository, however many doubted commits fenced it.
+type tokenProofs struct {
+	mu sync.Mutex
+	// pending counts, per repository, the fences awaiting proof; running
+	// says whether its waiter runs.
+	pending map[string]int
+	running map[string]bool
+	// slots bounds the waits held at once (tokenProofWaits).
+	slots chan struct{}
+}
+
+// settleTokens lifts the repository's fence that a COMMIT whose answer was
+// lost put up, once the database proves that transaction ended: every
+// transaction that moves a token holds the repository's changelog lock until
+// it ends (inTx, and the erase's own), so the lock granted to the waiter is
+// that proof, as the tail's fenced head read relies on (changetail.go
+// tailHead). The repository has one waiter (proveTokens), which this hands
+// the fence to, or starts. A server shutting down leaves the fence standing.
+func (s *service) settleTokens(repository string) {
+	p := &s.proofs
+	p.mu.Lock()
+	if p.pending == nil {
+		p.pending, p.running = map[string]int{}, map[string]bool{}
+	}
+	p.pending[repository]++
+	if p.running[repository] {
+		p.mu.Unlock()
+		return
+	}
+	p.running[repository] = true
+	p.mu.Unlock()
+	s.spawn("prove a token commit ended", repository, func(ctx context.Context) {
+		s.proveTokens(ctx, repository)
+	})
+}
+
+// proveTokens is a repository's one waiter. An attempt proves the fences
+// registered before it began: each doubted transaction sent its COMMIT, the
+// changelog lock held, before its fence was handed here, so a lock asked for
+// after that is granted after the transaction ended. Fences handed over
+// while an attempt waits wait for the next one. A failed attempt (an error,
+// a wait that ran out) proves nothing: it tries again, for as long as it
+// takes, and the fences stand meanwhile; the wait is on the maintenance
+// pool, so it outlives the repository's own.
+func (s *service) proveTokens(ctx context.Context, repository string) {
+	p := &s.proofs
+	key := Scope{Repository: repository}.lockKey(changelogLockKey)
+	pause := 50 * time.Millisecond
+	for {
+		p.mu.Lock()
+		n := p.pending[repository]
+		if n == 0 {
+			delete(p.pending, repository)
+			delete(p.running, repository)
+			p.mu.Unlock()
+			return
+		}
+		p.mu.Unlock()
+		if err := s.awaitLockFree(ctx, key); err == nil {
+			p.mu.Lock()
+			p.pending[repository] -= n
+			p.mu.Unlock()
+			for range n {
+				s.tokens.unfence(repository)
+			}
+			pause = 50 * time.Millisecond
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pause):
+		}
+		pause = min(2*pause, tokenProofRetryMax)
+	}
+}
+
+// awaitLockFree is one attempt at a proof: the lock granted, and let go at
+// once, within one of the bounded slots.
+func (s *service) awaitLockFree(ctx context.Context, key string) error {
+	if s.testTokenProof != nil {
+		if err := s.testTokenProof(); err != nil {
+			return err
+		}
+	}
+	select {
+	case s.proofs.slots <- struct{}{}:
+		defer func() { <-s.proofs.slots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	ctx, cancel := context.WithTimeout(ctx, cmp.Or(s.testTokenProofAttempt, tokenProofAttempt))
+	defer cancel()
+	tx, err := s.maint.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, key); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (ds *dataset) commitDoubted() {
+	ds.tail.reset()
+	ds.watch.nudge()
+}
+
+// nudge wakes every subscriber without moving the signaled seq. A commit in
+// doubt may not have landed, and a seq claimed for it could be taken by the
+// next write; the read the nudge wakes finds out which (changetail.go).
+func (b *broadcaster) nudge() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed || b.timer != nil {
+		return
+	}
+	b.timer = time.AfterFunc(300*time.Millisecond, b.flush)
+}
+
+// lastSignaled is the highest seq a commit has signaled.
+func (b *broadcaster) lastSignaled() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.last
 }
 
 func (b *broadcaster) flush() {
@@ -1273,11 +1525,10 @@ func legacyAppNamespace(actor substrate.Actor, clientID string) string {
 	return string(substrate.AppActor(u.Host))
 }
 
-// metaKeyAllowed enforces the label/annotation namespace rule: a human hand
-// (`api`, `console`, `substratectl`) and the engine's own may write any
-// well-formed key, which is what makes the `owner/…` convention theirs to
-// write; every other actor — an agent, a function, a bundle — is bound to its
-// own actor name as the namespace.
+// metaKeyAllowed enforces the label/annotation namespace rule: the person and
+// the engine may write any well-formed key, which is what makes the `owner/…`
+// convention theirs to write; every other actor — an agent, a function, a
+// bundle — is bound to its own actor key as the namespace.
 //
 // An app writes under its own actor and, beside it, under `app:` and the host
 // of its client id (clientID, substrate.ClientIDFrom): the namespace a binary
@@ -1294,13 +1545,12 @@ func metaKeyAllowed(ctx context.Context, actor substrate.Actor, clientID, key st
 	if ns == actorNamespace(actor) || ns == legacyAppNamespace(actor, clientID) {
 		return nil
 	}
-	return fmt.Errorf("%w: actor %q may not write key %q", substrate.ErrForbidden, actor, key)
+	return fmt.Errorf("%w: %s may not write key %q", substrate.ErrForbidden, handWords(actor), key)
 }
 
 // inRawTx runs fn in a plain scoped transaction: no actor, no fold, no
 // changelog entry, the shape a re-key or a maintenance read needs. It
-// settles nothing on purpose: fn must not fold. Sealed rows it rewrote are
-// mirrored into the directory after the commit, as any transaction's are.
+// settles nothing on purpose: fn must not fold.
 func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if ds.svc.readOnly {
 		return ErrDirectoryReadOnly
@@ -1313,9 +1563,9 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 		return err
 	}
 	defer wc.release()
-	// One rollback covers every exit, commitAndMirror's refusal of a latched
-	// directory included: a re-key holds every sealed row FOR UPDATE, and a
-	// transaction left open there would hold them until the context died.
+	// One rollback covers every exit, the commit's refusal included: a re-key
+	// holds every sealed row FOR UPDATE, and a transaction left open there
+	// would hold them until the context died.
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{ctx: ctx, ds: ds, tx: tx, wc: wc, now: nowUTC(), internal: true}
 	if err := fn(t); err != nil {
@@ -1329,5 +1579,40 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 	if len(t.folded) > 0 || len(t.pending) > 0 {
 		return errors.New("substrate/engine: a raw transaction folded or appended; it may not")
 	}
-	return ds.commitAndMirror(tx, t)
+	return ds.commit(tx, t)
+}
+
+// spoolCut is dataset.spoolCopy. Its zero value is ready, and each side
+// waits for it on its own context, so a compaction or a copy whose request
+// or pass ends stops waiting.
+type spoolCut struct {
+	once sync.Once
+	sem  *semaphore.Weighted
+}
+
+// spoolCutShares is more copies at once than a repository runs: its archive
+// pass and its one export.
+const spoolCutShares = 1 << 10
+
+func (c *spoolCut) weighted() *semaphore.Weighted {
+	c.once.Do(func() { c.sem = semaphore.NewWeighted(spoolCutShares) })
+	return c.sem
+}
+
+// share is a copy's hold, and its release may be called more than once.
+func (c *spoolCut) share(ctx context.Context) (func(), error) {
+	return c.acquire(ctx, 1)
+}
+
+// hold is a compaction's: no copy is between its spool and its snapshot.
+func (c *spoolCut) hold(ctx context.Context) (func(), error) {
+	return c.acquire(ctx, spoolCutShares)
+}
+
+func (c *spoolCut) acquire(ctx context.Context, n int64) (func(), error) {
+	sem := c.weighted()
+	if err := sem.Acquire(ctx, n); err != nil {
+		return nil, err
+	}
+	return sync.OnceFunc(func() { sem.Release(n) }), nil
 }

@@ -321,7 +321,7 @@ func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
 func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mediaType string) error {
 	props := map[string]any{
 		blobPropDigest:    digest,
-		blobPropCreatedBy: string(actor),
+		blobPropCreatedBy: vocabulary.ActorRef(actorID(actor)),
 		blobStateStatus:   string(substrate.BlobPending),
 	}
 	if name != "" {
@@ -374,7 +374,7 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 		// may name any declared state); a tombstoned manifest resurrects.
 		props := map[string]any{
 			blobPropDigest: digest, blobPropSize: size,
-			blobPropCreatedBy: string(actor),
+			blobPropCreatedBy: vocabulary.ActorRef(actorID(actor)),
 			blobStateStatus:   string(substrate.BlobStored),
 		}
 		// Name and mime type are optional: an empty one is written as nothing
@@ -791,10 +791,11 @@ func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store,
 		if err != nil || live {
 			return err
 		}
-		// A streaming export listed these bytes while their manifest was
-		// live, and its archive restores that manifest: they stay until the
-		// stream ends, and the orphan sweep deletes them after (#1022).
-		if ds.exportHolds(digest) {
+		// A streaming export or an archive pass listed these bytes while
+		// their manifest was live, and what it writes restores that
+		// manifest: they stay until it ends, and the orphan sweep deletes
+		// them after (#1022).
+		if ds.blobHeld(digest) {
 			return nil
 		}
 		// Nothing to commit but the lock, so the delete runs inside the

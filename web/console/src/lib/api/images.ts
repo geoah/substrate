@@ -44,7 +44,7 @@ export function proxiedImage(url: string): Promise<string | undefined> {
   if (held) return held
   const pending = (async () => {
     if (!url.startsWith("https://")) return undefined
-    const headers: Record<string, string> = { "X-Substrate-Actor": "console" }
+    const headers: Record<string, string> = {}
     const token = getToken()
     if (token) headers.Authorization = `Bearer ${token}`
     try {

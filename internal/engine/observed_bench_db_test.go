@@ -204,7 +204,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	sourceRef := func(id string) map[string]any { return map[string]any{"ref": kindSource + "/" + id} }
 	put := func(kind, id string, props map[string]any) time.Duration {
 		started := time.Now()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s: %v", id, err)
 		}
 		return time.Since(started)
@@ -506,7 +506,7 @@ func TestObservedIndexBenchmark(t *testing.T) {
 	for i := range 50 {
 		s := home20[i%len(home20)]
 		started := time.Now()
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, trace, s.id+"/"+day.Add(time.Duration(i%24)*time.Hour).Format("2006-01-02T15"),
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, trace, s.id+"/"+day.Add(time.Duration(i%24)*time.Hour).Format("2006-01-02T15"),
 			substrate.PatchInput{Properties: map[string]any{"quality": "valid"}}); err != nil {
 			t.Fatalf("patch: %v", err)
 		}

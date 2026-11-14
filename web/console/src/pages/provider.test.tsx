@@ -20,6 +20,7 @@ import {
 } from "@testing-library/react"
 import type { ReactElement } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import { Toaster } from "@/components/ui/toast"
 import { SUBSTRATE_OAUTH_SOURCE } from "@/lib/api/bundles"
@@ -62,6 +63,8 @@ vi.mock("@/router", () => ({
 }))
 
 import { ProviderPage } from "./provider"
+
+beforeEach(() => seedActors())
 
 const GOOGLE = "providers.substrate.reamde.dev/google"
 const ACCOUNT = `${GOOGLE}/account`
@@ -112,11 +115,11 @@ const KINDS: KindInfo[] = [
       "substrate.reamde.dev/core/sync",
     ],
     {
-      email: { type: "email", writer: "oauth" },
-      enabledGmail: { type: "bool", writer: "owner", displayName: "Gmail" },
+      email: { type: "email", writer: "system" },
+      enabledGmail: { type: "bool", writer: "person", displayName: "Gmail" },
       enabledContacts: {
         type: "bool",
-        writer: "owner",
+        writer: "person",
         displayName: "Contacts",
       },
       syncFrequency: {
@@ -126,11 +129,11 @@ const KINDS: KindInfo[] = [
           { value: "daily", label: "Every day" },
         ],
         default: "daily",
-        writer: "owner",
+        writer: "person",
       },
-      syncState: { type: "string", writer: "connector" },
-      syncPaused: { type: "bool", writer: "owner", displayName: "Paused" },
-      syncRequestedAt: { type: "datetime", writer: "owner" },
+      syncState: { type: "string", writer: ["function", "agent"] },
+      syncPaused: { type: "bool", writer: "person", displayName: "Paused" },
+      syncRequestedAt: { type: "datetime", writer: "person" },
     },
     "internal"
   ),
@@ -196,7 +199,7 @@ const CATALOG: CatalogItem = {
   package: "google",
   description: "Keeps a copy of your Google contacts.",
   version: 34,
-  tier: "published",
+  keptBy: "publisher",
   provider: true,
   brings: ["account", "collections"],
   installed: true,
@@ -527,7 +530,7 @@ describe("ProviderPage", () => {
       }
       if (method === "POST" && path.endsWith("/oauth/start"))
         return jsonResponse(200, { url: CONSENT_URL })
-      if (method === "POST" && path.endsWith("/install"))
+      if (method === "POST" && path.endsWith("/add"))
         return jsonResponse(200, status())
       if (method === "DELETE") return new Response(null, { status: 204 })
       return jsonResponse(200, { records: [], items: [] })
@@ -646,7 +649,7 @@ describe("ProviderPage", () => {
       await waitFor(() =>
         expect(
           calls("POST").some((c) =>
-            c.url.endsWith(`${encodeURIComponent(GOOGLE)}/install`)
+            c.url.endsWith(`${encodeURIComponent(GOOGLE)}/add`)
           )
         ).toBe(true)
       )
@@ -951,16 +954,8 @@ describe("ProviderPage", () => {
     it("tells what the provider's own actors changed, and links to History", async () => {
       serve({
         changes: [
-          change(
-            3,
-            "function:providers.substrate.reamde.dev:google:synccontacts",
-            "c1"
-          ),
-          change(
-            2,
-            "function:providers.substrate.reamde.dev:google:synccontacts",
-            "c2"
-          ),
+          change(3, "act-fn-google-synccontacts", "c1"),
+          change(2, "act-fn-google-synccontacts", "c2"),
           change(1, "api", "c3"),
         ],
       })
@@ -982,8 +977,8 @@ describe("ProviderPage", () => {
         .filter((u) => !u.includes("watch=1"))
         .map((u) => new URL(u, "http://x").searchParams.getAll("actors"))
       expect(actorsAsked[0]).toEqual([
-        "bundle:providers.substrate.reamde.dev:google",
-        "function:providers.substrate.reamde.dev:google:synccontacts",
+        "act-fn-google-synccontacts",
+        "act-pkg-google",
       ])
       const all = within(section).getByText("See all in History")
       expect(all.closest("a")?.getAttribute("data-to")).toBe("/history")
@@ -1457,9 +1452,9 @@ describe("ProviderPage", () => {
         within(dialog).getByRole("button", { name: /remove values/ })
       )
       await waitFor(() =>
-        expect(
-          calls("POST").find((c) => c.url.endsWith("/install"))?.body
-        ).toEqual({ confirm: { planHash: "cafe", changelogSeq: 41 } })
+        expect(calls("POST").find((c) => c.url.endsWith("/add"))?.body).toEqual(
+          { confirm: { planHash: "cafe", changelogSeq: 41 } }
+        )
       )
     })
 
@@ -1488,7 +1483,7 @@ describe("ProviderPage", () => {
       const base = fetchMock.getMockImplementation()!
       let refusals = 0
       fetchMock.mockImplementation(async (url, init) => {
-        if (init?.method === "POST" && String(url).endsWith("/install")) {
+        if (init?.method === "POST" && String(url).endsWith("/add")) {
           refusals++
           return jsonResponse(409, {
             error: {
@@ -1516,18 +1511,59 @@ describe("ProviderPage", () => {
       expect(
         within(dialog).getByText(`function ${GOOGLE}/sync: version 3 → 4`)
       ).toBeTruthy()
+      // The binary ships this one: its code is not another publisher's.
+      expect(within(dialog).queryByText("Code: experimental.")).toBeNull()
       fireEvent.click(
         within(dialog).getByRole("button", {
           name: "Approve the changes and update",
         })
       )
       await waitFor(() => expect(refusals).toBe(1))
-      expect(
-        calls("POST").find((c) => c.url.endsWith("/install"))?.body
-      ).toEqual({ expect: { version: 4, digest: "sha256:abc" } })
+      expect(calls("POST").find((c) => c.url.endsWith("/add"))?.body).toEqual({
+        expect: { version: 4, digest: "sha256:abc" },
+      })
       expect(
         await within(dialog).findByText(
           /The publisher listed another version since you reviewed this one/
+        )
+      ).toBeTruthy()
+    })
+
+    it("says, in the review, that code a publisher outside this server published is experimental", async () => {
+      serve({
+        catalog: [
+          {
+            ...CATALOG,
+            publisher: {
+              authority: "tools.example.com",
+              name: "Example Tools",
+              documentUrl:
+                "https://tools.example.com/.well-known/substrate.json",
+            },
+            upgrade: {
+              available: true,
+              from: 3,
+              to: 4,
+              work: 0,
+              lossy: false,
+              reviewRequired: true,
+              candidateVersion: 4,
+              candidateDigest: "sha256:abc",
+              changes: [
+                { kind: "function", id: `${GOOGLE}/sync`, from: 3, to: 4 },
+              ],
+            },
+          },
+        ],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(within(dialog).getByText("Code: experimental.")).toBeTruthy()
+      expect(
+        within(dialog).getByText(
+          /Its code comes from a publisher outside this server/
         )
       ).toBeTruthy()
     })
@@ -1560,6 +1596,88 @@ describe("ProviderPage", () => {
       expect(
         within(dialog).getByText(/did not say which version this preview is of/)
       ).toBeTruthy()
+    })
+
+    // A provider the binary ships, whose update only keeps history for less
+    // time: no publisher's digest, no plan. The click opens the review
+    // anyway (decision 0282), reads the preview again, and sends the bare
+    // install once the fresh preview shortens the same kinds at the same
+    // version; one that moved is not sent.
+    const shortening = {
+      available: true,
+      from: 3,
+      to: 4,
+      work: 0,
+      lossy: false,
+      retentionShortens: [{ kind: CONTACT, from: "all", to: "P30D" }],
+    }
+    function serveFresh(fresh: typeof shortening) {
+      serve({ catalog: [{ ...CATALOG, upgrade: shortening }] })
+      const base = fetchMock.getMockImplementation()!
+      fetchMock.mockImplementation(async (url, init) => {
+        const path = String(url)
+        if (
+          (init?.method ?? "GET") === "GET" &&
+          path === `${CATALOG_PATH}/${encodeURIComponent(GOOGLE)}`
+        ) {
+          return jsonResponse(200, { ...CATALOG, upgrade: fresh })
+        }
+        return base(url, init)
+      })
+    }
+
+    it("opens a review for an update of a shipped provider that keeps history for less time, and sends it once the fresh preview agrees", async () => {
+      serveFresh(shortening)
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      expect(
+        within(dialog).getByText("Update Google and keep less history?")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText("History kept for less time")
+      ).toBeTruthy()
+      expect(
+        within(dialog).getByText(`${CONTACT}: all of it → 30 days`)
+      ).toBeTruthy()
+      expect(calls("POST").some((c) => c.url.endsWith("/add"))).toBe(false)
+      const confirm = within(dialog).getByRole<HTMLButtonElement>("button", {
+        name: "Keep less history and update",
+      })
+      expect(confirm.disabled).toBe(false)
+      fireEvent.click(confirm)
+      // The bare add: the route takes no consent to a shortening.
+      await waitFor(() =>
+        expect(calls("POST").filter((c) => c.url.endsWith("/add"))).toEqual([
+          {
+            url: `${CATALOG_PATH}/${encodeURIComponent(GOOGLE)}/add`,
+            body: undefined,
+          },
+        ])
+      )
+    })
+
+    it("sends nothing when the fresh preview keeps other history for less time, and says so", async () => {
+      serveFresh({
+        ...shortening,
+        retentionShortens: [{ kind: CONTACT, from: "all", to: "P7D" }],
+      })
+      renderPage(<ProviderPage />)
+      expect(await screen.findByText("Update available")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: /^Update$/ }))
+      const dialog = await screen.findByRole("dialog")
+      fireEvent.click(
+        within(dialog).getByRole("button", {
+          name: "Keep less history and update",
+        })
+      )
+      expect(
+        await within(dialog).findByText(
+          /What this update keeps for less time changed since you read it/
+        )
+      ).toBeTruthy()
+      expect(calls("POST").some((c) => c.url.endsWith("/add"))).toBe(false)
     })
   })
 
@@ -1630,7 +1748,7 @@ describe("ProviderPage", () => {
       authority: "samples.substrate.reamde.dev",
       package: "people",
       description: "One record per human.",
-      tier: "sample",
+      keptBy: "repository",
       provider: false,
       brings: ["collections"],
       closure: { ...CATALOG.closure, kinds: null, functions: null },
@@ -1660,7 +1778,7 @@ describe("ProviderPage", () => {
         expect(
           calls("POST").some((c) =>
             c.url.endsWith(
-              `${encodeURIComponent("samples.substrate.reamde.dev/people")}/import`
+              `${encodeURIComponent("samples.substrate.reamde.dev/people")}/add`
             )
           )
         ).toBe(true)
@@ -1709,7 +1827,7 @@ describe("ProviderPage", () => {
             .filter((c) => c.url.startsWith(`${CATALOG_PATH}/`))
             .map((c) => c.url.slice(CATALOG_PATH.length + 1))
         ).toEqual([
-          `${encodeURIComponent("samples.substrate.reamde.dev/people")}/import`,
+          `${encodeURIComponent("samples.substrate.reamde.dev/people")}/add`,
         ])
       )
     })

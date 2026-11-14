@@ -31,7 +31,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "providers.substrate.reamde.dev/google", Name: "google", Authority: "providers.substrate.reamde.dev",
-				Package: "google", Version: 4, Tier: substrate.TierPublished,
+				Package: "google", Version: 4, KeptBy: substrate.KeptByPublisher,
 			},
 			Installed: true,
 			Upgrade: &substrate.BundleUpgrade{
@@ -42,7 +42,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "providers.substrate.reamde.dev/linear", Name: "linear", Authority: "providers.substrate.reamde.dev",
-				Package: "linear", Version: 2, Tier: substrate.TierPublished,
+				Package: "linear", Version: 2, KeptBy: substrate.KeptByPublisher,
 			},
 			Installed: true,
 			Upgrade:   &substrate.BundleUpgrade{Available: true, From: 1, To: 2},
@@ -50,7 +50,7 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 		{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "samples.substrate.reamde.dev/tasks", Name: "tasks", Authority: "samples.substrate.reamde.dev",
-				Package: "tasks", Version: 8, Tier: substrate.TierSample,
+				Package: "tasks", Version: 8, KeptBy: substrate.KeptByRepository,
 			},
 		},
 	}
@@ -64,14 +64,14 @@ func TestCatalogPrintsUpgradesAndBlockersForCoreAndProviders(t *testing.T) {
 			t.Errorf("catalog did not call %s: %v", want, h.fake.doorRequests())
 		}
 	}
-	// One row per shipped package, core first: the tier, whether it is here,
+	// One row per shipped package, core first: who keeps it, whether it is here,
 	// the version the binary ships and the motion an upgrade would make.
 	for _, want := range []string{
 		"PACKAGE",
-		"substrate.reamde.dev/core               seed        true        17        16 -> 17, blocked",
-		"providers.substrate.reamde.dev/google   published   true        4         3 -> 4, blocked",
-		"providers.substrate.reamde.dev/linear   published   true        2         1 -> 2",
-		"samples.substrate.reamde.dev/tasks      sample      false       8",
+		"substrate.reamde.dev/core               binary       true        17        16 -> 17, blocked",
+		"providers.substrate.reamde.dev/google   publisher    true        4         3 -> 4, blocked",
+		"providers.substrate.reamde.dev/linear   publisher    true        2         1 -> 2",
+		"samples.substrate.reamde.dev/tasks      repository   false       8",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("catalog table lacks %q:\n%s", want, stdout)
@@ -104,7 +104,7 @@ func TestCatalogListsWithoutAShippedPreview(t *testing.T) {
 		h.fake.catalog = []substrate.CatalogItem{{
 			CatalogBundle: substrate.CatalogBundle{
 				ID: "samples.substrate.reamde.dev/tasks", Name: "tasks", Authority: "samples.substrate.reamde.dev",
-				Package: "tasks", Version: 8, Tier: substrate.TierSample,
+				Package: "tasks", Version: 8, KeptBy: substrate.KeptByRepository,
 			},
 		}}
 		stdout, stderr, err := h.run("catalog")
@@ -137,7 +137,7 @@ func TestCatalogPrintsNoMotionForAnUnavailableUpgrade(t *testing.T) {
 	if strings.Contains(stdout, "18 -> 17") || strings.Contains(stdout, "restart") {
 		t.Fatalf("an unavailable upgrade prints a motion:\n%s", stdout)
 	}
-	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+seed\s+true\s+17\s*$`).MatchString(stdout) {
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+binary\s+true\s+17\s*$`).MatchString(stdout) {
 		t.Fatalf("the core row is not listed at the shipped version with an empty UPGRADE cell:\n%s", stdout)
 	}
 }
@@ -183,7 +183,7 @@ func TestCatalogJSONCarriesTheBlockers(t *testing.T) {
 		Upgrade: substrate.BundleUpgrade{Available: true, From: 16, To: 17, Blockers: []string{labelGuard}},
 	}}
 	stdout, _ := h.mustRun("catalog", "-o", "json")
-	for _, want := range []string{`"id": "substrate.reamde.dev/core"`, `"tier": "seed"`, `"from": 16`, `"to": 17`, `"blockers"`} {
+	for _, want := range []string{`"id": "substrate.reamde.dev/core"`, `"keptBy": "binary"`, `"from": 16`, `"to": 17`, `"blockers"`} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("catalog json lacks %s:\n%s", want, stdout)
 		}
@@ -192,7 +192,7 @@ func TestCatalogJSONCarriesTheBlockers(t *testing.T) {
 
 // A shipped package with no stored version has never landed here: a second
 // builtin package a core guard withholds, say. Its row reads not installed,
-// rather than the seed tier being assumed present.
+// rather than the seeded package being assumed present.
 func TestCatalogReadsASeedPackageNotYetHeldAsAbsent(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
@@ -207,10 +207,10 @@ func TestCatalogReadsASeedPackageNotYetHeldAsAbsent(t *testing.T) {
 		},
 	}
 	stdout, _ := h.mustRun("catalog")
-	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+seed\s+true\s+17\s`).MatchString(stdout) {
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/core\s+binary\s+true\s+17\s`).MatchString(stdout) {
 		t.Fatalf("core is not listed as held:\n%s", stdout)
 	}
-	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/extra\s+seed\s+false\s+3\s`).MatchString(stdout) {
+	if !regexp.MustCompile(`(?m)^substrate\.reamde\.dev/extra\s+binary\s+false\s+3\s`).MatchString(stdout) {
 		t.Fatalf("a shipped package with no stored version reads as installed:\n%s", stdout)
 	}
 }
@@ -223,7 +223,7 @@ func lossyGoogle() substrate.CatalogItem {
 	return substrate.CatalogItem{
 		CatalogBundle: substrate.CatalogBundle{
 			ID: googleProvider, Name: "google", Authority: "providers.substrate.reamde.dev",
-			Package: "google", Version: 4, Tier: substrate.TierPublished,
+			Package: "google", Version: 4, KeptBy: substrate.KeptByPublisher,
 		},
 		Installed: true,
 		Upgrade: &substrate.BundleUpgrade{
@@ -261,7 +261,7 @@ func editedTasks() substrate.CatalogItem {
 	return substrate.CatalogItem{
 		CatalogBundle: substrate.CatalogBundle{
 			ID: tasksSample, Name: "tasks", Authority: "samples.substrate.reamde.dev",
-			Package: "tasks", Version: 7, Tier: substrate.TierSample,
+			Package: "tasks", Version: 7, KeptBy: substrate.KeptByRepository,
 			Origin: tasksSample, OriginVersion: 7, Modified: true,
 		},
 		Installed: true,
@@ -274,12 +274,12 @@ func editedTasks() substrate.CatalogItem {
 
 // `import --allow-data-loss` over an edited copy reads the preview, says the
 // edits go, and confirms exactly that plan.
-func TestImportConfirmsAReimportThatReplacesEdits(t *testing.T) {
+func TestAddingASampleAgainConfirmsTheEditsItReplaces(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.catalog = []substrate.CatalogItem{editedTasks()}
-	stdout, _ := h.mustRun("import", tasksSample, "--allow-data-loss")
-	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + tasksSample + "/import"} {
+	stdout, _ := h.mustRun("add", tasksSample, "--allow-data-loss")
+	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + tasksSample + "/add"} {
 		if !contains(h.fake.doorRequests(), want) {
 			t.Errorf("import did not call %s: %v", want, h.fake.doorRequests())
 		}
@@ -291,7 +291,7 @@ func TestImportConfirmsAReimportThatReplacesEdits(t *testing.T) {
 	for _, want := range []string{
 		tasksSample + ": confirming plan d15c at changelog seq 9, which replaces edits:",
 		"replaces your copy of " + tasksSample + " whole: the declarations edited since it was imported go with it",
-		"geoah.example.com/tasks imported",
+		"geoah.example.com/tasks added",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("import did not print %q:\n%s", want, stdout)
@@ -299,7 +299,7 @@ func TestImportConfirmsAReimportThatReplacesEdits(t *testing.T) {
 	}
 	// Without the flag the import is the bare POST, and the server's refusal
 	// is the answer.
-	h.mustRun("import", tasksSample)
+	h.mustRun("add", tasksSample)
 	if _, ok := lastConfirm(t, h); ok {
 		t.Fatal("a bare import sent a confirmation")
 	}
@@ -307,15 +307,15 @@ func TestImportConfirmsAReimportThatReplacesEdits(t *testing.T) {
 
 // `substratectl catalog` says an edited copy is one, and which command
 // replaces the edits.
-func TestCatalogSaysAnEditedCopyTakesImportAgain(t *testing.T) {
+func TestCatalogSaysAnEditedCopyTakesAddAgain(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.catalog = []substrate.CatalogItem{editedTasks()}
 	stdout, _ := h.mustRun("catalog")
-	if !regexp.MustCompile(`(?m)^samples\.substrate\.reamde\.dev/tasks\s+sample\s+true\s+7\s+edited copy$`).MatchString(stdout) {
+	if !regexp.MustCompile(`(?m)^samples\.substrate\.reamde\.dev/tasks\s+repository\s+true\s+7\s+edited copy$`).MatchString(stdout) {
 		t.Errorf("the UPGRADE column does not say the copy was edited:\n%s", stdout)
 	}
-	want := tasksSample + ": your copy was edited since it was imported; importing it again replaces those edits, confirm it with `substratectl import " + tasksSample + " --allow-data-loss`"
+	want := tasksSample + ": your copy was edited since it was added; adding it again replaces those edits, confirm it with `substratectl add " + tasksSample + " --allow-data-loss`"
 	if !strings.Contains(stdout, want) {
 		t.Errorf("catalog did not print %q:\n%s", want, stdout)
 	}
@@ -324,12 +324,12 @@ func TestCatalogSaysAnEditedCopyTakesImportAgain(t *testing.T) {
 // `install --allow-data-loss` binds the consent to the preview: it reads the
 // catalog, prints the steps that remove values and sends that preview's hash
 // and changelog head as the confirmation, never a bare yes.
-func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
+func TestAddConfirmsALossyUpgradeItPreviewed(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
-	stdout, _ := h.mustRun("install", googleProvider, "--allow-data-loss")
-	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + googleProvider + "/install"} {
+	stdout, _ := h.mustRun("add", googleProvider, "--allow-data-loss")
+	for _, want := range []string{"GET /api/v1/catalog", "POST /api/v1/catalog/" + googleProvider + "/add"} {
 		if !contains(h.fake.doorRequests(), want) {
 			t.Errorf("install did not call %s: %v", want, h.fake.doorRequests())
 		}
@@ -341,7 +341,7 @@ func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
 	for _, want := range []string{
 		googleProvider + ": confirming plan cafe at changelog seq 41, which removes values:",
 		"drops middleName on " + googleProvider + "/contact: its value leaves 3 live records (lossy: the values stay in the changelog only)",
-		googleProvider + " installed",
+		googleProvider + " added",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("install did not print %q:\n%s", want, stdout)
@@ -351,13 +351,14 @@ func TestInstallConfirmsALossyUpgradeItPreviewed(t *testing.T) {
 
 // Without the flag the install is the bare POST it always was: no preview is
 // read and no body is sent, so a lossy upgrade is the server's 403, which the
-// CLI renders with the hint naming the flag this command carries.
-func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
+// CLI renders with the hint naming the flag this command carries. (It reads
+// the package's own entry for the code's label.)
+func TestAddWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
 	h.fake.installRefusesLossy = true
-	_, _, err := h.run("install", googleProvider)
+	_, _, err := h.run("add", googleProvider)
 	if err == nil {
 		t.Fatal("a lossy install without the flag must fail")
 	}
@@ -373,16 +374,72 @@ func TestInstallWithoutTheFlagIsRefusedWithTheHint(t *testing.T) {
 	renderError(&rendered, err)
 	for _, want := range []string{
 		"error: the vocabulary change removes values from stored records and needs a confirmation",
-		"hint: re-run `substratectl install <package> --allow-data-loss`",
+		"hint: re-run `substratectl add <package> --allow-data-loss`",
 	} {
 		if !strings.Contains(rendered.String(), want) {
 			t.Errorf("the refusal did not render %q:\n%s", want, rendered.String())
 		}
 	}
 	// With the flag the same install confirms the previewed plan and lands.
-	h.mustRun("install", googleProvider, "--allow-data-loss")
+	h.mustRun("add", googleProvider, "--allow-data-loss")
 	if confirm, ok := lastConfirm(t, h); !ok || confirm.PlanHash != "cafe" {
 		t.Fatalf("the flagged install carried confirmation %+v (present=%v)", confirm, ok)
+	}
+}
+
+// An upgrade that keeps some kind's history for less time is refused before
+// the door, naming each kind and what it keeps now and after, and taken with
+// --allow-shorter-history (decision 0282). The route takes no consent to a
+// shortening, so the add that takes it is the bare POST. The refusal names
+// `add`, whichever alias ran.
+func TestAddAsksBeforeKeepingLessHistory(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	shorter := lossyGoogle()
+	shorter.Upgrade = &substrate.BundleUpgrade{
+		Available: true, From: 3, To: 4,
+		RetentionShortens: []substrate.RetentionChange{{Kind: googleProvider + "/contact", From: "all", To: "P30D"}},
+	}
+	sample := editedTasks()
+	sample.Upgrade = &substrate.BundleUpgrade{
+		Available: true, From: 7, To: 8,
+		RetentionShortens: []substrate.RetentionChange{{Kind: "geoah.example.com/tasks/task", From: "all", To: "P7D"}},
+	}
+	h.fake.catalog = []substrate.CatalogItem{shorter, sample}
+	for _, tc := range []struct{ verb, id, says string }{
+		{"install", googleProvider, googleProvider + ": the upgrade keeps the history of 1 kind for less time (" + googleProvider + "/contact: all -> P30D)"},
+		{"import", tasksSample, tasksSample + ": the upgrade keeps the history of 1 kind for less time (geoah.example.com/tasks/task: all -> P7D)"},
+	} {
+		_, _, err := h.run(tc.verb, tc.id)
+		if err == nil {
+			t.Fatalf("%s of an upgrade that keeps less history was not refused", tc.verb)
+		}
+		for _, want := range []string{tc.says, "`substratectl add " + tc.id + " --allow-shorter-history`"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the %s refusal does not say %q: %v", tc.verb, want, err)
+			}
+		}
+	}
+	for _, r := range h.fake.doorRequests() {
+		if strings.HasPrefix(r, "POST ") {
+			t.Fatalf("a refused upgrade reached the door: %v", h.fake.doorRequests())
+		}
+	}
+	stdout, _ := h.mustRun("add", googleProvider, "--allow-shorter-history")
+	for _, want := range []string{
+		googleProvider + ": keeping less history, as --allow-shorter-history says:",
+		"  " + googleProvider + "/contact: all -> P30D",
+		googleProvider + " added",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("add did not print %q:\n%s", want, stdout)
+		}
+	}
+	if !contains(h.fake.doorRequests(), "POST /api/v1/catalog/"+googleProvider+"/add") {
+		t.Fatalf("the flagged add did not reach the route: %v", h.fake.doorRequests())
+	}
+	if _, ok := lastConfirm(t, h); ok {
+		t.Fatal("the flagged add sent a confirmation")
 	}
 }
 
@@ -394,7 +451,7 @@ func TestCatalogPrintsTheConversionSteps(t *testing.T) {
 	h.fake.catalog = []substrate.CatalogItem{lossyGoogle()}
 	stdout, _ := h.mustRun("catalog")
 	for _, want := range []string{
-		googleProvider + ": the upgrade rewrites 3 live records and removes values; confirm it with `substratectl install " + googleProvider + " --allow-data-loss`",
+		googleProvider + ": the upgrade rewrites 3 live records and removes values; confirm it with `substratectl add " + googleProvider + " --allow-data-loss`",
 		"  drops middleName on " + googleProvider + "/contact: its value leaves 3 live records",
 	} {
 		if !strings.Contains(stdout, want) {
@@ -462,5 +519,111 @@ data:
 	h.mustRun("apply", "-f", file, "--allow-data-loss")
 	if _, ok := lastConfirm(t, h); ok {
 		t.Fatal("a lossless plan was confirmed")
+	}
+}
+
+// Where a person takes a package, the CLI says when its code comes from a
+// publisher outside this server: a publisher's document published it and its
+// closure runs functions, or it brings first a package that does. The
+// binary's own providers, a package that runs no code and a requirement
+// already held as listed carry no label.
+func outsideCodeCatalog() []substrate.CatalogItem {
+	publisher := &substrate.AuthorizationPackagePublisher{Authority: "tools.example.com", Name: "Example Tools"}
+	entry := func(id string, pub *substrate.AuthorizationPackagePublisher, functions []string, requires ...string) substrate.CatalogItem {
+		authority, pkg, _ := strings.Cut(id, "/")
+		return substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{
+			ID: id, Name: pkg, Authority: authority, Package: pkg, Version: 1, KeptBy: substrate.KeptByPublisher,
+			Publisher: pub, Requires: requires, Closure: substrate.CatalogClosure{Functions: functions},
+		}}
+	}
+	held := entry("tools.example.com/base", publisher, []string{"tools.example.com/base/fetch"})
+	held.Installed = true
+	return []substrate.CatalogItem{
+		entry("tools.example.com/sync", publisher, []string{"tools.example.com/sync/pull"}),
+		entry("tools.example.com/words", publisher, nil),
+		entry("tools.example.com/bundle", publisher, nil, "tools.example.com/sync"),
+		entry("tools.example.com/over", publisher, nil, "tools.example.com/base"),
+		held,
+		entry("providers.substrate.reamde.dev/google", nil, []string{"providers.substrate.reamde.dev/google/sync"}),
+	}
+}
+
+func TestCatalogLabelsCodeFromOutsideThisServer(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig()
+	h.fake.shippedStatus = 404
+	h.fake.catalog = outsideCodeCatalog()
+	stdout, _ := h.mustRun("catalog")
+	for id, want := range map[string]bool{
+		"tools.example.com/sync":                true,
+		"tools.example.com/bundle":              true,
+		"tools.example.com/base":                true,
+		"tools.example.com/words":               false,
+		"tools.example.com/over":                false,
+		"providers.substrate.reamde.dev/google": false,
+	} {
+		line := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(id) + `\s.*$`).FindString(stdout)
+		if line == "" {
+			t.Fatalf("no row for %s:\n%s", id, stdout)
+		}
+		if got := strings.HasSuffix(strings.TrimSpace(line), "experimental"); got != want {
+			t.Errorf("%s: labeled experimental %v, want %v:\n%s", id, got, want, line)
+		}
+	}
+	if !strings.Contains(stdout, "CODE") {
+		t.Errorf("the table names no CODE column:\n%s", stdout)
+	}
+	stdout, _ = h.mustRun("catalog", "-o", "json")
+	var rows []catalogRow
+	if err := json.Unmarshal([]byte(stdout), &rows); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if want := r.ID == "tools.example.com/sync" || r.ID == "tools.example.com/bundle" || r.ID == "tools.example.com/base"; (r.Code == "experimental") != want {
+			t.Errorf("%s: json code %q, want experimental %v", r.ID, r.Code, want)
+		}
+	}
+}
+
+func TestAddSaysCodeFromOutsideThisServerIsExperimental(t *testing.T) {
+	for id, want := range map[string]bool{
+		"tools.example.com/bundle":              true,
+		"tools.example.com/over":                false,
+		"providers.substrate.reamde.dev/google": false,
+	} {
+		t.Run(id, func(t *testing.T) {
+			h := newHarness(t)
+			h.writeConfig()
+			h.fake.catalog = outsideCodeCatalog()
+			stdout, _ := h.mustRun("add", id)
+			label := id + ": code experimental. " + outsideCodeWords
+			if strings.Contains(stdout, label) != want {
+				t.Errorf("add printed the label %v, want %v:\n%s", !want, want, stdout)
+			}
+			if want && strings.Index(stdout, label) > strings.Index(stdout, id+" added") {
+				t.Errorf("the label follows the add it qualifies:\n%s", stdout)
+			}
+			if contains(h.fake.doorRequests(), "GET /api/v1/catalog") {
+				t.Errorf("the add read the whole catalog: %v", h.fake.doorRequests())
+			}
+		})
+	}
+}
+
+// `install` and `import`, the two verbs `add` replaced, stay as aliases of it:
+// a script that names either reaches the one route, whatever the package.
+func TestInstallAndImportAreAliasesOfAdd(t *testing.T) {
+	for _, verb := range []string{"install", "import"} {
+		for _, id := range []string{googleProvider, tasksSample} {
+			h := newHarness(t)
+			h.writeConfig()
+			stdout, _ := h.mustRun(verb, id)
+			if want := "POST /api/v1/catalog/" + id + "/add"; !contains(h.fake.doorRequests(), want) {
+				t.Errorf("%s %s did not call %s: %v", verb, id, want, h.fake.doorRequests())
+			}
+			if !strings.Contains(stdout, " added") {
+				t.Errorf("%s %s did not say what was added:\n%s", verb, id, stdout)
+			}
+		}
 	}
 }

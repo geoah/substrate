@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The config/account dialog's rendering contract (GUIDE §8 + rule 13): human
  * labels (schema displayName or humanized id, never a raw camelCase property),
- * an enum property as a real <select>, host-managed props (writer!=owner) never
+ * an enum property as a real <select>, host-managed props (writer leaves out person) never
  * offered, and — the layout fix — each field a full-width block where the
  * help/description flows beneath the control, NOT trapped in a narrow label
  * column beside it. */
@@ -22,7 +22,7 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { RecordConfigForm } from "./record-config-form"
 
 // The account kind as the substrate serves it: email + grantedScopes are the
-// OAuth facility's (writer: oauth), the toggles/cadence/backfill are the
+// OAuth facility's (writer: system), the toggles/cadence/backfill are the
 // owner's, and syncFrequency is an enum with a displayName.
 const accountKind: KindInfo = {
   identity: "providers.substrate.reamde.dev/google/account",
@@ -34,8 +34,8 @@ const accountKind: KindInfo = {
   description: "",
   definition: {
     properties: {
-      email: { type: "email", writer: "oauth" },
-      grantedScopes: { type: "string", repeated: true, writer: "oauth" },
+      email: { type: "email", writer: "system" },
+      grantedScopes: { type: "string", repeated: true, writer: "system" },
       enabledContacts: {
         type: "bool",
         displayName: "Sync contacts",
@@ -56,7 +56,7 @@ const accountKind: KindInfo = {
         type: "string",
         description: "how far back a first sync reaches",
       },
-      tokenRef: { type: "secret", writer: "oauth" },
+      tokenRef: { type: "secret", writer: "system" },
     },
   },
 }
@@ -131,7 +131,7 @@ describe("RecordConfigForm", () => {
     expect(screen.queryByText("None")).toBeNull()
   })
 
-  it("never offers a host-managed (writer!=owner) property", () => {
+  it("never offers a host-managed (writer leaves out person) property", () => {
     renderForm()
     // email + grantedScopes belong to the OAuth facility.
     expect(screen.queryByText("Email")).toBeNull()

@@ -26,7 +26,7 @@ func openShelfDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ds.mu.Lock()
 	ds.skipThreadTitles = true
 	ds.mu.Unlock()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "clerkllm",
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-clerkllm",
@@ -53,7 +53,7 @@ func openShelfDataset(t *testing.T) (*dataset, *fakeLLM) {
 			},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("declare the shelf: %v", err)
 	}
 	return ds, fake
@@ -183,7 +183,7 @@ func TestAgentReadsARefusalOfWhatIsStoredAgain(t *testing.T) {
 		defer close(decided)
 		<-deciding
 		go func() {
-			_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 				Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
 			})
 			written <- err
@@ -241,7 +241,7 @@ func TestAgentReadsAZoneItCouldNotLoadAgain(t *testing.T) {
 	const zone = "Substrate_Test/Shelf"
 	appear := testZone(t, zone, 3*time.Hour)
 	metric := obsPackage + "/metric"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: metric, ID: fid("bolts"), Properties: map[string]any{"name": "Bolts"},
 	}); err != nil {
 		t.Fatalf("put the metric: %v", err)
@@ -310,7 +310,7 @@ func TestAgentQueryCountsAList(t *testing.T) {
 	ds, fake := openShelfDataset(t)
 	widget := shelfPackage + "/widget"
 	for _, name := range []string{"bolt", "nut", "washer"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: widget, ID: fid("w-" + name), Properties: map[string]any{"name": name},
 		}); err != nil {
 			t.Fatal(err)
@@ -371,7 +371,7 @@ func TestAgentQueryCountsAList(t *testing.T) {
 	}
 
 	// The card is enforced on a direct call, so the declaration carries it.
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, map[string]any{"kind": widget, "first": 1, "count": true})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, vocabulary.HostFunctionQuery, map[string]any{"kind": widget, "first": 1, "count": true})
 	if err != nil {
 		t.Fatalf("a direct counted list: %v", err)
 	}

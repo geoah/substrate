@@ -8,6 +8,9 @@ and revokes it in **Settings → AI assistants**. The console's page carries
 the same steps with this server's address filled in. The design and its
 reasons are in [the plan](plans/mcp.md) and
 [0230](decisions/0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md).
+The MCP door is experimental: [discovery](api.md#discovery) lists it as the
+`mcp` feature, and its tools may change in any release
+([stability](stability.md)).
 
 ## Connect
 
@@ -50,34 +53,36 @@ variable, and send it as a header. In `~/.cursor/mcp.json`:
 
 ## What an assistant can do
 
-Most of what the owner does in the console: read every record, the token and
-credential records among them (their secrets are digests and redacted
-values); write any record but those and the protected
+Most of what the owner does in the console: read every record, the token
+records among them (their secrets are digests and redacted values); write any record but those and the protected
 `substrate.reamde.dev/core/secret` records (a secret-typed property of
 another kind, such as a provider's `apiKey`, is written like any other);
 declare and change kinds, triggers,
 functions and agents; install providers and import samples; run functions,
 chat with agents, run syncs; merge and split records; read and store files.
 
-What it never does: write, mint or revoke tokens, credentials, secrets or
-recovery keys, or accept a change request that would; read a webhook's
-key; export the repository; connect a provider account (the owner does
-that in the console, since it needs their browser); verify a domain;
+What it never does: write, mint or revoke tokens, credentials or secrets,
+or accept a change request that would; read a webhook's key; export the
+repository; connect a provider account (the owner does that in the console,
+since it needs their browser); verify a domain;
 answer another app's approval; uninstall or purge a package.
 
 Code an assistant declares runs as the owner's code does, and reaches what
 the owner's code may, secrets included.
 
-Its writes are its own in History, under its app's actor: `app:local` for
-an assistant on the owner's computer (Claude Code, Codex), the client's
-host or verified authority for a hosted one (claude.ai), and `api` for a
-token the owner made by hand. Its token works at `/mcp` alone.
+Its writes are its own in History, made by its app's
+[actor record](api.md#actors) on behalf of the owner: the app whose
+publisher is `local` for an assistant on the owner's computer (Claude Code,
+Codex), the client's host or verified authority for a hosted one
+(claude.ai), and the person for a token the owner made by hand. Each write
+also links its token, so two assistants on one computer, one local app,
+read apart by their names. Its token works at `/mcp` alone.
 
 ## The tools
 
 | Tool | What it does |
 | --- | --- |
-| `overview` | start here: the owner's authority, each package with its source and kinds, the agents, applets and LLM providers, what waits on the owner, and the guide's topics |
+| `overview` | start here: the owner's authority (their own packages are under `~`), each package with its source and kinds, the agents, applets and LLM providers, what waits on the owner, and the guide's topics |
 | `guide` | the documentation, one topic at a time (below) |
 | `kinds` | the kinds the repository holds, grouped by package, each with its purpose and first sentence; narrowed by package, purpose or words |
 | `describe_kind` | one kind's declaration |
@@ -86,7 +91,7 @@ token the owner made by hand. Its token works at `/mcp` alone.
 | `write` | put, patch or delete one record |
 | `decide` | accept or reject a change request |
 | `apply` | declare or change vocabulary; `plan` previews |
-| `packages` | the catalog, install, import, status, enable, disable, bind, upgrades |
+| `packages` | the catalog, add, status, enable, disable, bind, upgrades |
 | `call` | run a function |
 | `chat` | talk to an agent, or stop its turn |
 | `triggers` | status, sync status, wake, run, replay, parked deliveries |

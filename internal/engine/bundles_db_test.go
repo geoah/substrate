@@ -70,14 +70,14 @@ func mbAccountTypeDoc() map[string]any {
 		map[string]any{
 			"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 			"properties": map[string]any{
-				"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
-				"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
-				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
-				"address":       map[string]any{"type": "email", "writer": "owner"},
+				"tokenRef":      map[string]any{"type": "secret", "writer": "system"},
+				"tokenStatus":   map[string]any{"type": "string", "writer": "system"},
+				"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system"},
+				"address":       map[string]any{"type": "email", "writer": "person"},
 				// A feature toggle the manifest maps to scopes.
-				"enabledMail": map[string]any{"type": "bool", "writer": "owner"},
+				"enabledMail": map[string]any{"type": "bool", "writer": "person"},
 				// Connector-owned sync state.
-				"syncToken": map[string]any{"type": "string", "writer": "connector"},
+				"syncToken": map[string]any{"type": "string", "writer": []any{"function", "agent"}},
 			},
 		})
 }
@@ -95,11 +95,18 @@ func mbMessageTypeDoc() map[string]any {
 }
 
 func mbFnDoc(name, source string) map[string]any {
+	writes := []any{mbMessageType}
+	if name == "echo" {
+		// The connector names its account, as every provider's sync names
+		// its own: an account is a control kind, which no glob reaches and
+		// which a hand writes only where its rules name it (decision 0276).
+		writes = append(writes, mbAccountType)
+	}
 	return vocabulary.FunctionManifest(mbPackage, name, map[string]any{
 		"description": "test function " + name,
 		"runtime":     vocabulary.RuntimePython,
 		"source":      source,
-		"permissions": map[string]any{"writes": []any{mbMessageType}},
+		"permissions": map[string]any{"writes": writes},
 	})
 }
 
@@ -130,7 +137,6 @@ func mbDocs(installs []string, members ...map[string]any) []map[string]any {
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(mbPackage, 0),
-		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
 		vocabulary.BundleManifest(mbPackage, map[string]any{
 			"description": "the mail bundle",
 			"inputs": map[string]any{
@@ -187,7 +193,7 @@ func mbPointOAuthAt(docs []map[string]any, baseURL string) {
 }
 
 // mbWireEmail turns on OAuth email derivation for the mail closure: it adds an
-// `email` (writer: oauth) property to the account type and points the bundle's
+// `email` (writer: system) property to the account type and points the bundle's
 // oauth2 block at that property. mbPointOAuthAt then rewrites the endpoint to
 // the fake provider's /userinfo. The user never types email; the facility sets
 // it from the grant.
@@ -197,7 +203,7 @@ func mbWireEmail(docs []map[string]any) {
 		if d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) {
 			if meta, _ := d["metadata"].(map[string]any); meta["id"] == mbAccountType {
 				props, _ := data["properties"].(map[string]any)
-				props["email"] = map[string]any{"type": "email", "writer": "oauth"}
+				props["email"] = map[string]any{"type": "email", "writer": "system"}
 			}
 		}
 		if d["kind"] == vocabulary.CoreKind(vocabulary.DocBundle) {
@@ -307,7 +313,6 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 	// other way round.
 	headless := []map[string]any{
 		vocabulary.PackageManifest(mbPackage, 0),
-		vocabulary.ActorManifest(mbPackage, vocabulary.PackageActor(mbPackage)),
 		mbMessageTypeDoc(),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, headless); err != nil {
@@ -537,7 +542,7 @@ func TestBundleDisableStopsDelivery(t *testing.T) {
 	}
 
 	// Invocation refuses...
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err == nil ||
 		!strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("disabled function call: %v", err)
 	}
@@ -593,7 +598,7 @@ func TestBundleUpgradeRefusesBreakage(t *testing.T) {
 	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, noEcho); err != nil {
 		t.Fatalf("dropping an unreferenced function: %v", err)
 	}
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, nil); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, nil); err == nil {
 		t.Fatal("echo survived its removal")
 	}
 }
@@ -663,7 +668,7 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 		t.Fatalf("mailitem schema row not pruned: %+v %v", row, err)
 	}
 	// The callable is gone, and the trigger row went with it — it cannot fire.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err == nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err == nil {
 		t.Fatal("a torn-down bundle's function ran")
 	}
 	if row, err := ds.Get(ctx, "substrate.reamde.dev/core/trigger", "on-mark-mail"); err != nil || row.DeletedAt == nil {
@@ -867,7 +872,7 @@ func TestShadowAccountConfigTraitIsNotAnAccount(t *testing.T) {
 		t.Fatalf("bare trait filter: %v", err)
 	}
 	// The runner injects no shadow records as accounts.
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call echo: %v", err)
 	}
@@ -950,7 +955,6 @@ func TestAMergeEffectRefusesFrozenBundleRecords(t *testing.T) {
 	const toolPackage = "wtool.test.dev/wtool"
 	mergerDocs := []map[string]any{
 		vocabulary.PackageManifest(toolPackage, 0),
-		vocabulary.ActorManifest(toolPackage, vocabulary.PackageActor(toolPackage)),
 		vocabulary.FunctionManifest(toolPackage, "merger", map[string]any{
 			"description": "merges two mail accounts",
 			"runtime":     vocabulary.RuntimePython,
@@ -972,7 +976,7 @@ def main(input, host):
 		t.Fatalf("disable: %v", err)
 	}
 	args := map[string]any{"winner": a1.ID, "loser": a2.ID}
-	_, _, err := ds.CallFunction(ctx, substrate.ActorAPI, toolPackage+"/merger", args)
+	_, _, err := ds.CallFunction(ctx, substrate.ActorPerson, toolPackage+"/merger", args)
 	if err == nil || !strings.Contains(err.Error(), "frozen") {
 		t.Fatalf("a merge effect bypassed the bundle freeze: %v", err)
 	}
@@ -984,7 +988,7 @@ def main(input, host):
 	if err := ds.EnableBundle(ctx, mbPackage); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
-	if _, n, err := ds.CallFunction(ctx, substrate.ActorAPI, toolPackage+"/merger", args); err != nil || n != 1 {
+	if _, n, err := ds.CallFunction(ctx, substrate.ActorPerson, toolPackage+"/merger", args); err != nil || n != 1 {
 		t.Fatalf("merge effect while live: %d %v", n, err)
 	}
 }
@@ -1100,7 +1104,7 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 	}
 	callDone := make(chan callRes, 1)
 	go func() {
-		_, n, err := ds.CallFunction(ctx, substrate.ActorAPI, waiterFn, map[string]any{})
+		_, n, err := ds.CallFunction(ctx, substrate.ActorPerson, waiterFn, map[string]any{})
 		callDone <- callRes{n, err}
 	}()
 	select {
@@ -1145,7 +1149,7 @@ func TestDisableDrainsAnAdmittedInvocation(t *testing.T) {
 		t.Fatalf("drained invocation: %d %v", r.effects, r.err)
 	}
 	// And the next admission refuses.
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, waiterFn, map[string]any{}); err == nil ||
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, waiterFn, map[string]any{}); err == nil ||
 		!strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("post-disable invocation: %v", err)
 	}

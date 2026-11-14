@@ -83,6 +83,13 @@ private struct ConsoleContent: View {
                 controller.signedOut = { [sessions] tokenID in
                     Task { await sessions.signedOut(of: server, tokenID: tokenID) }
                 }
+                controller.renamed = { [sessions, weak controller] tokenID, repository in
+                    Task {
+                        if let session = await sessions.renamed(on: server, tokenID: tokenID, repository: repository) {
+                            controller?.updateSession(session)
+                        }
+                    }
+                }
             }
     }
 }

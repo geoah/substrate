@@ -68,6 +68,13 @@ export function isMachinery(authority: string, pkg: string): boolean {
  * record 0231). */
 export const CONTACT_KIND = `${CORE_PACKAGE}/contact`
 
+/** A repository's override of one kind's retention (decision 0282). */
+export const RETENTION_KIND = `${CORE_PACKAGE}/retention`
+
+/** The package declaration, which states the retention its kinds fall back
+ * to. */
+export const PACKAGE_KIND = `${CORE_PACKAGE}/package`
+
 /** The facts an owner keeps for their agents (decision record 0197). */
 export const MEMORY_KIND = `${LLM_PACKAGE}/memory`
 
@@ -146,6 +153,10 @@ export const TRIGGER_RUN_KIND = `${CORE_PACKAGE}/triggerrun`
  * (`vocabulary.KindLLMInteraction`). */
 export const INTERACTION_KIND = `${LLM_PACKAGE}/interaction`
 
+/** The call an agent wants to make that waits for the owner's approval
+ * (`vocabulary.KindLLMApproval`, decision record 0254). */
+export const APPROVAL_KIND = `${LLM_PACKAGE}/approval`
+
 /** Where INTERACTION_KIND was before record 0077 moved it out of core. A
  * stamp written before the move still spells it, and the loader still
  * accepts it on a stored grant the boot upgrade has not rewritten yet. */
@@ -164,11 +175,10 @@ export const OBSERVED_TRAIT = `${CORE_PACKAGE}/observed`
  * the metric records by it, never by a sample's kind name. */
 export const METRIC_TRAIT = `${CORE_PACKAGE}/metric`
 
-/** The four core kinds a grant glob never reaches (`vocabulary.AuthKinds`,
+/** The three core kinds a grant glob never reaches (`vocabulary.AuthKinds`,
  * record 0080): an entry has to spell one out to grant it. */
 export const AUTH_KINDS: readonly string[] = [
   `${CORE_PACKAGE}/token`,
   `${CORE_PACKAGE}/credential`,
   `${CORE_PACKAGE}/secret`,
-  `${CORE_PACKAGE}/recoverykey`,
 ]

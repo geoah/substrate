@@ -34,7 +34,6 @@ const (
 func pfDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(pfPackage, 0),
-		vocabulary.ActorManifest(pfPackage, vocabulary.PackageActor(pfPackage)),
 		vocabulary.BundleManifest(pfPackage, map[string]any{
 			"description": "a bundle whose package a later binary parks", "installs": []any{pfNote},
 		}),
@@ -281,7 +280,6 @@ const (
 func pfMappedDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(pfPackage, 0),
-		vocabulary.ActorManifest(pfPackage, vocabulary.PackageActor(pfPackage)),
 		vocabulary.BundleManifest(pfPackage, map[string]any{
 			"description": "a bundle mapping from a package that stays live", "installs": []any{pfCard, pfPackage + "/sourcecard"},
 		}),
@@ -542,7 +540,6 @@ const (
 func pfLegacyDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(pfLegacy, 0),
-		vocabulary.ActorManifest(pfLegacy, vocabulary.PackageActor(pfLegacy)),
 		vocabulary.BundleManifest(pfLegacy, map[string]any{
 			"description": "a bundle whose agent a later binary does not parse",
 			"installs":    []any{pfLegacyMemo, pfLegacyAgent},

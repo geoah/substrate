@@ -136,23 +136,25 @@ func normalizeCode(in string) (string, error) {
 	return code, nil
 }
 
-// askRepository resolves the repository name: the flag, the context's, else a
-// prompt.
-func (a *app) askRepository(repository string) (string, error) {
-	if repository == "" {
+// askIdentity is the name a person signs in with: the one given, else the
+// current context's, else that context's repository, which is the name every
+// person a release before identities registered signs in with (decision
+// 0274), else asked for.
+func (a *app) askIdentity(identity string) (string, error) {
+	if identity == "" {
 		if ctx, err := a.resolveContext(); err == nil {
-			repository = ctx.Repository
+			identity = firstNonEmpty(ctx.Identity, ctx.Repository)
 		}
 	}
-	if repository != "" {
-		return repository, nil
+	if identity != "" {
+		return identity, nil
 	}
-	got, err := a.prompt("Repository: ")
+	got, err := a.prompt("Name: ")
 	if err != nil {
 		return "", err
 	}
 	if got == "" {
-		return "", errors.New("a repository name is required")
+		return "", errors.New("the name you sign in with is required")
 	}
 	return got, nil
 }

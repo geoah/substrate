@@ -2,7 +2,7 @@
 status: superseded
 date: 2026-09-05
 decision-makers: George Antoniadis
-superseded-by: 0052
+superseded-by: 0261
 ---
 
 # 0046. A repository owns one authority, chosen at registration and defaulting to the server's host

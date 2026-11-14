@@ -5,7 +5,7 @@
  * 0020), so every answer is inferred from the declaration and the values,
  * the same way every time, and a reader can predict it. */
 
-import { elementSpec, type PropSpec } from "@/lib/record-schema"
+import { elementSpec, personWritable, type PropSpec } from "@/lib/record-schema"
 
 /** Whether a property reads as a structure of its own fields: a declared
  * object, alone or in a list. A keyed map keeps its own rendering. */
@@ -339,10 +339,7 @@ export function fieldsToAdd(
   const bag = fieldsOf(value)
   return fields.filter(
     (f) =>
-      !held(bag[f.name]) &&
-      !f.managed &&
-      (!f.writer || f.writer === "owner") &&
-      !isNestedField(f)
+      !held(bag[f.name]) && !f.managed && personWritable(f) && !isNestedField(f)
   )
 }
 

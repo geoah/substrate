@@ -1,5 +1,14 @@
-import { cx } from "@substrate/react"
-import { CalendarDays, Check, Clock, Flag, ListIcon, X } from "lucide-react"
+import { cx, useWriteState } from "@substrate/react"
+import {
+  CalendarDays,
+  Check,
+  Clock,
+  Flag,
+  Layers,
+  ListIcon,
+  Sparkle,
+  X,
+} from "lucide-react"
 import {
   useCallback,
   useEffect,
@@ -13,6 +22,7 @@ import { undoWindow, type TaskActions } from "./actions"
 import { MenuButton } from "./Menu"
 import { priorityWords, type Priority, type Status, type Tone } from "./model"
 import type { RowView } from "./present"
+import { words } from "./words"
 
 export const toneClass: Record<Tone, string> = {
   quiet: "text-secondary",
@@ -39,6 +49,7 @@ export function StatusMark(props: {
   pending?: number
   label: string
   onToggle: () => void
+  disabled?: boolean
 }) {
   const { pending } = props
   const filled = pending !== undefined || props.status === "done"
@@ -66,7 +77,8 @@ export function StatusMark(props: {
       }}
       onPointerDown={(e) => e.stopPropagation()}
       aria-label={props.label}
-      className="group relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      disabled={props.disabled}
+      className="group relative flex size-11 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default"
     >
       {pending !== undefined && (
         <svg
@@ -158,12 +170,35 @@ export function TaskRow(
     ...rest
   } = props
   const t = view.task
-  const open = t.status === "open"
-  const struck = !open || view.pending
-  const chips = open && (view.due || view.priority || view.listName)
+  const suggestion = view.suggestion
+  const open = t.status === "open" || !!suggestion
+  const struck = (!open || view.pending) && !suggestion
+  const refused = useWriteState(t.kind, t.recordID) === "parked"
+  const chips =
+    refused ||
+    (open &&
+      (view.due ||
+        view.priority ||
+        view.priorityLabel ||
+        view.listName ||
+        view.collection ||
+        suggestion))
   const toggle = () =>
-    open && !view.pending ? actions.complete(t.id) : actions.reopen(t.id)
-  const swipe = useSwipe({ trailing: open ? 2 : 1, onFull: toggle })
+    t.status === "open" && !view.pending
+      ? actions.complete(t.id)
+      : actions.reopen(t.id)
+  const writable = !t.item.collection.viewOnly
+  // Buttons rather than a mark trail the row: where the row is too narrow
+  // for them and a readable title (a phone at a large text size), they go
+  // under the title rather than squeeze it.
+  const wide =
+    (!!suggestion && (suggestion.accept || suggestion.dismiss)) ||
+    !!view.decision
+  const swipe = useSwipe({
+    trailing: suggestion ? (suggestion.dismiss ? 1 : 0) : open ? 2 : 1,
+    leading: suggestion ? suggestion.accept : view.toggles,
+    onFull: () => (suggestion ? actions.act(t.id, "accept") : toggle()),
+  })
   return (
     <div
       ref={elementRef}
@@ -183,19 +218,33 @@ export function TaskRow(
       {swipe.offset > 0 && (
         <div className="absolute inset-y-0 left-0 flex">
           <SwipeButton
-            label={view.toggle}
+            label={suggestion ? words.suggestionRow.accept : view.toggle}
             className="bg-ok"
             width={Math.max(swipeWidth, swipe.offset)}
             onClick={() => {
               swipe.close()
-              toggle()
+              if (suggestion) actions.act(t.id, "accept")
+              else toggle()
             }}
           />
         </div>
       )}
-      {swipe.offset < 0 && (
+      {swipe.offset < 0 && suggestion && (
         <div className="absolute inset-y-0 right-0 flex">
-          {open && (
+          <SwipeButton
+            label={words.suggestionRow.dismiss}
+            className="bg-[#8e8e93]"
+            width={swipeWidth}
+            onClick={() => {
+              swipe.close()
+              actions.act(t.id, "dismiss")
+            }}
+          />
+        </div>
+      )}
+      {swipe.offset < 0 && !suggestion && (
+        <div className="absolute inset-y-0 right-0 flex">
+          {open && t.item.actions.wontDo.length > 0 && (
             <SwipeButton
               label="Won't Do"
               className="bg-[#8e8e93]"
@@ -206,15 +255,17 @@ export function TaskRow(
               }}
             />
           )}
-          <SwipeButton
-            label="Delete"
-            className="bg-danger"
-            width={swipeWidth}
-            onClick={() => {
-              swipe.close()
-              actions.deleteTask(t.id)
-            }}
-          />
+          {writable && (
+            <SwipeButton
+              label="Delete"
+              className="bg-danger"
+              width={swipeWidth}
+              onClick={() => {
+                swipe.close()
+                actions.deleteTask(t.id)
+              }}
+            />
+          )}
         </div>
       )}
       <div
@@ -224,6 +275,7 @@ export function TaskRow(
         }}
         className={cx(
           "relative flex items-center gap-1 pr-1.5 pl-4",
+          wide && "flex-wrap",
           selected
             ? "bg-[color-mix(in_srgb,var(--sx-accent)_9%,var(--sx-card))]"
             : "bg-card"
@@ -232,6 +284,7 @@ export function TaskRow(
         <div
           className={cx(
             "min-w-0 flex-1 py-2.5 transition-opacity",
+            wide && "min-w-[min(100%,11rem)]",
             (faded || !open) && "opacity-[0.62]"
           )}
         >
@@ -249,6 +302,12 @@ export function TaskRow(
                 struck ? "text-secondary line-through" : "text-label"
               )}
             >
+              {suggestion && (
+                <Sparkle
+                  className="mr-1.5 mb-0.5 inline size-3.5 fill-accent text-accent"
+                  aria-hidden
+                />
+              )}
               {view.title}
             </span>
             {view.notes && (
@@ -263,6 +322,20 @@ export function TaskRow(
             )}
             {chips && (
               <span className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                {suggestion && view.collection && (
+                  <Chip
+                    icon={<Layers className="size-3.5 shrink-0" />}
+                    text={view.collection}
+                    className="text-secondary"
+                  />
+                )}
+                {suggestion && (
+                  <Chip
+                    icon={<Sparkle className="size-3.5 shrink-0" />}
+                    text={suggestion.written}
+                    className="text-secondary"
+                  />
+                )}
                 {view.due && (
                   <Chip
                     icon={<Clock className="size-3.5 shrink-0" />}
@@ -278,10 +351,41 @@ export function TaskRow(
                     className={priorityClass[view.priority]}
                   />
                 )}
+                {view.priorityLabel && (
+                  <Chip
+                    icon={<Flag className="size-3.5 shrink-0" />}
+                    text={view.priorityLabel.text}
+                    className={
+                      view.priorityLabel.pressing
+                        ? "text-danger"
+                        : "text-secondary"
+                    }
+                  />
+                )}
                 {view.listName && (
                   <Chip
                     icon={<ListIcon className="size-3.5 shrink-0" />}
                     text={view.listName}
+                    className="text-secondary"
+                  />
+                )}
+                {refused && (
+                  <span
+                    title={words.notSavedDetail}
+                    className="rounded-full bg-danger/10 px-1.5 py-0.5 text-[12px] leading-4 font-semibold text-danger"
+                  >
+                    {words.notSaved}
+                  </span>
+                )}
+                {suggestion?.viewOnly && (
+                  <span className="text-[12px] leading-4 font-medium text-secondary">
+                    {words.viewOnly}
+                  </span>
+                )}
+                {!suggestion && view.collection && (
+                  <Chip
+                    icon={<Layers className="size-3.5 shrink-0" />}
+                    text={view.collection}
                     className="text-secondary"
                   />
                 )}
@@ -320,16 +424,101 @@ export function TaskRow(
             </div>
           )}
         </div>
-        <span className={cx("flex", (faded || !open) && "opacity-[0.62]")}>
-          <StatusMark
-            status={t.status}
-            pending={pending}
-            label={view.toggle}
-            onToggle={toggle}
+        {suggestion ? (
+          <SuggestionControls
+            view={view}
+            onAct={(action) => actions.act(t.id, action)}
+            onUndo={() => actions.reopen(t.id)}
           />
-        </span>
+        ) : view.decision && view.decision.action !== "complete" ? (
+          <UndoControl
+            words={words.undo[view.decision.action]}
+            onUndo={() => actions.reopen(t.id)}
+          />
+        ) : (
+          <span className={cx("flex", (faded || !open) && "opacity-[0.62]")}>
+            <StatusMark
+              status={t.status}
+              pending={pending}
+              label={view.toggle}
+              onToggle={toggle}
+              disabled={!view.toggles}
+            />
+          </span>
+        )}
       </div>
     </div>
+  )
+}
+
+/** A suggestion's trailing control: Dismiss beside Accept, or while its
+ * decision waits out the window, what was decided and Undo. */
+function SuggestionControls(props: {
+  view: RowView
+  onAct: (action: "accept" | "dismiss") => void
+  onUndo: () => void
+}) {
+  const s = props.view.suggestion!
+  const d = props.view.decision
+  if (d)
+    return <UndoControl words={words.undo[d.action]} onUndo={props.onUndo} />
+  if (!s.accept && !s.dismiss) return null
+  return (
+    <span
+      className="ml-auto flex shrink-0 items-center gap-2 pr-1.5 pl-1 @max-sm:pb-2.5"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {s.dismiss && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onAct("dismiss")
+          }}
+          aria-label={`${words.suggestionRow.dismiss} ${props.view.title}`}
+          title={`${words.suggestionRow.dismiss} (D)`}
+          className="flex size-11 items-center justify-center rounded-full bg-fill text-secondary outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <X className="size-4" strokeWidth={2.5} />
+        </button>
+      )}
+      {s.accept && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onAct("accept")
+          }}
+          aria-label={`${words.suggestionRow.accept} ${props.view.title}`}
+          title={`${words.suggestionRow.accept} (A)`}
+          className="h-11 rounded-full bg-accent px-4 text-[15px] font-semibold text-white outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+        >
+          {words.suggestionRow.accept}
+        </button>
+      )}
+    </span>
+  )
+}
+
+/** A decision waiting out its window, said, with its Undo. */
+function UndoControl(props: { words: string; onUndo: () => void }) {
+  return (
+    <span
+      className="ml-auto flex shrink-0 items-center gap-2 pr-1.5 pl-1 @max-sm:pb-2.5"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <span className="text-[15px] text-secondary">{props.words}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          props.onUndo()
+        }}
+        className="h-11 rounded-full bg-fill px-4 text-[15px] font-semibold outline-none hover:bg-selected focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        {words.undo.action}
+      </button>
+    </span>
   )
 }
 
@@ -362,7 +551,11 @@ let closeOpenRow: (() => void) | undefined
 /** A row's swipe: a finger moving sideways before it holds the row slides
  * it, and it settles shut, open on its buttons, or, past half the width
  * from the left, does its full-swipe action. */
-function useSwipe(opts: { trailing: number; onFull: () => void }) {
+function useSwipe(opts: {
+  trailing: number
+  leading: boolean
+  onFull: () => void
+}) {
   const [offset, setOffset] = useState(0)
   const [dragging, setDragging] = useState(false)
   const gesture = useRef<
@@ -378,7 +571,7 @@ function useSwipe(opts: { trailing: number; onFull: () => void }) {
     | undefined
   >(undefined)
   const close = useCallback(() => setOffset(0), [])
-  const lead = swipeWidth
+  const lead = opts.leading ? swipeWidth : 0
   const trail = swipeWidth * opts.trailing
 
   useEffect(() => {
@@ -419,7 +612,12 @@ function useSwipe(opts: { trailing: number; onFull: () => void }) {
         setDragging(true)
         e.currentTarget.setPointerCapture(e.pointerId)
       }
-      setOffset(Math.max(-trail - 24, Math.min(g.width * 0.9, g.base + dx)))
+      setOffset(
+        Math.max(
+          trail ? -trail - 24 : 0,
+          Math.min(lead ? g.width * 0.9 : 0, g.base + dx)
+        )
+      )
     },
     onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
       const g = gesture.current
@@ -427,11 +625,11 @@ function useSwipe(opts: { trailing: number; onFull: () => void }) {
       if (!g?.active || e.pointerId !== g.id) return
       setDragging(false)
       const x = g.base + (e.clientX - g.x)
-      if (x > g.width * 0.5) {
+      if (lead && x > g.width * 0.5) {
         setOffset(0)
         opts.onFull()
-      } else if (x > lead / 2) setOffset(lead)
-      else if (x < -trail / 2) setOffset(-trail)
+      } else if (lead && x > lead / 2) setOffset(lead)
+      else if (trail && x < -trail / 2) setOffset(-trail)
       else setOffset(0)
     },
     onPointerCancel: () => {

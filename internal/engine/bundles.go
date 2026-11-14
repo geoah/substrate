@@ -40,6 +40,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"sync"
 
@@ -423,6 +425,7 @@ func (t *txn) checkTriggerCallableRow(tr *trigger) error {
 // "<authority>/<package>") or by its
 // owned authority — the two spellings a caller reasonably has in hand.
 func (ds *dataset) bundleByID(id string) (*vocabulary.Bundle, error) {
+	id = vocabulary.LocalizeRef(id, ds.names()...)
 	if b, ok := ds.registry().BundleOf(id); ok {
 		return b, nil
 	}
@@ -494,6 +497,7 @@ func (ds *dataset) BundlePackage(ctx context.Context, id string) (string, error)
 // QUARANTINED bundle (issue 010: its package is absent from the live registry)
 // still uninstallable.
 func (ds *dataset) bundlePackageOf(ctx context.Context, id string) (string, error) {
+	id = vocabulary.LocalizeRef(id, ds.names()...)
 	if b, err := ds.bundleByID(id); err == nil {
 		return b.Package, nil
 	}
@@ -543,10 +547,32 @@ func (ds *dataset) UninstallBundle(ctx context.Context, id string) error {
 	_, err = ds.applyVocabularyBatch(ctx, substrate.ActorSystem, vocabularyBatch{
 		replacePackages: []string{pkg},
 		beforeGuards: func(t *txn) error {
-			return t.tearDownCallableTriggers(callables)
+			if err := t.tearDownCallableTriggers(callables); err != nil {
+				return err
+			}
+			return t.disablePackageActors(pkg, callables)
 		},
 	})
 	return err
+}
+
+// disablePackageActors disables the actor records of a package whose code is
+// leaving: its own and each of its functions' and agents' (decision 0270).
+// Their old writes still link them, and an install of the package again
+// enables each as it writes.
+func (t *txn) disablePackageActors(pkg string, callables map[string]bool) error {
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	keys := []substrate.Actor{substrate.BundleActor(authority, name)}
+	for _, identity := range slices.Sorted(maps.Keys(callables)) {
+		a, p, n := vocabulary.SplitKindRef(identity)
+		keys = append(keys, substrate.FunctionActor(a, p, n), substrate.AgentActor(a, p, n))
+	}
+	for _, key := range keys {
+		if err := t.disableActor(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // packageCallableIdentities lists the identities of a package's functions and
@@ -991,6 +1017,26 @@ func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.Bundl
 	return quarantined[0], nil
 }
 
+// bundleFeatures lists an OAuth bundle's feature toggles off its trusted
+// manifest metadata, in toggle order: what each asks the provider for, and
+// whether that reads it or changes it.
+func bundleFeatures(b *vocabulary.Bundle) []substrate.BundleFeature {
+	if b.OAuth2 == nil {
+		return nil
+	}
+	var out []substrate.BundleFeature
+	for _, toggle := range slices.Sorted(maps.Keys(b.OAuth2.FeatureScopes)) {
+		access := b.OAuth2.FeatureAccess[toggle]
+		if access == "" {
+			access = vocabulary.FeatureAccessRead
+		}
+		out = append(out, substrate.BundleFeature{
+			Toggle: toggle, Scopes: slices.Clone(b.OAuth2.FeatureScopes[toggle]), Access: access,
+		})
+	}
+	return out
+}
+
 // bundleStatus computes one bundle's status. counted reads Accounts and
 // LiveRecords: an exact count of every live row of each of its kinds, which
 // for a large kind is a scan of the table, so a read that does not show them
@@ -1017,6 +1063,7 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 	st.Functions = len(g.FunctionOrder)
 	st.Kinds = len(g.KindOrder)
 	st.Version = g.Version
+	st.Features = bundleFeatures(b)
 	if err := ds.packageOrigin(ctx, b.Package, &st); err != nil {
 		return st, err
 	}
@@ -1135,13 +1182,14 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle, count
 // refused, naming the traits carrying the word (decision record 0101), never
 // widened to a local look-alike answering for a core trait.
 func (ds *dataset) TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error) {
-	types, err := ds.registry().ImplementingStrict(trait)
+	reg := ds.registry()
+	types, err := reg.ImplementingStrict(trait)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	out := make([]substrate.KindInfo, 0, len(types))
 	for _, t := range types {
-		out = append(out, typeInfo(t))
+		out = append(out, typeInfoIn(reg, t))
 	}
 	return out, nil
 }

@@ -56,7 +56,7 @@ func (ds *dataset) referencingTargets(ctx context.Context, x dbx, ref *substrate
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, field, err)
 		}
-		targets = append(targets, eref{Kind: ty.Identity, ID: id})
+		targets = append(targets, eref{Kind: ty.Identity, ID: vocabulary.LocalizeID(ty.Identity, id, ds.names()...)})
 	}
 	trail, err := trailIDs(ctx, x, targets)
 	if err != nil {
@@ -477,7 +477,16 @@ func referencePathsOf(v any) []string {
 // kilobytes a cursor in a URL would otherwise repeat on every page.
 func orderSignature(order string, f substrate.Filter) string {
 	sum := sha256.Sum256([]byte(order + "|" + filterDigest(f)))
-	return hex.EncodeToString(sum[:16])
+	return hex.EncodeToString(sum[:8])
+}
+
+// requestSignature is the identity of a list request's own filter and
+// orderBy, before either is resolved against the declarations: what a cursor
+// replayed under another request differs in.
+func requestSignature(orders []substrate.Order, f substrate.Filter) string {
+	raw, _ := json.Marshal(orders)
+	sum := sha256.Sum256([]byte(string(raw) + "|" + filterDigest(f)))
+	return hex.EncodeToString(sum[:8])
 }
 
 // filterDigest is the filter's identity for a cursor: its canonical JSON,

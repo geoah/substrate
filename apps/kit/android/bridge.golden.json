@@ -849,6 +849,17 @@
       ]
     },
     {
+      "name": "KindStatus.Standing",
+      "module": "SubstrateCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "proposed", "value": "proposed"},
+        {"name": "open", "value": "open"},
+        {"name": "done", "value": "done"},
+        {"name": "dropped", "value": "dropped"}
+      ]
+    },
+    {
       "name": "LabeledValue",
       "module": "SubstrateScreens",
       "kind": "struct",

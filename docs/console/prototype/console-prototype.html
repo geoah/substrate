@@ -1498,8 +1498,7 @@ function settingsPage(){
     ${tech()?`<div class="devbox" style="margin-top:10px"><div class="h">${ic("code")}Developer</div><div>Stored on <span class="idtxt">${pref}</span>, next to the sidebar state it already keeps (<span class="pk">collapsed</span>, <span class="pk">favorites</span>, <span class="pk">sidebarOpen</span>).</div><div>Proposed new properties: <span class="pk">recordWidth</span> <span class="pk">tableWidth</span> <span class="pk">density</span> <span class="pk">technicalDetails</span> <span class="pk">theme</span> — additive, one version bump of the kind.</div></div>`:""}
     <div class="sechead"><h2 class="h2">Account</h2></div><div class="set-sec">
       ${row("ada.localhost","The name you sign in with. It’s also the address of your data.",copyBtn("ada.localhost"))}
-      ${row("Password","Changed 4 days ago.",`<button class="btn sm">Change</button>`)}
-      ${row("Recovery key","Keep it in your password manager. With it, a backup of your data opens anywhere.",`<button class="btn sm">How it works</button>`)}</div>
+      ${row("Password","Changed 4 days ago.",`<button class="btn sm">Change</button>`)}</div>
     <div class="sechead"><h2 class="h2">Signed in</h2></div><div class="set-sec">
       ${row("This browser","Signed in today · Chrome on macOS",`<span class="pill ok">You are here</span>`)}
       ${row("Command line","Signed in 4 days ago · substratectl",`<button class="btn sm">Sign out…</button>`)}</div>

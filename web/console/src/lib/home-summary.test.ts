@@ -45,8 +45,8 @@ describe("providersSummary", () => {
     const summary = providersSummary([
       status({ accounts: 1 }),
       status({
-        id: "ada.example.com/tasks",
-        authority: "ada.example.com",
+        id: "~/tasks",
+        authority: "~",
         package: "tasks",
         provider: false,
       }),
@@ -101,12 +101,11 @@ function kind(identity: string): KindInfo {
 }
 
 describe("homeSections", () => {
-  const HOME = "ada.example.com"
   const yours = [
-    kind(`${HOME}/tasks/task`),
-    kind(`${HOME}/tasks/project`),
-    kind(`${HOME}/people/person`),
-    kind(`${HOME}/notes/note`),
+    kind("~/tasks/task"),
+    kind("~/tasks/project"),
+    kind("~/people/person"),
+    kind("~/notes/note"),
   ]
   const google = ["calendarevent", "contact", "gmailthread"].map((n) =>
     kind(`providers.substrate.reamde.dev/google/${n}`)
@@ -114,7 +113,7 @@ describe("homeSections", () => {
 
   it("ranks yours together across packages, then each provider under its own heading", () => {
     const sections = homeSections(
-      collectionGroups([...yours, ...google], HOME),
+      collectionGroups([...yours, ...google]),
       () => true
     )
     expect(sections.map((s) => s.label)).toEqual(["Your data", "From Google"])
@@ -124,7 +123,7 @@ describe("homeSections", () => {
 
   it("leads with the collections that hold something", () => {
     const sections = homeSections(
-      collectionGroups(yours, HOME),
+      collectionGroups(yours),
       (k) => k.name === "task"
     )
     expect(sections[0].kinds[0].name).toBe("task")
@@ -132,7 +131,7 @@ describe("homeSections", () => {
 
   it("keeps to the cap, yours taking their share first", () => {
     const sections = homeSections(
-      collectionGroups([...yours, ...google], HOME),
+      collectionGroups([...yours, ...google]),
       () => true,
       5,
       4

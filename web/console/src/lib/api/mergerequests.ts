@@ -1,6 +1,6 @@
 /** Merge-request reads and THE verdict write — the console's only mutation
  * besides login. The read is the generic single record read, with
- * propertyMeta; the write is one atomic PATCH at the request: the `decision`
+ * marks; the write is one atomic PATCH at the request: the `decision`
  * transition, with the optional note riding the same write as the
  * `owner/note` annotation. Accepting runs `applyMerge` inside
  * the same transaction — a stale request (already merged, deleted, kind
@@ -20,7 +20,7 @@ import { verdictPatch, type MergeVerdict } from "@/lib/mergerequests"
 export const MR_NAME = "recordmergerequest"
 
 /** One request whole — the single read is the only surface carrying
- * `propertyMeta` (who proposed, who decided) and `annotations` (the note, and
+ * `marks` (who proposed, who decided) and `annotations` (the note, and
  * the server's conflict record after a refused apply). */
 export function mergeRequestQueryOptions(id: string) {
   return recordQueryOptions(CORE_AUTHORITY, CORE_PACKAGE_NAME, MR_NAME, id)

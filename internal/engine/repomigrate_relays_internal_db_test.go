@@ -169,29 +169,23 @@ func relayOpen(t *testing.T, dsn, root, repo string) (*service, *dataset) {
 }
 
 // relayRerun closes the service, forgets that migration 5 ran, and opens the
-// repository again, which runs it.
+// repository again, which runs it. The migrations after it are forgotten too:
+// they run in order, so an open refuses a ledger missing one below another.
 func relayRerun(t *testing.T, svc *service, dsn, root, repo string) (*service, *dataset) {
 	t.Helper()
 	if err := svc.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	maint, err := OpenScopedDB(dsn, repo, RoleMaint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = maint.Close() }()
-	if _, err := maint.ExecContext(context.Background(),
-		`DELETE FROM repository_migrations WHERE repository = $1 AND version = 5`, repo); err != nil {
-		t.Fatalf("forget migration 5: %v", err)
-	}
+	MakeMigrationPending(t, dsn, repo, 5)
 	return relayOpen(t, dsn, root, repo)
 }
 
-func relayHead(t *testing.T, db *sql.DB, repo string) int64 {
+// relayHead is the changelog head of the repository whose id is id.
+func relayHead(t *testing.T, db *sql.DB, id string) int64 {
 	t.Helper()
 	var seq int64
 	if err := db.QueryRowContext(context.Background(),
-		`SELECT coalesce(max(seq), 0) FROM changelog WHERE repository = $1`, repo).Scan(&seq); err != nil {
+		`SELECT coalesce(max(seq), 0) FROM changelog WHERE repository = $1`, id).Scan(&seq); err != nil {
 		t.Fatal(err)
 	}
 	return seq
@@ -274,25 +268,25 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 
 	// The owner names one relay contact, hides another, promotes a third and
 	// merges a fourth into Grace's.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, edited),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, edited),
 		substrate.PatchInput{Properties: map[string]any{"name": "Review thread"}}); err != nil {
 		t.Fatalf("name: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, hidden),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, hidden),
 		substrate.PatchInput{Properties: map[string]any{"prominence": "hidden"}}); err != nil {
 		t.Fatalf("hide: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindContact, relayContactOf(t, ds, known),
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindContact, relayContactOf(t, ds, known),
 		substrate.PatchInput{Properties: map[string]any{"prominence": "known"}}); err != nil {
 		t.Fatalf("promote: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindContact, Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindContact, Properties: map[string]any{
 		"name": "Linus", "memberOf": []any{relayRef(vocabulary.KindContact, relayContactOf(t, ds, member))},
 	}}); err != nil {
 		t.Fatalf("an owner's contact naming a relay contact: %v", err)
 	}
 	graceContact := relayContactOf(t, ds, grace)
-	if _, err := ds.Merge(ctx, substrate.ActorAPI, substrate.MergeInput{
+	if _, err := ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{
 		Kind: vocabulary.KindContact, Winner: graceContact, Loser: relayContactOf(t, ds, merged),
 	}); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -399,7 +393,7 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*) FROM refs r JOIN records x ON x.repository = r.repository AND x.kind = r.dst_kind AND x.id = r.dst
 		WHERE r.repository = $1 AND r.dst_kind = $2 AND x.deleted_at IS NOT NULL AND r.src_kind = $3`,
-		repo, relayHubKind, relayMessageKind).Scan(&dangling); err != nil {
+		ds.Repository().ID, relayHubKind, relayMessageKind).Scan(&dangling); err != nil {
 		t.Fatal(err)
 	}
 	if dangling != 0 {
@@ -407,9 +401,9 @@ func TestRepositoryMigrationRemovesTheContactsReplyRelaysMade(t *testing.T) {
 	}
 
 	// Again: nothing to do.
-	head := relayHead(t, db, repo)
+	head := relayHead(t, db, ds.Repository().ID)
 	s, ds = relayRerun(t, s, dsn, root, repo)
-	if got := relayHead(t, db, repo); got != head {
+	if got := relayHead(t, db, ds.Repository().ID); got != head {
 		t.Fatalf("a second run moved the changelog from %d to %d", head, got)
 	}
 
@@ -437,19 +431,19 @@ func TestRepositoryMigrationOfReplyRelaysIsSilentWithoutGoogle(t *testing.T) {
 	}
 	_ = svc.Close()
 	s, ds := relayOpen(t, dsn, root, repo)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindContact, Properties: map[string]any{"emails": []any{"reply+AAEXAMPLE0000@reply.github.com"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	db := rawDB(t, ds)
-	head := relayHead(t, db, repo)
+	head := relayHead(t, db, ds.Repository().ID)
 	_, _ = relayRerun(t, s, dsn, root, repo)
-	if got := relayHead(t, db, repo); got != head {
+	if got := relayHead(t, db, ds.Repository().ID); got != head {
 		t.Fatalf("the migration moved the changelog from %d to %d in a repository without Google", head, got)
 	}
 	var name string
-	if err := db.QueryRowContext(ctx, `SELECT name FROM repository_migrations WHERE repository = $1 AND version = 5`, repo).Scan(&name); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT name FROM repository_migrations WHERE repository = $1 AND version = 5`, ds.Repository().ID).Scan(&name); err != nil {
 		t.Fatalf("the ledger does not record migration 5: %v", err)
 	}
 }

@@ -26,6 +26,10 @@ data:
     keep parking. The substrate opens it when the problem appears, updates
     it while the problem continues and resolves it when the problem clears.
   purpose: internal
+  # Bookkeeping, as a triggerrun: the alert's latest state is always kept,
+  # and its history of opening, updates and resolving a week (decision
+  # record 0283).
+  retention: P7D
   names:
     singular: alert
   displayTemplate: "{summary}"

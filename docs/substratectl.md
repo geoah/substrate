@@ -2,21 +2,22 @@
 
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
-kind, addressed as `{authority}/{package}/{kind}/{id}`, and the CLI mirrors that:
-kinds, get, apply, import, patch, delete, watch. It lives in the
+kind, addressed as `{authority}/{package}/{kind}/{id}` (`~/tasks/task/t9` for
+the repository's own), and the CLI mirrors that:
+kinds, get, apply, add, patch, delete, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
-substratectl register --server https://substrate.example --repository ada.example.com
-substratectl login --repository ada.example.com
+substratectl register --server https://substrate.example --identity ada.example.com
+substratectl login --identity ada.example.com
 substratectl kinds                        # every declared kind
-substratectl get ada.example.com/tasks/task            # list a collection
-substratectl get ada.example.com/tasks/task t9 -o yaml  # one record, apply-able envelope
+substratectl get '~/tasks/task'           # list a collection
+substratectl get '~/tasks/task' t9 -o yaml  # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
 substratectl validate -f task.yaml        # the server's checks, offline
-substratectl patch ada.example.com/tasks/task t9 --state status=done
+substratectl patch '~/tasks/task' t9 --state status=done
 substratectl watch                        # resumable change stream
-substratectl export                       # the recovery export, a tar of the repository directory
+substratectl export                       # the recovery export, the repository's archive as one tar
 ```
 
 ## Two hats
@@ -24,24 +25,43 @@ substratectl export                       # the recovery export, a tar of the re
 `substratectl` addresses a substrate two different ways, and the flags say which.
 
 **The user's hat** speaks HTTP and carries a token: everything above, plus
-`register`, `login`, `logout`, `token`, `trigger`, `sync`, `function`, `bundle`,
-`takeover`, `catalog`, `import`, `install` and `export`. It needs a server and a token,
-and it can run anywhere.
+`register`, `login`, `logout`, `rename`, `token`, `trigger`, `sync`, `function`, `bundle`,
+`takeover`, `catalog`, `add` (with its aliases `install` and `import`), `publish --as`,
+`release` and `export`. It needs a server and a token, and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
-verify`, `repository snapshot`, `repository rebuild`, `repository
-rotate-generation`, `repository reembed` and `repository reindex`. Every one
-of them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when
-that is unset) and refuses without it before touching anything. The ones
-that open the repository directory (`verify`, `rebuild`, `reembed`,
-`reindex`, `snapshot`, `rotate-generation` and `user reset`) also need
-`SUBSTRATE_DATA_ROOT`; `repository list` reads the database alone, and
-`repository inspect` reports a missing root instead of refusing. The one
-exception is `repository rewrap`, which opens a copied repository directory
-with the user's recovery key for a new `SUBSTRATE_CREDENTIAL_KEY` and needs
-no database at all.
+verify`, `repository rebuild`, `repository compact`, `repository
+rotate-generation`, `repository reembed`, `repository reindex`, and `archive report`, `archive resolve`,
+`archive remove` and `archive import`, which settle an archive that is not
+as the database left it
+([the archive's contract](operations.md#the-archives-contract)). Every one of
+them needs `--dsn` (or `DATABASE_URL`, or `SUBSTRATE_DATABASE_URL` when that
+is unset) and refuses without it before touching anything. The ones that
+open the engine (`verify`, `rebuild`, `compact`, `reembed`, `reindex`,
+`rotate-generation`, `user reset` and the `archive` ones) also need
+`SUBSTRATE_DATA_ROOT`, and read the `SUBSTRATE_ARCHIVE`
+settings the server runs with, so `verify` holds the same archive to the
+table; `repository inspect` reads the database alone, and `repository list`
+reads it, and the data root and the archive when `SUBSTRATE_DATA_ROOT` is
+set. Each takes the repository by its name or by its id, and `repository list`
+prints both: the directory under the data root and the archive's prefix are
+named by the id. `repository list` also shows each repository's archive mark
+(`ARCHIVED`: the seq the archive holds every line up to and its age, `never`
+before the first pass), and `repository inspect` how far that is behind the
+head. Its `STATE` is `serving`, `set aside` (the running server's start found
+it damaged; see
+[a repository set aside at start-up](operations.md#a-repository-set-aside-at-start-up))
+or `stopped` (no server is running), read from the writer leases, and a 0.x
+directory under the data root or an archive with no row is listed as `set
+aside` or `not imported`. An archive that does not answer leaves the
+database's rows and the data root's directories listed, and the command
+says on stderr that the archive was not read.
 [Running a substrate](operations.md) is where that hat lives.
+
+A request for a repository the server set aside answers the reason
+`set_aside`, and every command prints `the repository is set aside` with
+who brings it back.
 
 `substratectl version` belongs to neither hat: it prints the client version
 and the API version it speaks (`substratectl <version> (api v1)`), and needs
@@ -54,10 +74,17 @@ it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
 registration possible. `--skip-totp` registers without a second factor, which
-the owner can turn on later in the console's Settings. `--repository` names the repository, which BECOMES its
-authority: the home of every package you declare kinds in, and the name you
-log in with. A name carrying a dot is taken as it is; a bare label is
-completed under the substrate's own host, and `register` prints the result.
+the owner can turn on later in the console's Settings. `--identity` is the
+name you sign in with, and the repository registration creates takes it too
+unless `--repository` names another; the repository's name BECOMES its
+authority. The packages you declare kinds in live in the repository's local
+namespace, `~`, not under the name. A command that
+names only `--repository`, as one from before identities does, names you
+after it. A name carrying a dot is taken as it is; a bare label is completed
+under the substrate's public host (`SUBSTRATE_PUBLIC_URL`), and `register`
+prints the result. A name under `localhost` or an IP address is refused
+unless the substrate itself runs there, which is development
+([the default name](auth.md#the-default-name)).
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
@@ -65,11 +92,25 @@ Against a substrate that verifies no second factor
 entirely: `substratectl` reads `GET /.well-known/substrate/server.json` first
 and stops asking for something nothing checks.
 
-`substratectl login` presents the password and mints a token record, which it stores
-as the current context. Where the account has a second factor the substrate
+`substratectl login --identity <name>` presents the password and mints a
+token record in your repository, which it stores as the current context. A
+person who may open several repositories names one with `--repository` (its
+name or id), or is shown them and asked; with `--password-stdin` there is
+nobody to ask, and `login` says to name one. Without `--identity` it signs in
+as `--repository`, else the context's person, else it asks. Where the account has a second factor the substrate
 answers `totp_required`, and `login` then asks for the code and sends it;
 `--totp-code` sends one up front. `substratectl logout` revokes that token record and then
 forgets it, because a session is its [token record](auth.md#tokens).
+`substratectl logout --everywhere` asks for the password, and the code where
+the account has one, and ends every token the person holds, this one, every
+other sign-in, every minted token and every app's and assistant's included
+([signing out everywhere](auth.md#signing-out-everywhere)).
+
+`substratectl rename <name>` gives the repository a new name, a bare label
+completed as at registration. It asks for the password, and the code where the
+account has one, and stores the new name in the context. The old name keeps
+resolving to the repository for 90 days, on every address, and `rename`
+prints the moment it lapses ([renaming a repository](auth.md#renaming-a-repository)).
 
 `substratectl token create --label backup` mints a token for a script or a device and
 prints the secret exactly once; `--expires` takes a duration (`720h`) or an
@@ -86,21 +127,27 @@ headlessly, and a password is never an argument.
 
 Config lives at `~/.config/substratectl/config.yaml`, mode 0600 in a 0700 directory
 (`SUBSTRATECTL_CONFIG` and `XDG_CONFIG_HOME` are respected). It holds one **context**
-per substrate: a name, the server, the repository, the token, and the token's
-id so `logout` can revoke the very token it forgets. No URL names the
+per substrate: a name, the server, the repository, the person's name, the
+token, and the token's id so `logout` can revoke the very token it forgets. No URL names the
 repository: the token implies it, and there is nothing else to configure.
 
 `SUBSTRATE_SERVER` and `SUBSTRATE_TOKEN` override the file, and flags override
 both; `SS_SERVER` and `SS_TOKEN` are the one accepted alias, read only when the
 canonical variable is unset. `--context` picks a stored context by name.
-`--actor` names the [actor](api.md#actors) a write is attributed to, and
-defaults to `substratectl`.
+A write takes no actor flag: the server derives the
+[actor](api.md#actors) from the token, so a sign-in's writes are the
+person's, with the token beside them.
 
 ## Reading
 
 `substratectl get <kind> [id]` lists the records of one kind or reads one record. The kind is
-its full reference (`ada.example.com/tasks/task` for the tasks sample imported
-into the repository registered above). A bare `task`
+its full reference: `~/tasks/task` for the tasks sample added to the
+repository, whatever the repository is called, because the repository's own
+kinds live in its local namespace, `~`
+([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Quote it: a shell
+expands an unquoted `~/` at the start of a word to your home directory. The
+repository's full name is accepted in its place (`ada.example.com/tasks/task`
+for the repository registered above), and what comes back says `~`. A bare `task`
 is refused, naming every kind the repository declares under that word
 ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md));
 `substratectl kinds` lists them all. Lists take `--filter` (the
@@ -121,8 +168,8 @@ several in one read, each record once
 (`--referencing <kind>/<id> --referencing <kind>/<id>` sends
 `referencing.refs`). `--orphaned` lists the
 [orphaned mapping targets](projection.md#when-the-last-source-goes-the-orphan-mark)
-of that kind — rows minted from a source that is now gone, with nothing above
-the machine tier holding a property (`--orphaned=false` is the complement).
+of that kind — rows minted from a source that is now gone, with nothing on
+them pinned (`--orphaned=false` is the complement).
 `--ambiguous` lists the
 [ambiguous mapping sources](projection.md#when-a-probe-finds-several-candidates-onambiguous)
 of that kind, rows a probe with several candidates left unlinked
@@ -245,6 +292,19 @@ rolling value names its window and `n`, the buckets in it with a value
 (`rolling(7,n=6,avg of sum)=8123 steps`). `-o json` and `-o yaml` print the
 answer whole.
 
+### How long history is kept
+
+`substratectl retention [kind]` lists how long each kind's history is kept
+past each record's latest state, from `GET /api/v1/retention`: `all`,
+`none` or an ISO 8601 duration such as `P30D`. `DECLARED` is what the kind's
+declaration states (its own `retention`, else its package header's; `-`
+reads as all), `OVERRIDE` is this repository's
+`substrate.reamde.dev/core/retention` record for the kind, and `EFFECTIVE`
+is the one that applies ([retention](vocabulary.md#the-reserved-keys)). An override
+is an ordinary record: `apply` one whose `appliesTo` names the kind's
+declaration and whose `retention` is the value, `delete` it to go back to
+the declared one. Nothing drops an entry by it yet.
+
 ## Writing
 
 - `apply -f FILE` applies YAML manifests (`---`-separated; `-` reads stdin). A
@@ -259,13 +319,14 @@ answer whole.
   a function or a bundle, keys written under `data.properties` read the same.
   A document naming either key is sent as written, so a key dropped from the
   file is dropped from the declaration. `--as <authority>` rehomes the
-  input first: every mention of the one authority its declarations are
-  written under becomes the one named, which is `import` (below) run
-  client-side over files on disk. An input declaring under two authorities is
-  refused naming both. A document that would create a package under any
-  authority but the repository's own is `403`
-  ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)): rehome a sample with `--as-mine`, and take
-  a provider or a catalogue with `install`. `--hold-waiting-mappings` holds back each suggested
+  input first: every whole mention of the one authority its declarations
+  are written under becomes the one named, as text, over files on disk
+  (`add` of a sample, below, moves only where the closure names something). An input declaring under two authorities is
+  refused naming both. A document that would create a package anywhere but
+  in `~` is `403`, the repository's full name being folded into `~` first
+  ([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+  [decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)): copy a sample with `--as-mine`, and take
+  a provider or a catalogue with `add`. `--hold-waiting-mappings` holds back each suggested
   mapping whose source kind this repository does not have, applies the rest,
   and prints one line per mapping held; apply the same files again once the
   provider is installed ([vocabulary](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
@@ -308,6 +369,14 @@ answer whole.
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
+- `pin <kind> <id> <property>...` keeps the named properties' values against
+  sync, and `release <kind> <id> <property>...` hands them back to it, which
+  picks each value again among what its source records offer. A write by a
+  person, an app, a function or an agent pins what it writes already, so
+  `pin` is for a value sync wrote. Both work on a required property, both are
+  recorded in the record's history, and `get -o yaml` shows each property's
+  mark under `status.properties`
+  ([projection](projection.md#where-a-value-came-from-the-marks)).
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
   `--purge` collects the record now, so the next `apply` at the id is a fresh
   record rather than a restore of the tombstone
@@ -321,7 +390,10 @@ full `<kind>/<id>` path where the declaration names no kind.
 
 `substratectl watch` streams [the changelog](changelog.md), one line per committed change,
 resumable with `--from` and `--generation` (the opening line prints both) and
-filterable by `--kinds`, `--actors` and `--ops`. A cursor from a history the
+filterable by `--kinds`, `--actors` and `--ops`. A line ends with the id of
+the change's [actor record](api.md#actors), and ` for ` and the id of the
+one it acted for where there is one; `--actors` takes those ids, and
+`substratectl get substrate.reamde.dev/core/actor <id>` reads one. A cursor from a history the
 server has since replaced is refused with the head to resume from. To
 narrow to one kind instead, `substratectl get <kind> -w` streams that
 one kind's changes.
@@ -331,7 +403,7 @@ functions, so it is the `trigger` subcommands that drive it: `status` shows
 each trigger's kind, callable, enabled flag, cursor and the head it lags,
 lag, last fire, parked count, pending count, last error and, for a
 webhook trigger, the public path its `WEBHOOK` column prints
-(`/webhooks/<authority>/<trigger-id>`, the URL an external service POSTs to);
+(`/webhooks/<repository id>/<trigger-id>`, the URL an external service POSTs to);
 `parked` lists the deliveries it gave up on, `retry` re-runs one and clears it
 however the delivery settles, and `forget` drops one that can never be
 delivered again without running anything; `replay`
@@ -362,8 +434,10 @@ first consent.
 
 `substratectl alerts` lists the open [alerts](functions.md#driving-triggers),
 newest first: one line per ongoing problem with its key (such as
-`trigger.parked/<trigger id>`), level, state, count, when it was first and
-last seen, and its summary. `--all` adds the resolved ones, and `-o json` or
+`trigger.parked/<trigger id>`, or `secret.left-behind/<record path>/<property>`
+for a value an import without secrets left behind, which putting a value
+back resolves), level, state, count, when it was first and last seen, and
+its summary. `--all` adds the resolved ones, and `-o json` or
 `-o yaml` prints them as one array of `apply`-able documents. An alert is an
 ordinary record, so resolving one by hand is `get`, setting `state` to
 `resolved`, and `apply`.
@@ -381,24 +455,27 @@ a parked delivery of that streak stands ([how it opens and clears](functions.md#
 actor, and prints the output. There is no build step: a function is inline
 source on its manifest, so it installs with the ordinary `apply`.
 
-`substratectl import <sample>` takes one of the shipped
-[samples](bundles.md#the-catalog): the server rewrites the closure's
-placeholder authority to the one this repository owns and admits it there, so
-`import samples.substrate.reamde.dev/tasks` lands `<your authority>/tasks/task`
-which is your kind, writable. It prints the id the sample landed under, which
-is not the one typed. The copy records where it came from, so `substratectl
+`substratectl add <package>` takes one of the catalog's packages, and who
+keeps it decides where it lands ([0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md));
+`install` and `import` are its aliases. One of the shipped
+[samples](bundles.md#the-catalog) is copied: the server moves the closure's
+authority into this repository's local namespace and admits it there, so
+`add samples.substrate.reamde.dev/tasks` lands `~/tasks/task`, the same in
+every repository, which is your kind, writable. It prints `~/tasks added`:
+a sample's landed id is not the one typed. The copy records where it came from, so `substratectl
 catalog` offers the upgrade when a later binary ships the sample at a newer
-version, and importing again is how it lands; over a copy you edited since,
-or where the new closure removes values from records, the re-import is
-refused until `import <sample> --allow-data-loss` reads the preview, prints
+version, and adding it again is how it lands; over a copy you edited since,
+or where the new closure removes values from records, adding it again is
+refused until `add <sample> --allow-data-loss` reads the preview, prints
 what goes and confirms exactly that plan
-([bundles](bundles.md#the-two-doors)). A provider takes the other door and
-installs under the authority that publishes it.
+([bundles](bundles.md#adding-a-package)). A published package, a provider or
+a catalogue, lands under the authority that publishes it.
 
-`substratectl apply --as <authority>` (or `--as-mine`) rehomes a shipped
-sample's files by hand. When the input carries its package document the
+`substratectl apply --as-mine` copies a shipped sample's files into `~` by
+hand, and `--as <authority>` rehomes them onto another name, which the server
+folds into `~` when it is the repository's own. When the input carries its package document the
 request names the package it was authored as, and the server stamps the
-landed copy with it exactly as an import would; a later `--as` apply over a
+landed copy with it exactly as `add` would; a later `--as` apply over a
 copy you edited since is refused the same way, and `--allow-data-loss`
 confirms it. One package per run: an input carrying several package documents
 is refused, because one request names one origin.
@@ -418,14 +495,18 @@ yours like any other
 ([0214](decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)):
 `apply`, `patch`, `delete`, `bundle uninstall` and `bundle purge` of it are
 refused by nothing. Its package row still names the app that declared it;
-`substratectl takeover <authority>/<package> --confirm <authority>/<package>`
-rewrites that: `declaredBy` becomes the actor you write as, `takenOverFrom`
-names the app, and nothing else moves. It prints the app it took the package
-from, cannot be handed back, and without `--confirm` repeating the package
+`substratectl takeover '~/<package>' --confirm '~/<package>'`
+rewrites that: `declaredBy` links your own actor record, `takenOverFrom`
+names the app by its client id or its publisher, and nothing else moves. It
+prints the app it took the package from and the actor record that now
+declares it (`declared by substrate.reamde.dev/core/actor/<id>`), cannot be
+handed back, and without `--confirm` repeating the package
 it refuses before it sends anything.
 
 `substratectl catalog` lists every package the binary ships, seeded `core`
-first, then the catalog's published packages and samples: whether this repository
+first, then the catalog's published packages and samples: who keeps it (KEPT
+BY: `binary` for core, written at registration and upgraded at boot,
+`publisher` for a published package, `repository` for a sample), whether this repository
 holds it, the version the binary ships and, where the server previewed an
 [upgrade](bundles.md#install-and-lifecycle), its motion (`16 -> 17`),
 `blocked` when a guard refuses it and, for core, `lands at restart` when it
@@ -434,30 +515,75 @@ under the table; they name the kind, the property and the count of live
 records holding the old shape, which is what to migrate before the upgrade
 lands. So do the conversion steps an upgrade would run, each with the live
 records it rewrites; a step marked lossy removes values from the fold, and an
-upgrade with one runs only with `--allow-data-loss` on `install <package>` or
-`import <sample>`, which reads the preview again, prints the steps and
+upgrade with one runs only with `--allow-data-loss` on `add <package>`,
+which reads the preview again, prints the steps and
 confirms exactly that plan ([bundles](bundles.md#install-and-lifecycle)). A
-sample copy edited since it was imported reads `edited copy` in the column
-and says under the table that importing it again replaces those edits, under
-the same flag.
+sample copy edited since it was added reads `edited copy` in the column
+and says under the table that adding it again replaces those edits, under
+the same flag. The CODE column reads `experimental` for a package whose code
+a publisher outside this server published, its own or that of a package
+taking it brings first ([stability](stability.md)), and `add` prints the
+same before it adds.
 `substratectl apply --allow-data-loss` does the same for a vocabulary change
-of your own. `-o json` prints the same rows.
+of your own. `-o json` prints the same rows, `keptBy` on each.
+
+An upgrade that keeps some kind's history for less time
+([retention](vocabulary.md#the-reserved-keys)) is refused by `add
+<package>` before it reaches the route, naming each kind with what it keeps
+now and after (`…/contact: all -> P30D`).
+`--allow-shorter-history` takes it, and prints the same lines. Nothing is
+removed until a release that compacts history, and an override of a kind's
+retention (`substratectl retention`) keeps its history whatever the upgrade
+says.
 
 ## Exporting
 
 `substratectl export` downloads the repository's recovery export
 ([backups](operations.md#backups)): `GET /api/v1/export` streamed to
-`<authority>-<head>.tar`, a tar of the repository directory as of one
-committed point, laid out as a data root with `snapshot.json` recording the
-head seq and checksum as its last entry. The token is the whole credential.
-The archive is read back on the way to disk, so one the connection cut short
-is refused and removed rather than kept as a backup; a complete one prints
-its point, its segment, sealed-file and blob counts, and how to restore it.
-`-o` names the file, `-o -` streams the archive to stdout with the report on
-stderr, and an existing file is never overwritten. Restoring is extracting it
-under a stopped server's `SUBSTRATE_DATA_ROOT` and booting, or, on a host
-with another credential key, `repository rewrap` with the recovery key first
+`<authority>-<head>.tar`, the repository's archive as one tar, as of one
+committed point. It holds one archive of its own,
+`repositories/<id>/<archive>/` with `blobs/`, `sealed/`, `spool/` and the
+history in pieces under `changelog/<dialect>/`, and, as its last entry, its
+manifest under `repositories/<id>/manifests/<archive>/`, whose `head` and
+`headSum` are the point
+([the stored format](stored-format.md#the-archive)). The token is the whole
+credential. The tar is read back on the way to disk, so one the connection
+cut short, which has no manifest, is refused and removed rather than kept as
+a backup; a complete one prints its point, its piece, sealed-value and blob
+counts, and how to restore it. `-o` names the file, `-o -` streams the tar
+to stdout with the report on stderr, and an existing file is never
+overwritten. Restoring is extracting it into the archive a stopped server
+reads (`SUBSTRATE_ARCHIVE`, by default `<SUBSTRATE_DATA_ROOT>/archive`) and
+booting with the same `SUBSTRATE_CREDENTIAL_KEY`. A host with another key
+refuses it, unless its operator accepts restoring it without its secrets
 ([restore without the credential key](operations.md#restore-without-the-credential-key)).
+
+## Importing under another name
+
+`substratectl archive import <repository id> <archive id> --name <name>` is
+the operator's import of a repository under another name than its archive's
+manifest gives: an export extracted into the archive, which a server set
+aside at start-up because another repository there holds its name. A
+repository's own kinds live under `~`, so no record of its own spells its
+name, and every record, reference, declaration and token scope reads the
+same under the new name. The id does not change, and the repository's own
+record and its first person's actor record take the new name at its first
+open. Its people come with it under their own sign-in names; one whose name
+another person on this server holds, or whose sign-in this host's key does
+not open, is left out until `substratectl user reset <repository id>
+--identity <another name>`, and their tokens are refused until then. A
+webhook address by the old name reaches whoever holds that name now
+([restore under another name](operations.md#restore-under-another-name)).
+
+```
+substratectl --dsn "$DATABASE_URL" archive import rnd-0vrkvsgbs6bnz2sjy4196kccck <archive id> --name bo.example.com
+```
+
+It opens as the writer, so stop the server first. It refuses what a restore
+refuses, under the new name, and also a name another set-aside repository
+claims and an archive a release before the local namespace wrote.
+[Running a substrate](operations.md#restore-under-another-name) has the
+whole procedure.
 
 ## Verifying the repository's name
 
@@ -469,6 +595,48 @@ runs the check; it prints `verified` and the time, or the reason the check
 failed, and exits non-zero until the record passes, so a script can wait on
 DNS propagation. Both take `-o json` and `-o yaml`.
 
+## Publishing a package of your own
+
+```sh
+substratectl publish '~/recipes' --as ada.example.com        # the plan; changes nothing
+substratectl publish '~/recipes' --as ada.example.com --yes  # publish
+substratectl publish ada.example.com/recipes --release       # the next release: what it holds, then asks
+substratectl publish ada.example.com/recipes --release --yes # the next release, without asking
+```
+
+`substratectl publish <~/package> --as <authority>` publishes one of the
+repository's own packages under an authority whose DNS you control, so that
+another substrate can install it. Without `--yes` it prints the server's plan
+and changes nothing: the name the package takes, the kinds that move to it
+and how many records move with them, how many records elsewhere have a
+reference repointed, your other packages whose declarations follow, what
+blocks it, and the TXT record to publish at `_substrate.<authority>`, with
+whether DNS shows it yet. It exits 0 either way. With `--yes` the server
+publishes, once DNS shows the record and nothing blocks it, and the command
+prints the first release; otherwise it prints the server's refusal and exits
+non-zero. A publish is permanent: the package leaves `~` for good and keeps
+the published name, and it cannot be unpublished. Quote `~/package`, or the
+shell expands the `~`; an argument that arrives as `$HOME/<package>` is read
+as `~/<package>` again.
+
+`substratectl publish <authority>/<package> --release` writes the next
+release of a package the repository publishes: its declarations as they are
+now, at its next version, which substrates that installed it can take as an
+update. It first prints what the release will hold, as the server answers
+it: the version and the one before it, the SHA-256 of the closure, the
+declarations in it, and what refuses it now. Then it asks before it writes;
+an answer other than `y` writes nothing. `--yes` writes without asking, for
+a script, and `-o json` or `-o yaml` without `--yes` prints the plan and
+writes nothing. A package with nothing changed since its last release is
+refused, and so is one another server's install would refuse, or whose
+authority's `_substrate` record no longer names this repository's
+document. `substratectl release` is another command, the marks':
+it hands a record's pinned values back to sync, and each command's help names
+the other. `--as` and `--release` take `-o json`, `-o yaml` and `--yes`. `--as`,
+`--release` and `--check` are exclusive: `--check`, below, is for a package whose authority document
+you host yourself. [Publishing a package](publishing.md) says what a publish
+does and what a person sees.
+
 ## Check a package release
 
 ```sh
@@ -478,10 +646,17 @@ substratectl publish example.com/notes --check \
 ```
 
 This reads the authority's live document and prints the version entry to
-add. `--document authority.json` reads a development document instead; its
+add, with the `dialect` the closure needs: the one its header states, or
+the highest any key of it arrived in where that is more, and none where the
+closure uses no key a dialect introduced. A header that states less than its
+keys need is refused, naming the key
+([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)). `--document authority.json` reads a development document instead; its
 existing closure paths are relative to that file's directory.
-`--allow-narrowing` acknowledges removal or renaming from the newest listed
-closure. The command uploads nothing. It refuses changed published
+`--allow-narrowing` acknowledges a removed or renamed property from the
+newest listed closure. A kind any listed version published and the
+candidate drops, and a renamed kind, a kind declaring `movedFrom`, are
+refused with the flag or without it: a published kind's name is permanent.
+The command uploads nothing. It refuses changed published
 versions, downgrades, invalid closures and unexpected digests.
 
 Next: the [web console](console.md), the same repository in a browser.

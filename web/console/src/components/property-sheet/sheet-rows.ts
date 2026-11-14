@@ -2,7 +2,7 @@
  * page lists, in what order, which of them a person may edit in place, and
  * which fold away as empty. */
 
-import type { KindInfo, PropertyMeta, SubstrateRecord } from "@/lib/api/types"
+import type { KindInfo, PropertyMark, SubstrateRecord } from "@/lib/api/types"
 import {
   AUTHORITY_PROPERTY,
   PACKAGE_PROPERTY,
@@ -12,7 +12,7 @@ import {
 import { fieldOf, type FormField } from "@/lib/record-form"
 import {
   bodyProperty,
-  ownerWritable,
+  personWritable,
   propSpecsByName,
   systemSpecs,
   titleProperty,
@@ -24,7 +24,7 @@ import type { UnitReader } from "@/lib/unit-reader"
 export type RowLock =
   /** The engine stamps it and refuses a write that disagrees. */
   | "managed"
-  /** A declared `writer:` other than the owner: the host keeps it. */
+  /** A declared `writer:` that leaves out `person`: the host keeps it. */
   | "host"
   /** A provider's own copy: the whole record is read-only here. */
   | "provider"
@@ -43,7 +43,7 @@ export interface SheetRow {
   value: unknown
   filled: boolean
   lock?: RowLock
-  meta?: PropertyMeta
+  meta?: PropertyMark
   /** A short note read beside the value (a draft's state: it moves once the
    * record exists). */
   hint?: string
@@ -145,7 +145,7 @@ export function sheetRows(
         ? "managed"
         : fromId
           ? "id"
-          : !ownerWritable(spec)
+          : !personWritable(spec)
             ? "host"
             : undefined
     rows.push({
@@ -155,7 +155,7 @@ export function sheetRows(
       value,
       filled: isFilled(value),
       lock,
-      meta: record.propertyMeta?.[spec.name],
+      meta: record.marks?.[spec.name],
       hint: fromId ? "from the record id" : undefined,
     })
   }
@@ -169,7 +169,7 @@ export function sheetRows(
       value,
       filled: true,
       lock: readOnly ? "provider" : "undeclared",
-      meta: record.propertyMeta?.[name],
+      meta: record.marks?.[name],
     })
   }
   rows.sort(

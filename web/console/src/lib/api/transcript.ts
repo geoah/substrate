@@ -14,6 +14,7 @@
  * are tested. */
 
 import {
+  APPROVAL_KIND,
   CORE_PACKAGE,
   INTERACTION_KIND,
   INTERACTION_KIND_PRE_MOVE,
@@ -259,6 +260,14 @@ export function interactionIdOf(call: ToolCallView): string | undefined {
       c.op === "put"
   )
   return stamped?.id
+}
+
+/** The approval a call landed instead of running (decision record 0254),
+ * from the engine-stamped changes. */
+export function approvalIdOf(call: ToolCallView): string | undefined {
+  return (call.changes ?? []).find(
+    (c) => c.kind === APPROVAL_KIND && c.op === "put"
+  )?.id
 }
 
 /** The engine-stamped `changes` of a row, or undefined where none rode it.
@@ -545,6 +554,47 @@ export function jobNoticeOf(turn: TurnView): JobNotice | undefined {
       ...(callable ? { callable } : {}),
       ok: env.ok === true,
       ...(typeof env.output === "string" ? { output: env.output } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** An approval's outcome, as it reports into the conversation
+ * (internal/engine/approvals.go, event "approvalDecided"): which approval,
+ * whether the owner approved it, the tool and the agent, and, for an
+ * approved call, whether it ran and what it answered or why it failed. */
+export interface ApprovalNotice {
+  approvalId: string
+  decision: "approved" | "denied"
+  tool: string
+  agent?: string
+  ok?: boolean
+  error?: string
+}
+
+export function approvalNoticeOf(turn: TurnView): ApprovalNotice | undefined {
+  if (turn.role !== "system" || !turn.content.trim().startsWith("{"))
+    return undefined
+  try {
+    const parsed: unknown = JSON.parse(turn.content)
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const env = parsed as Record<string, unknown>
+    if (env.event !== "approvalDecided") return undefined
+    const decision = env.decision
+    if (decision !== "approved" && decision !== "denied") return undefined
+    const path = str(env.approval)
+    const approvalId = path.slice(path.lastIndexOf("/") + 1)
+    if (!approvalId) return undefined
+    const agent = str(env.agent)
+    const error = str(env.error)
+    return {
+      approvalId,
+      decision,
+      tool: str(env.tool),
+      ...(agent ? { agent } : {}),
+      ...(typeof env.ok === "boolean" ? { ok: env.ok } : {}),
+      ...(error ? { error } : {}),
     }
   } catch {
     return undefined

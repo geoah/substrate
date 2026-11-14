@@ -20,7 +20,7 @@ import (
 
 func putPolicy(t *testing.T, ds *dataset, id string, props map[string]any) *substrate.Record {
 	t.Helper()
-	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	e, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: id, Properties: props,
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func TestPolicyGatesAWriteIntoARequest(t *testing.T) {
 		t.Fatalf("the tool row carries no request change: %+v", tool["changes"])
 	}
 	// The owner accepts; the held write lands; the thread hears it.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -137,7 +137,7 @@ func TestPolicySelectorRefusesAVerbFromAnotherVocabulary(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 	for _, op := range []string{"create", "update"} {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-" + op,
 			Properties: map[string]any{
 				"selector": map[string]any{"ops": []any{op}},
@@ -192,7 +192,7 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	}
 	// A pattern outside the grammar is refused at the write door rather than
 	// admitted as a rule that matches nothing.
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-dotstar",
 		Properties: map[string]any{
 			"selector": map[string]any{"kinds": []any{"crew.*"}},
@@ -204,7 +204,7 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	}
 	// A rule with no action speaks for nothing, so it never lands: the
 	// declaration requires `action` (issue 464).
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-actionless",
 		Properties: map[string]any{
 			"selector": map[string]any{"kinds": []any{crewPackage + "/widget"}},
@@ -224,7 +224,7 @@ func TestPolicySelectorRefusesAKindTheRepositoryDoesNotHave(t *testing.T) {
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 	for _, pat := range []string{"widgets", "crew.test.dev/crew/widgets", "gadget"} {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-typo",
 			Properties: map[string]any{
 				"selector": map[string]any{"kinds": []any{pat}},
@@ -292,7 +292,7 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	var logs syncBuffer
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	selector := map[string]any{"kinds": []any{"*"}}
-	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
+	if err := ds.inTx(ctx, substrate.ActorPerson, true, func(tx *txn) error {
 		_, err := tx.put(substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 			Properties: map[string]any{"selector": selector},
@@ -317,14 +317,14 @@ func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
 	}
 	// The only ways out are an action or a delete: a write that leaves it
 	// actionless is refused like any other.
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 		Properties: map[string]any{"criteria": "anything"},
 	})
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "props.action") {
 		t.Fatalf("a write that left the row actionless admitted: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "noaction",
 		Properties: map[string]any{"action": "gate"},
 	}); err != nil {
@@ -340,7 +340,7 @@ func TestPolicySelectorRefusesABareKindName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-bare-widget",
 		Properties: map[string]any{"selector": map[string]any{"kinds": []any{"widget"}}, "action": "gate"},
 	})
@@ -375,7 +375,7 @@ func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 		t.Fatalf("verdict = %s %v %v", verdict, rule, err)
 	}
 	// A disabled policy matches nothing; the allow remains.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "refuse-widgets", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "refuse-widgets", substrate.PatchInput{
 		Properties: map[string]any{"disabled": true},
 	}); err != nil {
 		t.Fatal(err)
@@ -436,7 +436,7 @@ func TestPolicyAllowOverridesTheGateItNames(t *testing.T) {
 		"action":   "gate",
 	})
 	expect("an unnamed gate", policyOpPut, editor, policyGate, "gate-editor")
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-editor", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "gate-editor", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -446,7 +446,7 @@ func TestPolicyAllowOverridesTheGateItNames(t *testing.T) {
 		"action":   "refuse",
 	})
 	expect("a refuse", policyOpPut, editor, policyRefuse, "refuse-widgets")
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "refuse-widgets", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "refuse-widgets", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	expect("after the refuse is gone", policyOpPut, editor, policyAllow, "always-editor-put-widget")
@@ -455,7 +455,7 @@ func TestPolicyAllowOverridesTheGateItNames(t *testing.T) {
 	// lifted, even by the allow that names it.
 	setGateAction := func(action string) {
 		t.Helper()
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.PatchInput{
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.PatchInput{
 			Properties: map[string]any{"action": action},
 		}); err != nil {
 			t.Fatal(err)
@@ -467,7 +467,7 @@ func TestPolicyAllowOverridesTheGateItNames(t *testing.T) {
 	expect("the named gate restored", policyOpPut, editor, policyAllow, "always-editor-put-widget")
 
 	// Revoking the allow puts the gate back.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
 		Properties: map[string]any{"disabled": true},
 	}); err != nil {
 		t.Fatal(err)
@@ -507,7 +507,7 @@ func TestPolicyOverrideIsRefusedUnlessANarrowAllowNamesALiveGate(t *testing.T) {
 		{"itself", "o-self", map[string]any{"selector": narrow, "action": "allow", "overrides": "o-self"}, "this policy itself"},
 	}
 	for _, c := range cases {
-		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchPolicy, ID: c.id, Properties: c.props,
 		})
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -538,17 +538,17 @@ func TestPolicyStaleOverrideIsRefusedButCanBeDisabled(t *testing.T) {
 	putPolicy(t, ds, "always-editor-put-widget", map[string]any{
 		"selector": narrow, "action": "allow", "overrides": "gate-widgets",
 	})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "gate-widgets", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "late-allow",
 		Properties: map[string]any{"selector": narrow, "action": "allow", "overrides": "gate-widgets"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("an override naming a deleted gate: %v, want a refusal containing %q", err, "does not exist")
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchPolicy, "always-editor-put-widget", substrate.PatchInput{
 		Properties: map[string]any{"disabled": true},
 	}); err != nil {
 		t.Fatalf("disabling a stale override: %v", err)
@@ -616,7 +616,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 		t.Fatalf("request thread = %v", got)
 	}
 	// Accepting materializes the held effect.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -684,7 +684,7 @@ func TestVoluntaryProposalsStaySelfAcceptable(t *testing.T) {
 	// self-decision is refused (TestGatedRequestsRefuseBundleDecisions).
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-mine"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -757,7 +757,7 @@ func TestGatedRequestsRefuseBundleDecisions(t *testing.T) {
 		t.Fatalf("the refusal does not name the gate: %s", content)
 	}
 	// The owner still can.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("owner accept: %v", err)

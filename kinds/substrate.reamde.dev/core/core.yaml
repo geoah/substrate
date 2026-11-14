@@ -31,17 +31,21 @@
 # (`agent:<authority>:<package>:<name>`), a chat user message under the
 # caller's — every effect a delivery applies carries the CALLABLE's actor.
 #
-# ALPHA at v1: the agent kind, the `llm` package's vocabulary and the
-# agent call and chat routes are explicitly ALPHA and UNFROZEN (ruling A12). They
-# may change or be superseded without a v1 wire break the
-# Agents section. recordpatchpolicy's judge half carries the same marker, in
-# its own file.
+# EXPERIMENTAL inside a stable package (docs/stability.md): the header below
+# labels core `stable`, and two parts of it are outside that label by name.
+# The `agent` kind is experimental, like the `llm` package's kinds and the
+# agent call and chat routes, and so is the judge half of
+# `recordpatchpolicy`, which carries the same marker in its own file. Either
+# may change or go in any release.
 kind: substrate.reamde.dev/core/package
 metadata:
   id: substrate.reamde.dev/core
 data:
   authority: substrate.reamde.dev
   package: core
+  # The label core states for its kinds (docs/stability.md): they only gain
+  # things within 1.x. The two exceptions are named above.
+  stability: stable
   # a maturity statement, not a routing key: no envelope carries a version.
   # version 31: the temporal trait's description says that `dueAt` is the
   # point variant remapped, `temporal(point: dueAt)`. The trait's document
@@ -93,7 +97,40 @@ data:
   # version 53: the query tool takes `count`, a list's filtered set's size,
   # which is how an agent counts a kind's records now the aggregate read
   # groups by no kind, and its aggregate card shows groupBy with a value.
-  version: 53
+  # version 54: a bundle's featureScopes entry takes `access`, `read` or
+  # `write`, so a surface can tell a toggle that lets the bundle's code
+  # change the provider from one that syncs (decision record 0255), and a
+  # function takes `approval: required`, an agent's call of it waiting for
+  # the owner's approval before it runs (decision record 0254).
+  # version 55: a package header takes `stability`, the label it states for
+  # its kinds, and core states `stable` (decision record 0256).
+  # version 56: a package header takes `interface`, the function interface
+  # its code is written against (decision record 0265).
+  # version 57: a package header takes `dialect`, the vocabulary dialect it
+  # needs (decision record 0268).
+  # version 58: `recoverykey` left the tree, and the age wrap with it
+  # (decision record 0264). Like `run` below, it is not retired: a repository
+  # registered before keeps the kind declared, emptied by its migration, and
+  # a fresh one never has it.
+  # version 59: an actor is a record the engine writes for every hand, with a
+  # type and a link, and the four actor documents core declared are gone
+  # (decision record 0270).
+  # version 60: `retention` on a kind and a package header, the `retention`
+  # kind a repository overrides one with, and seven days for `alert`
+  # (decision records 0282 and 0283).
+  # version 61: `credential` left the tree, and a person's sign-in with it,
+  # for an identity the server holds (decision record 0274). Like `run`
+  # below, it is not retired: a repository registered before keeps the kind
+  # declared, emptied by its migration, and a fresh one never has it. A
+  # person's actor names their identity (`identity`).
+  # version 62: a person's actor holds roles (`roles`), each a record of the
+  # new `role` kind: what the person may read and write (decision record
+  # 0275).
+  # version 63: the vocabulary host function tells an agent the owner's own
+  # packages live under `~` (decision record 0259).
+  # version 64: `release`, one version of a package the repository publishes
+  # (decision record 0291).
+  version: 64
   # `run` became `triggerrun` (2026-09-12). The old name is NOT retired here:
   # the boot upgrade never prunes, so a header retiring a kind an existing
   # repository still declares is refused whole and `triggerrun` never lands
@@ -108,50 +145,6 @@ data:
   # `movedFrom`, so the upgrade carries every live record to its new kind and
   # repoints every reference at it (decision record 0078). What a repository
   # that predates the move keeps is four dormant, EMPTY kinds.
----
-# The substrate's own actors: the doors a human write comes through, and the
-# engine's own hand. Attribution, not authorization (§3). The machine hands
-# that carry a prefix — `bundle:<authority>:<package>`,
-# `function:<authority>:<package>:<name>` and
-# `agent:<authority>:<package>:<name>` — are minted by the substrate at
-# dispatch from the identity that runs, never declared, and never claimable by
-# a request.
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: api
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the console's writes: the browser app, holding a token like any other client
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: console
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the operator's CLI
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: substratectl
-data:
-  authority: substrate.reamde.dev
-  package: core
-  tier: owner
----
-# the engine's own writes: mapping recompute, the declaration mirrors, merge
-# execution, the boot-time vocabulary upgrade, and the auth paths that write
-# the credential and token records. A bare word: the actor domain is closed,
-# so nothing has to be forward-qualified to stay out of the vocabulary's way.
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: substrate
-data:
-  authority: substrate.reamde.dev
-  package: core
 ---
 # when a thing sits on the timeline — an instant, or a span
 kind: substrate.reamde.dev/core/trait
@@ -255,7 +248,7 @@ data:
   description: one connected account of a bundle; only the substrate's OAuth
     flow may write its credential ref
   # The host-written hands on an account (review-google #2): the account kind
-  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # redeclares these with `writer: system` so only the OAuth facility may set
   # them — a stranger cannot assign a credential ref, a status, or a scope set.
   properties:
     tokenRef: secret
@@ -286,9 +279,9 @@ data:
 # the host-recognized interface behind the console's Connections view and the
 # `sync status` read. An `accountconfig` kind binds it beside the token
 # properties, and every binding kind redeclares the twelve properties with a
-# `writer:` role: `syncRequestedAt` and `syncPaused` are the OWNER's hands
-# (the two things a person does to a sync — ask for one, stop them), the rest
-# are the CONNECTOR's, which the sync function writes through its effects and
+# `writer:`: `syncRequestedAt` and `syncPaused` are a `person`'s (the two
+# things a person does to a sync — ask for one, stop them), the rest are
+# `[function, agent]`, which the sync function writes through its effects and
 # the trigger dispatcher stamps around a record-sourced delivery under the
 # callable's own actor (engine sync.go). `syncState` is a plain string, not a
 # `state` machine (decision 0085): the substrate and the body both write it

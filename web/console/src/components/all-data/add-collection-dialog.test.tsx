@@ -403,7 +403,7 @@ describe("Add a collection: Standard collections", () => {
   const entry = (over: Record<string, unknown>) => ({
     description: "",
     version: 1,
-    tier: "published",
+    keptBy: "publisher",
     installed: false,
     closure: closure(null),
     ...over,
@@ -456,7 +456,7 @@ describe("Add a collection: Standard collections", () => {
       "fetch",
       vi.fn(async (input: string, init?: RequestInit) => {
         const url = new URL(String(input), "http://console.test")
-        if (init?.method === "POST" && url.pathname.endsWith("/install")) {
+        if (init?.method === "POST" && url.pathname.endsWith("/add")) {
           added = true
           return new Response(JSON.stringify(held("clinical")))
         }

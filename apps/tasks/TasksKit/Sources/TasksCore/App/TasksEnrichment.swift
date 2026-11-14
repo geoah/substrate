@@ -13,10 +13,11 @@ public extension TasksApp {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = context.environment.timeZone
         calendar.locale = context.environment.locale
-        let model = TasksModel(state.records, in: calendar)
+        let model = model(state, calendar: calendar)
         let today = CivilDay(context.now, in: calendar)
         let writes = TaskWrites(mint: { context.mint() })
         let wrote = { (write: LocalWrite) in Event.records(.wrote(write)) }
+        let own = model.collection(TasksKinds.task)
 
         switch command {
         case let .select(section):
@@ -26,38 +27,88 @@ public extension TasksApp {
         case let .open(task):
             return [.opened(task)]
         case let .filter(filter):
-            guard filter != state.filter, filter.flatMap(\.listID).map({ model.lists[$0] != nil }) ?? true else { return [] }
+            guard filter != state.filter else { return [] }
+            if case let .group(path)? = filter, model.groups[path] == nil { return [] }
             return [.filtered(filter)]
         case let .quickAdd(name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty else { return [] }
-            // On Needs you a task goes into the list it is narrowed to and is
-            // due today, so it lands where the owner is looking.
-            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
-            let list = selection.listID
+            guard !name.isEmpty, let target = model.newTasksTarget else { return [] }
+            if let refusal = model.refusal(target) { return [.refused(refusal)] }
+            // On Needs you a task goes into the group it is narrowed to and is
+            // due today, where the collection takes a day alone, so it lands
+            // where the owner is looking.
+            let group = Self.group(for: state, in: target)
             let task = TaskItem(
-                id: writes.newID(), name: name, list: list, position: Position.between(model.lastPosition(inList: list), nil),
-                due: state.selection == .needsYou ? .day(today) : nil)
-            return [wrote(writes.create(task))]
+                kind: target.kind, recordID: writes.newID(), name: name, group: group.map(TaskGroupLink.record) ?? TaskGroupLink.none,
+                position: target.order == nil ? nil : Position.between(Self.lastPosition(of: target, in: group, model: model), nil),
+                due: state.selection == .needsYou && target.dueDay != nil ? .day(today) : nil)
+            return [wrote(writes.create(task, in: target))]
         case .newTask:
-            let selection = state.selection == .needsYou ? state.filter ?? .needsYou : state.selection ?? .inbox
-            return [.editorOpened(ChildKey(writes.newID()), .new(list: selection.listID, day: state.selection == .needsYou ? today : nil))]
-        case let .edit(id):
-            guard model.tasks[id] != nil else { return [] }
-            return [.editorOpened(ChildKey(writes.newID()), .task(id))]
-        case let .complete(id):
-            guard state.completing[id] == nil, let event = status(id, .done, model, writes).first, case let .records(.wrote(write)) = event else {
-                return []
+            guard let target = model.newTasksTarget else { return [] }
+            if let refusal = model.refusal(target) { return [.refused(refusal)] }
+            return [
+                .editorOpened(ChildKey(writes.newID()), .new(list: Self.group(for: state, in: target), day: state.selection == .needsYou ? today : nil))
+            ]
+        case let .edit(path):
+            guard let task = model.tasks[path], let collection = model.collection(task.kind), collection.writable, collection.title != nil
+            else { return [] }
+            return [.editorOpened(ChildKey(writes.newID()), .task(path))]
+        case let .complete(path):
+            return decide(.complete, path, to: nil, state: state, model: model, writes: writes, context: context)
+        case let .abandon(path):
+            return decide(.wontDo, path, to: nil, state: state, model: model, writes: writes, context: context)
+        case let .accept(path):
+            return decide(.accept, path, to: nil, state: state, model: model, writes: writes, context: context)
+        case let .dismiss(path):
+            return decide(.dismiss, path, to: nil, state: state, model: model, writes: writes, context: context)
+        case let .reopen(path):
+            guard state.pending[path] == nil else {
+                DecisionFile.update(context.environment.folder) { $0[path] = nil }
+                return [.undone(path)]
             }
-            return [.completing(id, write)]
-        case let .reopen(id):
-            guard state.completing[id] == nil else { return [.uncompleted(id)] }
-            return status(id, .open, model, writes)
-        case let .abandon(id):
-            return undone(id, state) + status(id, .abandoned, model, writes)
-        case let .reschedule(id, how):
-            guard let task = model.tasks[id] else { return [] }
-            guard how != .pickDay else { return [.editorOpened(ChildKey(writes.newID()), .task(id))] }
+            return decide(.reopen, path, to: nil, state: state, model: model, writes: writes, context: context)
+        case let .decide(path, decision, value):
+            return decide(decision, path, to: value, state: state, model: model, writes: writes, context: context)
+        case let .undo(path):
+            guard state.pending[path] != nil else { return [] }
+            DecisionFile.update(context.environment.folder) { $0[path] = nil }
+            return [.undone(path)]
+        case .dismissChoice:
+            return state.choice == nil ? [] : [.chose(nil)]
+        case let .setSuggestion(path, property, value):
+            guard let task = model.tasks[path], task.isSuggestion, let collection = model.collection(task.kind), collection.writable,
+                Self.editable(collection).contains(property)
+            else { return [] }
+            var edits = state.edits[path] ?? JSONObject()
+            let record = state.records[path]
+            // A field set back to what the record holds is no edit.
+            if (value ?? .null) == (record?.properties[property] ?? .null) { edits[property] = nil } else { edits[property] = value ?? .null }
+            // A day set clears a moment the record holds, which would win.
+            if property == collection.dueDay, let at = collection.due, record?.properties[at].map({ $0 != .null }) == true {
+                edits[at] = .null
+            }
+            return edits == (state.edits[path] ?? JSONObject()) ? [] : [.suggestionSet(path, edits)]
+        case let .pick(on):
+            return [.picking(on ? [] : nil)]
+        case let .picked(path):
+            guard var picked = state.picked, model.tasks[path]?.isSuggestion == true else { return [] }
+            if let index = picked.firstIndex(of: path) { picked.remove(at: index) } else { picked.append(path) }
+            return [.picking(picked)]
+        case .acceptPicked, .dismissPicked:
+            // One decision for every one picked: each its first value, as a
+            // swipe would write it, in its own window.
+            let decision: TaskDecision = command == .acceptPicked ? .accept : .dismiss
+            var events: [Event] = []
+            for path in state.picked ?? [] {
+                guard let value = model.tasks[path]?.actions[decision].first else { continue }
+                events += decide(decision, path, to: value, state: state, model: model, writes: writes, context: context)
+            }
+            return events + [.picking(nil)]
+        case let .reschedule(path, how):
+            guard let task = model.tasks[path], let collection = model.collection(task.kind), collection.writable else { return [] }
+            guard how != .pickDay else {
+                return task.kind == TasksKinds.task ? [.editorOpened(ChildKey(writes.newID()), .task(path))] : []
+            }
             let day =
                 switch how {
                 case .today: today
@@ -65,77 +116,147 @@ public extension TasksApp {
                 case .nextWeek, .pickDay: today.adding(days: 7, in: calendar)
                 }
             var next = task
-            // A timed task keeps its time of day on the new day.
-            if let instant = task.due?.instant {
+            // A timed task keeps its time of day on the new day; a kind with
+            // no due day takes a day alone only where it already has a time.
+            if let instant = task.due?.instant, collection.due != nil {
                 let clock = calendar.dateComponents([.hour, .minute], from: instant)
                 next.due = .time(day.start(in: calendar, hour: clock.hour ?? 0).addingTimeInterval(Double(clock.minute ?? 0) * 60), day: day)
-            } else {
+            } else if collection.dueDay != nil {
                 next.due = .day(day)
+            } else {
+                return []
             }
             guard next.due != task.due else { return [] }
-            return [wrote(writes.change(task, to: next))]
-        case let .setPriority(id, priority):
-            guard let task = model.tasks[id], task.priority != priority else { return [] }
+            return undone(path, state) + [wrote(writes.change(task, to: next, in: collection))]
+        case let .setPriority(path, priority):
+            guard let task = model.tasks[path], let collection = model.collection(task.kind), collection.writable,
+                collection.priorities.contains(priority.rawValue), task.priorityValue != priority.rawValue
+            else { return [] }
             var next = task
             next.priority = priority
-            return [wrote(writes.change(task, to: next))]
-        case let .move(id, list):
-            guard let task = model.tasks[id], task.list != list, list.map({ model.lists[$0] != nil }) ?? true else { return [] }
+            next.priorityValue = priority.rawValue
+            return [wrote(writes.change(task, to: next, in: collection))]
+        case let .move(path, list):
+            guard let task = model.tasks[path], task.kind == TasksKinds.task, let own, own.writable, task.list != list,
+                list.map({ model.groups[ListSelection.list($0).listPath] != nil }) ?? true
+            else { return [] }
             var next = task
-            next.list = list
+            next.group = list.map { .record(ListSelection.list($0).listPath) } ?? TaskGroupLink.none
             next.position = Position.between(model.lastPosition(inList: list), nil)
-            return [wrote(writes.change(task, to: next))]
-        case let .reorderTask(id, index):
-            guard let selection = state.selection, selection != .needsYou, TasksSettings.order(state.settings) == .manual else { return [] }
-            let open = TaskOrder.manual.sorted(model.tasks(in: selection).filter(\.isOpen), in: calendar)
-            let moves = Position.moves(id, to: index, in: open.map(\.id), positions: open.reduce(into: [:]) { $0[$1.id] = $1.position })
-            let changes = moves.sorted { $0.key < $1.key }.compactMap { id, position -> LocalWrite? in
-                guard let task = model.tasks[id], task.position != position else { return nil }
+            return [wrote(writes.change(task, to: next, in: own))]
+        case let .reorderTask(path, index):
+            guard let selection = state.selection, selection != .needsYou, TasksSettings.order(state.settings) == .manual,
+                let task = model.tasks[path], let collection = model.collection(task.kind), collection.writable, collection.order != nil
+            else { return [] }
+            let open = TaskOrder.manual.sorted(model.tasks(in: selection).filter { $0.isOpen && $0.kind == task.kind }, in: calendar)
+            let moves = Position.moves(path, to: index, in: open.map(\.id), positions: open.reduce(into: [:]) { $0[$1.id] = $1.position })
+            let changes = moves.sorted { $0.key < $1.key }.compactMap { path, position -> LocalWrite? in
+                guard let task = model.tasks[path], task.position != position else { return nil }
                 var next = task
                 next.position = position
-                return writes.change(task, to: next)
+                return writes.change(task, to: next, in: collection)
             }
             return changes.isEmpty ? [] : [wrote(LocalWrite(entries: changes.flatMap(\.entries)))]
         case let .reorderList(id, index):
             let lists = model.arrangedLists
-            let moves = Position.moves(id, to: index, in: lists.map(\.id), positions: lists.reduce(into: [:]) { $0[$1.id] = $1.position })
+            let moves = Position.moves(id, to: index, in: lists.map(\.recordID), positions: lists.reduce(into: [:]) { $0[$1.recordID] = $1.position })
             let changes = moves.sorted { $0.key < $1.key }.compactMap { id, position -> LocalWrite? in
-                guard let list = model.lists[id], list.position != position else { return nil }
+                guard let list = model.groups[ListSelection.list(id).listPath], list.position != position else { return nil }
                 var next = list
                 next.position = position
                 return writes.change(list, to: next)
             }
             return changes.isEmpty ? [] : [wrote(LocalWrite(entries: changes.flatMap(\.entries)))]
-        case let .deleteTask(id):
-            guard let task = model.tasks[id] else { return [] }
-            var events: [Event] = undone(id, state) + [wrote(writes.delete(TasksKinds.task, id, version: task.version))]
-            if state.openTask == id { events.append(.opened(nil)) }
+        case let .deleteTask(path):
+            guard let task = model.tasks[path], model.collection(task.kind)?.writable == true else { return [] }
+            var events: [Event] = undone(path, state) + [wrote(writes.delete(task.kind, task.recordID, version: task.version))]
+            if state.openTask == path { events.append(.opened(nil)) }
             return events
         case let .createList(name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty else { return [] }
-            let list = TaskList(
-                id: writes.newID(), name: name,
-                position: Position.between(model.lists.values.compactMap(\.position).max(), nil))
-            return [wrote(writes.create(list)), .shown(.list(list.id))]
+            let list = TaskGroup(
+                recordID: writes.newID(), name: name, position: Position.between(model.arrangedLists.compactMap(\.position).max(), nil))
+            return [wrote(writes.create(list)), .shown(.group(list.id))]
         case let .renameList(id, name):
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let list = model.lists[id], !name.isEmpty, name != list.name else { return [] }
+            guard let list = model.groups[ListSelection.list(id).listPath], !name.isEmpty, name != list.name else { return [] }
             var next = list
             next.name = name
             return [wrote(writes.change(list, to: next))]
         case let .deleteList(id):
-            guard model.lists[id] != nil else { return [] }
+            guard model.groups[ListSelection.list(id).listPath] != nil else { return [] }
             return [.asked(.deleteList(id: id))]
         case .confirm:
-            guard case let .deleteList(id)? = state.confirmation, let list = model.lists[id] else { return [.answered] }
-            var events: [Event] = [.answered, wrote(writes.delete(TasksKinds.list, id, version: list.version))]
+            guard case let .deleteList(id)? = state.confirmation, let list = model.groups[ListSelection.list(id).listPath] else { return [.answered] }
+            var events: [Event] = [.answered, wrote(writes.delete(list.kind, list.recordID, version: list.version))]
             if state.selection == .list(id) { events.append(.shown(state.section == TasksMenu.lists ? nil : .inbox)) }
             if state.filter == .list(id) { events.append(.filtered(nil)) }
             return events
         case .dismissConfirmation:
             return [.answered]
+        case let .pin(path), let .unpin(path):
+            guard model.groups[path] != nil || command == .unpin(path) else { return [] }
+            var pins = model.pinsKept(held: state.records, reading: linked.kinds(in: state.linked))
+            if case .pin = command {
+                guard !pins.contains(path) else { return [] }
+                pins.append(path)
+            } else {
+                guard pins.contains(path) else { return [] }
+                pins.removeAll { $0 == path }
+            }
+            let values = JSONValue.array(pins.map(TasksCodec.reference))
+            return preference(["pins": values], model: model, writes: writes)
+        case let .setNewTasks(kind):
+            guard let collection = model.collection(kind), collection.enabled, collection.writable,
+                (model.preference.newTasks ?? TasksKinds.task) != kind
+            else { return [] }
+            return preference(["newTasks": kind == TasksKinds.task ? .null : .string(kind)], model: model, writes: writes)
+        case let .setCollection(kind, on):
+            guard let collection = model.collection(kind), collection.enabled != on else { return [] }
+            var events = setting(kind, ["enabled": .bool(on)], model: model, writes: writes)
+            // Turned on, it asks for what changes it, and for its grouping's
+            // reads: the owner approves exactly the kinds they chose.
+            if on {
+                var scopes: [String] = []
+                if !collection.writable { scopes.append("write:\(kind)") }
+                if let group = collection.group, !Self.grant(state.linked.link).reads(group.kind) { scopes.append("read:\(group.kind)") }
+                if !scopes.isEmpty { events.append(.approvalAsked(ApprovalAsk(collection: kind, scopes: scopes, held: state.linked.link?.scopes))) }
+            }
+            return events
+        case let .setGrouping(kind, property):
+            guard let collection = model.collection(kind) else { return [] }
+            guard let property else {
+                guard collection.group != nil else { return [] }
+                return setting(kind, ["group": .string(CollectionSetting.none)], model: model, writes: writes)
+            }
+            guard let reference = collection.allReferences.first(where: { $0.property == property }), collection.group != reference
+            else { return [] }
+            var events = setting(kind, ["group": .string(property)], model: model, writes: writes)
+            if !Self.grant(state.linked.link).reads(reference.kind) {
+                events.append(
+                    .approvalAsked(
+                        ApprovalAsk(collection: kind, scopes: ["read:\(reference.kind)"], held: state.linked.link?.scopes, group: reference.kind)))
+            }
+            return events
+        case let .requestApproval(kind, group):
+            guard let collection = model.collection(kind) else { return [] }
+            let scopes = group.map { ["read:\($0)"] } ?? ["write:\(kind)"]
+            let grant = Self.grant(state.linked.link)
+            guard !scopes.allSatisfy({ grant.covers($0) }) else { return [] }
+            // Asked from a page's line: the owner is on the approval page at once.
+            var ask = ApprovalAsk(collection: collection.kind, scopes: scopes, held: state.linked.link?.scopes, group: group)
+            ask.answered = true
+            return [.approvalAsked(ask)]
+        case let .showSettings(page):
+            if case let .collection(kind)? = page, model.collection(kind) == nil { return [] }
+            return page == state.settingsPage ? [] : [.settingsShown(page)]
+        case let .approvalAnswered(completed):
+            return state.approval == nil ? [] : [.approvalAnswered(completed: completed)]
+        case .dismissApproval:
+            return state.approval == nil ? [] : [.approvalAsked(nil)]
         case let .settings(command):
+            if case .open(row: .app(TasksSettings.collections)) = command { return [.settingsShown(.collections)] }
             let next = state.settings.applying(command)
             return next == state.settings ? [] : [.settingsChanged(next)]
         case .clearSaved:
@@ -146,25 +267,87 @@ public extension TasksApp {
             return [.records(.foregrounded)]
         case let .offered(version):
             return [.offered(version)]
-        case let .reminderTapped(id):
-            return [.tapped(id)]
+        case let .reminderTapped(path):
+            return [.tapped(path)]
         case .dismissProblem:
             return [.problemDismissed]
         }
     }
 
-    /// A completion still in its window is taken back before anything else
-    /// happens to the task.
-    private func undone(_ id: String, _ state: TasksState) -> [Event] {
-        state.completing[id] == nil ? [] : [.uncompleted(id)]
+    /// The group a task added here goes in, by path: the one shown, or the
+    /// one Needs you is narrowed to, where it is of the collection's group
+    /// kind.
+    static func group(for state: TasksState, in collection: TaskCollection) -> String? {
+        let selection = state.selection == .needsYou ? state.filter : state.selection
+        guard case let .group(path)? = selection, let kind = collection.group?.kind,
+            RecordReference(path: path)?.kind == kind
+        else { return nil }
+        return path
     }
 
-    /// A move of state, where the package allows it.
-    private func status(_ id: String, _ status: TaskStatus, _ model: TasksModel, _ writes: TaskWrites) -> [Event] {
-        guard let task = model.tasks[id], task.status.moves(to: status) else { return [] }
-        var next = task
-        next.status = status
-        if status == .open { next.completedAt = nil }
-        return [.records(.wrote(writes.change(task, to: next)))]
+    /// The highest position among a collection's tasks in a group (nil: in
+    /// none).
+    static func lastPosition(of collection: TaskCollection, in group: String?, model: TasksModel) -> Decimal? {
+        model.tasks.values.filter { task in
+            guard task.kind == collection.kind else { return false }
+            let path: String? = if case let .record(path)? = task.group { path } else { nil }
+            return path == group
+        }.compactMap(\.position).max()
+    }
+
+    /// The properties a suggestion's page sets before it is accepted: the
+    /// readings it edits.
+    static func editable(_ collection: TaskCollection) -> [String] {
+        [collection.group?.property, collection.due, collection.dueDay, collection.priority].compactMap { $0 }
+    }
+
+    /// A decision still in its window is taken back before anything else
+    /// happens to the task.
+    private func undone(_ path: String, _ state: TasksState) -> [Event] {
+        state.pending[path] == nil ? [] : [.undone(path)]
+    }
+
+    /// A decision on a task: written after its undo window, or at once for a
+    /// reopen; with several values and none picked, the choice is asked. A
+    /// suggestion's fields as the owner set them go in its accept's patch.
+    private func decide(
+        _ decision: TaskDecision, _ path: String, to value: String?, state: TasksState, model: TasksModel, writes: TaskWrites,
+        context: Enrichment<TasksApp>
+    ) -> [Event] {
+        guard state.pending[path] == nil else { return [] }
+        let edits = decision == .accept ? state.edits[path] ?? JSONObject() : JSONObject()
+        switch model.outcome(of: decision, on: path, to: value, edits: edits) {
+        case .none:
+            return []
+        case let .choose(values):
+            return [.chose(DecisionChoice(task: path, decision: decision, values: values))]
+        case let .write(task, properties):
+            let write = writes.decide(task, properties: properties)
+            let chosen = properties[model.collection(task.kind)?.status.property ?? ""]?.text ?? ""
+            let closing: [Event] = state.choice == nil ? [] : [.chose(nil)]
+            if decision == .reopen { return closing + [.records(.wrote(write))] }
+            let pending = PendingDecision(
+                decision: decision, value: chosen, write: write, deadline: context.now.addingTimeInterval(Self.undoWindow))
+            // Kept on the device before the owner sees it made.
+            DecisionFile.update(context.environment.folder) { $0[path] = pending }
+            return [.deciding(path, pending)]
+        }
+    }
+
+    /// A change to a collection's settings record, under its derived id.
+    private func setting(_ kind: String, _ change: JSONObject, model: TasksModel, writes: TaskWrites) -> [Event] {
+        let held = model.collection(kind)?.setting
+        let id = held?.recordID ?? CollectionSetting.id(for: kind)
+        let write = writes.setting(
+            TasksKinds.collection, id, held: held?.version, created: ["kind": .string(kind)], change: change)
+        return write.entries.isEmpty ? [] : [.settings(.wrote(write))]
+    }
+
+    /// A change to the preference record, under its derived id. A pin whose
+    /// record is gone is dropped by the write.
+    private func preference(_ change: JSONObject, model: TasksModel, writes: TaskWrites) -> [Event] {
+        let id = model.preference.recordID ?? TasksPreference.id
+        let write = writes.setting(TasksKinds.preference, id, held: model.preference.version, created: [:], change: change)
+        return write.entries.isEmpty ? [] : [.settings(.wrote(write))]
     }
 }

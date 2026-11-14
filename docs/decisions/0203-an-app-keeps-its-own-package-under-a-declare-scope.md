@@ -1,7 +1,7 @@
 ---
-status: proposed
-amended-by: 0214
-date: 2026-11-01
+status: superseded
+superseded-by: 0214
+date: 2026-11-13
 decision-makers: George Antoniadis
 ---
 

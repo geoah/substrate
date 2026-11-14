@@ -54,9 +54,12 @@ var wireTypes = map[string]any{
 	"Referencing":         Referencing{},
 	"RankedPage":          RankedPage{},
 	"Scores":              Scores{},
-	"PropertyMeta":        PropertyMeta{},
+	"PropertyMark":        PropertyMark{},
 	"PropertyAlternative": PropertyAlternative{},
-	"PutInput":            PutInput{},
+	"RecordLink":          RecordLink{},
+	// The pin and release body.
+	"MarkInput": MarkInput{},
+	"PutInput":  PutInput{},
 	// The patch body. The console calls it RecordPatch (records.ts).
 	"RecordPatch": PatchInput{},
 	// The filter grammar. The console calls the Filter `RecordFilter`.
@@ -64,6 +67,11 @@ var wireTypes = map[string]any{
 	"RecordFilter": Filter{},
 	"KindInfo":     KindInfo{},
 	"KindLabel":    KindLabel{},
+	// How long each kind's history is kept (decision 0282): the kind page
+	// shows it.
+	"KindRetention": KindRetention{},
+	// The console's RetentionChange (types.ts) mirrors it.
+	"RetentionChange": RetentionChange{},
 	// A blob's manifest: what PUT /blobs answers and what a blobref property
 	// resolves to on a read. The console uploads blobs and reads them back.
 	"BlobInfo": BlobInfo{},
@@ -71,6 +79,15 @@ var wireTypes = map[string]any{
 	// card shows, and the check it runs.
 	"DomainProof": DomainProof{},
 	"DomainCheck": DomainCheck{},
+	// Publishing one of the repository's own packages (publish.ts): the
+	// request, the plan the console states before the owner confirms and
+	// answers after, and the releases of what the repository publishes.
+	"PublishInput": PublishInput{},
+	"PublishPlan":  PublishPlan{},
+	"ReleaseInput": ReleaseInput{},
+	"ReleasePlan":  ReleasePlan{},
+	"Release":      Release{},
+	"Releases":     Releases{},
 	// The deployer's site, discovery's optional `site` object: the doors and
 	// the landing read their brand from it.
 	"SiteInfo": SiteInfo{},
@@ -147,8 +164,14 @@ var wireTypes = map[string]any{
 	// Login: the request the door decodes. The console's LoginRequest
 	// (auth.ts) mirrors it.
 	"LoginRequest": LoginRequest{},
-	// A credential change's answer: the repository the factors proved.
+	// A credential change's answer: the identity the factors proved.
 	"SessionCredential": SessionCredential{},
+	// The person behind a token (GET /identity), and one repository they may
+	// open, which a sign-in refused for want of one lists too.
+	"IdentityInfo":     IdentityInfo{},
+	"RepositoryChoice": RepositoryChoice{},
+	"RepositoryNames":  RepositoryNames{},
+	"FormerName":       FormerName{},
 	// The approval page (authorize.ts): the parked request it renders, the
 	// approval it posts and the redirect either answer carries.
 	"AuthorizationRequest":      AuthorizationRequest{},
@@ -236,6 +259,7 @@ var wireTypes = map[string]any{
 
 	// The installed bundle's computed status and the lifecycle replies.
 	"BundleStatus":      BundleStatus{},
+	"BundleFeature":     BundleFeature{},
 	"InputStatus":       InputStatus{},
 	"SetupItem":         SetupItem{},
 	"BundleUninstalled": BundleUninstalled{},

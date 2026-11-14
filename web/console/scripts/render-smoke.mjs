@@ -250,7 +250,6 @@ async function seedObservations(page) {
       Accept: "application/json",
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      "X-Substrate-Actor": "console",
     }
     const send = async (method, path, body) => {
       const res = await fetch(path, {
@@ -262,7 +261,7 @@ async function seedObservations(page) {
     }
     const failed = await send(
       "POST",
-      `/api/v1/catalog/${encodeURIComponent("substrate.reamde.dev/health")}/install`
+      `/api/v1/catalog/${encodeURIComponent("substrate.reamde.dev/health")}/add`
     )
     if (failed) return failed
     const kind = "substrate.reamde.dev/observations/observation"
@@ -315,7 +314,6 @@ async function ownerContactName(page) {
     const headers = {
       Accept: "application/json",
       Authorization: `Bearer ${localStorage.getItem("substrate.token")}`,
-      "X-Substrate-Actor": "console",
     }
     const read = async (path) => {
       const res = await fetch(path, { headers })
@@ -385,12 +383,6 @@ const routes = [
       await expect(page, '"Create your Substrate" button', () => create.click())
       await shows(
         page,
-        '"Save your recovery key" heading',
-        pageTitle(page, "Save your recovery key")
-      )
-      await page.getByRole("button", { name: "Saved, continue" }).click()
-      await shows(
-        page,
         '"What should we call you?" heading',
         pageTitle(page, "What should we call you?")
       )
@@ -409,7 +401,7 @@ const routes = [
           `the owner's contact is named ${JSON.stringify(named)}, not ${JSON.stringify(owner)}`
         )
       }
-      return `registered ${repository}, kept the recovery key, named the owner's contact, "Your substrate"`
+      return `registered ${repository}, named the owner's contact, "Your substrate"`
     },
   },
   {

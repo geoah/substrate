@@ -23,12 +23,10 @@ import (
 // waiting on Postgres, so running one test at a time left the machine idle.
 // What makes it SAFE is that a test shares nothing it can observe — its own
 // database (engine.MigratedDSN, a copy of the migrated template), and its own
-// repository id (testdb.Repository, a name derived from the test's own). The
+// repository (testdb.Repository, a name derived from the test's own). The
 // runner (runner.Shared, one per process) keys function processes on the
-// repository id, and the id is the authority, so two tests registering one
-// name would share function processes and either one's Close would retire
-// the other's mid-delivery.
-// A test that runs function bodies must not register a fixed name.
+// repository id, which creation mints, so two tests never share function
+// processes and one's Close never retires the other's mid-delivery.
 //
 // The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
 // (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
@@ -232,13 +230,32 @@ func registerUser(t *testing.T, svc substrate.Service, repository string) (*auth
 	}
 	u := &authUser{repository: repository, password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Repository: repository, Password: u.password,
+		Identity: repository, Repository: repository, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
 	})
 	if err != nil {
 		t.Fatalf("register %q: %v", repository, err)
 	}
 	return u, res.Token, res.Secret
+}
+
+// repositoryIDByName is the id of the repository a name belongs to, or of the
+// one an id already names. The id, not the name, names its directory under the
+// data root and scopes its rows (decision 0261), so a test that reaches either
+// from a name asks for it.
+func repositoryIDByName(t *testing.T, svc substrate.Service, name string) string {
+	t.Helper()
+	repos, err := svc.Repositories(context.Background())
+	if err != nil {
+		t.Fatalf("list repositories: %v", err)
+	}
+	for _, r := range repos {
+		if r.Authority == name || r.ID == name {
+			return r.ID
+		}
+	}
+	t.Fatalf("no repository is named %q", name)
+	return ""
 }
 
 func maxSeq(t *testing.T, ds substrate.Dataset) int64 {
@@ -256,9 +273,14 @@ func maxSeq(t *testing.T, ds substrate.Dataset) int64 {
 	}
 }
 
+// changesSince is every change after `after`, but the actor records a hand's
+// first write lays down beside it (decision 0270): what a test counts is the
+// writes it made.
 func changesSince(t *testing.T, ds substrate.Dataset, after int64) []substrate.Change {
 	t.Helper()
-	out, err := ds.Changes(context.Background(), after, substrate.ChangeFilter{}, 500)
+	out, err := ds.Changes(context.Background(), after, substrate.ChangeFilter{
+		ExcludeKinds: []string{"substrate.reamde.dev/core/actor"},
+	}, 500)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
 	}
@@ -526,3 +548,29 @@ func refPathValue(e *substrate.Record, name string) string {
 // create a record under no other id (decision 0228). The same name is the
 // same id, so a test names a record by fid("t-1") everywhere it reads it.
 func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }
+
+// markSetBy is the id of the actor record a mark names as setBy, "" for none.
+func markSetBy(m substrate.PropertyMark) string {
+	if m.SetBy == nil {
+		return ""
+	}
+	_, id, _ := vocabulary.SplitRecordPath(m.SetBy.Ref)
+	return id
+}
+
+// markFrom is a mark's derivedFrom as record paths.
+func markFrom(m substrate.PropertyMark) []string {
+	var out []string
+	for _, l := range m.DerivedFrom {
+		out = append(out, l.Ref)
+	}
+	return out
+}
+
+// altFrom is the record path an alternative is read from, "" for none.
+func altFrom(a substrate.PropertyAlternative) string {
+	if a.DerivedFrom == nil {
+		return ""
+	}
+	return a.DerivedFrom.Ref
+}

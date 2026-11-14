@@ -1,27 +1,58 @@
 import Foundation
+import SubstrateAPI
+import SubstrateCore
 import SubstrateDevice
 import SubstrateLocal
 import SubstrateRuntime
 import SubstrateScreens
 
 /// What the root's events ask the device and the server for, and the work
-/// each is, beyond the records' own, which are the kit's `LinkedRecords`
-/// (`LinkedRecordsApp`): writes go to the outbox alone, and the link sees the
-/// outbox move and sends them.
+/// each is, beyond the data link's own, which are the kit's `LinkedRecords`
+/// (`LinkedRecordsApp`): the settings link's, the kinds with a status, the
+/// device's settings and reminders, and each decision's undo window. Writes
+/// go to the outbox alone, and the link sees the outbox move and sends them.
 public extension TasksApp {
     func ownEffects(of event: Event, on state: TasksState, from previous: TasksState, presented presentation: TasksPresentation) -> [Effect] {
         var out: [Effect] = []
         switch event {
-        case .records(.opened):
-            out += [.readSettings, .readPermission]
-        case .records(.foregrounded):
-            out += [.readUsage, .readPermission]
-        case .records(.cleared):
-            out.append(.readUsage)
-        case let .completing(id, write):
-            out.append(.settle(id, write))
-        case let .uncompleted(id):
-            out.append(.unsettle(id))
+        case let .records(records):
+            if Self.shared(records) {
+                out += settingsLinked.effects(of: records, on: state.settingsLinked, from: previous.settingsLinked).map(Effect.settings)
+            }
+            switch records {
+            case .opened:
+                out += [.readSettings, .readPermission, .readDecisions]
+            case let .enqueued(ids, _, _), let .notQueued(ids, _):
+                if !ids.isDisjoint(with: previous.settling) { out.append(.forgetDecisions(ids, paths: [])) }
+            case .foregrounded:
+                out += [.readUsage, .readPermission]
+                if state.linked.link?.signedIn == true { out.append(.discover) }
+            case .refreshAsked:
+                if state.linked.link?.signedIn == true { out.append(.discover) }
+            case .cleared:
+                out.append(.readUsage)
+            case let .linked(link):
+                // At every sign-in and every new approval: the scopes say
+                // which kinds the grant reads.
+                let before = previous.linked.link
+                if link.signedIn, before?.signedIn != true || before?.scopes != link.scopes || before?.generation != link.generation {
+                    out.append(.discover)
+                }
+            default:
+                break
+            }
+        case let .settings(settings):
+            out += settingsLinked.effects(of: settings, on: state.settingsLinked, from: previous.settingsLinked).map(Effect.settings)
+        case let .deciding(path, pending):
+            out.append(.settle(path, pending.write, pending.deadline))
+        case let .decisionsRead(decisions):
+            for (path, decision) in decisions.sorted(by: { $0.key < $1.key }) where previous.pending[path] == nil {
+                out.append(.settle(path, decision.write, decision.deadline))
+            }
+        case let .decisionDropped(path):
+            out.append(.forgetDecisions([], paths: [path]))
+        case let .undone(path):
+            out.append(.unsettle(path))
         case let .settingsChanged(settings):
             out.append(.saveSettings(settings))
             // Asked when the owner turns reminders on, never before: the
@@ -32,6 +63,14 @@ public extension TasksApp {
             }
         default:
             break
+        }
+        // The data link was closed and opened again over new kinds, here
+        // rather than by the records' own event: the kinds follow from the
+        // settings and the declarations, whatever event moved them.
+        let kinds = linked.kinds(in: state.linked)
+        if kinds != linked.kinds(in: previous.linked) {
+            out += linked.effects(of: .rekinded(kinds), on: state.linked, from: previous.linked).map(Effect.records)
+                .filter { effect in !out.contains(effect) }
         }
         // The reminders follow the plan the presenter made, once the device
         // has said what it allows and the tasks and settings are read.
@@ -44,12 +83,16 @@ public extension TasksApp {
     func ownKey(of effect: Effect) -> String? {
         switch effect {
         case .records: nil
+        case let .settings(settings): settingsLinked.key(of: settings).map { "settings.\($0)" }
+        case .discover: "discover"
         case .readSettings: "settings.read"
         case .readPermission, .askPermission: "permission"
         case .saveSettings: "settings"
         case .schedule: "reminders"
         case .readUsage: "usage"
-        case let .settle(id, _), let .unsettle(id): "complete.\(id)"
+        case let .settle(path, _, _), let .unsettle(path): "decide.\(path)"
+        case .readDecisions: "decisions.read"
+        case .forgetDecisions: nil
         }
     }
 
@@ -59,6 +102,39 @@ public extension TasksApp {
         switch effect {
         case .records:
             return .none
+        case let .settings(settings):
+            return settingsLinked.perform(settings, in: environment).map(Event.settings)
+        case .discover:
+            let source = environment.client
+            let closure = closure
+            return .once {
+                guard let client = await source.current() else { return nil }
+                do {
+                    let kinds = try await client.implementors(of: TasksKinds.lifecycle)
+                    var declarations = kinds.map {
+                        TaskKindDeclaration(identity: $0.identity, singular: $0.label?.singular, plural: $0.label?.plural, definition: $0.definition)
+                    }
+                    // A group kind needs no status, so the trait does not
+                    // name it: its declaration (its label, its order) is read
+                    // on its own, where the token reads it; one it does not
+                    // read answers none.
+                    let known = Set(declarations.map(\.identity)).union(closure.map(\.identity))
+                    var targets: [String] = []
+                    for declaration in declarations {
+                        for name in declaration.propertyNames {
+                            guard let target = declaration.singleReference(name), !known.contains(target), !targets.contains(target) else { continue }
+                            targets.append(target)
+                        }
+                    }
+                    for target in targets {
+                        guard let record = try? await client.record(KindDeclaration.kind, target) else { continue }
+                        declarations.append(TaskKindDeclaration(identity: target, definition: record.properties))
+                    }
+                    return .discovered(declarations)
+                } catch {
+                    return .discoveryFailed(explain(error, app: Self.appName, server: client.server))
+                }
+            }
         case .readSettings:
             return .once {
                 guard let folder else { return .settingsRead(SettingsValues(), usage: []) }
@@ -85,16 +161,44 @@ public extension TasksApp {
         case .readUsage:
             guard let folder else { return .none }
             return .once { .usage(folder.usage()) }
-        case let .settle(_, write):
-            // The window is the clock's, so a test moves it; a cancelled
-            // wait (the mark taken back) writes nothing.
-            let clock = environment.clock
+        case .readDecisions:
+            return .once { .decisionsRead(DecisionFile.load(from: folder)) }
+        case let .forgetDecisions(ids, paths):
             return .once {
-                try? await clock.sleep(until: clock.now.addingTimeInterval(Self.undoWindow))
-                return Task.isCancelled ? nil : .records(.wrote(write))
+                DecisionFile.update(folder) { decisions in
+                    for path in paths { decisions[path] = nil }
+                    decisions = decisions.filter { $0.value.write.entries.allSatisfy { !ids.contains($0.id) } }
+                }
+                return nil
+            }
+        case let .settle(path, write, deadline):
+            // The window is the clock's, so a test moves it; a cancelled
+            // wait (the decision taken back) writes nothing. A deadline
+            // already past (a launch after the app was closed in the window)
+            // writes at once.
+            let clock = environment.clock
+            let outbox = linked.outbox
+            return .once {
+                try? await clock.sleep(until: deadline)
+                guard !Task.isCancelled else { return nil }
+                // Written once: an earlier run that queued it, or whose
+                // write the server already took, leaves nothing to do.
+                if let outbox, await Self.written(write, in: outbox) { return .decisionDropped(path) }
+                return .records(.wrote(write))
             }
         case .unsettle:
             return .cancel
         }
+    }
+
+    /// Whether the outbox already holds `write`, or has seen its record past
+    /// the version it was pinned to.
+    static func written(_ write: LocalWrite, in outbox: Outbox) async -> Bool {
+        let queued = Set(await outbox.entries.map(\.id))
+        for entry in write.entries {
+            if queued.contains(entry.id) { return true }
+            if let base = entry.baseVersion, base > 0, let seen = await outbox.version(of: entry.kind, entry.recordID), seen > base { return true }
+        }
+        return false
     }
 }

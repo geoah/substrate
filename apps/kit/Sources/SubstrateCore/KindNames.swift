@@ -10,7 +10,7 @@ public enum KindNames {
     /// reads as the raw name, capitalised: a wrong split is worse than none.
     static let words: Set<String> = [
         "account", "actor", "address", "agent", "alert", "allergy", "analyte", "api",
-        "app", "appointment", "attachment", "authority", "batch", "blob", "block", "book",
+        "app", "appointment", "approval", "attachment", "authority", "batch", "blob", "block", "book",
         "bot", "bridge", "bundle", "calendar", "chat", "client", "code", "comment",
         "communication", "condition", "conduct", "config", "console", "contact", "conversation", "conversion",
         "credential", "cycle", "data", "database", "digest", "dispense", "document", "drive",

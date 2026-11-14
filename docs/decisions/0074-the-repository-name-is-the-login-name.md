@@ -1,7 +1,8 @@
 ---
-status: accepted
-date: 2026-09-09
+status: superseded
+date: 2026-11-13
 decision-makers: George Antoniadis
+superseded-by: 0274
 ---
 
 # 0074. The repository name is the login name, and `username` is gone

@@ -73,7 +73,8 @@ successor must be `accepted`, which the linter checks.
 ## 5. Land it
 
 Add the row to the index table in `docs/decisions/README.md`, with a status
-that matches the frontmatter, then:
+that matches the frontmatter. A record is `accepted` in the pull request that
+lands its code, never `proposed` behind it on `main`. Then:
 
 ```bash
 mise run lint:docs

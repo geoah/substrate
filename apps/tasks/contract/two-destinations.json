@@ -1,0 +1,519 @@
+{
+  "name": "a state machine that accepts into two states and stamps its close",
+  "now": "2026-11-09T09:41:00Z",
+  "timeZone": "Europe/London",
+  "grant": [
+    "write:substrate.reamde.dev/tasks/*",
+    "read:implements(substrate.reamde.dev/core/lifecycle)",
+    "write:ada.example.com/flow/ticket"
+  ],
+  "declarations": [
+    {
+      "identity": "substrate.reamde.dev/tasks/task",
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Something you have to do, such as Buy milk or Renew passport, with when it is due and how urgent it is. It is in one of your task lists or in none, and stays open until you mark it done or abandon it.",
+        "purpose": "primary",
+        "names": {
+          "singular": "task"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/temporal(point: dueAt)",
+          "substrate.reamde.dev/core/lifecycle"
+        ],
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "what to do, in one line, such as Buy milk"
+          },
+          "description": {
+            "type": "markdown",
+            "description": "the details, as prose"
+          },
+          "url": {
+            "type": "url",
+            "description": "a link that goes with the task, such as the page to read or the form to fill in"
+          },
+          "list": {
+            "type": "reference",
+            "kind": "substrate.reamde.dev/tasks/list",
+            "mustExist": true,
+            "onDelete": "cascade",
+            "description": "the task list it is in; absent when it is in none, which Substrate Tasks shows as its inbox"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the task sits among the tasks of its list, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          },
+          "dueDay": {
+            "type": "date",
+            "description": "the day it is due; written on every task with a due date, timed or not"
+          },
+          "priority": {
+            "type": "enum",
+            "description": "how urgent it is, from none to urgent",
+            "default": "none",
+            "values": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "status": {
+            "type": "state",
+            "description": "open until you mark it done or abandon it; either can be undone. A suggested task waits as proposed until you add or dismiss it",
+            "states": [
+              "proposed",
+              "open",
+              "done",
+              "abandoned"
+            ],
+            "initial": "open",
+            "done": [
+              "done"
+            ],
+            "dropped": [
+              "abandoned"
+            ],
+            "proposed": [
+              "proposed"
+            ],
+            "transitions": [
+              {
+                "from": "proposed",
+                "to": "open"
+              },
+              {
+                "from": "proposed",
+                "to": "abandoned"
+              },
+              {
+                "from": "open",
+                "to": "done",
+                "stamps": {
+                  "completedAt": "now"
+                }
+              },
+              {
+                "from": "done",
+                "to": "open"
+              },
+              {
+                "from": "open",
+                "to": "abandoned"
+              },
+              {
+                "from": "abandoned",
+                "to": "open"
+              }
+            ]
+          },
+          "completedAt": {
+            "type": "datetime",
+            "description": "when it was marked done"
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/list",
+      "label": {
+        "singular": "Task list",
+        "plural": "Task lists"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "A task list: a named list of your tasks, such as Groceries or Home, kept in the order you arrange your lists. A task is in one list or in none.",
+        "purpose": "primary",
+        "names": {
+          "singular": "list"
+        },
+        "label": {
+          "singular": "Task list",
+          "plural": "Task lists"
+        },
+        "displayTemplate": "{name}",
+        "properties": {
+          "name": {
+            "type": "string",
+            "required": true,
+            "description": "the list's name, such as Groceries"
+          },
+          "position": {
+            "type": "decimal",
+            "description": "where the list sits among your lists, lowest first; a number written as a string, such as \"2\" or \"1.5\""
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/collection",
+      "label": {
+        "singular": "Task collection",
+        "plural": "Task collections"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "How Substrate Tasks shows one collection of your tasks: whether it is on, what it groups by, and which of its properties the app reads as the due date, the priority and the order.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "collection"
+        },
+        "label": {
+          "singular": "Task collection",
+          "plural": "Task collections"
+        },
+        "displayTemplate": "{kind}",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "required": true,
+            "description": "the collection's kind, by its full reference, such as substrate.reamde.dev/tasks/task"
+          },
+          "enabled": {
+            "type": "bool",
+            "description": "whether Substrate Tasks shows the collection"
+          },
+          "group": {
+            "type": "string",
+            "description": "the reference the collection's tasks are grouped by; absent for the app's guess, `-` for none"
+          },
+          "due": {
+            "type": "string",
+            "description": "the property read as the due time; absent for the app's guess, `-` for none"
+          },
+          "dueDay": {
+            "type": "string",
+            "description": "the property read as the due day; absent for the app's guess, `-` for none"
+          },
+          "priority": {
+            "type": "string",
+            "description": "the property read as the priority; absent for the app's guess, `-` for none"
+          },
+          "order": {
+            "type": "string",
+            "description": "the property read as the owner's order; absent for the app's guess, `-` for none"
+          }
+        }
+      }
+    },
+    {
+      "identity": "substrate.reamde.dev/tasks/preference",
+      "label": {
+        "singular": "Tasks preference",
+        "plural": "Tasks preferences"
+      },
+      "definition": {
+        "authority": "substrate.reamde.dev",
+        "package": "tasks",
+        "description": "Your choices across every collection Substrate Tasks shows: where new tasks go, and the groups you pinned, in your order.",
+        "purpose": "supporting",
+        "names": {
+          "singular": "preference"
+        },
+        "label": {
+          "singular": "Tasks preference",
+          "plural": "Tasks preferences"
+        },
+        "properties": {
+          "newTasks": {
+            "type": "string",
+            "description": "the kind new tasks are written to, by its full reference; absent for substrate.reamde.dev/tasks/task"
+          },
+          "pins": {
+            "type": "reference",
+            "repeated": true,
+            "description": "the groups you pinned, in your order"
+          }
+        }
+      }
+    },
+    {
+      "identity": "ada.example.com/flow/ticket",
+      "definition": {
+        "authority": "ada.example.com",
+        "package": "flow",
+        "names": {
+          "singular": "ticket"
+        },
+        "traits": [
+          "substrate.reamde.dev/core/lifecycle"
+        ],
+        "displayTemplate": "{headline}",
+        "properties": {
+          "headline": {
+            "type": "string",
+            "required": true
+          },
+          "dueAt": {
+            "type": "datetime"
+          },
+          "closedAt": {
+            "type": "datetime"
+          },
+          "status": {
+            "type": "state",
+            "states": [
+              "suggested",
+              "backlog",
+              "active",
+              "resolved",
+              "wontfix"
+            ],
+            "initial": "backlog",
+            "transitions": [
+              {
+                "from": "suggested",
+                "to": "backlog"
+              },
+              {
+                "from": "suggested",
+                "to": "active"
+              },
+              {
+                "from": "suggested",
+                "to": "wontfix"
+              },
+              {
+                "from": "backlog",
+                "to": "active"
+              },
+              {
+                "from": "backlog",
+                "to": "wontfix"
+              },
+              {
+                "from": "active",
+                "to": "resolved",
+                "stamps": {
+                  "closedAt": "now"
+                }
+              },
+              {
+                "from": "resolved",
+                "to": "active"
+              }
+            ],
+            "done": [
+              "resolved"
+            ],
+            "dropped": [
+              "wontfix"
+            ],
+            "proposed": [
+              "suggested"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "records": [
+    {
+      "kind": "substrate.reamde.dev/tasks/collection",
+      "id": "c-ticket",
+      "version": 1,
+      "createdAt": "2026-11-01T08:00:00Z",
+      "properties": {
+        "kind": "ada.example.com/flow/ticket",
+        "enabled": true,
+        "title": "ada.example.com/flow/ticket"
+      }
+    },
+    {
+      "kind": "ada.example.com/flow/ticket",
+      "id": "k1",
+      "version": 1,
+      "createdAt": "2026-11-08T08:00:00Z",
+      "properties": {
+        "headline": "Rotate the keys",
+        "title": "Rotate the keys",
+        "status": "suggested"
+      }
+    },
+    {
+      "kind": "ada.example.com/flow/ticket",
+      "id": "k2",
+      "version": 3,
+      "createdAt": "2026-11-02T08:00:00Z",
+      "properties": {
+        "headline": "Patch the router",
+        "title": "Patch the router",
+        "status": "resolved",
+        "closedAt": "2026-11-07T08:00:00Z"
+      }
+    },
+    {
+      "kind": "ada.example.com/flow/ticket",
+      "id": "k3",
+      "version": 1,
+      "createdAt": "2026-11-03T08:00:00Z",
+      "properties": {
+        "headline": "Renew the certificate",
+        "title": "Renew the certificate",
+        "status": "backlog",
+        "dueAt": "2026-11-12T10:00:00Z"
+      }
+    }
+  ],
+  "expect": {
+    "collections": [
+      {
+        "kind": "substrate.reamde.dev/tasks/task",
+        "enabled": true,
+        "viewOnly": false,
+        "creatable": true,
+        "title": "name",
+        "due": "dueAt",
+        "dueDay": "dueDay",
+        "priority": "priority",
+        "order": "position",
+        "group": {
+          "property": "list",
+          "kind": "substrate.reamde.dev/tasks/list"
+        }
+      },
+      {
+        "kind": "ada.example.com/flow/ticket",
+        "enabled": true,
+        "viewOnly": false,
+        "creatable": false,
+        "title": "headline",
+        "due": "dueAt",
+        "dueDay": null,
+        "priority": null,
+        "order": null,
+        "group": null
+      }
+    ],
+    "items": {
+      "ada.example.com/flow/ticket/k1": {
+        "standing": "proposed",
+        "accept": [
+          "backlog",
+          "active"
+        ],
+        "dismiss": [
+          "wontfix"
+        ],
+        "complete": [],
+        "wontDo": [],
+        "reopen": [],
+        "group": null,
+        "band": null
+      },
+      "ada.example.com/flow/ticket/k2": {
+        "standing": "done",
+        "accept": [],
+        "dismiss": [],
+        "complete": [],
+        "wontDo": [],
+        "reopen": [
+          "active"
+        ],
+        "group": null,
+        "band": null
+      },
+      "ada.example.com/flow/ticket/k3": {
+        "standing": "open",
+        "accept": [],
+        "dismiss": [],
+        "complete": [],
+        "wontDo": [
+          "wontfix"
+        ],
+        "reopen": [],
+        "group": null,
+        "band": "comingUp"
+      }
+    },
+    "needsYou": {
+      "lateOrUrgent": [],
+      "comingUp": [
+        "ada.example.com/flow/ticket/k3"
+      ],
+      "later": [],
+      "noDate": 0,
+      "suggestions": 1,
+      "badge": 0
+    },
+    "suggestions": [
+      "ada.example.com/flow/ticket/k1"
+    ],
+    "groups": [
+      {
+        "collection": "substrate.reamde.dev/tasks/task",
+        "kind": "substrate.reamde.dev/tasks/list",
+        "rows": []
+      }
+    ]
+  },
+  "commands": [
+    {
+      "do": {
+        "accept": "ada.example.com/flow/ticket/k1"
+      },
+      "choices": [
+        "backlog",
+        "active"
+      ],
+      "writes": []
+    },
+    {
+      "do": {
+        "accept": "ada.example.com/flow/ticket/k1",
+        "to": "active",
+        "edits": {
+          "dueAt": "2026-11-20T09:00:00Z"
+        }
+      },
+      "writes": [
+        {
+          "op": "patch",
+          "path": "ada.example.com/flow/ticket/k1",
+          "ifVersion": 1,
+          "properties": {
+            "status": "active",
+            "dueAt": "2026-11-20T09:00:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "reopen": "ada.example.com/flow/ticket/k2"
+      },
+      "writes": [
+        {
+          "op": "patch",
+          "path": "ada.example.com/flow/ticket/k2",
+          "ifVersion": 3,
+          "properties": {
+            "status": "active",
+            "closedAt": null
+          }
+        }
+      ]
+    },
+    {
+      "do": {
+        "complete": "ada.example.com/flow/ticket/k3"
+      },
+      "writes": []
+    },
+    {
+      "do": {
+        "accept": "ada.example.com/flow/ticket/k1",
+        "to": "resolved"
+      },
+      "writes": []
+    }
+  ]
+}

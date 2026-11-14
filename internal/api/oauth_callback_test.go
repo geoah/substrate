@@ -9,11 +9,11 @@ import (
 	"testing"
 )
 
-// oauthSvc wraps the fake service with the substrate.OAuthCompleter half the
-// callback asserts at runtime — a canned outcome, so the test drives the
-// return-page.
+// oauthSvc is the stub service with a canned CompleteOAuth outcome, so the
+// test drives the return-page: what the engine answers for a real consent is
+// the OAuth facility's suite.
 type oauthSvc struct {
-	*fakeService
+	*stubService
 	record string
 	err    error
 }
@@ -23,7 +23,7 @@ func (s oauthSvc) CompleteOAuth(context.Context, string, string) (string, error)
 }
 
 func callbackHandler(record string, err error, consoleURL string) http.Handler {
-	return New(Config{Service: oauthSvc{fakeService: newFakeService(), record: record, err: err}, ConsoleURL: consoleURL})
+	return New(Config{Service: oauthSvc{stubService: &stubService{}, record: record, err: err}, ConsoleURL: consoleURL})
 }
 
 const callbackPath = "/api/v1/oauth/callback?state=abc&code=xyz"

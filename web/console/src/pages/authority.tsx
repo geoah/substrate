@@ -7,12 +7,14 @@
  * with its full reference and its purpose. Bounded registry data, so no
  * paging. */
 
+import { OUTSIDE_CODE_WORDS } from "@/lib/app-setup"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 
 import { AgentCard } from "@/components/agent/agent-ref"
+import { PackagePublishActions } from "@/components/packages/publish-package"
 import { PublisherDetails } from "@/components/packages/publisher"
 import { PublishedPackageSection } from "@/components/packages/published-package"
 import { StandardPackageSection } from "@/components/packages/standard-package"
@@ -46,7 +48,7 @@ import {
   providerInfo,
 } from "@/lib/actor-identity"
 import { functionsQueryOptions } from "@/lib/api/functions"
-import { splitKind } from "@/lib/api/http"
+import { LOCAL_AUTHORITY, splitKind } from "@/lib/api/http"
 import { isStandard } from "@/lib/bundles"
 import { authorityTitle, packageTitle } from "@/lib/collections"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
@@ -56,7 +58,12 @@ import { kindPurpose } from "@/lib/definition"
 import { hiddenKindsNote } from "@/lib/grid-values"
 import { displayPlural } from "@/lib/kind-names"
 import { kindDescription } from "@/lib/kind-copy"
-import { packageAgent, packagesQueryOptions } from "@/lib/packages"
+import {
+  packageAgent,
+  packageInterface,
+  packageStability,
+  packagesQueryOptions,
+} from "@/lib/packages"
 import { buildTools, toolDescription, toolName, type Tool } from "@/lib/tools"
 import { authorityRoute, packageRoute } from "@/router"
 
@@ -282,7 +289,9 @@ export function AuthorityPage() {
         description={
           providers
             ? "Collections providers publish. Their records are copies, kept up to date by each provider."
-            : "The collections published under this name."
+            : authority === LOCAL_AUTHORITY
+              ? "Your own collections: the ones you made and the samples you added. They are yours to change."
+              : "The collections published under this name."
         }
       />
       <PageState
@@ -326,6 +335,7 @@ export function AuthorityPage() {
  * (decision 0047); an agent's package is what a person asked it to build. */
 export function PackagePage() {
   const { authority, pkg } = packageRoute.useParams()
+  const navigate = useNavigate()
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
   const packages = useQuery(packagesQueryOptions)
@@ -363,6 +373,9 @@ export function PackagePage() {
   const primary = kinds.filter((k) => kindPurpose(k) === "primary").length
   const provider = authority === PROVIDERS_AUTHORITY ? providerInfo(pkg) : null
   const agent = packageAgent(packages.data, `${authority}/${pkg}`)
+  // Read off the package's own row once it is here: a label guessed before
+  // the rows load would call a stable package experimental.
+  const row = packages.data?.get(`${authority}/${pkg}`)
   const agentId = agent ? actorIdentity(agent).record?.id : undefined
   return (
     <TablePage>
@@ -377,6 +390,21 @@ export function PackagePage() {
             )}
           </span>
         }
+        actions={
+          <PackagePublishActions
+            authority={authority}
+            pkg={pkg}
+            onPublished={(published) => {
+              // The package left `~`: its page is under the new name now.
+              const [to, name] = published.split("/")
+              void navigate({
+                to: "/data/$authority/$pkg",
+                params: { authority: to, pkg: name },
+                replace: true,
+              })
+            }}
+          />
+        }
         meta={
           <>
             {technical && (
@@ -389,6 +417,27 @@ export function PackagePage() {
                   value={`${authority}/${pkg}`}
                   label="Copy the package"
                 />
+              </span>
+            )}
+            {technical && row && (
+              <span>
+                Stability{" "}
+                <span className="text-muted-foreground">
+                  {packageStability(row)}
+                </span>
+              </span>
+            )}
+            {published && tools.length > 0 && (
+              <span title={OUTSIDE_CODE_WORDS}>
+                Code <span className="text-muted-foreground">experimental</span>
+              </span>
+            )}
+            {technical && row && tools.length > 0 && (
+              <span>
+                Function interface{" "}
+                <span className="text-muted-foreground">
+                  {packageInterface(row)}
+                </span>
               </span>
             )}
             <span>{countWord(technical ? kinds.length : primary)}</span>

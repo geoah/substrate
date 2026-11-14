@@ -5,14 +5,15 @@ packages a repository is seeded with, `substrate.reamde.dev/core`,
 `substrate.reamde.dev/llm`, `substrate.reamde.dev/console`,
 `substrate.reamde.dev/observations` and `substrate.reamde.dev/assistant`
 (agents, no kinds), the four well-known catalogues it can
-install (`health`, `labs`, `environment` and `clinical`, under the same
-authority), the
-LLM sample copied onto the repository's own authority at registration, and
-the other sample packages it can import. A kind is named `<authority>/<package>/<name>`;
+add (`health`, `labs`, `environment` and `clinical`, under the same
+authority), and the sample packages it can add, the LLM sample among them,
+each copied into the repository's local namespace, `~`, when it is added. A
+kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
-spells it, a sample's under the placeholder authority an import rewrites. Which door a
-package takes, what an import rewrites and how an upgrade is offered are in
-[bundles](bundles.md#the-two-doors); the provider packages, and the four
+spells it, a sample's under the placeholder authority adding it rewrites to
+`~`. Where a
+package lands, what adding a sample rewrites and how an upgrade is offered are in
+[bundles](bundles.md#adding-a-package); the provider packages, and the four
 samples this page does not table (notes, llm, readinglist and pebble, whose
 kinds are described beside the functions and agents that write them), are in
 the [bundles catalog](bundles-catalog.md). Every declaration is queryable in
@@ -20,8 +21,14 @@ your own repository (`substratectl kinds`, or `GET /api/v1/records` with
 `substrate.reamde.dev/core/kind` in `filter.kinds`), descriptions included, so this page
 is the map and the repository is the source of truth.
 
+A package states how much its kinds may change in its header's `stability`
+([stability](stability.md#on-a-package-for-its-kinds)). Of the packages on
+this page, `core` states `stable`; `llm`, `assistant`, `applets`, `console`
+and `observations` state `experimental`; and the catalogues and the samples
+state none, which reads as `experimental`.
+
 The tables for core are [below](#substratereamdedevcore); what follows first is
-the vocabulary you import or install.
+the vocabulary you add.
 
 ## samples.substrate.reamde.dev/people (a sample)
 
@@ -35,8 +42,8 @@ This sample also ships four **suggested mappings** onto its own `person`, from
 GitHub's `user`, Google's `contact` and `emailaddress`, and Linear's `user`.
 Each is admitted only where you already hold the
 provider it reads, and reported `waiting` for that provider otherwise
-([suggested mappings](bundles.md#suggested-mappings)). Installing the provider
-afterwards does not land it: import this sample again, and then a GitHub
+([suggested mappings](bundles.md#suggested-mappings)). Adding the provider
+afterwards does not land it: add this sample again, and then a GitHub
 identity and the same human's address-book contact converge on one record of
 yours.
 
@@ -87,16 +94,16 @@ It ships one **suggested mapping** too, from Linear's `issue` onto its own
 `task`: matched on the issue's URL, carrying the heading and the link, and
 never `status`, which is a state and moves only through its own transitions.
 Like every suggested mapping it lands only where the Linear provider is already
-installed, and importing this sample again is what lands it afterwards
+installed, and adding this sample again is what lands it afterwards
 ([suggested mappings](bundles.md#suggested-mappings)).
 
 ## substrate.reamde.dev/health (a well-known catalogue)
 
-A person's body, sleep and training. Installed from the catalog, never
+A person's body, sleep and training. Added from the catalog, never
 copied: it lands under `substrate.reamde.dev` and upgrades from the catalog
 ([decision 0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-The Apple Health and WHOOP providers require it, so installing either
-installs it.
+The Apple Health and WHOOP providers require it, so adding either
+adds it.
 
 | Kind      | What it is                                                                                     |
 | --------- | ---------------------------------------------------------------------------------------------- |
@@ -115,8 +122,8 @@ either unit reads as one series
 
 ## substrate.reamde.dev/labs (a well-known catalogue)
 
-Blood tests and what a lab reports. It requires `health`, and installing it
-installs `health` first.
+Blood tests and what a lab reports. It requires `health`, and adding it
+adds `health` first.
 
 | Kind        | What it is                                                                                            |
 | ----------- | ----------------------------------------------------------------------------------------------------- |
@@ -138,7 +145,7 @@ a lab report and a lab result, and a lab trend on the seeded `metric` kind.
 
 The medical record a care provider keeps about you, one kind per HL7 FHIR R4
 resource ([clinical records](clinical.md)). It requires `labs`, whose
-reports and results are its test results, and installing it installs `labs`
+reports and results are its test results, and adding it adds `labs`
 and `health` first.
 
 | Kind                 | What it is                                                                                       |
@@ -169,16 +176,18 @@ meter to write observations against, `environment/air_temperature`,
 ## substrate.reamde.dev/core
 
 The substrate's own machinery, declared as kinds so it lists, reads, and
-filters exactly like vocabulary. This is the whole of what a fresh repository
-speaks:
+filters exactly like vocabulary. The package states `stable`, and two parts
+of it are outside that label and experimental: the `agent` kind, and the
+judge half of `recordpatchpolicy`
+([outside the promise](stability.md#outside-the-promise-by-name)). This is
+the whole of what a fresh repository speaks:
 
 | Kind                 | What it is                                                                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `repository`         | The repository describing itself from the inside: the `authority` it owns, which is its id (`name` is deprecated and holds the same value), and a `lifecycle` state (`active`, `suspended`, `deleting`). |
 | `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
-| `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
 | `token`              | One bearer credential: label, optional expiry, and the hash of its secret.                                                                          |
-| `actor`              | One declared actor, the name writes are attributed to, and the tier it writes at.                                                                   |
+| `actor`              | One hand that writes: the person, an app, a function, an agent, a package or the system, as its `type`, with a `name` and a link to what it is (`function`, `agent`, `package`, or an app's `publisher`), and `disabled` once its code or approval is gone. The engine writes every one, and every history line, change event and stored attribution links one ([actors](api.md#actors)). |
 | `agent`              | One declared agent: an LLM-loop callable ([agents](agents.md)).                                                                                    |
 | `blob`               | One content-addressed blob: the manifest is the metadata, the bytes live in the byte store; the digest is the id.                                   |
 | `recordmerge`        | One performed merge and what it moved ([merges](projection.md#merges)).                                                                            |
@@ -189,6 +198,7 @@ speaks:
 | `setting`            | One configuration value a bundle needs, at `<bundle id>/<name>`: `value` as a string, held on write to a `type` of `string`, `url`, `int`, `bool` or `enum` with `values` ([settings](bundles.md#settings)). |
 | `secret`             | The same, with `value` typed `secret`: sealed at rest, injected only into its own bundle's functions, never read back.                               |
 | `contact`            | Someone or something you deal with: a person, a business, a group or a bot (`contactType`), with flat name parts, the card's `organizationName` and `jobTitle`, `memberOf` organizations and groups, `emails`, `phones`, `urls`, the `substrate` repository name it lives at, `pronouns`, named `dates` and a `prominence` state (`utility`, `known`, `hidden`). The owner's data, not machinery: it declares `purpose: primary` and merges. Your own contact is the one the setting `substrate.reamde.dev/core/ownerContact` names by its id ([decision 0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)), and core's mappings fill contacts from each installed provider's people ([how they wait](projection.md#cores-mappings-onto-contacts)). |
+| `retention`          | How long this repository keeps one kind's history past each record's latest state, in place of what the kind declares: `appliesTo` names the kind's declaration and `retention` is `all`, `none` or an ISO 8601 duration; one live record per kind, deleted to go back to the declared one ([decision 0282](decisions/0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md)). |
 | `consolepreference`  | The console's preferences for the repository, shared across sessions: navigation (`collapsed`, `favorites`; `sidebarOpen` is deprecated), layout (`recordWidth`, `tableWidth`, `density`, `technicalDetails`, `theme`) and each collection's saved `views`. |
 
 The delivery machinery is core's too, declared as data kinds so a trigger is
@@ -201,9 +211,14 @@ console-editable and changelog-visible like anything else
 | `triggerrun` | One trigger delivery attempt, written after it settles: the delivery ledger's row. Runs are pruned to the newest few per trigger, but the newest ok run, the parked runs after it and a parked run whose delivery still waits in the ledger stay ([decision 0178](decisions/0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md)). A direct call of a networked function writes one too, with mode `call` and no trigger, never pruned. |
 | `alert` | One ongoing problem the substrate found, such as a trigger whose deliveries keep parking: a `key` its id derives from, a `level`, a `summary`, the last error as `detail`, the records it is `about`, when it was first and last seen, a `count` and a `state` of `open` or `resolved`. The engine opens, updates and resolves it ([decision 0148](decisions/0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md)). |
 
-The ten [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
+The nine [declarable kinds](vocabulary.md#the-declarable-kinds) (`authority`,
 `package`, `kind`, `propertytype`, `trait`, `recordmapping`, `function`,
-`agent`, `bundle`, `actor`) live in core too, and so do the eleven shipped
+`agent`, `bundle`) live in core too. A `package` record carries
+what its header states, such as `description`, `retired` and `stability`
+(`stable`, `beta` or `experimental`: the label the package states for its
+kinds, absent where the header states none), beside what the engine stamps,
+such as `version`, `source` and `declaredBy`. Core also holds the eleven
+shipped
 traits: `temporal`, which puts a record on the timeline; `recurring` and
 `override`, the repeat rule and the moved occurrence ([traits](traits.md));
 `sync`, the state a provider's function reports on one connected account;
@@ -224,9 +239,9 @@ The second package the binary seeds: the agent runtime's own data, out of core
 so core is not everything (decision record
 [0077](decisions/0077-the-llm-kinds-live-in-their-own-seeded-package.md)). It
 is seeded exactly as core is, so a fresh repository holds these kinds without
-importing anything, and one created before a kind existed receives it at its
-next open. **Agents are alpha**, so all of them are a preview, unfrozen at v1
-and not part of the frozen core:
+adding anything, and one created before a kind existed receives it at its
+next open. The package states `experimental`, so every kind in it may
+change or go in any release ([stability](stability.md)):
 
 | Kind          | What it is                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------ |
@@ -235,6 +250,7 @@ and not part of the frozen core:
 | `thread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `message`     | One turn in a thread, with its tool-call audit.                                                  |
 | `interaction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
+| `approval`    | One call an agent made to a function declaring `approval: required`, held before it ran: `agent`, `function`, `tool` and `arguments`, frozen; `thread`, the conversation the owner is in, and `requestedIn`, a sub-agent's own thread. The owner moves it `pending` to `approved` or `denied`; the engine moves an approved one to `running`, then `done` or `failed`, and reports it into the thread ([agents](agents.md#approvals), decision record [0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)). |
 | `memory`      | One standing fact or instruction the owner keeps for their agents: `text`, `active` (default true) and `source` (`owner`, `agent` or `import`). The one `primary` kind of the package, because the rows are the owner's data; an agent reads the active ones through `context.pinned` ([agents](agents.md#pinned-context), decision record [0197](decisions/0197-an-agent-pins-standing-context-into-its-prompt-once-per-thread.md)). |
 | `instruction` | One standing instruction the owner gives one agent about how to work: `agent` (a reference to it), `text`, `active` (default true) and `source`. `primary`, like `memory`. The engine reads an agent's active ones into its system prompt when a thread opens, as the owner's direction; an agent writes one only where its own writes name the kind ([agents](agents.md#owner-instructions), decision record [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)). |
 
@@ -245,7 +261,7 @@ manifest document is a record of a core kind whatever package it describes.
 
 The fifth seeded package (decision record
 [0241](decisions/0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md)):
-the owner's assistant, four agents and no kinds, written into every
+the owner's assistant, five agents and no kinds, written into every
 repository and upgraded at boot, so a prompt fix reaches every repository
 with the binary.
 
@@ -259,10 +275,19 @@ with the binary.
 - `designer`, which Moss calls as a background job to build or change one
   of the owner's applets: its writes name `applets/applet` alone, and it checks each
   screen with `preview` ([the applets plan](plans/applets.md)).
+- `secretary`, which Moss calls for the owner's mail, calendar and Drive
+  files over several steps. It takes the Google provider's offered tools by
+  pattern, so it has them once the provider is installed and none before; it
+  reads and drafts, and sends only what Moss says the owner asked to send
+  ([Google's tools](bundles-catalog.md#googles-tools)). Its grant writes no
+  record.
+
+Moss itself takes every offered function, Google's tools among them, for a
+single step, and hands the secretary anything longer.
 
 The owner shapes them without editing them: `llm/instruction` records
 naming one of them ride its system prompt, and Moss proposes one when asked
-to change how it works. All four name the seeded `anthropic` row. The
+to change how it works. All five name the seeded `anthropic` row. The
 design and the recorded sessions are in [docs/plans/moss.md](plans/moss.md).
 
 ## substrate.reamde.dev/applets
@@ -293,10 +318,10 @@ it at its next open.
 | `collectionview` | A saved view a package ships for one collection, a tab after All ([saved views](console.md#a-collection)): `appliesTo`, a reference to the kind's declaration; `name`; `where`, one filter condition per property; `sort` (`property:asc` or `:desc`); the `columns` it shows, in order; the property it `group`s by; `nest`, false to show a nesting collection flat; and `default`, the tab a bare address opens on until the reader picks one (decision record [0229](decisions/0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md)). |
 | `recordview` | How the console lays out the record page of one kind: `appliesTo`, a reference to the kind's declaration; `name` and `intro`; the `window` it reads, by the names of the record's own properties; properties to `fold` away from the sheet, and the rarely read ones it keeps `collapsed`; and `sections`, each one block: `heading`, `text`, `properties`, `related`, `chart`, `spans`, `stats` (tiles, dials and bars against a baseline), `trend` (daily, weekly or monthly strips), `table` (records of one kind as rows), `breakdown` (shares of the record's own properties) or `lanes` (declared, not yet drawn) ([record views](console.md#record-views)). |
 
-A sample, a catalogue or a provider ships its views as records; a re-import
+A sample, a catalogue or a provider ships its views as records; adding it again
 or an upgrade replaces a view only that package and the engine wrote and
 leaves one any other hand edited or deleted as it was left
-([the two doors](bundles.md#the-two-doors)). The console package ships
+([adding a package](bundles.md#adding-a-package)). The console package ships
 collection views in `views.yaml`: two of `llm/memory`, **Active** (the
 default) and **Retired**, and six of `core/contact`, **People** (known
 persons, the default), **Organizations**, **Groups**, **Bots**, **To sort**

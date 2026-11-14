@@ -12,8 +12,8 @@ import (
 // A chat thread's heading (decision record 0170). The thread opens with its
 // first message as its subject, the title model replaces that once after the
 // first turn, and an owner's rename is never overwritten: the generated title
-// is written only while the subject's manager row still names the agent's
-// own actor, which a rename by any other actor moves.
+// is written only while the subject's mark is still set by the agent's own
+// actor, which a rename by any other actor moves.
 
 const propThreadSubject = "subject"
 
@@ -73,8 +73,18 @@ func (l *agentLoop) titleAfterFirstTurn(status, reply string) {
 	if skip || strings.TrimSpace(reply) == "" {
 		return
 	}
+	// The title is the first turn's work, held to that turn's holders, which
+	// its rows carry: bound now, from the turn itself, never read later from
+	// the thread, which a next turn may have claimed by the time it runs.
+	held := holdersOf(l.runCtx, l.actor)
+	if substrate.IsPerson(held.onBehalfOf) {
+		held.onBehalfOf = l.ds.personActorFor(l.runCtx, held.onBehalfOf)
+	}
 	l.ds.spawn("title thread", func(ctx context.Context) {
-		l.titleThread(ctx, reply)
+		if hook := l.ds.beforeTitle; hook != nil {
+			hook()
+		}
+		l.titleThread(withHolders(ctx, held), reply)
 	})
 }
 
@@ -171,7 +181,7 @@ func (l *agentLoop) titleThread(ctx context.Context, reply string) {
 // wrote none, so no snapshot holds the row yet), and whether a patch was
 // made at all: a deleted thread takes none.
 func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usage, cost float64) (lifetime float64, finished, patched bool, err error) {
-	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	err = l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		patched, finished = false, false
 		t.causedBy = l.in.causedBy
 		// The order every put takes (claimThread says why).
@@ -202,11 +212,11 @@ func (l *agentLoop) writeTitle(ctx context.Context, title string, usage *llm.Usa
 			"costUSD":          num("costUSD") + cost,
 		}
 		if title != "" {
-			managers, err := t.managersOf(ref)
+			marks, err := t.marksOf(ref)
 			if err != nil {
 				return err
 			}
-			if m, ok := managers[propThreadSubject]; ok && m.actor == string(l.actor) {
+			if m, ok := marks[propThreadSubject]; ok && m.SetBy == actorID(l.actor) {
 				props[propThreadSubject] = title
 			}
 		}

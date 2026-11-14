@@ -14,6 +14,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 const nav = vi.hoisted(() => ({ to: [] as unknown[] }))
 
@@ -51,6 +52,9 @@ import {
 } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
+import { actorLink } from "@/lib/actors.test-fixtures"
+
+beforeEach(() => seedActors())
 
 const TASK = "ada.example.com/tasks/task"
 
@@ -79,9 +83,9 @@ const rec = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   version: 3,
   createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-01T00:00:00Z",
-  propertyMeta: {
-    name: { manager: "console", tier: "owner" },
-    location: { manager: "console", tier: "owner" },
+  marks: {
+    name: { pinned: true, setBy: actorLink("act-person") },
+    location: { pinned: true, setBy: actorLink("act-person") },
   },
   ...over,
 })
@@ -149,11 +153,10 @@ describe("RecordHeader meta line", () => {
   it("says nothing of the kind when a provider holds a value", () => {
     renderHeader(
       rec({
-        propertyMeta: {
-          name: { manager: "console", tier: "owner" },
+        marks: {
+          name: { pinned: true, setBy: actorLink("act-person") },
           location: {
-            manager: "function:providers.substrate.reamde.dev:google:sync",
-            tier: "machine",
+            setBy: actorLink("act-fn-google-sync"),
           },
         },
       })

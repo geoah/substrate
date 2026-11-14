@@ -25,7 +25,7 @@ const (
 func provisionPinners(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "pinllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-pinllm"},
 	}); err != nil {
@@ -62,7 +62,7 @@ func provisionPinners(t *testing.T, ds *dataset, fake *fakeLLM) {
 			"compaction": map[string]any{"reserveTokens": 200, "keepRecentTokens": 60},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the pin package: %v", err)
 	}
 }
@@ -73,14 +73,14 @@ func putMemory(t *testing.T, ds *dataset, id, text string, props map[string]any)
 	for k, v := range props {
 		p[k] = v
 	}
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: kindMemory, ID: id, Properties: p}); err != nil {
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: kindMemory, ID: id, Properties: p}); err != nil {
 		t.Fatalf("put memory %s: %v", id, err)
 	}
 }
 
 func chatPinned(t *testing.T, ds *dataset, agent, thread, text string) string {
 	t.Helper()
-	res, err := ds.ChatAgent(context.Background(), substrate.ActorAPI, pinPackage+"/"+agent, substrate.ChatInput{Thread: thread, Message: text}, nil)
+	res, err := ds.ChatAgent(context.Background(), substrate.ActorPerson, pinPackage+"/"+agent, substrate.ChatInput{Thread: thread, Message: text}, nil)
 	if err != nil {
 		t.Fatalf("chat %s: %v", agent, err)
 	}
@@ -235,7 +235,7 @@ func TestPinnedContextOutsideTheGrantIsRefused(t *testing.T) {
 			}}},
 		}),
 	}
-	_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, docs)
+	_, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, docs)
 	if err == nil || !strings.Contains(err.Error(), "not in data.permissions.reads.kinds") {
 		t.Fatalf("pinning outside the grant: %v", err)
 	}

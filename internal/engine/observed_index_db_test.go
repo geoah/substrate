@@ -135,6 +135,7 @@ type pointRow struct {
 
 func (r obsIndex) points(t *testing.T, kind, id string) []pointRow {
 	t.Helper()
+	kind = vocabulary.LocalizeRef(kind, r.ds.Repository().Authority)
 	var out []pointRow
 	for _, p := range derivedPoints(t, r.ds) {
 		if p.Kind != kind || p.RecordID != id {
@@ -690,7 +691,7 @@ func TestObservedRollupEqualsTheRawAggregate(t *testing.T) {
 	hr(fid("hr/06"), "2026-10-07T06:00:00Z", "2026-10-07T07:00:00Z",
 		[]any{0, 950000}, []any{"70", "71"}, 2)
 	checkRollupsMatchSpec(t, r.ds, r.db)
-	if _, err := r.ds.Delete(context.Background(), substrate.ActorAPI, r.observation, fid("door/2"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(context.Background(), substrate.ActorPerson, r.observation, fid("door/2"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
@@ -891,7 +892,7 @@ func TestObservedTombstoneRestoreAndPurge(t *testing.T) {
 		t.Fatalf("latest = %+v", l)
 	}
 
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, fid("hr/07"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.trace, fid("hr/07"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := r.points(t, r.trace, fid("hr/07")); len(got) != 0 {
@@ -910,7 +911,7 @@ func TestObservedTombstoneRestoreAndPurge(t *testing.T) {
 		t.Errorf("the restore did not bring the index back\n%s", firstDifference([]byte(whole), []byte(got)))
 	}
 
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, fid("hr/06"), substrate.DeleteInput{Purge: true}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.trace, fid("hr/06"), substrate.DeleteInput{Purge: true}); err != nil {
 		t.Fatal(err)
 	}
 	if n := r.count(t, `SELECT count(*) FROM records WHERE kind = $1 AND id = $2`, r.trace, fid("hr/06")); n != 0 {
@@ -923,7 +924,7 @@ func TestObservedTombstoneRestoreAndPurge(t *testing.T) {
 		t.Errorf("latest after the purge = %+v", l)
 	}
 	checkRollupsMatchSpec(t, r.ds, r.db)
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.trace, fid("hr/07"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.trace, fid("hr/07"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := r.latest(t, "health/heart_rate", r.source+"/garmin"); ok {
@@ -1222,7 +1223,7 @@ func TestObservedLatestKeepsOneRowPerStatistic(t *testing.T) {
 	if got, want := latestRows(), fmt.Sprintf("avg=%s:60/2 max=%s:80/2", fid("hrv/2/avg"), fid("hrv/2/max")); got != want {
 		t.Errorf("after two nights the latest rows are %q, want %q", got, want)
 	}
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("hrv/2/max"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.observation, fid("hrv/2/max"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := latestRows(), fmt.Sprintf("avg=%s:60/2 max=%s:84/1", fid("hrv/2/avg"), fid("hrv/1/max")); got != want {
@@ -1285,7 +1286,6 @@ func TestObservedIndexFollowsTheBinding(t *testing.T) {
 		props["metric"] = map[string]any{"type": "reference", "trait": vocabulary.TraitMetricCore}
 		return []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"},
 				map[string]any{"traits": traits, "properties": props}),
 		}
@@ -1604,7 +1604,7 @@ func TestObservedRollupRowsAlwaysCarryTheirDetail(t *testing.T) {
 		t.Errorf("%d counter rows hold a step, want the second reading's alone", steps)
 	}
 	// The table refuses a row missing any of it.
-	repo := testdb.Repository(t)
+	repo := r.ds.Repository().ID
 	for _, x := range []struct{ what, columns, values string }{
 		{"a number without its digits", `n, bounded, sum, min, max, covered_ms`, `1, 0, 1, 1, 1, 0`},
 		{"a first and last point without their record", `n, bounded, first_ts, last_ts, covered_ms`, `1, 0, now(), now(), 0`},
@@ -1686,7 +1686,6 @@ func packedClosure(pkg string, bound bool) []map[string]any {
 	props["metric"] = map[string]any{"type": "reference", "trait": vocabulary.TraitMetricCore}
 	return []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
-		vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "reading"},
 			map[string]any{"traits": traits, "properties": props}),
 	}
@@ -1793,7 +1792,7 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 	held := make(chan struct{}, 1)
 	var pkg string
 	r := openObservedIndex(t, engine.WithTestReprojectionHook(func(ctx context.Context, kind string) error {
-		if !armed.Load() || kind != pkg+"/reading" {
+		if !armed.Load() || kind != "~/meters/reading" {
 			return nil
 		}
 		select {
@@ -1999,7 +1998,7 @@ func TestObservedCounterRecomputesTheNextReadingsBucket(t *testing.T) {
 	step("a reading before them", "00:00=- 01:00=6 02:00=5")
 	reading(fid("m/00"), "00:00", "7")
 	step("a correction of it", "00:00=- 01:00=3 02:00=5")
-	if _, err := r.ds.Delete(ctx, substrate.ActorAPI, r.observation, fid("m/01"), substrate.DeleteInput{}); err != nil {
+	if _, err := r.ds.Delete(ctx, substrate.ActorPerson, r.observation, fid("m/01"), substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	step("a deletion of the middle reading", "00:00=- 02:00=8")
@@ -2182,7 +2181,7 @@ func TestObservedMetricWriteDuringItsReprojectionPage(t *testing.T) {
 	}
 	engine.DrainIndexReprojection(t, r.ds)
 	rollups := func(tiers ...any) error {
-		_, err := r.ds.Patch(ctx, substrate.ActorAPI, r.metric, fid("porch/temperature"),
+		_, err := r.ds.Patch(ctx, substrate.ActorPerson, r.metric, fid("porch/temperature"),
 			substrate.PatchInput{Properties: map[string]any{"rollups": tiers}})
 		return err
 	}

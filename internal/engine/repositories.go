@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The control plane is one table and one row per user: the
@@ -23,14 +25,16 @@ import (
 
 // Repository is one row of the control-plane table.
 type Repository struct {
-	// ID is the repository's authority (decision 0046): the DNS-style name
-	// chosen at registration, unique across the substrate, permanent, and the
-	// home of the kinds its user declares. It is the primary key, the scope
-	// every repository-scoped query runs under, the DEK wrap's binding and the
-	// name of the directory under the data root.
+	// ID is the repository's key (decision 0261): minted at creation
+	// (vocabulary.NewRepositoryID), never shown as a name and never changed.
+	// It is the primary key, the scope every repository-scoped query runs
+	// under, the DEK wrap's binding and the name of the directory under the
+	// data root. A row a release before ids wrote holds the name here until
+	// the boot gives it an id (repositoryid.go).
 	ID string
-	// Authority always equals ID: the repositories_id_is_authority CHECK holds
-	// the two equal on every row, and the engine writes both.
+	// Authority is the repository's name: the DNS-style name chosen at
+	// registration, unique across the substrate, what its user signs in with,
+	// and the home of the kinds its user declares (decision 0046).
 	Authority string
 	CreatedAt time.Time
 	// DEK is the repository's data-encryption key, WRAPPED under the host
@@ -61,9 +65,26 @@ func newHistoryGeneration() (string, error) {
 // scope is the repository's query scope.
 func (r Repository) scope() Scope { return Scope{Repository: r.ID} }
 
+// label names the repository in a refusal an operator reads: by the name they
+// know it by, and by the id its directory, its rows and its writer lease are
+// keyed by, which is what they look it up under.
+func (r Repository) label() string {
+	if r.Authority == "" || r.Authority == r.ID {
+		return r.ID
+	}
+	return r.Authority + " (id " + r.ID + ")"
+}
+
 // info renders the repository the way the read surfaces still describe it.
 func (r Repository) info() substrate.RepositoryInfo {
 	return substrate.RepositoryInfo{ID: r.ID, Authority: r.Authority, State: "active"}
+}
+
+// registry names reg as this repository's, so its lookups take the
+// repository's name as another spelling of `~` (decision record 0259).
+func (r Repository) registry(reg *vocabulary.Registry) *vocabulary.Registry {
+	reg.SetHome(r.Authority)
+	return reg
 }
 
 // ensureRoles creates the two Postgres roles the isolation rests on. It is
@@ -272,24 +293,60 @@ func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.
 // authority apart, and a racing registration that gets past it loses on the
 // primary key instead; losing costs the loser nothing but the rows under its
 // own authority, which it erases on the way out.
-func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository) error {
+//
+// A creation for a person (registration) inserts their identity and the row
+// that lets it open the repository in the same transaction, so a registration
+// that loses its name to a racing one creates no person either. The row and
+// the end of any lapsed hold another repository kept on the name commit as
+// one (takeFormerName), and the repository that held it is answered ("" for
+// none).
+func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository, person *identityRow) (string, error) {
 	generation, err := newHistoryGeneration()
 	if err != nil {
-		return err
+		return "", err
 	}
 	r.HistoryGeneration = generation
-	err = cp.QueryRowContext(ctx, `
+	tx, err := cp.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	took, err := takeFormerName(ctx, tx, r.Authority)
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	// The repository that held the name as a lapsed former name answers to it
+	// no more: its names are fenced around this COMMIT (namescache.go).
+	var fenced []string
+	if took != "" {
+		if err := lockNames(ctx, tx, took); err != nil {
+			return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+		}
+		fenced = append(fenced, took)
+	}
+	err = tx.QueryRowContext(ctx, `
 		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID)).Scan(&r.CreatedAt)
 	if err != nil {
 		if taken := repositoryRowTaken(err, r); taken != nil {
-			return taken
+			return "", taken
 		}
-		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	if person != nil {
+		if err := insertIdentity(ctx, tx, person); err != nil {
+			return "", err
+		}
+		if err := linkIdentity(ctx, tx, person.ID, r.ID); err != nil {
+			return "", err
+		}
+	}
+	if err := s.commitFencingNames(tx, false, fenced...); err != nil {
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
-	return nil
+	return took, nil
 }
 
 // sqlstateUniqueViolation is Postgres's SQLSTATE for a unique or primary-key
@@ -322,8 +379,10 @@ func repositoryRowTaken(err error, r *Repository) error {
 // case unreachable, and this is the check that holds if it ever is not, since
 // erasing there would delete a live repository's rows, changelog and directory.
 // The lookup runs on a context of its own, like the erase, because the
-// request behind the failure may be gone.
-func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id string, inserted bool) error {
+// request behind the failure may be gone. person is the identity the
+// creation inserted with its row, if any: it goes in the erase's own
+// transaction, so no crash leaves its name held by no repository.
+func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id string, inserted bool, person string) error {
 	if !inserted {
 		lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -335,7 +394,29 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 			return fmt.Errorf("substrate/engine: erase repository %s: look up its row: %w", id, err)
 		}
 	}
-	return s.eraseRepositoryOn(ctx, cp, id)
+	return s.eraseRepositoryOn(ctx, cp, id, eraseFor{person: person})
+}
+
+// ErrRepositoryBeingDeleted is the refusal of a repository whose deletion
+// began and did not finish (decision 0279, rule 7): the server finishes it
+// at its next start, once the archive answers.
+var ErrRepositoryBeingDeleted = fmt.Errorf("%w: the repository's deletion began; the server finishes it at its next start", substrate.ErrNotFound)
+
+// The deletion's durable steps, as its test seam names them
+// (testEraseFault).
+const (
+	eraseAfterBegan         = "after the row said the deletion began"
+	eraseAfterMark          = "after the archive's deletion mark was written"
+	eraseAfterArchiveObject = "after one of the archive's objects was deleted"
+	eraseAfterArchive       = "after the archive was deleted"
+	eraseAfterDirectory     = "after the directory was removed"
+)
+
+func (s *service) eraseStage(stage string) error {
+	if s.testEraseFault == nil {
+		return nil
+	}
+	return s.testEraseFault(stage)
 }
 
 // eraseRepository erases a repository whole: every repository-scoped row, then
@@ -356,18 +437,29 @@ func (s *service) eraseFailedCreation(ctx context.Context, cp controlPlane, id s
 //   - It VERIFIES the scope is empty afterwards — scoped tables AND the
 //     control-plane row — and returns an error if anything survived, so a caller
 //     can changelog it and the boot sweeper can reclaim what a crash left.
-//   - The DIRECTORY GOES FIRST, then the rows. A crash between the two leaves
-//     a row with no directory, which the next boot writes out again from the
-//     tables (repodir.go, case 5): consistent, and complete. The other order
-//     would leave a directory with no row, which the next boot IMPORTS as a
-//     repository whose registration was reported failed.
+//   - The ARCHIVE AND THE DIRECTORY GO FIRST, then the rows. A crash between
+//     the two leaves a row with neither, whose next archive pass writes the
+//     archive again from the tables. The other order would leave an archive
+//     with no row, which the next boot RESTORES as a repository that was
+//     deleted, or whose registration was reported failed.
 func (s *service) eraseRepository(ctx context.Context, id string) error {
-	return s.eraseRepositoryOn(ctx, s.maint, id)
+	return s.eraseRepositoryOn(ctx, s.maint, id, eraseFor{})
+}
+
+// eraseFor names whom an erase is for. person's place in the repository,
+// and their identity when the repository was its last, go in the
+// transaction that records the deletion began, so no crash leaves a name
+// held by a repository being deleted. proved is the version of the factors a
+// person's delete proved: that transaction holds the identity's row to it
+// before it records anything (factorsStandOn).
+type eraseFor struct {
+	person string
+	proved *time.Time
 }
 
 // eraseRepositoryOn is eraseRepository on a given control-plane handle: the
 // registration's locked connection, so the cleanup needs no second one.
-func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string) error {
+func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id string, by eraseFor) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
@@ -378,11 +470,77 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 		ds.close()
 	}
 	s.mu.Unlock()
-	// And the Log a reconcile kept for its first open: it vouches for
-	// segments this erase removes, which a repository created again under
-	// the same name must not inherit.
-	s.takeChecked(id)
 
+	// The row says the deletion began before anything is removed: from here
+	// no archive pass runs on it, and a boot that finds the row finishes the
+	// deletion (rule 7). A person's fence runs in the transaction that
+	// records it, so a change of the factors either committed first, and the
+	// fence refuses with the repository whole, or waits for that commit and
+	// meets a deletion already begun, which nothing undoes.
+	tx, err := cp.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The locks in the order a sign-in takes them, the person's row before
+	// the repository's changelog lock (holdFactors, then the mint), so the
+	// two cannot wait on each other. The changelog lock is what proves a
+	// COMMIT below whose answer is lost has ended (commitFencingTokens).
+	switch {
+	case by.proved != nil:
+		if err := factorsStandOn(ctx, tx, by.person, *by.proved); err != nil {
+			return err
+		}
+	case by.person != "":
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM identities WHERE id = $1 FOR UPDATE`, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+		}
+	}
+	if err := lockTokens(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE repositories SET deletion_began_at = coalesce(deletion_began_at, now()) WHERE id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
+	}
+	// The deletion ends any take of the repository: no boot replaces it
+	// from a copy staged before.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM archive_takes WHERE repository_id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: end its take: %w", id, err)
+	}
+	if by.person != "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM identity_repositories WHERE repository_id = $1 AND identity = $2`, id, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s (its person's place): %w", id, err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM identities i WHERE i.id = $1
+			AND NOT EXISTS (SELECT 1 FROM identity_repositories l WHERE l.identity = i.id)`, by.person); err != nil {
+			return fmt.Errorf("substrate/engine: erase repository %s (its person's identity): %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: record that its deletion began: %w", id, err)
+	}
+	if err := s.eraseStage(eraseAfterBegan); err != nil {
+		return err
+	}
+	if err := s.eraseArchive(ctx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: delete its archive: %w", id, err)
+	}
+	if err := s.eraseStage(eraseAfterArchive); err != nil {
+		return err
+	}
+	if err := s.eraseLocal(ctx, cp, id); err != nil {
+		return err
+	}
+	// Named by no take now; a boot removes it too.
+	_ = os.RemoveAll(filepath.Join(s.dataRoot, takeRootDir, id))
+	return nil
+}
+
+// eraseLocal removes what the server holds of a repository: its directory,
+// then every row, in one transaction. A deletion runs it after the archive's
+// part; a take of the archive runs it alone, the archive left whole.
+func (s *service) eraseLocal(ctx context.Context, cp controlPlane, id string) error {
 	dir, err := changelogfile.RepoDir(s.dataRoot, id)
 	if err != nil {
 		return err
@@ -390,22 +548,42 @@ func (s *service) eraseRepositoryOn(ctx context.Context, cp controlPlane, id str
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: remove its directory: %w", id, err)
 	}
+	if err := s.eraseStage(eraseAfterDirectory); err != nil {
+		return err
+	}
 
 	tx, err := cp.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// The repository's tokens go in this transaction: the changelog lock
+	// first, so the token cache can prove it ended (commitFencingTokens).
+	if err := lockTokens(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
 	for _, table := range repositoryScopedTables {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository = $1`, id); err != nil {
 			return fmt.Errorf("substrate/engine: erase repository %s (%s): %w", id, table, err)
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM identity_repositories WHERE repository_id = $1`, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s (identity_repositories): %w", id, err)
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s (repositories): %w", id, err)
 	}
-	if err := tx.Commit(); err != nil {
+	// The repository's tokens, its people's places in it and its names go
+	// with it, all fenced around the one COMMIT (tokencache.go,
+	// namescache.go).
+	if err := lockNames(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	if err := s.commitErasing(tx, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
+	}
+	if s.testAfterErase != nil {
+		s.testAfterErase(id)
 	}
 	if residue, err := repositoryResidue(ctx, cp, id); err != nil {
 		return err
@@ -478,7 +656,7 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 // same set 0001_init puts row level security on. A rollback that missed one
 // would leave rows nothing can ever reach again.
 var repositoryScopedTables = []string{
-	"records", "refs", "former_ids", "annotations", "property_managers",
+	"records", "refs", "former_ids", "annotations", "property_marks",
 	"property_offers", "changelog", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "vocabulary_dialect", "repository_migrations",
@@ -486,7 +664,7 @@ var repositoryScopedTables = []string{
 	"idempotency_keys", "search_index", "index_reprojections",
 	"observed_streams", "observed_segments", "observed_rollups", "observed_latest", "observed_index",
 	"unit_graph", "unit_uses", "unit_uses_index",
-	"operator_spend_reservations",
+	"operator_spend_reservations", "archive_records", "archive_objects",
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {
@@ -515,12 +693,15 @@ func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
 	return r, nil
 }
 
-// repositoryByAuthority finds the repository that owns an authority, which is
-// the repository whose id it is. Two repositories on one substrate cannot own
-// the same one: a kind reference names its authority and nothing else, so a
-// shared authority would be two homes for one name.
-func (s *service) repositoryByAuthority(ctx context.Context, authority string) (Repository, error) {
-	return s.repositoryByID(ctx, authority)
+// repositoryByKey finds a repository by its id or by its name, which never
+// look alike: an id holds no dot and a name always does. It is the lookup of
+// every door a caller names a repository at (an operator command, a webhook
+// address, a dataset a caller asks for).
+func (s *service) repositoryByKey(ctx context.Context, key string) (Repository, error) {
+	if vocabulary.ValidRepositoryID(key) {
+		return s.repositoryByID(ctx, key)
+	}
+	return s.repositoryByName(ctx, key)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {
@@ -552,6 +733,5 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	return out, rows.Err()
 }
 
-// A user's factors are the credential record and its sealed rows, never a
-// column in this table: the control plane holds nothing about a user but the
-// repository they own and the day they arrived.
+// A person's factors are their identity's (identities.go), never a column in
+// this table: a repository row holds nothing about the people who open it.

@@ -14,8 +14,6 @@ import (
 	"sync"
 
 	"gopkg.in/yaml.v3"
-
-	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Datatype is a built-in property datatype: what a VALUE is, never what a
@@ -295,6 +293,12 @@ type Property struct {
 	// in neither.
 	Done    []string
 	Dropped []string
+	// Proposed are the open values a record waits in until its owner
+	// accepts it, a suggestion an agent or a sync wrote (decision 0247).
+	// Each is declared and in neither list above, one value at least is in
+	// none of the three, and a machine has a transition from each proposed
+	// state to an open one.
+	Proposed []string
 	// MustExist requires the referent RECORD to exist when the value is written
 	// (a tombstoned row counts as existing); a value naming no record is
 	// refused with the same not-found any addressed read gives. Absent, the
@@ -330,8 +334,8 @@ type Property struct {
 	// the engine alone: a mapping synthesizes its subject slot on its source
 	// kind (mappingsubject.go, record 96), or stamps the declaration that
 	// already stood there. Empty on every property a document declares for
-	// itself. It is what `propertyMeta.manager` reads as `mapping:<id>`, and
-	// what tells the reconcile which slots are its own to take back.
+	// itself. It is why the slot carries no mark (decision 0284), and what
+	// tells the reconcile which slots are its own to take back.
 	MappedBy string
 	// mappedOver is the declaration MappedBy stamped, nil when the property is
 	// purely synthesized. Unexported because it is the reconcile's undo and
@@ -401,27 +405,37 @@ type Property struct {
 	// (checkDeclarationWrite, in internal/engine). This is the only statement of
 	// the stamped set; the engine keeps no hand-written list beside it.
 	Managed bool
-	// Writer restricts WHICH actor role may write this property, enforced
-	// server-side after the merged row is known. Empty is
-	// unrestricted — the ordinary "nothing ranks writers" rule. The declared
-	// roles are:
-	//   - "oauth"     — only the host OAuth facility's actor (tokenRef,
-	//     tokenStatus, grantedScopes: the facility's hands on an account).
-	//   - "connector" — only installed bundle code (function.*/agent.*):
-	//     the connector's own sync state (syncToken, lastSyncedAt, syncStatus).
-	//   - "owner"     — only an owner-tier actor.
-	// A host-written property a stranger could otherwise assign directly is the
-	// vulnerability this closes: the console blacklist is not a boundary.
-	Writer string
+	// Writers is the types of actor that may write this property, its
+	// `writer:` (decision 0290), enforced server-side after the merged row is
+	// known; nil leaves it unrestricted. The engine's own hand, `system`,
+	// writes any property. A host-written property a stranger could otherwise
+	// assign directly is what it closes: the console's form is not a
+	// boundary. The shipped packages declare three: `system` for an
+	// account's credential hands (tokenRef, tokenStatus, grantedScopes),
+	// `[function, agent]` for a sync's own state, and `person` for what a
+	// person asks of a sync.
+	Writers []string
 }
 
-// Property writer roles: the admitted values of a
-// property's `writer:` restriction.
-const (
-	WriterOAuth     = "oauth"
-	WriterConnector = "connector"
-	WriterOwner     = "owner"
-)
+// WrittenBy reports whether an actor of the given type may write the
+// property: any type where it declares no `writer:`, else the types it names.
+func (p *Property) WrittenBy(actorType string) bool {
+	return p.Writers == nil || slices.Contains(p.Writers, actorType)
+}
+
+// WrittenOnlyBy reports whether the property declares one type of actor as
+// its only writer.
+func (p *Property) WrittenOnlyBy(actorType string) bool {
+	return len(p.Writers) == 1 && p.Writers[0] == actorType
+}
+
+// retiredWriters are the `writer:` words before actor types (decision 0290),
+// each with what replaced it, which a refusal names.
+var retiredWriters = map[string]string{
+	"owner":     "person",
+	"connector": "[function, agent]",
+	"oauth":     "system",
+}
 
 // The admitted `keyPattern:` contracts of a keyed map's keys. Both reuse the
 // validator the rest of the loader holds the same spelling to, so a key and a
@@ -467,7 +481,7 @@ var keyPatternRE = map[string]*regexp.Regexp{
 // terms rather than the regexp's.
 var keyPatternRule = map[string]string{
 	KeyPatternCamel:   camelRule,
-	KeyPatternKindRef: "a kind reference (`task` or `example.com/tasks/task`)",
+	KeyPatternKindRef: "a kind reference (`task`, `example.com/work/task` or `~/work/task`)",
 }
 
 // CheckKey holds one key of a keyed map to the declared contract. The keys are
@@ -763,6 +777,11 @@ type Kind struct {
 	// applies the default for the kind's purpose.
 	IDs string
 
+	// Retention is the kind's declared `retention:` (decision record 0282),
+	// empty where the declaration says nothing. Read it through
+	// Registry.RetentionOf, which falls back to the package header's.
+	Retention string
+
 	// HotColumns lists the hot properties this type's capabilities bind, in
 	// {"at","endsAt","dueAt"} terms.
 	HotColumns map[string]bool
@@ -908,14 +927,9 @@ type Package struct {
 	Authority string
 	// Name is the package's own word ("core", "google", "tasks"), empty on an
 	// authority row.
-	Name    string
-	Version int64
-	Source  string
-	Actors  []string
-	// ActorTiers is each declared actor's manager tier — an explicit
-	// attribute of the actor document (`tier: owner|bundle|machine`,
-	// machine by default), never derived from the actor's spelling.
-	ActorTiers    map[string]substrate.Tier
+	Name          string
+	Version       int64
+	Source        string
 	PropertyTypes map[string]*PropertyType
 	DatatypeOrder []string
 	Traits        map[string]*Trait
@@ -939,6 +953,29 @@ type Package struct {
 	// Description is what the package or the authority is for, in the
 	// author's own words.
 	Description string
+	// Stability is the label the package header states for its kinds, one of
+	// substrate.Stabilities, and empty where the header states none: nothing
+	// is defaulted in, so a stored header says only what its author wrote,
+	// and a reader treats an empty one as experimental. Always empty on an
+	// authority row.
+	Stability string
+	// Interface is the function interface the header names its code as
+	// written against, one of FunctionInterfaces, and 0 where the header
+	// names none, which reads as 1. Always 0 on an authority row.
+	Interface int64
+	// Dialect is the vocabulary dialect the header says the package needs,
+	// at most Dialect, and 0 where it states none. Always 0 on an authority
+	// row.
+	Dialect int64
+	// NeedsDialect is the dialect the keys the package's declarations use
+	// need: the highest any of them arrived in (keyIntroducedAt), 0 where
+	// every one is read by every dialect. A header may state more, never
+	// less.
+	NeedsDialect int64
+	// Retention is the header's `retention:` for the kinds that state none
+	// (decision record 0282), empty where it states none. Always empty on an
+	// authority row.
+	Retention string
 
 	// pending holds trait property contracts checked once every kind
 	// in the package is parsed.
@@ -965,6 +1002,96 @@ type Registry struct {
 	// the reason (seededmapping.go). Replaced whole at every build, never
 	// mutated, so a clone shares it.
 	held map[string]string
+	// names are the names of the repository this registry is, the name
+	// first and then the former names it still answers to, which every
+	// lookup by reference takes as other spellings of Local (LocalizeRef).
+	// Nil on the shipped registry, which belongs to no repository. A
+	// function, because a former name stops answering at a time of its own
+	// (decision record 0287), whatever the registry was built at.
+	names func() []string
+}
+
+// SetHome names the repository this registry is, by one name: its lookups
+// then read the repository's full name as `~`. A clone carries it.
+func (r *Registry) SetHome(name string) {
+	r.SetNames(func() []string { return []string{name} })
+}
+
+// SetNames names the repository this registry is by the names it answers to
+// when a lookup runs, its name first. A clone carries it.
+func (r *Registry) SetNames(names func() []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.names = names
+}
+
+// Names are the names the repository answers to now, its name first, or
+// none.
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	names := r.names
+	r.mu.RUnlock()
+	if names == nil {
+		return nil
+	}
+	return names()
+}
+
+// Home is the repository's name, or "".
+func (r *Registry) Home() string {
+	if names := r.Names(); len(names) > 0 {
+		return names[0]
+	}
+	return ""
+}
+
+// Localize is ref with this registry's repository names folded into `~`,
+// each but a name a package here is held under (Spellings).
+func (r *Registry) Localize(ref string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.localizeHeld(ref)
+}
+
+// localizeHeld is Localize for a caller already holding r.mu.
+func (r *Registry) localizeHeld(ref string) string {
+	if r.names == nil {
+		return ref
+	}
+	return LocalizeRef(ref, r.spellingsHeld(r.names())...)
+}
+
+// Spellings are those of names that spell `~` in this registry: every one
+// but a name a package here is held under, which is not `~`'s: one a
+// publisher's install brought, or one this repository published under a
+// name it answers to (decision record 0287). While the registry holds
+// `publisher.example/tasks`, `publisher.example/tasks/task` names that
+// package's kind, whatever the repository is called, so no stored name
+// changes its meaning; the repository's own kinds are then written `~`.
+func (r *Registry) Spellings(names ...string) []string {
+	if r == nil {
+		return names
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.spellingsHeld(names)
+}
+
+func (r *Registry) spellingsHeld(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		held := false
+		for _, id := range r.order {
+			if g := r.packages[id]; g.Authority == n && !g.IsAuthority() {
+				held = true
+				break
+			}
+		}
+		if !held {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // NewRegistry returns an empty registry.
@@ -994,6 +1121,7 @@ func (r *Registry) Clone() *Registry {
 	}
 	c.version = r.version
 	c.held = r.held
+	c.names = r.names
 	return c
 }
 
@@ -1017,7 +1145,7 @@ func (r *Registry) Packages() []string {
 func (r *Registry) PackageByName(identity string) (*Package, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	g, ok := r.packages[identity]
+	g, ok := r.packages[r.localizeHeld(identity)]
 	return g, ok
 }
 
@@ -1100,6 +1228,7 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 func (r *Registry) TraitByIdentity(identity string) (*Trait, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	identity = r.localizeHeld(identity)
 	if g, ok := r.packages[KindPackage(identity)]; ok {
 		if c, ok := g.Traits[KindName(identity)]; ok {
 			return c, true
@@ -1176,7 +1305,7 @@ func (r *Registry) Kinds() []*Kind {
 func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	t, ok := r.byIdent[identity]
+	t, ok := r.byIdent[r.localizeHeld(identity)]
 	return t, ok
 }
 
@@ -1190,6 +1319,7 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	nameOrIdentity = r.localizeHeld(nameOrIdentity)
 	if t, ok := r.byIdent[nameOrIdentity]; ok {
 		return t, nil
 	}
@@ -1237,6 +1367,7 @@ func (r *Registry) Implementing(iface string) []*Kind {
 // different authorities into one answer. Machine selectors ("status"/"HasStatus")
 // stay bare by nature.
 func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
+	iface = r.Localize(iface)
 	if Qualified(iface) {
 		var out []*Kind
 		for _, t := range r.Kinds() {
@@ -1258,69 +1389,4 @@ func (r *Registry) ImplementingStrict(iface string) ([]*Kind, error) {
 	}
 	sort.Strings(names)
 	return nil, errors.New(bareNameProblem("", "trait", iface, names))
-}
-
-// Actors lists every declared actor across authorities.
-func (r *Registry) Actors() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	seen := map[string]bool{}
-	var out []string
-	for _, name := range r.order {
-		for _, a := range r.packages[name].Actors {
-			if !seen[a] {
-				seen[a] = true
-				out = append(out, a)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// ActorPackage returns the authority that declared an actor.
-func (r *Registry) ActorPackage(actor string) (string, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, name := range r.order {
-		for _, a := range r.packages[name].Actors {
-			if a == actor {
-				return name, true
-			}
-		}
-	}
-	return "", false
-}
-
-// ActorTier resolves an actor's manager tier from registry DATA:
-// a declared actor document's explicit tier attribute (machine by default),
-// and the bundle tier for every registered function's and agent's own
-// actor. Nothing here reads the actor's spelling — an unknown actor is simply
-// not the registry's to answer.
-func (r *Registry) ActorTier(actor string) (substrate.Tier, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	for _, name := range r.order {
-		g := r.packages[name]
-		for _, a := range g.Actors {
-			if a != actor {
-				continue
-			}
-			if tier, ok := g.ActorTiers[a]; ok {
-				return tier, true
-			}
-			return substrate.TierMachine, true
-		}
-		for _, fn := range g.Functions {
-			if fn.Actor() == actor {
-				return substrate.TierBundle, true
-			}
-		}
-		for _, ag := range g.Agents {
-			if ag.Actor() == actor {
-				return substrate.TierBundle, true
-			}
-		}
-	}
-	return "", false
 }

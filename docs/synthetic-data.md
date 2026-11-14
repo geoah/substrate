@@ -159,10 +159,10 @@ that holds a client config (`configKind`) whose `clientId` is not the
 such a config: its id alone does not show synth connected it. Then
 `setup.json`, which the emitter declared (`synth.Setup`): a push provider is
 installed from the catalog, the `labs` catalogue is installed (bringing
-`health`), any sample the emitter names is imported, and the records the
+`health`), any sample the emitter names is added, and the records the
 deliveries name (the account) are written. The catalog says whether the
 repository holds each package: one held at the version the server ships is
-skipped, an older one is upgraded, and a sample imported or upgraded after
+skipped, an older one is upgraded, and a sample added or upgraded after
 the runner landed rows is replayed from the start of the changelog. Then every YAML document file
 (`labs.yaml`) is applied; a document naming a kind under any authority but
 the substrate's own or the repository's is refused before anything is
@@ -185,7 +185,7 @@ run parked does not. A stop at a trigger or a delivery (a key refused, a
 trigger that cannot be read, a post refused or lost, a run that does not
 settle, a park) names the `-resume PROVIDER/NNNN` that takes the load up
 again: the providers before it and its own setup are skipped. A stop in a
-provider's setup (the runner, an install, an import, a record) names none;
+provider's setup (the runner, an add, a record) names none;
 the next load starts over, and skips the packages the repository already
 holds at the shipped version.
 The bearer comes from `SUBSTRATE_TOKEN`, never from argv, and is sent to the
@@ -204,7 +204,7 @@ holds the token.
   overlaps a workout, readings happen awake), the recording names and the
   mock server's parameter sets, a writer that replaces an earlier run, and
   every emitter agreeing on every night and workout within a minute.
-- `cmd/synth`'s tests drive `load` against a fake substrate: the import
+- `cmd/synth`'s tests drive `load` against a fake substrate: the sample
   order, the authority check, the catalog read, the refusal of a
   repository holding provider data synth did not write, the webhook key and
   its absence from a printed error, the retries, `-resume`, the token kept

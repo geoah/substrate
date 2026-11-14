@@ -148,7 +148,7 @@ func (ds *dataset) warnActionless(id string) {
 		return
 	}
 	ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing — give it allow, gate or refuse, or delete it",
-		"repository", logSafeID(ds.Repository().ID), "policy", logSafeID(id))
+		"repository", logSafeID(ds.info.ID), "policy", logSafeID(id))
 }
 
 // validatePolicyRow admits a recordpatchpolicy at the write door, the way a
@@ -701,6 +701,11 @@ func (t *txn) putGatedRequest(gw *gatedWrite) (string, error) {
 	if gw.policyID != "" {
 		props["policy"] = vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, gw.policyID)
 		props["policyRevision"] = gw.policyVersion
+	}
+	// The held write is held to the one check as if it were written: a hand
+	// whose rules do not reach the target has nothing to put up for review.
+	if err := t.authorizeWrite(gw.kind); err != nil {
+		return "", err
 	}
 	if _, err := t.put(substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: requestID, Properties: props,

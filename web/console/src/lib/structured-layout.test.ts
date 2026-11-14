@@ -73,7 +73,7 @@ const routine = specs({
           rirMax: { type: "decimal" },
           rest: { type: "duration" },
           tempo: { type: "string" },
-          load: { type: "decimal", writer: "connector" },
+          load: { type: "decimal", writer: ["function", "agent"] },
           stamp: { type: "datetime", managed: true },
         },
       },

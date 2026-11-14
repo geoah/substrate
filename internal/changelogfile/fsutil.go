@@ -63,3 +63,6 @@ func syncDir(dir string) error {
 	defer func() { _ = d.Close() }()
 	return d.Sync()
 }
+
+// SyncDir is syncDir for a caller that renames a repository directory.
+func SyncDir(dir string) error { return syncDir(dir) }

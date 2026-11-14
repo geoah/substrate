@@ -115,9 +115,6 @@ func (ds *dataset) sweepUnheldSealed(ctx context.Context) (int, error) {
 				return err
 			}
 			_ = rows.Close()
-			for _, ref := range refs {
-				t.mirrorSealedDelete(ref)
-			}
 			n = len(refs)
 			return nil
 		})

@@ -14,7 +14,7 @@ import (
 func entryAt(seq int64) Entry {
 	return Entry{
 		Seq: seq, TS: time.Date(2026, 9, 5, 10, 0, 0, int(seq)*1000, time.UTC),
-		Actor: "api", Principal: "k7abc", Op: "put",
+		Actor: "api", Token: "k7abc", Op: "put",
 		RecordID: fmt.Sprintf("rec%d", seq), Kind: "ada.example.com/task",
 		Txn:     seq,
 		Payload: json.RawMessage(fmt.Sprintf(`{"seq":%d,"n":1.50}`, seq)),
@@ -146,4 +146,26 @@ func seqZero() Entry {
 	e := entryAt(1)
 	e.Seq = 0
 	return e
+}
+
+// Report is what Verify read of a directory.
+type Report struct {
+	Segments         int
+	Entries          int64
+	Head             int64
+	TruncatedBytes   int64
+	TruncatedEntries int64
+}
+
+// Verify opens dir read-only and reports it: a test's look at what a
+// directory holds, every finished segment held to its sidecar.
+func Verify(dir string) (Report, error) {
+	l, err := OpenReadOnly(dir)
+	if err != nil {
+		return Report{}, err
+	}
+	return Report{
+		Segments: len(l.segments), Entries: l.head, Head: l.head,
+		TruncatedBytes: l.TruncatedBytes, TruncatedEntries: l.TruncatedEntries,
+	}, nil
 }

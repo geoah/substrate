@@ -92,8 +92,12 @@ func (t *txn) guardSettingWrite(sp *applySpec) error {
 		}
 	}
 	if sp.id == timezoneSettingID {
-		if err := guardTimezoneSetting(value); err != nil {
-			return err
+		// A zone the write names is held to the IANA database's spelling; a
+		// stored one the write leaves out is left as it is.
+		if _, named := sp.props[propSettingValue]; named {
+			if err := guardTimezoneSetting(value); err != nil {
+				return err
+			}
 		}
 	}
 	if value == "" {

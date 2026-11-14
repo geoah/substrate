@@ -88,10 +88,11 @@ func postRaw(h http.Handler, path, token string, body []byte) *httptest.Response
 
 // A JSON body past its route's cap is a 413 with code bad_request, on the
 // unauthenticated door and on the API alike; a body under the cap that does
-// not decode stays a 400.
+// not decode stays a 400. Each is the door's, before the service or the
+// dataset is reached.
 func TestOversizedJSONBodyIsTooLarge(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 	over := func(limit int64) []byte {
 		return []byte(`{"repository":"` + strings.Repeat("a", int(limit)) + `"}`)
 	}
@@ -114,11 +115,12 @@ func TestOversizedJSONBodyIsTooLarge(t *testing.T) {
 // A client that sends the headers and then stalls on the body is answered
 // at the route's deadline instead of holding its goroutine and connection
 // for as long as it likes. The server sets no ReadTimeout, so the per-route
-// deadline is the only thing that ends the wait.
+// deadline is the only thing that ends the wait. Each body is read before
+// the dataset is reached.
 func TestStalledBodyIsAnsweredAtTheDeadline(t *testing.T) {
 	shortBodyDeadlines(t)
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 	srv := httptest.NewServer(env.h)
 	defer srv.Close()
 	bearer := map[string]string{"Authorization": "Bearer " + tok, "Content-Type": "application/json"}

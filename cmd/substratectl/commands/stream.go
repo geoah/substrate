@@ -81,6 +81,7 @@ func streamChanges(out, errOut io.Writer, r io.Reader) error {
 func streamError(p substrate.ErrorPayload, opened bool, cursor int64, generation string) *apiError {
 	ae := &apiError{
 		Code:           p.Code,
+		Reason:         p.Reason,
 		Message:        p.Message,
 		Problems:       p.Problems,
 		ProblemDetails: p.ProblemDetails,

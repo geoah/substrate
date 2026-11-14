@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { KindInfo, SubstrateRecord, TriggerStatus } from "@/lib/api/types"
 import {
@@ -15,6 +16,7 @@ import {
   firstSentence,
   lastSyncOf,
   providerActors,
+  permissionState,
   providerStanding,
   providerTools,
   recurrenceWords,
@@ -31,6 +33,8 @@ import { noteServerDate, resetServerClock } from "@/lib/api/http"
 import { FAILED_PREVIEW_BLOCKER } from "@/lib/bundles"
 import { shortDate } from "@/lib/format"
 import { syncFieldsOf } from "@/lib/sync"
+
+beforeEach(() => seedActors())
 
 function record(
   id: string,
@@ -248,7 +252,7 @@ describe("providerStanding", () => {
     })
   })
 
-  it("says which account fails to sync, with the error and the fixes", () => {
+  it("says which account fails to sync, with the error, its technical text folded, and the fixes", () => {
     const s = providerStanding({
       ...base,
       accounts: [
@@ -271,10 +275,53 @@ describe("providerStanding", () => {
         code: "sync",
         summary: "Syncing ada@example.com is failing",
         detail: ["gmail: HTTP 403"],
+        technical: "trace",
         account: "ada",
         fixes: ["sync-now", "reconnect"],
       },
     ])
+  })
+
+  it("asks to reconnect an account whose sign-in predates a switch it has on", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [{ ...ada, ungranted: ["Gmail sending", "Calendar editing"] }],
+    })
+    expect(s).toMatchObject({
+      tone: "attention",
+      line: "Reconnect ada@example.com to approve Gmail sending and Calendar editing",
+    })
+    expect(s.problems).toEqual([
+      {
+        code: "permissions-missing",
+        summary:
+          "Reconnect ada@example.com to approve Gmail sending and Calendar editing",
+        detail: [
+          "They are turned on, but the account’s sign-in was approved before, so nothing can use them until you approve again.",
+        ],
+        account: "ada",
+        fixes: ["reconnect"],
+      },
+    ])
+  })
+
+  it("leaves a missing switch to the sign-in problem while the sign-in is broken", () => {
+    const s = providerStanding({
+      ...base,
+      accounts: [
+        { ...ada, tokenStatus: "erroring", ungranted: ["Gmail sending"] },
+      ],
+    })
+    expect(s.problems.map((p) => p.code)).toEqual(["sign-in"])
+  })
+
+  it("asks nothing of a token provider's accounts", () => {
+    const s = providerStanding({
+      ...base,
+      oauth: false,
+      accounts: [{ ...ada, ungranted: ["Gmail sending"] }],
+    })
+    expect(s.problems).toEqual([])
   })
 
   describe("a failing account asked to sync again", () => {
@@ -867,6 +914,15 @@ describe("connectionWords", () => {
     expect(connectionWords("erroring", "Google").text).toBe(
       "Its sign-in stopped working · reconnect it"
     )
+    expect(
+      connectionWords(
+        "erroring",
+        "Google",
+        "The provider couldn't renew this sign-in just now. It tries again on its own.\nprovider answered 502"
+      ).text
+    ).toBe(
+      "The provider couldn't renew this sign-in just now. It tries again on its own."
+    )
   })
 })
 
@@ -1123,7 +1179,7 @@ describe("what a provider did", () => {
       "substrate.reamde.dev/core/triggerrun"
     )
 
-  it("names the bundle and its functions as actors", () => {
+  it("links the actor records of the package and its functions", () => {
     expect(
       providerActors(G, [
         `${G}/synccontacts`,
@@ -1131,9 +1187,9 @@ describe("what a provider did", () => {
         `${G}/syncgmail`,
       ])
     ).toEqual([
-      "bundle:providers.substrate.reamde.dev:google",
-      "function:providers.substrate.reamde.dev:google:synccontacts",
-      "function:providers.substrate.reamde.dev:google:syncgmail",
+      "act-fn-google-synccontacts",
+      "act-fn-google-syncgmail",
+      "act-pkg-google",
     ])
   })
 
@@ -1178,5 +1234,59 @@ describe("approvedWords", () => {
     expect(
       approvedWords({ paused: false, lastSyncedAt: "2026-10-19T10:00:00Z" })
     ).toBe("is approved and a sync is starting.")
+  })
+})
+
+describe("permissionState", () => {
+  const feature = {
+    toggle: "enabledGmailWrite",
+    scopes: ["gmail.modify", "userinfo.email"],
+  }
+  const account = (
+    properties: Record<string, unknown>,
+    grantedScopes: string[],
+    tokenStatus = "connected"
+  ) => ({ record: { properties }, grantedScopes, tokenStatus })
+
+  it("is off until the owner turns it on", () => {
+    expect(
+      permissionState(account({}, ["gmail.readonly"]), feature, true)
+    ).toBe("off")
+  })
+
+  it("needs approval while the grant lacks one of its scopes", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, ["userinfo.email"]),
+        feature,
+        true
+      )
+    ).toBe("approve")
+  })
+
+  it("is allowed once the grant carries every scope", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, [
+          "gmail.modify",
+          "userinfo.email",
+        ]),
+        feature,
+        true
+      )
+    ).toBe("allowed")
+  })
+
+  it("waits on the account's own connect before anything else", () => {
+    expect(
+      permissionState(
+        account({ enabledGmailWrite: true }, [], "erroring"),
+        feature,
+        true
+      )
+    ).toBe("unconnected")
+    expect(permissionState(account({}, [], "pending"), feature, true)).toBe(
+      "off"
+    )
   })
 })

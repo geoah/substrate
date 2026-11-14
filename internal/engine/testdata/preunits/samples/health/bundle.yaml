@@ -143,10 +143,9 @@ data:
     """
     from decimal import Context, Decimal, ROUND_HALF_EVEN
 
-    HOME = "samples.substrate.reamde.dev"
-    LABRESULT = HOME + "/health/labresult"
-    ANALYTE = HOME + "/health/analyte"
-    METRIC = HOME + "/observations/metric"
+    LABRESULT = "samples.substrate.reamde.dev/health/labresult"
+    ANALYTE = "samples.substrate.reamde.dev/health/analyte"
+    METRIC = "samples.substrate.reamde.dev/observations/metric"
     FORMULA_VERSION = "1"
     MAX_ID = 128
 

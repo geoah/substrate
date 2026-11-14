@@ -63,7 +63,7 @@ func TestAgentQueryReads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-listed"),
 		Properties: map[string]any{"name": "first"},
 	}); err != nil {
@@ -155,7 +155,7 @@ func TestAgentWriteWritesWithinEmit(t *testing.T) {
 	if err != nil || len(changes) == 0 {
 		t.Fatalf("changes: %v %v", changes, err)
 	}
-	if changes[0].Actor != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/editor")) {
+	if changes[0].Actor != actorID(substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/editor"))) {
 		t.Fatalf("actor %q, want the agent's", changes[0].Actor)
 	}
 }
@@ -245,7 +245,7 @@ func TestAgentWriteRefusesAnUnknownInputKey(t *testing.T) {
 // or the API would.
 func putRequest(t *testing.T, ds *dataset, id, targetKind, targetID string, diff map[string]any) *substrate.Record {
 	t.Helper()
-	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	e, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: id,
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": diff},
@@ -275,13 +275,13 @@ func TestAgentWriteDecidesRequestsWithinEmit(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 
-	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	widget, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-decided"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	task, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: taskKind, ID: fid("t-guarded"), Properties: map[string]any{"name": "not the agent's"},
 	})
 	if err != nil {
@@ -373,7 +373,7 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "on-proposal",
 		Properties: map[string]any{
 			"source": map[string]any{"record": map[string]any{
@@ -384,7 +384,7 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("put the proposal trigger: %v", err)
 	}
-	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	widget, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-reviewed"), Properties: map[string]any{"name": "raw"},
 	})
 	if err != nil {
@@ -421,7 +421,7 @@ func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 
 	// The chat surface refuses before any completion is bought.
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/judge", substrate.ChatInput{Message: "hi"}, nil)
+	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/judge", substrate.ChatInput{Message: "hi"}, nil)
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "hidden from chat") {
 		t.Fatalf("chat on an agent hidden from chat: %v", err)
 	}
@@ -464,7 +464,7 @@ func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
 	ds, _ := openAgentDataset(t)
 	const pkg = "window.agent.example/timeline"
 	series := pkg + "/series"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 1),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "series"}, map[string]any{
 			"traits": []any{"substrate.reamde.dev/core/temporal(range)", "substrate.reamde.dev/core/recurring"},
@@ -479,7 +479,7 @@ func TestAgentQueryBoundedOnAtComputesOccurrences(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("declare the series kind: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: series, ID: fid("meds"), Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: series, ID: fid("meds"), Properties: map[string]any{
 		"name": "Meds", "recurrence": "FREQ=DAILY;BYHOUR=7,19;BYMINUTE=30", "timezone": "UTC",
 		"at": "2026-09-01T07:30:00Z", "endsAt": "2026-09-01T07:35:00Z",
 	}}); err != nil {

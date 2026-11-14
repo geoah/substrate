@@ -41,6 +41,9 @@ type shippedUpgradeStage struct {
 	// because a reference at a kind the same transaction carries must not be
 	// counted as pointing elsewhere, and they run first inside it.
 	moves []kindMove
+	// current is the registry the stored declarations compile to. The move
+	// checks read it in guards, once the moves' live rows are known.
+	current *vocabulary.Registry
 	// narrowings are the guards that need a live-row count. guards runs them
 	// over whichever reader the door holds: the boot's transaction, or the
 	// bare pool for the read.
@@ -103,7 +106,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 		return nil, err
 	}
 	current := ds.registry()
-	st := &shippedUpgradeStage{upgrade: map[string]bool{}, keep: map[string]bool{}}
+	st := &shippedUpgradeStage{upgrade: map[string]bool{}, keep: map[string]bool{}, current: current}
 	// The kinds and package headers this upgrade will NOT rewrite, by
 	// identity: a declaration held at its stored version keeps whatever shape
 	// it declares, so it is not the upgrade's business and must not be able
@@ -179,14 +182,13 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	st.moves = classifyKindMoves(current, reg, st.upgrade, keptIdents)
 	moved := movedTargets(st.moves)
 	st.narrowings = classifyNarrowingsExcept(current, reg, st.upgrade, keptIdents, moved)
-	st.refused = append(st.refused, moveGuards(current, st.moves)...)
 
 	// The default check `/vocabulary/apply` takes, for the same reason the
 	// narrowing guards are here: a declared default no write could store would
 	// land at boot and break every create of that kind afterwards, and the door
 	// that refuses it by hand would have caught it. It needs no live rows, so it
 	// is decided before any row is counted.
-	st.refused = checkDeclaredDefaults(ds.coercer(), reg, st.upgrade)
+	st.refused = append(st.refused, checkDeclaredDefaults(ds.coercer(), reg, st.upgrade)...)
 	// The retired-name check the same door takes (decision 0055): a shipped
 	// declaration that reuses a name this repository's stored closure retired,
 	// or a tree that dropped a stored retirement, is refused before any row
@@ -200,7 +202,7 @@ func (ds *dataset) stageShippedUpgrade(ctx context.Context) (*shippedUpgradeStag
 	// The apply door refuses what its candidate cannot compile; this door had
 	// no candidate, so a shipped change a stored package could not re-resolve
 	// against (a mapping path naming a property the tree dropped or renamed)
-	// landed, and admissibleSubset quarantined the user's package at the next
+	// landed, and admissibleInto quarantined the user's package at the next
 	// load for a change the tree made. The candidate is built on EVERY upgrade
 	// (shippedCandidate: the stored registry with the upgraded packages
 	// replaced by the shipped ones) and its problems refuse the boot. The cost
@@ -438,10 +440,22 @@ func (st *shippedUpgradeStage) guards(q sqlReader, ceiling int64) ([]string, sub
 	if err != nil {
 		return nil, substrate.ConversionPlan{}, err
 	}
+	// A move's declaration checks are asked only while its old kind holds
+	// live rows (decision records 0078 and 0257): an old kind left declared
+	// and empty, as every repository that predates a shipped move keeps one,
+	// carries nothing, so a later upgrade of the new kind trips none of them.
+	// The store's own lines above (a reference left pinned at the old kind)
+	// are asked of every move.
+	lines = append(lines, moveGuards(st.current, carrying(planned.moves))...)
 	grants, err := countGrants(q, movedTargets(st.moves))
 	if err != nil {
 		return nil, substrate.ConversionPlan{}, err
 	}
+	carried, err := countCarriedOverrides(q, st.moves)
+	if err != nil {
+		return nil, substrate.ConversionPlan{}, err
+	}
+	grants += carried
 	st.conversions.moves, st.conversions.grantPatches = planned, grants
 	lines = append(lines, moveLines...)
 	plan, err := st.conversions.wire(q, ceiling, false)

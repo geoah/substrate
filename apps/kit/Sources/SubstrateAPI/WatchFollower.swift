@@ -140,7 +140,13 @@ public struct WatchFollower: Sendable {
                     cursor = WatchCursor(seq: row.seq, generation: cursor?.generation ?? "")
                     continuation.yield(.row(row))
                 case let .failed(code, message):
-                    continuation.yield(code == "compacted" ? .relist : .ended(.refused(message)))
+                    // `auth` is the stream's token ending (revoked, or the
+                    // person signed out everywhere): sign in again.
+                    switch code {
+                    case "compacted": continuation.yield(.relist)
+                    case "auth": continuation.yield(.ended(.signedOut))
+                    default: continuation.yield(.ended(.refused(message)))
+                    }
                     return .finished
                 }
             }

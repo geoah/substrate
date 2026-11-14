@@ -83,13 +83,13 @@ func TestDeadWordsAreReadOffTerms(t *testing.T) {
 	for _, d := range vocab.dead {
 		got[d.word] = d.replacement
 	}
-	for _, want := range []string{"entity", "type", "group", "log", "edge", "relationship", "tenant", "identity", "integration", "configtype", "singleton"} {
+	for _, want := range []string{"entity", "type", "group", "log", "edge", "relationship", "tenant", "username", "integration", "configtype", "singleton"} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("terms.md's dead word %q was not read: %v", want, got)
 		}
 	}
 	// The live word after each arrow is never read as dead.
-	for _, live := range []string{"record", "kind", "authority", "trait", "vocabulary", "changelog", "bundle", "reference", "provider", "input"} {
+	for _, live := range []string{"record", "kind", "authority", "trait", "vocabulary", "changelog", "bundle", "reference", "provider", "input", "identity"} {
 		if _, ok := got[live]; ok {
 			t.Errorf("the live word %q was read as dead: %v", live, got)
 		}

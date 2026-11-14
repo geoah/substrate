@@ -31,6 +31,7 @@ import { PageHeader } from "@/components/identity/page-header"
 import { DocPage } from "@/components/identity/page-layout"
 import { OAuthHosts } from "@/components/packages/outside-code"
 import { AccountsSection } from "@/components/providers/accounts-section"
+import { AgentAccessSection } from "@/components/providers/agent-access-section"
 import { AddonsSection } from "@/components/providers/addons-section"
 import {
   ImportAgainNote,
@@ -367,6 +368,16 @@ function ProviderDoc({
             <p className="mt-2 text-[12.5px] text-muted-foreground">
               Showing the first accounts only.
             </p>
+          )}
+          {entry.permissions.length > 0 && (
+            <>
+              <SectionHead
+                id="agents"
+                title="What your agents may do"
+                hint="Each is off until you allow it"
+              />
+              <AgentAccessSection entry={entry} />
+            </>
           )}
         </>
       )}

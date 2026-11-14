@@ -1,8 +1,11 @@
 /** Who did something, in plain words: "You", an agent by its name, a
- * provider's sync by the provider, the substrate itself. The raw actor string
- * (decision 0025's grammar) is never shortened away: it rides the hover card,
- * and technical mode shows it inline. */
+ * provider's sync by the provider, the substrate itself. A change and a
+ * manager link an actor record by its id (decision 0270), and the name is read
+ * from that record (actor-directory.ts). The id is never shortened away: it
+ * rides the hover card, and technical mode shows it inline. */
 
+import { actorInfo } from "@/lib/actor-directory"
+import type { ActorInfo } from "@/lib/api/actors"
 import { CORE_PACKAGE } from "@/lib/api/http"
 import { packageDisplayName } from "@/lib/kind-names"
 
@@ -58,25 +61,20 @@ export type ActorClass =
   "you" | "agent" | "function" | "bundle" | "app" | "engine"
 
 export interface ActorIdentity {
-  /** The actor string as stored. */
+  /** The id of the actor record, "" for a hand named by its identity
+   * alone. */
   actor: string
   cls: ActorClass
   /** The plain name the page shows. */
   name: string
-  /** For "You": the door the write came through ("this console"). */
-  via?: string
   /** The provider a function or bundle acts for. */
   provider?: ProviderInfo
   /** One sentence for the hover card. */
   description: string
   /** The declaration record behind the actor, where it has one. */
   record?: { kind: string; id: string }
-}
-
-const DOORS: Record<string, string> = {
-  console: "this console",
-  substratectl: "the command line",
-  api: "the API",
+  /** True once the code or approval behind the actor is gone. */
+  disabled?: boolean
 }
 
 /** A provider function's name: `synccontacts` → "Google Contacts sync",
@@ -105,70 +103,42 @@ export function agentName(id: string): string {
   return capitalise(spaced.trim() || id)
 }
 
-export function actorIdentity(actor: string): ActorIdentity {
-  if (actor === "substrate") {
-    return {
-      actor,
-      cls: "engine",
-      name: "Substrate",
-      description: "The substrate itself: merges, schedules and housekeeping.",
-    }
+/** The identity of an agent, from the agent's own identity
+ * (`<authority>/<package>/<name>`). */
+export function agentIdentity(identity: string, actor = ""): ActorIdentity {
+  return {
+    actor,
+    cls: "agent",
+    name: agentName(identity),
+    description: "One of your agents.",
+    record: { kind: `${CORE_PACKAGE}/agent`, id: identity },
   }
-  // An app whose access went to this device writes as `app:local`: nothing
-  // tells two programs on the owner's device apart (decision 0209).
-  if (actor === "app:local") {
-    return {
-      actor,
-      cls: "app",
-      name: "An app on this device",
-      description:
-        "An app you approved that runs on your device. Nothing confirms which program it is. Settings, under Apps, lists it.",
-    }
-  }
-  // An app the owner approved writes as `app:<authority>` when its publisher
-  // was verified and `app:<host>` otherwise (decisions 0194 and 0209): it is
-  // the app, never the owner, even though its token is one of theirs.
-  if (actor.startsWith("app:") && actor.length > "app:".length) {
-    return {
-      actor,
-      cls: "app",
-      name: actor.slice("app:".length),
-      description: "An app you approved. Settings, under Apps, lists it.",
-    }
-  }
-  const parts = actor.split(":")
-  const [head, authority, pkg, name] = parts
+}
+
+/** The identity of a function, from the function's own identity
+ * (`<authority>/<package>/<name>`). */
+export function functionIdentity(identity: string, actor = ""): ActorIdentity {
+  const [authority, pkg, name] = identity.split("/")
   const provider =
     authority === PROVIDERS_AUTHORITY && pkg ? providerInfo(pkg) : undefined
-  if (head === "agent" && parts.length === 4) {
-    return {
-      actor,
-      cls: "agent",
-      name: agentName(name),
-      description: "One of your agents.",
-      record: {
-        kind: `${CORE_PACKAGE}/agent`,
-        id: `${authority}/${pkg}/${name}`,
-      },
-    }
+  return {
+    actor,
+    cls: "function",
+    name: provider
+      ? functionName(provider, name ?? identity)
+      : (name ?? identity),
+    provider,
+    description: provider
+      ? `Runs for ${provider.name}, a provider you added.`
+      : "One of your tools.",
+    record: { kind: `${CORE_PACKAGE}/function`, id: identity },
   }
-  if (head === "function" && parts.length === 4) {
-    return {
-      actor,
-      cls: "function",
-      name: provider ? functionName(provider, name) : name,
-      provider,
-      description: provider
-        ? `Runs for ${provider.name}, a provider you added.`
-        : "One of your tools.",
-      record: {
-        kind: `${CORE_PACKAGE}/function`,
-        id: `${authority}/${pkg}/${name}`,
-      },
-    }
-  }
-  // The seeded packages install under a bare package word (`bundle:core`).
-  if (head === "bundle" && parts.length === 2) {
+}
+
+/** The identity of a package's own installs, from the package's identity
+ * (`<authority>/<package>`). */
+export function packageIdentity(identity: string, actor = ""): ActorIdentity {
+  if (identity === CORE_PACKAGE) {
     return {
       actor,
       cls: "bundle",
@@ -176,43 +146,78 @@ export function actorIdentity(actor: string): ActorIdentity {
       description: "The substrate's own built-in package.",
     }
   }
-  if (head === "bundle" && parts.length === 3) {
-    return {
-      actor,
-      cls: "bundle",
-      name: provider ? provider.name : packageDisplayName(pkg),
-      provider,
-      description: provider
-        ? "A provider you added."
-        : "A bundle this repository installed.",
-      record: { kind: `${CORE_PACKAGE}/bundle`, id: `${authority}/${pkg}` },
-    }
-  }
-  // An authority-shaped name is a single-writer bundle acting under its
-  // authority's name (record 60), or a provider's package under it.
-  if (!actor.includes(":") && actor.includes(".")) {
-    const [owner, pkgWord] = actor.split("/")
-    const named =
-      owner === PROVIDERS_AUTHORITY && pkgWord
-        ? providerInfo(pkgWord)
-        : undefined
-    return {
-      actor,
-      cls: "bundle",
-      name: named ? named.name : actor,
-      provider: named,
-      description: named
-        ? "A provider you added."
-        : "A bundle acting under its authority's name.",
-    }
-  }
-  // Every other name is one a request asserted, and a request carries one of
-  // this repository's tokens: it is the person who owns them.
+  const [authority, pkg] = identity.split("/")
+  const provider =
+    authority === PROVIDERS_AUTHORITY && pkg ? providerInfo(pkg) : undefined
   return {
     actor,
-    cls: "you",
-    name: "You",
-    via: DOORS[actor] ?? actor,
-    description: "You, signed in.",
+    cls: "bundle",
+    name: provider ? provider.name : packageDisplayName(pkg ?? identity),
+    provider,
+    description: provider
+      ? "A provider you added."
+      : "A package this repository installed.",
+    record: { kind: `${CORE_PACKAGE}/package`, id: identity },
+  }
+}
+
+/** The identity an actor record describes. */
+export function identityOfActor(info: ActorInfo): ActorIdentity {
+  const disabled = info.disabled || undefined
+  switch (info.type) {
+    case "system":
+      return {
+        actor: info.id,
+        cls: "engine",
+        name: "Substrate",
+        description:
+          "The substrate itself: merges, schedules and housekeeping.",
+      }
+    case "app":
+      // An app whose access went to this device is one actor: nothing tells
+      // two programs on the owner's device apart (decision 0209).
+      return info.publisher === "local"
+        ? {
+            actor: info.id,
+            cls: "app",
+            name: "An app on this device",
+            description:
+              "An app you approved that runs on your device. Nothing confirms which program it is. Settings, under Apps, lists it.",
+            disabled,
+          }
+        : {
+            actor: info.id,
+            cls: "app",
+            name: info.publisher || info.name,
+            description: "An app you approved. Settings, under Apps, lists it.",
+            disabled,
+          }
+    case "agent":
+      return { ...agentIdentity(info.link ?? info.name, info.id), disabled }
+    case "function":
+      return { ...functionIdentity(info.link ?? info.name, info.id), disabled }
+    case "package":
+      return { ...packageIdentity(info.link ?? info.name, info.id), disabled }
+    case "person":
+      return {
+        actor: info.id,
+        cls: "you",
+        name: "You",
+        description: "You, signed in.",
+      }
+  }
+}
+
+/** The identity of the actor record an id links, read from the directory. An
+ * id the directory does not hold yet reads as an actor of no known kind, and
+ * keeps its id. */
+export function actorIdentity(actor: string): ActorIdentity {
+  const info = actorInfo(actor)
+  if (info) return identityOfActor(info)
+  return {
+    actor,
+    cls: "engine",
+    name: "An actor",
+    description: "An actor this console has not read.",
   }
 }

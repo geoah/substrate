@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -24,13 +23,11 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>console"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	svc := newFakeService()
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	h := New(Config{Service: svc, Now: clock.now, WebDir: dir})
+	h := newStubEnv(t, newStubKinds(personKind), func(c *Config) { c.WebDir = dir }).h
 	// A token, so the authenticated subtree answers about the PATH rather than
 	// about the caller (an unauthenticated 401 is the right answer there, and it
 	// is a JSON problem object already).
-	tok := svc.token(fakeRepository)
+	tok := stubToken
 
 	for _, path := range []string{
 		"/api",
@@ -78,8 +75,8 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 // With no console built in, an unmatched API path is STILL the JSON problem
 // object — the contract belongs to the API, not to the presence of a WebDir.
 func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 	// `/api/v1/nope` matches no route at all — not even the generic
 	// {authority}/{package}/{kind}/{id} record, whose own 404 is a JSON
 	// problem object already — so it is the router's fallback that has to
@@ -101,8 +98,8 @@ func TestUnmatchedAPIPathsAreJSONWithoutAWebDir(t *testing.T) {
 // never silence. A silently dropped parameter returns UNFILTERED rows that look
 // filtered, which is the worst answer available.
 func TestUnknownListParamsAreRefused(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 
 	for _, query := range []string{"?bogus=1", "?first=2&bogus=1", "?limit=5", "?watch=1&bogus=1"} {
 		rec := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
@@ -126,40 +123,16 @@ func TestUnknownListParamsAreRefused(t *testing.T) {
 	}
 }
 
-// Every parameter the list DOES support keeps working — the refusal above must
-// not be a blanket one.
-func TestSupportedListParamsStillWork(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	createPerson(t, env, tok)
-
-	for _, query := range []string{
-		"",
-		"?first=5",
-		"?after=",
-		"?orderBy=updatedAt:desc",
-		"?withAnnotations=1",
-		"?expand=manager",
-		`?filter={"properties":{"name":{"eq":"Ada"}}}`,
-		`?filter={"kinds":["` + personKind + `"]}&first=5&orderBy=createdAt&withAnnotations=1`,
-	} {
-		rec := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-	}
-	// The watch mode's own parameters: the switch and the resume cursor.
-	wantNotRefused(t, env, recordsPath+"?watch=1&from=0", tok)
-	generation := env.svc.datasets[fakeRepository].generation
-	wantNotRefused(t, env, recordsOf(t, personKind, "watch=1", "from=1", "generation="+generation), tok)
-}
-
 // A single-record GET honors no query parameter, so every one is refused by
 // name with the body the list answers (#335). It was a silent 200 before: a
 // client sending a stale `withEdges` or an `expand` the read never runs got
-// the bare record back and could not tell.
+// the bare record back and could not tell. Every refusal is the door's: the
+// stub has no Get and no List, so a read that reached the dataset would be a
+// 500. The read without a parameter is TestRecordReadAnswersWithoutParameters.
 func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	id := createPerson(t, env, tok)
+	env := newStubEnv(t, newStubKinds(personKind))
+	tok := stubToken
+	id := "p1"
 
 	// Refused on the list too, so the two bodies must match byte for byte.
 	for _, query := range []string{"?withEdges=1", "?bogus=1", "?limit=5"} {
@@ -191,26 +164,18 @@ func TestUnknownRecordReadParamsAreRefused(t *testing.T) {
 	// The kind is resolved first, as on DELETE: an unknown kind is still 404.
 	rec = env.do(t, http.MethodGet, "/api/v1/samples.substrate.reamde.dev/people/widgets/"+id+"?bogus=1", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-
-	// With no parameter the read answers as before, an empty query included.
-	for _, query := range []string{"", "?"} {
-		rec := env.do(t, http.MethodGet, peoplePath+"/"+id+query, tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-		if got := decodeJSON[substrate.Record](t, rec).ID; got != id {
-			t.Errorf("GET record%s: id = %q, want %q", query, got, id)
-		}
-	}
 }
 
 // A query string that does not parse is refused on every route that names its
 // parameters. r.URL.Query() drops the pair it cannot read, so `?filter=%ZZ`
 // listed every row and `?bogus=1;x=2` passed the name check as a clean query.
+// The refusal is the door's: the recorder answers List alone, so any other
+// read or write that reached the dataset would be a 500.
 func TestMalformedQueryStringsAreRefused(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	id := createPerson(t, env, tok)
-	seedChanges(ds, 3)
+	ds := newRecordsRecorder()
+	env := newStubEnv(t, ds)
+	tok := stubToken
+	id := "p1"
 
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, peoplePath + "/" + id + "?bogus=1;x=2"},
@@ -222,20 +187,20 @@ func TestMalformedQueryStringsAreRefused(t *testing.T) {
 		{http.MethodGet, changesPath + "?ops=put;delete"},
 		{http.MethodDelete, peoplePath + "/" + id + "?ifVersion=1;purge=true"},
 	} {
-		ds.lastDeleteID = ""
 		rec := env.do(t, c.method, c.path, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		if !strings.HasPrefix(msg, "malformed query string: ") || strings.Contains(msg, "not supported") {
 			t.Errorf("%s %s: message = %q, want the parse error alone", c.method, c.path, msg)
 		}
-		if ds.lastDeleteID != "" {
-			t.Errorf("%s %s reached the dataset", c.method, c.path)
-		}
 	}
-	// An escaped `;` and `%` are ordinary characters, not a malformed query.
+	// An escaped `;` and `%` are ordinary characters, not a malformed query,
+	// and reach the list as the characters they spell.
 	rec := env.do(t, http.MethodGet, recordsPath+`?filter={"properties":{"name":{"eq":"A%3Bda%25"}}}`, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
+	if got := ds.query.Filter.Properties["name"].Eq; got != "A;da%" {
+		t.Fatalf("the list saw name eq %v, want A;da%%", got)
+	}
 }
 
 // wantNotRefused drives a WATCH request to completion: the stream would
@@ -257,11 +222,12 @@ func wantNotRefused(t *testing.T, env *testEnv, path, token string) {
 
 // The changes feed's filter keys are PLURAL, so the plausible singular guess
 // (`type=`, `op=`, `actor=`) used to be dropped in silence and answer with the
-// whole unfiltered feed looking like a filtered one.
+// whole unfiltered feed looking like a filtered one. The refusal is the
+// door's: the stub has no change feed, so a read that reached the dataset
+// would be a 500.
 func TestUnknownChangeParamsAreRefused(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	seedChanges(env.svc.datasets[fakeRepository], 3)
+	env := newStubEnv(t, nil)
+	tok := stubToken
 
 	for query, want := range map[string]string{
 		"?kind=samples.substrate.reamde.dev/people/person": "kinds",
@@ -276,27 +242,4 @@ func TestUnknownChangeParamsAreRefused(t *testing.T) {
 			t.Errorf("%s: message = %q, want the plural %q suggested", query, msg, want)
 		}
 	}
-}
-
-// The feed's real parameters keep working, in both of its modes.
-func TestSupportedChangeParamsStillWork(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	seedChanges(env.svc.datasets[fakeRepository], 3)
-
-	for _, query := range []string{
-		"",
-		"?from=0",
-		"?first=2",
-		"?first=2&before=3&generation=" + env.svc.datasets[fakeRepository].generation,
-		"?kinds=samples.substrate.reamde.dev/people/person&ops=put&actors=owner",
-		"?excludeKinds=samples.substrate.reamde.dev/tasks/task&excludeOps=delete&excludeActors=machine",
-		"?recordId=e1&recordKind=samples.substrate.reamde.dev/people/person",
-		"?q=ada",
-	} {
-		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-	}
-	generation := env.svc.datasets[fakeRepository].generation
-	wantNotRefused(t, env, changesPath+"?watch=1&from=3&generation="+generation+"&kinds=samples.substrate.reamde.dev/people/person", tok)
 }

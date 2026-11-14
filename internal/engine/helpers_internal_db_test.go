@@ -42,11 +42,10 @@ func newRaceDataset(t *testing.T, opts ...Option) *dataset {
 		t.Fatalf("dataset is a %T", d)
 	}
 	importVocabulary(t, ds, "tasks")
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "race", Authority: racePackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(racePackage, 0),
-			vocabulary.ActorManifest(racePackage, vocabulary.PackageActor(racePackage)),
 			vocabulary.KindManifest(racePackage, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		},
@@ -58,7 +57,7 @@ func newRaceDataset(t *testing.T, opts ...Option) *dataset {
 
 func racePut(t *testing.T, ds *dataset, props map[string]any) *substrate.Record {
 	t.Helper()
-	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	e, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: raceWidget, Properties: props,
 	})
 	if err != nil {
@@ -123,7 +122,6 @@ func widgetsManifest(withTrigger bool) enginetest.Manifest {
 		Name: "widgets", Authority: widgetsPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(widgetsPackage, 0),
-			vocabulary.ActorManifest(widgetsPackage, vocabulary.PackageActor(widgetsPackage)),
 			vocabulary.KindManifest(widgetsPackage, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(widgetsPackage, "mirror", map[string]any{

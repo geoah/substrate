@@ -47,7 +47,7 @@ func TestParseTailReadsWhatEncodeWrote(t *testing.T) {
 		if tail.seq != e.Seq || tail.txn != e.Txn || tail.sum != sum {
 			t.Fatalf("seq %d: tail = %+v, want seq %d txn %d", e.Seq, tail, e.Seq, e.Txn)
 		}
-		cut := append(append([]byte(nil), line[:tail.sumAt]...), line[tail.tsAt:]...)
+		cut := append(append([]byte(nil), line[:tail.sumAt]...), line[tail.sumEnd:]...)
 		if sha256.Sum256(cut) != sum {
 			t.Fatalf("seq %d: the line without its sum pair is not what the sum hashes: %s", e.Seq, cut)
 		}
@@ -131,13 +131,13 @@ func restamp(t *testing.T, line []byte) []byte {
 	if !ok {
 		t.Fatalf("no tail to restamp: %s", line)
 	}
-	cut := append(append([]byte(nil), line[:tail.sumAt]...), line[tail.tsAt:]...)
+	cut := append(append([]byte(nil), line[:tail.sumAt]...), line[tail.sumEnd:]...)
 	sum := sha256.Sum256(cut)
 	out := append([]byte(nil), line[:tail.sumAt]...)
 	out = append(out, sumKey...)
 	out = append(out, fmt.Sprintf("%x", sum)...)
 	out = append(out, `",`...)
-	return append(out, line[tail.tsAt:]...)
+	return append(out, line[tail.sumEnd:]...)
 }
 
 // A line whose bytes hash to its sum but whose keys are not the ones Encode

@@ -25,7 +25,7 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 		},
 		"action": "gate",
 	})
-	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	widget, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-doomed"), Properties: map[string]any{"name": "keep me"},
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 	}
 
 	// The precondition is part of the reviewed envelope.
-	_, err = ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	_, err = ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{propIfVersion: 7},
 	})
 	if err == nil || !strings.Contains(err.Error(), "immutable") {
@@ -60,12 +60,12 @@ func TestGatedDeleteCarriesIfVersionToTheAccept(t *testing.T) {
 	}
 
 	// The target moves while the request waits.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, crewPackage+"/widget", widget.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, crewPackage+"/widget", widget.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": "edited since"},
 	}); err != nil {
 		t.Fatalf("edit target: %v", err)
 	}
-	_, err = ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	_, err = ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	})
 	if err == nil {

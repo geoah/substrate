@@ -11,10 +11,12 @@ import (
 )
 
 // apiError is the rendered form of the substrate error envelope
-// {"error":{"code","message","problems","problemDetails"}}.
+// {"error":{"code","reason","message","problems","problemDetails"}}.
 type apiError struct {
-	Status   int
-	Code     string
+	Status int
+	Code   string
+	// Reason narrows Code where the server gives one (substrate.ErrorPayload).
+	Reason   string
 	Message  string
 	Problems []string
 	// ProblemDetails is the same validation refusal field-addressed, which a
@@ -30,8 +32,11 @@ type apiError struct {
 	// re-lists from and resumes at (docs/changelog.md, frames and the horizon).
 	Head       *int64
 	Generation string
-	Method     string
-	Path       string
+	// Repositories ride a sign-in refused with `repository_required`: the
+	// repositories the person may open, one of which goes in `--repository`.
+	Repositories []substrate.RepositoryChoice
+	Method       string
+	Path         string
 	// Hint, when set, replaces the status-derived next action.
 	Hint string
 	// Headline, when set, replaces the code-derived headline: `validate`
@@ -89,6 +94,10 @@ func (e *apiError) headline() string {
 		return "rate limited"
 	case "compacted":
 		return "the cursor no longer addresses this changelog"
+	case "unavailable":
+		if e.Reason == substrate.ReasonSetAside {
+			return "the repository is set aside"
+		}
 	}
 	return fmt.Sprintf("request failed with status %d", e.Status)
 }
@@ -99,6 +108,8 @@ func (e *apiError) hint() string {
 		return e.Hint
 	}
 	switch {
+	case e.Reason == substrate.ReasonSetAside:
+		return "the server found this repository damaged when it started: it serves the others, writes nothing to this one, and serves it again once its operator repairs it and restarts the server"
 	case e.Status == 401 || e.Code == "auth":
 		return "run `substratectl login` to mint a new token"
 	case e.Status == 409 || e.Code == "conflict":
@@ -125,19 +136,16 @@ func (e *apiError) hint() string {
 	return ""
 }
 
-// lossyHint names the command that carries --allow-data-loss for the door
+// lossyHint names the command that carries --allow-data-loss for the route
 // that refused (decisions 0067 and 0070): the consent is bound to a preview,
-// so the flag previews first and confirms exactly what it printed. A sample
-// re-import's preview is the catalog's, read off the copy's origin stamp, and
-// it covers the edits the re-import replaces as well as the values it removes.
+// so the flag previews first and confirms exactly what it printed. A sample's
+// preview is the catalog's, read off the copy's origin stamp, and it covers
+// the edits adding it again replaces as well as the values it removes.
 func lossyHint(path string) string {
-	switch {
-	case strings.Contains(path, "/vocabulary/apply"):
+	if strings.Contains(path, "/vocabulary/apply") {
 		return "re-run `substratectl apply --allow-data-loss`: it previews the plan, prints the steps that remove values and confirms exactly those"
-	case strings.Contains(path, "/catalog/") && strings.HasSuffix(path, "/import"):
-		return "re-run `substratectl import <sample> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, the edits the re-import replaces) and confirms exactly that plan"
 	}
-	return "re-run `substratectl install <package> --allow-data-loss`: it reads the preview, prints the steps that remove values and confirms exactly those"
+	return "re-run `substratectl add <package> --allow-data-loss`: it reads the preview, prints what goes (the values a step removes, and the edits to a sample copy it replaces) and confirms exactly that plan"
 }
 
 // guardHint branches on what was actually refused. A `guard` on a record

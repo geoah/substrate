@@ -73,8 +73,9 @@ var webhookHeaderDenylist = map[string]bool{
 	"authorization": true, "cookie": true, "proxy-authorization": true, "set-cookie": true,
 }
 
-// postWebhook is POST /webhooks/{authority}/{trigger}[/{key}]: the public door
-// (decision 0045). No bearer; the path names the repository and the trigger,
+// postWebhook is POST /webhooks/{repository}/{trigger}[/{key}]: the public door
+// (decision 0045). No bearer; the path names the repository, by its id or by
+// its name (decision 0261), and the trigger,
 // and the trigger's own key, when it declares one, is the credential, read
 // from the trailing path segment, `?key=` or a bearer header; an app's token
 // as the bearer stands in for it under `webhook:` (webhookGranted). The
@@ -99,14 +100,27 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 		deadline = webhookMultipartDeadline
 	}
 	clear := bodyDeadline(w, deadline)
-	authority, trigger, key := pathParam(r, "authority"), pathParam(r, "trigger"), webhookKey(r)
+	named, trigger, key := pathParam(r, "repository"), pathParam(r, "trigger"), webhookKey(r)
 	ctx := r.Context()
-	granted, bearer := h.webhookGranted(r, authority, trigger, key), key
+	// The path's name becomes an id here, once (decision record 0287): the
+	// token, the grant and the engine all see the id, so a name that changes
+	// hands meanwhile cannot carry one repository's token to another's.
+	repository, err := h.svc.RepositoryIDOf(ctx, named)
+	if err != nil {
+		w.Header().Set("Connection", "close")
+		refuseUnread(w, r, err)
+		return
+	}
+	tok, granted := h.webhookGranted(r, repository, trigger, key)
+	bearer := key
 	if granted {
-		ctx = substrate.WithWebhookGrant(ctx, authority, trigger)
+		ctx = substrate.WithWebhookGrant(ctx, repository, trigger)
+		// The delivery acts for the token's person, and its run is held to
+		// their roles (decision 0276).
+		ctx = substrate.WithOnBehalfOf(substrate.WithIdentity(ctx, tok.Identity), substrate.ActorPerson)
 		key = ""
 	}
-	target, err := h.svc.CheckWebhook(ctx, authority, trigger, key)
+	target, err := h.svc.CheckWebhook(ctx, repository, trigger, key)
 	if err != nil {
 		// net/http reads the rest of a body before it answers, unless the
 		// answer closes the connection: a refusal reads none of it.
@@ -151,11 +165,11 @@ func (h *handler) postWebhook(w http.ResponseWriter, r *http.Request) {
 	clear()
 	// The body may take minutes: a token revoked or lapsed meanwhile no
 	// longer delivers, and is refused as a wrong key is.
-	if granted && !h.webhookGranted(r, authority, trigger, bearer) {
+	if _, still := h.webhookGranted(r, repository, trigger, bearer); granted && !still {
 		writeWebhookError(w, r, substrate.ErrNotFound)
 		return
 	}
-	fid, err := h.svc.ReceiveWebhook(ctx, authority, trigger, key, req)
+	fid, err := h.svc.ReceiveWebhook(ctx, repository, trigger, key, req)
 	if err != nil {
 		writeWebhookError(w, r, err)
 		return
@@ -215,9 +229,11 @@ func webhookKey(r *http.Request) string {
 }
 
 // webhookGranted reports whether the bearer, the request's only credential,
-// is an app's token that delivers to this trigger in this repository
-// (`webhook:`, docs/plans/app-setup.md), which the engine then takes in place
-// of the trigger's key. Anything short of that, a revoked or lapsed token, a
+// is an app's token that delivers to this trigger in the repository with id
+// repository (`webhook:`, docs/plans/app-setup.md), which the engine then
+// takes in place of the trigger's key, and answers the token. Its person must
+// hold a role in the repository now: a token acts for its person, and one
+// whose person holds none delivers nothing (decision 0275). Anything short of that, a revoked or lapsed token, a
 // full-access one, one of another repository or one without the scope, stays
 // the key the bearer always was, so it is refused exactly as a wrong key is
 // and the answer tells a sender nothing about the token.
@@ -226,27 +242,35 @@ func webhookKey(r *http.Request) string {
 // ask for: one that finds no token is charged to its source, and a source
 // that spent its pace is looked up no more until it refills, its bearer the
 // wrong key it then is.
-func (h *handler) webhookGranted(r *http.Request, authority, trigger, key string) bool {
+func (h *handler) webhookGranted(r *http.Request, repository, trigger, key string) (substrate.TokenInfo, bool) {
+	var none substrate.TokenInfo
 	secret := bearerSecret(r)
 	if secret == "" || secret != key || !strings.HasPrefix(secret, substrate.TokenSecretPrefix) {
-		return false
+		return none, false
 	}
 	pace := sourceOf(r) + "|webhook-token"
 	if !h.parkRate.spare(costPaired, pace) {
-		return false
+		return none, false
 	}
 	ds, tok, err := h.svc.Authenticate(r.Context(), secret)
 	if errors.Is(err, substrate.ErrAuth) {
 		h.parkRate.allow(costPaired, pace)
 	}
 	if err != nil || !tok.Scoped() {
-		return false
+		return none, false
 	}
 	if exp := tok.ExpiresAt; exp != nil && h.now().After(*exp) {
-		return false
+		return none, false
 	}
 	grant, err := scope.NewGrant(tok.Scopes)
-	return err == nil && grant.Delivers(trigger) && ds.Repository().Authority == authority
+	if err != nil || !grant.Delivers(trigger) || ds.Repository().ID != repository {
+		return none, false
+	}
+	held, err := ds.PersonRoles(substrate.WithIdentity(r.Context(), tok.Identity))
+	if err != nil || len(held) == 0 {
+		return none, false
+	}
+	return tok, true
 }
 
 // readWebhookRequest turns the HTTP request into the seam's transport facts,

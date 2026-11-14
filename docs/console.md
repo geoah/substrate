@@ -13,20 +13,16 @@ which is why signing out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field where the substrate reads one.
 
-The recovery key is made in the browser, as the registration page opens,
-and only its public half is sent; the server never sees the key itself. It is
-a field of the first step's form, beside the name and the password, so a
-password manager that offers to save the new login when that form is
-submitted saves the key on the same item, which the authenticator code then
-joins at the second step. Where the browser cannot make the key, the server
-makes the pair and returns the key once. Either way the key is shown again
-after the repository is created, beside a hidden username field, so a
-manager can still add it to a login it already holds (in 1Password, **Save**
-→ **Login** → **Update** from the toolbar icon's menu).
+Registration has no key step. A server older than the console (below `auth`
+revision 2, [decision 0264](decisions/0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md))
+still makes a recovery key for the new repository and answers with it once;
+against such a server the page shows it first, under **Save your recovery
+key**, with a copy button and **Saved, continue**, because that answer is the
+only copy. `substratectl register` prints it the same way.
 
-Once the repository exists, and after the recovery key where one is shown,
-registration asks "What should we call you?". **Continue** creates your own
-contact (a `substrate.reamde.dev/core/contact` record under a minted id, a
+Once the repository exists, registration asks "What should we call you?".
+**Continue** creates your own contact (a
+`substrate.reamde.dev/core/contact` record under a minted id, a
 known person whose `substrate` is your repository's name) and writes the core
 setting `substrate.reamde.dev/core/ownerContact` with that contact's id
 ([decision 0231](decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md)).
@@ -77,7 +73,7 @@ same sections:
 
 - **One section per package** that holds your records, titled by the
   package's word (**Training**, **Health**, **Tasks**) and ordered by it:
-  your own packages, the samples you imported, any other authority's that is
+  your own packages, the samples you added, any other authority's that is
   neither a provider's nor the substrate's machinery, and the substrate's
   packages that hold your records, `observations` and the well-known
   catalogues (`health`, `labs`, `clinical`,
@@ -262,8 +258,14 @@ naming the agent that made it where one did, and
 **Made by** with that agent's card and a way to ask it. Who declared a
 package is the `package` row's `declaredBy`, stamped by the engine
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md));
-a package created before the stamp names no one. A standard collection's
-package (below) adds **Updates**: who keeps it up to date, **Update** when
+a package created before the stamp names no one. With Technical details on,
+the head also says the package's **Stability**, beside its id: the label its
+`package` row states for its kinds, and `experimental` where the row states
+none ([stability](stability.md#on-a-package-for-its-kinds)), and, for a
+package that ships tools, its **Function interface**: the version its code
+is written against, 1 where the row names none
+([functions](functions.md#the-interface)). A standard collection's package (below) adds **Updates**: who keeps it
+up to date, **Update** when
 the catalog offers one (or why it is blocked), **Pause** and **Remove**,
 which a provider has on its own page
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md));
@@ -292,7 +294,7 @@ another page can link straight to it:
   the well-known catalogues (health, lab results, the medical record,
   environment) and a package an app's approval installed. Each is listed by
   the collections it adds, or by what it is where it adds metrics alone, with
-  **Add**, which installs it and first anything it requires, and stays in
+  **Add**, which adds it and first anything it requires, and stays in
   the dialog. Its publisher keeps its declarations, so you add the records
   and not the fields; the dialog says so, and points at a sample for a
   collection you can change. One already here reads **Added**, a link to
@@ -303,8 +305,9 @@ another page can link straight to it:
   [purpose](decisions/0133-a-kind-declares-its-purpose.md) is read from the
   catalog's closure until the repository holds the kind, so a sample whose
   kinds are all supporting or internal is not offered as a collection. Adding
-  one imports it under the repository's own authority
-  ([0048](decisions/0048-providers-are-published-samples-are-copied.md)),
+  one copies it into the repository's local namespace, `~`
+  ([0048](decisions/0048-providers-are-published-samples-are-copied.md),
+  [0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)),
   taking first any package it requires that the repository does not hold, and
   says so beforehand. A sample already taken reads **Added**; its package
   page offers the update when the binary ships it at a newer version than the
@@ -335,7 +338,7 @@ earn a column, and the last change closes the row. A duration reads in
 words (`8m 12s`), as on the record page, the stored text on hover. A column that holds nothing
 on the rows loaded opens hidden, and the **Columns** button says how many
 are. So does a property the kind marks `deprecated`, and on a provider's
-collection every property a writer role other than the owner keeps (sync
+collection every property whose declared `writer:` leaves out a person (sync
 cursors, statuses, tokens). The title is the row's one link to the record; a
 parent row's chip reads "1 / 3" beside a ring and says "1 of 3 subtasks
 done". **Columns**
@@ -494,7 +497,7 @@ removes it after asking. A new or duplicated item is a small form, written
 once it holds every field an item must. On a narrow screen a table reads as
 labelled rows.
 A row that is not yours to edit says why: the engine stamps it, the host keeps
-it (a declared `writer:` other than the owner), the whole record is a
+it (a declared `writer:` that leaves out a person), the whole record is a
 provider's copy, or the kind never declared it. The record's prose, where the
 kind has a body property, reads under the sheet and edits in place the same
 way.
@@ -505,20 +508,20 @@ under the sheet ("2 shown under During this workout"), which opens them for
 editing.
 
 **Who holds each value** is read off the record's
-[`propertyMeta`](projection.md#reading-provenance-propertymeta). Where every
+[marks](projection.md#where-a-value-came-from-the-marks). Where every
 value is yours the head says so once; otherwise a chip at the end of a row
 marks a value someone else holds (the provider's badge and name, or an
 agent), and an amber **_Provider_ differs** marks one a live source offers
 differently. **Who holds each value** in the ⋯ menu puts a chip on every row.
-Opening one says who holds the value
-at which [tier](terms.md#truth-and-derivation) and what that means for it
-(**Yours**, **Synced**, **Set by provider** or **Set by an agent**), the
-source record it came from, and every other version a live source offers, with
-who offers it and when. **Use _Provider_'s** writes that value, which makes you
-its holder at the owner tier; **Stop overriding** patches the property to
-null, so projection refills it from the live sources and it follows them
-again; **Use my own value** opens the editor. Both writes ask first and name
-the consequence.
+Opening one says who set the value, whether it is
+pinned and what that means for it (**Yours**, **Synced**, **Set by provider**
+or **Set by an agent**), the source records it came from, and every other
+version a source record offers, with which record offers it and when. **Use
+_Provider_'s** writes that value, which pins it as yours; **Stop overriding**
+releases the property, so sync picks its value again among the source
+records and it follows them; **Keep this value** pins a value sync wrote;
+**Use my own value** opens the editor. Each write asks first and names the
+consequence.
 
 Under the properties, in order:
 
@@ -832,16 +835,16 @@ in `appliesTo`
 (`substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep`). The
 `health` and `labs` catalogues ship five between them and the WHOOP provider
 two ([the well-known catalogues](observations.md#the-well-known-catalogues)).
-A sample's import rehomes `appliesTo` with the kind; a view on a provider's
+Adding a sample moves `appliesTo` into `~` with the kind; a view on a provider's
 or a catalogue's kind keeps it, because only `samples.substrate.reamde.dev`
 is rewritten.
 
-**Upgrades.** An import or an upgrade replaces a shipped view that only the
-import has written. A view you wrote, edited, trimmed or deleted through the
-API, the console or `substratectl` stays as you left it on every re-import
+**Upgrades.** An add or an upgrade replaces a shipped view that only the
+closure has written. A view you wrote, edited, trimmed or deleted through the
+API, the console or `substratectl` stays as you left it on every add
 and upgrade. To take a newer shipped view over yours, apply the shipped file
-with `substratectl apply -f`, a sample's with its authority rewritten to your
-repository's ([the two doors](bundles.md#the-two-doors) gives the commands),
+with `substratectl apply -f`, a sample's with its authority rewritten to `~`
+([adding a package](bundles.md#adding-a-package) gives the commands),
 purging the view first where you added a property the shipped view does not
 set.
 
@@ -863,7 +866,7 @@ over one document**, and the document is the apply-able envelope.
   admits, a `reference` picks a record of the kind it points at, a `secret` is
   write-only (a read serves `<redacted>`, and leaving the field blank keeps the
   sealed value), and a `json` property gets a JSON editor. Host-managed
-  properties (a declared `writer:` that is not the owner) are never offered.
+  properties (a declared `writer:` that leaves out a person) are never offered.
 - **YAML** is the expert lens: the whole envelope in a code editor that knows
   the kind. **Completion** offers what may be written where the cursor is (the
   envelope's keys, the declared properties with their datatype and one-liner
@@ -954,7 +957,7 @@ panel on the right.
   adds the supporting and internal ones, each tagged with its
   [purpose](agents.md), and the ones that only work for other agents. One you
   can talk to starts a chat, and one that only works for other agents says so. **Add agents** lists the shipped samples that bring
-  agents, each with **Add**, the same import as
+  agents, each with **Add**, the same add as
   [Add a collection](#add-a-collection)'s samples.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
   the `llm/message` records the loop wrote, not from the browser's memory, so a
@@ -1014,6 +1017,15 @@ panel on the right.
   and applies the suggestion. Deciding writes a message into the thread and
   resumes the agent. Questions the agent asks are cards too, answered in
   place.
+- **Approvals** are cards under the tool row that asked: a call of a
+  function that waits for the owner (a send, a calendar change) says which
+  agent asks, the tool, and each argument it would run with, and offers
+  **Approve** and **Decline**. Once decided, the card follows the call
+  (**Approved, running**, **Approved and done**, **Approved, but it didn't
+  work** with the error, **Declined**), and the outcome line the engine
+  writes into the thread resumes the agent. A sub-agent's call waits after
+  the transcript, since its own tool rows are in its own thread
+  ([agents](agents.md#approvals)).
 - **The panel** says what the agent runs on (**Runs on OpenAI, gpt-5**, the
   AI model linking to its card on [Providers](#providers)), what it can see,
   change and ask, what it is always allowed to do (each rule with
@@ -1058,7 +1070,7 @@ triggers run), **Other tools** that nothing uses yet, and, in everyday mode,
 with the rest. Each card says what the tool is for and when it runs.
 **Add tools** lists the shipped samples that bring functions (Notes, the
 reading list and Pebble), each by the tools it adds and with **Add**, the same
-import as [Add a collection](#add-a-collection)'s samples.
+add as [Add a collection](#add-a-collection)'s samples.
 
 A tool is a [function](functions.md), and its page is at
 `/tools/{authority}/{package}/{name}`, the function's reference segment by
@@ -1083,7 +1095,7 @@ and one trigger's record page is the trigger.
 **Providers** (`/providers`) lists every outside service the substrate uses a
 key or a sign-in for, in three groups
 ([0233](decisions/0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md)).
-Which packages are providers is the catalog's to say, apart from its tier
+Which packages are providers is the catalog's to say, apart from who keeps them
 ([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)):
 a standard collection such as health or the medical record is no provider
 and is added from [Add a collection](#add-a-collection), and an add-on such
@@ -1164,7 +1176,8 @@ up**, **Needs attention**, **Paused**) or the card offers **Add**, and one
 line says what is true right now. **Needs attention** lists
 each reason under **Why it needs attention**: a provider that failed to load,
 an account whose sign-in stopped working, an account whose last sync failed,
-a gap in its setup, a trigger that cannot run, failed runs waiting to be
+an account with a switch turned on that its sign-in was approved before
+(**Reconnect** asks the provider to approve it), a gap in its setup, a trigger that cannot run, failed runs waiting to be
 retried, an update your records block. A failed sync is not one of them while
 its account holds a sync request newer than its last run's start and its
 acknowledgement (**Sync now**, or the request a reconnect makes): the account
@@ -1185,7 +1198,7 @@ the console's last response, so a browser clock running ahead cannot date it
 after the run that answers it.
 
 With Technical details on, **Other packages** lists every other bundle the
-repository holds (standard collections' packages, imported samples, the
+repository holds (standard collections' packages, added samples, the
 seeded `llm` and `console` packages, anything applied directly) with its
 version, state, update and removal, and
 states any pending upgrade of the seeded packages. The `llm` package is
@@ -1204,7 +1217,9 @@ back to it:
   client's redirect URI, and says which secrets are set without ever showing
   one. **Connect your account** opens the account dialog, which asks only what
   the owner decides, read off the account kind's declaration: what to bring
-  in, one toggle per stream, and the sync's schedule and depth. On an OAuth
+  in, one toggle per stream, what your agents may do (the toggles the
+  bundle's `featureScopes` marks `access: write`, each off until you allow
+  it), and the sync's schedule and depth. On an OAuth
   provider its one button is **Create and connect**: it creates the account
   and opens the provider's [consent](bundles.md#the-oauth-facility) in a new
   tab, and the account reads connected when the approval returns.
@@ -1215,6 +1230,13 @@ back to it:
   it. When an approval returns, the notice says what it starts: the first
   sync on a new account, a sync on an account that synced before, nothing on
   a paused one.
+- **What your agents may do**, on a provider whose bundle marks a switch
+  `access: write` (Google's **Gmail sending** and **Calendar editing**): one
+  row per account and switch, reading **Off** until you allow it, **Needs your
+  approval** once it is on and the account's sign-in predates it, and
+  **Allowed** once the grant covers it, with **Turn on**, **Reconnect** and
+  **Turn off**. An account connected before the provider had the switch reads
+  **Off** here.
 - **Add-ons**: the packages that extend it (Slack live events on Slack's
   page), each opening its own page, with **Add** or where it stands.
 - **What it adds**: what it brings in (its primary kinds, each with what it
@@ -1238,7 +1260,7 @@ in, then remove its declarations. An upgrade the binary ships is offered as
 **Update**, confirmed first where the preview is lossy, and stated instead of
 offered where the server would refuse it, with the guard lines that say what
 to migrate. The same page serves any other package the repository holds, such
-as an imported sample or a standard collection's package, without the setup
+as an added sample or a standard collection's package, without the setup
 steps and accounts, and a package the catalog offers and the repository does
 not hold yet (the page an approval's **Open its page** opens): what it is,
 what adding it brings, and **Add**.
@@ -1689,7 +1711,13 @@ how many values are pending.
   `substrate.reamde.dev`, **API tokens** (label, created, expiry; mint one for
   a script or a device, each with full access, and revoke), and what this
   server says about itself at `/.well-known/substrate/server.json`: its
-  version, its API endpoint and its features.
+  version, its API endpoint and its features. The features are a table, one
+  row per group of routes, with the feature's name, its **Stability**
+  (`stable`, `beta` or `experimental`) and its **Revision**, the number that
+  goes up when the feature gains something. A **Notice** column appears where
+  a feature carries one, which is where the server announces a coming break.
+  A server from before revisions were counted shows a dash there.
+  [Stability](stability.md) says what each label promises.
 
 The old addresses `/account` and `/account/tokens` redirect here.
 

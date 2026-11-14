@@ -18,3 +18,8 @@ go.sum linguist-generated=true
 # the project — neither is vendored, and neither should be written off as
 # "not code" in the repository's language statistics.
 kinds/** linguist-detectable=true
+
+# A kept directory is what a release wrote, byte for byte: its segment lines
+# carry checksums, so nothing may normalize them, and a diff of one is
+# machine output (docs/stored-format.md).
+internal/testenv/testdata/kept/** -text -diff linguist-generated=true

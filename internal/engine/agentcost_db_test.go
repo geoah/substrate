@@ -25,7 +25,7 @@ func cachedTurn(content string, calls ...fakeCall) fakeTurn {
 
 func putPricedProvider(t *testing.T, ds *dataset, fake *fakeLLM, id string, pricing map[string]any) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: id,
 		Properties: map[string]any{
 			"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
@@ -198,7 +198,7 @@ func TestAThreadCountsEveryBilledAttemptOfARetriedCompletion(t *testing.T) {
 		_, _ = fmt.Fprint(w, head+`,"usage":{"input_tokens":70,"output_tokens":30}}`)
 	}))
 	t.Cleanup(srv.Close)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "namellm",
 		Properties: map[string]any{
 			"wire": "anthropic", "baseURL": srv.URL, "apiKey": "row-key-namellm",

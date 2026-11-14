@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -20,14 +22,10 @@ func listWithFilter(filter string) string {
 // silently drop — the whole point of A7's strict decode: a dropped `ifVersion`
 // would turn a guarded write into an unconditional one.
 func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	// Seed p1 so a strict-decode failure is what returns 400, not a missing
-	// resource: the decode is refused before the Patch ever runs.
-	env.svc.datasets[fakeRepository].records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "samples.substrate.reamde.dev/people/person", Version: 1,
-		Properties: map[string]any{"name": "Ada"},
-	}
+	// The stub resolves the kind and has no Patch or Put: the decode is
+	// refused before either ever runs, or the answer would be a 500.
+	env := newStubEnv(t, newStubKinds(personKind))
+	tok := stubToken
 
 	// `ifversion` (lowercase) is not the `ifVersion` field — strict decode
 	// refuses it rather than dropping the CAS precondition.
@@ -55,8 +53,8 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 // The patch body is strict the same way: a near-miss key is named, never
 // dropped, because a dropped `properties` writes nothing and answers 200.
 func TestStrictDecodeNamesUnknownPatchKey(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, newStubKinds(personKind))
+	tok := stubToken
 	rec := env.do(t, http.MethodPatch, peoplePath+"/p1", tok, map[string]any{
 		"props": map[string]any{"name": "Ada"}, // it is `properties`, not `props`
 	})
@@ -69,8 +67,8 @@ func TestStrictDecodeNamesUnknownPatchKey(t *testing.T) {
 // A misspelled filter key must ERROR — a dropped predicate could broaden a
 // destructive query.
 func TestStrictDecodeNamesUnknownFilterKey(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, newStubKinds(personKind))
+	tok := stubToken
 	rec := env.do(t, http.MethodGet, listWithFilter(`{"nope":1}`), tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if body := rec.Body.String(); !strings.Contains(body, "nope") {
@@ -78,35 +76,60 @@ func TestStrictDecodeNamesUnknownFilterKey(t *testing.T) {
 	}
 }
 
+// s7Recorder resolves the person kind and records what the handler decoded
+// for a create and a list: the decoder's openness is the claim, and only the
+// handed input shows it, since the engine refuses a property the kind does
+// not declare.
+type s7Recorder struct {
+	stubKinds
+
+	mu    sync.Mutex
+	put   substrate.PutInput
+	query substrate.Query
+}
+
+func (d *s7Recorder) Put(_ context.Context, _ substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.put = in
+	return &substrate.Record{ID: "r1", Kind: in.Kind, Version: 1, Created: true, Properties: in.Properties}, nil
+}
+
+func (d *s7Recorder) List(_ context.Context, q substrate.Query) (*substrate.Page, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.query = q
+	return &substrate.Page{Records: []*substrate.Record{}}, nil
+}
+
+func (d *s7Recorder) Head(context.Context) (substrate.ChangelogHead, error) {
+	return substrate.ChangelogHead{Seq: 1, Generation: "stub-generation"}, nil
+}
+
 // Openness stays INSIDE the map-valued fields: arbitrary property names are
 // authored content, never unknown struct fields, so a create with a property
-// the decoder has never heard of still lands.
+// the decoder has never heard of reaches the write with it.
 func TestStrictDecodeKeepsPropertiesOpen(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{
+	ds := &s7Recorder{stubKinds: newStubKinds(personKind)}
+	env := newStubEnv(t, ds)
+	rec := env.do(t, http.MethodPost, recordsPath, stubToken, map[string]any{
 		"kind":       personKind,
 		"properties": map[string]any{"name": "Ada", "anythingGoesHere": 42},
 	})
 	wantStatus(t, rec, http.StatusCreated)
+	ds.mu.Lock()
+	got := ds.put.Properties["anythingGoesHere"]
+	ds.mu.Unlock()
+	if fmt.Sprint(got) != "42" {
+		t.Fatalf("the write was handed anythingGoesHere = %#v, want 42", got)
+	}
 	// And a well-formed filter still parses.
-	rec = env.do(t, http.MethodGet, listWithFilter(`{"properties":{"name":{"eq":"Ada"}}}`), tok, nil)
+	rec = env.do(t, http.MethodGet, listWithFilter(`{"properties":{"name":{"eq":"Ada"}}}`), stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
-}
-
-// An expired token authenticates as a spent credential: `auth`, not
-// `forbidden`. A future expiry is fine.
-func TestExpiredTokenRejected(t *testing.T) {
-	env := newTestEnv(t)
-	// The test clock sits at 2023-11-14 (api_test.go).
-	past := time.Unix(1_600_000_000, 0).UTC()   // 2020
-	future := time.Unix(1_800_000_000, 0).UTC() // 2027
-
-	expired := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &past })
-	rec := env.do(t, http.MethodGet, peopleRecords, expired, nil)
-	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
-
-	live := env.svc.tokenWith(fakeRepository, func(i *substrate.TokenInfo) { i.ExpiresAt = &future })
-	rec = env.do(t, http.MethodGet, peopleRecords, live, nil)
-	wantStatus(t, rec, http.StatusOK)
+	ds.mu.Lock()
+	props := ds.query.Filter.Properties
+	ds.mu.Unlock()
+	if _, ok := props["name"]; !ok {
+		t.Fatalf("the list was handed filter properties %+v, want the name predicate", props)
+	}
 }

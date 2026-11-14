@@ -71,7 +71,7 @@ import {
   type FieldBag,
   type FormValue,
 } from "@/lib/record-form"
-import { elementSpec, ownerWritable, type PropSpec } from "@/lib/record-schema"
+import { elementSpec, personWritable, type PropSpec } from "@/lib/record-schema"
 import {
   copyOf,
   insertAt,
@@ -618,7 +618,7 @@ function ObjectList({
     pathKey(property, edit.draft.path) === pathKey(property, path)
       ? edit.draft
       : undefined
-  const writable = Boolean(edit) && ownerWritable(spec) && !spec.managed
+  const writable = Boolean(edit) && personWritable(spec) && !spec.managed
   const allCollapsed =
     layout.mode === "stack" &&
     keys.length > 1 &&
@@ -732,7 +732,7 @@ function draftFields(item: PropSpec, identity?: PropSpec): string[] {
     .filter(
       (f) =>
         !f.managed &&
-        ownerWritable(f) &&
+        personWritable(f) &&
         (f.required || (f.default !== undefined && !isNestedField(f)))
     )
     .map((f) => f.name)
@@ -756,7 +756,7 @@ function needsDraft(spec: PropSpec, value: unknown): boolean {
   return (
     !held(value) &&
     (spec.fields ?? []).some(
-      (f) => f.required && !f.managed && ownerWritable(f)
+      (f) => f.required && !f.managed && personWritable(f)
     )
   )
 }
@@ -777,7 +777,7 @@ function copyDraft(
     (f) =>
       !isNestedField(f) &&
       !f.managed &&
-      ownerWritable(f) &&
+      personWritable(f) &&
       (f.required || held(base[f.name]))
   )
   return {
@@ -1406,7 +1406,7 @@ function spokenValue(spec: PropSpec, value: unknown): string {
 
 /** Whether the reader may write this field here. */
 function writableField(spec: PropSpec): boolean {
-  return !spec.managed && ownerWritable(spec) && spec.kind !== "secret"
+  return !spec.managed && personWritable(spec) && spec.kind !== "secret"
 }
 
 /** One value: read, and on a click (or Enter) edited where it sits. */
@@ -1984,7 +1984,7 @@ function ObjectFields({
   path: Path
 }) {
   const { property, edit } = useStructure()
-  if (!edit || !ownerWritable(spec) || spec.managed) return null
+  if (!edit || !personWritable(spec) || spec.managed) return null
   const anchor = `${pathKey(property, path)}#fields`
   const register = (el: HTMLButtonElement | null) => {
     if (el) edit.anchors.set(anchor, el)

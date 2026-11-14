@@ -88,10 +88,10 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, mirrorManifest()); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, mirrorManifest()); err != nil {
 		t.Fatalf("install mirror types: %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, traitMirrorManifest()); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, traitMirrorManifest()); err != nil {
 		t.Fatalf("install trait mirror types: %v", err)
 	}
 
@@ -346,7 +346,7 @@ func TestIncomingOverTraitReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, traitMirrorManifest()); err != nil {
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, traitMirrorManifest()); err != nil {
 		t.Fatalf("install trait mirror types: %v", err)
 	}
 	accA := mustPut(t, ds, owner, substrate.PutInput{

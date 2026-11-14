@@ -26,9 +26,9 @@ function kind(identity: string, purpose?: string): KindInfo {
 }
 
 const KINDS = [
-  kind("ada.example.com/tasks/task"),
-  kind("ada.example.com/tasks/tasklog", "supporting"),
-  kind("ada.example.com/people/person"),
+  kind("~/tasks/task"),
+  kind("~/tasks/tasklog", "supporting"),
+  kind("~/people/person"),
   kind("other.example.com/notes/note"),
   kind("providers.substrate.reamde.dev/google/contact"),
   kind("providers.substrate.reamde.dev/google/emailaddress", "supporting"),
@@ -44,7 +44,7 @@ const KINDS = [
 ]
 
 describe("collectionGroups", () => {
-  const groups = collectionGroups(KINDS, "ada.example.com")
+  const groups = collectionGroups(KINDS)
 
   it("reads each package by label, then each provider by name, then the substrate", () => {
     expect(groups.map((g) => g.label)).toEqual([
@@ -71,13 +71,9 @@ describe("collectionGroups", () => {
 
   it("gives every package but the providers' and the machinery its own group, keyed by its reference", () => {
     const tasks = groups.find((g) => g.label === "Tasks")
-    expect(tasks?.id).toBe("group:package:ada.example.com/tasks")
-    expect(tasks?.primary.map((k) => k.identity)).toEqual([
-      "ada.example.com/tasks/task",
-    ])
-    expect(tasks?.hidden.map((k) => k.identity)).toEqual([
-      "ada.example.com/tasks/tasklog",
-    ])
+    expect(tasks?.id).toBe("group:package:~/tasks")
+    expect(tasks?.primary.map((k) => k.identity)).toEqual(["~/tasks/task"])
+    expect(tasks?.hidden.map((k) => k.identity)).toEqual(["~/tasks/tasklog"])
     const labs = groups.find((g) => g.label === "Labs")
     expect(labs?.authorities.map((a) => a.authority)).toEqual([
       "substrate.reamde.dev",
@@ -94,23 +90,23 @@ describe("collectionGroups", () => {
     expect(observations?.hidden).toHaveLength(1)
   })
 
-  it("names the publisher where two packages share a word, home first", () => {
-    const shared = collectionGroups(
-      [
-        kind("substrate.reamde.dev/training/session"),
-        kind("zed.example.com/training/session"),
-        kind("zed.example.com/tasks/task"),
-      ],
-      "zed.example.com"
-    )
+  it("names the publisher where two packages share a word, the owner's own first", () => {
+    const shared = collectionGroups([
+      kind("substrate.reamde.dev/training/session"),
+      kind("aaa.example.com/training/session"),
+      kind("~/training/session"),
+      kind("~/tasks/task"),
+    ])
     expect(shared.map((g) => g.label)).toEqual([
       "Tasks",
-      "Training (zed.example.com)",
+      "Training (yours)",
+      "Training (aaa.example.com)",
       "Training (substrate.reamde.dev)",
     ])
     expect(shared.map((g) => g.id)).toEqual([
-      "group:package:zed.example.com/tasks",
-      "group:package:zed.example.com/training",
+      "group:package:~/tasks",
+      "group:package:~/training",
+      "group:package:aaa.example.com/training",
       "group:package:substrate.reamde.dev/training",
     ])
   })
@@ -147,16 +143,13 @@ describe("collectionGroups", () => {
 })
 
 describe("the owner's data inside the machinery packages", () => {
-  const groups = collectionGroups(
-    [
-      kind("substrate.reamde.dev/core/kind", "internal"),
-      kind("substrate.reamde.dev/core/contact", "primary"),
-      kind("substrate.reamde.dev/llm/memory", "primary"),
-      kind("substrate.reamde.dev/llm/instruction", "primary"),
-      kind("substrate.reamde.dev/llm/thread", "internal"),
-    ],
-    "ada.example.com"
-  )
+  const groups = collectionGroups([
+    kind("substrate.reamde.dev/core/kind", "internal"),
+    kind("substrate.reamde.dev/core/contact", "primary"),
+    kind("substrate.reamde.dev/llm/memory", "primary"),
+    kind("substrate.reamde.dev/llm/instruction", "primary"),
+    kind("substrate.reamde.dev/llm/thread", "internal"),
+  ])
 
   it("gives an owner-data kind a group of its own, and the assistant's memories and instructions one together, before the substrate", () => {
     expect(groups.map((g) => [g.id, g.label, g.type])).toEqual([
@@ -199,7 +192,7 @@ describe("the owner's data inside the machinery packages", () => {
 describe("group folding", () => {
   it("starts provider groups folded and every other group open", () => {
     const tasks = {
-      id: "group:package:ada.example.com/tasks",
+      id: "group:package:~/tasks",
       type: "package" as const,
     }
     const google = { id: "group:provider:google", type: "provider" as const }
@@ -212,6 +205,7 @@ describe("group folding", () => {
 
 describe("authority and package titles", () => {
   it("names an authority where its collections sit", () => {
+    expect(authorityTitle("~")).toBe("Yours")
     expect(authorityTitle("ada.example.com")).toBe("ada.example.com")
     expect(authorityTitle("providers.substrate.reamde.dev")).toBe(
       "From providers"
@@ -220,7 +214,7 @@ describe("authority and package titles", () => {
   })
 
   it("names a package by its word, and a provider by its name", () => {
-    expect(packageTitle("ada.example.com", "tasks")).toBe("Tasks package")
+    expect(packageTitle("~", "tasks")).toBe("Tasks package")
     expect(packageTitle("substrate.reamde.dev", "llm")).toBe("LLM package")
     expect(packageTitle("providers.substrate.reamde.dev", "google")).toBe(
       "Google"
@@ -230,7 +224,7 @@ describe("authority and package titles", () => {
 
 describe("collectionSource", () => {
   it("says where a kind comes from: its package, a provider or the substrate", () => {
-    expect(collectionSource("ada.example.com/tasks/task")).toBe("Tasks")
+    expect(collectionSource("~/tasks/task")).toBe("Tasks")
     expect(
       collectionSource("providers.substrate.reamde.dev/google/contact")
     ).toBe("From Google")

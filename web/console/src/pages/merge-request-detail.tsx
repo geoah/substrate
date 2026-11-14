@@ -1,8 +1,10 @@
 /** Merge request detail (`/merge-requests/:id`): the evidence, then the
  * field-by-field side-by-side of the two records that SAYS what the merge
- * will do per row — machine-held differences are settled by the post-merge
- * recompute from the union of live sources; owner-held values yield to
- * nobody (§7.1), so a differing one is the owner's explicit choice. The two
+ * will do per row — unpinned differences are settled by the post-merge
+ * recompute from the union of live sources; a value pinned on the record that
+ * stays yields to nobody (§7.1), so a differing one is the owner's explicit
+ * choice; one pinned only on the record combined away stays with that record
+ * and is not copied. The two
  * verdicts are single atomic submits behind a Dialog that states the
  * recompute/reversibility posture (`recordsplit` exists); an optional note
  * rides the same write as `owner/note`. A resolved request keeps its record:
@@ -95,6 +97,7 @@ import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 import { useUnits } from "@/hooks/use-units"
+import { setByOf } from "@/lib/provenance"
 
 /** One side of the pair: its kind reference and id, and the title the
  * request carries for it. */
@@ -112,17 +115,23 @@ function refTitle(ref?: PairTarget): string {
 
 const POSTURE_TEXT: Record<
   Exclude<DiffPosture, "equal">,
-  { label: string; tier: string; explain: string }
+  { label: string; word: string; explain: string }
 > = {
   choice: {
     label: "Kept",
-    tier: "owner",
+    word: "pinned",
     explain:
-      "You set this on at least one side, so the one that stays keeps its value. If the other one is right, change it after combining.",
+      "This is set by hand on the record that stays, so it keeps its value. If the other one is right, change it after combining.",
+  },
+  left: {
+    label: "Not copied",
+    word: "pinned",
+    explain:
+      "This is set by hand on the record being combined away. It stays with that record and is not copied. If you want it on the record that stays, set it there yourself.",
   },
   recompute: {
     label: "Combined",
-    tier: "recompute",
+    word: "recompute",
     explain:
       "This is kept up to date from elsewhere. After combining, it is worked out again from both records' sources.",
   },
@@ -155,7 +164,7 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
         {text.label}
         {technical && (
           <span className="ml-1 font-mono text-[11.5px] text-faint">
-            {text.tier}
+            {text.word}
           </span>
         )}
       </TooltipTrigger>
@@ -602,8 +611,8 @@ export function MergeRequestDetailPage() {
     typeof request.properties.decidedAt === "string"
       ? request.properties.decidedAt
       : undefined
-  const proposer = request.propertyMeta?.rationale?.manager
-  const decider = request.propertyMeta?.decidedAt?.manager
+  const proposer = setByOf(request.marks?.rationale)
+  const decider = setByOf(request.marks?.decidedAt)
   const note = verdictNote(request)
   const technical = technicalMode
   const conflict = conflictAnnotation(request)

@@ -8,13 +8,8 @@ import { ChevronRightIcon } from "lucide-react"
 
 import { ActorMark } from "@/components/identity/actor-ref"
 import { Skeleton } from "@/components/ui/skeleton"
-import { actorIdentity } from "@/lib/actor-identity"
-import {
-  agentActor,
-  chatRows,
-  openingMessages,
-  threadActiveAt,
-} from "@/lib/agent-chat"
+import { agentIdentity } from "@/lib/actor-identity"
+import { chatRows, openingMessages, threadActiveAt } from "@/lib/agent-chat"
 import {
   conversationsQueryOptions,
   openingMessagesQueryOptions,
@@ -71,9 +66,7 @@ export function RecentChats() {
   return (
     <ul className="overflow-hidden rounded-[10px] border border-border">
       {rows.map((row) => {
-        const agent = row.agentId
-          ? actorIdentity(agentActor(row.agentId))
-          : undefined
+        const agent = row.agentId ? agentIdentity(row.agentId) : undefined
         const at = threadActiveAt(row.thread)
         return (
           <li

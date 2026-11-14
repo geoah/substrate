@@ -8,7 +8,7 @@ not a file read.
 
 ## The declarable kinds
 
-Ten kinds declare everything:
+Nine kinds declare everything:
 
 | Kind                           | Declares                                              | Taught on                                         |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------- |
@@ -21,12 +21,14 @@ Ten kinds declare everything:
 | `substrate.reamde.dev/core/function`      | one pure callable in Python                           | [Functions](functions.md)                        |
 | `substrate.reamde.dev/core/agent`         | one callable whose body is an LLM loop                | [Agents](agents.md)                              |
 | `substrate.reamde.dev/core/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
-| `substrate.reamde.dev/core/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |
 
 A manifest wears the same four-key [envelope](data-model.md#the-envelope) as
-any record. Its `kind:` is one of the ten above, always a core kind whatever
+any record. Its `kind:` is one of the nine above, always a core kind whatever
 package the document declares into, and any other envelope key is a load
-error.
+error. `substrate.reamde.dev/core/actor` was a tenth until vocabulary
+dialect 4: an actor is now a record the substrate writes for everything that
+acts ([actors](api.md#actors)), and a package that ships an actor document is
+refused at load.
 
 A declaration's id is its declared name. For a `kind` that name is the
 kind reference, and it must equal
@@ -36,9 +38,23 @@ them differently is a load error, never a silent rename. A `propertytype`,
 `<authority>/<package>/<name>` form. A `package`'s id is
 `<authority>/<package>`, and a `bundle`'s id is the package it owns
 (`providers.substrate.reamde.dev/google`). An `authority` document's id is the
-DNS name itself, and an `actor`'s id is a bare word, or the
-`bundle:<authority>:<package>` actor of the package that declares it. So the
-closure header, a package, is seven lines:
+DNS name itself.
+
+An authority is a DNS name, or `~`, the repository's **local namespace**
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). The packages a
+repository declares itself and the samples it adds live there, so a kind it
+declares is `~/garden/plant`, its package `~/garden` and its
+`data.authority` `~`, whatever the repository is called. `~` is the one
+authority without a dot and the one short form a kind reference has. A
+document may spell it with the repository's full name instead
+(`ada.example.com/garden/plant`), and admission folds that into `~`; every
+read says `~`. Its hands carry `~` as their package does
+(`bundle:~:garden`), so their actor records are the same whatever the
+repository is called. In YAML, quote a bare `~`
+(`authority: "~"`), which unquoted is null; `~/garden/plant` needs no
+quotes.
+
+The closure header, a package, is seven lines:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
@@ -49,6 +65,17 @@ data:
   package: tasks
   version: 1
 ```
+
+A header's keys are a closed set. `authority` and `package` repeat the id and
+must agree with it, and `version` is the closure's version. Five more are
+optional: `description`; `retired`, the kind names the package has spent
+([retiring a name](#retiring-a-name)); `stability`, the label the package
+states for its kinds, one of `stable`, `beta` and `experimental`
+([the reserved keys](#the-reserved-keys)); `interface`, the function
+interface its code is written against
+([functions](functions.md#the-interface)); and `dialect`, the vocabulary
+dialect it needs
+([the dialect](#vocabulary-evolution-and-the-dialect-contract)).
 
 Each declarable kind has a collection under `substrate.reamde.dev/core`, named
 for the kind. A declaration is read there like any other record, and listed
@@ -71,10 +98,11 @@ auditable in the [changelog](changelog.md):
 - **The seed, once, at creation.** Creating a repository writes the binary's
   shipped vocabulary, the `substrate.reamde.dev` authority (`core`, `llm` and
   `console`),
-  into the new repository's changelog as ordinary record entries, under the
-  actor `bundle:core`, in the same transaction as the repository itself. The
+  into the new repository's changelog as ordinary record entries, by the
+  core package's [actor](api.md#actors), in the same transaction as the
+  repository itself. The
   provider closures embedded beside it are the catalog, not the seed, and the
-  LLM sample is imported in the same creation
+  LLM sample is copied in the same creation
   ([getting started](getting-started.md#registration)). After that the tree
   has no standing over that repository: nothing
   re-projects it at open, and nothing is ever pruned. A shipped package the
@@ -83,7 +111,7 @@ auditable in the [changelog](changelog.md):
   declaration carries a `version`, its package's unless the declaration
   overrides it. The first open of a repository in a process diffs
   the binary's shipped declarations against the stored ones and appends the
-  difference as explicit entries under the actor `substrate`: one transaction
+  difference as explicit entries by the `system` actor: one transaction
   per repository, convergent and idempotent, so an unchanged tree writes
   nothing at all. Only same-or-newer wins, never a downgrade and never a
   prune, and a repository nobody opens is never touched. A version is an
@@ -99,18 +127,18 @@ auditable in the [changelog](changelog.md):
   ([admission](#admission)). The conversions a shipped declaration declares
   (below) still rewrite the records they name inside it.
 - **An install, which is a copy.** Installing a bundle writes that
-  bundle's manifests into the repository's changelog under
-  `bundle:<authority>:<package>`
-  ([Bundles](bundles.md)). The shipped catalog is a source, never a
+  bundle's manifests into the repository's changelog by the package's own
+  actor ([Bundles](bundles.md)). The shipped catalog is a source, never a
   package, and nothing on the serving path reads it.
 
 **A package row names who declared it.** The write that creates a
-`package` row stamps the managed `declaredBy` property with that write's
-actor: `bundle:core` for a seeded package, `bundle:<authority>:<package>` for
-a catalog install or import, `substrate` for a shipped package a boot upgrade
-adds to an existing repository, the door (`console`, `substratectl`, `api`)
-for a hand apply, and `function:…` or `agent:…` for a callable. Every later apply,
-upgrade or re-import leaves it alone, so it names the first declarer, and no
+`package` row stamps the managed `declaredBy` property with a reference to
+that write's [actor record](api.md#actors): the core package's for a seeded
+package, the package's own for a catalog add, the system's for a shipped
+package a boot upgrade adds to an existing repository, the person's for a
+hand apply through any client, and a function's or an agent's for a
+callable. Every later apply, upgrade or add leaves it alone, so it names the
+first declarer, and no
 document may write it. A package created before the stamp existed carries none
 ([0109](decisions/0109-a-package-row-names-the-actor-that-declared-it.md)).
 The package's record read (`GET
@@ -143,9 +171,9 @@ POST /api/v1/vocabulary/apply
 
 → 200 {"records": […],
        "heldMappings": [
-         {"id": "ada.example.com/people/slackuserperson",
+         {"id": "~/people/slackuserperson",
           "from": "providers.substrate.reamde.dev/slack/user",
-          "to": "ada.example.com/people/person",
+          "to": "~/people/person",
           "package": "providers.substrate.reamde.dev/slack",
           "state": "waiting"}]}
 ```
@@ -160,12 +188,12 @@ commits; the plan response does not list the held mappings.
 **The package chokepoint** decides who may write a declaration, which is what
 a package is for. Shipped vocabulary, a package whose stored rows say
 `source: builtin`, is writable only through a substrate path: the seed, an
-upgrade, an install, which is what the actors `substrate` and
-`bundle:<authority>:<package>` name. A generic API write into one is
-`forbidden`, and neither actor form can be claimed by a request.
+upgrade, an install, which is what the `system` actor and a package's own
+actor write. A generic API write into one is `forbidden`, and no request
+writes as either: a request's actor is the person or an app.
 
-A **published** package is refused on the same terms. Installing one from the
-catalog's published tier (a provider such as
+A **published** package is refused on the same terms. Adding one from the
+catalog (a provider such as
 `providers.substrate.reamde.dev/google`, or a catalogue such as
 `substrate.reamde.dev/labs`) writes `source: published` on its package row and
 its declarations,
@@ -177,19 +205,21 @@ lifecycle verb on its bundle
 ([decision 0048](decisions/0048-providers-are-published-samples-are-copied.md)).
 
 Everything else, the kinds the repository declares itself and the sample
-packages it imported, is the user's to write.
+packages it added, is the user's to write.
 
-**A token creates a new package only under the repository's own authority**
-([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). Every other authority reaches a repository from
-the binary: the seed, the boot upgrade, a catalog install or a sample import,
-which rehomes its closure onto the repository's authority anyway. A `POST
+**A token creates a new package only in `~`**
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+[decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), the repository's
+full name folded into it first. Every other authority reaches a repository from
+the binary: the seed, the boot upgrade, or a catalog add,
+which copies a sample's closure into `~` anyway. A `POST
 …/vocabulary/apply` (or `substratectl apply -f`) that would create a package
 under any other authority is `403`, whoever writes it: the owner's doors, an
-app, an agent or a function. The refusal names `substratectl install
-<package>` and `POST /api/v1/catalog/{id}/install`, the door that brings a
+app, an agent or a function. The refusal names `substratectl add
+<package>` and `POST /api/v1/catalog/{id}/add`, the route that brings a
 provider or a catalogue. A package the repository already holds under another
 authority keeps the rules above: an `installed` copy applied by hand before
-this rule stays editable, and its next install promotes it to `published`.
+this rule stays editable, and adding it again promotes it to `published`.
 
 Opening a repository rebuilds its registry from the stored declaration
 records, shipped, published and installed alike, each carrying the source its
@@ -227,8 +257,7 @@ carry a property whose declaration moved, since every other row derives the
 same indexes under either declaration. Every row of the kind re-derives
 instead where the change reaches all of them: the kind is declared on one
 side of the batch only (new, or dropped, as an uninstall drops a parked
-package's kinds), its body's `fts` flag moves, the order of its indexed
-properties moves, or its rows belong to a package that does not parse. The
+package's kinds), the order of its indexed properties moves, or its rows belong to a package that does not parse. The
 refs rows are re-derived inside the transaction, so a reverse read is
 current when the batch answers. The search index is re-derived after the
 commit, by the background pass the boot upgrade uses
@@ -243,14 +272,14 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   with initialisms uppercase (`displayTemplate`, `oneOf`, `ifVersion`,
   `onEnter`, `endsAt`). Snake spellings are errors, not aliases. A kind name
   and a package name stay `[a-z][a-z0-9]*`; an authority stays a dotted
-  lowercase DNS name; an actor is a bare word or a prefixed machine hand,
-  never a DNS name; enum and state values stay lowercase words.
+  lowercase DNS name; enum and state values stay lowercase words.
 - **Reserved property names.** `title`, `at`, `endsAt` and `dueAt` are the
   four properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
-  three arrive through the `temporal` trait. `body` is not reserved: a kind
-  that declares it as a text-family property gets the hot `body` column, and a
-  kind that does not declare it carries none. The built-in `title` is not a
+  three arrive through the `temporal` trait. `body` is not reserved: it is an
+  ordinary property, declared with any type, as any other name is
+  ([decision record 0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)).
+  The built-in `title` is not a
   kind's display storage either: a kind that has a heading declares its own
   property for it (`name`, `summary`, `subject`) and renders the title with a
   `displayTemplate`, which is what the engine writes into the column. On a
@@ -266,8 +295,8 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   property); a LIST HEAD (`{names[].displayName}` the first entry's field of a
   repeated object, `{assignees[].login}` the first referent's property of a
   repeated reference, `{emails[]}` the first value of a repeated scalar); one
-  of the derived tokens `{snippet}` (the opening of the record's longest text,
-  a declared `body` included), `{localName}` and `{id}`; or one of the
+  of the derived tokens `{snippet}` (the opening of the record's longest text),
+  `{localName}` and `{id}`; or one of the
   column-backed names every record carries (`{title}`, `{at}`, `{endsAt}`,
   `{dueAt}`). `{localName}` and `{id}` yield to a real property of that name.
   `{snippet}` never does, so it means the same on every kind, and a kind that
@@ -281,9 +310,8 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   which is what lets a mirror whose provider sends arrays title itself
   ([decision record 0086](decisions/0086-the-head-of-a-repeated-source-is-spelled-with-brackets.md)).
   A state property renders the state the record is in (`{status}` is `open`),
-  an instant renders as the RFC 3339 value a read returns, and a declared
-  `body` renders its text, though all three live outside the record's other
-  properties.
+  and an instant renders as the RFC 3339 value a read returns, though both
+  live outside the record's other properties.
   Every token is checked against the kind's own declarations at load, so a typo
   fails on the manifest and not as an empty title: a `[]` head that is not
   repeated is refused naming the plain spelling, and a sensitive property never
@@ -360,33 +388,95 @@ stored closure the binary no longer accepts.
 
 The vocabulary changes over the life of a repository, and v1 fixes how, so a binary
 upgrade or a bundle upgrade can never silently corrupt data already written
-against the old shape. The contract has two halves.
+against the old shape. The contract has three parts.
 
-**A per-repository vocabulary dialect.** Each repository carries a monotonic
-vocabulary-dialect integer naming the shape its stored declaration rows are
-in. It is 2 today. A repository is stamped at the binary's maximum when it
-is created, and one stamped lower is raised to it at its first open. A binary
-whose maximum
-supported dialect is below a repository's stored dialect refuses to open that
-repository with a named error ("the store speaks a newer schema dialect than
-this binary"), rather than opening it and misreading rows written by a newer
-shape; the API surfaces the refusal as `503 repository temporarily
-unavailable`, never as an invalid token, and
-[upgrading the binary](operations.md#upgrading-the-binary) is where that lands
-on an operator. A repository's stored dialect is internal to its own store and
-never appears on the wire, and [API discovery](api.md#discovery) does not
-report the binary's maximum either. The next number is spent when a release
-changes what a stored declaration row holds, together with the step that
-rewrites the rows and stamps the new number in the same transaction.
-Dialect 2 changes no row's shape: it marks this release's seeded `core`
-closure (`oneOf` reference properties, the `quantity` type), which the
-v0.113.0 loader refuses. v0.113.0 reads the manifest's dialect only when it
-imports a directory its database has no repository row for, so the stamp
-refuses that case by name. A database restored with the repository row still
-in it imports the directory without reading the manifest, which is why a
+**The vocabulary dialect.** The dialect is the number of the declaration
+format a server reads: the closed key sets of every declaration document
+([decision 0268](decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md),
+which amends [0020](decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
+It is 6 today. A server refuses a document carrying a key it does not know,
+so every key added to a declaration, removed from one or moved between two
+raises the number, in the release that admits it. Dialect 6 added
+`retention` on a kind and a package header
+([0282](decisions/0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md));
+dialect 5 made a property's `writer:` name types of actor
+([0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)), so
+every `writer:` a package carries needs it;
+dialect 4 took the actor document out, so a package declares no actor
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md));
+dialect 3 added the package
+header's `stability`, `interface` and `dialect`; dialect 2 marked the seeded
+closure that brought `oneOf` reference properties and the `quantity` type.
+`internal/vocabulary/testdata/dialect.golden.json` records every key set
+under the number it was admitted at: a test refuses a key set that moved
+under an unchanged number, and a closed check written inline instead of
+through a registered set in either of the two shapes one takes: a key a
+loop ranges over compared with `!=` to a word, in either order, or switched
+over with a word among its cases and a `default` for the rest. It does not
+see a check written with `==` alone, or a key read by name without a loop,
+which review holds. `mise run dialect:check` holds the same against the base
+branch. Each key that arrived after dialect 2 is listed beside the dialect
+it arrived in (`keyIntroducedAt` in `internal/vocabulary/dialect.go`), so the
+loader knows the least dialect a package's declarations and the records it
+ships beside them need: a step that adds a key adds its line there, at the
+number it raises the dialect to. The golden holds that table too, and the
+test and `dialect:check` refuse a key added without its line at the new
+number, a line whose number moved, and a line dropped while its key stays
+in its set.
+
+The number is read in three places:
+
+- **Discovery.** A server publishes the dialect it reads as
+  `vocabulary.dialect` in [discovery](api.md#discovery).
+- **A package header.** A package states the dialect it needs under
+  `dialect`:
+
+  ```yaml
+  kind: substrate.reamde.dev/core/package
+  metadata:
+    id: ~/garden
+  data:
+    authority: "~"
+    package: garden
+    dialect: 3
+    version: 4
+  ```
+
+  A server that reads a lower dialect refuses the package, naming both
+  numbers. A header may not state less than its declarations need, the
+  highest dialect any key they use arrived in; one that does is refused,
+  naming the key, so a server older than that key is never told the package
+  is written for it. `dialect` arrived in dialect 3 itself, so a header that
+  carries it states 3 or more. A header that states none stores nothing.
+- **A publisher's document.** Each version a publisher lists may carry the
+  dialect its closure needs, beside its `closure` and `sha256`
+  ([publishing a package](apps.md#publish-a-package)). The catalog installs
+  the newest version at or above the floor asked for whose dialect the
+  server reads, and a refresh passes over a version written for a newer one,
+  so a publisher that adopts a new key leaves an older server installing the
+  version before. A version that states no dialect is fetched, and passed
+  over the same way when its closure's header states a newer one. A version
+  listed below what its closure needs is a broken release, refused as such,
+  since an older server would fetch it and stop on a key it does not know.
+
+**A repository is stamped with the dialect.** A repository is stamped at the
+binary's dialect when it is created, and one stamped lower is raised to it
+at its first open. A binary whose dialect is below a repository's stamp
+refuses to open that repository with a named error ("the store speaks a
+newer schema dialect than this binary"), rather than opening it and
+misreading rows written in a newer format; the API surfaces the refusal as
+`503 repository temporarily unavailable`, never as an invalid token, and
+[upgrading the binary](operations.md#upgrading-the-binary) is where that
+lands on an operator. A new dialect therefore closes the way back to the
+release before it. A dialect that changes what a stored declaration row
+holds ships the step that rewrites the rows and stamps the new number in
+the same transaction. A release before dialect 3 reads the stamp in the
+directory manifest only when it imports a directory its database has no
+repository row for, so a database restored with the repository row still in
+it imports the directory without reading the manifest, which is why a
 rollback restores the database and the data root together. A change to what
-a row's values may SAY, with the row's shape as it was, is not a dialect: it
-is a
+a row's values may SAY, with the row's shape as it was and no key added, is
+not a dialect: it is a
 [repository migration](operations.md#upgrading-the-binary), code that runs
 once per repository at its first open and rewrites the rows through the
 changelog. The first one wrote the full identity into every stored bare name
@@ -403,6 +493,12 @@ once. The narrowing diffs that refuse:
   `keyed:` flip both count, because a map is not a list and neither is a scalar,
   and no stored value converts between them
 - removing an enum value a record still holds
+- adding a `values:` list to a property that had none, while a record holds
+  a value outside it, on a type a write is held to the list: a string, a
+  text, a date, a duration, an email, a URL, a phone number, a time zone, a
+  recurrence. Such a record could not be saved again. A list on a type no
+  write is held to (a number, a date and time, a decimal, json) strands
+  nothing and admits
 - removing a state a record still occupies
 - narrowing a `reference` property's `kind:` or `trait:` pin while records
   point outside the new one (unconstrained to a pin, or one pin to another;
@@ -531,15 +627,27 @@ tombstones the old rows: one transaction, ordinary record writes, one `move`
 step on the conversion plan saying how many records travelled ([decision
 0078](decisions/0078-a-kind-move-is-ordinary-record-writes.md)). The old kind
 stays declared and empty, never pruned and never retired, and a second open
-finds nothing to move. The two kinds declare the same properties, because the
-rows travel with their properties untouched: a property only one of them
-declares, or one the new kind takes over under a new name, refuses the move.
+finds nothing to move. The rows travel with their properties untouched, so a
+property the old kind declares and the new one does not, one the new kind
+takes over under a new name, or one only the new kind declares and requires,
+refuses the move; an optional property only the new kind declares is admitted.
 A kind a `recordmapping` names at either end, or one that declares a subject
-reference, is not moved. Through `POST …/vocabulary/apply` the key is stored
-and no records move: a `movedFrom:` naming a kind the repository still
-declares is refused, naming the shipped tree as the one path that moves
-records in this build. This is how the agent runtime's four kinds left `core`
-for `substrate.reamde.dev/llm`.
+reference, is not moved. These checks are asked only while the old kind holds
+live rows: an old kind left declared and empty trips none of them ([decision
+0257](decisions/0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md)).
+This is how the agent runtime's four kinds left `core` for
+`substrate.reamde.dev/llm`.
+
+Every other door refuses a move: the apply door, a catalog install, import
+and upgrade, a publisher's refresh and an app's approval. A `movedFrom:`
+naming a kind the repository still declares is refused, and
+`substratectl publish --check` refuses a release that declares one at all. A
+publisher may not rename a kind, because other repositories hold records of
+it under its name
+([decision 0269](decisions/0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md)):
+it keeps the old kind, marks it `deprecated: true`, and declares the new one
+beside it. A `movedFrom:` naming a kind the repository does not declare
+moves nothing and is stored as written.
 
 **Renaming: `renamedFrom:` moves the values.** A property may declare the name
 it replaces:
@@ -561,7 +669,7 @@ Each rewritten record moves its `version`, and a record that did not carry the
 old name is left alone. So is a tombstoned one: it keeps the old name until a
 put restores it, and that put moves the value to the new name
 ([Restoring a tombstone](#restoring-a-tombstone)). What travels with the value:
-the property's manager row (who last wrote it, at which tier), the offer rows a
+the property's mark (whether it is pinned, who set it, which sources back it), the offer rows a
 mapping wrote onto it, and the embeddings of an `embed: true` property, which
 are rekeyed and re-enqueued under the new name so no vector is bought twice. A
 secret moves as its sealed reference. The key stays on the stored declaration
@@ -590,10 +698,9 @@ record carries (a restored tombstone may hold a dropped name): a destination
 that exists would merge two properties, and is refused, the live case with
 the count. A trigger's or a policy's CEL guard naming the old property is not
 checked, because an expression is compiled against the record it runs on and
-not against a declaration: rewrite it with the rename. `body`
-never renames in either direction, because it is a column and not a key of the
-record's properties; a state property carries no `renamedFrom:`; and two
-properties may not name the same previous name.
+not against a declaration: rewrite it with the rename. A state property
+carries no `renamedFrom:`, and two properties may not name the same previous
+name.
 
 The cost is the live count: a kind with a thousand records carrying the old
 name rewrites a thousand rows and appends a thousand entries in one
@@ -616,7 +723,7 @@ required, or is added as required, with a default declared, has the default
 written onto every live record holding no value for it: the key absent, or
 one of the empty values `required:` refuses. No marker is needed; the pair is
 the trigger. The value is coerced as a create's default is, the record's
-manager row for it names the actor that applied the declaration, and a
+mark for it is set by the actor that applied the declaration, and a
 property with `embed: true` is queued to embed. A record already carrying a
 value is left alone, and so is a default declared without `required:`, which
 seeds creates and nothing else. A required property's default may not be an
@@ -634,7 +741,7 @@ A state takes no `default:` and no marker: the machine's own `initial` is the
 value, and there is nothing else it could be. Without this the records would
 stand outside the machine forever — no transition leaves an absent state, and
 a `put` may not move a state at all — so an absent state on a declared machine
-is a bug and never a position. It writes no manager row, because a machine's
+is a bug and never a position. It writes no mark, because a machine's
 position is nobody's property, and a machine every record already stands in is
 not a step, so admitting the same declaration again enters nothing.
 
@@ -654,7 +761,7 @@ properties:
 
 Admitting the declaration rewrites `active` to `working` on every live
 record, in a scalar, in each element of a `repeated:` list and in each value
-of a `keyed:` map. The manager row stays: the spelling moved, not who wrote
+of a `keyed:` map. The mark stays: the spelling moved, not who wrote
 it. The same list rules hold as for a property's `renamedFrom:`: the previous
 value may not still be declared, two values may not name the same previous
 value, and the key is refused inside `fields:` and on a
@@ -664,7 +771,7 @@ that carries it, as every new key does.
 
 **Dropping a property nulls its values.** A property the new declaration no
 longer names, and no `renamedFrom:` takes, has its value removed from every
-live record carrying it: the record's manager row for it, its embedding and,
+live record carrying it: the record's mark for it, its embedding and,
 for a secret, its sealed material go with the value, exactly as a patch
 clearing the property would leave it. The old values stay in the changelog,
 where a rebuild replays the removal as the write it was. A `type: state`
@@ -729,12 +836,12 @@ merge in
 ([decision 0144](decisions/0144-a-restoring-put-completes-the-conversions-a-tombstone-missed.md)):
 
 - a value under a name some property declares as its `renamedFrom:` moves to
-  that property, with its manager row;
+  that property, with its mark;
 - a value holding a spelling some value declares as its `renamedFrom:` takes
   the new spelling;
 - every other value is held to what a `put` naming it would store: kept in
   that stored form where the declaration admits it, and removed with its
-  manager row, its embedding and its sealed material where it does not (a
+  mark, its embedding and its sealed material where it does not (a
   property the kind no longer declares, a removed enum value, a changed type,
   a tightened pattern or bound, a reference its pin no longer admits, a blob
   that is gone). An object value takes the defaults its fields declare,
@@ -749,7 +856,7 @@ With `status` declared as above and a record deleted while it held `active`:
 
 ```bash
 substratectl apply -f widget.yaml   # a put onto the tombstone, without `status`
-substratectl get <authority>/shop/widget w1 -o yaml   # status: working
+substratectl get '~/shop/widget' w1 -o yaml   # status: working
 ```
 
 The restoring entry names each step under the keys a conversion uses
@@ -770,18 +877,18 @@ enum values by property and states by property:
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: geoah.example.com/shop
+  id: ~/shop
 data:
-  authority: geoah.example.com
+  authority: "~"
   package: shop
   retired:
     kinds: [gadget]
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: geoah.example.com/shop/widget
+  id: ~/shop/widget
 data:
-  authority: geoah.example.com
+  authority: "~"
   package: shop
   names:
     singular: widget
@@ -804,9 +911,9 @@ stored entry into every later document of the same package or kind, so a
 document that omits the list does not lift it and the list never shrinks
 while the row stands; and a declaration of a retired name is refused on every
 path with the same sentence, `a retired name is never declared again`: the
-apply verb, a bundle install or a sample import (a rehomed sample that
-declares a name the repository retired under the same package is refused
-too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
+apply verb, a bundle install or adding a sample (a sample copied into `~`
+that declares a name the repository retired under the same package is
+refused too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
 tree itself. A retired name is not a `deprecated:` one: `deprecated:` keeps
 the name usable and asks clients to stop offering it.
 
@@ -836,8 +943,12 @@ admitted, validated at load and stored on the declaration, and none changes a
 write. `renamedFrom:`, above, was reserved the same way and is acted on now,
 on a property and on a value entry alike. A kind's `purpose:` sits between the
 two: it changes no write either, but it is not waiting on anything, because
-the reader it exists for is a client. A kind's `ids:` is acted on from the
-start: it decides whether a create may name its record.
+the reader it exists for is a client. A package's `stability:` is the same.
+A kind's `ids:` is acted on from the
+start: it decides whether a create may name its record. `retention:`, on a
+kind and on a package header, is reserved as `unique:` is: admitted,
+validated and stored, and acted on by nothing until the compaction that drops
+history past it lands.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"
@@ -941,6 +1052,128 @@ its grant reaches only through a glob
 not a property named `purpose` — a kind may declare one of those too, under
 `properties:`, and it is an ordinary property.
 
+**`stability:` says how much a package's kinds may change**
+([record 0256](decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md)).
+It sits on the package header and takes one of three values, `stable`,
+`beta` or `experimental`:
+
+```yaml
+kind: substrate.reamde.dev/core/package
+metadata:
+  id: ~/garden
+data:
+  authority: "~"
+  package: garden
+  stability: beta
+  version: 3
+```
+
+It is the package's label for every kind it declares, and no kind carries one
+of its own. An absent `stability:` stores nothing, and a reader treats the
+package as `experimental`, the weakest promise, so a package that never said
+is told apart from one that wrote the word. Any other value is refused,
+naming the three. No write is refused over it: it is the publisher's
+statement, read by a client off the package record, and
+[stability](stability.md) says what each label promises. Through
+`POST /api/v1/vocabulary/apply` a changed label moves the package to its next
+version, like any other change to the header, and dropping the key clears
+it from the record. The key is a package
+header's alone: an authority document and a bundle document refuse it.
+
+**`retention:` says how long a kind's history is kept**
+([record 0282](decisions/0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md)).
+Every record's latest state is always kept; this is how long the changelog
+keeps the entries about it past that: `all` (every entry), `none` (nothing
+past the latest state) or an ISO 8601 duration, in the one
+[duration grammar](data-model.md#property-types) (`P30D`, `P1W`, `PT12H`; no years or
+months, and no zero, which is `none`):
+
+```yaml
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ada.example.com/journal/entry
+data:
+  retention: all
+```
+
+A package header may state it for the kinds that state none, and a kind's
+own key wins; absent on both reads as `all`, and nothing is written into
+the declaration. Any other value is refused with a reason, at the apply
+door, the catalog and the boot upgrade alike, because all three load
+through the same loader. The shipped defaults follow three classes:
+
+- **A kind a person writes keeps everything.** It states nothing, or, under
+  a provider's header, states `all`: a provider's `config` (the connection
+  settings), its `account` (the connection and the choices the owner made
+  on it) and Apple's `share` (what the owner sent, with their note).
+- **A mirror of an outside service keeps 30 days**, from its package
+  header's `P30D`: every other provider kind.
+- **Bookkeeping keeps seven days** (`P7D`): what the substrate or a sync
+  writes about its own runs, core's `triggerrun` and `alert`
+  ([record 0283](decisions/0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md)),
+  a sync's progress through one item (`beeper/chatsync`,
+  `google/calendarsync`, `notion/pagesync`, `slack/conversationsync`) and
+  Apple Health's delivery receipt (`applehealth/export`).
+
+`kinds/retention.golden.json` holds every shipped kind's value, and a test
+refuses a new kind until its author says which class it is in.
+
+**An upgrade a person takes never shortens a kind's history unasked.** A
+kind's retention is compared by what it keeps (its effective retention: the
+owner's override, else its own key, else its header's, else `all`, and a
+duration by its length, so `P30D` and `PT720H` are one value). An upgrade
+that keeps a kind's history for less time, a header gaining a default or a
+kind gaining a shorter key among them, is never a safe addition: a
+published package's refresh leaves it for the owner, and every upgrade
+preview names each such kind under `retentionShortens`. Each door a person
+takes an upgrade through asks: the console's Update opens a review that
+lists them, whoever keeps the package; `substratectl add` refuses it until
+`--allow-shorter-history` takes it; an app's approval sends the person to
+the package's page in the console; and MCP's `packages` `add` refuses it,
+telling the agent to send the person there. Two doors take the caller's word
+by design and ask nothing: the API's add route and the vocabulary apply, so
+a client of either reads `retentionShortens` first. One that keeps the same
+or longer is safe.
+
+The seeded packages (`core`, `llm`, `console`, `observations`) upgrade with
+the binary at its boot, which asks nobody, so they take the shipped values
+as they stand, and a release that shortens one says so in its notes. A
+restart alone brings those; an installed provider keeps the retention it had
+until it is upgraded, and from then a kind of it that states none inherits
+its header's `P30D`. The release that brought `retention` removes, rewrites
+or compacts no history: an override that a kind move carries, or one it
+makes redundant, is an ordinary write. The
+release that brought `retention` moved `core/triggerrun` and `core/alert`
+from all of their history to seven days. An override keeps a kind's history
+whatever its declaration says, written before an upgrade or after it:
+
+```yaml
+kind: substrate.reamde.dev/core/retention
+metadata:
+  id: triggerruns
+data:
+  properties:
+    appliesTo:
+      ref: substrate.reamde.dev/core/kind/substrate.reamde.dev/core/triggerrun
+    retention: all
+```
+
+`substratectl apply -f` takes it, and `substratectl retention
+substrate.reamde.dev/core/triggerrun` then shows `all` under EFFECTIVE.
+
+A repository overrides one kind's with a record of
+`substrate.reamde.dev/core/retention`: `appliesTo` names the kind's
+declaration, `retention` takes the same values, and one live record per
+kind is admitted. Deleting it restores the declared one. An override of a
+kind the repository does not declare applies to nothing until the kind is
+declared, and a kind removed keeps all of its history whatever its override
+said. A kind move on the shipped upgrade carries the override with the rows
+to the kind they moved to; where that kind holds an override of its own,
+the one that keeps longer stands on it and the other is deleted.
+`GET /api/v1/retention` and `substratectl retention` answer what applies
+([retention](api.md#retention)). **Nothing drops an entry by it yet**: the
+compaction that does is a later release.
+
 **`ids:` says who names a new record of the kind**
 ([record 0228](decisions/0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md)).
 `type: minted` means the substrate assigns the id, a UUIDv7 in 26 lowercase
@@ -1003,6 +1236,93 @@ The rules:
 Like `purpose:`, they change no write and no stored record, so editing them
 is not a narrowing.
 
+**`proposed:` says which open values wait for the owner.** A suggestion an
+agent or a sync wrote waits in a proposed value until the owner accepts it
+into an open one or dismisses it into a dropped one
+([record 0247](decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md)):
+
+```yaml
+status:
+  type: state
+  states: [proposed, open, done, abandoned]
+  initial: proposed
+  transitions:
+    - from: proposed
+      to: open
+    - from: proposed
+      to: abandoned
+    - from: open
+      to: done
+  done:
+    - done
+  dropped:
+    - abandoned
+  proposed:
+    - proposed
+```
+
+- Each entry names one of the property's own values, and none is in `done:`
+  or `dropped:`.
+- At least one value is in none of the three lists, the state a proposal is
+  accepted into.
+- A machine's initial state may be proposed, and each proposed state has a
+  transition to an open one.
+- It sits where `done:` and `dropped:` may, and changes no stored record.
+
+## Who may write a property
+
+A property's `writer:` names the types of [actor](api.md#actors) that may
+write it
+([decision 0290](decisions/0290-a-propertys-writer-names-types-of-actor.md)):
+one type, or a list of them, from the six an actor record's `type` holds,
+`person`, `app`, `function`, `agent`, `package` and `system`.
+
+```yaml
+properties:
+  syncFrequency:
+    type: string
+    writer: person             # the person, through any of their tokens
+  syncToken:
+    type: string
+    writer: [function, agent]  # a sync's installed code
+  tokenRef:
+    type: secret
+    writer: system             # the substrate's own hand, the OAuth facility
+```
+
+- **Absent**, any actor may write the property.
+- **The check** reads the type of the hand that chose the value: a scoped
+  app's token and an assistant's write as their app, a person's sign-in and
+  any other full-access token as the person, installed code as its function
+  or agent, and the substrate as the system. A write by any other type is
+  refused `403 forbidden`, naming the property, the types it admits, and
+  the hand in words with its type. A scoped token whose client id names no
+  app reads as the person and writes no property with a `writer:`.
+- **The system's own pass** writes any property, for what the engine itself
+  decides or replays: the OAuth facility's tokens, a sync's run cut short, a
+  migration's rewrite. A value it only carries is held to the hand that
+  chose it. A [mapping](projection.md#record-mappings)'s recompute writes no
+  property with a `writer:`, whoever started it: what the engine keeps of
+  who wrote a source is attribution, not proof of who chose each value, so
+  the write that would carry or remove such a value is refused. A
+  change-request policy that accepts a request carries the request's values
+  for the person whose rule it is, and is held as the person is.
+- **Any shape** takes it on a property: a scalar, an object or a reference.
+  A state machine does not, since its transitions say what moves it. A
+  field of an object takes none: the property's `writer:` guards its whole
+  value, and one on a field is refused at load.
+- **The console** offers a property for editing only where a person may
+  write it.
+- **Refused at load**, naming what is wrong: an empty list (it admits no
+  writer), a type named twice, a word that is not a type of actor, and the
+  three words `writer:` took before actor types, each naming its
+  replacement: `owner` is `person`, `connector` is `[function, agent]` and
+  `oauth` is `system`. A declaration stored with one of them is rewritten at
+  the repository's first open under this release, by repository migration 10,
+  as ordinary record writes, whatever its package's admission; one stored on
+  a field, which never had an effect, is removed. The key's value changed
+  shape at vocabulary dialect 5, which a package that declares it states.
+
 ## Reference properties
 
 A link can carry values of its own: where it sits in a list, what role it
@@ -1025,6 +1345,12 @@ properties:
           - value: writer
           - value: editor
 ```
+
+Three names are reserved and refused as a link property: `ref`, which holds
+the referent's path; `target`, held for a referent a read may one day inline;
+and `repository`, held for the repository a referent lives in, once a
+reference can point into another one. A kind's own property may still be named
+`repository`.
 
 A write sends them beside the value's `ref` key, and the engine coerces each
 one exactly as it coerces a record's own property, against the declared
@@ -1078,7 +1404,7 @@ rows: the fold derives both from the package's stored declaration, which it
 reads for nothing else, so `repository rebuild` and a boot import reproduce
 them. A source record of another package keeps the reference row of the
 subject slot a quarantined mapping gave its kind, the same way. A package whose stored declaration no longer parses has nothing to
-derive them from, and a rebuild indexes its records by title and body alone,
+derive them from, and a rebuild indexes its records by title alone,
 with no reference rows. The fold snapshot names such a package under
 `unparsed_packages`. Uninstalling a quarantined bundle re-indexes its
 remaining records the same way.

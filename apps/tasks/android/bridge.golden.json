@@ -2,6 +2,32 @@
   "version": 1,
   "types": [
     {
+      "name": "ApprovalLine",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "message", "type": "String"},
+        {"name": "approve", "type": "String"},
+        {"name": "collection", "type": "String"},
+        {"name": "group", "type": "String?"},
+        {"name": "scopes", "type": "[String]"}
+      ]
+    },
+    {
+      "name": "ApprovalPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "collection", "type": "String"},
+        {"name": "message", "type": "String"},
+        {"name": "scopes", "type": "[String]"},
+        {"name": "approve", "type": "String"},
+        {"name": "cancel", "type": "String"},
+        {"name": "refused", "type": "String?"},
+        {"name": "waiting", "type": "Bool"}
+      ]
+    },
+    {
       "name": "BandHeading",
       "module": "TasksCore",
       "kind": "struct",
@@ -9,6 +35,62 @@
         {"name": "band", "type": "TaskBand"},
         {"name": "title", "type": "String"},
         {"name": "count", "type": "Int"}
+      ]
+    },
+    {
+      "name": "ChoicePresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "task", "type": "String"},
+        {"name": "decision", "type": "TaskDecision"},
+        {"name": "title", "type": "String"},
+        {"name": "options", "type": "[EditorOption]"},
+        {"name": "cancel", "type": "String"}
+      ]
+    },
+    {
+      "name": "CollectionPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "kind", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "reference", "type": "String"},
+        {"name": "groupTitle", "type": "String"},
+        {"name": "groups", "type": "[GroupChoice]"},
+        {"name": "statesTitle", "type": "String"},
+        {"name": "states", "type": "[LabeledValue]"},
+        {"name": "fieldsTitle", "type": "String"},
+        {"name": "fields", "type": "[LabeledValue]"},
+        {"name": "approval", "type": "ApprovalLine?"}
+      ]
+    },
+    {
+      "name": "CollectionRow",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "reference", "type": "String"},
+        {"name": "meta", "type": "String?"},
+        {"name": "on", "type": "Bool"},
+        {"name": "viewOnly", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "CollectionsPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "intro", "type": "String"},
+        {"name": "showTitle", "type": "String"},
+        {"name": "rows", "type": "[CollectionRow]"},
+        {"name": "footer", "type": "String"},
+        {"name": "newTasksTitle", "type": "String"},
+        {"name": "newTasks", "type": "EditorChoice"}
       ]
     },
     {
@@ -25,6 +107,28 @@
       ]
     },
     {
+      "name": "CountedRow",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "detail", "type": "String"},
+        {"name": "count", "type": "Int"},
+        {"name": "selection", "type": "ListSelection"}
+      ]
+    },
+    {
+      "name": "DetailFact",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "label", "type": "String"},
+        {"name": "value", "type": "String"},
+        {"name": "note", "type": "String?"}
+      ]
+    },
+    {
       "name": "DetailField",
       "module": "TasksCore",
       "kind": "struct",
@@ -34,7 +138,8 @@
         {"name": "value", "type": "String"},
         {"name": "url", "type": "String?"},
         {"name": "tone", "type": "DueWords.Tone?"},
-        {"name": "choice", "type": "EditorChoice?"}
+        {"name": "choice", "type": "EditorChoice?"},
+        {"name": "property", "type": "String?"}
       ]
     },
     {
@@ -104,8 +209,36 @@
       "fields": [
         {"name": "id", "type": "String"},
         {"name": "title", "type": "String"},
+        {"name": "count", "type": "Int?"},
         {"name": "selection", "type": "ListSelection?"},
         {"name": "selected", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "GroupChoice",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "detail", "type": "String"},
+        {"name": "selected", "type": "Bool"}
+      ]
+    },
+    {
+      "name": "GroupSection",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "reference", "type": "String"},
+        {"name": "rows", "type": "[SidebarRow]"},
+        {"name": "quiet", "type": "[SidebarRow]"},
+        {"name": "more", "type": "String?"},
+        {"name": "busiest", "type": "Int"},
+        {"name": "all", "type": "String?"},
+        {"name": "reorders", "type": "Bool"}
       ]
     },
     {
@@ -136,20 +269,23 @@
         {"name": "title", "type": "String"},
         {"name": "summary", "type": "ListSummary"},
         {"name": "chips", "type": "[FilterChip]"},
+        {"name": "queue", "type": "CountedRow?"},
         {"name": "bands", "type": "[BandHeading]"},
         {"name": "clear", "type": "String?"},
+        {"name": "noDate", "type": "CountedRow?"},
         {"name": "open", "type": "KeyedList<TaskRow>"},
         {"name": "openTitle", "type": "String"},
         {"name": "closed", "type": "KeyedList<TaskRow>"},
         {"name": "closedTitle", "type": "String"},
         {"name": "showsClosed", "type": "Bool"},
         {"name": "toggleClosed", "type": "String"},
-        {"name": "quickAdd", "type": "String"},
+        {"name": "quickAdd", "type": "String?"},
         {"name": "newTask", "type": "String"},
         {"name": "reorders", "type": "Bool"},
         {"name": "orderNote", "type": "String?"},
         {"name": "empty", "type": "EmptyPresentation?"},
         {"name": "actions", "type": "[ActionButton<ListAction>]"},
+        {"name": "pin", "type": "ActionButton<PinAction>?"},
         {"name": "rowMenu", "type": "TaskMenuWords"}
       ]
     },
@@ -163,11 +299,33 @@
           "fields": []
         },
         {
-          "name": "inbox",
+          "name": "suggestions",
           "fields": []
         },
         {
-          "name": "list",
+          "name": "noDate",
+          "fields": []
+        },
+        {
+          "name": "group",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "ungrouped",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "missing",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "collection",
           "fields": [
             {"name": "_0", "type": "String"}
           ]
@@ -185,12 +343,47 @@
       ]
     },
     {
+      "name": "PinAction",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "pin",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "unpin",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
       "name": "PriorityBadge",
       "module": "TasksCore",
       "kind": "struct",
       "fields": [
         {"name": "text", "type": "String"},
         {"name": "priority", "type": "TaskPriority"}
+      ]
+    },
+    {
+      "name": "QueuePresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "title", "type": "String"},
+        {"name": "intro", "type": "String"},
+        {"name": "rows", "type": "KeyedList<TaskRow>"},
+        {"name": "select", "type": "String"},
+        {"name": "picking", "type": "Bool"},
+        {"name": "picked", "type": "String?"},
+        {"name": "acceptPicked", "type": "String?"},
+        {"name": "dismissPicked", "type": "String?"},
+        {"name": "empty", "type": "EmptyPresentation?"}
       ]
     },
     {
@@ -214,14 +407,35 @@
       ]
     },
     {
+      "name": "SettingsPage",
+      "module": "TasksCore",
+      "kind": "enum",
+      "cases": [
+        {
+          "name": "collections",
+          "fields": []
+        },
+        {
+          "name": "collection",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        }
+      ]
+    },
+    {
       "name": "SidebarPresentation",
       "module": "TasksCore",
       "kind": "struct",
       "fields": [
         {"name": "title", "type": "String"},
         {"name": "fixed", "type": "[SidebarRow]"},
-        {"name": "listsTitle", "type": "String"},
-        {"name": "lists", "type": "KeyedList<SidebarRow>"},
+        {"name": "search", "type": "String"},
+        {"name": "pinnedTitle", "type": "String"},
+        {"name": "pinned", "type": "[SidebarRow]"},
+        {"name": "sections", "type": "[GroupSection]"},
+        {"name": "ungroupedTitle", "type": "String"},
+        {"name": "ungrouped", "type": "[SidebarRow]"},
         {"name": "newList", "type": "String"},
         {"name": "noLists", "type": "String?"},
         {"name": "selected", "type": "ListSelection?"}
@@ -235,10 +449,31 @@
         {"name": "id", "type": "String"},
         {"name": "selection", "type": "ListSelection"},
         {"name": "title", "type": "String"},
+        {"name": "detail", "type": "String?"},
         {"name": "symbol", "type": "String"},
         {"name": "open", "type": "Int"},
         {"name": "openWords", "type": "String"},
+        {"name": "pinned", "type": "Bool"},
         {"name": "actions", "type": "[ActionButton<ListAction>]"}
+      ]
+    },
+    {
+      "name": "SuggestionPresentation",
+      "module": "TasksCore",
+      "kind": "struct",
+      "fields": [
+        {"name": "id", "type": "String"},
+        {"name": "header", "type": "String"},
+        {"name": "title", "type": "String"},
+        {"name": "fields", "type": "[DetailField]"},
+        {"name": "description", "type": "DetailFact?"},
+        {"name": "detailsTitle", "type": "String"},
+        {"name": "details", "type": "[DetailFact]"},
+        {"name": "place", "type": "String?"},
+        {"name": "pending", "type": "Bool"},
+        {"name": "pendingWords", "type": "String?"},
+        {"name": "actions", "type": "[ActionButton<TaskAction>]"},
+        {"name": "approval", "type": "ApprovalLine?"}
       ]
     },
     {
@@ -261,6 +496,18 @@
         {
           "name": "delete",
           "fields": []
+        },
+        {
+          "name": "accept",
+          "fields": []
+        },
+        {
+          "name": "dismiss",
+          "fields": []
+        },
+        {
+          "name": "undo",
+          "fields": []
         }
       ]
     },
@@ -269,9 +516,22 @@
       "module": "TasksCore",
       "kind": "stringEnum",
       "cases": [
-        {"name": "needsYou", "value": "needsYou"},
-        {"name": "upcoming", "value": "upcoming"},
-        {"name": "later", "value": "later"}
+        {"name": "lateOrUrgent", "value": "lateOrUrgent"},
+        {"name": "comingUp", "value": "comingUp"},
+        {"name": "later", "value": "later"},
+        {"name": "noDate", "value": "noDate"}
+      ]
+    },
+    {
+      "name": "TaskDecision",
+      "module": "TasksCore",
+      "kind": "stringEnum",
+      "cases": [
+        {"name": "accept", "value": "accept"},
+        {"name": "dismiss", "value": "dismiss"},
+        {"name": "complete", "value": "complete"},
+        {"name": "wontDo", "value": "wontDo"},
+        {"name": "reopen", "value": "reopen"}
       ]
     },
     {
@@ -281,11 +541,14 @@
       "fields": [
         {"name": "id", "type": "String"},
         {"name": "title", "type": "String"},
-        {"name": "status", "type": "TaskStatus"},
+        {"name": "standing", "type": "KindStatus.Standing"},
         {"name": "pending", "type": "Bool"},
         {"name": "fields", "type": "[DetailField]"},
+        {"name": "detailsTitle", "type": "String"},
+        {"name": "details", "type": "[DetailFact]"},
         {"name": "actions", "type": "[ActionButton<TaskAction>]"},
-        {"name": "edit", "type": "String"}
+        {"name": "edit", "type": "String?"},
+        {"name": "approval", "type": "ApprovalLine?"}
       ]
     },
     {
@@ -332,7 +595,7 @@
         {
           "name": "setPriority",
           "fields": [
-            {"name": "_0", "type": "TaskPriority"}
+            {"name": "_0", "type": "String?"}
           ]
         },
         {
@@ -352,11 +615,11 @@
       "fields": [
         {"name": "title", "type": "String"},
         {"name": "name", "type": "EditorText"},
-        {"name": "notes", "type": "EditorText"},
-        {"name": "link", "type": "EditorText"},
-        {"name": "list", "type": "EditorChoice"},
-        {"name": "due", "type": "EditorDue"},
-        {"name": "priority", "type": "EditorChoice"},
+        {"name": "notes", "type": "EditorText?"},
+        {"name": "link", "type": "EditorText?"},
+        {"name": "list", "type": "EditorChoice?"},
+        {"name": "due", "type": "EditorDue?"},
+        {"name": "priority", "type": "EditorChoice?"},
         {"name": "save", "type": "String"},
         {"name": "canSave", "type": "Bool"},
         {"name": "cancel", "type": "String"},
@@ -392,7 +655,10 @@
         {"name": "priorities", "type": "[EditorOption]"},
         {"name": "move", "type": "String"},
         {"name": "delete", "type": "String"},
-        {"name": "swipeDelete", "type": "String"}
+        {"name": "swipeDelete", "type": "String"},
+        {"name": "accept", "type": "String"},
+        {"name": "dismiss", "type": "String"},
+        {"name": "undo", "type": "String"}
       ]
     },
     {
@@ -414,28 +680,26 @@
       "fields": [
         {"name": "id", "type": "String"},
         {"name": "title", "type": "String"},
-        {"name": "status", "type": "TaskStatus"},
+        {"name": "standing", "type": "KindStatus.Standing"},
+        {"name": "suggestion", "type": "Bool"},
         {"name": "pending", "type": "Bool"},
-        {"name": "toggle", "type": "String"},
+        {"name": "pendingWords", "type": "String?"},
+        {"name": "toggle", "type": "String?"},
+        {"name": "written", "type": "String?"},
+        {"name": "viewOnly", "type": "String?"},
+        {"name": "refused", "type": "String?"},
         {"name": "due", "type": "DueBadge?"},
         {"name": "priority", "type": "PriorityBadge?"},
         {"name": "listName", "type": "String?"},
+        {"name": "collection", "type": "String?"},
         {"name": "band", "type": "TaskBand?"},
         {"name": "reschedule", "type": "RescheduleMenu?"},
         {"name": "decisions", "type": "[ActionButton<TaskAction>]"},
+        {"name": "picked", "type": "Bool?"},
+        {"name": "editable", "type": "Bool"},
         {"name": "hasNotes", "type": "Bool"},
         {"name": "notes", "type": "String?"},
         {"name": "spoken", "type": "String"}
-      ]
-    },
-    {
-      "name": "TaskStatus",
-      "module": "TasksCore",
-      "kind": "stringEnum",
-      "cases": [
-        {"name": "open", "value": "open"},
-        {"name": "done", "value": "done"},
-        {"name": "abandoned", "value": "abandoned"}
       ]
     },
     {
@@ -490,16 +754,74 @@
           ]
         },
         {
+          "name": "abandon",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "accept",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "dismiss",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
           "name": "reopen",
           "fields": [
             {"name": "_0", "type": "String"}
           ]
         },
         {
-          "name": "abandon",
+          "name": "decide",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "_1", "type": "TaskDecision"},
+            {"name": "to", "type": "String"}
+          ]
+        },
+        {
+          "name": "undo",
           "fields": [
             {"name": "_0", "type": "String"}
           ]
+        },
+        {
+          "name": "dismissChoice",
+          "fields": []
+        },
+        {
+          "name": "setSuggestion",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "property", "type": "String"},
+            {"name": "to", "type": "JSON?"}
+          ]
+        },
+        {
+          "name": "pick",
+          "fields": [
+            {"name": "_0", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "picked",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "acceptPicked",
+          "fields": []
+        },
+        {
+          "name": "dismissPicked",
+          "fields": []
         },
         {
           "name": "reschedule",
@@ -560,6 +882,61 @@
           "fields": [
             {"name": "_0", "type": "String"}
           ]
+        },
+        {
+          "name": "pin",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "unpin",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "setCollection",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "on", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "setGrouping",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "property", "type": "String?"}
+          ]
+        },
+        {
+          "name": "setNewTasks",
+          "fields": [
+            {"name": "_0", "type": "String"}
+          ]
+        },
+        {
+          "name": "requestApproval",
+          "fields": [
+            {"name": "_0", "type": "String"},
+            {"name": "group", "type": "String?"}
+          ]
+        },
+        {
+          "name": "showSettings",
+          "fields": [
+            {"name": "_0", "type": "SettingsPage?"}
+          ]
+        },
+        {
+          "name": "approvalAnswered",
+          "fields": [
+            {"name": "completed", "type": "Bool"}
+          ]
+        },
+        {
+          "name": "dismissApproval",
+          "fields": []
         },
         {
           "name": "confirm",
@@ -637,7 +1014,13 @@
         {"name": "detail", "value": "detail"},
         {"name": "editor", "value": "editor"},
         {"name": "confirmation", "value": "confirmation"},
-        {"name": "settings", "value": "settings"}
+        {"name": "settings", "value": "settings"},
+        {"name": "queue", "value": "queue"},
+        {"name": "suggestion", "value": "suggestion"},
+        {"name": "choice", "value": "choice"},
+        {"name": "collections", "value": "collections"},
+        {"name": "collection", "value": "collection"},
+        {"name": "approval", "value": "approval"}
       ]
     },
     {
@@ -652,7 +1035,8 @@
         {"name": "version", "type": "String"},
         {"name": "channel", "type": "String?"},
         {"name": "device", "type": "String"},
-        {"name": "address", "type": "String?"}
+        {"name": "address", "type": "String?"},
+        {"name": "scopes", "type": "[String]?"}
       ]
     },
     {
@@ -663,12 +1047,19 @@
         {"name": "menu", "type": "AppMenuPresentation"},
         {"name": "sidebar", "type": "SidebarPresentation"},
         {"name": "list", "type": "ListPresentation?"},
+        {"name": "queue", "type": "QueuePresentation?"},
         {"name": "detail", "type": "TaskDetailPresentation?"},
+        {"name": "suggestion", "type": "SuggestionPresentation?"},
+        {"name": "choice", "type": "ChoicePresentation?"},
         {"name": "editors", "type": "[String: TaskEditorPresentation]"},
         {"name": "confirmation", "type": "ConfirmationPresentation<Confirmation>?"},
         {"name": "settings", "type": "[SettingsSection]"},
         {"name": "storage", "type": "SettingsSection"},
         {"name": "about", "type": "AboutPresentation"},
+        {"name": "collections", "type": "CollectionsPresentation"},
+        {"name": "collection", "type": "CollectionPresentation?"},
+        {"name": "settingsPage", "type": "SettingsPage?"},
+        {"name": "approval", "type": "ApprovalPresentation?"},
         {"name": "notices", "type": "[NoticeLine]"},
         {"name": "problem", "type": "ProblemPresentation?"},
         {"name": "reminders", "type": "[NotificationRequest]"},

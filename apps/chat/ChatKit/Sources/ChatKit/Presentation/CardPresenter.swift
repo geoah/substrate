@@ -80,6 +80,42 @@ enum CardPresenter {
             problem: decision == "proposed" ? card?.problem.map { "That didn't go through: \($0)" } : nil, busy: card?.busy)
     }
 
+    static func approval(_ id: String, card: ChatAppState.Card?, pending: Record?, outcome: ApprovalNotice?) -> ApprovalCard {
+        // The card's own read is the newer: the list holds only the ones
+        // still waiting.
+        let record = card?.record ?? pending
+        let state = record?["state"]?.string ?? outcome.map { $0.approved ? ($0.ok == false ? "failed" : "done") : "denied" }
+        let tone: ApprovalCard.Tone =
+            switch state {
+            case "approved", "running": .running
+            case "done": .done
+            case "failed": .failed
+            case "denied": .declined
+            default: .waiting
+            }
+        let title =
+            switch state {
+            case nil: "Approval"
+            case "approved": "Approved, starting"
+            case "running": "Approved, running"
+            case "done": "Approved and done"
+            case "failed": "Approved, but it didn't work"
+            case "denied": "Declined"
+            default: "Waiting for your approval"
+            }
+        let agent = referent(record?["agent"], pin: Kinds.agent).map(agentName) ?? "The agent"
+        let arguments = (record?["arguments"]?.object ?? [:]).filter { $0.value != .null && $0.value != .string("") }
+            .sorted { $0.key < $1.key }
+            .map { ApprovalCard.Argument(name: $0.key, label: propertyLabel($0.key), value: valueWords($0.value)) }
+        let pending = state == "pending"
+        return ApprovalCard(
+            title: title, loading: record == nil && outcome == nil, pending: pending, tone: tone,
+            asks: pending ? "\(agent) wants to run" : "\(agent) asked to run",
+            tool: record?["tool"]?.text ?? outcome?.tool ?? "", arguments: arguments,
+            error: state == "failed" ? record?["error"]?.text ?? outcome?.error : nil,
+            problem: card?.problem.map { "That didn't go through: \($0)" }, busy: card?.busy, approve: "Approve", decline: "Decline")
+    }
+
     /// Each suggestion's `propose` call, by the request it landed.
     static func proposals(_ turns: [Turn]) -> [String: ToolCall] {
         var out: [String: ToolCall] = [:]

@@ -66,7 +66,7 @@ func PutShippedUnits(ctx context.Context, ds substrate.Dataset, ids ...string) e
 		} else if !errors.Is(err, substrate.ErrNotFound) {
 			return err
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			return fmt.Errorf("enginetest: put %s %s: %w", kind, id, err)
 		}
 		return nil

@@ -134,7 +134,7 @@ func TestChangeTriggersStates(t *testing.T) {
 
 	chipOf := func(recordID string, actor substrate.Actor) (substrate.ChangeTrigger, bool) {
 		for _, ch := range changes {
-			if ch.RecordID != recordID || ch.Actor != actor {
+			if ch.RecordID != recordID || ch.Actor != vocabulary.ActorID(actor) {
 				continue
 			}
 			for _, ct := range states[ch.Seq] {
@@ -233,7 +233,7 @@ func TestRecordFilterMatchesMergeAndSplitForBothRecords(t *testing.T) {
 func TestChangesCursorWalkSkipsNoSeqUnderConcurrentWriters(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	ctx := context.Background()
@@ -355,7 +355,7 @@ func TestChangesCursorWalkSkipsNoSeqUnderConcurrentWriters(t *testing.T) {
 func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 	t.Parallel()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 	ctx := context.Background()
@@ -472,7 +472,7 @@ func TestChangesCursorWalkSeesEveryPatchDuringASyncBurst(t *testing.T) {
 		chs, err := ds.Changes(ctx, last, substrate.ChangeFilter{
 			Kinds:  []string{"samples.substrate.reamde.dev/messaging/conversationmessage"},
 			Ops:    []substrate.Op{substrate.OpPatch},
-			Actors: []substrate.Actor{owner},
+			Actors: []string{vocabulary.ActorID(owner)},
 		}, 500)
 		if err != nil {
 			t.Fatalf("changes: %v", err)

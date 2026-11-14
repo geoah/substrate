@@ -40,7 +40,6 @@ func rpProviderCatalog(t *testing.T, version int64, remarkIndexed bool) *catalog
 	}
 	docs := []map[string]any{
 		vocabulary.PackageManifest(rpPackage, version),
-		vocabulary.ActorManifest(rpPackage, vocabulary.PackageActor(rpPackage)),
 		vocabulary.BundleManifest(rpPackage, map[string]any{
 			"description": "a provider whose upgrade indexes a property its rows carry",
 			"installs":    []any{rpMeter},
@@ -181,8 +180,8 @@ func TestTheReprojectionKeepsTheRequestOfAnApplyThatDidNotPublish(t *testing.T) 
 	}})
 
 	fault.arm(engine.CommitUnpublished)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, notes(true)); !errors.Is(err, engine.ErrChangelogFileBehind) {
-		t.Fatalf("an apply that did not publish: err = %v, want ErrChangelogFileBehind", err)
+	if _, err := ds.ApplyVocabularyDocuments(ctx, owner, notes(true)); !errors.Is(err, engine.ErrRegistryUnsettled) {
+		t.Fatalf("an apply that did not publish: err = %v, want ErrRegistryUnsettled", err)
 	}
 	select {
 	case <-engine.IndexReprojectionDone(ds):

@@ -55,7 +55,6 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 		Name: "google.gmail", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 1),
-			vocabulary.ActorManifest(pkg, "connector:gmail"),
 			vocabulary.KindManifest(pkg,
 				map[string]any{"singular": "accountconfig"},
 				map[string]any{"properties": map[string]any{
@@ -247,7 +246,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 			Properties: map[string]substrate.Cond{"hash": {In: []any{"a", "b"}}},
 		}},
 		"exists probe on another type's secret": {Filter: substrate.Filter{
-			Properties: map[string]substrate.Cond{"passwordRef": {Exists: ptr(true)}},
+			Properties: map[string]substrate.Cond{"apiKey": {Exists: ptr(true)}},
 		}},
 		"ordering oracle": {
 			Filter:  substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/token"}},
@@ -367,7 +366,7 @@ func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newVocabularyDataset(t, "messaging")
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 

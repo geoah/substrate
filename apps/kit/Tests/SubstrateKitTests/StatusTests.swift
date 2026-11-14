@@ -382,17 +382,39 @@ final class TransportBox: @unchecked Sendable {
             ])
         #expect(ReviewHeading(changes: review, firstSignIn: false) == .moreAccess)
         #expect(ReviewHeading(changes: review.filter(\.leftOut), firstSignIn: false) == .renew)
-        // `~` is the repository's authority, as the token stores it.
+        // `~` is the repository's own namespace, as the token stores it, and
+        // the repository's name is another spelling of it (decision record
+        // 0259).
         var home = manifest
         home.scopes = ["read:~/notes/*"]
         var held = session
-        held.scopes = ["read:ada.example.com/notes/*"]
+        held.scopes = ["read:~/notes/*"]
         held.requestedScopes = ["read:~/notes/*"]
+        #expect(home.leftOut(by: held).isEmpty)
+        held.scopes = ["read:ada.example.com/notes/*"]
         #expect(home.leftOut(by: held).isEmpty)
         // A session that never kept its request left nothing out.
         held.requestedScopes = nil
         held.scopes = []
         #expect(home.leftOut(by: held).isEmpty)
+    }
+
+    /// A scope asked for beside the manifest is asked once, and one an
+    /// earlier request added is carried by the next, so approving it again
+    /// takes nothing back.
+    @Test func aScopeAskedBesideTheManifestIsKeptByTheNextRequest() {
+        let chore = "write:ada.example.com/work/chore"
+        var home = syncManifest()
+        home.scopes = ["write:~/tasks/*"]
+        let asking = home.asking([chore, chore, "write:~/tasks/*"])
+        #expect(asking.scopes == ["write:~/tasks/*", chore])
+        var session = appSession()
+        session.scopes = ["write:~/tasks/*", chore]
+        #expect(home.beyond(session) == [chore])
+        session.scopes = ["write:ada.example.com/tasks/*", chore]
+        #expect(home.beyond(session) == [chore])
+        session.scopes = nil
+        #expect(home.beyond(session).isEmpty)
     }
 
     /// The check carries this build's version beside the request, so the

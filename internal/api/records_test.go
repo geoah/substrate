@@ -1,12 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -65,14 +64,38 @@ func wantMessage(t *testing.T, rec *httptest.ResponseRecorder, fragments ...stri
 	}
 }
 
+// recordsRecorder is a repository that resolves the person kind and keeps
+// what the records route handed its List and its Search, answering an empty
+// page and an empty ranking: the decoding is the handler's, and only the
+// handed input shows it whole.
+type recordsRecorder struct {
+	stubKinds
+	query  substrate.Query
+	search substrate.SearchInput
+}
+
+func newRecordsRecorder() *recordsRecorder {
+	return &recordsRecorder{stubKinds: newStubKinds(personKind)}
+}
+
+func (d *recordsRecorder) List(_ context.Context, q substrate.Query) (*substrate.Page, error) {
+	d.query = q
+	return &substrate.Page{Records: []*substrate.Record{}, Generation: "recordsgeneration"}, nil
+}
+
+func (d *recordsRecorder) Search(_ context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
+	d.search = in
+	return substrate.SearchResult{Hits: []substrate.Hit{}}, nil
+}
+
 // --- the list ------------------------------------------------------------
 
 // The list carries the whole grammar to the dataset unchanged: every filter
-// arm, the sort, the page and the expansion.
+// arm, the sort, the page and the expansion, and it answers the dataset's
+// page as it was given.
 func TestRecordsListCarriesTheGrammar(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newRecordsRecorder()
+	env := newStubEnv(t, ds)
 
 	f := substrate.Filter{
 		Kinds:      []string{personKind},
@@ -81,10 +104,10 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 	}
 	path := filterPath(t, f, "orderBy="+url.QueryEscape("at:desc,createdAt"), "first=7", "after=cur1",
 		"expand="+url.QueryEscape("manager, author"), "withAnnotations=1")
-	rec := env.do(t, http.MethodGet, path, tok, nil)
+	rec := env.do(t, http.MethodGet, path, stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 
-	q := ds.lastQuery
+	q := ds.query
 	if len(q.Filter.Kinds) != 1 || q.Filter.Kinds[0] != personKind {
 		t.Fatalf("filter.kinds = %v", q.Filter.Kinds)
 	}
@@ -108,8 +131,8 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 		t.Fatalf("expand = %v, want the comma-separated names, trimmed", q.Expand)
 	}
 	page := decodeJSON[substrate.Page](t, rec)
-	if page.Generation != ds.generation {
-		t.Fatalf("page generation = %q, want %q", page.Generation, ds.generation)
+	if page.Generation != "recordsgeneration" {
+		t.Fatalf("page generation = %q, want the dataset's", page.Generation)
 	}
 }
 
@@ -117,378 +140,55 @@ func TestRecordsListCarriesTheGrammar(t *testing.T) {
 // written; it is refused as a companion to `after` and on the ranked read,
 // which has no keyset (decision 0085).
 func TestRecordsListOffset(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	ds := newRecordsRecorder()
+	env := newStubEnv(t, ds)
 
 	f := substrate.Filter{Kinds: []string{personKind}}
-	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=25", "offset=100"), tok, nil)
+	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=25", "offset=100"), stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if q := ds.lastQuery; q.First != 25 || q.Offset != 100 || q.After != "" {
+	if q := ds.query; q.First != 25 || q.Offset != 100 || q.After != "" {
 		t.Fatalf("paging = first %d offset %d after %q, want first 25 offset 100 and no cursor", q.First, q.Offset, q.After)
 	}
 
 	// Not a number, and negative, are both refused at the door rather than
 	// reaching the engine as a zero that silently answers page one.
 	for _, bad := range []string{"offset=soon", "offset=-1"} {
-		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), tok, nil)
+		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), stubToken, nil)
 		wantStatus(t, rec, http.StatusBadRequest)
 		wantMessage(t, rec, "offset")
 	}
 
 	// The ranked read names its own grammar and refuses the rest by name.
-	rec = env.do(t, http.MethodGet, filterPath(t, f, "q=ada", "offset=10"), tok, nil)
+	rec = env.do(t, http.MethodGet, filterPath(t, f, "q=ada", "offset=10"), stubToken, nil)
 	wantStatus(t, rec, http.StatusBadRequest)
 	wantMessage(t, rec, "offset")
 }
 
-// `count=1` asks for the size of the filtered set beside the page. It reaches
-// the dataset as Query.Count, the answer carries `count` (zero included), a
-// list that did not ask carries none, and the ranked read and the tail, which
-// have no filtered set to count, refuse it by name.
-func TestRecordsListCount(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+// `count=1` is the one spelling of the count: a value read as "no" would
+// answer a page without the number the caller is about to render. The ranked
+// read and the tail, which have no filtered set to count, refuse it by name.
+// Each refusal is the door's, so the dataset is never reached.
+func TestRecordsListCountIsOneSpelling(t *testing.T) {
+	env := newStubEnv(t, nil)
 	f := substrate.Filter{Kinds: []string{personKind}}
-
-	counted := func(rec *httptest.ResponseRecorder) (int64, bool) {
-		t.Helper()
-		var body map[string]json.RawMessage
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatal(err)
-		}
-		raw, ok := body["count"]
-		if !ok {
-			return 0, false
-		}
-		var n int64
-		if err := json.Unmarshal(raw, &n); err != nil {
-			t.Fatalf("count = %s, want a number", raw)
-		}
-		return n, true
-	}
-
-	// An empty set is counted, not omitted: zero is an answer.
-	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if n, ok := counted(rec); !ok || n != 0 {
-		t.Fatalf("count over an empty set = %d (present %v), want 0 present", n, ok)
-	}
-
-	for _, name := range []string{"Ada", "Grace", "Hedy"} {
-		createRecord(t, env, tok, personKind, map[string]any{"name": name})
-	}
-	rec = env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if !ds.lastQuery.Count {
-		t.Fatal("count=1 did not reach the dataset")
-	}
-	if n, ok := counted(rec); !ok || n != 3 {
-		t.Fatalf("count = %d (present %v), want 3", n, ok)
-	}
-
-	// A list that did not ask carries no count at all.
-	rec = env.do(t, http.MethodGet, filterPath(t, f), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if ds.lastQuery.Count {
-		t.Fatal("a list without count=1 asked the dataset for one")
-	}
-	if n, ok := counted(rec); ok {
-		t.Fatalf("a list without count=1 answered count %d", n)
-	}
-
-	// One spelling: a value read as "no" would answer a page without the
-	// number the caller is about to render.
 	for _, bad := range []string{"count=true", "count=0", "count="} {
-		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), tok, nil)
+		rec := env.do(t, http.MethodGet, filterPath(t, f, bad), stubToken, nil)
 		wantStatus(t, rec, http.StatusBadRequest)
 		wantMessage(t, rec, "count")
 	}
-
-	// The ranked read and the tail name their own grammar.
 	for _, mode := range []string{"q=ada", "watch=1"} {
-		rec := env.do(t, http.MethodGet, filterPath(t, f, mode, "count=1"), tok, nil)
+		rec := env.do(t, http.MethodGet, filterPath(t, f, mode, "count=1"), stubToken, nil)
 		wantStatus(t, rec, http.StatusBadRequest)
 		wantMessage(t, rec, "count")
-	}
-}
-
-// With no filter at all the list is every record: there is no collection to
-// scope it, so the route does not invent one.
-func TestRecordsListWithoutAFilterIsEveryKind(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{}})
-	ds.put(&substrate.Record{ID: "t1", Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{}})
-
-	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.Page](t, rec)
-	if len(page.Records) != 2 {
-		t.Fatalf("records = %d, want both kinds", len(page.Records))
-	}
-	if len(ds.lastQuery.Filter.Kinds) != 0 {
-		t.Fatalf("the route narrowed an unfiltered list to %v", ds.lastQuery.Filter.Kinds)
-	}
-}
-
-// filter.kinds resolves each reference against the repository's kinds, so an
-// unknown one is the record path's 404, named, in every mode.
-func TestRecordsUnknownKindInFilterIs404(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	const unknown = "samples.substrate.reamde.dev/people/widget"
-	for _, extra := range [][]string{nil, {"q=ada"}, {"watch=1"}} {
-		rec := env.do(t, http.MethodGet, recordsOf(t, unknown, extra...), tok, nil)
-		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "unknown kind "+unknown) {
-			t.Fatalf("%v: message = %q, want the kind named", extra, msg)
-		}
-	}
-}
-
-// A bare word in filter.kinds, or as a create's kind, is not a missing kind
-// but a malformed reference: 422, naming the identity the repository declares
-// under it, on every read mode and on the create (decision record 0101).
-func TestRecordsBareKindIs422NamingTheSpelling(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	for _, extra := range [][]string{nil, {"q=ada"}, {"watch=1"}} {
-		rec := env.do(t, http.MethodGet, recordsOf(t, "person", extra...), tok, nil)
-		wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-		wantMessage(t, rec, `"person" is a bare name`, "samples.substrate.reamde.dev/people/person")
-	}
-	rec := env.do(t, http.MethodPost, "/api/v1/records", tok, map[string]any{
-		"kind": "person", "properties": map[string]any{"name": "Ada"},
-	})
-	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
-	wantMessage(t, rec, `"person" is a bare name`, "samples.substrate.reamde.dev/people/person")
-}
-
-// The reverse read is a filter arm: `filter.referencing` narrows to the
-// records pointing at one target, and the page's `matches` says from which
-// property each one points. `property` narrows to one site.
-func TestRecordsReferencingFillsMatches(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	const target = personKind + "/p1"
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Properties: map[string]any{
-		"name": "Ada", "manager": map[string]any{"ref": target},
-	}})
-	ds.put(&substrate.Record{ID: "m1", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", Properties: map[string]any{
-		"text": "hi", "author": map[string]any{"ref": target, "since": 3},
-	}})
-	ds.put(&substrate.Record{ID: "p3", Kind: personKind, Properties: map[string]any{"name": "Nobody"}})
-
-	rec := env.do(t, http.MethodGet, filterPath(t, substrate.Filter{Referencing: &substrate.Referencing{Ref: target}}), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.Page](t, rec)
-	if len(page.Records) != 2 {
-		t.Fatalf("referencing page = %+v, want the two pointers", page.Records)
-	}
-	if got := page.Matches[personKind+"/p2"]; len(got) != 1 || got[0].Property != "manager" {
-		t.Fatalf("matches for p2 = %+v", got)
-	}
-	if got := page.Matches["samples.substrate.reamde.dev/messaging/conversationmessage/m1"]; len(got) != 1 || got[0].Property != "author" {
-		t.Fatalf("matches for m1 = %+v", got)
-	}
-	if q := ds.lastQuery.Filter.Referencing; q == nil || q.Ref != target {
-		t.Fatalf("the dataset saw referencing = %+v", q)
-	}
-
-	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{
-		Kinds:       []string{personKind},
-		Referencing: &substrate.Referencing{Ref: target, Property: "manager"},
-	}), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page = decodeJSON[substrate.Page](t, rec)
-	if len(page.Records) != 1 || page.Records[0].ID != "p2" {
-		t.Fatalf("property-narrowed page = %+v", page.Records)
-	}
-}
-
-// `referencing.refs` is several targets in one read, spelled on the wire as a
-// list beside the single `ref`: the dataset sees the list whole, a record
-// pointing at two of them is on the page once, and the list past the cap, or
-// set together with `ref`, is refused naming why.
-func TestRecordsReferencingTakesAListOfTargets(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	const work, home = personKind + "/work", personKind + "/home"
-	ds.put(&substrate.Record{ID: "work", Kind: personKind, Properties: map[string]any{"name": "Work"}})
-	ds.put(&substrate.Record{ID: "home", Kind: personKind, Properties: map[string]any{"name": "Home"}})
-	ds.put(&substrate.Record{ID: "a", Kind: personKind, Properties: map[string]any{
-		"name": "A", "manager": map[string]any{"ref": work},
-	}})
-	ds.put(&substrate.Record{ID: "b", Kind: personKind, Properties: map[string]any{
-		"name": "B", "manager": map[string]any{"ref": home},
-	}})
-	ds.put(&substrate.Record{ID: "both", Kind: "samples.substrate.reamde.dev/messaging/conversationmessage", Properties: map[string]any{
-		"text": "hi", "author": map[string]any{"ref": work}, "mentions": map[string]any{"ref": home},
-	}})
-	ds.put(&substrate.Record{ID: "none", Kind: personKind, Properties: map[string]any{"name": "None"}})
-
-	raw := `{"referencing":{"refs":["` + work + `","` + home + `"]}}`
-	rec := env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.Page](t, rec)
-	var ids []string
-	for _, e := range page.Records {
-		ids = append(ids, e.ID)
-	}
-	if strings.Join(ids, ",") != "a,b,both" {
-		t.Fatalf("referencing refs page = %v, want a, b and both once each", ids)
-	}
-	if got := page.Matches["samples.substrate.reamde.dev/messaging/conversationmessage/both"]; len(got) != 2 {
-		t.Fatalf("matches for the record pointing at both = %+v, want both sites", got)
-	}
-	if q := ds.lastQuery.Filter.Referencing; q == nil || q.Ref != "" || len(q.Refs) != 2 {
-		t.Fatalf("the dataset saw referencing = %+v", q)
-	}
-
-	// The list keeps the `property` narrowing the single form has.
-	raw = `{"referencing":{"refs":["` + work + `","` + home + `"],"property":"manager"}}`
-	rec = env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if page := decodeJSON[substrate.Page](t, rec); len(page.Records) != 2 {
-		t.Fatalf("property-narrowed refs page = %+v, want a and b", page.Records)
-	}
-
-	tooMany := make([]string, substrate.MaxReferencingTargets+1)
-	for i := range tooMany {
-		tooMany[i] = personKind + "/p" + strconv.Itoa(i)
-	}
-	tooManyJSON, err := json.Marshal(tooMany)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Spelled as the wire carries them, so an empty `refs` beside `ref` is a
-	// case: a Go client's omitempty would drop it before it left.
-	for name, tc := range map[string]struct{ referencing, want string }{
-		"past the cap":       {`{"refs":` + string(tooManyJSON) + `}`, "the cap is " + strconv.Itoa(substrate.MaxReferencingTargets)},
-		"ref and refs":       {`{"ref":"` + work + `","refs":["` + home + `"]}`, "set ref or refs, not both"},
-		"ref and empty refs": {`{"ref":"` + work + `","refs":[]}`, "set ref or refs, not both"},
-		"an empty refs":      {`{"refs":[]}`, "name a target"},
-		"neither":            {`{"property":"manager"}`, "name a target"},
-	} {
-		raw := `{"referencing":` + tc.referencing + `}`
-		rec := env.do(t, http.MethodGet, recordsPath+"?filter="+url.QueryEscape(raw), tok, nil)
-		if rec.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("%s: status = %d, want 422: %s", name, rec.Code, rec.Body.String())
-		}
-		wantMessage(t, rec, tc.want)
-	}
-}
-
-// The reverse read sizes its fan-in only when asked: a referencing page
-// without `count=1` asks the dataset for no count and answers none, and one
-// with it hands the dataset both the arm and the ask (issue #334).
-func TestRecordsReferencingCountsOnRequest(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	const target = personKind + "/p1"
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
-	for _, id := range []string{"p2", "p3", "p4"} {
-		ds.put(&substrate.Record{ID: id, Kind: personKind, Properties: map[string]any{
-			"name": id, "manager": map[string]any{"ref": target},
-		}})
-	}
-	f := substrate.Filter{Referencing: &substrate.Referencing{Ref: target}}
-
-	rec := env.do(t, http.MethodGet, filterPath(t, f, "first=1"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if ds.lastQuery.Count {
-		t.Fatal("a referencing page without count=1 asked the dataset for a count")
-	}
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatal(err)
-	}
-	if raw, ok := body["count"]; ok {
-		t.Fatalf("a referencing page without count=1 answered count %s", raw)
-	}
-
-	rec = env.do(t, http.MethodGet, filterPath(t, f, "first=1", "count=1"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if q := ds.lastQuery; !q.Count || q.Filter.Referencing == nil || q.Filter.Referencing.Ref != target {
-		t.Fatalf("the dataset saw %+v, want the referencing arm and the count", q)
-	}
-	page := decodeJSON[substrate.Page](t, rec)
-	if page.Count == nil {
-		t.Fatal("a referencing page with count=1 answered no count")
-	}
-	if *page.Count != 3 {
-		t.Fatalf("count = %d, want the three pointers", *page.Count)
-	}
-}
-
-// `expand` hydrates the named reference properties one hop: the referents
-// land in `included`, keyed by record path, each once; a dangling pointer has
-// no entry.
-func TestRecordsExpandFillsIncluded(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "boss", Kind: personKind, Properties: map[string]any{"name": "Sam"}})
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Properties: map[string]any{
-		"name": "Ada", "manager": map[string]any{"ref": personKind + "/boss"},
-	}})
-	ds.put(&substrate.Record{ID: "p3", Kind: personKind, Properties: map[string]any{
-		"name": "Grace", "manager": map[string]any{"ref": personKind + "/boss"},
-	}})
-	ds.put(&substrate.Record{ID: "p4", Kind: personKind, Properties: map[string]any{
-		"name": "Orphan", "manager": map[string]any{"ref": personKind + "/gone"},
-	}})
-
-	rec := env.do(t, http.MethodGet, recordsOf(t, personKind, "expand=manager"), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.Page](t, rec)
-	if len(page.Included) != 1 {
-		t.Fatalf("included = %+v, want the one referent once", page.Included)
-	}
-	if boss := page.Included[personKind+"/boss"]; boss == nil || boss.Properties["name"] != "Sam" {
-		t.Fatalf("included[boss] = %+v", boss)
-	}
-
-	// Without `expand`, the key is absent, not an empty object.
-	rec = env.do(t, http.MethodGet, recordsOf(t, personKind), tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if strings.Contains(rec.Body.String(), `"included"`) {
-		t.Fatalf("an unexpanded page carries included: %s", rec.Body.String())
-	}
-}
-
-// A list cursor from another history is the changefeed's signal, 410
-// `compacted` with the head to start over from, never a 422 the client reads
-// as its own mistake.
-func TestRecordsStaleCursorIs410Compacted(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	seedChanges(ds, 3)
-	ds.errs["List"] = fmt.Errorf("after: %w", substrate.ErrStaleHistory)
-
-	rec := env.do(t, http.MethodGet, recordsPath+"?after=old-cursor", tok, nil)
-	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
-	problem := decodeJSON[substrate.ErrorEnvelope](t, rec).Error
-	if problem.Head == nil || *problem.Head != 3 || problem.Generation != ds.generation {
-		t.Fatalf("compacted problem = %+v, want head 3 and the live generation", problem)
 	}
 }
 
 // A parameter the list does not honor is a bad_request naming it, and a
 // misspelled filter key is refused rather than silently broadening the list.
 func TestRecordsListRefusesUnknownParameters(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
 	for _, query := range []string{"?bogus=1", "?first=2&bogus=1", "?limit=5", "?from=3", "?generation=g"} {
-		rec := env.do(t, http.MethodGet, recordsPath+query, tok, nil)
+		rec := env.do(t, http.MethodGet, recordsPath+query, stubToken, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message
 		key := strings.TrimPrefix(strings.SplitN(query, "=", 2)[0], "?")
@@ -499,9 +199,9 @@ func TestRecordsListRefusesUnknownParameters(t *testing.T) {
 			t.Errorf("%s: message = %q, want %q named", query, msg, key)
 		}
 	}
-	rec := env.do(t, http.MethodGet, recordsPath+"?filter=%7Bnot-json", tok, nil)
+	rec := env.do(t, http.MethodGet, recordsPath+"?filter=%7Bnot-json", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	rec = env.do(t, http.MethodGet, recordsPath+`?filter={"kind":"x"}`, tok, nil)
+	rec = env.do(t, http.MethodGet, recordsPath+`?filter={"kind":"x"}`, stubToken, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, `"kind"`) {
 		t.Fatalf("a misspelled filter key must be named: %q", msg)
@@ -511,52 +211,27 @@ func TestRecordsListRefusesUnknownParameters(t *testing.T) {
 // --- the ranked read -----------------------------------------------------
 
 // `q` switches the route to the ranked read: the query, its mode, the kind
-// narrowing and the hit count reach Search, and the answer is the ranked
-// page with the per-arm scores keyed by record path.
+// narrowing, the purposes and the hit count reach Search as written, the
+// mode folded to its lower-case spelling. The ranked page itself is the
+// engine's (TestRecordsRankedReadAnswersTheRankedPage).
 func TestRecordsRankedReadShapesTheSearch(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Title: "Ada Lovelace", Properties: map[string]any{}})
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Title: "Grace Hopper", Properties: map[string]any{}})
+	ds := newRecordsRecorder()
+	env := newStubEnv(t, ds)
 
-	rec := env.do(t, http.MethodGet, recordsOf(t, personKind, "q=ada", "mode=Lexical", "first=5"), tok, nil)
+	rec := env.do(t, http.MethodGet, recordsOf(t, personKind, "q=ada", "mode=Lexical", "first=5"), stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
-	in := ds.lastSearch
+	in := ds.search
 	if in.Q != "ada" || in.Mode != substrate.SearchLexical || in.K != 5 ||
 		len(in.Kinds) != 1 || in.Kinds[0] != personKind {
 		t.Fatalf("search input = %+v", in)
 	}
-	page := decodeJSON[substrate.RankedPage](t, rec)
-	if len(page.Records) != 1 || page.Records[0].ID != "p1" {
-		t.Fatalf("ranked records = %+v", page.Records)
-	}
-	if s := page.Scores[personKind+"/p1"]; s.Lexical != 0.5 || s.Semantic != 0 {
-		t.Fatalf("scores = %+v", page.Scores)
-	}
-	// No keyset, no snapshot: the ranked page claims neither.
-	for _, absent := range []string{`"cursor"`, `"head"`, `"generation"`} {
-		if strings.Contains(rec.Body.String(), absent) {
-			t.Fatalf("ranked page carries %s: %s", absent, rec.Body.String())
-		}
-	}
-	if !strings.Contains(rec.Body.String(), `"pending":0`) {
-		t.Fatalf("ranked page must always say how much of the index is pending: %s", rec.Body.String())
-	}
 
 	// filter.purposes narrows the ranked read and reaches Search beside the
 	// kinds.
-	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{Purposes: []string{"primary", "supporting"}}, "q=ada"), tok, nil)
+	rec = env.do(t, http.MethodGet, filterPath(t, substrate.Filter{Purposes: []string{"primary", "supporting"}}, "q=ada"), stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
-	if got := ds.lastSearch.Purposes; len(got) != 2 || got[0] != "primary" || got[1] != "supporting" {
+	if got := ds.search.Purposes; len(got) != 2 || got[0] != "primary" || got[1] != "supporting" {
 		t.Fatalf("search purposes = %v", got)
-	}
-
-	// An empty ranking is `[]`, never null.
-	rec = env.do(t, http.MethodGet, recordsPath+"?q=nobody", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	if !strings.Contains(rec.Body.String(), `"records":[]`) {
-		t.Fatalf("empty ranking = %s", rec.Body.String())
 	}
 }
 
@@ -565,8 +240,7 @@ func TestRecordsRankedReadShapesTheSearch(t *testing.T) {
 // would not produce the filtered top-k. Every other arm, and every list
 // parameter, is refused by name.
 func TestRecordsRankedReadRefusesWhatItCannotHonor(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
 	for _, tc := range []struct{ path, want string }{
 		{recordsPath + "?q=x&orderBy=at", `"orderBy"`},
 		{recordsPath + "?q=x&after=c", `"after"`},
@@ -582,7 +256,7 @@ func TestRecordsRankedReadRefusesWhatItCannotHonor(t *testing.T) {
 		// them silently ignored.
 		{filterPath(t, substrate.Filter{Search: "y"}, "q=x"), "filter.search"},
 	} {
-		rec := env.do(t, http.MethodGet, tc.path, tok, nil)
+		rec := env.do(t, http.MethodGet, tc.path, stubToken, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, tc.want) {
 			t.Errorf("%s: message = %q, want %s named", tc.path, msg, tc.want)
@@ -594,10 +268,10 @@ func TestRecordsRankedReadRefusesWhatItCannotHonor(t *testing.T) {
 
 // `watch=1` is the tail, narrowed by filter.kinds alone: the change filter
 // has no property arms, so any other arm is refused by name, as is every
-// list parameter.
+// list parameter. The tail's own parameters are honored
+// (TestRecordsWatchHonorsItsOwnParameters).
 func TestRecordsWatchRefusesWhatItCannotHonor(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
 	for _, tc := range []struct{ path, want string }{
 		{recordsPath + "?watch=1&orderBy=at", `"orderBy"`},
 		{recordsPath + "?watch=1&first=5", `"first"`},
@@ -613,146 +287,50 @@ func TestRecordsWatchRefusesWhatItCannotHonor(t *testing.T) {
 		// purpose resolved once would go stale as kinds are declared.
 		{filterPath(t, substrate.Filter{Purposes: []string{"primary"}}, "watch=1"), "filter.purposes"},
 	} {
-		rec := env.do(t, http.MethodGet, tc.path, tok, nil)
+		rec := env.do(t, http.MethodGet, tc.path, stubToken, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 		if msg := decodeJSON[substrate.ErrorEnvelope](t, rec).Error.Message; !strings.Contains(msg, tc.want) {
 			t.Errorf("%s: message = %q, want %s named", tc.path, msg, tc.want)
 		}
 	}
-	// The tail's own parameters are honored.
-	wantNotRefused(t, env, recordsOf(t, personKind, "watch=1", "from=0"), tok)
-	generation := env.svc.datasets[fakeRepository].generation
-	wantNotRefused(t, env, recordsPath+"?watch=1&from=1&generation="+generation, tok)
 }
 
 // --- the create ----------------------------------------------------------
 
-// POST creates under a server-assigned id: the body names its kind, an
-// unknown one is 404, and the status says what the write did.
-func TestRecordsPostCreatesUnderTheBodysKind(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	created := createRecord(t, env, tok, personKind, map[string]any{"name": "Ada"})
-	if created.Kind != personKind || created.ID == "" || created.Version != 1 {
-		t.Fatalf("created = %+v", created)
-	}
-	if ds.lastPut.Kind != personKind || ds.lastPut.ID != "" {
-		t.Fatalf("put input = %+v, want the body's kind and no id", ds.lastPut)
-	}
-
-	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{
-		"kind": "samples.substrate.reamde.dev/people/widget", "properties": map[string]any{},
-	})
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-	wantMessage(t, rec, "unknown kind samples.substrate.reamde.dev/people/widget")
-
-	// A key beside the envelope's is refused by the strict decode, named.
-	rec = env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"kind": personKind, "propertys": map[string]any{}})
+// A key beside the create envelope's is refused by the strict decode, named,
+// before the dataset is reached.
+func TestRecordsPostRefusesAnUnknownKey(t *testing.T) {
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodPost, recordsPath, stubToken, map[string]any{"kind": personKind, "propertys": map[string]any{}})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	wantMessage(t, rec, `"propertys"`)
 }
 
 // `kind` is required, and `id` is refused: a chosen id is a PUT at the record
-// path, so the refusal names that PUT and nothing is written.
+// path, so the refusal names that PUT. Both are the door's, so nothing is
+// written: the stub has no Put, and reaching it would be a 500.
 func TestRecordsPostRequiresKindAndRefusesID(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	env := newStubEnv(t, nil)
 
-	rec := env.do(t, http.MethodPost, recordsPath, tok, map[string]any{"properties": map[string]any{"name": "Ada"}})
+	rec := env.do(t, http.MethodPost, recordsPath, stubToken, map[string]any{"properties": map[string]any{"name": "Ada"}})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	wantMessage(t, rec, "kind is required")
 
-	rec = env.do(t, http.MethodPost, recordsPath, tok, map[string]any{
+	rec = env.do(t, http.MethodPost, recordsPath, stubToken, map[string]any{
 		"kind": personKind, "id": "chosen", "properties": map[string]any{"name": "Ada"},
 	})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)
 	wantMessage(t, rec, "PUT "+peoplePath+"/chosen")
-	if ds.lastPut.Kind != "" || len(ds.records) != 0 {
-		t.Fatalf("a refused POST wrote %+v", ds.lastPut)
-	}
-}
-
-// A repeat of a POST under one Idempotency-Key answers the first record with
-// its 201; the same key with another body is the 409 naming the key.
-func TestRecordsPostHonorsIdempotencyKey(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	body := map[string]any{"kind": personKind, "properties": map[string]any{"name": "Ada"}}
-
-	first := env.do(t, http.MethodPost, recordsPath, tok, body, idempotencyHeader, "reused")
-	wantStatus(t, first, http.StatusCreated)
-	if ds.lastIdempotencyKey != "reused" {
-		t.Fatalf("the dataset saw Idempotency-Key %q", ds.lastIdempotencyKey)
-	}
-	repeat := env.do(t, http.MethodPost, recordsPath, tok, body, idempotencyHeader, "reused")
-	wantStatus(t, repeat, http.StatusCreated)
-	if a, b := decodeJSON[substrate.Record](t, first), decodeJSON[substrate.Record](t, repeat); a.ID != b.ID {
-		t.Fatalf("the repeat created %s, want the first attempt's %s", b.ID, a.ID)
-	}
-	if len(ds.records) != 1 {
-		t.Fatalf("records = %d, want the one the first attempt created", len(ds.records))
-	}
-
-	rec := env.do(t, http.MethodPost, recordsPath, tok,
-		map[string]any{"kind": personKind, "properties": map[string]any{"name": "Grace"}}, idempotencyHeader, "reused")
-	wantErrorCode(t, rec, http.StatusConflict, codeConflict)
-	wantMessage(t, rec, `Idempotency-Key "reused"`)
-
-	// Without the header the write carries no key.
-	rec = env.do(t, http.MethodPost, recordsPath, tok, body)
-	wantStatus(t, rec, http.StatusCreated)
-	if ds.lastIdempotencyKey != "" {
-		t.Fatalf("a request without the header carried key %q", ds.lastIdempotencyKey)
-	}
-}
-
-// PUT at the record path is the other create, and a second PUT there is the
-// update: the two doors never disagree about what a repeat does.
-func TestRecordsPostAndPutReportCreateAndUpdate(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-
-	created := createRecord(t, env, tok, personKind, map[string]any{"name": "Ada"})
-	rec := env.do(t, http.MethodPut, peoplePath+"/"+created.ID, tok, map[string]any{"properties": map[string]any{"name": "Ada L"}})
-	wantStatus(t, rec, http.StatusOK)
-	if e := decodeJSON[substrate.Record](t, rec); e.Version != 2 {
-		t.Fatalf("the re-put landed at version %d", e.Version)
-	}
-	rec = env.do(t, http.MethodPut, peoplePath+"/fresh", tok, map[string]any{"properties": map[string]any{"name": "Grace"}})
-	wantStatus(t, rec, http.StatusCreated)
-}
-
-// A PUT that changes nothing is not a create, even on a record no write has
-// moved past version 1: a client counting its creates by status counts one.
-func TestRecordsPutThatChangesNothingIsNotACreate(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	body := map[string]any{"properties": map[string]any{"name": "Grace"}}
-
-	wantStatus(t, env.do(t, http.MethodPut, peoplePath+"/fresh", tok, body), http.StatusCreated)
-	rec := env.do(t, http.MethodPut, peoplePath+"/fresh", tok, body)
-	wantStatus(t, rec, http.StatusOK)
-	if e := decodeJSON[substrate.Record](t, rec); e.Version != 1 {
-		t.Fatalf("the unchanged re-put moved the record to version %d", e.Version)
-	}
 }
 
 // There is no collection path: a three-segment path under the version prefix
-// names nothing, in every method, and answers the router's JSON 404.
+// names nothing, in every method, and answers the router's JSON 404. The
+// stub has no Put, so a write that reached the dataset would be a 500.
 func TestRecordsHasNoCollectionPath(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
+	env := newStubEnv(t, newStubKinds(personKind))
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
-		rec := env.do(t, method, peoplePath, tok, map[string]any{"properties": map[string]any{"name": "x"}})
+		rec := env.do(t, method, peoplePath, stubToken, map[string]any{"properties": map[string]any{"name": "x"}})
 		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 		wantMessage(t, rec, "no such API path")
-	}
-	if ds.lastPut.Kind != "" || len(ds.records) != 0 {
-		t.Fatalf("a collection path wrote %+v", ds.lastPut)
 	}
 }

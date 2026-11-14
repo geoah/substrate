@@ -288,6 +288,7 @@ export function SetupSteps({
             view.configured &&
             Boolean(view.status?.installed && view.status.enabled)
           }
+          features={view.status?.features}
           connect={view.oauth ? connect : undefined}
           onSetUpCredentials={
             view.configKind
@@ -307,6 +308,7 @@ export function SetupSteps({
           providerName={name}
           oauth={view.oauth}
           configured={view.configured}
+          features={view.status?.features}
           record={choosing.record}
           label={choosing.label}
           open

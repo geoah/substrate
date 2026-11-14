@@ -28,13 +28,26 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// DIALECT 1 IS THE ONLY RUNG: the ops, fold effects and entry frame this
-// binary writes. A change that teaches the writer a spelling an older binary's
+// THE RUNGS. Dialect 1 named a line's actor by its spelling and its token as
+// `principal`; dialect 2 dropped the recovery key's wrap from its lines
+// (decision 0264, conversion_0002_drop_recovery_wrap.go); dialect 3 links the
+// three actor records a write records (decision 0270,
+// conversion_0003_link_actors.go); dialect 4 has a record effect carry `body`
+// among its properties, not as a delta field of its own (decision 0273,
+// conversion_0004_move_body_into_properties.go); dialect 5, the ops, fold
+// effects and entry frame this binary writes, holds each property's mark where
+// dialect 4 held who managed it and at which tier (decision 0284,
+// conversion_0005_marks.go); dialect 6 spells the repository's own kinds
+// `~/…` (decision 0259, conversion_0006_local_namespace.go); dialect 7 adds
+// the two state entries a compaction writes, `state` and `ledger`
+// (compact.go), which an older binary's fold refuses. Each step rewrites the rung below into its own. A change that teaches the writer a spelling an older binary's
 // fold would refuse or misread (a new fold effect kind, a new op, a payload
 // shape an old decoder reads differently) bumps maxChangelogDialect in the
 // same commit, and changelogdialect_internal_test.go is what makes the first
 // two say so: it reads the declared ops and effect kinds and fails on any the
-// rung does not list.
+// rung does not list. A change that alters a shape history already holds
+// also lands a conversion step to the new rung (conversion.go), so this
+// binary reads one dialect: its own.
 
 import (
 	"context"
@@ -55,7 +68,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 1
+const maxChangelogDialect = 7
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay.
 // No dialect is on the wire: it is exported for the tests outside this package
@@ -71,13 +84,19 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := admitChangelogDialect(ds.info.ID, stored, maxChangelogDialect); err != nil {
+	if err := admitChangelogDialect(ds.info.ID, stored, ds.svc.maxDialect); err != nil {
+		return err
+	}
+	// A history below this binary's dialect is converted by the boot check
+	// and nowhere else (conversion.go): appending to it unconverted would
+	// stamp lines this binary never wrote.
+	if err := ds.refusePendingConversion(ctx, stored); err != nil {
 		return err
 	}
 	// A store already at this binary's maximum needs no stamp from it, which
 	// is the common case: remember that, so the first append does not run the
 	// upsert for a claim already on the row.
-	if stored == maxChangelogDialect {
+	if stored == ds.svc.maxDialect {
 		ds.changelogStamped.Store(true)
 	}
 	return nil
@@ -95,7 +114,7 @@ func (t *txn) refuseNewerChangelogDialect() error {
 	if err != nil {
 		return err
 	}
-	return admitChangelogDialect(t.ds.info.ID, stored, maxChangelogDialect)
+	return admitChangelogDialect(t.ds.info.ID, stored, t.ds.svc.maxDialect)
 }
 
 // admitChangelogDialect is the one comparison every gate makes: a repository
@@ -108,10 +127,6 @@ func admitChangelogDialect(repository string, stored, max int) error {
 			ErrChangelogDialectNewer, repository, stored, max)
 	}
 	return nil
-}
-
-func newerChangelogDialect(repository string, stored int) error {
-	return admitChangelogDialect(repository, stored, maxChangelogDialect)
 }
 
 // readChangelogDialect reads the repository's stamp through a pool or a
@@ -141,19 +156,14 @@ const changelogDialectStamp = `
 // run through the same place). The claim is written by the transaction that
 // writes the entries, so it commits with them or not at all, and the dataset
 // only remembers it AFTER that commit: a flag set on a rolled-back stamp would
-// let the next append land with nothing claiming it. The transaction is
-// marked as the claimant, so commitAndMirror rewrites the directory's
-// manifest with the claim BEFORE it appends the entries (repodir.go
-// writeManifestBeforeCommit): the manifest is what an import reads for the
-// dialect, so it must say what the segments require before they require it.
+// let the next append land with nothing claiming it.
 func (t *txn) stampChangelogDialect() error {
 	if t.ds.changelogStamped.Load() {
 		return nil
 	}
-	if _, err := t.exec(changelogDialectStamp, maxChangelogDialect); err != nil {
-		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", maxChangelogDialect, err)
+	if _, err := t.exec(changelogDialectStamp, t.ds.svc.maxDialect); err != nil {
+		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", t.ds.svc.maxDialect, err)
 	}
-	t.claimsChangelogDialect = true
 	t.afterCommit = append(t.afterCommit, func() { t.ds.changelogStamped.Store(true) })
 	return nil
 }

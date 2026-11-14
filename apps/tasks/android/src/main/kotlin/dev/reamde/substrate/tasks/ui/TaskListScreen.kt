@@ -20,15 +20,20 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.rounded.AddCircle
 import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -57,26 +62,29 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import dev.reamde.substrate.kit.bridge.AccessBanner
+import dev.reamde.substrate.kit.bridge.KindStatus
 import dev.reamde.substrate.kit.ui.KitSpacing
 import dev.reamde.substrate.kit.ui.KitText
 import dev.reamde.substrate.kit.ui.brandAccent
 import dev.reamde.substrate.kit.ui.style
+import dev.reamde.substrate.tasks.bridge.CountedRow
 import dev.reamde.substrate.tasks.bridge.ListAction
 import dev.reamde.substrate.tasks.bridge.ListPresentation
 import dev.reamde.substrate.tasks.bridge.ListSelection
+import dev.reamde.substrate.tasks.bridge.PinAction
 import dev.reamde.substrate.tasks.bridge.TaskAction
 import dev.reamde.substrate.tasks.bridge.TaskBand
 import dev.reamde.substrate.tasks.bridge.TaskMenuWords
 import dev.reamde.substrate.tasks.bridge.TaskPriority
 import dev.reamde.substrate.tasks.bridge.TaskRow
-import dev.reamde.substrate.tasks.bridge.TaskStatus
 import dev.reamde.substrate.tasks.bridge.TasksApp
 import dev.reamde.substrate.tasks.bridge.TasksPresentation
 
 /**
  * One list's tasks: the open ones in the order the presentation gives, then the completed ones where shown, the quick add field at the bottom and New Task as
- * the floating button. Needs you draws its chips above the rows and its rows under their bands' headings. A row's mark completes or reopens it, a tap opens it
- * and a long press offers the rest. Every change is a command.
+ * the floating button where a task can be added here. Needs you draws its pinned groups' chips and the suggestions' row above the rows, its rows under their
+ * bands' headings, and the undated as one row at the end. A row's mark completes or reopens it, a tap opens it and a long press offers the rest. Every change
+ * is a command.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +106,24 @@ internal fun TaskListScreen(
                     onBack?.let { IconButton(onClick = it) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } }
                 },
                 actions = {
+                    list.pin?.let { pin ->
+                        IconButton(
+                            onClick = {
+                                actions.send(
+                                    when (val chosen = pin.action) {
+                                        is PinAction.Pin -> TasksApp.Command.Pin(chosen.value)
+                                        is PinAction.Unpin -> TasksApp.Command.Unpin(chosen.value)
+                                    }
+                                )
+                            }
+                        ) {
+                            Icon(
+                                Icons.Rounded.PushPin,
+                                contentDescription = pin.title,
+                                tint = if (pin.action is PinAction.Unpin) MaterialTheme.brandAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     if (list.selection != ListSelection.NeedsYou || list.actions.isNotEmpty()) {
                         Box {
                             IconButton(onClick = { options = true }) { Icon(Icons.Rounded.MoreVert, contentDescription = "List Options") }
@@ -137,16 +163,19 @@ internal fun TaskListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { actions.send(TasksApp.Command.NewTask) }) {
-                Icon(Icons.Rounded.EditNote, contentDescription = list.newTask)
+            if (list.quickAdd != null) {
+                FloatingActionButton(onClick = { actions.send(TasksApp.Command.NewTask) }) {
+                    Icon(Icons.Rounded.EditNote, contentDescription = list.newTask)
+                }
             }
         },
-        bottomBar = { QuickAdd(list.quickAdd) { actions.send(TasksApp.Command.QuickAdd(it)) } },
+        bottomBar = { list.quickAdd?.let { prompt -> QuickAdd(prompt) { actions.send(TasksApp.Command.QuickAdd(it)) } } },
     ) { padding ->
         PullToRefreshBox(isRefreshing = false, onRefresh = { actions.send(TasksApp.Command.Refresh) }, modifier = Modifier.padding(padding)) {
             LazyColumn(Modifier.fillMaxSize()) {
                 item { Notices(banner, app.notices, actions) }
                 if (list.chips.isNotEmpty()) item { Chips(list, actions) }
+                list.queue?.let { queue -> item(key = "queue") { CountedRowView(queue, "suggestion", actions) } }
                 list.clear?.let { clear ->
                     item {
                         Text(
@@ -171,15 +200,13 @@ internal fun TaskListScreen(
                     items(list.open.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
                 } else {
                     for (band in list.bands) {
-                        if (band.band != TaskBand.needsYou) {
-                            item(key = "band-" + band.band.name) {
-                                Text(
-                                    band.title,
-                                    style = KitText.heading.style,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
-                                )
-                            }
+                        item(key = "band-" + band.band.name) {
+                            Text(
+                                "${band.title}  ${band.count}",
+                                style = KitText.heading.style,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = KitSpacing.content, top = KitSpacing.screen, bottom = KitSpacing.medium),
+                            )
                         }
                         items(list.open.rows.filter { it.band == band.band }, key = { it.id }) { row ->
                             TaskRowView(row, row.id == selected, list.rowMenu, app, actions)
@@ -197,10 +224,11 @@ internal fun TaskListScreen(
                     }
                     items(list.closed.rows, key = { it.id }) { row -> TaskRowView(row, row.id == selected, list.rowMenu, app, actions) }
                 }
+                list.noDate?.let { noDate -> item(key = "nodate") { CountedRowView(noDate, "nodate", actions) } }
                 item { Box(Modifier.padding(KitSpacing.block * 2)) }
             }
             val empty = list.empty
-            if (empty != null && list.open.rows.isEmpty() && list.closed.rows.isEmpty()) Placeholder(empty.title, empty.message)
+            if (empty != null && list.open.rows.isEmpty() && list.closed.rows.isEmpty() && list.queue == null) Placeholder(empty.title, empty.message)
         }
     }
 }
@@ -213,7 +241,11 @@ private fun Chips(list: ListPresentation, actions: TasksActions) {
         modifier = Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = KitSpacing.content, vertical = KitSpacing.small),
     ) {
         for (chip in list.chips) {
-            FilterChip(selected = chip.selected, onClick = { actions.send(TasksApp.Command.Filter(chip.selection)) }, label = { Text(chip.title) })
+            FilterChip(
+                selected = chip.selected,
+                onClick = { actions.send(TasksApp.Command.Filter(chip.selection)) },
+                label = { Text(chip.count?.let { "${chip.title}  $it" } ?: chip.title) },
+            )
         }
     }
 }
@@ -242,41 +274,74 @@ private fun QuickAdd(prompt: String, add: (String) -> Unit) {
     }
 }
 
+/** A row that stands for a list of its own, the suggestions or the undated: its mark, its title and words, its count, and a disclosure; a tap shows it. */
+@Composable
+internal fun CountedRowView(row: CountedRow, symbol: String, actions: TasksActions) {
+    ListItem(
+        leadingContent = { Icon(TasksMarks.symbol(symbol), contentDescription = null, tint = MaterialTheme.brandAccent) },
+        headlineContent = { Text(row.title, style = KitText.heading.style) },
+        supportingContent = { Text(row.detail, style = KitText.secondary.style, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailingContent = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (symbol == "nodate") Text("${row.count}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        modifier = Modifier.combinedClickable(onClick = { actions.send(TasksApp.Command.Show(row.selection)) }),
+    )
+}
+
 /**
- * A task as a row: its name, and under it, each under its own mark, when it is due, how urgent it is, the list it is in and whether it has notes; on its right
- * the round mark that completes or reopens it, filled while a completion waits its undo window, when a tap on it takes the mark back. On Needs you a late
- * task's row also offers where to move it and Won't Do. Read aloud as the presentation words it.
+ * A task as a row: its title, one meta line (when it is due, how urgent it is, the group it is in, its collection where several are on; a suggestion's
+ * collection and when it was written), and one trailing control: the round mark that completes or reopens it, filled while a completion waits its undo window,
+ * when a tap on it takes the mark back; Undo for another decision in its window; Dismiss beside Accept for a suggestion. On Needs you a late task's row also
+ * offers where to move it and Won't Do. While suggestions are picked, a tap picks the row. Read aloud as the presentation words it.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, app: TasksPresentation, actions: TasksActions) {
     var menu by remember { mutableStateOf(false) }
-    val open = row.status == TaskStatus.open
-    val marked = row.pending || row.status == TaskStatus.done
+    val open = row.standing == KindStatus.Standing.open
+    val marked = row.pending || row.standing == KindStatus.Standing.done
+    val picked = row.picked
     Box(Modifier.alpha(if (row.band == TaskBand.later) 0.62f else 1f)) {
         ListItem(
-            trailingContent = {
-                IconButton(onClick = { actions.send(if (open && !row.pending) TasksApp.Command.Complete(row.id) else TasksApp.Command.Reopen(row.id)) }) {
-                    Icon(
-                        if (row.pending) TasksMarks.mark(TaskStatus.done) else TasksMarks.mark(row.status),
-                        contentDescription = row.toggle,
-                        tint = if (marked) MaterialTheme.brandAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            },
+            leadingContent =
+                picked?.let { on -> { Icon(if (on) TasksMarks.mark(KindStatus.Standing.done) else TasksMarks.mark(KindStatus.Standing.open), null) } },
+            // A suggestion's title takes the row's width; its controls sit on its meta's line.
+            trailingContent = if (row.suggestion) null else ({ Trailing(row, actions, open, marked) }),
             headlineContent = {
                 Text(
                     row.title,
-                    textDecoration = if (row.status == TaskStatus.abandoned || row.pending) TextDecoration.LineThrough else null,
-                    color = if (open && !row.pending) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textDecoration = if (row.standing == KindStatus.Standing.dropped || (row.pending && !row.suggestion)) TextDecoration.LineThrough else null,
+                    color = if ((open || row.suggestion) && !row.pending) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
             supportingContent =
-                if (row.due != null || row.priority != null || row.listName != null || row.hasNotes || row.reschedule != null || row.decisions.isNotEmpty()) {
+                if (
+                    row.written != null ||
+                        row.viewOnly != null ||
+                        row.refused != null ||
+                        row.pendingWords != null ||
+                        row.due != null ||
+                        row.priority != null ||
+                        row.listName != null ||
+                        row.collection != null ||
+                        row.hasNotes ||
+                        row.reschedule != null ||
+                        row.decisions.any { !row.suggestion }
+                ) {
                     {
-                        Column(verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
-                            if (row.due != null || row.priority != null || row.listName != null || row.hasNotes) Facts(row)
-                            if (row.reschedule != null || row.decisions.isNotEmpty()) Decisions(row, actions)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(KitSpacing.small)) {
+                                row.written?.let { Fact(TasksMarks.symbol("suggestion"), it, MaterialTheme.colorScheme.onSurfaceVariant) }
+                                row.viewOnly?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                row.refused?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.colorScheme.error) }
+                                if (row.pending) row.pendingWords?.let { Text(it, style = KitText.footnote.style, color = MaterialTheme.brandAccent) }
+                                if (row.due != null || row.priority != null || row.listName != null || row.collection != null || row.hasNotes) Facts(row)
+                                if (!row.suggestion && (row.reschedule != null || row.decisions.isNotEmpty())) Decisions(row, actions)
+                            }
+                            if (row.suggestion) Trailing(row, actions, open, marked)
                         }
                     }
                 } else {
@@ -285,7 +350,7 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
             colors = ListItemDefaults.colors(containerColor = if (chosen) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface),
             modifier =
                 Modifier.combinedClickable(
-                    onClick = { actions.send(TasksApp.Command.Open(row.id)) },
+                    onClick = { actions.send(if (picked != null) TasksApp.Command.Picked(row.id) else TasksApp.Command.Open(row.id)) },
                     onLongClick = { menu = true },
                     onClickLabel = row.spoken,
                 ),
@@ -293,6 +358,49 @@ internal fun TaskRowView(row: TaskRow, chosen: Boolean, words: TaskMenuWords, ap
         TaskMenu(menu, dismiss = { menu = false }, row, words, app, actions)
     }
 }
+
+/** A row's one trailing control. */
+@Composable
+private fun Trailing(row: TaskRow, actions: TasksActions, open: Boolean, marked: Boolean) {
+    when {
+        row.pending && row.pendingWords != "Done" ->
+            androidx.compose.material3.TextButton(onClick = { actions.send(TasksApp.Command.Undo(row.id)) }) { Text("Undo") }
+        row.suggestion ->
+            if (row.picked == null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(KitSpacing.small), verticalAlignment = Alignment.CenterVertically) {
+                    for (decision in row.decisions) {
+                        if (decision.action == TaskAction.Dismiss) {
+                            FilledTonalIconButton(onClick = { actions.send(TasksApp.Command.Dismiss(row.id)) }) {
+                                Icon(Icons.Rounded.Close, contentDescription = decision.title)
+                            }
+                        } else {
+                            Button(onClick = { actions.send(command(decision.action, row.id)) }) { Text(decision.title) }
+                        }
+                    }
+                }
+            }
+        row.toggle != null ->
+            IconButton(onClick = { actions.send(if (open && !row.pending) TasksApp.Command.Complete(row.id) else TasksApp.Command.Reopen(row.id)) }) {
+                Icon(
+                    if (row.pending) TasksMarks.mark(KindStatus.Standing.done) else TasksMarks.mark(row.standing),
+                    contentDescription = row.toggle,
+                    tint = if (marked) MaterialTheme.brandAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+    }
+}
+
+/** A row's or a page's action as the command that does it. */
+internal fun command(action: TaskAction, task: String): TasksApp.Command =
+    when (action) {
+        TaskAction.Complete -> TasksApp.Command.Complete(task)
+        TaskAction.Reopen -> TasksApp.Command.Reopen(task)
+        TaskAction.Abandon -> TasksApp.Command.Abandon(task)
+        TaskAction.Delete -> TasksApp.Command.DeleteTask(task)
+        TaskAction.Accept -> TasksApp.Command.Accept(task)
+        TaskAction.Dismiss -> TasksApp.Command.Dismiss(task)
+        TaskAction.Undo -> TasksApp.Command.Undo(task)
+    }
 
 /** What a late task's row decides from where it is: the days it can move to, and Won't Do. */
 @Composable
@@ -321,18 +429,7 @@ private fun Decisions(row: TaskRow, actions: TasksActions) {
             }
         }
         for (decision in row.decisions) {
-            androidx.compose.material3.TextButton(
-                onClick = {
-                    actions.send(
-                        when (decision.action) {
-                            TaskAction.Complete -> TasksApp.Command.Complete(row.id)
-                            TaskAction.Reopen -> TasksApp.Command.Reopen(row.id)
-                            TaskAction.Abandon -> TasksApp.Command.Abandon(row.id)
-                            TaskAction.Delete -> TasksApp.Command.DeleteTask(row.id)
-                        }
-                    )
-                }
-            ) {
+            androidx.compose.material3.TextButton(onClick = { actions.send(command(decision.action, row.id)) }) {
                 Text(decision.title)
             }
         }
@@ -349,6 +446,7 @@ private fun Facts(row: TaskRow) {
         row.due?.let { Fact(Icons.Rounded.CalendarToday, it.text, TasksMarks.color(it.tone)) }
         row.priority?.let { Fact(TasksMarks.icon(it.priority), it.text, TasksMarks.color(it.priority)) }
         row.listName?.let { Fact(Icons.AutoMirrored.Rounded.List, it, MaterialTheme.colorScheme.onSurfaceVariant) }
+        row.collection?.let { Fact(TasksMarks.symbol("records"), it, MaterialTheme.colorScheme.onSurfaceVariant) }
         if (row.hasNotes)
             Icon(
                 Icons.AutoMirrored.Rounded.Notes,
@@ -392,31 +490,32 @@ private fun TaskMenu(expanded: Boolean, dismiss: () -> Unit, row: TaskRow, words
                     )
                 }
             words.move ->
-                for (destination in app.sidebar.fixed.filter { it.selection != ListSelection.NeedsYou } + app.sidebar.lists.rows) {
-                    DropdownMenuItem(
-                        text = { Text(destination.title) },
-                        onClick = {
-                            send(TasksApp.Command.Move(row.id, (destination.selection as? ListSelection.List)?.value))
-                        },
-                    )
+                for (destination in app.sidebar.sections.filter { it.reorders }.flatMap { it.rows + it.quiet }) {
+                    val list = (destination.selection as? ListSelection.Group)?.value ?: continue
+                    DropdownMenuItem(text = { Text(destination.title) }, onClick = { send(TasksApp.Command.Move(row.id, list.substringAfterLast('/'))) })
                 }
             else -> {
                 if (row.pending) {
-                    DropdownMenuItem(text = { Text(row.toggle) }, onClick = { send(TasksApp.Command.Reopen(row.id)) })
-                } else if (row.status == TaskStatus.open) {
+                    DropdownMenuItem(text = { Text(words.undo) }, onClick = { send(TasksApp.Command.Undo(row.id)) })
+                } else if (row.suggestion) {
+                    DropdownMenuItem(text = { Text(words.accept) }, onClick = { send(TasksApp.Command.Accept(row.id)) })
+                    DropdownMenuItem(text = { Text(words.dismiss) }, onClick = { send(TasksApp.Command.Dismiss(row.id)) })
+                } else if (row.standing == KindStatus.Standing.open) {
                     DropdownMenuItem(text = { Text(words.complete) }, onClick = { send(TasksApp.Command.Complete(row.id)) })
                     DropdownMenuItem(text = { Text(words.abandon) }, onClick = { send(TasksApp.Command.Abandon(row.id)) })
                 } else {
                     DropdownMenuItem(text = { Text(words.reopen) }, onClick = { send(TasksApp.Command.Reopen(row.id)) })
                 }
-                DropdownMenuItem(text = { Text(words.edit) }, onClick = { send(TasksApp.Command.Edit(row.id)) })
-                DropdownMenuItem(text = { Text(words.priority) }, onClick = { submenu = words.priority })
-                DropdownMenuItem(text = { Text(words.move) }, onClick = { submenu = words.move })
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text(words.delete, color = MaterialTheme.colorScheme.error) },
-                    onClick = { send(TasksApp.Command.DeleteTask(row.id)) },
-                )
+                if (row.editable) {
+                    DropdownMenuItem(text = { Text(words.edit) }, onClick = { send(TasksApp.Command.Edit(row.id)) })
+                    DropdownMenuItem(text = { Text(words.priority) }, onClick = { submenu = words.priority })
+                    DropdownMenuItem(text = { Text(words.move) }, onClick = { submenu = words.move })
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = { Text(words.delete, color = MaterialTheme.colorScheme.error) },
+                        onClick = { send(TasksApp.Command.DeleteTask(row.id)) },
+                    )
+                }
             }
         }
     }

@@ -43,8 +43,8 @@ struct LiveAppTests {
         await harness.send(.show(.list("groceries")))
         let presented = await harness.presentation
         #expect(titles(presented) == ["Eggs"])
-        #expect(presented.sidebar.lists.rows.map(\.title) == ["Groceries"])
-        #expect(presented.sidebar.lists.rows.first?.openWords == "1 open task")
+        #expect(presented.sidebar.sections.first?.rows.map(\.title) == ["Groceries"])
+        #expect(presented.sidebar.sections.first?.rows.first?.openWords == "1 open task")
         // What was read is kept, and where the watch resumes.
         #expect(await rig.cache.records(of: TasksKinds.task).map(\.id) == ["t1"])
         #expect(await rig.cache.cursor == WatchCursor(seq: 7, generation: "g1"))
@@ -126,26 +126,26 @@ struct LiveAppTests {
         #expect(rig.notifications.pending.isEmpty)
         await harness.send(.settings(.toggle(row: .app(TasksSettings.remind), on: true)))
         try await harness.until { _ in rig.notifications.pending.count == 2 }
-        let vet = try #require(rig.notifications.pending[Reminders.id("t2")])
+        let vet = try #require(rig.notifications.pending[Reminders.id(t("t2"))])
         #expect(vet.fireAt == Date(timeIntervalSince1970: 1_793_718_000))
         #expect(vet.title == "Call the vet")
         #expect(vet.body.map(spaced) == "Due at 3:00 PM")
-        #expect(vet.userInfo == ["task": "t2"])
+        #expect(vet.userInfo == ["task": t("t2")])
         #expect(vet.category == Reminders.category)
         // A day's task reminds at the chosen hour of its day.
-        #expect(rig.notifications.pending[Reminders.id("t3")]?.fireAt == Date(timeIntervalSince1970: 1_793_696_400 + 86400))
+        #expect(rig.notifications.pending[Reminders.id(t("t3"))]?.fireAt == Date(timeIntervalSince1970: 1_793_696_400 + 86400))
 
-        await harness.send(.complete("t2"))
+        await harness.send(.complete(t("t2")))
         try await window(harness)
-        try await harness.until { _ in rig.notifications.pending.keys.sorted() == [Reminders.id("t3")] }
-        #expect(rig.notifications.calls.contains(.cancel(Reminders.id("t2"))))
+        try await harness.until { _ in rig.notifications.pending.keys.sorted() == [Reminders.id(t("t3"))] }
+        #expect(rig.notifications.calls.contains(.cancel(Reminders.id(t("t2")))))
 
         // Turned off, every one goes.
         await harness.send(.settings(.toggle(row: .app(TasksSettings.remind), on: false)))
         try await harness.until { _ in rig.notifications.pending.isEmpty }
         // A tap, which the app's delegate sends, opens the task in its list.
-        await harness.send(.reminderTapped("t3"))
-        try await harness.until { await $0.state.openTask == "t3" }
+        await harness.send(.reminderTapped(t("t3")))
+        try await harness.until { await $0.state.openTask == t("t3") }
         #expect(await harness.state.selection == .inbox)
         #expect(await harness.presentation.detail?.title == "Pay rent")
     }
@@ -177,33 +177,33 @@ struct LiveAppTests {
         await harness.send(.show(.list("groceries")))
 
         // Marked done: the row stays, filled, and nothing is written yet.
-        await harness.send(.complete("t2"))
-        var bread = try #require(await harness.presentation.list?.open["t2"])
+        await harness.send(.complete(t("t2")))
+        var bread = try #require(await harness.presentation.list?.open[t("t2")])
         #expect(bread.pending == true)
         #expect(bread.toggle == "Undo")
-        #expect(bread.status == .open)
+        #expect(bread.standing == .open)
         #expect(await rig.outbox.entries.isEmpty)
 
         // Taken back within the window: the wait is cancelled, and the
         // write never comes, however far the clock then moves.
-        await harness.send(.reopen("t2"))
-        bread = try #require(await harness.presentation.list?.open["t2"])
+        await harness.send(.reopen(t("t2")))
+        bread = try #require(await harness.presentation.list?.open[t("t2")])
         #expect(bread.pending == false)
         #expect(bread.toggle == "Mark as Done")
         await harness.advance(by: TasksApp.undoWindow + 1)
         await harness.settle()
         #expect(await rig.outbox.entries.isEmpty)
-        #expect(await harness.state.completing.isEmpty)
+        #expect(await harness.state.pending.isEmpty)
 
         // Left alone past the window: the write goes, and the row leaves.
-        await harness.send(.complete("t2"))
+        await harness.send(.complete(t("t2")))
         try await window(harness)
         try await harness.until { _ in await !rig.outbox.entries.isEmpty }
         let written = await rig.outbox.entries
         #expect(written.count == 1)
         #expect(written.first?.properties == ["status": "done"])
-        #expect(await harness.presentation.list?.open["t2"] == nil)
-        #expect(await harness.state.completing.isEmpty)
+        #expect(await harness.presentation.list?.open[t("t2")] == nil)
+        #expect(await harness.state.pending.isEmpty)
     }
 
     @Test func anEditOnAVersionAnotherDeviceMovedOnIsAConflictForTheOwnerNeverAWriteOver() async throws {
@@ -213,7 +213,7 @@ struct LiveAppTests {
         let harness = rig.harness()
         await harness.runtime.linkChanged(signedIn)
         try await harness.until { await $0.state.linked.phase == .following }
-        await harness.send(.edit("t1"))
+        await harness.send(.edit(t("t1")))
         let (key, _) = try #require(await harness.presentation.editors.first)
         try await harness.runtime.send(TaskEditor.Command.setNotes("A dozen"), to: [key])
         // Renamed on another device while the editor is open.
@@ -258,7 +258,7 @@ struct AppTests {
     /// A completion's window, over: the write it was waiting with, as the
     /// settle effect delivers it (effects are not performed here).
     func settle(_ harness: ControllerHarness<TasksApp>, _ id: String) async throws {
-        let write = try #require(await harness.state.completing[id])
+        let write = try #require(await harness.state.pending[t(id)]?.write)
         await harness.deliver(.records(.wrote(write)))
     }
 
@@ -275,13 +275,13 @@ struct AppTests {
             taskRecord("c", "C", position: "3"),
         ])
         #expect(titles(await harness.presentation) == ["A", "B", "C"])
-        await harness.send(.reorderTask("c", to: 0))
+        await harness.send(.reorderTask(t("c"), to: 0))
         let writes = enqueued(harness)
         #expect(writes.count == 1)
         #expect(writes.first?.properties == ["position": "0"])
         #expect(writes.first?.guarded == true)
         #expect(titles(await harness.presentation) == ["C", "A", "B"])
-        await harness.send(.reorderTask("c", to: 1))
+        await harness.send(.reorderTask(t("c"), to: 1))
         #expect(enqueued(harness).last?.properties == ["position": "1.5"])
         #expect(titles(await harness.presentation) == ["A", "C", "B"])
     }
@@ -289,7 +289,7 @@ struct AppTests {
     @Test func listsReorderToo() async throws {
         let (_, harness) = try await loaded([listRecord("a", "Home", position: "1"), listRecord("b", "Work", position: "2")])
         await harness.send(.reorderList("b", to: 0))
-        #expect(await harness.presentation.sidebar.lists.rows.map(\.title) == ["Work", "Home"])
+        #expect(await harness.presentation.sidebar.sections.first.map { ($0.rows + $0.quiet).map(\.title) } == ["Work", "Home"])
         #expect(enqueued(harness).first?.properties == ["position": "0"])
     }
 
@@ -303,7 +303,7 @@ struct AppTests {
         #expect(list.open.rows.map(\.title) == ["C", "B", "A"])
         #expect(list.reorders == false)
         #expect(list.orderNote == "Sorted by due date")
-        await harness.send(.reorderTask("a", to: 0))
+        await harness.send(.reorderTask(t("a"), to: 0))
         #expect(enqueued(harness).isEmpty)
     }
 
@@ -332,28 +332,33 @@ struct AppTests {
         #expect(write.replacing == "\(TasksKinds.list)/home")
         let presented = await harness.presentation
         #expect(presented.confirmation == nil)
-        #expect(presented.sidebar.lists.rows.isEmpty)
+        // Its tasks, until the server's pass takes them with it, are in a
+        // list out of reach.
+        #expect(presented.sidebar.sections.first?.rows.map(\.title) == ["No list", "Missing"])
         #expect(presented.list?.selection == .inbox)
         #expect(titles(presented) == ["D"])
     }
 
     @Test func completeReopenAndWontDoMoveTheStateAsThePackageAllows() async throws {
         let (_, harness) = try await loaded([taskRecord("a", "A", version: 4)])
-        await harness.send(.complete("a"))
+        await harness.send(.complete(t("a")))
         // Within its window the mark is the row's alone: a second complete
         // starts nothing, and the write waits.
-        #expect(harness.effects.contains(.settle("a", try #require(await harness.state.completing["a"]))))
-        await harness.send(.complete("a"))
+        let pending = try #require(await harness.state.pending[t("a")])
+        #expect(harness.effects.contains(.settle(t("a"), pending.write, pending.deadline)))
+        #expect(pending.deadline == now.addingTimeInterval(TasksApp.undoWindow))
+        await harness.send(.complete(t("a")))
         #expect(enqueued(harness).isEmpty)
         try await settle(harness, "a")
         #expect(enqueued(harness).last?.properties == ["status": "done"])
         #expect(await harness.presentation.list?.open.rows.isEmpty == true)
         // Done cannot become abandoned: nothing is written.
-        await harness.send(.abandon("a"))
+        await harness.send(.abandon(t("a")))
         #expect(enqueued(harness).count == 1)
-        await harness.send(.reopen("a"))
+        await harness.send(.reopen(t("a")))
         #expect(enqueued(harness).last?.properties == ["status": "open", "completedAt": .null])
-        await harness.send(.abandon("a"))
+        await harness.send(.abandon(t("a")))
+        try await settle(harness, "a")
         #expect(enqueued(harness).last?.properties == ["status": "abandoned"])
     }
 
@@ -380,7 +385,7 @@ struct AppTests {
         #expect(needs[0].spoken == "Pay rent, 1 day late, priority High, in Home")
         #expect(needs[1].due.map { spaced($0.text) } == "Today, 3:00 PM")
         #expect(needs[1].due?.tone == .soon)
-        #expect(needs[1].listName == "No List")
+        #expect(needs[1].listName == "No list")
         #expect(await harness.presentation.menu.sections.first?.badge == 1)
     }
 
@@ -402,17 +407,21 @@ struct AppTests {
             selection: .needsYou)
         let list = try #require(await harness.presentation.list)
         #expect(list.title == "Needs you")
-        #expect(list.bands.map(\.title) == ["Needs you", "Coming up", "Later"])
-        #expect(list.bands.map(\.count) == [5, 2, 2])
+        #expect(list.bands.map(\.title) == ["Late or urgent", "Coming up", "Later"])
+        #expect(list.bands.map(\.count) == [5, 2, 1])
+        // An undated task that is not pressing is counted, never listed.
+        #expect(list.noDate == CountedRow(title: "No date", detail: "Open tasks with no due date", count: 1, selection: .noDate))
+        #expect(list.queue == nil)
         #expect(list.clear == nil)
         #expect(list.reorders == false)
         #expect(list.showsClosed == false)
         let rows = list.open.rows
-        #expect(rows.map(\.id) == ["late", "later-late", "missed", "undated-urgent", "undated-high", "today", "week", "far", "someday"])
-        #expect(rows.map(\.band) == [.needsYou, .needsYou, .needsYou, .needsYou, .needsYou, .upcoming, .upcoming, .later, .later])
+        #expect(rows.map(\.id) == ["late", "later-late", "missed", "undated-urgent", "undated-high", "today", "week", "far"].map(t))
+        #expect(rows.map(\.band) == [.lateOrUrgent, .lateOrUrgent, .lateOrUrgent, .lateOrUrgent, .lateOrUrgent, .comingUp, .comingUp, .later])
         #expect(rows[0].due == DueBadge(text: "3 days late", tone: .overdue))
         #expect(rows[2].due.map { spaced($0.text) } == "Late since 8:00 AM")
         #expect(rows[3].due == nil)
+        #expect(rows[3].priority == PriorityBadge(text: "Urgent, no date", priority: .urgent))
         // A late task is moved; one with no day picks one. Past the band, a
         // row decides nothing from where it is.
         #expect(rows[0].reschedule?.title == "Move")
@@ -421,28 +430,27 @@ struct AppTests {
         #expect(rows[3].reschedule?.title == "Pick a Day")
         #expect(rows[5].reschedule == nil)
         #expect(rows[5].decisions.isEmpty)
-        #expect(list.chips.map(\.title) == ["All", "No List", "Home", "Work"])
-        #expect(list.chips.map(\.selected) == [true, false, false, false])
+        // The chips are the pinned groups, and none is pinned.
+        #expect(list.chips.isEmpty)
         #expect(await harness.presentation.menu.sections.first?.badge == 5)
         #expect(await harness.presentation.sidebar.fixed.first?.open == 5)
 
         // Narrowed to Work: its rows alone, in the same bands.
         await harness.send(.filter(.list("work")))
         let work = try #require(await harness.presentation.list)
-        #expect(work.open.rows.map(\.id) == ["later-late", "missed", "far", "someday"])
-        #expect(work.bands.map(\.count) == [2, 2])
-        #expect(work.chips.map(\.selected) == [false, false, false, true])
+        #expect(work.open.rows.map(\.id) == ["later-late", "missed", "far"].map(t))
+        #expect(work.bands.map(\.count) == [2, 1])
         #expect(work.quickAdd == "Add a task for today to Work")
         // A list with nothing late says so above what is coming.
         await harness.send(.filter(.list("home")))
         #expect(await harness.presentation.list?.clear == nil)
         await harness.send(.filter(.inbox))
         let inbox = try #require(await harness.presentation.list)
-        #expect(inbox.open.rows.map(\.id) == ["undated-urgent"])
+        #expect(inbox.open.rows.map(\.id) == [t("undated-urgent")])
         await harness.send(.filter(.list("gone")))
         #expect(await harness.state.filter == .inbox)
         await harness.send(.filter(nil))
-        #expect(await harness.presentation.list?.open.rows.count == 9)
+        #expect(await harness.presentation.list?.open.rows.count == 8)
     }
 
     @Test func aLateTaskMovesToANamedDayKeepingItsTimeAndADayPickedOpensTheEditor() async throws {
@@ -453,14 +461,14 @@ struct AppTests {
                 taskRecord("c", "Renew passport", position: "3", priority: "high"),
             ],
             selection: .needsYou)
-        await harness.send(.reschedule("a", .tomorrow))
+        await harness.send(.reschedule(t("a"), .tomorrow))
         #expect(enqueued(harness).last?.properties == ["dueDay": "2026-11-04", "dueAt": .null])
-        await harness.send(.reschedule("b", .nextWeek))
+        await harness.send(.reschedule(t("b"), .nextWeek))
         #expect(enqueued(harness).last?.properties == ["dueDay": "2026-11-10", "dueAt": "2026-11-10T08:30:00Z"])
-        await harness.send(.reschedule("c", .today))
+        await harness.send(.reschedule(t("c"), .today))
         #expect(enqueued(harness).last?.properties == ["dueDay": "2026-11-03", "dueAt": .null])
-        #expect(await harness.presentation.list?.bands.map(\.band) == [.upcoming])
-        await harness.send(.reschedule("a", .pickDay))
+        #expect(await harness.presentation.list?.bands.map(\.band) == [.comingUp])
+        await harness.send(.reschedule(t("a"), .pickDay))
         #expect(await harness.presentation.editors.count == 1)
         #expect(enqueued(harness).count == 3)
     }
@@ -485,7 +493,7 @@ struct AppTests {
         rent.properties["description"] = "Before the 6th."
         rent.properties["url"] = "https://example.com/rent"
         let (_, harness) = try await loaded([listRecord("home", "Home"), rent], selection: .list("home"))
-        await harness.send(.open(task: "a"))
+        await harness.send(.open(task: t("a")))
         let detail = try #require(await harness.presentation.detail)
         // Each fact once: the list and the priority are the choices that
         // change them, under their own labels, and Edit is the toolbar's.
@@ -496,19 +504,20 @@ struct AppTests {
         #expect(detail.fields.first { $0.field == .priority }?.choice?.selected == "high")
         #expect(detail.actions.map(\.title) == ["Mark as Done", "Won't Do", "Delete Task"])
         #expect(detail.edit == "Edit")
-        await harness.send(.edit("a"))
+        await harness.send(.edit(t("a")))
         let (key, editor) = try #require(await harness.presentation.editors.first)
         // Every fact the two views share has one label in both.
         let shared = detail.fields.filter { editor.labels[$0.field] != nil }
         #expect(shared.map(\.field) == [.list, .due, .priority, .notes, .link])
         for field in shared { #expect(field.label == editor.labels[field.field], "\(field.field)") }
         for field in detail.fields { if let choice = field.choice { #expect(choice.label == editor.labels[field.field]) } }
-        #expect(editor.list.selected == "home")
-        #expect(editor.due.kind == .day)
+        // The list by its record's path, as every group is.
+        #expect(editor.list?.selected == ListSelection.list("home").listPath)
+        #expect(editor.due?.kind == .day)
 
         // Edited and saved: one patch on the version the owner saw.
         try await harness.runtime.send(TaskEditor.Command.setName("Pay the rent"), to: [key])
-        try await harness.runtime.send(TaskEditor.Command.setPriority(.urgent), to: [key])
+        try await harness.runtime.send(TaskEditor.Command.setPriority("urgent"), to: [key])
         try await harness.runtime.send(TaskEditor.Command.save, to: [key])
         let entry = try #require(enqueued(harness).last)
         #expect(entry.method == .patch)
@@ -523,8 +532,8 @@ struct AppTests {
 
     @Test func anEditSavedAfterAnotherDeviceChangedTheTaskWritesOnlyWhatTheOwnerChangedOnTheVersionTheySaw() async throws {
         let (_, harness) = try await loaded([taskRecord("a", "Pay rent", version: 1)])
-        await harness.send(.open(task: "a"))
-        await harness.send(.edit("a"))
+        await harness.send(.open(task: t("a")))
+        await harness.send(.edit(t("a")))
         let (key, _) = try #require(await harness.presentation.editors.first)
         try await harness.runtime.send(TaskEditor.Command.setNotes("Before the 6th."), to: [key])
         // Another device renames the task while the editor is open.
@@ -541,8 +550,8 @@ struct AppTests {
 
     @Test func aSaveTheDeviceCouldNotKeepLeavesTheEditorOpenWithItsDraftToRetry() async throws {
         let (_, harness) = try await loaded([taskRecord("a", "Pay rent", version: 1)])
-        await harness.send(.open(task: "a"))
-        await harness.send(.edit("a"))
+        await harness.send(.open(task: t("a")))
+        await harness.send(.edit(t("a")))
         let (key, _) = try #require(await harness.presentation.editors.first)
         try await harness.runtime.send(TaskEditor.Command.setName("Pay the rent"), to: [key])
         try await harness.runtime.send(TaskEditor.Command.save, to: [key])
@@ -609,7 +618,7 @@ struct AppTests {
 
     @Test func aLandedWriteStaysShownUntilItsRecordIsReadAgain() async throws {
         let (_, harness) = try await loaded([taskRecord("a", "Eggs", version: 1)])
-        await harness.send(.complete("a"))
+        await harness.send(.complete(t("a")))
         try await settle(harness, "a")
         let entry = try #require(enqueued(harness).first)
         await harness.deliver(.records(.enqueued([entry.id], queue: [entry], landed: [])))
@@ -625,12 +634,14 @@ struct AppTests {
     @Test func theSettingsScreenIsTheAppsSectionsThenTheLinksAndEachCommandFindsItsController() async throws {
         let (_, harness) = try await loaded([taskRecord("a", "A", dueDay: "2026-11-04")])
         let app = await harness.presentation
-        #expect(app.settings.map(\.title) == ["Reminders", "Lists"])
+        #expect(app.settings.map(\.title) == [nil, "Reminders", "Lists"])
+        #expect(app.settings[0].rows.map(\.label) == ["Collections"])
+        #expect(app.settings[0].rows.first?.detail == "1 on")
         // Off by default, so the reminders' own rows wait for the switch.
-        #expect(app.settings[0].rows.map(\.label) == ["Remind Me When Tasks Are Due"])
+        #expect(app.settings[1].rows.map(\.label) == ["Remind Me When Tasks Are Due"])
         let on = SettingsValues(toggles: [TasksSettings.remind: true])
         #expect(
-            TasksSettings.sections(on, permission: .on, scheduled: 0, device: "this iPhone", locale: Locale(identifier: "en_US"))[0]
+            TasksSettings.sections(on, permission: .on, scheduled: 0, device: "this iPhone", locale: Locale(identifier: "en_US"))[1]
                 .rows.map(\.label) == ["Remind Me When Tasks Are Due", "Tasks Due on a Day", "Reminders Set on This iPhone"])
         #expect(app.about.version == LabeledValue("Version", "0.1.0 (1)"))
         // Android's device words are lowercase; the label is title case throughout.
@@ -639,7 +650,7 @@ struct AppTests {
             ("this iPad", "Reminders Set on This iPad"), ("this Mac", "Reminders Set on This Mac"),
         ] {
             let sections = TasksSettings.sections(on, permission: .on, scheduled: 0, device: device, locale: Locale(identifier: "en_US"))
-            #expect(sections[0].rows.last?.label == label)
+            #expect(sections[1].rows.last?.label == label)
         }
         // Routed as the shell routes them, with what TasksShell configures.
         let route = { SettingsRoute<TasksApp>.route($0, settings: { .settings($0) }, clearSaved: .clearSaved) }
@@ -675,8 +686,10 @@ struct LinkedTests {
         try await harness.until { await $0.presentation.snapshot.phase == .accessEnded }
         let presented = await harness.presentation
         #expect(presented.ended?.title == "Substrate Tasks's access ended")
+        // Whichever link's read was refused first, neither reads on.
         let app = try #require(await harness.runtime.state(of: LinkController<TasksApp>.appKey))
-        guard case .stopped = app.linked.phase else { throw Unexpected() }
+        #expect(!app.linked.phase.running)
+        #expect(!app.settingsLinked.phase.running)
     }
 
     @Test func theManifestIsTheRequestAppJSONRecords() throws {

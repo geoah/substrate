@@ -17,7 +17,7 @@ public enum Reminders {
     public static func id(_ task: String) -> String { prefix + task }
 
     /// The category a reminder is scheduled under, which a tap's response
-    /// carries; the task's id is in its `userInfo` under `task`.
+    /// carries; the task's record path is in its `userInfo` under `task`.
     public static let category = "tasks.reminder"
 
     /// The app's command for a notification the owner answered: a tap on a
@@ -37,7 +37,7 @@ public enum Reminders {
             guard let due = task.due else { continue }
             let at = due.instant ?? due.day.start(in: calendar, hour: TasksSettings.hour(settings))
             guard at > now else { continue }
-            let list = task.list.flatMap { model.lists[$0]?.name }
+            let list = model.groupName(task)
             let when = due.instant.map { "Due at \(DueWords.time($0, calendar: calendar, locale: locale))" } ?? "Due today"
             out.append(
                 NotificationRequest(

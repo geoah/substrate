@@ -48,14 +48,13 @@ package engine
 // needs no changelog dialect rung.
 //
 // Who wrote it: a backfilled value is a write by the hand that applied the
-// declaration, so its manager row is that actor at the transaction's tier, as
-// a create that fell back to the default would record. An entered state has no
-// manager row, because no state does: a machine's position is not a property
-// anyone owns (write.go records managers for the accepted properties, and a
-// transition accepts its stamps, never the state). A renamed value keeps
-// its manager (rename.go moveManager), and a remapped one keeps its manager
-// too: the value's spelling moved, not who last wrote it. A nulled value has
-// no manager afterwards, no embedding and no sealed material, exactly as a
+// declaration, so its mark is that hand's, as a create that fell back to the
+// default would record. An entered state has no mark, because no state does:
+// a machine's position is not a property anyone owns (write.go marks the
+// accepted properties, and a transition accepts its stamps, never the state).
+// A renamed value keeps its mark (rename.go moveMark), and a remapped one
+// keeps its mark too: the value's spelling moved, not who wrote it. A nulled
+// value has no mark afterwards, no embedding and no sealed material, exactly as a
 // patch clearing it would leave the record; a nulled state had none of the
 // three to begin with. A converted record is a source
 // write like any other, so its subjects recompute after its entry
@@ -162,8 +161,9 @@ type conversionPlan struct {
 	// moves is the resolved kind move (move.go, record 0078): the rows to
 	// carry in the order they are written, and the sources whose references
 	// follow them. It runs FIRST and is not per-property. grantPatches is the
-	// number of declarations whose kind grants the move rewrites, counted into
-	// the work like every other entry.
+	// number of declarations whose kind grants the move rewrites, and the
+	// writes that carry a moved kind's retention override, counted into the
+	// work like every other entry.
 	moves        movesPlanned
 	grantPatches int64
 	renames      []propertyRename
@@ -291,11 +291,11 @@ func backfillable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
 // in the states column, which the step can remove. A state has to be one: a
 // create enters `initial` and no write clears a state, so a counted refusal
 // would fire on every kind with records and name a migration nobody can run.
-// A property living in its own column (a hot trait property, the title, the
-// body) is not under `props`, so the count the narrowing takes stays the
-// answer for those.
+// A property living in its own column (a hot trait property, the title) is
+// not under `props`, so the count the narrowing takes stays the answer for
+// those.
 func nullable(ty *vocabulary.Kind, p *vocabulary.Property) bool {
-	if p.Name == substrate.PropTitle || p.Name == substrate.PropBody {
+	if p.Name == substrate.PropTitle {
 		return false
 	}
 	if _, hot := hotColumns[p.Name]; hot && ty.UsesHot(p.Name) {
@@ -1118,7 +1118,7 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 		if renamed[r.from] == "" {
 			continue
 		}
-		if err := t.moveManager(ref, r.from, r.to); err != nil {
+		if err := t.moveMark(ref, r.from, r.to); err != nil {
 			return false, err
 		}
 		if err := t.moveEmbeddings(ref, r.from, r.to, kind.Props[r.to].Embed); err != nil {
@@ -1128,7 +1128,7 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	for _, name := range backfilled {
 		// A write by the hand that applied the declaration, as a create that
 		// fell back to the default would record it.
-		if err := t.setManager(ref, name, t.actor, t.tier); err != nil {
+		if err := t.setMark(ref, name, t.directMark(t.actor)); err != nil {
 			return false, err
 		}
 		if kind.Props[name].Embed {
@@ -1138,7 +1138,7 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 		}
 	}
 	for name := range remapped {
-		// The manager stays: the spelling moved, not who wrote the value. The
+		// The mark stays: the spelling moved, not who wrote the value. The
 		// text changed where the property embeds, so the worker re-embeds it.
 		if kind.Props[name].Embed {
 			if err := t.enqueueEmbed(ref, name); err != nil {
@@ -1150,13 +1150,13 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 	for _, n := range nulled {
 		nulledNames = append(nulledNames, n.prop)
 		if n.state {
-			continue // a state has no manager row, no vectors and no seal
+			continue // a state has no mark, no vectors and no seal
 		}
-		// What a patch clearing the property leaves behind: no manager row (a
-		// released property is nobody's), no vectors and no queue row under a
+		// What a patch clearing the property leaves behind: no mark (a
+		// cleared property is nobody's), no vectors and no queue row under a
 		// name no declaration has, and no sealed material behind a secret
 		// (write.go erases it on an accepted clear).
-		if err := t.deleteManager(ref, n.prop); err != nil {
+		if err := t.unmark(ref, n.prop); err != nil {
 			return false, err
 		}
 		if err := t.dropEmbeddings(ref, n.prop); err != nil {
@@ -1166,7 +1166,6 @@ func (t *txn) convertRecord(kc *kindConversion, ref eref) (bool, error) {
 			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 				return false, err
 			}
-			t.mirrorSealedDelete(old)
 		}
 	}
 

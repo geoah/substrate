@@ -31,6 +31,10 @@ type BundleStatus struct {
 	// Every item mirrors a refusal dispatch would actually make; a
 	// non-refusal is never a setup step.
 	Setup []SetupItem `json:"setup,omitempty"`
+	// Features is the account toggles an OAuth bundle's consent is built
+	// from, in name order: the scopes each asks for and whether they read the
+	// provider or change it. Empty on a bundle with no `oauth2` block.
+	Features []BundleFeature `json:"features,omitempty"`
 	// Accounts counts live records of the bundle's accountconfig-trait types.
 	Accounts  int `json:"accounts"`
 	Functions int `json:"functions"`
@@ -86,6 +90,16 @@ type BundleStatus struct {
 	AddonFor string `json:"addonFor,omitempty"`
 }
 
+// BundleFeature is one account toggle of an OAuth bundle (decision record
+// 0255): the scopes turning it on asks for, and its access, `read` or
+// `write`. An account's grantedScopes missing one of a toggle it has on is an
+// account whose sign-in predates the toggle, and a reconnect grants it.
+type BundleFeature struct {
+	Toggle string   `json:"toggle"`
+	Scopes []string `json:"scopes"`
+	Access string   `json:"access"`
+}
+
 // BundleCodeChange is the review evidence for one changed outside declaration.
 type BundleCodeChange struct {
 	Kind string `json:"kind"`
@@ -107,6 +121,14 @@ type BundleUpgrade struct {
 	ReviewRequired   bool                  `json:"reviewRequired,omitempty"`
 
 	CodeChanges []BundleCodeChange `json:"codeChanges,omitempty"`
+	// RetentionShortens lists every kind the repository declares whose
+	// history the upgrade would keep for less time, compared by the effective
+	// retention (the owner's override, else the declaration's own key, else
+	// its package header's, else all) and by how long each keeps, so a
+	// respelling is no change. A shortening is never a safe addition: a
+	// published package's automatic refresh leaves it for the owner's review
+	// (decision 0282).
+	RetentionShortens []RetentionChange `json:"retentionShortens,omitempty"`
 	// Available reports the shipped closure moves at least one stored
 	// declaration: a declaration this repository lacks, one whose shipped
 	// version is newer, or one the closure stopped shipping (which a

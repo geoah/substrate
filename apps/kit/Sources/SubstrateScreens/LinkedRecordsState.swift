@@ -9,6 +9,9 @@ import SubstrateRuntime
 /// is their fold, kept so a presenter does not fold again.
 public struct LinkedRecordsState: Codable, Equatable, Sendable {
     public var link: LinkSnapshot?
+    /// The kinds the app named last (`LinkedRecords.Event.rekinded`); nil
+    /// while they are the ones it opened with.
+    public var kinds: [String]?
     /// The records as the server last answered them, by `kind/id`.
     public var server: [String: Record] = [:]
     /// The outbox's writes of the kinds, as it last reported them, and the

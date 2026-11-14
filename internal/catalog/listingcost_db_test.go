@@ -32,13 +32,13 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	base := newDataset(t)
 	ctx := context.Background()
 	// labs requires health, so its preview walks a requirement; the people
-	// sample is a stamped copy, the other tier's preview.
+	// sample is a stamped copy, the other keeper's preview.
 	importVocabulary(t, loadCatalog(t), base, labsID)
 	importSamples(t, loadCatalog(t), base, peopleSampleID)
 	const live = 40
 	for range live {
-		if _, err := base.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: homeAuthority + "/people/person",
+		if _, err := base.Put(ctx, substrate.ActorPerson, substrate.PutInput{
+			Kind: "~/people/person",
 		}); err != nil {
 			t.Fatalf("put a person: %v", err)
 		}
@@ -57,7 +57,7 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	}
 	var people int64
 	for i := range counted {
-		if counted[i].ID == homeAuthority+"/people" {
+		if counted[i].ID == "~/people" {
 			people = counted[i].LiveRecords
 		}
 		if uncounted[i].LiveRecords != 0 || uncounted[i].Accounts != 0 {

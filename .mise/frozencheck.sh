@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# The two things this tree writes once and never edits, held against the merge
-# base: a landed migration, and the body of an accepted decision record.
+# The things this tree writes once and never edits, held against the merge
+# base: a landed migration, a landed conversion step, a kept directory, and
+# the body of an accepted decision record.
 #
 # NOT in `lint`, for the same reason `kinds:check` is not: it reads the DIFF,
 # so it needs a base branch and has no answer on a laptop without one.
@@ -41,6 +42,8 @@ cd "$(git rev-parse --show-toplevel)" || exit 2
 
 migrations=internal/engine/migrations
 repomigrations='internal/engine/repomigration_*.go'
+conversions='internal/engine/conversion_[0-9][0-9][0-9][0-9]_*.go'
+kept=internal/testenv/testdata/kept
 decisions=docs/decisions
 fail=0
 
@@ -100,6 +103,31 @@ while read -r status path; do
   *) flag "${path} is a landed repository migration and this branch changes it (${status})" ;;
   esac
 done < <(git diff --name-status --diff-filter=AMDRT "$base_commit" -- "$repomigrations" |
+  awk '{ print $1, $NF }' | sed -E 's/^R[0-9]+/D/; s/^T/M/')
+
+# A landed CONVERSION STEP (engine/conversion.go) is never edited: a
+# repository it converted carries its stamp, and never runs a changed step.
+while read -r status path; do
+  [ -n "$path" ] || continue
+  case "$status" in
+  A) ;;
+  M) flag "${path} is a landed conversion step and this branch edits it; add a new one instead" ;;
+  D) flag "${path} is a landed conversion step and this branch deletes it; a directory below its dialect could no longer be read" ;;
+  *) flag "${path} is a landed conversion step and this branch changes it (${status})" ;;
+  esac
+done < <(git diff --name-status --diff-filter=AMDRT "$base_commit" -- "$conversions" |
+  awk '{ print $1, $NF }' | sed -E 's/^R[0-9]+/D/; s/^T/M/')
+
+# A KEPT DIRECTORY is what a release wrote (docs/stored-format.md): a file in
+# it may be added and nothing else, or it stops being evidence of what that
+# release wrote.
+while read -r status path; do
+  [ -n "$path" ] || continue
+  case "$status" in
+  A) ;;
+  *) flag "${path} is in a kept directory and this branch changes it (${status}); a release's directory is kept as that release wrote it" ;;
+  esac
+done < <(git diff --name-status --diff-filter=AMDRT "$base_commit" -- "$kept" |
   awk '{ print $1, $NF }' | sed -E 's/^R[0-9]+/D/; s/^T/M/')
 
 # --- an accepted record's body is never edited --------------------------

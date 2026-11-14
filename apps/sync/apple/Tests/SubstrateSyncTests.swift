@@ -137,19 +137,32 @@ final class HealthSettleTests: XCTestCase {
     }
 
     /// The parked list carries the requests the server accepted and has not
-    /// run, which it marks pending, and the ones it is running: neither is a
-    /// refusal. A server that marks none says pending in its words.
+    /// run, which it marks pending, the ones it is running, and the ones that
+    /// wait for the server's own retry: none is a refusal. A server that marks
+    /// none says pending in its words.
     func testOnlyARefusalInTheParkedListFailsADay() {
         let items = [
             ParkedDelivery(fireID: "hook-a", lastError: "the fire has not settled, and a restart resumes it", pending: true),
             ParkedDelivery(fireID: "hook-p", lastError: "delivery accepted: the fire has not settled, and a restart resumes it"),
             ParkedDelivery(fireID: "hook-b", lastError: "run: runner: Refused: the body is not JSON", running: true),
             ParkedDelivery(fireID: "hook-c", lastError: "run: runner: Refused: the body is not JSON"),
+            ParkedDelivery(fireID: "hook-w", lastError: "temporary, retried automatically at 2026-11-13T09:00:15Z: the provider is down"),
             ParkedDelivery(fireID: "hook-z", lastError: "another sender's refusal"),
         ]
         XCTAssertEqual(
-            SyncEngine.refusals(items, among: ["hook-a", "hook-p", "hook-b", "hook-c"]),
+            SyncEngine.refusals(items, among: ["hook-a", "hook-p", "hook-b", "hook-c", "hook-w"]),
             ["hook-c": "run: runner: Refused: the body is not JSON"])
+    }
+
+    /// A delivery waiting for the server's retry keeps its day waiting on the
+    /// same fire, between attempts; once the retries run out the server sets
+    /// it aside under the error it waited on, and that is the refusal that
+    /// sends the day again.
+    func testAWaitingDeliveryIsNoRefusalUntilItsRetriesRunOut() {
+        let waiting = ParkedDelivery(fireID: "hook-w", lastError: "temporary, retried automatically at 2026-11-13T09:00:15Z: the provider is down")
+        XCTAssertEqual(SyncEngine.refusals([waiting], among: ["hook-w"]), [:])
+        let setAside = ParkedDelivery(fireID: "hook-w", lastError: "the provider is down")
+        XCTAssertEqual(SyncEngine.refusals([setAside], among: ["hook-w"]), ["hook-w": "the provider is down"])
     }
 
     /// A source is due by when it last ran, not when it last succeeded: a

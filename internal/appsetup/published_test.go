@@ -125,7 +125,7 @@ func TestADocumentPublishedPackageRowNamesItsPublisherAndWhatItBrings(t *testing
 	ds := newFakeDataset()
 	row := plan(t, ds, cat, pkgDetail(coachPkg, 1))[0]
 	info := row.Package
-	if row.Action != substrate.SetupInstall || row.Blocked != nil || info.Shipped != 2 || info.Held != 0 || info.Tier != substrate.TierPublished || info.Description == "" {
+	if row.Action != substrate.SetupInstall || row.Blocked != nil || info.Shipped != 2 || info.Held != 0 || info.KeptBy != substrate.KeptByPublisher || info.Description == "" {
 		t.Fatalf("coach = %+v %+v", row, info)
 	}
 	wantPublisher(t, "the coach's", info.Publisher)

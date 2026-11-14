@@ -33,7 +33,6 @@ type app struct {
 	contextName string
 	serverFlag  string
 	tokenFlag   string
-	actorFlag   string
 	// dsnFlag is the OPERATOR hat's database URL. It is a separate world from
 	// the flags above: those address a substrate over HTTP with a token, this
 	// one addresses the box's Postgres with no token at all.
@@ -153,15 +152,9 @@ func (a *app) client() (*client, error) {
 		return nil, fmt.Errorf("no substrate server configured: run `substratectl login --server <url>` or set SUBSTRATE_SERVER")
 	}
 	cl := newClient(ctx.Server, ctx.Token, a.hc)
-	cl.actor = a.actorFlag
 	a.cl = cl
 	return cl, nil
 }
-
-// defaultActor is what substratectl's writes are attributed to. An actor is
-// ATTRIBUTION, not authorization: it names the door a
-// write came through, and this is that door.
-var defaultActor = string(substrate.ActorCLI)
 
 // Execute runs the CLI and returns the process exit code.
 func Execute(version string) int {
@@ -212,7 +205,6 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 	pf.StringVar(&a.contextName, "context", "", "context to use from the config")
 	pf.StringVar(&a.serverFlag, "server", "", "substrate base URL (overrides the context)")
 	pf.StringVar(&a.tokenFlag, "token", "", "bearer token (overrides the context)")
-	pf.StringVar(&a.actorFlag, "actor", defaultActor, "write as this actor (X-Substrate-Actor)")
 	pf.StringVar(&a.dsnFlag, "dsn", "", "operator commands only: the substrate's Postgres URL (default $DATABASE_URL)")
 
 	root.AddCommand(
@@ -220,19 +212,22 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		a.registerCommand(),
 		a.loginCommand(),
 		a.logoutCommand(),
+		a.renameCommand(),
 		a.tokenCommand(),
 		// The records.
 		a.kindsCommand(),
+		a.retentionCommand(),
 		a.getCommand(),
 		a.searchCommand(),
 		a.aggregateCommand(),
 		a.applyCommand(),
 		a.validateCommand(),
 		a.catalogCommand(),
-		a.importCommand(),
-		a.installCommand(),
+		a.addCommand(),
 		a.publishCommand(),
 		a.patchCommand(),
+		a.pinCommand(),
+		a.releaseCommand(),
 		a.deleteCommand(),
 		a.watchCommand(),
 		a.exportCommand(),
@@ -246,6 +241,7 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		// The box.
 		a.userCommand(),
 		a.repositoryCommand(),
+		a.archiveCommand(),
 		a.versionCommand(),
 	)
 	return root

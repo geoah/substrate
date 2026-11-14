@@ -4,7 +4,7 @@
  * words are tested here. */
 
 import { agentName } from "@/lib/actor-identity"
-import { splitKind } from "@/lib/api/http"
+import { LOCAL_AUTHORITY, splitKind } from "@/lib/api/http"
 import type {
   AuthorizationCallFunction,
   AuthorizationKind,
@@ -75,8 +75,8 @@ function isVerb(word: string): word is ScopeVerb {
   return Object.hasOwn(ACTIONS, word)
 }
 
-/** A stored scope (`agents:ada.example.com/llm/*`) as words. A scope this
- * console does not know keeps its own spelling as the pattern. */
+/** A stored scope (`agents:~/llm/*`) as words. A scope this console does
+ * not know keeps its own spelling as the pattern. */
 export function scopeWords(scope: string): ScopeWords {
   if (scope === "full" || scope === "mcp")
     return { verb: scope, action: ACTIONS[scope], pattern: "" }
@@ -194,7 +194,9 @@ function patternPhrase(shape: PatternShape): string {
     case "all":
       return "records"
     case "authority":
-      return `records from ${shape.authority}`
+      return shape.authority === LOCAL_AUTHORITY
+        ? "records of the kinds you made or added"
+        : `records from ${shape.authority}`
     case "package":
       return `${packageDisplayName(shape.pkg)} records`
     case "exact": {
@@ -219,7 +221,9 @@ function agentsPhrase(scope: SentenceScope, shape: PatternShape): string {
     return listWords(scope.agents.map((a) => agentName(a.id)))
   switch (shape.shape) {
     case "authority":
-      return `the agents from ${shape.authority}`
+      return shape.authority === LOCAL_AUTHORITY
+        ? "the agents you made or added"
+        : `the agents from ${shape.authority}`
     case "package":
       return `the agents in ${packageDisplayName(shape.pkg)}`
     case "exact":
@@ -307,7 +311,9 @@ function functionsPhrase(
     return listWords(functions.map((f) => functionName(f.identity)))
   switch (shape.shape) {
     case "authority":
-      return `the functions from ${shape.authority}`
+      return shape.authority === LOCAL_AUTHORITY
+        ? "the functions you made or added"
+        : `the functions from ${shape.authority}`
     case "package":
       return `the functions in ${packageDisplayName(shape.pkg)}`
     case "exact":

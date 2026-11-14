@@ -52,6 +52,8 @@ import {
   reachWords,
   setupTitle,
   versionWords,
+  OUTSIDE_CODE_WORDS,
+  runsOutsideCode,
 } from "@/lib/app-setup"
 import { cn } from "@/lib/utils"
 import { ExternalLink } from "@/components/external-link"
@@ -375,7 +377,11 @@ function PackageFacts({ pkg }: { pkg: AuthorizationPackage }) {
       <Term name="Package">
         <Mono>{pkg.id}</Mono>
       </Term>
-      {pkg.tier && <Term name="Tier">{pkg.tier}</Term>}
+      {pkg.keptBy && (
+        <Term name="Kept by">
+          {pkg.keptBy === "publisher" ? "Its publisher" : "This repository"}
+        </Term>
+      )}
       <Term name="The app needs">version {pkg.required} or later</Term>
       {pkg.oauthHosts && pkg.oauthHosts.length > 0 && (
         <Term name="OAuth hosts">
@@ -494,6 +500,7 @@ export function SetupRow({
   const versions = publishedWords(row) ?? versionWords(row)
   const kept = keptWords(row)
   const code = row.package && codeWords(row.package, webhooks)
+  const outside = row.package && runsOutsideCode(row.package)
   const network = row.package && networkWords(row.package)
   const signIn = row.package && oauthHostWords(row.package)
   const reach = row.package && reachWords(row.package)
@@ -518,6 +525,12 @@ export function SetupRow({
           </p>
         )}
         {code && <p className="text-xs">{code}</p>}
+        {outside && (
+          <p className="text-xs">
+            <span className="font-medium">Code: experimental.</span>{" "}
+            {OUTSIDE_CODE_WORDS}
+          </p>
+        )}
         {network && <p className="text-xs">{network}</p>}
         {signIn && <p className="text-xs">{signIn}</p>}
         {reach && <p className="text-xs">{reach}</p>}

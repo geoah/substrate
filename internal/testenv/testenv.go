@@ -101,16 +101,15 @@ type Env struct {
 type Option func(*options)
 
 type options struct {
-	repository        string
-	password          string
-	recoveryPublicKey string
-	dsn               string
-	dataRoot          string
-	credentialKey     string
-	kindsDir          string
-	engine            []engine.Option
-	now               func() time.Time
-	noRegister        bool
+	repository    string
+	password      string
+	dsn           string
+	dataRoot      string
+	credentialKey string
+	kindsDir      string
+	engine        []engine.Option
+	now           func() time.Time
+	noRegister    bool
 }
 
 // WithUser names the repository Start registers and the password its user
@@ -127,13 +126,6 @@ func WithUser(repository, password string) Option {
 // repository's authority (decision 0210).
 func WithRepository(repository string) Option {
 	return func(o *options) { o.repository = repository }
-}
-
-// WithRecoveryPublicKey registers with a client-minted age recipient, the way
-// substratectl does, so the test holds the identity that opens the
-// repository's sealed files on a host with another credential key.
-func WithRecoveryPublicKey(recipient string) Option {
-	return func(o *options) { o.recoveryPublicKey = recipient }
 }
 
 // WithDSN opens the engine over an existing schema instead of a fresh one:
@@ -228,15 +220,6 @@ func Start(t testing.TB, opts ...Option) *Env {
 		_ = svc.Close()
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
-	handler := api.New(api.Config{
-		Service:    svc,
-		Catalog:    cat,
-		InviteCode: InviteCode,
-		// The auth rate limiter reads the same clock as the TOTP verifier, so
-		// a test spaces two logins by advancing it rather than sleeping.
-		Now: o.now,
-	})
-
 	// A real listener on a kernel-assigned port: two tests in one binary must
 	// not race for a number, and a test that reads e.URL gets something it
 	// could paste into curl.
@@ -245,6 +228,21 @@ func Start(t testing.TB, opts ...Option) *Env {
 		_ = svc.Close()
 		t.Fatalf("testenv: listen: %v", err)
 	}
+	url := "http://" + ln.Addr().String()
+	handler := api.New(api.Config{
+		Service:    svc,
+		Catalog:    cat,
+		InviteCode: InviteCode,
+		// The server's public URL is the address the tests reach it at, a
+		// loopback one, as `mise run dev` sets: a short name is completed
+		// under it, and a name under it is admitted, as in development
+		// (decision record 0288).
+		PublicURL: url,
+		// The auth rate limiter reads the same clock as the TOTP verifier, so
+		// a test spaces two logins by advancing it rather than sleeping.
+		Now: o.now,
+	})
+
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	var once sync.Once
@@ -260,12 +258,12 @@ func Start(t testing.TB, opts ...Option) *Env {
 
 	env := &Env{
 		Session: &Session{Repository: o.repository},
-		URL:     "http://" + ln.Addr().String(),
+		URL:     url,
 		DSN:     dsn, Service: svc, t: t, now: o.now, stop: stop,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}
 	if !o.noRegister {
-		env.register(o.repository, o.password, o.recoveryPublicKey)
+		env.register(o.repository, o.password)
 	}
 	return env
 }
@@ -317,13 +315,15 @@ func (e *Env) TOTPCode() string {
 	return code
 }
 
-// Login signs the user in with the password and a code, and returns the
-// status and body: a test asserting a refusal needs the refusal. On success
-// the Session's Token is replaced with the new secret.
-func (e *Env) Login(repository, password, code string) (int, []byte) {
+// Login signs the person in by the name they sign in with, the password and
+// a code, and returns the status and body: a test asserting a refusal needs
+// the refusal. On success the Session's Token is replaced with the new
+// secret. Registration names a person after their repository, so a test's
+// repository is its person's name too.
+func (e *Env) Login(identity, password, code string) (int, []byte) {
 	e.t.Helper()
 	status, raw, _ := e.DoRaw(http.MethodPost, "/login", marshal(e.t, substrate.LoginRequest{
-		Repository: repository, Password: password, TOTPCode: code, Label: "testenv-login",
+		Identity: identity, Password: password, TOTPCode: code, Label: "testenv-login",
 	}), map[string]string{"Content-Type": "application/json", "Authorization": ""})
 	if status == http.StatusCreated {
 		var out substrate.MintedToken
@@ -338,25 +338,24 @@ func (e *Env) Login(repository, password, code string) (int, []byte) {
 // RegisterUser registers another repository on the same substrate and returns
 // an Env authenticated as its user: the server, the clock and the schema are
 // shared, the Session is theirs. A bare repository label is completed under
-// the listener's host; an empty recovery recipient has the server mint the
-// pair. The copy cannot Stop the substrate.
-func (e *Env) RegisterUser(repository, password, recoveryPublicKey string) *Env {
+// the listener's host. The copy cannot Stop the substrate.
+func (e *Env) RegisterUser(repository, password string) *Env {
 	e.t.Helper()
 	other := *e
 	other.Session = &Session{Repository: repository}
 	other.stop = nil
-	other.register(repository, password, recoveryPublicKey)
+	other.register(repository, password)
 	return &other
 }
 
 // register walks the real registration: enroll for a TOTP seed, then commit
 // with a code derived from it. Registration ends holding a token, so there is
 // no separate login.
-func (e *Env) register(repository, password, recoveryPublicKey string) {
+func (e *Env) register(repository, password string) {
 	e.t.Helper()
 	var enrollment substrate.TOTPEnrollment
 	e.mustJSON(http.MethodPost, "/register/enroll", map[string]any{
-		"inviteCode": InviteCode, "repository": repository,
+		"inviteCode": InviteCode, "identity": repository,
 	}, &enrollment)
 
 	code, err := engine.TOTPCode(enrollment.Secret, engine.TOTPStep(e.now()))
@@ -365,9 +364,8 @@ func (e *Env) register(repository, password, recoveryPublicKey string) {
 	}
 	var out substrate.Registered
 	e.mustJSON(http.MethodPost, "/register", substrate.RegisterRequest{
-		InviteCode: InviteCode, Repository: repository, Password: password,
+		InviteCode: InviteCode, Identity: repository, Password: password,
 		TOTPSecret: enrollment.Secret, TOTPCode: code, Label: "testenv",
-		RecoveryPublicKey: recoveryPublicKey,
 	}, &out)
 	if out.Secret == "" {
 		e.t.Fatal("testenv: registration returned no token secret")

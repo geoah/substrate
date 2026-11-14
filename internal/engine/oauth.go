@@ -34,7 +34,7 @@ type oauthEndpoints = oauthflow.Endpoints
 const finalizerOAuth = "substrate.oauth"
 
 // actorOAuth is the host OAuth facility's writer identity: the ONLY actor
-// permitted to write an account's `writer: oauth` properties — tokenRef,
+// permitted to write an account's `writer: system` properties — tokenRef,
 // tokenStatus, grantedScopes. Its writes are the facility's
 // own, never a stranger's.
 const actorOAuth substrate.Actor = "substrate.oauth"
@@ -55,19 +55,19 @@ const (
 // are not part of the accountconfig trait: a trait property is a contract
 // every implementor must declare, and a repository's own account kind, or a
 // provider installed before these shipped, would stop loading. The facility
-// writes each one only where the account's kind declares it `writer: oauth`,
+// writes each one only where the account's kind declares it `writer: system`,
 // and stamps `erroring` either way.
 const (
 	propTokenError   = "tokenError"
 	propTokenErrorAt = "tokenErrorAt"
 )
 
-// oauthWrites reports whether a kind declares name as a `writer: oauth`
+// oauthWrites reports whether a kind declares name as a `writer: system`
 // property: the only slot the facility may fill, and a write to an undeclared
 // one is refused whole.
 func oauthWrites(ty *vocabulary.Kind, name string) bool {
 	p, ok := ty.Prop(name)
-	return ok && p.Writer == vocabulary.WriterOAuth
+	return ok && p.WrittenOnlyBy(substrate.ActorTypeSystem)
 }
 
 // noteTokenRefresh stamps one refresh's outcome onto the account: a failure
@@ -93,7 +93,7 @@ func oauthWrites(ty *vocabulary.Kind, name string) bool {
 func (ds *dataset) noteTokenRefresh(ctx context.Context, account eref, cause error, gen time.Time) {
 	status, reason := tokenStatusConnected, ""
 	if cause != nil {
-		status, reason = tokenStatusErroring, boundText(firstLine(cause.Error()), syncErrorMax)
+		status, reason = tokenStatusErroring, tokenReason(cause)
 	}
 	// A read outside the transaction first: the common case is a row that
 	// already says so, and it takes no lock.
@@ -324,11 +324,10 @@ func oauthScopesForAccount(meta *vocabulary.BundleOAuth2, row *erow) []string {
 // record path `<authority>/<package>/<kind>/<id>`: it returns the provider
 // consent URL, state signed over (repository, record path, nonce). The
 // requested scope union is DERIVED from the account's enabled feature
-// toggles; the flow is gated on the OWNER TIER —
-// an actor DECLARED below owner (an authority's or a bundle's own hand) may
-// not start or restart a consent. An undeclared actor reads
-// as owner (actorTier's default), so the gate binds declared machine actors,
-// not unknown names.
+// toggles. Starting one writes the account, a control kind, so it is held to
+// the one check: a person's request, or an app's acting for its person, whose
+// roles write the account's kind; installed code never starts a consent, and
+// an app's scoped token never does.
 // The nonce's hash lands in oauth_flows beside the flow's PKCE verifier, with
 // the state's own expiry: the callback consumes it exactly once, so a captured
 // state cannot replay.
@@ -337,14 +336,18 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if fl == nil {
 		return "", fmt.Errorf("%w: oauth is not configured on this substrate", substrate.ErrValidation)
 	}
-	if ds.actorTier(actor) != substrate.TierOwner {
-		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not %s", substrate.ErrForbidden, actor)
-	}
 	if _, scoped := substrate.ScopesFrom(ctx); scoped {
-		return "", fmt.Errorf("%w: only the owner may start an oauth flow, not an app's token", substrate.ErrForbidden)
+		return "", fmt.Errorf("%w: an app's token does not start an oauth flow", substrate.ErrForbidden)
 	}
 	account, err := ds.findAccountRef(ctx, record)
 	if err != nil {
+		return "", err
+	}
+	accountKind, err := ds.resolveType(account.Kind)
+	if err != nil {
+		return "", err
+	}
+	if err := ds.requestMayWrite(ctx, actor, accountKind); err != nil {
 		return "", err
 	}
 	row, b, err := ds.oauthAccountOf(ctx, account)
@@ -368,7 +371,7 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if err := ds.putOAuthFlow(ctx, nonce, row.ref(), verifier, nowUTC().Add(oauthflow.StateTTL)); err != nil {
 		return "", err
 	}
-	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.Repository().ID, Record: vocabulary.RecordPath(row.Kind, row.ID), Nonce: nonce}, verifier)
+	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.info.ID, Record: vocabulary.RecordPath(row.Kind, row.ID), Nonce: nonce}, verifier)
 }
 
 // putOAuthFlow persists one started flow: the nonce hashed (a database read
@@ -512,7 +515,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	// the user never types it — the facility reads it off the provider's
 	// account-info endpoint (People `people/me` / OIDC userinfo, from TRUSTED
 	// manifest metadata) with the fresh access token and writes it to the
-	// `writer: oauth` property the bundle names. Best-effort: a userinfo failure
+	// `writer: system` property the bundle names. Best-effort: a userinfo failure
 	// logs and leaves email unset rather than failing the whole connect. The
 	// network call stays OUTSIDE the write transaction below.
 	var derivedEmail string
@@ -530,7 +533,7 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 	// #5). A reconnect overwrites in place: the record keeps its ref, the
 	// store keeps one row per account.
 	// The patch is attributed to the OAuth facility's own actor: tokenRef,
-	// tokenStatus and grantedScopes are `writer: oauth`, so ONLY this actor may
+	// tokenStatus and grantedScopes are `writer: system`, so ONLY this actor may
 	// set them. Still an internal write — it bypasses the
 	// system-type guard and the owner-gate the facility itself enforced above.
 	return ds.inTx(ctx, actorOAuth, true, func(t *txn) error {
@@ -589,24 +592,20 @@ func (ds *dataset) completeOAuth(ctx context.Context, st oauthflow.State, code s
 			}
 		}
 		// The derived email lands only when the bundle names a real `writer:
-		// oauth` property (Finalize enforces the pairing; this re-checks against
+		// system` property (Finalize enforces the pairing; this re-checks against
 		// the live type so a misconfigured bundle skips instead of failing the
 		// connect with an undeclared-property write).
 		if derivedEmail != "" && meta.EmailProperty != "" {
 			if ty, err := ds.resolveType(row.Kind); err == nil {
-				if p, ok := ty.Prop(meta.EmailProperty); ok && p.Writer == vocabulary.WriterOAuth {
+				if p, ok := ty.Prop(meta.EmailProperty); ok && p.WrittenOnlyBy(substrate.ActorTypeSystem) {
 					props[meta.EmailProperty] = derivedEmail
 				}
 			}
 		}
-		// A `sync`-trait account's half of the reconnect rides the same patch
-		// at the tiers its properties' writers need: one changelog entry, so
-		// a record trigger sees the new status, the cleared error and the
-		// sync request together and fires once.
-		tiers := map[string]substrate.Tier{}
-		syncOnReconnect(ty, row, t.now, props, tiers)
-		t.propTiers = &propTiers{ref: account, tiers: tiers}
-		defer func() { t.propTiers = nil }()
+		// A `sync`-trait account's half of the reconnect rides the same patch:
+		// one changelog entry, so a record trigger sees the new status, the
+		// cleared error and the sync request together and fires once.
+		syncOnReconnect(ty, row, t.now, props)
 		_, err = t.patch(account, substrate.PatchInput{
 			Properties:    props,
 			AddFinalizers: []string{finalizerOAuth},
@@ -917,7 +916,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 	tok, account, gen := g.tok, g.account, g.gen
 	out := refreshOutcome{gen: gen}
 	if account != want {
-		out.failed = errors.New("the stored credential reference belongs to another account")
+		out.failed = errOtherAccountsGrant
 		return out, nil
 	}
 	if out.failed = ds.refuseOtherClient(ctx, g, client); out.failed != nil {
@@ -963,7 +962,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 				tok, gen = g.tok, g.gen
 				out.gen, landed = gen, true
 				if g.account != account {
-					out.failed = errors.New("the stored credential reference belongs to another account")
+					out.failed = errOtherAccountsGrant
 					return out, nil
 				}
 				if out.failed = ds.refuseOtherClient(storeCtx, g, client); out.failed != nil {
@@ -990,7 +989,7 @@ func (ds *dataset) refreshCredential(ctx context.Context, ref string, want eref,
 		return out, nil
 	}
 	if tok.RefreshToken == "" {
-		out.failed = fmt.Errorf("token for %s expired and cannot refresh", account.ID)
+		out.failed = errCannotRefresh{account: account.ID}
 		return out, nil
 	}
 	if refusal := oauthRefreshes.backedOff(e, gen, ds.oauthNow()); refusal != nil {
@@ -1123,8 +1122,74 @@ func (ds *dataset) oauthWriteRefusal() error {
 // reached oauthParkAfter carries (0180): how many refusals of its
 // generation, since when, the last answer, and the ask.
 func repeatedRefusal(refusals int, since time.Time, last error) error {
-	return fmt.Errorf("refused %d times since %s, last answer: %w; reconnect the account",
-		refusals, since.UTC().Format(time.RFC3339), last)
+	return &refusedRepeatedly{refusals: refusals, since: since.UTC(), last: last}
+}
+
+type refusedRepeatedly struct {
+	refusals int
+	since    time.Time
+	last     error
+}
+
+func (e *refusedRepeatedly) Error() string {
+	return fmt.Sprintf("refused %d times since %s, last answer: %v; reconnect the account",
+		e.refusals, e.since.Format(time.RFC3339), e.last)
+}
+
+func (e *refusedRepeatedly) Unwrap() error { return e.last }
+
+// errCannotRefresh is a due token with no refresh token, or, with
+// noFacility, a deployment whose OAuth facility is off.
+type errCannotRefresh struct {
+	account    string
+	noFacility bool
+}
+
+func (e errCannotRefresh) Error() string {
+	return fmt.Sprintf("token for %s expired and cannot refresh", e.account)
+}
+
+var errOtherAccountsGrant = errors.New("the stored credential reference belongs to another account")
+
+// tokenReason is the account's tokenError for cause: on its first line, one
+// sentence the owner can act on, and on the next, the facility's own words,
+// which the console folds away and an operator greps for. The first line is
+// what every surface that shows one line shows, so it must never be a status
+// code. reasonOAuthClientChanged is compared whole
+// (saysClientChanged), so it stays exactly itself.
+func tokenReason(cause error) string {
+	if errors.Is(cause, errOAuthClientChanged) {
+		return reasonOAuthClientChanged
+	}
+	raw := firstLine(cause.Error())
+	return tokenSentence(cause) + "\n" + boundText(raw, syncErrorMax)
+}
+
+func tokenSentence(cause error) string {
+	var repeated *refusedRepeatedly
+	var te *oauthflow.TokenError
+	var cannot errCannotRefresh
+	switch {
+	case errors.As(cause, &repeated):
+		// The instant ends in a comma: refusal readers cut it out on that.
+		return fmt.Sprintf("The provider has refused to renew this sign-in %d times since %s, so syncing has stopped. Reconnect the account.",
+			repeated.refusals, repeated.since.Format(time.RFC3339))
+	case oauthflow.GrantRefused(cause):
+		return "The provider no longer accepts this sign-in: it was revoked, expired or replaced. Reconnect the account."
+	case errors.As(cause, &te) && (te.Code == "invalid_client" || te.Code == "unauthorized_client"):
+		return "The provider refused this app's sign-in details (its client ID or secret). Check them in the provider's settings, then reconnect the account."
+	case oauthflow.Refused(cause):
+		return "The provider refused to renew this sign-in. Reconnect the account if this keeps happening."
+	case errors.As(cause, &te):
+		return "The provider couldn't renew this sign-in just now. It tries again on its own."
+	case errors.As(cause, &cannot) && cannot.noFacility:
+		return "This sign-in expired, and this server has no OAuth facility to renew it. The server's operator has to turn it on."
+	case errors.As(cause, &cannot):
+		return "This sign-in expired and can't be renewed on its own. Reconnect the account."
+	case errors.Is(cause, errOtherAccountsGrant):
+		return "This connection's stored sign-in belongs to another account. Reconnect the account."
+	}
+	return "The sign-in couldn't be renewed just now. It tries again on its own; reconnect the account if this keeps happening."
 }
 
 // storeRefreshedToken stores a refreshed token through updateCredential's
@@ -1161,7 +1226,7 @@ func (ds *dataset) storeRefreshedToken(ctx context.Context, ref string, account 
 // and the provider is not asked.
 // `want` is the account the ref was read off. A credential row records the
 // account it was issued for, and the two must agree: `tokenRef` is a
-// `writer: oauth` property, but the facility is not the only hand that can
+// `writer: system` property, but the facility is not the only hand that can
 // ever reach one, and a ref re-pointed at ANOTHER account's row would hand
 // this bundle a live grant issued for a different connection (and, across
 // bundles, for a different provider). Refuse rather than resolve.
@@ -1178,7 +1243,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 	}
 	tok, account := g.tok, g.account
 	if account != want {
-		return "", errors.New("the stored credential reference belongs to another account")
+		return "", errOtherAccountsGrant
 	}
 	if err := ds.refuseOtherClient(ctx, g, client); err != nil {
 		return "", err
@@ -1190,7 +1255,7 @@ func (ds *dataset) accountAccessToken(ctx context.Context, ref string, want eref
 		return tok.AccessToken, nil
 	}
 	if ds.svc.oauth == nil || tok.RefreshToken == "" {
-		return "", fmt.Errorf("token for %s expired and cannot refresh", account.ID)
+		return "", errCannotRefresh{account: account.ID, noFacility: ds.svc.oauth == nil}
 	}
 	out, err := ds.refreshCredential(ctx, ref, account, g.gen, meta, client)
 	if err != nil {

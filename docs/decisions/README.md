@@ -88,6 +88,9 @@ nobody should read the sequence as a count.
 ## Statuses and lifecycle
 
 - `proposed` becomes `accepted` or `rejected`.
+- A record is `accepted` in the pull request that lands its code, so no record
+  is `proposed` while the code it describes is on `main`. A record written
+  ahead of its code stays `proposed` until that pull request.
 - `accepted` becomes `superseded`.
 - `rejected` and `superseded` are terminal.
 - `date` is the date of the last status change, and it is the only frontmatter
@@ -189,7 +192,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0022](0022-rest-is-frozen-graphql-is-a-projection.md) | REST is the frozen v1 contract; GraphQL is a derived projection | superseded |
 | [0023](0023-a-sealed-payload-is-bound-to-its-address.md) | A sealed payload is bound to the address it was written at | accepted |
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | accepted |
-| [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | accepted |
+| [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | superseded |
 | [0026](0026-embedding-vectors-are-1536-wide-or-refused.md) | Embedding vectors are 1536 wide or the provider row is refused | accepted |
 | [0027](0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md) | An edge needs its target at write, outlives a tombstone, and dies with a purge | superseded |
 | [0030](0030-a-blob-outside-postgres-settles-after-its-bytes.md) | A blob outside Postgres settles after its bytes, behind a pending manifest | accepted |
@@ -212,11 +215,11 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0047](0047-a-kind-lives-in-a-package.md) | A kind lives in a package, and a package lives in an authority | accepted |
 | [0048](0048-providers-are-published-samples-are-copied.md) | Providers are published packages; samples are copied and owned | accepted |
 | [0049](0049-the-owner-of-a-mappings-target-declares-it.md) | The owner of a mapping's target declares it and pins the subject | accepted |
-| [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | accepted |
+| [0050](0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md) | The changelog is checksummed segment files per repository, and Postgres indexes it | superseded |
 | [0051](0051-a-repository-directory-is-the-backup-unit.md) | A repository directory under the data root is the backup unit | superseded |
-| [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | accepted |
+| [0052](0052-the-authority-is-the-repository-id.md) | The authority is the repository id | superseded |
 | [0053](0053-rest-is-supported-all-of-graphql-is-preview.md) | REST is the supported interface; all of GraphQL is preview | superseded |
-| [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | accepted |
+| [0054](0054-a-repository-moves-between-host-keys-through-an-offline-rewrap.md) | A repository moves between host keys through an offline rewrap of its manifest | superseded |
 | [0055](0055-a-retired-name-is-declared-and-never-inferred-from-a-prune.md) | A retired name is a declared reservation, never inferred from a prune | accepted |
 | [0056](0056-a-change-cursor-is-a-seq-under-a-history-generation.md) | A change cursor is a seq under a history generation | accepted |
 | [0057](0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md) | A changelog line names its transaction, and an unfinished transaction is cut whole | accepted |
@@ -224,19 +227,19 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0059](0059-a-marked-repository-refuses-plain-and-host-key-sealed-payloads.md) | A repository marked DEK-only refuses plain and host-key-sealed payloads | accepted |
 | [0060](0060-a-record-carries-the-kind-version-that-last-wrote-it.md) | A record carries the kind version that last wrote it | accepted |
 | [0061](0061-a-change-event-names-the-affected-records-and-clients-fetch-them.md) | A change event names the affected records with their versions, and clients fetch them | accepted |
-| [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | accepted |
+| [0062](0062-a-write-is-on-disk-before-its-commit-and-its-final-newline-is-the-commit-marker.md) | A write is on disk before its commit, and its final newline is the commit marker | superseded |
 | [0063](0063-a-property-rename-is-ordinary-record-writes.md) | A property rename is ordinary record writes, never a fold-time conversion | accepted |
 | [0064](0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md) | Trigger bookkeeping is a delivery ledger folded from the changelog | accepted |
-| [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | accepted |
+| [0065](0065-a-snapshot-is-a-stopped-server-copy-that-records-its-head.md) | A snapshot is a stopped-server copy that records its head and lists what it needs | superseded |
 | [0066](0066-a-backfill-and-an-enum-remap-are-ordinary-record-writes.md) | A backfill and an enum remap are ordinary record writes, composed with the rename | accepted |
 | [0067](0067-a-lossy-conversion-runs-only-with-a-confirmation-bound-to-its-preview.md) | A lossy conversion runs only with a confirmation bound to its preview | accepted |
 | [0068](0068-an-accepted-webhook-is-a-pending-entry-in-the-delivery-ledger.md) | An accepted webhook request is a pending entry in the delivery ledger before its `202` | superseded |
-| [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | accepted |
+| [0069](0069-the-owner-export-is-the-snapshot-streamed-as-a-tar.md) | The owner's export is the snapshot, streamed as a tar under the bearer token | superseded |
 | [0070](0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md) | A sample copy is upgraded through its origin stamp, and `requiresAtLeast` pins a floor under a requirement | accepted |
 | [0071](0071-a-webhook-url-names-the-repository-by-its-authority.md) | A webhook URL names the repository by its authority | accepted |
 | [0072](0072-reserve-a-purged-record-id-against-reuse.md) | Reserve a purged record id so a later write cannot take it | rejected |
 | [0073](0073-idempotency-keys-live-in-a-postgres-table-not-the-changelog.md) | Idempotency keys live in a Postgres table, not the changelog | accepted |
-| [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | accepted |
+| [0074](0074-the-repository-name-is-the-login-name.md) | The repository name is the login name, and `username` is gone | superseded |
 | [0075](0075-v1-ships-the-fs-blob-backend-alone.md) | v1 ships the `fs` blob backend alone, and `SUBSTRATE_BLOB_STORE` is gone | accepted |
 | [0076](0076-a-bundle-ships-its-settings-as-core-setting-and-secret-records.md) | A bundle ships its settings as core `setting` and `secret` records | accepted |
 | [0077](0077-the-llm-kinds-live-in-their-own-seeded-package.md) | The LLM kinds live in their own seeded package, `substrate.reamde.dev/llm` | accepted |
@@ -270,17 +273,17 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0105](0105-a-lossy-confirmation-binds-to-what-the-plan-affects.md) | A lossy confirmation binds to what the plan affects | accepted |
 | [0106](0106-the-apply-door-holds-back-a-mapping-whose-provider-is-absent.md) | The apply door holds back a mapping whose provider is absent, on request | accepted |
 | [0107](0107-an-apply-links-the-sources-its-mappings-left-unlinked.md) | An apply links the sources its mappings left unlinked | accepted |
-| [0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | proposed |
+| [0108](0108-an-allow-outranks-a-gate-only-by-naming-it.md) | An allow outranks a gate only by naming it | accepted |
 | [0109](0109-a-package-row-names-the-actor-that-declared-it.md) | A package row names the actor that declared it | accepted |
 | [0110](0110-a-schedule-trigger-passes-declared-arguments-to-its-function.md) | A schedule trigger passes declared arguments to its function | accepted |
 | [0111](0111-a-function-and-an-agent-list-read-is-the-window-read.md) | A function's and an agent's list read is the window read | accepted |
-| [0113](0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | accepted |
+| [0113](0113-a-manager-row-holds-at-its-actors-live-machine-tier.md) | A manager row holds at the machine tier once its actor is declared there | superseded |
 | [0114](0114-a-change-row-reads-a-property-rename-as-one-move.md) | A change row reads a property rename as one move | accepted |
 | [0115](0115-an-owner-adjusts-a-change-request-on-the-accepting-write.md) | An owner adjusts a change request on the accepting write | accepted |
 | [0116](0116-a-probe-folds-case-only-when-it-declares-fold-case.md) | A probe folds case only when it declares `fold: case` | accepted |
 | [0117](0117-a-kind-may-declare-its-display-label.md) | A kind may declare its display label, singular and plural | accepted |
 | [0118](0118-a-mapping-where-narrows-its-sources-in-the-filter-grammar.md) | A mapping's `where` narrows its sources in the filter grammar | accepted |
-| [0119](0119-a-direct-call-of-a-networked-function-writes-a-run-row.md) | A direct call of a networked function writes a run row | proposed |
+| [0119](0119-a-direct-call-of-a-networked-function-writes-a-run-row.md) | A direct call of a networked function writes a run row | accepted |
 | [0120](0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md) | A map rule reaches a mirror's subject through the target's pin | accepted |
 | [0121](0121-a-function-body-runs-an-agent-under-permissions-agents.md) | A function body runs an agent under `permissions.agents` | accepted |
 | [0122](0122-a-delete-may-purge-so-a-put-starts-the-record-over.md) | A delete may purge, so the next put starts the record over | accepted |
@@ -304,13 +307,13 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0143](0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md) | A token has full access to its repository, and a login token does not expire | accepted |
 | [0144](0144-a-restoring-put-completes-the-conversions-a-tombstone-missed.md) | A restoring put completes the conversions a tombstone missed | accepted |
 | [0145](0145-a-release-is-a-pull-request-that-dates-the-changelog.md) | A release is a pull request that dates the changelog, and a merge to main releases nothing | accepted |
-| [0146](0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md) | A finished segment is read at its first and last lines before serving, and a snapshot links what its base holds | proposed |
-| [0147](0147-a-pass-runs-its-schedule-triggers-in-a-lane-beside-its-record-triggers.md) | A pass runs its schedule triggers in a lane beside its record triggers | proposed |
-| [0148](0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md) | An ongoing problem is one alert record, written under the callable it is about | proposed |
-| [0149](0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md) | A spend cap holds an agent trigger, a third state beside running and parked | proposed |
-| [0150](0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md) | A schedule lane fires its due triggers in parallel, one fire per trigger | proposed |
-| [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | proposed |
-| [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | proposed |
+| [0146](0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md) | A finished segment is read at its first and last lines before serving, and a snapshot links what its base holds | accepted |
+| [0147](0147-a-pass-runs-its-schedule-triggers-in-a-lane-beside-its-record-triggers.md) | A pass runs its schedule triggers in a lane beside its record triggers | accepted |
+| [0148](0148-an-ongoing-problem-is-one-alert-record-written-under-the-callable-it-is-about.md) | An ongoing problem is one alert record, written under the callable it is about | accepted |
+| [0149](0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md) | A spend cap holds an agent trigger, a third state beside running and parked | accepted |
+| [0150](0150-a-schedule-lane-fires-its-due-triggers-in-parallel-one-fire-per-trigger.md) | A schedule lane fires its due triggers in parallel, one fire per trigger | accepted |
+| [0151](0151-an-agent-delivery-a-restart-interrupted-is-rerun-once-at-the-first-pass.md) | An agent delivery a restart interrupted is rerun once, at the first pass after the restart | accepted |
+| [0152](0152-a-hand-retry-writes-a-run-row-and-the-newest-ok-run-outlives-retention.md) | A hand retry writes a run row, and the newest ok run outlives retention | accepted |
 | [0153](0153-a-quantity-is-exact-digits-and-a-ucum-code-converted-only-within-its-measure.md) | A quantity is exact digits and a UCUM code, converted only within its measure | superseded |
 | [0154](0154-an-observed-value-binds-the-core-observed-trait-which-never-gains-a-property.md) | An observed value binds the core `observed` trait, which never gains a property | accepted |
 | [0155](0155-an-observed-value-names-what-it-is-about-with-an-about-reference.md) | An observed value names what it is about with an `about` reference | accepted |
@@ -327,31 +330,31 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0166](0166-a-record-page-layout-is-a-record-in-a-seeded-console-package.md) | A record page's layout is a record in a seeded console package | accepted |
 | [0167](0167-the-webhook-door-answers-after-a-sealed-spool-write.md) | The webhook door answers `202` after a sealed spool write, and a drain records the request | accepted |
 | [0168](0168-a-provider-s-live-events-ship-as-an-opt-in-bundle-that-requires-it.md) | A provider's live events ship as an opt-in bundle that requires the provider, with its webhook off | accepted |
-| [0169](0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md) | A chat turn runs detached from its client, and its thread is attached by id | proposed |
-| [0170](0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md) | A chat thread is titled by its first message, then by its model, and an owner rename holds | proposed |
-| [0171](0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md) | A reasoning delta is its own event, and a turn keeps a bounded summary, never the chain | proposed |
-| [0172](0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md) | An agent names the kinds it searches, and its prompt lists them | proposed |
-| [0173](0173-the-embed-drain-packs-values-into-capped-requests-and-sets-a-refused-one-aside.md) | The embed drain packs values into capped requests and sets a refused one aside | proposed |
-| [0174](0174-the-semantic-arm-is-indexed-approximate-and-bounded.md) | The semantic arm is indexed, approximate and bounded | proposed |
-| [0175](0175-a-record-view-draws-tiles-trends-and-tables-from-one-batched-read-per-block.md) | A record view draws tiles, trends and tables from one batched read per block, and a band is view data | proposed |
-| [0176](0176-a-reconnect-requests-a-sync.md) | A reconnect requests a sync | proposed |
-| [0177](0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md) | A failing alert needs a standing park, and ends with the last one or its trigger | proposed |
-| [0178](0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md) | A sync delivery that settles ok retires the account's older parks of the same callable | proposed |
-| [0179](0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md) | The console waits fifteen minutes for a requested sync to start | proposed |
-| [0180](0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md) | A refresh stores its rotated token, and an hour of refusals parks the credential | proposed |
-| [0181](0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md) | A cached prompt token is priced at its cache rate | proposed |
-| [0182](0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md) | A record trigger is walked by one caller at a time | proposed |
-| [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | proposed |
-| [0184](0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md) | A record view grows by adding a field, never by retyping one | proposed |
-| [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | proposed |
+| [0169](0169-a-chat-turn-runs-detached-from-its-client-and-its-thread-is-attached-by-id.md) | A chat turn runs detached from its client, and its thread is attached by id | accepted |
+| [0170](0170-a-chat-thread-is-titled-by-its-first-message-then-by-its-model-and-an-owner-rename-holds.md) | A chat thread is titled by its first message, then by its model, and an owner rename holds | accepted |
+| [0171](0171-a-reasoning-delta-is-its-own-event-and-a-turn-keeps-a-bounded-summary-never-the-chain.md) | A reasoning delta is its own event, and a turn keeps a bounded summary, never the chain | accepted |
+| [0172](0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md) | An agent names the kinds it searches, and its prompt lists them | accepted |
+| [0173](0173-the-embed-drain-packs-values-into-capped-requests-and-sets-a-refused-one-aside.md) | The embed drain packs values into capped requests and sets a refused one aside | accepted |
+| [0174](0174-the-semantic-arm-is-indexed-approximate-and-bounded.md) | The semantic arm is indexed, approximate and bounded | accepted |
+| [0175](0175-a-record-view-draws-tiles-trends-and-tables-from-one-batched-read-per-block.md) | A record view draws tiles, trends and tables from one batched read per block, and a band is view data | accepted |
+| [0176](0176-a-reconnect-requests-a-sync.md) | A reconnect requests a sync | accepted |
+| [0177](0177-a-failing-alert-needs-a-standing-park-and-ends-with-the-last-one-or-its-trigger.md) | A failing alert needs a standing park, and ends with the last one or its trigger | accepted |
+| [0178](0178-a-sync-delivery-that-settles-ok-retires-the-accounts-older-parks-of-the-same-callable.md) | A sync delivery that settles ok retires the account's older parks of the same callable | accepted |
+| [0179](0179-the-console-waits-fifteen-minutes-for-a-requested-sync-to-start.md) | The console waits fifteen minutes for a requested sync to start | accepted |
+| [0180](0180-a-refresh-stores-its-rotated-token-and-an-hour-of-refusals-parks-the-credential.md) | A refresh stores its rotated token, and an hour of refusals parks the credential | accepted |
+| [0181](0181-a-cached-prompt-token-is-priced-at-its-cache-rate.md) | A cached prompt token is priced at its cache rate | accepted |
+| [0182](0182-a-record-trigger-is-walked-by-one-caller-at-a-time.md) | A record trigger is walked by one caller at a time | accepted |
+| [0183](0183-an-unreachable-beeper-desktop-throttles-the-sync-and-throttled-reads-as-waiting.md) | An unreachable Beeper Desktop throttles the sync, and throttled reads as waiting | accepted |
+| [0184](0184-a-record-view-grows-by-adding-a-field-never-by-retyping-one.md) | A record view grows by adding a field, never by retyping one | accepted |
+| [0185](0185-a-table-draws-its-results-as-tiles-and-every-tile-takes-one-size.md) | A table draws its results as tiles, and every tile takes one size | accepted |
 | [0186](0186-units-and-conversions-are-core-records-and-a-value-converts-through-the-repositorys-graph.md) | Units and conversions are core records, and a value converts through the repository's graph | accepted |
-| [0187](0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md) | Linked sources are one device, read from their highest-ranked source | proposed |
-| [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | proposed |
+| [0187](0187-linked-sources-are-one-device-read-from-their-highest-ranked-source.md) | Linked sources are one device, read from their highest-ranked source | accepted |
+| [0188](0188-the-observations-page-folds-a-metrics-sources-into-one-row-and-keeps-channels-apart.md) | The Observations page folds a metric's sources into one row, and keeps channels apart | accepted |
 | [0189](0189-the-observation-source-kind-stays-in-the-observations-sample.md) | The observation source kind stays in the observations sample | superseded |
 | [0190](0190-a-blobref-declares-the-media-types-of-its-bytes.md) | A blobref declares the media types of its bytes | accepted |
 | [0191](0191-a-shipped-record-is-held-by-any-hand-but-the-one-that-ships-it.md) | A shipped record is held by any hand but the one that ships it | accepted |
 | [0192](0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md) | Observations is seeded, and the well-known catalogues are first-party packages | accepted |
-| [0193](0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md) | The clinical record is a first-party catalogue shaped on FHIR | proposed |
+| [0193](0193-the-clinical-record-is-a-first-party-catalogue-shaped-on-fhir.md) | The clinical record is a first-party catalogue shaped on FHIR | accepted |
 | [0194](0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md) | An app gets a scoped token through a registration-free authorization flow | accepted |
 | [0195](0195-an-app-talks-to-agents-decides-their-requests-and-tails-the-feed-it-reads.md) | An app talks to agents, decides their requests and tails the feed it reads | accepted |
 | [0196](0196-a-turn-carries-its-own-context-rendered-once-and-stored-on-its-row.md) | A turn carries its own context, rendered once and stored on its row | accepted |
@@ -360,25 +363,25 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0200](0200-a-background-tool-returns-a-handle-and-its-result-resumes-the-thread.md) | A background tool returns a handle, and its result resumes the thread | accepted |
 | [0201](0201-a-continued-thread-replays-its-tool-exchanges.md) | A continued thread replays its tool exchanges | accepted |
 | [0202](0202-an-apps-approval-sets-up-what-it-needs-and-its-token-delivers-to-its-webhook.md) | An app's approval sets up what it needs, and its token delivers to its webhook | accepted |
-| [0203](0203-an-app-keeps-its-own-package-under-a-declare-scope.md) | An app keeps its own package under a declare scope | proposed |
+| [0203](0203-an-app-keeps-its-own-package-under-a-declare-scope.md) | An app keeps its own package under a declare scope | superseded |
 | [0204](0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md) | An app may ask for full access, and its owner approves it whole | accepted |
-| [0205](0205-an-app-owns-the-package-it-declares.md) | An app owns the package it declares | proposed |
+| [0205](0205-an-app-owns-the-package-it-declares.md) | An app owns the package it declares | superseded |
 | [0206](0206-a-spooled-webhook-request-refused-for-its-own-content-is-set-aside.md) | A spooled webhook request refused for its own content is set aside as `.refused` | accepted |
-| [0207](0207-an-app-declares-one-agent-held-to-its-own-reach.md) | An app declares one approved agent, held to a live approval at every run | proposed |
+| [0207](0207-an-app-declares-one-agent-held-to-its-own-reach.md) | An app declares one approved agent, held to a live approval at every run | superseded |
 | [0208](0208-a-repository-proves-its-name-with-a-txt-record-after-registration.md) | A repository proves its name with a TXT record after registration | accepted |
 | [0209](0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md) | An app is verified by its authority's TXT record and document | accepted |
 | [0210](0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md) | A token declares new packages only under its repository's authority | accepted |
-| [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | proposed |
-| [0212](0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md) | A package is published by its authority's document and installed from it | proposed |
-| [0213](0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md) | A published package keeps its publisher's versions, and an upgrade waits for every connected build | proposed |
-| [0214](0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md) | An app's approval installs published packages, and `declare:` and the `agent` detail are retired | proposed |
-| [0215](0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md) | Code an approval installs reaches no further than the scopes it approves | proposed |
-| [0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md) | An add-on package waits for the provider it extends, under the approval already given | proposed |
-| [0217](0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md) | A published agent takes its provider through a bundle input and declares its daily cap | proposed |
-| [0218](0218-the-approval-page-writes-a-packages-settings-and-secrets-as-the-owner.md) | The approval page writes a package's settings and secrets as the owner | proposed |
-| [0219](0219-an-apps-token-reads-windows-aggregates-semantic-search-blobs-and-the-feeds-history-over-the-kinds-it-reads-and-calls-the-functions-its-call-scope-names.md) | An app's token reads windows, aggregates, semantic search, blobs and the feed's history over the kinds it reads, and calls the functions its call scope names | proposed |
-| [0220](0220-outside-code-is-confined-and-reviewed.md) | Code from an outside authority reaches only the hosts it declares, waits for review when it changes, and needs a sandbox that confines it | proposed |
-| [0221](0221-first-party-apps-publish-under-substrate-reamde-dev.md) | First-party apps publish under substrate.reamde.dev, and the binary wins for what it ships | proposed |
+| [0211](0211-the-console-groups-collections-by-package.md) | The console groups collections by package | accepted |
+| [0212](0212-a-package-is-published-by-its-authoritys-document-and-installed-from-it.md) | A package is published by its authority's document and installed from it | accepted |
+| [0213](0213-a-published-package-keeps-its-publishers-versions-and-an-upgrade-waits-for-every-connected-build.md) | A published package keeps its publisher's versions, and an upgrade waits for every connected build | accepted |
+| [0214](0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md) | An app's approval installs published packages, and `declare:` and the `agent` detail are retired | accepted |
+| [0215](0215-code-an-approval-installs-reaches-no-further-than-the-scopes-it-approves.md) | Code an approval installs reaches no further than the scopes it approves | accepted |
+| [0216](0216-an-add-on-package-waits-for-the-provider-it-extends-under-the-approval-already-given.md) | An add-on package waits for the provider it extends, under the approval already given | accepted |
+| [0217](0217-a-published-agent-takes-its-provider-through-a-bundle-input-and-declares-its-daily-cap.md) | A published agent takes its provider through a bundle input and declares its daily cap | accepted |
+| [0218](0218-the-approval-page-writes-a-packages-settings-and-secrets-as-the-owner.md) | The approval page writes a package's settings and secrets as the owner | accepted |
+| [0219](0219-an-apps-token-reads-windows-aggregates-semantic-search-blobs-and-the-feeds-history-over-the-kinds-it-reads-and-calls-the-functions-its-call-scope-names.md) | An app's token reads windows, aggregates, semantic search, blobs and the feed's history over the kinds it reads, and calls the functions its call scope names | accepted |
+| [0220](0220-outside-code-is-confined-and-reviewed.md) | Code from an outside authority reaches only the hosts it declares, waits for review when it changes, and needs a sandbox that confines it | accepted |
+| [0221](0221-first-party-apps-publish-under-substrate-reamde-dev.md) | First-party apps publish under substrate.reamde.dev, and the binary wins for what it ships | accepted |
 | [0222](0222-swift-is-the-language-of-the-apps-shared-code-and-android-runs-it-through-the-swift-sdk-for-android.md) | Swift is the language of the apps' shared code, and Android runs it through the Swift SDK for Android | accepted |
 | [0223](0223-a-screen-is-a-controller-over-a-pure-engine-and-presenter-and-android-receives-its-presentations-over-one-fixed-bridge.md) | A screen is a controller over a pure engine and presenter, and Android receives its presentations over one fixed bridge | accepted |
 | [0224](0224-an-app-is-one-folder-named-once-by-its-app-json-and-the-kits-layering-is-checked.md) | An app is one folder named once by its app.json, and the kit's layering is checked | accepted |
@@ -386,20 +389,65 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0226](0226-a-kinds-status-is-the-core-lifecycle-trait-and-names-its-done-and-dropped-states.md) | A kind's status is the core `lifecycle` trait, and names its done and dropped states | accepted |
 | [0228](0228-a-person-an-app-or-an-agent-creates-a-record-under-a-minted-id.md) | A person, an app or an agent creates a record under a minted id, a UUIDv7 in 26 Crockford characters | accepted |
 | [0229](0229-a-collections-shipped-saved-views-are-records-of-a-seeded-console-kind.md) | A collection's shipped saved views are records of a seeded console kind | accepted |
-| [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | proposed |
-| [0231](0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md) | A contact is a core kind of the owner's data, and a setting names the owner's own | proposed |
-| [0232](0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md) | Core maps the providers' people onto contacts, and a seeded mapping waits instead of refusing | proposed |
+| [0230](0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md) | An assistant reaches a substrate through MCP, with a token that works there alone | accepted |
+| [0231](0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md) | A contact is a core kind of the owner's data, and a setting names the owner's own | accepted |
+| [0232](0232-core-maps-the-providers-people-onto-contacts-and-a-seeded-mapping-waits-instead-of-refusing.md) | Core maps the providers' people onto contacts, and a seeded mapping waits instead of refusing | accepted |
 | [0233](0233-the-providers-page-lists-every-outside-service-the-substrate-uses-a-key-or-a-sign-in-for.md) | The Providers page lists every outside service the substrate uses a key or a sign-in for | accepted |
-| [0234](0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md) | Firecrawl is a provider whose tools are offered to agents and may run on the operator's key | proposed |
-| [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | proposed |
+| [0234](0234-firecrawl-is-a-provider-whose-tools-are-offered-to-agents.md) | Firecrawl is a provider whose tools are offered to agents and may run on the operator's key | accepted |
+| [0235](0235-an-empty-key-on-an-operator-listed-provider-row-runs-on-the-operators-transport-under-a-daily-allowance.md) | An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance | accepted |
 | [0236](0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md) | An owner may delete their repository, and the name is freed | accepted |
 | [0237](0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md) | A second factor is the owner's choice, and sign-in asks for the code only of an account that has one | accepted |
 | [0238](0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md) | The catalog tier says who keeps a package, and what it is for is read from its declarations | accepted |
-| [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | proposed |
-| [0240](0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md) | An agent changes long text by exact replacement against the version it read | proposed |
-| [0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md) | The assistant ships with the binary, and the owner shapes it through instruction records | proposed |
-| [0242](0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md) | A model a provider offers is a record, and an agent may run on a list of them | proposed |
+| [0239](0239-an-agent-declares-kinds-through-the-vocabulary-tool-under-its-writes.md) | An agent declares kinds through the vocabulary tool, under its writes | accepted |
+| [0240](0240-an-agent-changes-long-text-by-exact-replacement-against-the-version-it-read.md) | An agent changes long text by exact replacement against the version it read | accepted |
+| [0241](0241-the-assistant-ships-with-the-binary-and-the-owner-shapes-it-through-instruction-records.md) | The assistant ships with the binary, and the owner shapes it through instruction records | accepted |
+| [0242](0242-a-model-a-provider-offers-is-a-record-and-an-agent-may-run-on-a-list-of-them.md) | A model a provider offers is a record, and an agent may run on a list of them | accepted |
 | [0243](0243-an-applet-is-a2ui-screens-the-server-runs-and-the-console-gives-applets-a-place.md) | An applet is A2UI screens the server runs, seeded in every repository, and the console gives applets a place | accepted |
 | [0244](0244-an-applet-names-its-runtime-and-a2ui-is-the-one-the-server-runs.md) | An applet names its runtime, and a2ui is the one the server runs | accepted |
-| [0245](0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | A stale revision is a validation refusal narrowed by the reason `stale_revision` | proposed |
+| [0245](0245-a-stale-revision-is-a-validation-refusal-narrowed-by-the-reason-stale-revision.md) | A stale revision is a validation refusal narrowed by the reason `stale_revision` | accepted |
 | [0246](0246-a-declared-property-a-derived-only-token-shadows-is-spelled-with-a-leading-dot.md) | A declared property a derived-only token shadows is spelled with a leading dot | accepted |
+| [0247](0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md) | A status names the open states a record waits in until its owner accepts it | accepted |
+| [0248](0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md) | A webhook trigger a publisher ships is enabled only with a key or a signature | accepted |
+| [0254](0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md) | An agent's call of a function that declares approval waits for the owner in chat | accepted |
+| [0255](0255-a-providers-writes-ride-toggles-of-their-own-and-a-seeded-secretary-takes-the-providers-tools-by-pattern.md) | A provider's writes ride toggles of their own, and a seeded secretary takes the providers' tools by pattern | accepted |
+| [0256](0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md) | A stability label sits on a package and on a feature, and a feature carries a revision | accepted |
+| [0257](0257-a-kind-move-is-checked-only-while-its-old-kind-holds-rows-and-may-add-optional-properties.md) | A kind move is checked only while its old kind holds rows, and may add optional properties | accepted |
+| [0258](0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md) | One catalog route adds a package, and `keptBy` says who keeps it | accepted |
+| [0259](0259-a-repositorys-own-kinds-live-in-the-local-namespace.md) | A repository's own kinds live in the local namespace `~` | accepted |
+| [0260](0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md) | The stored format is a contract, each release keeps a directory, and history converts forward once | accepted |
+| [0261](0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md) | A repository is keyed by a minted id, and its name keeps every other job | accepted |
+| [0262](0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md) | Postgres alone confirms a write, and an archive is copied after the commit | accepted |
+| [0263](0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md) | The API's tests of engine behavior run on the real engine, and its stand-in is deleted | accepted |
+| [0264](0264-a-repositorys-secrets-travel-with-its-host-key-or-are-left-behind-by-the-operators-choice.md) | A repository's secrets travel with its host key, or are left behind by the operator's choice | accepted |
+| [0265](0265-a-package-names-the-function-interface-its-code-is-written-against.md) | A package names the function interface its code is written against | accepted |
+| [0266](0266-a-temporary-failure-is-retried-over-minutes-and-the-body-says-which-it-is.md) | A temporary failure is retried over minutes, and the body says which it is | accepted |
+| [0267](0267-a-schedule-trigger-says-what-it-does-with-runs-it-missed-and-runs-the-latest-by-default.md) | A schedule trigger says what it does with runs it missed, and runs the latest by default | accepted |
+| [0268](0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md) | A new declaration key raises the dialect, and a package states the dialect it needs | accepted |
+| [0269](0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md) | A publisher may not rename a kind, and code from outside publishers is experimental | accepted |
+| [0270](0270-every-hand-that-writes-is-an-actor-record.md) | Every hand that writes is an actor record, and a write links three of them | accepted |
+| [0271](0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md) | An error that may follow a write's commit says so, and a write of a named record takes a retry key | accepted |
+| [0272](0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md) | Signing out everywhere ends every token the person holds, and every stream ends with its token | accepted |
+| [0273](0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md) | Body is an ordinary property, and no property name is stored apart | accepted |
+| [0274](0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md) | A person signs in as an identity beside the repositories, and picks the repository | accepted |
+| [0275](0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md) | What a person may do is the roles they hold, and nothing is called owner | accepted |
+| [0276](0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md) | One check holds every hand that writes, and one list names the control kinds | accepted |
+| [0277](0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md) | The archive is pieces, blobs and sealed values, and its manifest is the mark | accepted |
+| [0278](0278-the-export-is-the-archive-as-one-file-and-the-snapshot-is-gone.md) | The export is the archive as one file, and the snapshot is gone | accepted |
+| [0279](0279-the-archive-holds-against-a-written-contract.md) | The archive holds against a written contract, and the database's record decides whether an archive is its own | accepted |
+| [0281](0281-a-repository-the-start-finds-damaged-is-set-aside-in-memory-and-the-rest-serve.md) | A repository the start finds damaged is set aside in memory, and the rest serve | accepted |
+| [0282](0282-a-kind-declares-how-long-its-history-is-kept-and-a-repository-may-override-it.md) | A kind declares how long its history is kept, and a repository may override it | accepted |
+| [0283](0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md) | Trigger run records keep a week of history, and positions stay in the log | accepted |
+| [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
+| [0287](0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md) | A repository's name is an alias, and a former name holds for 90 days | accepted |
+| [0288](0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md) | A short name is completed under the configured public host, and a local name is for development | accepted |
+| [0289](0289-a-repository-publishes-a-package-by-moving-it-out-of-the-local-namespace-to-an-authority-it-proves.md) | A repository publishes a package by moving it out of the local namespace to an authority it proves | accepted |
+| [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
+| [0291](0291-a-repositorys-server-serves-what-it-publishes-and-the-authoritys-record-naming-that-document-is-the-proof.md) | A repository's server serves what it publishes, and the authority's record naming that document is the proof | accepted |
+| [0292](0292-the-projects-name-is-permanent-and-its-packages-come-from-the-binary.md) | The project's name is permanent, and its packages come from the binary | accepted |
+| [0293](0293-a-publisher-that-moves-leaves-a-pointer-the-server-shows-and-never-follows.md) | A publisher that moves leaves a pointer the server shows and never follows | accepted |
+| [0294](0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md) | Every route is public, for an admin, or held to its rules | accepted |
+| [0295](0295-a-persons-token-is-held-to-that-persons-roles.md) | A person's token is held to that person's roles | accepted |
+| [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
+| [0298](0298-a-kind-move-sets-off-no-trigger-and-carries-a-records-merge-trail-and-vectors.md) | A kind move sets off no trigger, and carries a record's merge trail and vectors | accepted |
+| [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
+| [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |

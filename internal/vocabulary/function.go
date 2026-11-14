@@ -73,6 +73,10 @@ const (
 	FunctionEffectIrreversible = "irreversible"
 	FunctionConfirmPolicy      = "policy"
 	FunctionConfirmAlways      = "always"
+	// FunctionApprovalRequired is `approval: required`: an agent's call of the
+	// function waits for the owner's approval before its body runs (decision
+	// record 0254). Absent is no approval.
+	FunctionApprovalRequired = "required"
 
 	HostFunctionQuery   = PackageCore + "/query"
 	HostFunctionPropose = PackageCore + "/propose"
@@ -140,6 +144,13 @@ type Function struct {
 	// "policy" (and absent) leaves the owner's policies to decide. Floors
 	// only tighten.
 	Confirmation string
+	// Approval is the declared hold on the CALL rather than its effects:
+	// "required" means an agent's call does not run until the owner approves
+	// it, in the conversation the call came from; empty means it runs at
+	// once. Where Confirmation holds what a body returned, this holds the
+	// body itself, which is the only hold a call that writes nothing here
+	// (a send) can have.
+	Approval string
 	// Runtime names the body's language; Source is the inline body itself.
 	// Python's entrypoint is `main(input, host)`. On RuntimeHost there is no
 	// body at all: Source is empty and the engine is the implementation.
@@ -308,14 +319,14 @@ func ValidTypeGlob(pat string) bool {
 		// ("providers.substrate.reamde.dev/google/*").
 		head := pat[:len(pat)-2]
 		if authority, pkg := SplitPackageRef(head); authority != "" {
-			return ValidAuthority(authority) && ValidPackage(pkg)
+			return ValidKindAuthority(authority) && ValidPackage(pkg)
 		}
-		return ValidAuthority(head)
+		return ValidKindAuthority(head)
 	case strings.Contains(pat, "*"):
 		return false
 	default:
 		authority, pkg, name := SplitKindRef(pat)
-		if authority != "" && (!ValidAuthority(authority) || !ValidPackage(pkg)) {
+		if authority != "" && (!ValidKindAuthority(authority) || !ValidPackage(pkg)) {
 			return false
 		}
 		return ValidName(name)
@@ -324,30 +335,28 @@ func ValidTypeGlob(pat string) bool {
 
 // --- kind grants (decision record 0080) ---------------------------------------
 
-// AuthKinds are the four core kinds a GLOB never reaches. They hold the
+// AuthKinds are the three core kinds a GLOB never reaches. They hold the
 // repository's own auth material, so `*` means "everything the owner has",
 // not "everything, including the keys to the substrate". An entry that spells
 // one out still grants it: the carve-out is on the glob, not on the kind. The
 // exception is a `writes` entry naming one of ownerOnlyKinds, which the loader
 // refuses.
 var AuthKinds = map[string]bool{
-	CoreKind("token"):       true,
-	CoreKind("credential"):  true,
-	CoreKind("secret"):      true,
-	CoreKind("recoverykey"): true,
+	CoreKind("token"):      true,
+	CoreKind("credential"): true,
+	CoreKind("secret"):     true,
 }
 
 // ownerOnlyKinds are the auth kinds a `permissions.writes` entry may not name
 // even spelled out, each with the reason its refusal gives. The engine refuses
-// every non-internal put and patch of all three and a token delete below the
+// every non-internal put and patch of both and a token delete below the
 // owner tier (engine/write.go softDeleteIf), so such a grant could only ever
 // revoke the owner's sign-in or promise a write nothing honors. `secret` is
 // absent on purpose: it is a bundle's own configuration, which the owner
 // fills through the ordinary surface.
 var ownerOnlyKinds = map[string]string{
-	CoreKind("token"):       "tokens are the owner's alone, and no function or agent may revoke or write one",
-	CoreKind("credential"):  "the login credential is the owner's alone, and only the auth endpoints write it",
-	CoreKind("recoverykey"): "the recovery key is the owner's alone, and only registration writes it",
+	CoreKind("token"):      "tokens are the owner's alone, and no function or agent may revoke or write one",
+	CoreKind("credential"): "the login credential is the owner's alone, and only the auth endpoints write it",
 }
 
 // writesEntryProblem is grantEntryProblem for a `permissions.writes` entry:
@@ -741,6 +750,8 @@ var functionDataKeys = map[string]bool{
 	// The author's OBJECTIVE facts for the policy layer: what class of effect
 	// the body has, and a confirmation floor no policy or judge loosens.
 	"effect": true, "confirmation": true,
+	// Whether an agent's call waits for the owner's approval before it runs.
+	"approval": true,
 	// The sync stream the function keeps, read by the sync status alone.
 	"stream": true,
 	// Whether the function offers itself to agents, and under what tool name.
@@ -834,6 +845,19 @@ func (l *loader) parseFunction(d Document) *Function {
 	case "", FunctionConfirmPolicy, FunctionConfirmAlways:
 	default:
 		l.errf("%s: data.confirmation: %q — \"policy\" (the default) or \"always\"", where, fn.Confirmation)
+		return nil
+	}
+	fn.Approval = mstr(d.Data, "approval")
+	switch fn.Approval {
+	case "", FunctionApprovalRequired:
+	default:
+		l.errf("%s: data.approval: %q — \"required\", or absent for none", where, fn.Approval)
+		return nil
+	}
+	if fn.Approval != "" && fn.Runtime == RuntimeHost {
+		// The built-ins are the loop's own machinery: approving a query or an
+		// ask would be a second door onto what the policy door already holds.
+		l.errf("%s: data.approval: a host function runs as the loop's machinery and is never held for approval", where)
 		return nil
 	}
 	if raw, declared := d.Data["stream"]; declared {
@@ -1325,6 +1349,7 @@ func (r *Registry) Functions() []*Function {
 // authority, package and name, on a trigger, in an agent's tools, in a
 // `permissions.call` grant and on the call route alike.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
+	nameOrIdentity = r.Localize(nameOrIdentity)
 	var names []string
 	for _, f := range r.Functions() {
 		if f.Identity() == nameOrIdentity {
@@ -1339,4 +1364,10 @@ func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
 		return nil, errors.New(bareNameProblem("", "function", nameOrIdentity, names))
 	}
 	return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
+}
+
+// RequiresApproval reports whether an agent's call of the function waits for
+// the owner's approval before its body runs (decision record 0254).
+func (fn *Function) RequiresApproval() bool {
+	return fn.Approval == FunctionApprovalRequired
 }

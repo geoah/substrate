@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -239,11 +240,30 @@ func (c collection) ref(id string) string {
 	return name + "/" + id
 }
 
+// localRef is a kind reference as the server answers it: the repository's own
+// kinds under `~` (decision record 0259). A shell expands an unquoted `~/` at
+// the start of a word to the home directory, so an argument that arrives as
+// `$HOME/tasks/task` was typed `~/tasks/task`; and the context's repository
+// name is another spelling of `~`, folded here so a manifest written with it
+// finds the kind the server holds.
+func (a *app) localRef(ref string) string {
+	if home, err := os.UserHomeDir(); err == nil && home != "" && home != "/" {
+		if rest, ok := strings.CutPrefix(ref, home+"/"); ok && strings.Count(rest, "/") >= 1 {
+			ref = vocabulary.Local + "/" + rest
+		}
+	}
+	if ctx, err := a.resolveContext(); err == nil && ctx.Repository != "" {
+		ref = vocabulary.LocalizeRef(ref, ctx.Repository)
+	}
+	return ref
+}
+
 // resolveCollection turns a CLI argument into a collection. Only the full
 // reference "<authority>/<package>/<name>" names one, and it is taken as
 // written; a bare word is refused, naming the full spellings the registry
 // declares under it (decision record 0101).
 func (a *app) resolveCollection(ctx context.Context, arg string) (collection, error) {
+	arg = a.localRef(arg)
 	// A full reference needs no round trip: the wire takes it as written.
 	if authority, pkgName, name := vocabulary.SplitKindRef(arg); authority != "" {
 		col := collection{Authority: authority, Package: pkgName, Name: name}
@@ -304,6 +324,7 @@ func (a *app) lookupCached(name, pkg string) (substrate.KindInfo, bool) {
 // declared kind it names. A bare reference is refused the way a bare
 // collection argument is, naming the full spellings.
 func (a *app) collectionForKind(ctx context.Context, ref string) (collection, error) {
+	ref = a.localRef(ref)
 	authority, pkgName, name := vocabulary.SplitKindRef(ref)
 	if authority == "" {
 		return a.resolveCollection(ctx, name)

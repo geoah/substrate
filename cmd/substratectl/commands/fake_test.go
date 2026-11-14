@@ -35,10 +35,10 @@ type fakeSubstrate struct {
 	// `canonicalId` set — the only time that field is on the wire at all.
 	formerIDs map[string]string
 
-	// propertyMeta is the managed-property block per record, served beside the
+	// marks is the mark block per record, served beside the
 	// record's own fields on a single-record GET and NEVER on a list — the
 	// asymmetry is the contract, so the fake keeps it.
-	propertyMeta map[string]map[string]statusProperty
+	marks map[string]map[string]statusProperty
 
 	// extraTypes are registry rows appended to fakeRegistry on the types read.
 	// Empty by default so the golden `types` table is unaffected; the
@@ -59,6 +59,9 @@ type fakeSubstrate struct {
 	// the way the door's rate limiter does when the enrollment before it was a
 	// second ago.
 	paceRegisterOnce bool
+	// olderServerKey, when set, is the recovery key a server below `auth`
+	// revision 2 answers a registration with.
+	olderServerKey string
 	// revokeStatus, when non-zero, makes DELETE /tokens/{id} fail with it.
 	revokeStatus int
 	// totpDisabled makes GET /.well-known/substrate/server.json answer
@@ -71,6 +74,10 @@ type fakeSubstrate struct {
 	// noFactor is an account registered without a second factor: a login
 	// with no code signs in rather than being asked for one.
 	noFactor bool
+	// repositories, when set, are the repositories the person signing in may
+	// open: a login naming none of them is answered 409 repository_required
+	// with the list, as the door answers a person in several.
+	repositories []string
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
 	// catalog is GET /api/v1/catalog's items, and shipped is GET
@@ -87,14 +94,21 @@ type fakeSubstrate struct {
 	// domainRecordPublished makes the domain check pass; until then it
 	// fails with a reason (domain_test.go).
 	domainRecordPublished bool
+	// publishProven makes the publishing authority's record seen, and
+	// publishBlockers is what the plan says blocks a publish; releaseUnchanged
+	// refuses a release as nothing changed (publishown_test.go).
+	publishProven    bool
+	publishBlockers  []string
+	releaseUnchanged bool
 	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
 	// apply would run, which `apply --allow-data-loss` confirms by its hash.
 	plan substrate.VocabularyPlan
 	// vocabularyDelay holds the vocabulary apply's and the plan's answer back
 	// this long, as a server admitting a large batch does.
 	vocabularyDelay time.Duration
-	// installRefusesLossy makes a bare POST .../install (no confirmation in
-	// the body) answer the server's 403 `lossy`, as a lossy plan does.
+	// installRefusesLossy makes a bare POST .../add of a published package
+	// (no confirmation in the body) answer the server's 403 `lossy`, as a
+	// lossy plan does.
 	installRefusesLossy bool
 	// putValidation, when set, makes a record write answer the server's 422
 	// validation envelope carrying these problems — the refusal `apply` meets
@@ -132,9 +146,9 @@ type fakeSubstrate struct {
 func newFake(t *testing.T) (*fakeSubstrate, *httptest.Server) {
 	t.Helper()
 	f := &fakeSubstrate{
-		records:      map[string]*substrate.Record{},
-		formerIDs:    map[string]string{},
-		propertyMeta: map[string]map[string]statusProperty{},
+		records:   map[string]*substrate.Record{},
+		formerIDs: map[string]string{},
+		marks:     map[string]map[string]statusProperty{},
 	}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
@@ -147,11 +161,11 @@ func (f *fakeSubstrate) seed(e *substrate.Record) {
 	f.records[e.ID] = e
 }
 
-// seedMeta records the propertyMeta a single-record GET of id will carry.
+// seedMeta records the marks a single-record GET of id will carry.
 func (f *fakeSubstrate) seedMeta(id string, meta map[string]statusProperty) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.propertyMeta[id] = meta
+	f.marks[id] = meta
 }
 
 func (f *fakeSubstrate) record(id string) *substrate.Record {
@@ -232,6 +246,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /register/enroll", f.handleRegisterEnroll)
 	mux.HandleFunc("POST /register", f.handleRegister)
 	mux.HandleFunc("POST /login", f.handleLogin)
+	mux.HandleFunc("POST "+pathSignOutAll, f.handleSignOutEverywhere)
+	mux.HandleFunc("POST "+pathRename, f.handleRename)
 	mux.HandleFunc("POST /tokens", f.handleMint)
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
@@ -241,6 +257,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("PUT "+tasksPath+"/{id}", f.handlePut)
 	mux.HandleFunc("PATCH "+tasksPath+"/{id}", f.handlePatch)
 	mux.HandleFunc("DELETE "+tasksPath+"/{id}", f.handleDelete)
+	mux.HandleFunc("POST "+tasksPath+"/{id}/pin", f.handleMark)
+	mux.HandleFunc("POST "+tasksPath+"/{id}/release", f.handleMark)
 	// The shipped-example apply test writes triggers as ordinary data records
 	// in substrate.reamde.dev/core; a generic collection store answers those puts.
 	mux.HandleFunc("GET "+triggerColPath+"/{id}", f.handleTriggerGet)
@@ -266,20 +284,24 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/sync/status", f.handleSyncStatus)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
 	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)
-	// The sample door: the server rehomes the closure and answers with the
-	// LANDED bundle's status, whose id is the repository's own authority.
-	mux.HandleFunc("POST /api/v1/catalog/{id}/import", f.handleCatalogImport)
-	// The provider door: the id lands as named. The body, when there is one,
-	// is the confirmation of a lossy plan, kept in lastBody for the test.
-	mux.HandleFunc("POST /api/v1/catalog/{id}/install", f.handleCatalogInstall)
+	// The add route: a sample is rehomed and answered with the LANDED
+	// bundle's status, whose id is the repository's own authority; a
+	// published package lands as named. The body, when there is one, is the
+	// confirmation of a lossy plan, kept in lastBody for the test.
+	mux.HandleFunc("POST /api/v1/catalog/{id}/add", f.handleCatalogAdd)
 	mux.HandleFunc("POST /api/v1/vocabulary/plan", f.handleVocabularyPlan)
 	mux.HandleFunc("GET /api/v1/catalog", f.handleCatalog)
+	mux.HandleFunc("GET /api/v1/catalog/{id}", f.handleCatalogEntry)
 	mux.HandleFunc("GET /api/v1/vocabulary/upgrade", f.handleShippedUpgrade)
+	mux.HandleFunc("GET /api/v1/retention", f.handleRetention)
 	// The recovery export: a tar the test seeds (export_test.go).
 	mux.HandleFunc("GET /api/v1/export", f.handleExport)
 	// Domain verification (domain_test.go).
 	mux.HandleFunc("POST /api/v1/repository/domain", f.handleDomain)
 	mux.HandleFunc("POST /api/v1/repository/domain/verify", f.handleDomainVerify)
+	// Publishing one of the repository's own packages (publishown_test.go).
+	mux.HandleFunc("POST "+pathPublish, f.handlePublish)
+	mux.HandleFunc("POST "+pathRelease, f.handleRelease)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)
@@ -513,10 +535,28 @@ func (f *fakeSubstrate) handleCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, substrate.Listed(f.catalog))
 }
 
-// handleCatalogInstall stands in for the provider door: the bundle lands under
-// the id the request named, and the status comes back.
-func (f *fakeSubstrate) handleCatalogInstall(w http.ResponseWriter, r *http.Request) {
+// handleCatalogEntry serves one entry of the seeded catalog, or the 404 the
+// API answers for an id it does not list.
+func (f *fakeSubstrate) handleCatalogEntry(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
+	for _, e := range f.catalog {
+		if e.ID == r.PathValue("id") {
+			writeJSON(w, http.StatusOK, e)
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"code": "not_found", "message": "no such catalog entry"}})
+}
+
+// handleCatalogAdd stands in for the add route, which the package's keeper
+// steers: a sample (every one is under the samples authority) is copied, and
+// anything else is its publisher's.
+func (f *fakeSubstrate) handleCatalogAdd(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if strings.HasPrefix(r.PathValue("id"), "samples.substrate.reamde.dev/") {
+		f.copySample(w, r)
+		return
+	}
 	f.mu.Lock()
 	_, confirmed := f.lastBody["confirm"]
 	refuse := f.installRefusesLossy && !confirmed
@@ -569,11 +609,10 @@ func (f *fakeSubstrate) handleShippedUpgrade(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, substrate.Listed(f.shipped))
 }
 
-// handleCatalogImport stands in for the sample door: it answers the status of
-// the bundle as it LANDED: the sample's package under this repository's own
-// authority, never the shipped id the request named.
-func (f *fakeSubstrate) handleCatalogImport(w http.ResponseWriter, r *http.Request) {
-	f.noteRequest(r)
+// copySample answers a sample's add with the status of the bundle as it
+// LANDED: the sample's package under this repository's own authority, never
+// the shipped id the request named.
+func (f *fakeSubstrate) copySample(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	pkg := id
 	if _, after, ok := strings.Cut(id, "/"); ok {
@@ -677,22 +716,34 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var label string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
-	// Echo the recovery half the way the server does: the client-generated
-	// recipient comes straight back, and nothing mints server-side when one
-	// was supplied.
-	var recipient string
-	_ = json.Unmarshal(f.lastBody["recoveryPublicKey"], &recipient)
-	// The repository the way the server answers it: the name as sent when it
-	// carries a dot, else that label under the host the request reached.
-	var repository string
+	// The names the way the server answers them: as sent when they carry a
+	// dot, else that label under the host the request reached, as a server
+	// with no public URL finds it, and the repository named after the person
+	// unless the request names it.
+	identity, repository := f.names(r)
+	answer := map[string]any{
+		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
+		"secret":     fakeSecret,
+		"repository": repository,
+		"identity":   identity,
+	}
+	if f.olderServerKey != "" {
+		answer["recoveryKey"] = f.olderServerKey
+		answer["recoveryPublicKey"] = "age1older"
+	}
+	writeJSON(w, http.StatusCreated, answer)
+}
+
+// names reads a door request's person and repository as the server
+// completes them.
+func (f *fakeSubstrate) names(r *http.Request) (identity, repository string) {
+	_ = json.Unmarshal(f.lastBody["identity"], &identity)
 	_ = json.Unmarshal(f.lastBody["repository"], &repository)
-	repository = vocabulary.RepositoryAuthority(repository, r.Host)
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":             substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
-		"secret":            fakeSecret,
-		"repository":        repository,
-		"recoveryPublicKey": recipient,
-	})
+	identity = vocabulary.NameRule{}.Lookup(identity, r.Host)
+	if repository == "" {
+		return identity, identity
+	}
+	return identity, vocabulary.NameRule{}.Lookup(repository, r.Host)
 }
 
 // handleLogin mints a token record and hands back its secret once. There is no
@@ -711,12 +762,64 @@ func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
 		return
 	}
-	var label string
+	var label, named string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
+	_ = json.Unmarshal(f.lastBody["repository"], &named)
+	if named == "" && len(f.repositories) > 0 {
+		choices := make([]substrate.RepositoryChoice, len(f.repositories))
+		for i, name := range f.repositories {
+			choices[i] = substrate.RepositoryChoice{ID: fmt.Sprintf("rnd-%d", i), Name: name}
+		}
+		writeJSON(w, http.StatusConflict, map[string]any{"error": map[string]any{
+			"code": "conflict", "reason": substrate.ReasonRepositoryRequired,
+			"message": "name the repository to open", "repositories": choices,
+		}})
+		return
+	}
+	identity, repository := f.names(r)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":  substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
-		"secret": fakeSecret,
+		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
+		"secret":     fakeSecret,
+		"repository": repository,
+		"identity":   identity,
 	})
+}
+
+// handleRename answers as the rename door does: the same two-step code, then
+// the repository under the name it was given, the old one held 90 days.
+func (f *fakeSubstrate) handleRename(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if f.authFails(w) {
+		return
+	}
+	var code, repository, name string
+	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
+	_ = json.Unmarshal(f.lastBody["repository"], &repository)
+	_ = json.Unmarshal(f.lastBody["name"], &name)
+	if code == "" && !f.totpDisabled && !f.noFactor {
+		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": "rnd-0123456789abcdef", "name": name,
+		"formerNames": []any{map[string]any{"name": repository, "until": "2027-02-11T12:00:00Z"}},
+	})
+}
+
+// handleSignOutEverywhere answers as the door does: the same two-step code,
+// then the count of tokens it ended.
+func (f *fakeSubstrate) handleSignOutEverywhere(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if f.authFails(w) {
+		return
+	}
+	var code string
+	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
+	if code == "" && !f.totpDisabled && !f.noFactor {
+		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"identity": "geoah.example.com", "signedOut": 3})
 }
 
 func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {
@@ -1264,7 +1367,7 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	meta := f.propertyMeta[id]
+	meta := f.marks[id]
 	f.mu.Unlock()
 	if !merged && meta == nil {
 		writeJSON(w, http.StatusOK, e)
@@ -1278,7 +1381,7 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 		out["canonicalId"] = canonical
 	}
 	if meta != nil {
-		out["propertyMeta"] = meta
+		out["marks"] = meta
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1568,6 +1671,40 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, e)
 }
 
+// handleMark pins or releases the named properties of a seeded record and
+// answers it with its marks, as the server's record path does.
+func (f *fakeSubstrate) handleMark(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := r.PathValue("id")
+	e, ok := f.records[id]
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "no record "+id, nil)
+		return
+	}
+	var in substrate.MarkInput
+	if err := json.Unmarshal(mustRaw(f.lastBody), &in); err != nil || len(in.Properties) == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "name the properties", nil)
+		return
+	}
+	marks := f.marks[id]
+	if marks == nil {
+		marks = map[string]statusProperty{}
+		f.marks[id] = marks
+	}
+	for _, name := range in.Properties {
+		m := marks[name]
+		m.Pinned = strings.HasSuffix(r.URL.Path, "/pin")
+		marks[name] = m
+	}
+	body, _ := json.Marshal(e)
+	var out map[string]any
+	_ = json.Unmarshal(body, &out)
+	out["marks"] = marks
+	writeJSON(w, http.StatusOK, out)
+}
+
 // mustRaw re-marshals a recorded body map so it can be decoded into a typed
 // input; the fake records bodies generically.
 func mustRaw(body map[string]json.RawMessage) []byte {
@@ -1587,4 +1724,13 @@ func sortRecords(es []*substrate.Record) {
 			es[j], es[j-1] = es[j-1], es[j]
 		}
 	}
+}
+
+// handleRetention answers two kinds' retention: one as its package declares
+// it, one a repository record overrides.
+func (f *fakeSubstrate) handleRetention(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, substrate.Listed([]substrate.KindRetention{
+		{Kind: "providers.substrate.reamde.dev/google/message", Declared: "P30D", Effective: "P30D"},
+		{Kind: "samples.substrate.reamde.dev/tasks/task", Override: "P90D", OverrideID: "keep-tasks", Effective: "P90D"},
+	}))
 }

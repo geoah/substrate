@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-11-03
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
 ---
 

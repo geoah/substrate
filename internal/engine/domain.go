@@ -25,7 +25,7 @@ const domainProofLen = 10
 // DomainState reads the pending proof and the verified stamp off the
 // repository record.
 func (ds *dataset) DomainState(ctx context.Context) (substrate.DomainState, error) {
-	rec, err := ds.Get(ctx, kindRepository, ds.Repository().ID)
+	rec, err := ds.Get(ctx, kindRepository, ds.info.ID)
 	if err != nil {
 		return substrate.DomainState{}, err
 	}
@@ -94,12 +94,12 @@ func (ds *dataset) MarkDomainVerified(ctx context.Context, proof string) (time.T
 // repositoryRow locks the repository record for the domain writes, so two
 // starts at once mint one proof between them.
 func (ds *dataset) repositoryRow(t *txn) (*erow, error) {
-	row, err := t.loadRow(eref{Kind: kindRepository, ID: ds.Repository().ID}, true)
+	row, err := t.loadRow(eref{Kind: kindRepository, ID: ds.info.ID}, true)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil || row.DeletedAt != nil {
-		return nil, fmt.Errorf("%w: the repository record %s is missing", substrate.ErrNotFound, ds.Repository().ID)
+		return nil, fmt.Errorf("%w: the repository record %s is missing", substrate.ErrNotFound, ds.info.ID)
 	}
 	return row, nil
 }

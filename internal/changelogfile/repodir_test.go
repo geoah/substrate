@@ -20,9 +20,11 @@ func TestRepoDir(t *testing.T) {
 	if ChangelogDir(got) != filepath.Join(got, "changelog") || BlobsDir(got) != filepath.Join(got, "blobs") || SealedDir(got) != filepath.Join(got, "sealed") {
 		t.Fatal("subdirectory names")
 	}
-	// The grammar is the repository authority's (vocabulary.ValidRepositoryAuthority):
-	// lowercase DNS labels, at least one dot, up to 253 bytes.
-	for _, id := range []string{"a.b", "ada-1.example.com", longAuthority(200)} {
+	// A key is a repository id (vocabulary.ValidRepositoryID), or the
+	// authority a directory from before ids is named by
+	// (vocabulary.ValidRepositoryAuthority): lowercase DNS labels, at least
+	// one dot, up to 253 bytes.
+	for _, id := range []string{testRepoID, "a.b", "ada-1.example.com", longAuthority(200)} {
 		if _, err := RepoDir(root, id); err != nil {
 			t.Errorf("%q: %v", id, err)
 		}
@@ -37,11 +39,11 @@ func TestRepoDir(t *testing.T) {
 		strings.Repeat("x", 64) + ".example.com", longAuthority(254),
 	}
 	for _, id := range bad {
-		if _, err := RepoDir(root, id); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Errorf("RepoDir(%q): err = %v, want ErrRepositoryAuthority", id, err)
+		if _, err := RepoDir(root, id); !errors.Is(err, ErrRepositoryKey) {
+			t.Errorf("RepoDir(%q): err = %v, want ErrRepositoryKey", id, err)
 		}
-		if _, err := EnsureRepoDir(root, id); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Errorf("EnsureRepoDir(%q): err = %v, want ErrRepositoryAuthority", id, err)
+		if _, err := EnsureRepoDir(root, id); !errors.Is(err, ErrRepositoryKey) {
+			t.Errorf("EnsureRepoDir(%q): err = %v, want ErrRepositoryKey", id, err)
 		}
 	}
 	for _, rel := range []string{"", "relative", "./x"} {
@@ -65,14 +67,16 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, d := range []string{dir, ChangelogDir(dir), BlobsDir(dir), SealedDir(dir)} {
-			info, err := os.Stat(d)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !info.IsDir() || info.Mode().Perm() != dirMode {
-				t.Fatalf("%s: mode %v", d, info.Mode().Perm())
-			}
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.IsDir() || info.Mode().Perm() != dirMode {
+			t.Fatalf("%s: mode %v", dir, info.Mode().Perm())
+		}
+		// The directory holds no history (decision 0262).
+		if HasHistory(dir) {
+			t.Fatalf("a fresh repository directory holds history")
 		}
 		// A second call is a no-op.
 		if _, err := EnsureRepoDir(root, id); err != nil {
@@ -109,8 +113,8 @@ func TestEnsureRepoDirAndList(t *testing.T) {
 		if err := os.Mkdir(filepath.Join(root, RepositoriesDir, name), dirMode); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryAuthority) {
-			t.Fatalf("%s: err = %v, want ErrRepositoryAuthority", name, err)
+		if _, err := ListRepositoryDirs(root); !errors.Is(err, ErrRepositoryKey) {
+			t.Fatalf("%s: err = %v, want ErrRepositoryKey", name, err)
 		}
 	}
 }
@@ -125,4 +129,119 @@ func longAuthority(n int) string {
 		n -= l + 1
 	}
 	return strings.Join(labels, ".")
+}
+
+// A 0.x directory's history is its manifest, its segments and its sealed
+// files; RemoveHistory takes them and leaves the blobs and the spool.
+func TestRemoveHistoryKeepsTheBlobsAndTheSpool(t *testing.T) {
+	root := t.TempDir()
+	dir, err := EnsureRepoDir(root, "ada.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{ChangelogDir(dir), SealedDir(dir), BlobsDir(dir), SpoolDir(dir), filepath.Join(dir, "changelog.converting-2")} {
+		if err := os.MkdirAll(d, dirMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, f := range []string{filepath.Join(dir, ManifestName), filepath.Join(BlobsDir(dir), "blob-sha256-00"), filepath.Join(SpoolDir(dir), "1-f.webhook")} {
+		if err := os.WriteFile(f, []byte("x"), fileMode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !HasHistory(dir) {
+		t.Fatal("a directory with a manifest holds no history")
+	}
+	if err := RemoveHistory(dir, nil); err != nil {
+		t.Fatal(err)
+	}
+	if HasHistory(dir) {
+		t.Fatal("the history outlived RemoveHistory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, " ") != BlobsSubdir+" "+SpoolSubdir {
+		t.Fatalf("left %v, want the blobs and the spool", left)
+	}
+}
+
+// The boot's discovery says what a directory holds, or that it could not
+// read it: never "no history" for a directory it may not read.
+func TestHistoryStateReportsADirectoryItCannotRead(t *testing.T) {
+	dir, err := EnsureRepoDir(t.TempDir(), "rnd-0000000000000000000000000a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adopted, history, err := HistoryState(dir); adopted || history || err != nil {
+		t.Fatalf("an empty directory = %v, %v, %v, want no history", adopted, history, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte("{}"), fileMode); err != nil {
+		t.Fatal(err)
+	}
+	if adopted, history, err := HistoryState(dir); adopted || !history || err != nil {
+		t.Fatalf("a directory with a manifest = %v, %v, %v, want history", adopted, history, err)
+	}
+	if err := os.Rename(filepath.Join(dir, ManifestName), filepath.Join(dir, AdoptedManifestName)); err != nil {
+		t.Fatal(err)
+	}
+	if adopted, history, err := HistoryState(dir); !adopted || history || err != nil {
+		t.Fatalf("a directory whose history was adopted = %v, %v, %v, want adopted", adopted, history, err)
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whatever its mode")
+	}
+	if err := os.Chmod(dir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, dirMode) })
+	if _, _, err := HistoryState(dir); err == nil {
+		t.Fatal("a directory the process may not read reads as one with no history")
+	}
+}
+
+// The keying record ties a directory's name to an id, durably, beside the
+// directories and not in one, so discovery passes over it, and it goes once
+// its work is done.
+func TestTheKeyingRecord(t *testing.T) {
+	root := t.TempDir()
+	if _, err := EnsureRepoDir(root, "ada.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadKeyingRecords(root); err != nil || len(got) != 0 {
+		t.Fatalf("a data root with no record = %v, %v", got, err)
+	}
+	if err := WriteKeyingRecord(root, "ada.example.com", "not an id"); err == nil {
+		t.Fatal("a record naming no id was written")
+	}
+	const id = "rnd-0000000000000000000000000a"
+	if err := WriteKeyingRecord(root, "ada.example.com", id); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ReadKeyingRecords(root); err != nil || got["ada.example.com"] != id || len(got) != 1 {
+		t.Fatalf("the records = %v, %v, want ada.example.com tied to %s", got, err, id)
+	}
+	if dirs, err := ListRepositoryDirs(root); err != nil || len(dirs) != 1 || dirs[0] != "ada.example.com" {
+		t.Fatalf("discovery lists %v (%v), want the directory alone", dirs, err)
+	}
+	if err := RemoveKeyingRecord(root, "ada.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveKeyingRecord(root, "ada.example.com"); err != nil {
+		t.Fatalf("removing a record already gone: %v", err)
+	}
+	if got, err := ReadKeyingRecords(root); err != nil || len(got) != 0 {
+		t.Fatalf("the record outlived its removal: %v, %v", got, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, RepositoriesDir, KeyingRecordsDir, "ada.example.com"), []byte("garbage"), fileMode); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadKeyingRecords(root); err == nil {
+		t.Fatal("a record that does not read was passed over")
+	}
 }

@@ -128,3 +128,43 @@ func TestWebhookSpoolGauges(t *testing.T) {
 		t.Fatalf("spool gauges after the unregister = %v", got)
 	}
 }
+
+func TestArchiveGauges(t *testing.T) {
+	oldest := time.Now().Add(-90 * time.Second)
+	last := time.Unix(1_800_000_000, 0)
+	stats := ArchiveStats{Pending: 7, Oldest: oldest, LastPass: last, Failures: 2, Missing: 3}
+	unregister := RegisterArchive("archive.example.com", func() ArchiveStats { return stats })
+	read := func() map[string]float64 {
+		families, err := Registry.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]float64{}
+		for _, f := range families {
+			for _, m := range f.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "repository" && l.GetValue() == "archive.example.com" && m.GetGauge() != nil {
+						out[f.GetName()] = m.GetGauge().GetValue()
+					}
+				}
+			}
+		}
+		return out
+	}
+	got := read()
+	if got["substrate_archive_pending_entries"] != 7 || got["substrate_archive_delay_seconds"] < 90 ||
+		got["substrate_archive_last_pass_timestamp_seconds"] != 1_800_000_000 || got["substrate_archive_failed_passes"] != 2 ||
+		got["substrate_archive_missing_blobs"] != 3 {
+		t.Fatalf("archive gauges = %v", got)
+	}
+	// An archive that holds every entry is no delay, not the age of the zero
+	// time.
+	stats = ArchiveStats{LastPass: last}
+	if got := read(); got["substrate_archive_delay_seconds"] != 0 || got["substrate_archive_pending_entries"] != 0 {
+		t.Fatalf("archive gauges once caught up = %v", got)
+	}
+	unregister()
+	if got := read(); len(got) != 0 {
+		t.Fatalf("archive gauges after the unregister = %v", got)
+	}
+}

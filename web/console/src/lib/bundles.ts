@@ -1,15 +1,16 @@
 /** The Registry page's pure fold: it merges the two reads the page makes —
  * the imported bundles' runtime status and the shipped catalog closures — into
  * one row set, plus the small domain helpers the registry list and the
- * bundle detail share (the two tier sections and the provider-copy gate).
+ * bundle detail share (the two keepers' sections and the provider-copy gate).
  * Kept out of the page component modules so the pages stay component-only
  * (react-refresh) and this stays unit-testable.
  *
  * Vocabulary: the surface listing them is the REGISTRY and `bundle` stays the
- * schema/API term. The catalog has two TIERS (decision record 0048): a
- * PUBLISHED package is INSTALLED under the authority that publishes it, a
- * SAMPLE is IMPORTED under this repository's own authority and is the
- * repository's to edit afterwards. What a package is FOR is the catalog's
+ * schema/API term. A catalog package has one of two KEEPERS (decision record
+ * 0258): a PUBLISHED package is kept by its publisher and lands under the
+ * authority that publishes it, a SAMPLE is kept by the repository, copied
+ * into its local namespace `~` (decision record 0259) and the repository's to
+ * edit afterwards. What a package is FOR is the catalog's
  * second answer (decision record 0238): a provider, an add-on for one, or a
  * standard collection that adds collections. Both are backend fields, never
  * derived from an authority's shape here. A bundle owns exactly one PACKAGE
@@ -28,7 +29,7 @@ import type {
   BundleInstallRequest,
   BundleUpgrade,
   BundleUpgradeHolder,
-  CatalogTier,
+  CatalogKeeper,
   ConversionConfirm,
   ConversionPlan,
   KindInfo,
@@ -38,21 +39,22 @@ import type {
 import { kindByIdentity, kindPackage, splitKind } from "@/lib/definition"
 import { shortDateTime } from "@/lib/format"
 import { displayPlural } from "@/lib/kind-names"
+import { retentionText } from "@/lib/retention"
 import { kindHasTrait } from "@/lib/sync"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and the
- * catalog entry (when it is a shipped closure) it is a copy of. `tier` comes
- * from the catalog (backend field). */
+ * catalog entry (when it is a shipped closure) it is a copy of. `keptBy`
+ * comes from the catalog (backend field). */
 export interface BundleRow {
   /** What tells this row from every other, for list keys and lookups: the
    * catalog entry's shipped id, which the catalog never repeats, or the id
    * of a held bundle no entry claims. `id` is not unique: two publishers'
-   * samples of one package word both land at `<home>/<package>`. */
+   * samples of one package word both land at `~/<package>`. */
   key: string
   /** The bundle's id IN THIS REPOSITORY: the package identity it owns once
-   * it lands. A provider keeps its published id; an imported sample carries
-   * this repository's authority, so this is not always the catalog's id. The
-   * two doors are addressed by `catalog.id`. */
+   * it lands. A provider keeps its published id; an added sample sits in the
+   * local namespace (`~/<package>`), so this is not always the catalog's id.
+   * The add route is addressed by `catalog.id`. */
   id: string
   name: string
   authority: string
@@ -61,13 +63,13 @@ export interface BundleRow {
   status?: BundleStatus
   catalog?: CatalogItem
   installed: boolean
-  /** Which door this row takes. Absent on a bundle applied outside the
-   * shipped catalog: the tier is the catalog's to state, and guessing one
+  /** Who keeps this row's package. Absent on a bundle applied outside the
+   * shipped catalog: the keeper is the catalog's to state, and guessing one
    * from an authority's shape is the derivation the backend refuses to make. */
-  tier?: CatalogTier
+  keptBy?: CatalogKeeper
   /** The packages this closure declares against, named as they will be HERE:
-   * a sample's are rehomed onto this repository's authority, because that is
-   * what the server will look for. Admission refuses while one is missing
+   * a sample's own move into `~`, because that is what the server will look
+   * for. Admission refuses while one is missing
    * (catalog.Bundle.requires). */
   requires: string[]
   /** The floor under each required package (decision record 0070), keyed as
@@ -85,17 +87,14 @@ export interface BundleRow {
  * carrying the copy this repository holds of it when there is one (status
  * wins the count columns), and each held bundle no entry claims is a row of
  * its own. A copy is paired with its entry by its origin stamp, and by id
- * only when it has none (heldCopyOf). `home` is this repository's own
- * authority, which is where a sample lands: without it an unstamped imported
- * sample would never meet its catalog entry. */
+ * only when it has none (heldCopyOf). */
 export function mergeBundles(
   statuses: BundleStatus[],
-  catalog: CatalogItem[],
-  home = ""
+  catalog: CatalogItem[]
 ): BundleRow[] {
   const rows: BundleRow[] = []
   const matches = catalog.map(
-    (raw) => [raw, heldCopyOf(raw, statuses, home)] as const
+    (raw) => [raw, heldCopyOf(raw, statuses)] as const
   )
   // An unstamped copy at an id two entries land at could be either one's,
   // and nothing says which. The server reads both entries as installed, so
@@ -109,14 +108,14 @@ export function mergeBundles(
   for (const [raw, copy] of matches) {
     const status = copy && claims.get(copy.id) === 1 ? copy : undefined
     if (status) paired.add(status.id)
-    // A sample can be here under EITHER id: the import lands the rehomed
-    // one, and installing it verbatim (still a door until the providers stop
-    // requiring sample packages) lands the shipped one. The entry is REHOMED
-    // only when the row is: a closure held verbatim has its kinds under the
-    // authority the tree spells, and previewing them rehomed would link
-    // nowhere.
-    const id = copy?.id ?? landedId(raw, home)
-    const item = id === raw.id ? raw : landedCatalog(raw, home)
+    // A sample can be here under EITHER id: the import lands it under `~`,
+    // and installing it verbatim (still a door until the providers stop
+    // requiring sample packages) lands the shipped one. The entry is moved
+    // into `~` only when the row is: a closure held verbatim has its kinds
+    // under the authority the tree spells, and previewing them under `~`
+    // would link nowhere.
+    const id = copy?.id ?? landedId(raw)
+    const item = id === raw.id ? raw : landedCatalog(raw)
     rows.push({
       key: raw.id,
       id,
@@ -126,7 +125,7 @@ export function mergeBundles(
       ...(status && { status }),
       catalog: item,
       installed: copy ? copy.installed : item.installed,
-      tier: item.tier,
+      keptBy: item.keptBy,
       requires: item.requires ?? [],
       requiresAtLeast: item.requiresAtLeast ?? {},
       upgrade: item.upgrade,
@@ -184,11 +183,11 @@ export function addonOf(
  * adds collections or metrics (`health`, `labs`, `clinical`, an app's own
  * package). Add a collection lists it beside the samples. */
 export function isStandard(
-  row: Pick<BundleRow, "tier" | "catalog" | "status">
+  row: Pick<BundleRow, "keptBy" | "catalog" | "status">
 ): boolean {
   const brings = row.catalog?.brings ?? []
   return (
-    row.tier === "published" &&
+    row.keptBy === "publisher" &&
     !isProvider(row) &&
     !addonOf(row) &&
     (brings.includes("collections") || brings.includes("metrics"))
@@ -207,12 +206,12 @@ export function listedProvider(
  * `long` for a page's line. One answer for every page, so a package reads
  * the same wherever it is listed. */
 export function packageRole(
-  row: Pick<BundleRow, "tier" | "catalog" | "status">
+  row: Pick<BundleRow, "keptBy" | "catalog" | "status">
 ): {
   short: string
   long: string
 } {
-  if (row.tier === "sample")
+  if (row.keptBy === "repository")
     return { short: "Sample", long: "A sample you added" }
   if (addonOf(row)) return { short: "Add-on", long: "An add-on for a provider" }
   if (isProvider(row)) return { short: "Provider", long: "A provider" }
@@ -221,7 +220,7 @@ export function packageRole(
       short: "Standard collection",
       long: "A standard collection, kept up to date for you",
     }
-  if (row.tier === "published")
+  if (row.keptBy === "publisher")
     return { short: "Published", long: "Kept up to date by its publisher" }
   return { short: "Added by hand", long: "Added by hand" }
 }
@@ -498,14 +497,14 @@ export interface RequirementNode extends Requirement {
 }
 
 /** The row that supplies requirement `req` to `requirer`, matched on the id
- * each row has HERE, which is what a requirement names (a sample's are
- * rehomed by landedCatalog before they get this far). One id can name two
+ * each row has HERE, which is what a requirement names (a sample's are moved
+ * into `~` by landedCatalog before they get this far). One id can name two
  * rows, since two publishers' samples of one package word both land at
- * `<home>/<package>`. A satisfied requirement is supplied by the copy this
+ * `~/<package>`. A satisfied requirement is supplied by the copy this
  * repository holds, which is what admission checked. A missing one, absent
  * or held below its floor, is supplied by the entry the requirement named as
- * shipped, before the requirer's own authority was rehomed onto this
- * repository's: taking another publisher's sample would not satisfy it. */
+ * shipped, before the requirer's own authority moved into `~`: taking
+ * another publisher's sample would not satisfy it. */
 function supplierOf(
   req: Requirement,
   requirer: BundleRow,
@@ -573,6 +572,22 @@ export function missingChain(nodes: RequirementNode[]): RequirementNode[] {
   return out
 }
 
+/** Whether taking the row runs code a publisher outside this server
+ * published: its own closure's functions, or those of a package the take
+ * brings first (missingChain). A publisher's document is what marks an entry
+ * as another's, the fact the approval page reads too (runsOutsideCode in
+ * lib/app-setup). Such code is `experimental` at 1.0 whatever the package's
+ * own label says (docs/stability.md). */
+export function takeRunsOutsideCode(
+  row: BundleRow,
+  chain: RequirementNode[]
+): boolean {
+  const outside = (r: BundleRow | undefined) =>
+    Boolean(r?.catalog?.publisher) &&
+    (r?.catalog?.closure.functions ?? []).length > 0
+  return outside(row) || missingChain(chain).some((node) => outside(node.row))
+}
+
 /** What one press of the row's button will do: the bundles to take, leaves
  * first and the row itself last, or the one sentence saying why nothing can
  * be taken at all. Nothing is ever half-planned: a chain that cannot finish
@@ -630,9 +645,25 @@ export function needsConfirmation(upgrade: BundleUpgrade | undefined): boolean {
 /** Whether the publisher's changes need the reader's review before the
  * upgrade is taken (decision 0220): code that changed, shown as diffs, or
  * what the server marked for review without a diff, a kind removed, a
- * function's reach grown, a held version the document no longer lists. */
-export function reviewNeeded(upgrade: BundleUpgrade | undefined): boolean {
+ * function's reach grown, a held version the document no longer lists. The
+ * install binds such a review to the version and digest the preview named. */
+export function publisherReviewNeeded(
+  upgrade: BundleUpgrade | undefined
+): boolean {
   return Boolean(upgrade?.codeChanges?.length || upgrade?.reviewRequired)
+}
+
+/** Whether the upgrade needs the reader's review before it is taken: the
+ * publisher's changes, or history the upgrade would keep for less time,
+ * whatever the package's tier (decision 0282). A provider or a sample the
+ * binary ships has no publisher's digest to bind the review to, so its
+ * review is bound by reading the preview again at the click
+ * (`sameShortenings`). */
+export function reviewNeeded(upgrade: BundleUpgrade | undefined): boolean {
+  return (
+    publisherReviewNeeded(upgrade) ||
+    Boolean(upgrade?.retentionShortens?.length)
+  )
 }
 
 /** Whether a click on the upgrade asks first, for either reason. */
@@ -653,8 +684,12 @@ export function expectationOf(
 
 /** The body the door takes with an upgrade that asks first: the plan's
  * confirmation where it hands one out, and the reviewed version where the
- * preview names one. Undefined when the upgrade asks nothing, or when it
- * asks and the preview gave nothing to bind the answer to. */
+ * preview names one. An upgrade that asks only because it keeps history for
+ * less time answers an empty body where the preview has neither, which the
+ * door takes as the bare POST: it takes no consent to a shortening, and the
+ * click binds it instead (`sameShortenings`). Undefined when the upgrade
+ * asks nothing, or when it asks for a confirmation or a publisher's review
+ * and the preview gave nothing to bind the answer to. */
 export function confirmationOf(
   upgrade: BundleUpgrade | undefined
 ): BundleInstallRequest | undefined {
@@ -663,8 +698,37 @@ export function confirmationOf(
     ? { planHash: upgrade.planHash, changelogSeq: upgrade.changelogSeq ?? 0 }
     : undefined
   const expect = expectationOf(upgrade)
-  if (!confirm && !expect) return undefined
+  if (!confirm && !expect) {
+    return needsConfirmation(upgrade) || publisherReviewNeeded(upgrade)
+      ? undefined
+      : {}
+  }
   return { ...(confirm && { confirm }), ...(expect && { expect }) }
+}
+
+/** Whether a fresh preview keeps the same history for less time as the one
+ * the reader reviewed, at the same version: what binds the review of a
+ * shortening where no publisher's digest does. */
+export function sameShortenings(
+  reviewed: BundleUpgrade | undefined,
+  fresh: BundleUpgrade | undefined
+): boolean {
+  return (
+    reviewed?.to === fresh?.to &&
+    retentionShortLines(reviewed).join("\n") ===
+      retentionShortLines(fresh).join("\n")
+  )
+}
+
+/** The kinds whose history an upgrade would keep for less time, one line
+ * each, for the review that asks first because of them (decision 0282):
+ * "example.com/journal/entry: all of it → 30 days". */
+export function retentionShortLines(
+  upgrade: BundleUpgrade | undefined
+): string[] {
+  return (upgrade?.retentionShortens ?? []).map(
+    (c) => `${c.kind}: ${retentionText(c.from)} → ${retentionText(c.to)}`
+  )
 }
 
 /** The declarations an upgrade moves, one line each, for a review that
@@ -720,10 +784,10 @@ export function mappingLinksSentence(row: BundleRow): string {
   )
 }
 
-/** The mappings a RE-IMPORT would land: their provider is here and they fit
- * it, and only the import is missing. This is what earns a held sample an
- * "Import again" on its own page (decision record 0049); a moved closure is
- * offered the upgrade instead, which is the same door. */
+/** The mappings adding a sample AGAIN would land: their provider is here and
+ * they fit it, and only the add is missing. This is what earns a held sample
+ * an "Add again" on its own page (decision record 0049); a moved closure is
+ * offered the upgrade instead, which is the same route. */
 export function readyMappings(row: {
   catalog?: Pick<CatalogItem, "suggestedMappings">
 }): SuggestedMapping[] {

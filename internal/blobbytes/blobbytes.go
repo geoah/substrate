@@ -27,10 +27,6 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// BackendFS names the one backend. It is what a snapshot and an export record
-// in `snapshot.json` as the layout their blob bytes are written for.
-const BackendFS = "fs"
-
 // ErrNotStored is what a read or an open reports when the store holds no bytes
 // under that digest. The engine maps it to a not-found.
 var ErrNotStored = errors.New("blobbytes: no bytes are stored under this digest")
@@ -60,14 +56,14 @@ func checkDigest(digest string) error {
 	return nil
 }
 
-// checkRepository refuses anything that is not a repository id, which is the
-// repository's authority (vocabulary.ValidRepositoryAuthority: lowercase DNS
-// labels with at least one dot). The id is a path segment for the same reason
-// the digest is, and the authority grammar admits neither `/` nor `.` alone,
-// so a checked id names exactly one repository inside the store.
+// checkRepository refuses anything that is not a repository's directory key:
+// its id (vocabulary.ValidRepositoryID), or the authority a directory from
+// before ids is named by until the boot converts it. The key is a path segment
+// for the same reason the digest is, and neither grammar admits `/` or `.`
+// alone, so a checked key names exactly one repository inside the store.
 func checkRepository(repository string) error {
-	if !vocabulary.ValidRepositoryAuthority(repository) {
-		return fmt.Errorf("blobbytes: %q is not a repository id (an authority such as ada.example.com)", repository)
+	if !vocabulary.ValidRepositoryID(repository) && !vocabulary.ValidRepositoryAuthority(repository) {
+		return fmt.Errorf("blobbytes: %q is not a repository id", repository)
 	}
 	return nil
 }

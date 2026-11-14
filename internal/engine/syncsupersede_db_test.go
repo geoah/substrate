@@ -30,7 +30,7 @@ func futureSchedule() time.Time { return nowUTC().Add(time.Hour).Truncate(time.M
 // function of the job package on ops.
 func putJobTrigger(t *testing.T, ds *dataset, id, function string, ops ...any) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: id,
 		Properties: map[string]any{
 			"enabled":  true,
@@ -44,7 +44,7 @@ func putJobTrigger(t *testing.T, ds *dataset, id, function string, ops ...any) {
 
 func putJob(t *testing.T, ds *dataset, id string) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: id, Properties: map[string]any{"name": id},
 	}); err != nil {
 		t.Fatalf("put job %s: %v", id, err)
@@ -53,7 +53,7 @@ func putJob(t *testing.T, ds *dataset, id string) {
 
 func renameJob(t *testing.T, ds *dataset, id, name string) {
 	t.Helper()
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, supersedeJob, id, substrate.PatchInput{
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, supersedeJob, id, substrate.PatchInput{
 		Properties: map[string]any{"name": name},
 	}); err != nil {
 		t.Fatalf("patch job %s: %v", id, err)
@@ -367,14 +367,14 @@ func TestASyncDeliveryLeavesTheParkOfTheSameIDUnderAnotherKind(t *testing.T) {
 	ctx := context.Background()
 	ds := supersedeDataset(t, futureSchedule(), "update")
 	note := supersedePkg + "/note"
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.KindManifest(supersedePkg, map[string]any{"singular": "note"}, map[string]any{
 			"properties": map[string]any{"name": map[string]any{"type": "string"}},
 		}),
 	}); err != nil {
 		t.Fatalf("apply the note kind: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "note-sync",
 		Properties: map[string]any{
 			"enabled":  true,
@@ -385,7 +385,7 @@ func TestASyncDeliveryLeavesTheParkOfTheSameIDUnderAnotherKind(t *testing.T) {
 		t.Fatalf("put the note trigger: %v", err)
 	}
 	putJob(t, ds, fid("inbox"))
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: note, ID: fid("inbox"), Properties: map[string]any{"name": fid("inbox")},
 	}); err != nil {
 		t.Fatalf("put the note: %v", err)

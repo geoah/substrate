@@ -34,6 +34,26 @@ describe("record paths in prose", () => {
     ).toBe(true)
   })
 
+  it("lifts a path under ~, the repository's own, and only a whole one", () => {
+    expect(inlineRuns("See ~/tasks/task/x052.")).toEqual([
+      { type: "text", text: "See " },
+      {
+        type: "record",
+        kind: "~/tasks/task",
+        id: "x052",
+        text: "~/tasks/task/x052",
+      },
+      { type: "text", text: "." },
+    ])
+    expect(
+      inlineRuns("notes~/tasks/task/x1").every((r) => r.type === "text")
+    ).toBe(true)
+    expect(recordPathOf("~/tasks/task/x1")).toEqual({
+      kind: "~/tasks/task",
+      id: "x1",
+    })
+  })
+
   it("matches only a whole path", () => {
     expect(recordPathOf("a.b/c/d/e")).toEqual({ kind: "a.b/c/d", id: "e" })
     expect(recordPathOf("not/a/path")).toBeUndefined()

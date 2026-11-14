@@ -128,6 +128,10 @@ func (f *fsStore) Put(ctx context.Context, digest string, size int64, r io.Reade
 	return syncDir(f.dir)
 }
 
+// Path is the file the bytes under digest are in, for a store that takes a
+// file without copying it (the archive's directory store links it).
+func (f *fsStore) Path(digest string) (string, error) { return f.path(digest) }
+
 func (f *fsStore) Open(_ context.Context, digest string) (io.ReadCloser, error) {
 	name, err := f.path(digest)
 	if err != nil {

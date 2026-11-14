@@ -5,12 +5,13 @@ import TasksCore
 
 /// On a phone: a tab per section of the App menu, and apart from them at
 /// the bar's trailing end the system's prominent tab, the round + that adds
-/// a task (seeded with the list shown, and today on Needs you). Lists
-/// pushes a list, then a task; Needs you shows its rows at once and pushes
-/// a task. What
-/// is pushed is the presentation's, never the view's: the list shown and
-/// the task open, so a reminder's tap or a command from anywhere moves the
-/// stack, and going back is a command.
+/// a task (seeded with the list shown, and today on Needs you). Needs you
+/// shows its rows at once and pushes the suggestions, the undated or a
+/// task; Lists pushes a group, then a task; Settings pushes Collections,
+/// then one collection. What is pushed is the presentation's, never the
+/// view's: the list shown, the task open and the settings page, so a
+/// reminder's tap or a command from anywhere moves the stack, and going
+/// back is a command.
 struct TabRoot: View {
     @Environment(TasksShell.self) private var shell
     let link: LinkPresentation<TasksPresentation>
@@ -30,42 +31,77 @@ struct TabRoot: View {
     private func content(_ section: String) -> some View {
         switch section {
         case TasksMenu.needsYou:
-            NavigationStack(path: path(listed: false)) {
+            NavigationStack(path: path(home: .needsYou, section: TasksMenu.needsYou)) {
                 if let list = app.list, list.selection == .needsYou {
                     TaskListView(list: list, app: app, link: link)
-                        .navigationDestination(for: PhoneRoute.self) { _ in LivePushedDetail() }
+                        .navigationDestination(for: PhoneRoute.self) { route in pushed(route) }
+                } else if app.list != nil || app.queue != nil {
+                    // A list pushed over Needs you: Needs you is under it.
+                    Color.clear.navigationDestination(for: PhoneRoute.self) { route in pushed(route) }
                 } else {
                     ProgressView()
                 }
             }
         case TasksMenu.settings:
-            NavigationStack { AppSettingsView<TasksApp>() }
-        default:
-            NavigationStack(path: path(listed: true)) {
-                SidebarView(sidebar: app.sidebar, link: link, app: app, select: { shell.send(.show($0)) })
-                    .navigationDestination(for: PhoneRoute.self) { route in
-                        switch route {
-                        case .list: LivePushedList()
-                        case .task: LivePushedDetail()
+            NavigationStack(path: settingsPath) {
+                AppSettingsView<TasksApp>()
+                    .navigationDestination(for: SettingsPage.self) { page in
+                        switch page {
+                        case .collections: LiveCollections()
+                        case .collection: LiveCollection()
                         }
                     }
+            }
+        default:
+            NavigationStack(path: path(home: nil, section: TasksMenu.lists)) {
+                SidebarView(sidebar: app.sidebar, link: link, app: app, select: { shell.send(.show($0)) })
+                    .navigationDestination(for: PhoneRoute.self) { route in pushed(route) }
             }
         }
     }
 
-    /// The stack the presentation holds: the list shown (in Lists), then
-    /// the task open. A pop the system makes (a back swipe) is the command
-    /// that closes what it took off.
-    private func path(listed: Bool) -> Binding<[PhoneRoute]> {
-        let list = listed ? app.list.map { PhoneRoute.list($0.selection) } : nil
-        let task = app.detail.map { PhoneRoute.task($0.id) }
+    @ViewBuilder
+    private func pushed(_ route: PhoneRoute) -> some View {
+        switch route {
+        case .list: LivePushedList()
+        case .task: LivePushedDetail()
+        }
+    }
+
+    /// The stack the presentation holds: the list shown over the tab's home
+    /// (Needs you's, or none for Lists), then the task open. A pop the
+    /// system makes (a back swipe) is the command that closes what it took
+    /// off. Each section keeps its own stack in the state, which holds the
+    /// selected one's alone: a tab not shown pushes nothing and pops
+    /// nothing.
+    private func path(home: ListSelection?, section: String) -> Binding<[PhoneRoute]> {
+        guard app.menu.selected == section else { return .constant([]) }
+        let shown = app.queue != nil ? ListSelection.suggestions : app.list?.selection
+        let list = shown.flatMap { $0 == home ? nil : PhoneRoute.list($0) }
+        let task = (app.detail?.id ?? app.suggestion?.id).map(PhoneRoute.task)
         let current = [list, task].compactMap { $0 }
         return Binding(
             get: { current },
             set: { next in
                 guard next.count < current.count else { return }
                 if task != nil, !next.contains(where: { if case .task = $0 { true } else { false } }) { shell.send(.open(task: nil)) }
-                if list != nil, next.isEmpty { shell.send(.show(nil)) }
+                if list != nil, next.isEmpty { shell.send(.show(home)) }
+            })
+    }
+
+    /// Settings' stack: Collections, then one collection.
+    private var settingsPath: Binding<[SettingsPage]> {
+        let current: [SettingsPage] =
+            switch app.settingsPage {
+            case nil: []
+            case .collections?: [.collections]
+            case let .collection(kind)?: [.collections, .collection(kind)]
+            }
+        return Binding(
+            get: { current },
+            set: { next in
+                guard next.count < current.count else { return }
+                shell.send(.showSettings(next.last))
             })
     }
 }
@@ -84,8 +120,12 @@ private struct LivePushedList: View {
 
     var body: some View {
         let link = shell.presentation
-        if let app = link.app, let list = app.list {
-            TaskListView(list: list, app: app, link: link)
+        if let app = link.app {
+            if let queue = app.queue {
+                SuggestionsView(queue: queue, app: app, link: link)
+            } else if let list = app.list {
+                TaskListView(list: list, app: app, link: link)
+            }
         }
     }
 }
@@ -94,6 +134,26 @@ private struct LivePushedDetail: View {
     @Environment(TasksShell.self) private var shell
 
     var body: some View {
-        if let detail = shell.presentation.app?.detail { TaskDetailView(detail: detail) }
+        if let suggestion = shell.presentation.app?.suggestion {
+            SuggestionView(suggestion: suggestion)
+        } else if let detail = shell.presentation.app?.detail {
+            TaskDetailView(detail: detail)
+        }
+    }
+}
+
+private struct LiveCollections: View {
+    @Environment(TasksShell.self) private var shell
+
+    var body: some View {
+        if let app = shell.presentation.app { CollectionsView(collections: app.collections, approval: app.approval) }
+    }
+}
+
+private struct LiveCollection: View {
+    @Environment(TasksShell.self) private var shell
+
+    var body: some View {
+        if let app = shell.presentation.app, let collection = app.collection { CollectionView(collection: collection, approval: app.approval) }
     }
 }

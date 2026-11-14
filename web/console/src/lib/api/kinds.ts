@@ -12,6 +12,7 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
+import { KIND_KIND, PACKAGE_KIND, RETENTION_KIND } from "@/lib/core-kinds"
 import { scalarText } from "@/lib/format"
 import { rememberKindLabels } from "@/lib/kind-names"
 
@@ -23,7 +24,13 @@ import {
   splitKind,
 } from "./http"
 import { listPath } from "./records"
-import type { KindInfo, Page, SubstrateRecord } from "./types"
+import type {
+  KindInfo,
+  KindRetention,
+  OperationalList,
+  Page,
+  SubstrateRecord,
+} from "./types"
 
 // The registry is the core `kind` kind's records, named in `filter.kinds`.
 const KINDS = "kind"
@@ -111,6 +118,28 @@ export async function fetchKinds(signal?: AbortSignal): Promise<KindInfo[]> {
   rememberKindLabels(out)
   return out
 }
+
+/** How long each kind's history is kept here, by kind reference. */
+export async function fetchRetention(
+  signal?: AbortSignal
+): Promise<Map<string, KindRetention>> {
+  const list = await request<OperationalList<KindRetention>>(
+    "GET",
+    rootPath("retention"),
+    undefined,
+    { signal }
+  )
+  return new Map(list.items.map((r) => [r.kind, r]))
+}
+
+/** The key names the kinds whose writes move the answer, an override and a
+ * declaration of a kind or a package, so a write of any of them through the
+ * console refreshes it (recordWriteReaches). */
+export const retentionQueryOptions = queryOptions({
+  queryKey: ["registry", "retention", RETENTION_KIND, KIND_KIND, PACKAGE_KIND],
+  queryFn: ({ signal }) => fetchRetention(signal),
+  staleTime: 5 * 60_000,
+})
 
 export const kindsQueryOptions = queryOptions({
   queryKey: ["registry", "kinds"],

@@ -49,10 +49,10 @@ import dev.reamde.substrate.kit.ui.ProblemBox
 import dev.reamde.substrate.kit.ui.style
 import dev.reamde.substrate.tasks.bridge.DueKind
 import dev.reamde.substrate.tasks.bridge.EditorChoice
+import dev.reamde.substrate.tasks.bridge.EditorDue
 import dev.reamde.substrate.tasks.bridge.EditorText
 import dev.reamde.substrate.tasks.bridge.TaskEditor
 import dev.reamde.substrate.tasks.bridge.TaskEditorPresentation
-import dev.reamde.substrate.tasks.bridge.TaskPriority
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -94,11 +94,11 @@ internal fun TaskEditorForm(editor: TaskEditorPresentation, send: (TaskEditor.Co
         ) {
             editor.notKept?.let { ProblemBox(it) }
             TextField(editor.name, isError = editor.problem != null, supporting = editor.problem) { send(TaskEditor.Command.SetName(it)) }
-            TextField(editor.notes, lines = true) { send(TaskEditor.Command.SetNotes(it)) }
-            TextField(editor.link) { send(TaskEditor.Command.SetLink(it)) }
-            Choice(editor.list) { send(TaskEditor.Command.SetList(it.ifEmpty { null })) }
-            Due(editor, send, zone)
-            Choice(editor.priority) { send(TaskEditor.Command.SetPriority(runCatching { TaskPriority.valueOf(it) }.getOrDefault(TaskPriority.none))) }
+            editor.notes?.let { notes -> TextField(notes, lines = true) { send(TaskEditor.Command.SetNotes(it)) } }
+            editor.link?.let { link -> TextField(link) { send(TaskEditor.Command.SetLink(it)) } }
+            editor.list?.let { list -> Choice(list) { send(TaskEditor.Command.SetList(it.ifEmpty { null })) } }
+            editor.due?.let { due -> Due(due, send, zone) }
+            editor.priority?.let { priority -> Choice(priority) { send(TaskEditor.Command.SetPriority(it.ifEmpty { null })) } }
         }
     }
 }
@@ -154,8 +154,7 @@ private fun Choice(choice: EditorChoice, choose: (String) -> Unit) {
 /** When it is due: none, a day, or a day and time, as segments under the label, then the day (and the time) the pickers change. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Due(editor: TaskEditorPresentation, send: (TaskEditor.Command) -> Unit, zone: ZoneId) {
-    val due = editor.due
+private fun Due(due: EditorDue, send: (TaskEditor.Command) -> Unit, zone: ZoneId) {
     var picking by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(KitSpacing.medium)) {
         Text(due.label, style = KitText.secondary.style, color = MaterialTheme.colorScheme.onSurfaceVariant)

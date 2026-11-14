@@ -20,7 +20,7 @@ import (
 // tokenRef is a secret-typed credential-store reference — never a raw token —
 // tokenStatus is the connection state the facility last reported, and
 // grantedScopes is the scope set the last consent was granted for. All three
-// carry `writer: oauth`: only the OAuth facility may set them.
+// carry `writer: system`: only the OAuth facility may set them.
 const (
 	propTokenRef      = "tokenRef"
 	propTokenStatus   = "tokenStatus"
@@ -168,7 +168,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 						// and decides. A credential in backoff answers with
 						// its last refusal, so a refused grant costs no
 						// provider call per delivery.
-						entry["tokenError"] = err.Error()
+						entry["tokenError"] = tokenReason(err)
 					} else {
 						entry["token"] = token
 						secrets = append(secrets, token)

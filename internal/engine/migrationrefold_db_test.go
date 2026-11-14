@@ -22,6 +22,12 @@ package engine_test
 // migration keeps the whole ledger and runs nothing, so the fold the source's
 // own writes left is held to the rebuild with nothing re-derived first.
 //
+// A stage behind the migration that gives repositories ids holds the source
+// keyed by its name, as a release before ids left it: every `repository`
+// column and the control-plane row's id the name, the data key wrapped under
+// the name, the directory named by it with a format-1 manifest. Its open
+// converts it (repositoryid.go) before anything else reads it.
+//
 // A fixture migration that edits `records` and writes no changelog entry
 // goes through the same stage and must FAIL the comparison, on `records`.
 // That keeps the test from passing vacuously: a harness that stopped seeing
@@ -32,6 +38,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -40,6 +47,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -63,7 +71,7 @@ var refoldMarks = map[string][]string{"records": {"orphaned_at", "ambiguous_at"}
 // hold no row: a parked failure and a paged drain both need a function body
 // to run. A migration that edits either of them seeds a row first.
 var refoldSeeded = []string{
-	"records", "refs", "annotations", "property_managers", "former_ids", "property_offers",
+	"records", "refs", "annotations", "property_marks", "former_ids", "property_offers",
 	"trigger_cursors", "trigger_schedule", "observed_segments", "observed_rollups", "observed_latest",
 }
 
@@ -89,25 +97,52 @@ var refoldLags = []struct{ migration, table, column string }{
 // at zero counts nothing a real store of that age held.
 const refoldUnitGraph = "0016_unit_graph"
 
+// refoldPropertyMarks is the migration that replaces each property's
+// manager and tier with its mark (decision 0284). A store behind it held the
+// managers' table and a history in the changelog dialect before the marks, and the marks
+// conversion rebuilds its fold at the boot after it, marks and offers
+// included; the source's history is in the marks' dialect already, which no
+// store of that age held, so nothing converts it there. A stage behind it
+// compares, and requires, none of refoldMarkTables.
+const refoldPropertyMarks = "0026_property_marks"
+
+// refoldMarkTables are the tables refoldPropertyMarks replaces empty.
+var refoldMarkTables = []string{"property_marks", "property_offers"}
+
 // refoldLedgerTable is the migration that creates the repository ledger.
 const refoldLedgerTable = "0005_repository_migrations"
+
+// refoldRepositoryIDs is the migration that lets a repository's id differ
+// from its name. A stage behind it holds the source keyed by its name.
+const refoldRepositoryIDs = "0020_repository_ids"
 
 // refoldLedgerFloors names, for every repository migration, the SQL
 // migration that landed with it: a binary that ran it had applied that one,
 // so a stage at or past it keeps the repository migration's ledger row. A new
 // repository migration adds its entry here; the test fails until it does.
 var refoldLedgerFloors = map[string]string{
-	"qualify_bare_declaration_names": "0005_repository_migrations",
-	"qualify_bare_selector_kinds":    "0005_repository_migrations",
-	"name_units_by_unit_records":     "0016_unit_graph",
-	"name_applet_runtimes":           "0019_operator_spend_reservations",
-	"remove_reply_relay_contacts":    "0019_operator_spend_reservations",
+	"qualify_bare_declaration_names":         "0005_repository_migrations",
+	"qualify_bare_selector_kinds":            "0005_repository_migrations",
+	"name_units_by_unit_records":             "0016_unit_graph",
+	"name_applet_runtimes":                   "0019_operator_spend_reservations",
+	"remove_reply_relay_contacts":            "0019_operator_spend_reservations",
+	"key_the_repository_record_by_its_id":    "0020_repository_ids",
+	"start_paged_drains_over":                "0021_identity_columns_byte_order",
+	"purge_the_recovery_key":                 "0023_secrets_left_behind",
+	"link_actors":                            "0024_changelog_on_behalf_of",
+	"name_writers_by_actor_type":             "0024_changelog_on_behalf_of",
+	"drop_a_body_its_kind_does_not_declare":  "0025_records_drop_body",
+	"move_the_sign_in_out_of_the_repository": "0027_identities",
+	"give_every_person_admin":                "0027_identities",
 }
 
 // refoldSource is the seeded store every stage copies: the schema holding its
-// rows, its data root, and the one repository in both.
+// rows, its data root, and the one repository in both, by its name (repo) and
+// its id. namedDEK is its data key wrapped under the name, the binding a
+// release before ids wrapped it under.
 type refoldSource struct {
-	schema, root, repo string
+	schema, root, repo, id string
+	namedDEK               []byte
 }
 
 func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
@@ -131,6 +166,12 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 	}
 	if versions[refoldUnitGraph] == 0 {
 		t.Fatalf("the binary no longer embeds %s, whose unit_graph exemption is for that migration alone", refoldUnitGraph)
+	}
+	if versions[refoldPropertyMarks] == 0 {
+		t.Fatalf("the binary no longer embeds %s, whose marks exemption is for that migration alone", refoldPropertyMarks)
+	}
+	if versions[refoldRepositoryIDs] == 0 {
+		t.Fatalf("the binary no longer embeds %s, behind which a stage is keyed by the name", refoldRepositoryIDs)
 	}
 	for name, floor := range refoldLedgerFloors {
 		if versions[floor] == 0 {
@@ -160,6 +201,12 @@ func TestEveryMigrationLeavesAFoldTheRebuildReproduces(t *testing.T) {
 			if prior.Version < versions[refoldUnitGraph] {
 				delete(live, "unit_graph")
 				delete(rebuilt, "unit_graph")
+			}
+			if prior.Version < versions[refoldPropertyMarks] {
+				for _, table := range refoldMarkTables {
+					delete(live, table)
+					delete(rebuilt, table)
+				}
 			}
 			if tables, diff := refoldDifferences(live, rebuilt); len(tables) > 0 {
 				t.Fatalf("a store at %s, upgraded from %s on, holds a fold that differs in %s from what a rebuild "+
@@ -236,7 +283,8 @@ func seedRefoldSource(t *testing.T) refoldSource {
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	repo := testdb.Repository(t)
-	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+	info, err := svc.CreateRepository(ctx, repo)
+	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, repo)
@@ -254,7 +302,19 @@ func seedRefoldSource(t *testing.T) refoldSource {
 	if err := svc.Close(); err != nil {
 		t.Fatalf("close the source: %v", err)
 	}
-	return refoldSource{schema: currentSchema(t, rawDB(t, dsn)), root: root, repo: repo}
+	var wrapped []byte
+	if err := rawDB(t, dsn).QueryRowContext(ctx, `SELECT dek FROM repositories WHERE id = $1`, info.ID).Scan(&wrapped); err != nil {
+		t.Fatalf("read the source's wrapped DEK: %v", err)
+	}
+	dek, err := engine.OpenPayloadWithKey(engine.TestCredentialKeyBytes, wrapped, engine.DEKAAD(info.ID))
+	if err != nil {
+		t.Fatalf("unwrap the source's DEK: %v", err)
+	}
+	named, err := engine.SealWithKey(engine.TestCredentialKeyBytes, dek, engine.DEKAAD(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return refoldSource{schema: currentSchema(t, rawDB(t, dsn)), root: root, repo: repo, id: info.ID, namedDEK: named}
 }
 
 // installRefoldTriggers installs a package with one function and two
@@ -264,11 +324,10 @@ func installRefoldTriggers(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	const pkg = "refold.test.dev/refold"
 	callable := vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/noop")
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "refold", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.FunctionManifest(pkg, "noop", map[string]any{
 				"description": "the triggers' callable; no dispatch runs it",
 				"runtime":     vocabulary.RuntimePython,
@@ -314,16 +373,35 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	if err := engine.MigrateThrough(ctx, dsn, behind); err != nil {
 		t.Fatalf("migrate the stage through %d: %v", behind, err)
 	}
+	keyed := behind >= refoldVersion(t, refoldRepositoryIDs)
+	key := src.id
+	if !keyed {
+		key = src.repo
+	}
 	db := rawDB(t, dsn)
-	if n := copyRefoldRows(t, db, src.schema, currentSchema(t, db)); n == 0 {
+	if n := copyRefoldRows(t, db, src.schema, currentSchema(t, db), key); n == 0 {
 		t.Fatal("the stage holds no record: it would compare two empty folds")
 	}
-	if ledger && copyRefoldLedger(t, db, src.schema, currentSchema(t, db), behind) == 0 {
+	if !keyed {
+		if _, err := db.ExecContext(ctx, `UPDATE repositories SET dek = $1`, src.namedDEK); err != nil {
+			t.Fatalf("wrap the stage's DEK under the name: %v", err)
+		}
+	}
+	if ledger && copyRefoldLedger(t, db, src.schema, currentSchema(t, db), behind, key) == 0 {
 		t.Fatal("the stage kept no ledger row: it would stage what the empty ledger already does")
 	}
 	upgrade(t, dsn)
 
-	svc := reopenWith(t, dsn, copyRepositoryDir(t, src.root, src.repo))
+	// A keyed stage restores nothing (the archive is its table's); one
+	// behind ids has no archive and a directory named by the name, as a
+	// release before ids left it.
+	root := copyRepositoryDir(t, src.root, src.id)
+	if !keyed {
+		root = t.TempDir()
+		legacyDirectory(t, filepath.Join(src.root, "archive"), root, src.id)
+		keyRefoldDirByName(t, root, src)
+	}
+	svc := reopenWith(t, dsn, root)
 	ds, err := svc.Dataset(ctx, src.repo)
 	if err != nil {
 		t.Fatalf("open the staged repository: %v", err)
@@ -334,7 +412,18 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 	<-engine.SearchReindexDone(ds)
 	engine.DrainIndexReprojection(t, ds)
 	live = refoldSnapshot(t, db, omit)
+	marksAt := 0
+	if migrations, err := engine.Migrations(); err == nil {
+		for _, m := range migrations {
+			if m.Name == refoldPropertyMarks {
+				marksAt = m.Version
+			}
+		}
+	}
 	for _, table := range refoldSeeded {
+		if behind < marksAt && slices.Contains(refoldMarkTables, table) {
+			continue
+		}
 		if live[table] == "[]" {
 			t.Fatalf("the staged fold holds no %s row: the comparison would hold nothing there", table)
 		}
@@ -360,13 +449,30 @@ func refoldStage(t *testing.T, src refoldSource, behind int, omit map[string][]s
 // runs. schema_migrations is the stage's own. repository_migrations stays
 // empty, as it is for a repository older than every repository migration, so
 // the stage's open runs them all, unless the stage keeps the ledger
-// (copyRefoldLedger). It returns the records copied.
-func copyRefoldRows(t *testing.T, db *sql.DB, from, to string) int64 {
+// (copyRefoldLedger). Every `repository` column and the control-plane row's
+// id are written as key: the source's id, or its name for a stage behind
+// refoldRepositoryIDs. It returns the records copied.
+func copyRefoldRows(t *testing.T, db *sql.DB, from, to, key string) int64 {
 	t.Helper()
+	// A table a later migration replaced takes none of the source's rows: one
+	// it turned into a view holds none of its own in the source, and one
+	// whose stage shape requires a column the source no longer has could
+	// not take them. 0026 is both: it drops the old manager and offer tables'
+	// rows, a fold table and a derived one, which the marks and the rebuild
+	// give again.
 	tables := refoldColumnQuery(t, db, `
-		SELECT table_name FROM information_schema.tables
-		WHERE table_schema = $1 AND table_type = 'BASE TABLE'
-		ORDER BY table_name`, to)
+		SELECT s.table_name FROM information_schema.tables s
+		JOIN information_schema.tables f
+		  ON f.table_schema = $2 AND f.table_name = s.table_name AND f.table_type = 'BASE TABLE'
+		WHERE s.table_schema = $1 AND s.table_type = 'BASE TABLE'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM information_schema.columns c
+		      WHERE c.table_schema = $1 AND c.table_name = s.table_name
+		        AND c.is_nullable = 'NO' AND c.column_default IS NULL AND c.is_generated = 'NEVER'
+		        AND NOT EXISTS (
+		            SELECT 1 FROM information_schema.columns g
+		            WHERE g.table_schema = $2 AND g.table_name = s.table_name AND g.column_name = c.column_name))
+		ORDER BY s.table_name`, to, from)
 	var records int64
 	for _, table := range tables {
 		if table == "schema_migrations" || table == "repository_migrations" {
@@ -382,12 +488,16 @@ func copyRefoldRows(t *testing.T, db *sql.DB, from, to string) int64 {
 			continue
 		}
 		quoted := make([]string, len(cols))
+		selected := make([]string, len(cols))
 		for i, c := range cols {
 			quoted[i] = pgx.Identifier{c}.Sanitize()
+			selected[i] = quoted[i]
+			if c == "repository" || (table == "repositories" && c == "id") {
+				selected[i] = refoldLiteral(t, key)
+			}
 		}
-		list := strings.Join(quoted, ", ")
 		res, err := db.Exec(fmt.Sprintf(`INSERT INTO %s (%s) SELECT %s FROM %s`,
-			pgx.Identifier{to, table}.Sanitize(), list, list, pgx.Identifier{from, table}.Sanitize()))
+			pgx.Identifier{to, table}.Sanitize(), strings.Join(quoted, ", "), strings.Join(selected, ", "), pgx.Identifier{from, table}.Sanitize()))
 		if err != nil {
 			t.Fatalf("copy %s into the stage: %v", table, err)
 		}
@@ -402,8 +512,9 @@ func copyRefoldRows(t *testing.T, db *sql.DB, from, to string) int64 {
 
 // copyRefoldLedger copies the source's repository ledger rows of the
 // repository migrations whose floor (refoldLedgerFloors) is at or before
-// `behind` into the stage, and returns how many it kept.
-func copyRefoldLedger(t *testing.T, db *sql.DB, from, to string, behind int) int {
+// `behind` into the stage, under key as copyRefoldRows writes it, and returns
+// how many it kept.
+func copyRefoldLedger(t *testing.T, db *sql.DB, from, to string, behind int, key string) int {
 	t.Helper()
 	migrations, err := engine.Migrations()
 	if err != nil {
@@ -446,12 +557,69 @@ func copyRefoldLedger(t *testing.T, db *sql.DB, from, to string, behind int) int
 			continue
 		}
 		if _, err := db.Exec(fmt.Sprintf(`INSERT INTO %s (repository, version, name, applied_at) VALUES ($1, $2, $3, $4)`,
-			pgx.Identifier{to, "repository_migrations"}.Sanitize()), e.repository, e.version, e.name, e.appliedAt); err != nil {
+			pgx.Identifier{to, "repository_migrations"}.Sanitize()), key, e.version, e.name, e.appliedAt); err != nil {
 			t.Fatalf("copy ledger row %d into the stage: %v", e.version, err)
 		}
 		kept++
 	}
 	return kept
+}
+
+// keyRefoldDirByName puts the copy of the source's directory under root back
+// into the shape a release before ids left it in: named by the name, its
+// manifest format 1 with the data key wrapped under the name.
+func keyRefoldDirByName(t *testing.T, root string, src refoldSource) {
+	t.Helper()
+	from, err := changelogfile.RepoDir(root, src.id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	to, err := changelogfile.RepoDir(root, src.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(from, to); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(to, changelogfile.ManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m changelogfile.Manifest
+	if err := m.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	m.Format, m.ID, m.DEK = changelogfile.ManifestFormatBeforeIDs, "", src.namedDEK
+	if err := changelogfile.WriteManifest(to, m); err != nil {
+		t.Fatalf("write the format-1 manifest: %v", err)
+	}
+}
+
+// refoldVersion is the version of the embedded migration named name.
+func refoldVersion(t *testing.T, name string) int {
+	t.Helper()
+	migrations, err := engine.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range migrations {
+		if m.Name == name {
+			return m.Version
+		}
+	}
+	t.Fatalf("the binary embeds no migration %s", name)
+	return 0
+}
+
+// refoldLiteral is key as a SQL string literal. A key is a repository id or an
+// authority, neither of which holds a quote; one that did is refused rather
+// than escaped.
+func refoldLiteral(t *testing.T, key string) string {
+	t.Helper()
+	if !vocabulary.ValidRepositoryID(key) && !vocabulary.ValidRepositoryAuthority(key) {
+		t.Fatalf("%q is neither a repository id nor an authority", key)
+	}
+	return "'" + key + "'"
 }
 
 // refoldSnapshot reads every fold table whole: each row as JSON, every column

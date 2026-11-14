@@ -80,7 +80,7 @@ func TestReservedActorHoldsTheRetiredConnectorPrefix(t *testing.T) {
 	// A name that merely resembles one is ordinary, and so are the doors.
 	for _, a := range []substrate.Actor{
 		"connectorish", "substrateish.example.com", "functions",
-		substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI,
+		substrate.ActorPerson, substrate.ActorPerson, substrate.ActorPerson,
 	} {
 		if substrate.ReservedActor(a) {
 			t.Errorf("actor %q is refused at the door but names no writing hand", a)
@@ -114,8 +114,8 @@ func TestAnAssistantHoldsTheOwnersHandOnlyAtTheDoor(t *testing.T) {
 		actor substrate.Actor
 		want  bool
 	}{
-		{context.Background(), substrate.ActorConsole, true},
-		{context.Background(), substrate.ActorAPI, true},
+		{context.Background(), substrate.ActorPerson, true},
+		{context.Background(), substrate.ActorPerson, true},
 		{context.Background(), substrate.AppActorLocal, false},
 		{marked, substrate.AppActorLocal, true},
 		{marked, substrate.AppActor("claude.ai"), true},

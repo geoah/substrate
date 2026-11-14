@@ -44,7 +44,9 @@ identity.`,
 			if f, _ := row.Properties[substrate.PackageTakenOverFrom].(string); f != "" {
 				from = f
 			}
-			fmt.Fprintf(a.out, "package %s: taken over from %s, declared by %v\n", pkg, from, row.Properties[substrate.PackageDeclaredBy])
+			// declaredBy links the actor record of whoever declared it.
+			by, _ := row.Properties[substrate.PackageDeclaredBy].(map[string]any)
+			fmt.Fprintf(a.out, "package %s: taken over from %s, declared by %v\n", pkg, from, by["ref"])
 			return nil
 		},
 	}

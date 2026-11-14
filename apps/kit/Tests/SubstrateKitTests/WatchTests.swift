@@ -88,6 +88,12 @@ struct WatchTests {
         #expect(await take(5, from: follower(compacted).follow(from: nil)) == [.opened(WatchCursor(seq: 3, generation: "g")), .relist])
     }
 
+    @Test func anAuthFrameEndsTheFollowSignedOut() async throws {
+        let revoked = ScriptedLines()
+        revoked.answer(lines: [#"{"bookmark":3,"generation":"g"}"#, #"{"error":{"code":"auth","message":"the token was revoked"}}"#])
+        #expect(await take(5, from: follower(revoked).follow(from: nil)) == [.opened(WatchCursor(seq: 3, generation: "g")), .ended(.signedOut)])
+    }
+
     @Test func anotherTerminalFrameOrARefusedTokenEndsTheFollow() async throws {
         let stopped = ScriptedLines()
         stopped.answer(lines: [#"{"error":{"code":"internal","message":"The feed stopped."}}"#])

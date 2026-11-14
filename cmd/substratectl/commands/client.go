@@ -64,13 +64,13 @@ const (
 	pathRegister       = "/register"
 	pathLogin          = "/login"
 	pathTokens         = "/tokens"
+	pathSignOutAll     = "/signout/everywhere"
 )
 
 // client is the REST client for one substrate context.
 type client struct {
 	server string
 	token  string
-	actor  string
 	hc     *http.Client
 }
 
@@ -119,9 +119,6 @@ func (c *client) newRequest(ctx context.Context, method, path string, q url.Valu
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	if c.actor != "" {
-		req.Header.Set("X-Substrate-Actor", c.actor)
 	}
 	return req, nil
 }
@@ -186,21 +183,24 @@ func parseAPIError(resp *http.Response, method, path string) *apiError {
 	var env struct {
 		Error struct {
 			Code     string   `json:"code"`
+			Reason   string   `json:"reason"`
 			Message  string   `json:"message"`
 			Problems []string `json:"problems"`
 			// Both halves of a validation refusal are read: the engine's
 			// strings and the field-addressed split (substrate.ErrorPayload).
 			// Dropping either leaves the renderer with less than the wire
 			// carried (#547).
-			ProblemDetails []substrate.ProblemDetail `json:"problemDetails"`
-			Head           *int64                    `json:"head"`
-			Generation     string                    `json:"generation"`
+			ProblemDetails []substrate.ProblemDetail    `json:"problemDetails"`
+			Head           *int64                       `json:"head"`
+			Generation     string                       `json:"generation"`
+			Repositories   []substrate.RepositoryChoice `json:"repositories"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err == nil && (env.Error.Code != "" || env.Error.Message != "") {
-		ae.Code, ae.Message, ae.Problems = env.Error.Code, env.Error.Message, env.Error.Problems
+		ae.Code, ae.Reason, ae.Message, ae.Problems = env.Error.Code, env.Error.Reason, env.Error.Message, env.Error.Problems
 		ae.ProblemDetails = env.Error.ProblemDetails
 		ae.Head, ae.Generation = env.Error.Head, env.Error.Generation
+		ae.Repositories = env.Error.Repositories
 		return ae
 	}
 	if raw != "" {
@@ -316,14 +316,14 @@ func editFilter(q url.Values, edit func(*substrate.Filter)) error {
 	return nil
 }
 
-// recordRead is one GET's flat JSON: the record plus `propertyMeta`, the
-// managed-property block a single-record read carries and a list never does.
-// Decoded here beside the record rather than through substrate.Record, because
-// the meta is a read-view fact the CLI renders into `status.properties` and
-// nothing the write path ever sends.
+// recordRead is one GET's flat JSON: the record plus `marks`, which a
+// single-record read carries and a list never does. Decoded here beside the
+// record rather than through substrate.Record, because the marks are a
+// read-view fact the CLI renders into `status.properties` and nothing the
+// write path ever sends.
 type recordRead struct {
 	substrate.Record
-	PropertyMeta map[string]statusProperty `json:"propertyMeta"`
+	Marks map[string]statusProperty `json:"marks"`
 }
 
 func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
@@ -331,7 +331,18 @@ func (c *client) get(ctx context.Context, pkg, kind, id string) (*substrate.Reco
 	if err := c.do(ctx, http.MethodGet, recordPath(pkg, kind, id), nil, nil, &e); err != nil {
 		return nil, nil, err
 	}
-	return &e.Record, e.PropertyMeta, nil
+	return &e.Record, e.Marks, nil
+}
+
+// mark pins or releases the named properties of one record (action is "pin"
+// or "release"), and answers the record with its marks.
+func (c *client) mark(ctx context.Context, action, pkg, kind, id string, properties []string) (*substrate.Record, map[string]statusProperty, error) {
+	var e recordRead
+	body := substrate.MarkInput{Properties: properties}
+	if err := c.do(ctx, http.MethodPost, recordPath(pkg, kind, id)+"/"+action, nil, body, &e); err != nil {
+		return nil, nil, err
+	}
+	return &e.Record, e.Marks, nil
 }
 
 // put writes one record. With an id it is a PUT at the record path, whose
@@ -442,16 +453,19 @@ func vocabularyBody(docs []map[string]any, opts vocabularyOptions) map[string]an
 // server: the caller holds the seed and hands it back with one code.
 type registerBeginRequest struct {
 	InviteCode string `json:"inviteCode"`
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
 }
 
 // registerRequest is the registration commit — the only call that creates
 // anything.
 type registerRequest struct {
 	InviteCode string `json:"inviteCode"`
-	// Repository is the name of the repository to create, which BECOMES its
-	// authority: a bare label is completed under the substrate's own host.
-	Repository string `json:"repository"`
+	// Identity is the name the person signs in with, and Repository the
+	// name of the repository to create, which BECOMES its authority; absent,
+	// it is the identity's. A bare label is completed under the substrate's
+	// own host.
+	Identity   string `json:"identity"`
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
@@ -460,23 +474,14 @@ type registerRequest struct {
 	// the field.
 	SkipTOTP bool   `json:"skipTotp,omitempty"`
 	Label    string `json:"label,omitempty"`
-	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
-	// matching identity never rides the wire.
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
-// registerResult is a tokenResult plus the recovery half: the enrolled
-// recipient, and the identity ONLY when the server minted the pair.
-type registerResult struct {
-	tokenResult
-	RecoveryKey       string `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
-}
-
-// factors is both current factors presented directly, which is what a login
-// authenticates with. A bearer token is never a substitute.
+// factors is a person's identity and both current factors presented
+// directly, which is what a sign-in authenticates with; a sign-in may pick a
+// repository. A bearer token is never a substitute.
 type factors struct {
-	Repository string `json:"repository"`
+	Identity   string `json:"identity"`
+	Repository string `json:"repository,omitempty"`
 	Password   string `json:"password"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
@@ -487,9 +492,10 @@ type factors struct {
 type tokenResult struct {
 	Token  substrate.TokenInfo `json:"token"`
 	Secret string              `json:"secret"`
-	// Repository is the repository the door resolved the request's name to.
-	// Login and registration echo it; a `POST /tokens` mint does not.
+	// Repository and Identity are the names the door resolved the request's
+	// to. Login and registration echo them; a `POST /tokens` mint does not.
 	Repository string `json:"repository,omitempty"`
+	Identity   string `json:"identity,omitempty"`
 }
 
 // discoveryDoc is the slice of GET /.well-known/substrate/server.json the
@@ -535,6 +541,16 @@ func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*
 	return &out, nil
 }
 
+// registerResult is a tokenResult plus the recovery key a server below
+// `auth` revision 2 mints for a registration that names no recipient, which
+// is every registration this command sends: that server still wraps the
+// repository's key to it, and this answer is the only copy (decision 0264).
+// A current server sends none.
+type registerResult struct {
+	tokenResult
+	RecoveryKey string `json:"recoveryKey,omitempty"`
+}
+
 func (c *client) register(ctx context.Context, in registerRequest) (*registerResult, error) {
 	var out registerResult
 	if err := c.do(ctx, http.MethodPost, pathRegister, nil, in, &out); err != nil {
@@ -575,6 +591,19 @@ func (c *client) tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 
 // revokeToken deletes the token record — which is the whole of revocation: no
 // row means no access, and there is no revocation list to consult.
+// signOutEverywhere ends every token the person holds. Like the credential
+// changes it presents both factors and no token.
+func (c *client) signOutEverywhere(ctx context.Context, in factors) (int, error) {
+	var out substrate.SessionCredential
+	if err := c.do(ctx, http.MethodPost, pathSignOutAll, nil, in, &out); err != nil {
+		return 0, err
+	}
+	if out.SignedOut == nil {
+		return 0, nil
+	}
+	return *out.SignedOut, nil
+}
+
 func (c *client) revokeToken(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, pathTokens+"/"+url.PathEscape(id), nil, nil, nil)
 }

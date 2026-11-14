@@ -95,15 +95,17 @@ const (
 	DocRecordMapping = "recordmapping"
 	DocFunction      = "function"
 	DocAgent         = "agent"
-	DocActor         = "actor"
 	DocBundle        = "bundle"
+	// DocActor is the actor kind's local name. An actor is a record the
+	// engine writes for everything that acts (decision 0270), not a document
+	// a package declares, so it is no schema kind.
+	DocActor = "actor"
 )
 
 var schemaDocumentKinds = map[string]bool{
 	DocAuthority: true, DocPackage: true, DocKind: true, DocTrait: true,
 	DocPropertyType: true, DocRecordMapping: true, DocFunction: true,
-	DocAgent: true,
-	DocActor: true, DocBundle: true,
+	DocAgent: true, DocBundle: true,
 }
 
 // VocabularyDocumentKind reports whether a local name is one of the schema kinds —
@@ -168,6 +170,19 @@ type Document struct {
 	Labels      map[string]string
 	Annotations map[string]string
 	Data        map[string]any
+
+	// needs is the highest dialect a key of the envelope or of metadata
+	// arrived in, and needsKey that key: read here, before the loader, and
+	// counted toward the package the document builds (noteDocument).
+	needs    int64
+	needsKey string
+}
+
+// noteEnvelope counts key k of set toward what the document needs.
+func (d *Document) noteEnvelope(set map[string]bool, k string) {
+	if at := introducedAt(set, k); at > d.needs || (at > 0 && at == d.needs && k < d.needsKey) {
+		d.needs, d.needsKey = at, k
+	}
 }
 
 // ParseStream splits a `---` separated YAML stream into envelope-validated
@@ -208,6 +223,13 @@ type ShippedRecord struct {
 	Kind       string
 	ID         string
 	Properties map[string]any
+
+	// needs is the highest dialect a key of the record arrived in, and
+	// needsKey that key: what the header of the record's kind's package may
+	// not state less than (LoadShipped), the shipped record's keys being
+	// read here and not by the loader.
+	needs    int64
+	needsKey string
 }
 
 // IsDeclarationRef reports whether a document's kind reference names one of
@@ -241,7 +263,9 @@ func ParseShipped(data []byte) ([]Document, []ShippedRecord, error) {
 			continue
 		}
 		ref := mstr(raw, "kind")
-		if authority, _, _ := SplitKindRef(ref); authority == "" || IsDeclarationRef(ref) {
+		// An actor document is refused as the manifest it once was, not
+		// admitted as a record: the substrate writes every actor record.
+		if authority, _, _ := SplitKindRef(ref); authority == "" || IsDeclarationRef(ref) || ref == CoreKind(DocActor) {
 			doc, errs := documentFrom(raw)
 			problems = append(problems, errs...)
 			if len(errs) == 0 {
@@ -261,25 +285,43 @@ func ParseShipped(data []byte) ([]Document, []ShippedRecord, error) {
 	return docs, records, nil
 }
 
+// shippedRecordKeys, shippedRecordMetadataKeys and shippedRecordDataKeys
+// are a shipped record's closed key sets: its kind, its id and its
+// properties, and nothing else.
+var (
+	shippedRecordKeys         = map[string]bool{"kind": true, "metadata": true, "data": true}
+	shippedRecordMetadataKeys = map[string]bool{"id": true}
+	shippedRecordDataKeys     = map[string]bool{"properties": true}
+)
+
 func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string) {
 	var problems []string
 	errf := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 	authority, pkg, name := SplitKindRef(ref)
-	if !ValidAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
+	if !ValidKindAuthority(authority) || !ValidPackage(pkg) || !ValidPackage(name) {
 		errf("record: kind %q must be a kind reference, <authority>/<package>/<name>", ref)
 	}
+	var needs int64
+	var needsKey string
+	note := func(set map[string]bool, k string) {
+		if at := introducedAt(set, k); at > needs || (at > 0 && at == needs && k < needsKey) {
+			needs, needsKey = at, k
+		}
+	}
 	for k := range raw {
-		if k != "kind" && k != "metadata" && k != "data" {
+		if !shippedRecordKeys[k] {
 			errf("record %s: unknown key %q (a shipped record is kind, metadata.id and data.properties)", ref, k)
 		}
+		note(shippedRecordKeys, k)
 	}
 	meta := mmap(raw, "metadata")
 	for k := range meta {
-		if k != "id" {
+		if !shippedRecordMetadataKeys[k] {
 			errf("record %s: metadata: unknown key %q (a shipped record carries its id alone)", ref, k)
 		}
+		note(shippedRecordMetadataKeys, k)
 	}
 	id := mstr(meta, "id")
 	if !ValidID(id) {
@@ -287,15 +329,16 @@ func shippedRecordFrom(ref string, raw map[string]any) (ShippedRecord, []string)
 	}
 	data := mmap(raw, "data")
 	for k := range data {
-		if k != "properties" {
+		if !shippedRecordDataKeys[k] {
 			errf("record %s %s: data: unknown key %q (properties go under data.properties)", ref, id, k)
 		}
+		note(shippedRecordDataKeys, k)
 	}
 	props := mmap(data, "properties")
 	if len(props) == 0 {
 		errf("record %s %s: data.properties is required", ref, id)
 	}
-	return ShippedRecord{Kind: ref, ID: id, Properties: props}, problems
+	return ShippedRecord{Kind: ref, ID: id, Properties: props, needs: needs, needsKey: needsKey}, problems
 }
 
 // DocumentFromMap turns one already-decoded manifest (a stored declaration
@@ -321,6 +364,7 @@ func documentFrom(raw map[string]any) (Document, []string) {
 	}
 	for k := range raw {
 		if envelopeKeys[k] {
+			d.noteEnvelope(envelopeKeys, k)
 			continue
 		}
 		if replacement, deleted := deletedEnvelopeKeys[k]; deleted {
@@ -334,12 +378,15 @@ func documentFrom(raw map[string]any) (Document, []string) {
 		errf("manifest: kind is required — a kind reference like %q", CoreKind(DocKind))
 	case authority+"/"+pkg != PackageCore:
 		errf("manifest: kind %q: schema manifests are records of the %s kinds", ref, PackageCore)
+	case local == DocActor:
+		errf("manifest: kind %q: an actor is a record the substrate writes for everything that acts, and a package declares none — drop the document", ref)
 	case !schemaDocumentKinds[local]:
 		errf("manifest: unknown kind %q", ref)
 	}
 	meta := mmap(raw, "metadata")
 	for k := range meta {
 		if metadataKeys[k] {
+			d.noteEnvelope(metadataKeys, k)
 			continue
 		}
 		if k == "name" {
@@ -437,16 +484,6 @@ func PackageManifest(pkg string, version int64) map[string]any {
 		"data": map[string]any{
 			"authority": authority, "package": name, "version": version,
 		},
-	}
-}
-
-// ActorManifest renders an actor document.
-func ActorManifest(pkg, actor string) map[string]any {
-	authority, name := SplitPackageRef(pkg)
-	return map[string]any{
-		"kind":     CoreKind(DocActor),
-		"metadata": map[string]any{"id": actor},
-		"data":     map[string]any{"authority": authority, "package": name},
 	}
 }
 

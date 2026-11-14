@@ -128,3 +128,19 @@ func TestAFetchedClosureIsReadOncePerDigest(t *testing.T) {
 		t.Fatalf("fetched %d times, want once", fetches)
 	}
 }
+
+// A document may say where its publisher moved (decision record 0293): read
+// as another authority, and left out as anything else, the document still
+// read.
+func TestAnAuthorityDocumentSaysWhereItMoved(t *testing.T) {
+	doc, err := ParseAuthorityDocument([]byte(`{"authority":"old.example.com","movedTo":"new.example.com"}`), "old.example.com")
+	if err != nil || doc.MovedTo != "new.example.com" {
+		t.Fatalf("parse: %+v %v", doc, err)
+	}
+	for _, moved := range []string{"not a name", "~", "old.example.com"} {
+		doc, err := ParseAuthorityDocument([]byte(`{"authority":"old.example.com","movedTo":"`+moved+`"}`), "old.example.com")
+		if err != nil || doc.MovedTo != "" {
+			t.Errorf("movedTo %q read as %+v (%v), want the document read without it", moved, doc, err)
+		}
+	}
+}

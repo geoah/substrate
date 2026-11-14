@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-09-24
 decision-makers: George Antoniadis
+amended-by: 0259
 ---
 
 # 0101. A kind, trait or callable is named in full on every surface

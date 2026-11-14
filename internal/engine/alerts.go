@@ -25,6 +25,7 @@ const kindAlert = "substrate.reamde.dev/core/alert"
 // The alert kind's enum values, as its declaration spells them.
 const (
 	alertLevelError    = "error"
+	alertLevelWarning  = "warning"
 	alertStateOpen     = "open"
 	alertStateResolved = "resolved"
 )

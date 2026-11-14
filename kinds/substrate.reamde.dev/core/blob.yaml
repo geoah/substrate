@@ -16,7 +16,7 @@ data:
     — while the bytes themselves live in the store behind /blobs. The digest
     is the id, so identical bytes always mint the same blob, and a blobref
     property elsewhere points at one.
-  version: 7
+  version: 8
   purpose: internal
   names:
     singular: blob
@@ -40,7 +40,8 @@ data:
       type: string
       description: the optional media type declared when the bytes were stored
     createdBy:
-      type: string
+      type: reference
+      kind: substrate.reamde.dev/core/actor
       required: true
       description: the actor that stored the bytes, for provenance
     # pending while a ref exists but no bytes have landed; stored once the byte

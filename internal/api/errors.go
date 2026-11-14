@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"time"
 
@@ -18,10 +19,11 @@ import (
 )
 
 // Error codes of the wire envelope. The set is closed: clients switch on it
-// and nothing else ever appears in `error.code`. The client-error
-// family is 4xx; the server family is split so a client can tell "try again"
-// (unavailable) from "never here" (unsupported) from "genuine fault"
-// (internal). `compacted` is the changelog's one 410 signal.
+// and nothing else ever appears in `error.code` (errorCodes below is the
+// set). The client-error family is 4xx; the server family is split so a
+// client can tell "try again" (unavailable) from a callable's own fault
+// (function_failed) from "genuine fault" (internal). `compacted` is the
+// changelog's one 410 signal.
 const (
 	codeValidation = "validation" // 422
 	codeConflict   = "conflict"   // 409
@@ -56,6 +58,30 @@ const (
 	codeTOTPRequired = "totp_required" // 401
 )
 
+// errorCodes is the closed set: every code constant above, and nothing a
+// handler writes is outside it. The console's union
+// (web/console/src/lib/api/errorcodes.golden.json) and the list in
+// docs/api.md are held to it by errorcodes_test.go, so a code added above is
+// added here, and the golden is regenerated with
+// `go test ./internal/api/ -run TestErrorCodes -update`.
+var errorCodes = []string{
+	codeAuth,
+	codeBadRequest,
+	codeCompacted,
+	codeConflict,
+	codeForbidden,
+	codeFunctionFailed,
+	codeGuard,
+	codeInternal,
+	codeLossy,
+	codeNotFound,
+	codeParked,
+	codeRateLimited,
+	codeTOTPRequired,
+	codeUnavailable,
+	codeValidation,
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -64,7 +90,18 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
+// writeError is the one emit that takes its code as a string, so it is where
+// the closed set is held for a code that reaches it through a variable: one
+// outside errorCodes is a defect of the handler, and the client is answered
+// `internal` rather than a code it was never told about. Every other emit
+// names a code constant in an ErrorPayload literal, which
+// TestEveryEmittedCodeIsADeclaredConstant holds.
 func writeError(w http.ResponseWriter, status int, code, msg string, problems ...string) {
+	if !slices.Contains(errorCodes, code) {
+		slog.Error("a handler answered with a code outside the closed set", "code", code, "status", status)
+		writeJSON(w, http.StatusInternalServerError, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}})
+		return
+	}
 	writeJSON(w, status, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{Code: code, Message: msg, Problems: problems}})
 }
 
@@ -77,12 +114,30 @@ const restartRetryAfter = 30 * time.Second
 // refused key, and longer than the console waits out on its own.
 const keyRefusedRetryAfter = time.Minute
 
+// setAsideRetryAfter is the Retry-After on a repository the server set aside
+// at its start (substrate.ErrSetAside): it serves again only after its
+// operator repairs it and restarts the server, so a sender that retries on
+// its own (a webhook's provider) waits minutes, not seconds.
+const setAsideRetryAfter = 5 * time.Minute
+
 // writeUnavailable is the 503 emit: a transient condition the caller should
 // retry. Retry-After is mandatory on every unavailable, so it is
 // set here and cannot be forgotten at a call site. retryAfter rounds up to at
 // least one second.
 func writeUnavailable(w http.ResponseWriter, retryAfter time.Duration, msg string) {
 	writeUnavailablePayload(w, retryAfter, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+}
+
+// unavailablePayload is the 503 a bearer whose repository will not open
+// answers: the service's own refusal where a client acts on it (a repository
+// set aside at the server's start), else msg alone, the cause being one the
+// client is not shown.
+func unavailablePayload(cause error, msg string) substrate.ErrorPayload {
+	if errors.Is(cause, substrate.ErrSetAside) {
+		_, p := problemFor(cause)
+		return p
+	}
+	return substrate.ErrorPayload{Code: codeUnavailable, Message: msg}
 }
 
 // writeUnavailablePayload is writeUnavailable for a payload that carries
@@ -116,9 +171,24 @@ func writeCompacted(w http.ResponseWriter, head substrate.ChangelogHead, msg str
 // wherever it surfaces.
 func problemFor(err error) (int, substrate.ErrorPayload) {
 	var ve *substrate.ValidationError
+	var pick *substrate.RepositoryRequiredError
 	switch {
+	case errors.Is(err, substrate.ErrWriteInDoubt):
+		return inDoubtProblem(err)
+	case errors.As(err, &pick):
+		return http.StatusConflict, substrate.ErrorPayload{
+			Code: codeConflict, Reason: substrate.ReasonRepositoryRequired,
+			Message: "this person may open several repositories: send the sign-in again naming one in `repository`", Repositories: pick.Repositories,
+		}
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: ve.Reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
+		// The one reason that arrives as a value: one outside the closed set
+		// is not sent, and the client acts on the code.
+		reason := ve.Reason
+		if reason != "" && !slices.Contains(substrate.ErrorReasons, reason) {
+			slog.Error("a validation refusal carried a reason outside the closed set", "reason", reason)
+			reason = ""
+		}
+		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Reason: reason, Message: err.Error(), Problems: ve.Problems, ProblemDetails: ve.Details()}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, substrate.ErrorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrParked):
@@ -132,7 +202,14 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	case errors.Is(err, substrate.ErrNotFound):
 		return http.StatusNotFound, substrate.ErrorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):
-		return http.StatusConflict, substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
+		p := substrate.ErrorPayload{Code: codeConflict, Message: err.Error()}
+		switch {
+		case errors.Is(err, substrate.ErrFirstAttemptRunning):
+			p.Reason = substrate.ReasonFirstAttemptRunning
+		case errors.Is(err, substrate.ErrFirstAttemptLanded):
+			p.Reason = substrate.ReasonFirstAttemptLanded
+		}
+		return http.StatusConflict, p
 	case errors.Is(err, substrate.ErrLossyConversion):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeLossy, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAllowance):
@@ -140,7 +217,11 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	case errors.Is(err, substrate.ErrGuard):
 		return http.StatusForbidden, substrate.ErrorPayload{Code: codeGuard, Message: err.Error()}
 	case errors.Is(err, substrate.ErrForbidden):
-		return http.StatusForbidden, substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
+		p := substrate.ErrorPayload{Code: codeForbidden, Message: err.Error()}
+		if errors.Is(err, substrate.ErrNotPermitted) {
+			p.Reason = substrate.ReasonNotPermitted
+		}
+		return http.StatusForbidden, p
 	case errors.Is(err, substrate.ErrTOTPRequired):
 		return http.StatusUnauthorized, substrate.ErrorPayload{Code: codeTOTPRequired, Message: err.Error()}
 	case errors.Is(err, substrate.ErrAuth):
@@ -149,6 +230,8 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 		return http.StatusRequestEntityTooLarge, substrate.ErrorPayload{Code: codeBadRequest, Message: err.Error()}
 	case errors.Is(err, substrate.ErrKeyRefused):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonKeyRefused, Message: err.Error()}
+	case errors.Is(err, substrate.ErrSetAside):
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonSetAside, Message: err.Error()}
 	case errors.Is(err, substrate.ErrObservedRederiving):
 		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonObservedRederiving, Message: err.Error()}
 	case errors.Is(err, substrate.ErrRestartRequired), errors.Is(err, substrate.ErrUnavailable):
@@ -156,6 +239,23 @@ func problemFor(err error) (int, substrate.ErrorPayload) {
 	default:
 		return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Message: "internal error"}
 	}
+}
+
+// inDoubtMessage is what a write whose commit may have landed answers in
+// place of the masked "internal error": the cause is the server's, and what
+// the client needs is what it may conclude.
+const inDoubtMessage = "the write may have landed: the server lost the database's answer to its commit, or a step after the commit failed; read the record, or repeat the request under the same Idempotency-Key"
+
+// inDoubtProblem answers an error that followed a commit that may have landed
+// (substrate.ErrWriteInDoubt) with the reason in_doubt: 503 where the
+// repository now refuses writes until a restart, and 500 otherwise. No other
+// code carries it, because no refusal of the request itself reaches the
+// commit.
+func inDoubtProblem(err error) (int, substrate.ErrorPayload) {
+	if errors.Is(err, substrate.ErrRestartRequired) {
+		return http.StatusServiceUnavailable, substrate.ErrorPayload{Code: codeUnavailable, Reason: substrate.ReasonInDoubt, Message: err.Error()}
+	}
+	return http.StatusInternalServerError, substrate.ErrorPayload{Code: codeInternal, Reason: substrate.ReasonInDoubt, Message: inDoubtMessage}
 }
 
 // writeSubstrateError maps the engine's sentinel errors onto the wire
@@ -177,6 +277,12 @@ func writeSubstrateError(w http.ResponseWriter, r *http.Request, err error) {
 			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 		}
 	}
+	writeProblem(w, r, err, status, p)
+}
+
+// writeProblem writes the problem err maps to, logging a 5xx as
+// writeSubstrateError says, for a door that words the problem itself.
+func writeProblem(w http.ResponseWriter, r *http.Request, err error, status int, p substrate.ErrorPayload) {
 	if status == http.StatusServiceUnavailable {
 		writeUnavailableCause(w, r, err, p)
 		return
@@ -208,6 +314,10 @@ func writeUnavailableCause(w http.ResponseWriter, r *http.Request, err error, p 
 	case errors.Is(err, substrate.ErrKeyRefused):
 		slog.Warn("request answered unavailable: the vendor refused the key", attrs...)
 		retryAfter = keyRefusedRetryAfter
+	case errors.Is(err, substrate.ErrSetAside):
+		// The start logged why, once; a line per refused request would bury it.
+		slog.Debug("request refused: the repository is set aside", attrs...)
+		retryAfter = setAsideRetryAfter
 	case clientCanceled(r.Context(), err):
 		slog.Debug("request canceled by the client", attrs...)
 	default:

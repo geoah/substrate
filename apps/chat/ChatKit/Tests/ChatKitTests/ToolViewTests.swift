@@ -8,7 +8,7 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     Record(id: id, kind: Kinds.message, properties: props, createdAt: "2026-11-07T10:00:00Z")
 }
 
-private let searchCallable = "function:providers.substrate.reamde.dev:firecrawl:websearch"
+private let searchCallable = "substrate.reamde.dev/core/function/providers.substrate.reamde.dev/firecrawl/websearch"
 private let librarian = "substrate.reamde.dev/assistant/librarian"
 
 private let searchOutput = #"""
@@ -64,7 +64,8 @@ struct HostFunctionWords {
     @Test func anAgentTheAppCouldNotReadStillNamesEveryHostFunction() {
         #expect(resolveTool(agent: nil, name: "edit", callable: nil).function == HostFunction.edit)
         #expect(resolveTool(agent: nil, name: "vocabulary", callable: nil).function == HostFunction.vocabulary)
-        #expect(resolveTool(agent: nil, name: "wait", callable: "function:substrate.reamde.dev:core:wait").function == HostFunction.wait)
+        #expect(
+            resolveTool(agent: nil, name: "wait", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/wait").function == HostFunction.wait)
     }
 }
 
@@ -149,11 +150,11 @@ struct ResultShapes {
         // `query` answers records, and a sub-agent its reply: neither is
         // read for pages whatever its payload holds.
         let hosted = ToolCall(
-            id: "c", name: "query", callable: "function:substrate.reamde.dev:core:query", arguments: "{}",
+            id: "c", name: "query", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query", arguments: "{}",
             output: #"{"output":{"results":[{"url":"https://a.example.com"}]}}"#, ok: true)
         #expect(row(hosted).sources == nil)
         let asked = ToolCall(
-            id: "c", name: "librarian", callable: "agent:substrate.reamde.dev:assistant:librarian", arguments: "{}",
+            id: "c", name: "librarian", callable: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian", arguments: "{}",
             output: #"{"output":{"results":[{"url":"https://a.example.com"}]}}"#, ok: true)
         #expect(row(asked).sources == nil)
     }
@@ -221,14 +222,16 @@ struct BackgroundCalls {
         "a",
         [
             "role": "assistant", "content": "", "turn": 1,
-            "toolCalls": [["id": "c3", "name": "librarian", "callable": "agent:substrate.reamde.dev:assistant:librarian", "arguments": "{}"]],
+            "toolCalls": [
+                ["id": "c3", "name": "librarian", "callable": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian", "arguments": "{}"]
+            ],
         ])
 
     private func toolRow(_ state: String) -> Record {
         message(
             "t",
             [
-                "role": "tool", "toolCallId": "c3", "name": "librarian", "callable": "agent:substrate.reamde.dev:assistant:librarian",
+                "role": "tool", "toolCallId": "c3", "name": "librarian", "callable": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian",
                 "content": #"{"job":"c3","status":"working"}"#, "ok": true, "turn": 2,
                 "job": ["state": .string(state), "startedAt": "2026-11-07T10:00:01Z"],
             ])
@@ -237,7 +240,7 @@ struct BackgroundCalls {
     private func ended(ok: Bool, output: String) -> Record {
         let envelope: JSONValue = [
             "event": "toolCompleted", "toolCallId": "c3", "name": "librarian", "ok": .bool(ok), "output": .string(output),
-            "callable": "agent:substrate.reamde.dev:assistant:librarian",
+            "callable": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian",
         ]
         return message("s", ["role": "system", "content": .string(envelope.jsonText), "turn": 3])
     }
@@ -303,7 +306,7 @@ struct HeldWrites {
 
     private func write(_ output: String = HeldWrites.refusal) -> ToolCall {
         ToolCall(
-            id: "w1", name: "write", callable: "function:substrate.reamde.dev:core:write",
+            id: "w1", name: "write", callable: "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write",
             arguments: #"{"op":"patch","kind":"ada.example.com/tasks/task","id":"t1","input":{"properties":{"due":"2026-11-09"}}}"#,
             output: output, ok: false)
     }
@@ -343,12 +346,12 @@ struct StreamedCalls {
     /// work in the background, streamed and held there.
     static let stream = [
         #"{"kind":"thread","thread":"t1"}"#,
-        #"{"kind":"toolStarted","id":"c1","tool":"web_search","callable":"function:providers.substrate.reamde.dev:firecrawl:websearch","args":"{\"query\":\"quiet robot vacuum\"}","turn":1}"#,
-        #"{"kind":"toolFinished","id":"c1","tool":"web_search","callable":"function:providers.substrate.reamde.dev:firecrawl:websearch","ok":true,"output":"{\"effects\":0,\"output\":{\"results\":[{\"title\":\"Robot vacuums\",\"url\":\"https://uk.pcmag.com/robot-vacuums\"}]}}","turn":1}"#,
-        #"{"kind":"toolStarted","id":"c2","tool":"write","callable":"function:substrate.reamde.dev:core:write","args":"{\"op\":\"patch\",\"kind\":\"ada.example.com/tasks/task\",\"id\":\"t1\"}","turn":1}"#,
-        #"{"kind":"toolFinished","id":"c2","tool":"write","callable":"function:substrate.reamde.dev:core:write","ok":false,"output":"{\"error\":\"substrate: held for review: held for review as substrate.reamde.dev/core/recordpatchrequest/01h2xcejqtf2nbrexx3vqjhp41 — policy review gates patch\"}","turn":1}"#,
-        #"{"kind":"toolStarted","id":"c3","tool":"librarian","callable":"agent:substrate.reamde.dev:assistant:librarian","args":"{}","turn":1}"#,
-        #"{"kind":"toolFinished","id":"c3","tool":"librarian","callable":"agent:substrate.reamde.dev:assistant:librarian","ok":true,"output":"{\"job\":\"c3\",\"status\":\"working\"}","job":"working","turn":1}"#,
+        #"{"kind":"toolStarted","id":"c1","tool":"web_search","callable":"substrate.reamde.dev/core/function/providers.substrate.reamde.dev/firecrawl/websearch","args":"{\"query\":\"quiet robot vacuum\"}","turn":1}"#,
+        #"{"kind":"toolFinished","id":"c1","tool":"web_search","callable":"substrate.reamde.dev/core/function/providers.substrate.reamde.dev/firecrawl/websearch","ok":true,"output":"{\"effects\":0,\"output\":{\"results\":[{\"title\":\"Robot vacuums\",\"url\":\"https://uk.pcmag.com/robot-vacuums\"}]}}","turn":1}"#,
+        #"{"kind":"toolStarted","id":"c2","tool":"write","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/write","args":"{\"op\":\"patch\",\"kind\":\"ada.example.com/tasks/task\",\"id\":\"t1\"}","turn":1}"#,
+        #"{"kind":"toolFinished","id":"c2","tool":"write","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/write","ok":false,"output":"{\"error\":\"substrate: held for review: held for review as substrate.reamde.dev/core/recordpatchrequest/01h2xcejqtf2nbrexx3vqjhp41 — policy review gates patch\"}","turn":1}"#,
+        #"{"kind":"toolStarted","id":"c3","tool":"librarian","callable":"substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian","args":"{}","turn":1}"#,
+        #"{"kind":"toolFinished","id":"c3","tool":"librarian","callable":"substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian","ok":true,"output":"{\"job\":\"c3\",\"status\":\"working\"}","job":"working","turn":1}"#,
         #"{"kind":"done","result":{"reply":"","thread":"t1","status":"ok","turns":2}}"#,
     ]
 
@@ -417,7 +420,7 @@ struct RunEnds {
 
     @Test func aSubAgentsCallLinksItsOwnConversation() {
         let asked = ToolCall(
-            id: "c", name: "librarian", callable: "agent:substrate.reamde.dev:assistant:librarian", arguments: "{}",
+            id: "c", name: "librarian", callable: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian", arguments: "{}",
             output: #"{"reply":"Two notes.","thread":"child1","status":"ok"}"#, ok: true)
         #expect(row(asked).thread == ThreadLink(thread: "child1", label: "Open its conversation"))
         var stamped = asked

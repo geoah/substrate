@@ -833,6 +833,66 @@ data:
 	}
 }
 
+// A feature toggle's `access` says whether its scopes read the provider or
+// change it (decision record 0255): any word but those two is refused naming
+// them. The shipped google bundle's write toggles are the accepted case
+// (internal/providertest's TestGoogleToolsAdmit).
+func TestFeatureScopesAccessIsReadOrWrite(t *testing.T) {
+	doc := func(access string) string {
+		return `kind: substrate.reamde.dev/core/package
+metadata: {id: s.bundles.example.com/s}
+data: {authority: s.bundles.example.com, package: s, version: 1}
+---
+kind: substrate.reamde.dev/core/trait
+metadata: {id: s.bundles.example.com/s/oauth2}
+data:
+  authority: s.bundles.example.com
+  package: s
+  properties: {clientId: string, clientSecret: secret}
+---
+kind: substrate.reamde.dev/core/kind
+metadata: {id: s.bundles.example.com/s/config}
+data:
+  authority: s.bundles.example.com
+  package: s
+  names: {singular: config}
+  traits: [s.bundles.example.com/s/oauth2]
+  properties:
+    enabledThing: {type: bool}
+    enabledSending: {type: bool}
+---
+kind: substrate.reamde.dev/core/bundle
+metadata: {id: s.bundles.example.com/s}
+data:
+  authority: s.bundles.example.com
+  package: s
+  description: one config, so the closure is whole
+  inputs:
+    client: {kind: s.bundles.example.com/s/config}
+  installs:
+    - s.bundles.example.com/s/config
+    - s.bundles.example.com/s/oauth2
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://example.com/authorize
+    tokenEndpoint: https://example.com/token
+    featureScopes:
+      enabledThing: {scopes: [read:thing], access: read}
+      enabledSending: {scopes: [send:thing], access: ` + access + `}
+`
+	}
+	for _, access := range []string{"read", "write"} {
+		_, err := vocabulary.LoadFS(fstest.MapFS{"all.yaml": &fstest.MapFile{Data: []byte(doc(access))}})
+		if err != nil && strings.Contains(err.Error(), ".access") {
+			t.Fatalf("access %s was refused: %v", access, err)
+		}
+	}
+	_, err := vocabulary.LoadFS(fstest.MapFS{"all.yaml": &fstest.MapFile{Data: []byte(doc("admin"))}})
+	if want := `featureScopes["enabledSending"].access: admin — "read" or "write"`; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("want %q, got: %v", want, err)
+	}
+}
+
 // An index over no properties covers nothing. The loader used to drop it
 // silently, but the kind now declares `indices[].properties` required and a
 // projected record keeps the authored empty list, which that required rejects.

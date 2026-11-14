@@ -1,12 +1,12 @@
 /** Where one value comes from, at the end of its row: a labelled chip ("You",
  * or the provider's badge and name), an amber "<Provider> differs" pill when
  * a live source offers something else, one hover summary, and a click that
- * opens the detail under the row: who holds it at which tier, the source
- * record, what each source says instead, and the two writes that choose
- * between them. Both writes are the ordinary PATCH docs/projection.md
- * describes: "Use <Provider>’s" writes that value, which makes it yours;
- * "Stop overriding" patches the property to null, so the same write refills
- * it from the live sources and it follows them again. Each asks first. */
+ * opens the detail under the row: who set it and whether it is pinned, the
+ * source records behind it, what each source record says instead, and the
+ * writes that choose between them (decision 0284). "Use <Provider>’s" writes
+ * that value, which pins it as yours; "Stop overriding" releases the
+ * property, so sync picks it again among the source records; "Keep this
+ * value" pins a value sync wrote. Each asks first. */
 
 import { useState, type ReactNode } from "react"
 import { Undo2Icon } from "lucide-react"
@@ -14,8 +14,8 @@ import { Undo2Icon } from "lucide-react"
 import { ago } from "./dates"
 import { DeclaredValue } from "./property-value"
 import { type SheetRow } from "./sheet-rows"
-import { useRecordPatch, writeError } from "./use-record-patch"
-import { ActorMark, ActorRef } from "@/components/identity/actor-ref"
+import { useMarkAction, useRecordPatch, writeError } from "./use-record-patch"
+import { ActorRef } from "@/components/identity/actor-ref"
 import { IdText } from "@/components/identity/id-text"
 import { IdentityHoverCard } from "@/components/identity/identity-hover-card"
 import { OriginMark } from "@/components/identity/origin-mark"
@@ -25,67 +25,75 @@ import { RecordRef } from "@/components/identity/record-ref"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
-import { actorIdentity } from "@/lib/actor-identity"
+import { providerOfKind } from "@/lib/actor-identity"
 import type {
   PropertyAlternative,
-  PropertyMeta,
+  PropertyMark,
   SubstrateRecord,
 } from "@/lib/api/types"
 import {
   differsLabel,
   holderOf,
+  offerSource,
+  setByOf,
   sourceName,
-  tierExplanation,
-  tierLabel,
+  standingExplanation,
+  standingLabel,
+  standingOf,
   unionMembers,
-  type Tier,
+  type Standing,
 } from "@/lib/provenance"
 import { splitRecordPath } from "@/lib/record-path"
 import { typeLabel, type PropSpec } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 import { scalarText } from "@/lib/format"
 import { lowerFirst } from "@/lib/kind-names"
-import { originOfActor } from "@/lib/origin"
+import { originOfActor, originOfKind } from "@/lib/origin"
 
-const TIER_TONES: Record<Tier, string> = {
-  owner: "bg-primary-soft text-primary-text",
-  machine: "bg-ok-soft text-ok",
-  bundle: "bg-warn-soft text-warning",
+const STANDING_TONES: Record<Standing, string> = {
+  yours: "bg-primary-soft text-primary-text",
+  synced: "bg-ok-soft text-ok",
+  agent: "bg-warn-soft text-warning",
+  provider: "bg-warn-soft text-warning",
+  app: "bg-warn-soft text-warning",
+  pinned: "bg-warn-soft text-warning",
+  unpinned: "bg-hover text-muted-foreground",
+  none: "bg-hover text-muted-foreground",
 }
 
-export function TierTag({
-  tier,
-  actor,
-}: {
-  tier: Tier | undefined
-  actor?: string
-}) {
+export function StandingTag({ mark }: { mark: PropertyMark | undefined }) {
   const [technical] = useTechnicalDetails()
+  const standing = standingOf(mark)
   return (
     <span
-      data-tier={tier ?? "none"}
+      data-standing={standing}
       className={cn(
         "rounded-[4px] px-[7px] text-[11.5px] leading-[19px] font-medium whitespace-nowrap",
-        tier ? TIER_TONES[tier] : "bg-hover text-muted-foreground"
+        STANDING_TONES[standing]
       )}
     >
-      {tierLabel(tier, actor)}
-      {technical && tier ? ` · ${tier}` : ""}
+      {standingLabel(standing)}
+      {technical && mark ? ` · ${mark.pinned ? "pinned" : "not pinned"}` : ""}
     </span>
   )
 }
 
 /** The chip's mark and words. */
-function Holding({ meta }: { meta: PropertyMeta }) {
-  const holder = holderOf(meta)
+function Holding({ mark }: { mark: PropertyMark }) {
+  const holder = holderOf(mark)
   if (!holder) return null
+  const by = setByOf(mark)
+  const source = mark.derivedFrom?.[0]?.ref
+  const origin = by
+    ? originOfActor(by)
+    : originOfKind(splitRecordPath(source ?? "")?.kind ?? "")
   return (
     <span
       data-slot="owner-chip"
       data-holder={holder.mark}
       className="inline-flex h-[22px] items-center rounded-full border border-border-strong bg-background pr-2 pl-[3px] text-xs whitespace-nowrap text-muted-foreground group-aria-expanded/own:border-primary group-aria-expanded/own:text-primary-text"
     >
-      <OriginMark origin={originOfActor(meta.manager!)} short />
+      <OriginMark origin={origin} short />
     </span>
   )
 }
@@ -98,23 +106,23 @@ export interface Through {
   label: string
 }
 
-/** One sentence: who holds it and since when, through which mapping, and
+/** One sentence: who set it and since when, through which mapping, and
  * what the sources say. */
 function summaryOf(
-  meta: PropertyMeta,
+  mark: PropertyMark,
   spec: PropSpec,
   through?: Through
 ): string {
-  const holder = holderOf(meta)
+  const holder = holderOf(mark)
   const who =
     holder?.mark === "you"
       ? "You set this"
-      : meta.tier === "bundle"
+      : setByOf(mark)
         ? `${holder?.label} set this`
         : `Kept up to date by ${holder?.label ?? "a provider"}`
-  const when = meta.updatedAt ? ` · ${ago(meta.updatedAt)}` : ""
-  const alts = (meta.alternatives ?? [])
-    .map((a) => `${sourceName(a.actor)} says “${plain(a.value, spec)}”`)
+  const when = mark.setAt ? ` · ${ago(mark.setAt)}` : ""
+  const alts = (mark.alternatives ?? [])
+    .map((a) => `${sourceName(offerSource(a))} says “${plain(a.value, spec)}”`)
     .join(". ")
   const via = through ? ` Linked through ${through.label}.` : ""
   return `${who}${when}.${via}${alts ? ` ${alts}.` : ""}`
@@ -140,9 +148,9 @@ export function OwnershipChip({
   onToggle: () => void
   through?: Through
 }) {
-  const meta = row.meta
-  if (!meta?.manager) return null
-  const differs = differsLabel(meta)
+  const mark = row.meta
+  if (!mark || !holderOf(mark)) return null
+  const differs = differsLabel(mark)
   return (
     <IdentityHoverCard
       trigger={
@@ -162,10 +170,10 @@ export function OwnershipChip({
         <div className="flex flex-col">
           <div className="flex flex-col gap-1.5 px-3 pt-3 pb-2.5">
             <div>
-              <TierTag tier={meta.tier} actor={meta.manager} />
+              <StandingTag mark={mark} />
             </div>
             <div className="text-muted-foreground">
-              {summaryOf(meta, row.spec, through)}
+              {summaryOf(mark, row.spec, through)}
             </div>
           </div>
           <div className="border-t bg-panel px-3 py-[7px] text-[11.5px] text-faint">
@@ -179,7 +187,7 @@ export function OwnershipChip({
           {differs}
         </Pill>
       )}
-      <Holding meta={meta} />
+      <Holding mark={mark} />
     </IdentityHoverCard>
   )
 }
@@ -229,6 +237,7 @@ function SubHead({ children }: { children: ReactNode }) {
 type Pending = { base: number } & (
   | { kind: "use"; alternative: PropertyAlternative }
   | { kind: "release"; follow: string }
+  | { kind: "pin" }
 )
 
 export function OwnershipDetail({
@@ -248,49 +257,62 @@ export function OwnershipDetail({
   onEdit?: () => void
 }) {
   const [technical] = useTechnicalDetails()
-  const meta = row.meta ?? {}
-  const holder = holderOf(meta)
-  const alts = meta.alternatives ?? []
-  const union = unionMembers(row.value, meta)
+  const mark: PropertyMark = row.meta ?? {}
+  const standing = standingOf(row.meta)
+  const holder = holderOf(mark)
+  const by = setByOf(mark)
+  const alts = mark.alternatives ?? []
+  const union = unionMembers(row.value, mark)
   const [pending, setPending] = useState<Pending | null>(null)
   const patch = useRecordPatch(record, pending?.base)
+  const action = useMarkAction(record, pending?.base)
   const [failed, setFailed] = useState<string>()
   const who = holder?.label ?? "Someone"
+  const when = mark.setAt && <span title={mark.setAt}>{ago(mark.setAt)}</span>
 
   let head: ReactNode
-  if (meta.tier === "owner" || holder?.mark === "you") {
+  if (standing === "yours") {
     head = (
       <Line>
-        <TierTag tier={meta.tier} actor={meta.manager} />
+        <StandingTag mark={mark} />
         <b className="font-medium text-foreground">{who} set this</b>
-        {meta.updatedAt && (
-          <span title={meta.updatedAt}>{ago(meta.updatedAt)}</span>
-        )}
+        {when}
       </Line>
     )
-  } else if (meta.tier === "bundle") {
+  } else if (mark.pinned || by) {
     head = (
       <Line>
-        <TierTag tier={meta.tier} actor={meta.manager} />
+        <StandingTag mark={mark} />
         <b className="font-medium text-foreground">Set by {who}</b>
-        {meta.updatedAt && (
-          <span title={meta.updatedAt}>{ago(meta.updatedAt)}</span>
-        )}
+        {when}
       </Line>
     )
   } else {
     head = (
       <Line>
-        <TierTag tier={meta.tier} actor={meta.manager} />
+        <StandingTag mark={mark} />
         <b className="font-medium text-foreground">Kept up to date by {who}</b>
-        {meta.updatedAt && (
-          <span title={meta.updatedAt}>last synced {ago(meta.updatedAt)}</span>
+        {mark.setAt && (
+          <span title={mark.setAt}>last synced {ago(mark.setAt)}</span>
         )}
       </Line>
     )
   }
 
-  const follow = alts.length ? sourceName(alts[0].actor) : ""
+  // Whom a release follows: a source offering something else, or else one
+  // that offers the pinned value itself; none where nothing offers one.
+  const followed = alts.length
+    ? offerSource(alts[0])
+    : mark.derivedFrom?.[0]?.ref
+  const follow = followed ? sourceName(followed) : ""
+  const close = () => {
+    setPending(null)
+    setFailed(undefined)
+  }
+  const done = {
+    onSuccess: close,
+    onError: (error: Error) => setFailed(writeError(error)),
+  }
 
   return (
     <div
@@ -298,17 +320,19 @@ export function OwnershipDetail({
       className="col-span-full my-0.5 mb-3 flex min-w-0 flex-col gap-2.5 rounded-lg border bg-panel px-3.5 py-3 text-[13px]"
     >
       {head}
-      {meta.tier === "machine" && meta.source && (
+      {(mark.derivedFrom ?? []).length > 0 && (
         <Line>
           <span>From</span>
-          <Source path={meta.source} />
+          {(mark.derivedFrom ?? []).map((l) => (
+            <Source key={l.ref} path={l.ref} />
+          ))}
         </Line>
       )}
       {through && <ThroughLine through={through} />}
       <div className="text-[12.5px] text-faint">
         {readOnly
           ? "This is a copy of what the provider has. Change it there and it updates here."
-          : tierExplanation(meta.tier)}
+          : standingExplanation(standing)}
       </div>
       {union.some((u) => u.sources.length > 0) && (
         <>
@@ -339,11 +363,14 @@ export function OwnershipDetail({
           <SubHead>Other versions</SubHead>
           <div className="flex flex-col">
             {alts.map((alt, i) => {
-              const identity = actorIdentity(alt.actor)
-              const name = sourceName(alt.actor)
+              const source = offerSource(alt)
+              const provider = providerOfKind(
+                splitRecordPath(source)?.kind ?? ""
+              )
+              const name = sourceName(source)
               return (
                 <div
-                  key={`${alt.actor} ${alt.source ?? i}`}
+                  key={source || i}
                   data-alternative
                   className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-t py-2"
                 >
@@ -351,22 +378,15 @@ export function OwnershipDetail({
                     <AltValue value={alt.value} spec={row.spec} />
                   </span>
                   <span className="flex flex-wrap items-center gap-1.5 text-xs text-faint">
-                    {identity.provider ? (
-                      <ProviderBadge provider={identity.provider} size="xs" />
-                    ) : (
-                      <ActorMark identity={identity} size="xs" />
+                    {provider && (
+                      <ProviderBadge provider={provider} size="xs" />
                     )}
                     {name} has this
-                    {alt.source && (
+                    {source && (
                       <>
                         <span>· from</span>
-                        <Source path={alt.source} />
+                        <Source path={source} />
                       </>
-                    )}
-                    {technical && (
-                      <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">
-                        · {alt.actor}
-                      </span>
                     )}
                     <span title={alt.updatedAt}>· {ago(alt.updatedAt)}</span>
                   </span>
@@ -393,40 +413,42 @@ export function OwnershipDetail({
           </div>
         </>
       )}
-      {(!readOnly &&
-        ((meta.tier === "owner" && alts.length > 0) ||
-          meta.tier === "bundle")) ||
-      technical ? (
+      {(!readOnly && (mark.pinned || standing !== "none")) || technical ? (
         <div className="flex flex-wrap items-center gap-2 border-t pt-2.5">
-          {!readOnly && meta.tier === "owner" && alts.length > 0 && (
+          {!readOnly && mark.pinned && (
             <Button
               size="sm"
               variant="outline"
               onClick={() =>
-                setPending({
-                  kind: "release",
-                  follow,
-                  base: record.version,
-                })
+                setPending({ kind: "release", follow, base: record.version })
               }
             >
               <Undo2Icon />
-              Stop overriding · follow {follow}
+              {alts.length > 0
+                ? `Stop overriding · follow ${follow}`
+                : follow
+                  ? `Stop keeping · follow ${follow}`
+                  : "Stop keeping this value"}
             </Button>
           )}
-          {!readOnly && meta.tier === "bundle" && onEdit && (
+          {!readOnly && !mark.pinned && standing !== "none" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPending({ kind: "pin", base: record.version })}
+            >
+              Keep this value
+            </Button>
+          )}
+          {!readOnly && mark.pinned && standing !== "yours" && onEdit && (
             <Button size="sm" variant="outline" onClick={onEdit}>
               Use my own value
             </Button>
           )}
           {technical && (
             <span className="ml-auto flex flex-wrap items-center gap-1 font-mono text-[11.5px] text-faint">
-              {row.name} · {typeLabel(row.spec)} · manager{" "}
-              {meta.manager ? (
-                <ActorRef actor={meta.manager} link={false} />
-              ) : (
-                "none"
-              )}
+              {row.name} · {typeLabel(row.spec)} · set by{" "}
+              {by ? <ActorRef actor={by} link={false} /> : "sync"}
             </span>
           )}
         </div>
@@ -436,51 +458,62 @@ export function OwnershipDetail({
         <ConfirmDialog
           title={
             pending.kind === "use"
-              ? `Use ${sourceName(pending.alternative.actor)}’s ${lowerFirst(row.spec.label)}?`
-              : `Follow ${pending.follow} for ${lowerFirst(row.spec.label)}?`
+              ? `Use ${sourceName(offerSource(pending.alternative))}’s ${lowerFirst(row.spec.label)}?`
+              : pending.kind === "release"
+                ? pending.follow
+                  ? `Follow ${pending.follow} for ${lowerFirst(row.spec.label)}?`
+                  : `Stop keeping this ${lowerFirst(row.spec.label)}?`
+                : `Keep this ${lowerFirst(row.spec.label)}?`
           }
           consequence={
             pending.kind === "use" ? (
               <>
                 “{plain(pending.alternative.value, row.spec)}” replaces the
                 current value and becomes yours. Later changes from{" "}
-                {sourceName(pending.alternative.actor)} show up here as another
-                version but won’t replace it, until you choose to follow it
-                again.
+                {sourceName(offerSource(pending.alternative))} show up here as
+                another version but won’t replace it, until you choose to follow
+                it again.
+              </>
+            ) : pending.kind === "release" && pending.follow ? (
+              <>
+                Your value is no longer kept. {row.spec.label} takes what{" "}
+                {pending.follow} has now, and changes whenever it changes there.
+              </>
+            ) : pending.kind === "release" ? (
+              <>
+                Your value is no longer kept, so a sync may replace it. No
+                source offers one now: where a sync fills{" "}
+                {lowerFirst(row.spec.label)}, it is cleared until one does,
+                unless it is required.
               </>
             ) : (
               <>
-                Your value is removed. {row.spec.label} takes what{" "}
-                {pending.follow} has now, and changes whenever it changes there.
+                Syncs leave “{plain(row.value, row.spec)}” as it is. What they
+                offer shows up here as another version, until you choose to
+                follow it again.
               </>
             )
           }
           confirm={
             pending.kind === "use"
-              ? `Use ${sourceName(pending.alternative.actor)}’s`
-              : `Follow ${pending.follow}`
+              ? `Use ${sourceName(offerSource(pending.alternative))}’s`
+              : pending.kind === "release"
+                ? pending.follow
+                  ? `Follow ${pending.follow}`
+                  : "Stop keeping"
+                : "Keep this value"
           }
-          pending={patch.isPending}
+          pending={patch.isPending || action.isPending}
           error={failed}
           onConfirm={() =>
-            patch.mutate(
-              {
-                [row.name]:
-                  pending.kind === "use" ? pending.alternative.value : null,
-              },
-              {
-                onSuccess: () => {
-                  setPending(null)
-                  setFailed(undefined)
-                },
-                onError: (error) => setFailed(writeError(error)),
-              }
-            )
+            pending.kind === "use"
+              ? patch.mutate({ [row.name]: pending.alternative.value }, done)
+              : action.mutate(
+                  { action: pending.kind, property: row.name },
+                  done
+                )
           }
-          onClose={() => {
-            setPending(null)
-            setFailed(undefined)
-          }}
+          onClose={close}
         />
       )}
     </div>

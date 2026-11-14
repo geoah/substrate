@@ -75,6 +75,7 @@ struct SettingsRowView: View {
                 HStack {
                     Text(row.label).foregroundStyle(Color.primary)
                     Spacer()
+                    if let detail = row.detail { Text(detail).foregroundStyle(.secondary) }
                     Image(systemName: DesignTokens.Control.disclosure.systemName).font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
                 }
             }

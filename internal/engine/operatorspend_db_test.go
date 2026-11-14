@@ -336,7 +336,7 @@ func TestOperatorTitleCallGoesThroughTheGateAndKeepsItsCeilingWithoutUsage(t *te
 	ds.skipThreadTitles = false
 	ds.mu.Unlock()
 	op.script("chat", fakeTurn{content: "hello from the operator"}, fakeTurn{content: "Greeting", noUsage: true})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	ledger := waitLedger(t, ds, 2)
@@ -489,7 +489,7 @@ func TestOperatorEmbeddingsStampNeverMatchesARowNamedOperator(t *testing.T) {
 	if err := enginetest.InstallShelf(ctx, ds); err != nil {
 		t.Fatal(err)
 	}
-	book, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	book, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Atlas", "description": "saxophone almanac chapter"},
 	})
 	if err != nil {
@@ -526,7 +526,7 @@ func TestOperatorEmbeddingsStampNeverMatchesARowNamedOperator(t *testing.T) {
 	}
 
 	// The person's own row named `operator` takes the job on the same model.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "operator", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "operator", Properties: map[string]any{
 		"wire": "openai", "baseURL": rowEmb.srv.URL, "apiKey": "row-embed-key-fixture", "embedModel": "text-embedding-3-small",
 	}}); err != nil {
 		t.Fatal(err)

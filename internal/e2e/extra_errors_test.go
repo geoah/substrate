@@ -425,7 +425,7 @@ func xeCodeCases() []xeCodeCase {
 			}
 			c.paceAuth()
 			status, raw := c.doAs("", http.MethodPost, "/login",
-				map[string]any{"repository": c.r.repository, "password": c.r.password}, nil)
+				map[string]any{"identity": c.r.repository, "password": c.r.password}, nil)
 			xeRequireError(c, "a right password with no code", status, raw, http.StatusUnauthorized, "totp_required")
 		},
 	}, {
@@ -434,7 +434,7 @@ func xeCodeCases() []xeCodeCase {
 		run: func(c *C) {
 			// A repository name of this case's own: its bucket is untouched,
 			// so the first attempt spends it and the second is the 429.
-			attempt, err := json.Marshal(map[string]any{"repository": xaName("xerate"), "password": "not-the-password"})
+			attempt, err := json.Marshal(map[string]any{"identity": xaName("xerate"), "password": "not-the-password"})
 			c.requiref(err == nil, "marshal the attempt: %v", err)
 			headers := map[string]string{"Content-Type": "application/json"}
 			xeRaw(c, c.r.hc, "", http.MethodPost, "/login", strings.NewReader(string(attempt)), -1, headers)

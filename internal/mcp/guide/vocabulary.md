@@ -4,7 +4,7 @@ How to shape the owner's vocabulary: packages, kinds, every property type, trait
 
 ## Where your kinds go
 
-- The owner's authority is on `overview`, or read it: `query` with `kind` `substrate.reamde.dev/core/repository`, its `authority` property. A new package goes only under that authority.
+- The owner's packages live under `~`, the repository's local namespace (`~/wine`, `~/wine/bottle`, `authority` `~`), and a new package goes only there. The repository's full name is accepted for `~`; answers say `~`.
 - A package is one lowercase word for an area of life (`garden`, `wine`); a kind is one lowercase word for one thing in it (`plant`, `bottle`).
 - Read first: `kinds`, then `describe_kind` on every kind you might extend or point at. Extend a kind that fits with optional properties rather than declare a near-duplicate; a new package is for a new area.
 - Writable: the owner's own packages and imported samples. Refused: the seeded `substrate.reamde.dev/core`, `/llm`, `/console`, `/observations`, and every published package (an installed provider or catalogue).
@@ -15,11 +15,11 @@ How to shape the owner's vocabulary: packages, kinds, every property type, trait
 
 ```json
 [{"kind": "substrate.reamde.dev/core/package",
-  "metadata": {"id": "ada.example.com/wine"},
-  "data": {"authority": "ada.example.com", "package": "wine"}},
+  "metadata": {"id": "~/wine"},
+  "data": {"authority": "~", "package": "wine"}},
  {"kind": "substrate.reamde.dev/core/kind",
-  "metadata": {"id": "ada.example.com/wine/bottle"},
-  "data": {"authority": "ada.example.com", "package": "wine",
+  "metadata": {"id": "~/wine/bottle"},
+  "data": {"authority": "~", "package": "wine",
    "description": "A bottle of wine the owner has or had.",
    "names": {"singular": "bottle"},
    "displayTemplate": "{name}",

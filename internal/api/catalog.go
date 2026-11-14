@@ -24,9 +24,8 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			writeSubstrateError(w, r, err)
 			return
 		}
-		home := homeAuthority(r.Context())
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b, home)))
+			items = append(items, h.catalogItemFor(r, b, installed.copyOf(b)))
 		}
 		var accounts map[string]bool
 		for _, id := range installed.ids {
@@ -51,24 +50,13 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 				}
 				st := installed.byID[id]
 				from, _ := row.Properties["publishedFrom"].(string)
-				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, Tier: substrate.TierPublished, Provider: accounts[id], Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{resolveErr.Error()}}})
+				items = append(items, substrate.CatalogItem{CatalogBundle: substrate.CatalogBundle{ID: id, Name: st.Name, Authority: st.Authority, Package: st.Package, KeptBy: substrate.KeptByPublisher, Provider: accounts[id], Publisher: &substrate.AuthorizationPackagePublisher{Authority: st.Authority, DocumentURL: from, FromFile: strings.HasPrefix(from, "file:")}}, Installed: true, Upgrade: &substrate.BundleUpgrade{Blockers: []string{resolveErr.Error()}}})
 				continue
 			}
 			items = append(items, h.catalogItemFor(r, b, installed.byID[id]))
 		}
 	}
 	writeJSON(w, http.StatusOK, substrate.Listed(items))
-}
-
-// homeAuthority is the authority this repository owns, which is where a SAMPLE lands
-// (decision records 0046 and 0048). A dataset that names none answers "", and
-// a sample then reads as its shipped id, which is never installed.
-func homeAuthority(ctx context.Context) string {
-	ds := DatasetFrom(ctx)
-	if ds == nil {
-		return ""
-	}
-	return ds.Repository().Authority
 }
 
 // getCatalogItem is one shipped bundle's detail — the closure it installs
@@ -89,7 +77,7 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, h.catalogItemFor(r, b, installed.copyOf(b, homeAuthority(r.Context()))))
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r, b, installed.copyOf(b)))
 }
 
 // installedSet is every bundle installed in this repository, read once per
@@ -103,18 +91,18 @@ type installedSet struct {
 
 // copyOf is the installed bundle that IS catalog entry b in this repository,
 // or nil. A copy that carries an origin is matched on it: two authorities may
-// each publish a sample of one package word, and both land under the
-// repository's authority as `<home>/<package>`, so the landed id alone would
+// each publish a sample of one package word, and both land in the
+// repository's local namespace as `~/<package>`, so the landed id alone would
 // read both entries as installed after either import and hand both the one
 // copy's provenance. Only a copy stamped before the origin existed, and a
 // provider (which is never stamped), fall back to the id lookup HeldID does.
-func (s installedSet) copyOf(b *catalog.Bundle, home string) *substrate.BundleStatus {
+func (s installedSet) copyOf(b *catalog.Bundle) *substrate.BundleStatus {
 	for _, id := range s.ids {
 		if st := s.byID[id]; st.Origin == b.ID {
 			return st
 		}
 	}
-	st := s.byID[b.HeldID(s.held, home)]
+	st := s.byID[b.HeldID(s.held)]
 	if st == nil || st.Origin != "" {
 		return nil
 	}
@@ -190,45 +178,23 @@ func (h *handler) catalogItemFor(r *http.Request, b *catalog.Bundle, held *subst
 // that live rows block it (web/console/src/lib/bundles.ts).
 const failedPreviewBlocker = "the upgrade preview failed; see the server log"
 
-// postCatalogInstall applies a shipped bundle's closure into the caller's
-// repository through the same vocabulary apply admission path an explicit apply uses —
-// owner-only, atomic, refuse-breakage, idempotent (re-install is the bundle's
-// own upgrade semantics). The response is the installed bundle's computed
-// status.
-func (h *handler) postCatalogInstall(w http.ResponseWriter, r *http.Request) {
-	h.takeCatalogBundle(w, r, (*catalog.Catalog).InstallConfirmed, false)
-}
-
-// postCatalogImport is the SAMPLE door: the same admission over a closure
-// rehomed onto this repository's own authority first, so what lands is the
-// repository's own vocabulary. A PUBLISHED id is refused here, naming install.
-func (h *handler) postCatalogImport(w http.ResponseWriter, r *http.Request) {
-	h.takeCatalogBundle(w, r, (*catalog.Catalog).ImportConfirmed, true)
-}
-
-// catalogTakeRequest is the optional body of the two doors: the caller's
-// consent to a lossy conversion plan, bound to the preview it saw (decision
-// 0067). No body is the same as no confirmation, so a lossless upgrade is the
-// bare POST it always was.
-type catalogTakeRequest struct {
-	Expect  *catalog.PublishedCandidate  `json:"expect,omitempty"`
-	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
-}
-
-// takeCatalogBundle runs one of the two doors and answers with the status of
-// the bundle as it LANDED. `rehomed` says which id that is: the import rewrote
-// the closure onto this repository's authority, so its bundle record is
-// `<authority>/<package>`, while an install landed the id the request named.
-// Asking for the wrong one is a 404 on a write that succeeded.
-func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
-	take func(*catalog.Catalog, context.Context, substrate.Actor, string, substrate.Dataset, *substrate.ConversionConfirm) (*catalog.Bundle, []substrate.SuggestedMapping, error),
-	rehomed bool,
-) {
+// postCatalogAdd takes one catalog package into the caller's repository
+// through the same vocabulary apply admission path an explicit apply uses:
+// owner-only, atomic, refuse-breakage, idempotent (adding again is the
+// package's own upgrade). Who keeps the package decides where it lands
+// (decision record 0258): one its publisher keeps lands verbatim under the
+// authority that publishes it; one the repository keeps, a sample, is first
+// rehomed onto this repository's own authority, so what lands is the
+// repository's own vocabulary. Every sample ships in the binary, so the
+// binary's closure decides; anything else is its publisher's. The response
+// is the status of the bundle as it LANDED: a sample's is
+// `<authority>/<package>`, not the id the request named.
+func (h *handler) postCatalogAdd(w http.ResponseWriter, r *http.Request) {
 	if h.catalog == nil {
 		writeError(w, http.StatusNotFound, codeNotFound, "no catalog is shipped")
 		return
 	}
-	var req catalogTakeRequest
+	var req catalogAddRequest
 	raw, ok := readBody(w, r, jsonBody)
 	if !ok {
 		return
@@ -240,13 +206,21 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		}
 	}
 	ctx := r.Context()
+	id := pathParam(r, "id")
+	shipped, _ := h.catalog.ByID(id)
+	copied := shipped != nil && shipped.KeptBy == substrate.KeptByRepository
+	if copied && req.Expect != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"expect: "+id+" is a sample, which no publisher keeps, so there is no published version to expect")
+		return
+	}
 	var b *catalog.Bundle
 	var suggested []substrate.SuggestedMapping
 	var err error
-	if !rehomed {
-		b, suggested, err = h.catalog.InstallReviewed(ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm, req.Expect)
+	if copied {
+		b, suggested, err = h.catalog.ImportConfirmed(ctx, ActorFrom(ctx), id, DatasetFrom(ctx), req.Confirm)
 	} else {
-		b, suggested, err = take(h.catalog, ctx, ActorFrom(ctx), pathParam(r, "id"), DatasetFrom(ctx), req.Confirm)
+		b, suggested, err = h.catalog.InstallReviewed(ctx, ActorFrom(ctx), id, DatasetFrom(ctx), req.Confirm, req.Expect)
 	}
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotPublished) {
@@ -258,8 +232,8 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	landed := b.ID
-	if rehomed {
-		landed = b.LandedID(homeAuthority(ctx))
+	if copied {
+		landed = b.LandedID()
 	}
 	// The response is the landed bundle's computed status, the one schema
 	// this endpoint promises.
@@ -276,7 +250,16 @@ func (h *handler) takeCatalogBundle(w http.ResponseWriter, r *http.Request,
 	writeJSON(w, http.StatusOK, bundleTaken{BundleStatus: st, SuggestedMappings: suggested, Addons: b.AddonResults})
 }
 
-// bundleTaken is what the two doors answer: the landed bundle's computed
+// catalogAddRequest is the add route's optional body: the caller's consent
+// to a lossy conversion plan, bound to the preview it saw (decision 0067), and
+// for a published package the version and digest the reader reviewed. No body
+// is the same as no confirmation, so a lossless upgrade is the bare POST.
+type catalogAddRequest struct {
+	Expect  *catalog.PublishedCandidate  `json:"expect,omitempty"`
+	Confirm *substrate.ConversionConfirm `json:"confirm,omitempty"`
+}
+
+// bundleTaken is what the add route answers: the landed bundle's computed
 // status, plus the state of each suggested mapping the closure carries. A
 // closure with none marshals exactly as the status alone did.
 type bundleTaken struct {

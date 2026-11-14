@@ -26,7 +26,6 @@ type applySpec struct {
 	op       substrate.Op
 
 	title *string
-	body  *string
 
 	props       map[string]any
 	labels      map[string]any
@@ -121,11 +120,11 @@ func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in sub
 	// request, so no ceiling travels into it.
 	if ty, err := ds.resolveType(in.Kind); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
-			// A declaration write is admission, not one of the operations
-			// the key store covers (idempotency.go): refused rather than
-			// ignored, so a client never reads a silent no-op as a promise.
-			if substrate.IdempotencyKeyFrom(ctx) != "" {
-				return nil, fmt.Errorf("%w: Idempotency-Key is not accepted on a vocabulary kind; a declaration is addressed by its own id", substrate.ErrValidation)
+			if err := refuseKeyOnDeclaration(ctx); err != nil {
+				return nil, err
+			}
+			if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
+				return nil, err
 			}
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
@@ -138,25 +137,54 @@ func (ds *dataset) putInternal(ctx context.Context, actor substrate.Actor, in su
 }
 
 func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	run := func(t *txn) (*substrate.Record, error) {
+	op := idemCreate
+	if in.ID != "" {
+		op = idemPut
+	}
+	return ds.recordTx(ctx, actor, internal, op, in, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		return t.put(in)
+	})
+}
+
+// recordTx runs a write of one record. An internal write (the seed, a token
+// mint) runs on whatever context reached it and never consults a request's
+// key; every other one runs through idempotentRecordTx under op, keyed by
+// input.
+func (ds *dataset) recordTx(ctx context.Context, actor substrate.Actor, internal bool, op idempotentOp, input any, fn func(*txn) (*substrate.Record, error)) (*substrate.Record, error) {
+	if !internal {
+		return ds.idempotentRecordTx(ctx, actor, op, input, fn)
 	}
-	if internal {
-		// An internal put (the seed, a token mint) runs on whatever context
-		// reached it and never consults a request's key.
-		var out *substrate.Record
-		err := ds.inTx(ctx, actor, true, func(t *txn) error {
-			e, err := run(t)
-			out = e
-			return err
-		})
-		if err != nil {
-			return nil, err
-		}
-		return out, nil
+	var out *substrate.Record
+	err := ds.inTx(ctx, actor, true, func(t *txn) error {
+		e, err := fn(t)
+		out = e
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
-	return ds.idempotentRecordTx(ctx, actor, idemCreate, in, run)
+	return out, nil
+}
+
+// keyedAddress is what a patch or a delete is keyed by: the record it
+// addresses and the request's own input, so the same key sent at another
+// record is another request.
+type keyedAddress struct {
+	Kind  string `json:"kind"`
+	ID    string `json:"id"`
+	Input any    `json:"input"`
+}
+
+// refuseKeyOnDeclaration refuses an Idempotency-Key on a write of a
+// vocabulary kind: a declaration write is admission, not one of the
+// operations the key store covers (idempotency.go), so the key is refused
+// rather than ignored, and a client never reads a silent no-op as a promise.
+func refuseKeyOnDeclaration(ctx context.Context) error {
+	if substrate.IdempotencyKeyFrom(ctx) != "" {
+		return fmt.Errorf("%w: Idempotency-Key is not accepted on a vocabulary kind; a declaration is addressed by its own id", substrate.ErrValidation)
+	}
+	return nil
 }
 
 func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
@@ -196,11 +224,24 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err := t.forbidSystemKind(ty, substrate.OpPut); err != nil {
 		return nil, err
 	}
+	if err := t.authorizeWrite(ty); err != nil {
+		return nil, err
+	}
 	// Global lock order: the registry-dep/subject locks this type needs come
 	// before its own record lock.
 	if err := t.preRecordLocks(ty); err != nil {
 		return nil, err
 	}
+	// Where a record's id or a property names a kind, a package or a
+	// callable, the repository's full name is another spelling of `~`
+	// (decision record 0259): it is stored the way the conversion leaves
+	// history (localizeRecord). Nothing else a writer sent is read as a name.
+	in.ID = vocabulary.LocalizeID(ty.Identity, in.ID, t.names()...)
+	localized, lerr := localizeRecord(ty.Identity, in.Properties, t.names()...)
+	if lerr != nil {
+		return nil, lerr
+	}
+	in.Properties = localized
 	// A supplied id is the writer's OWN key, not an address to resolve: a
 	// former id (of this type — trails are per-type) is refused outright
 	// (conflict), so nothing here canonicalizes. Reads, patches, links and
@@ -259,7 +300,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 
 	return &applySpec{
 		ty: ty, id: id, existing: existing, op: substrate.OpPut,
-		title: hot.title, body: hot.body,
+		title: hot.title,
 		props: props, labels: labels, annotations: in.Annotations,
 		at: hot.at, endsAt: hot.endsAt, dueAt: hot.dueAt,
 		clearHot: hot.clear,
@@ -304,6 +345,12 @@ func (t *txn) checkID(typ, id string) error {
 	// snapshot and then land the write on a tombstoned loser.
 	if err := t.lockRecord(eref{Kind: typ, ID: id}); err != nil {
 		return err
+	}
+	// A kind move carries a merge's loser, a held tombstone, under its own
+	// id beside the record it was merged into, whose trail may already name
+	// it under the new kind, as both stood under the old one (move.go).
+	if t.movingRecords {
+		return nil
 	}
 	former, err := t.formerTarget(typ, id)
 	if err != nil {
@@ -364,7 +411,7 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 	if strings.HasPrefix(string(t.actor), substrate.AgentActorPrefix) {
 		if fn := t.effectBy; fn != nil {
 			return fmt.Errorf("%w: %q is not a minted id: function %s runs as %s's tool and writes as the agent, so its new %s takes a minted id. The function has to derive it with host.ids.minted(<key>), which names the same record for the same key",
-				substrate.ErrValidation, id, fn.Identity(), t.actor, ty.Identity)
+				substrate.ErrValidation, id, fn.Identity(), handWords(t.actor), ty.Identity)
 		}
 		return fmt.Errorf("%w: %q is not a minted id: a new %s takes the id the substrate assigns. Leave the id out and the substrate mints one",
 			substrate.ErrValidation, id, ty.Identity)
@@ -380,7 +427,6 @@ func (t *txn) createIDRefusal(ty *vocabulary.Kind, id string) error {
 // other property.
 type hotProps struct {
 	title  *string
-	body   *string
 	at     *time.Time
 	endsAt *time.Time
 	dueAt  *time.Time
@@ -396,7 +442,7 @@ func (h *hotProps) clearing(name string) {
 
 // mentions reports whether the write named any hot property at all.
 func (h *hotProps) mentions() bool {
-	return h.title != nil || h.body != nil || h.at != nil || h.endsAt != nil ||
+	return h.title != nil || h.at != nil || h.endsAt != nil ||
 		h.dueAt != nil || len(h.clear) > 0
 }
 
@@ -455,11 +501,8 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 	for _, name := range sortedKeys(in) {
 		v := in[name]
 		switch {
-		// `title` is always column-backed and never declared (ADR 0016). `body`
-		// is column-backed only when the kind DECLARES it (#68); undeclared, it
-		// falls through to the ordinary-property path, where coerceProps refuses
-		// a value as undeclared exactly like any other name.
-		case name == substrate.PropTitle, name == substrate.PropBody && declaresBody(ty):
+		// `title` is always column-backed and never declared (ADR 0016).
+		case name == substrate.PropTitle:
 			if v == nil {
 				// Null clears it; the column is NOT NULL, so empty IS cleared.
 				hot.clearing(name)
@@ -472,11 +515,7 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 			if err := storableText(s); err != nil {
 				return nil, hot, nil, fmt.Errorf("%w: properties.%s: %w", substrate.ErrValidation, name, err)
 			}
-			if name == substrate.PropTitle {
-				hot.title = &s
-			} else {
-				hot.body = &s
-			}
+			hot.title = &s
 			continue
 		case isHotTime(name) && ty.UsesHot(name):
 			if v == nil {
@@ -524,14 +563,6 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 	return props, hot, states, nil
 }
 
-// declaresBody reports whether ty declares the column-backed `body` property.
-// Only then does a write route `body` into the hot column; undeclared, `body`
-// is refused like any other name the kind does not carry (#68).
-func declaresBody(ty *vocabulary.Kind) bool {
-	_, ok := ty.Prop(substrate.PropBody)
-	return ok
-}
-
 func isHotTime(name string) bool {
 	return name == substrate.PropAt || name == substrate.PropEndsAt || name == substrate.PropDueAt
 }
@@ -559,11 +590,22 @@ func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id str
 // agent's `write` accept goes through: the ceiling reaches applyEditDiff's
 // authorizeRequestOp, which fails closed without one.
 func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, ceiling *effectCeiling) (*substrate.Record, error) {
+	// A patch of a run's own record by a person or an app continues the
+	// run: admitted where that hand could have started it (run.go).
+	if err := ds.continuation(ctx, actor, typ, id); err != nil {
+		return nil, err
+	}
 	// A patch addressed at a schema record routes through admission: the
 	// merged declaration must still close (schemawrite.go). The addressed
 	// type says which rows are schema rows; no peek by bare id exists.
 	if ty, err := ds.resolveType(typ); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
+			if err := refuseKeyOnDeclaration(ctx); err != nil {
+				return nil, err
+			}
+			if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
+				return nil, err
+			}
 			existing, err := ds.Get(ctx, ty.Identity, id)
 			if err != nil {
 				return nil, err
@@ -586,16 +628,13 @@ func (ds *dataset) patchInternal(ctx context.Context, actor substrate.Actor, typ
 }
 
 func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+	out, err := ds.recordTx(ctx, actor, internal, idemPatch, keyedAddress{Kind: typ, ID: id, Input: in}, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		ty, err := t.resolveType(typ)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		e, err := t.patch(eref{Kind: ty.Identity, ID: id}, in)
-		out = e
-		return err
+		return t.patch(eref{Kind: ty.Identity, ID: id}, in)
 	})
 	var dc *diffConflict
 	if errors.As(err, &dc) {
@@ -647,6 +686,11 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 		return nil, err
 	}
 	ref.Kind = ty.Identity
+	// As put does (decision record 0259).
+	ref.ID = vocabulary.LocalizeID(ty.Identity, ref.ID, t.names()...)
+	if in.Properties, err = localizeRecord(ty.Identity, in.Properties, t.names()...); err != nil {
+		return nil, err
+	}
 	// Global lock order: take the registry-dep/subject locks this addressed
 	// record's type needs BEFORE its own record lock (the contract "lock
 	// ordering"). A trigger patch can then never hold record|id while a
@@ -696,6 +740,9 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 			return nil, err
 		}
 	}
+	if err := t.authorizeWrite(ty); err != nil {
+		return nil, err
+	}
 	// Resolving a NOTIFYING machine is optimistic on the record's own
 	// version: a reviewer resolves the envelope they read, so a concurrent
 	// change cannot slip under the resolution. Generalized from the request
@@ -705,7 +752,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	// window and is bounded instead by the emit ceiling at acceptance.
 	for name := range states {
 		if m, ok := ty.Machines[name]; ok && machineNotifies(m) &&
-			in.IfVersion == nil && t.tier != substrate.TierBundle {
+			in.IfVersion == nil && !t.installedCode() {
 			return nil, fmt.Errorf("%w: resolving %s must carry ifVersion — the version you reviewed, so a concurrent change cannot slip under your resolution",
 				substrate.ErrConflict, name)
 		}
@@ -723,7 +770,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	// putGatedRequest), and is held the same way: the author's
 	// `confirmation: always` floor cites no policy, and a floor any agent
 	// with the right writes could accept would be no floor.
-	if ty.Identity == vocabulary.KindRecordPatchRequest && t.tier == substrate.TierBundle {
+	if ty.Identity == vocabulary.KindRecordPatchRequest && t.installedCode() {
 		if _, deciding := states[propDecision]; deciding && !t.policyDecision {
 			if _, gated := existing.Props["policy"]; gated {
 				return nil, fmt.Errorf("%w: a policy gated this request — its judge or the owner decides it, never installed code",
@@ -748,7 +795,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	}
 	return t.apply(&applySpec{
 		ty: ty, id: id, existing: existing, op: substrate.OpPatch,
-		title: hot.title, body: hot.body,
+		title: hot.title,
 		props: props, labels: labels, annotations: in.Annotations,
 		at: hot.at, endsAt: hot.endsAt, dueAt: hot.dueAt,
 		clearHot:      hot.clear,
@@ -780,12 +827,15 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 // apply is the single write path: machines, metadata, references, then one
 // no-op-suppressed row write and at most one changelog row.
 //
-// NOTHING RANKS WRITERS: any actor's direct write overwrites
-// anything, and the property-manager ledger records who last had a change
-// accepted. The one reader that defers to it is mapping RECOMPUTE (record
-// 51), which yields to any manager outside the machine tier — that is
-// recompute restraining itself, not this path guarding anyone.
+// NOTHING RANKS WRITERS: any actor's direct write overwrites anything, and
+// the property's mark records who wrote it and whether it is pinned. The one
+// reader that defers to it is mapping RECOMPUTE (record 51), which yields to
+// a pinned value — that is recompute restraining itself, not this path
+// guarding anyone (decision 0284).
 func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
+	if err := t.refuseInstalledPolicyWrite(sp.ty.Identity, sp.op); err != nil {
+		return nil, err
+	}
 	create := sp.existing == nil
 	row := sp.existing
 	// Everything this write appends to the changelog from here on — its own
@@ -844,6 +894,22 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 		}
 	}
+	// An approval likewise (approvals.go): the loop alone lands one, what
+	// runs is frozen, the owner alone decides it, and the engine alone runs
+	// and reports it.
+	if sp.ty.Identity == vocabulary.KindLLMApproval {
+		switch {
+		case create && t.movingRecords:
+		case create:
+			if err := t.admitApproval(sp); err != nil {
+				return nil, err
+			}
+		default:
+			if err := t.guardApproval(sp); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if create {
 		row = &erow{
 			ID: sp.id, Kind: sp.ty.Identity, States: map[string]string{},
@@ -854,7 +920,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	payload := map[string]any{}
 	var accepted []string
 	// deleted names the accepted properties this write removed: a delete
-	// clears the manager row rather than claiming it, and on a
+	// clears the mark rather than setting it, and on a
 	// mapped target it is the release trigger recompute refills from.
 	deleted := map[string]bool{}
 	// srcMappings is non-empty when this type is a source record: each
@@ -901,6 +967,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// A `setting`'s value must parse as the `type` it declares (settings.go):
 	// a setting is one string, so the type is the only contract there is.
 	if err := t.guardSettingWrite(sp); err != nil {
+		return nil, err
+	}
+	// A `retention` override's value holds to the declaration's grammar, one
+	// live record per kind (retention.go).
+	if err := t.guardRetentionWrite(sp); err != nil {
 		return nil, err
 	}
 	// A packed observed record's `stats` is the engine's and its `unit` is
@@ -1057,8 +1128,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// Title and body are properties with their own column; a displayTemplate
-	// overrides the writer's title entirely. The column is NOT NULL, so a
+	// Title is a property with its own column; a displayTemplate overrides
+	// the writer's title entirely. The column is NOT NULL, so a
 	// null clears to empty.
 	if sp.ty.Template == nil {
 		switch {
@@ -1073,18 +1144,6 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 		}
 	}
-	switch {
-	case sp.clearHot[substrate.PropBody]:
-		if take(substrate.PropBody, row.Body, true, "") {
-			row.Body = ""
-			deleted[substrate.PropBody] = true
-		}
-	case sp.body != nil:
-		if take(substrate.PropBody, row.Body, true, *sp.body) {
-			row.Body = *sp.body
-		}
-	}
-
 	// Trait-backed hot columns.
 	for _, hc := range []struct {
 		name string
@@ -1230,14 +1289,17 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.ds.validateTriggerRow(t.declarations(), sp.id, row.Props, !t.internal); err != nil {
 			return nil, err
 		}
+		tr, err := parseTrigger(sp.id, row.Props)
+		if err != nil {
+			return nil, fmt.Errorf("%w: trigger: %w", substrate.ErrValidation, err)
+		}
 		if !t.internal {
-			tr, err := parseTrigger(sp.id, row.Props)
-			if err != nil {
-				return nil, fmt.Errorf("%w: trigger: %w", substrate.ErrValidation, err)
-			}
 			if err := t.checkTriggerCallableRow(tr); err != nil {
 				return nil, err
 			}
+		}
+		if err := t.refuseOpenShippedWebhook(tr); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1300,16 +1362,19 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 	// External create of a bundle's config/account record is owner-only: the
 	// facility and connector never stand one up.
-	if err := t.checkBundleOwnerGate(sp.ty, create || sp.resurrect); err != nil {
+	if err := t.checkBundleOwnerGate(sp.ty); err != nil {
 		return nil, err
 	}
 	// Per-property ownership, enforced after the merged row is known: a
 	// `writer:`-restricted property (tokenRef/tokenStatus/grantedScopes →
 	// oauth; syncToken/lastSyncedAt/syncStatus → connector; email/toggles →
 	// owner) accepts a change only from its role's actor.
-	if err := t.checkPropertyOwnership(sp.ty, sp.ref(), accepted); err != nil {
+	if err := t.checkPropertyOwnership(sp.ty, accepted); err != nil {
 		return nil, err
 	}
+	// Whose rules hold the run's work, which the engine writes after the
+	// hand's own checks: no hand names it (heldto.go).
+	accepted = t.stampHeldTo(sp, row, before, create, accepted)
 
 	title, err := t.deriveTitle(sp.ty, row)
 	if err != nil {
@@ -1353,45 +1418,31 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if err := t.settleRestoreShape(sp.ref(), sp, shape); err != nil {
 			return nil, err
 		}
-		// The manager ledger, per accepted property: a delete clears the row
-		// (release — record 51), a recompute credits the WINNING SOURCE's
-		// actor at the MACHINE tier (attribution never pins — the machine's
-		// own rows stay the machine's to overwrite), and every direct write
-		// claims its own actor at the write context's tier.
-		managers := map[string]any{}
+		// The marks, per accepted property (decision 0284): a delete drops
+		// the mark, so the next recompute may refill the property; a link a
+		// mapping fills carries none, because its declaration says which
+		// mapping fills it and only merge and split move it; recompute marks
+		// what it wrote with the sources behind it and pins nothing; and every
+		// direct write marks its own hand, pinned by the hand's type.
 		for _, name := range accepted {
+			p, declared := sp.ty.Prop(name)
 			switch {
-			case deleted[name]:
-				if err := t.deleteManager(sp.ref(), name); err != nil {
+			case deleted[name], declared && p.MappedBy != "":
+				if err := t.unmark(sp.ref(), name); err != nil {
 					return nil, err
 				}
 			case t.recomputing:
-				actor, ok := t.recomputeManagers[name]
-				if !ok {
-					actor = t.actor
-				}
-				if err := t.setManager(sp.ref(), name, actor, substrate.TierMachine); err != nil {
+				if err := t.setMark(sp.ref(), name, mark{DerivedFrom: t.recomputeSources[name], SetAt: t.now}); err != nil {
 					return nil, err
 				}
-				managers[name] = string(actor)
 			default:
-				actor, tier := t.actor, t.propTier(sp.ref(), name)
-				// A SUBJECT SLOT IS THE MAPPING'S, whoever's write filled it
-				// (record 96). The value is not the writer's opinion — it is
-				// match-or-mint's answer, or the id the writer already had —
-				// and crediting the connector would let a `propertyMeta` read
-				// say a bundle holds the link when only merge and split can
-				// move it. The manager names the declaration instead, at the
-				// machine tier, so recompute and a later resolve are free to
-				// rewrite it.
-				if p, ok := sp.ty.Prop(name); ok && p.MappedBy != "" {
-					actor, tier = substrate.Actor("mapping:"+p.MappedBy), substrate.TierMachine
-				}
-				if err := t.setManager(sp.ref(), name, actor, tier); err != nil {
+				if err := t.setMark(sp.ref(), name, t.directMark(t.actor)); err != nil {
 					return nil, err
 				}
 			}
-			if p, ok := sp.ty.Prop(name); ok && p.Embed {
+			// A carried record brings its vectors and its queue with it
+			// (move.go carryVectors): its text is the text they were made of.
+			if p, ok := sp.ty.Prop(name); ok && p.Embed && !t.movingRecords {
 				if err := t.enqueueEmbed(sp.ref(), name); err != nil {
 					return nil, err
 				}
@@ -1400,16 +1451,25 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if created {
 			payload["created"] = true
 		}
+		// A carried record's line says where it came from, as its old row's
+		// tombstone says where it went: the same record arriving, which no
+		// trigger delivers (matchChanges, decision record 0078).
+		if t.movingRecords && t.movedFrom != "" {
+			payload["movedFrom"] = t.movedFrom
+		}
+		// A write that only moves the names a record holds to where they now
+		// point says so, as the move's own repoint lines do (move.go
+		// repointRecord): the record says the same thing as before.
+		if len(t.repointing) > 0 {
+			payload["repointed"] = t.repointing
+		}
 		if sp.resurrect {
 			payload["restored"] = true
 		}
 		shape.annotate(payload, accepted, undeclaredStates)
-		if len(managers) > 0 {
-			payload["managers"] = managers
-		}
 		if t.recomputing {
 			payload["mechanism"] = "mapping"
-			payload["triggeredBy"] = string(t.recomputeInitiator)
+			payload["triggeredBy"] = actorID(t.recomputeInitiator)
 		}
 		if len(sp.states) > 0 {
 			payload["states"] = row.States
@@ -1432,6 +1492,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			// definition from this write on and never to the rows the old
 			// one scanned past (delivery.go pinTriggerCursor).
 			if err := t.pinTriggerCursor(sp.id); err != nil {
+				return nil, err
+			}
+			if err := t.initEditedSchedule(sp.id, row.Props); err != nil {
 				return nil, err
 			}
 		}
@@ -1489,8 +1552,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 
 	// The other half of the orphan mark (orphans.go). A write onto a mapped
 	// target does not recompute it — nothing about its sources changed — but
-	// it may have taken a property above the machine tier, or given the last
-	// one back, and the mark reads both. The recompute above already did it
+	// it may have pinned a property, or given the last pin back, and the
+	// mark reads both. The recompute above already did it
 	// where it ran.
 	if changed && !t.recomputing && !recomputed && mapped {
 		if err := t.syncOrphaned(sp.ref()); err != nil {
@@ -1674,12 +1737,11 @@ func hotColumnOf(row *erow, name string) *time.Time {
 	return nil
 }
 
-// checkBundleOwnerGate refuses an EXTERNAL create/resurrect of a bundle's
-// config or account record by a non-owner actor, and every write of one by an
-// app's token. Internal writes (facility teardown, purge, mirrors) bypass;
-// the owner's and installed code's patches are governed by per-property
-// ownership below, not this coarse gate.
-func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
+// checkBundleOwnerGate refuses every write of a bundle's config or account
+// record by an app's token. Who else may write one is the one check's
+// (authorizeWrite): they are control kinds of the settings class. Internal
+// writes (facility teardown, purge, mirrors) bypass.
+func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind) error {
 	if t.internal || !t.isBundleOwnerGated(ty) {
 		return nil
 	}
@@ -1687,27 +1749,40 @@ func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
 	// properties are the connection's settings, which the owner alone
 	// changes.
 	if t.scoped {
-		return fmt.Errorf("%w: an app's token does not write a %s: connections are owner-managed",
-			substrate.ErrForbidden, ty.Name)
-	}
-	if !creating {
-		return nil
-	}
-	if !t.ownerHand() {
-		return fmt.Errorf("%w: only the owner may create a %s — connections are owner-managed",
+		return fmt.Errorf("%w: an app's token does not write a %s: connections are managed by a person",
 			substrate.ErrForbidden, ty.Name)
 	}
 	return nil
 }
 
-// ownerHand reports whether this write is the owner's own: an owner-tier
-// actor with no app's token behind it. An app's token writes the kinds its
-// scopes reach at the owner tier, so property ownership treats it as the
-// owner, but the actions only the owner takes (revoking a token, creating or
-// deleting an account or a bundle input, adjusting a change request) refuse
-// it (decision 0194).
-func (t *txn) ownerHand() bool {
-	return t.tier == substrate.TierOwner && !t.scoped
+// installedCode reports whether this write is installed code's: a function's
+// or an agent's run, which the dispatcher marks as it applies the run's
+// effects (setEffectEmit), or any hand whose actor is a function, an agent
+// or a package.
+func (t *txn) installedCode() bool {
+	switch substrate.ActorTypeOf(t.actor) {
+	case substrate.ActorTypeFunction, substrate.ActorTypeAgent, substrate.ActorTypePackage:
+		return true
+	}
+	return t.effEmitSet
+}
+
+// refuseInstalledPolicyWrite refuses a policy write by installed code, by
+// whatever path it reaches the record: a function's effect, a function it
+// calls, an agent's write or function tool, a provider's sync, and a change
+// request any of them accepts, whose materialization writes in the same
+// transaction. Every one of them is installed code's (installedCode: the
+// dispatcher's mark, or a function's, an agent's or a package's hand), and
+// every write lands through apply or softDeleteIf, so this is the one place
+// they all pass. A policy is a gate: one installed code could write is one it
+// could open. A person accepting a request installed code proposed is the
+// person's hand, and lands.
+func (t *txn) refuseInstalledPolicyWrite(kind string, op substrate.Op) error {
+	if kind != vocabulary.KindRecordPatchPolicy || !t.installedCode() {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is the owner's hand alone — installed code never writes the door's own rules, by any path (%s by %s)",
+		substrate.ErrForbidden, kind, op, t.actor)
 }
 
 // decidesOn reports whether this write is an app's decision on the change
@@ -1729,23 +1804,77 @@ func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
 	return ok && bundleInputKind(b, ty.Identity)
 }
 
-// checkPropertyOwnership holds every CHANGED property with a `writer:`
-// restriction to its role's actor. Enforced uniformly —
-// including internal writes — so the OAuth facility, the connector function
-// and the owner each write only their own hands; the console blacklist is a
-// convenience, not the boundary.
-func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, ref eref, accepted []string) error {
+// checkPropertyOwnership holds every CHANGED property with a `writer:` to
+// the types of actor it names (decision 0290), by the type of the hand that
+// chose the value. Enforced uniformly, including internal writes, so the sync
+// function, the person and the OAuth facility each write only their own
+// hands; the console's form is a convenience, not the boundary. The engine's
+// own pass writes any property (systemDecides), and no other hand writes a
+// guarded property it could not before (systemhands_test.go lists the
+// system's sites).
+//
+// A mapping's recompute writes no guarded property, whoever started it. The
+// value it carries was chosen by whoever wrote the winning source, and what
+// the engine stores of that (a source record's manager, the first of a
+// union's contributors) is attribution, not proof of who chose each value,
+// so nothing here could hold it to that hand. The write that would carry or
+// remove such a value is refused, as the direct write by an unknown hand
+// would be.
+func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, accepted []string) error {
+	if t.systemDecides() {
+		return nil
+	}
 	for _, name := range accepted {
 		p, ok := ty.Prop(name)
-		if !ok || p.Writer == "" {
+		if !ok || p.Writers == nil {
 			continue
 		}
-		if !t.mayWriteProp(p.Writer, t.propTier(ref, name)) {
-			return fmt.Errorf("%w: %s.%s is written by the %q role, not %s",
-				substrate.ErrForbidden, ty.Identity, name, p.Writer, t.actor)
+		if t.recomputing {
+			return fmt.Errorf("%w: %s.%s is written by %s, and a mapping writes no property that names its writers: write it directly",
+				substrate.ErrForbidden, ty.Identity, name, strings.Join(p.Writers, " or "))
 		}
+		typ, who := t.writerOf(t.actor)
+		if typ == substrate.ActorTypeSystem || p.WrittenBy(typ) {
+			continue
+		}
+		// The hand in words, never its spelling: an accepted change request
+		// stores the refusal (handWords).
+		return fmt.Errorf("%w: %s.%s is written by %s, not by %s",
+			substrate.ErrForbidden, ty.Identity, name, strings.Join(p.Writers, " or "), who)
 	}
 	return nil
+}
+
+// systemDecides reports whether a write is the engine's own pass, deciding or
+// replaying a value, which writes any property. A recompute carries its
+// sources' values and a policy's acceptance carries a request's, so neither
+// is, though both write as a hand of the system's type.
+func (t *txn) systemDecides() bool {
+	return substrate.ActorTypeOf(t.actor) == substrate.ActorTypeSystem && !t.recomputing && !isPolicyActor(t.actor)
+}
+
+// writerOf is the type a guarded property holds a hand to, and the hand in
+// words with it for a refusal. A policy rule accepts for the person whose
+// rule it is, and is held as the person is, as the owner tier held it
+// before. A scoped token whose hand reads as the person (one whose client id
+// names no app) is held to no type, as `owner` refused a scoped token.
+func (t *txn) writerOf(hand substrate.Actor) (string, string) {
+	typ := substrate.ActorTypeOf(hand)
+	switch {
+	case isPolicyActor(hand):
+		return substrate.ActorTypePerson, "a policy rule, which accepts for the person (person)"
+	case t.scoped && typ == substrate.ActorTypePerson:
+		return "", "the owner through a scoped token that names no app"
+	case typ == "":
+		return "", handWords(hand) + " (an actor of no type)"
+	}
+	return typ, handWords(hand) + " (" + typ + ")"
+}
+
+// isPolicyActor reports whether a hand is a change-request policy rule's
+// (judge.go decideAsPolicy).
+func isPolicyActor(hand substrate.Actor) bool {
+	return strings.HasPrefix(string(hand), "policy:")
 }
 
 // checkManagedProps holds a SUPPLIED managed property to the value the row
@@ -1785,41 +1914,6 @@ func (t *txn) checkManagedProps(sp *applySpec) error {
 			substrate.ErrValidation, sp.ty.Identity, name)
 	}
 	return nil
-}
-
-// mayWriteProp reports whether this transaction's actor, writing at tier,
-// fills a property-writer role: oauth is the facility's own actor, connector
-// is a bundle-tier write context (installed code; the tier is write-context
-// data), owner is an owner-tier one.
-func (t *txn) mayWriteProp(writer string, tier substrate.Tier) bool {
-	switch writer {
-	case vocabulary.WriterOAuth:
-		return t.actor == actorOAuth
-	case vocabulary.WriterConnector:
-		return tier == substrate.TierBundle
-	case vocabulary.WriterOwner:
-		return tier == substrate.TierOwner && !t.scoped
-	}
-	return true
-}
-
-// propTiers is the tier each named property of one record's write stands
-// at, where it is not the transaction's own (txn.propTiers).
-type propTiers struct {
-	ref   eref
-	tiers map[string]substrate.Tier
-}
-
-// propTier answers the tier one property of a write to ref stands at: the
-// one propTiers names for it on that record, else the transaction's. A write
-// to any other record in the same transaction keeps the transaction's tier.
-func (t *txn) propTier(ref eref, name string) substrate.Tier {
-	if o := t.propTiers; o != nil && o.ref == ref {
-		if tier, ok := o.tiers[name]; ok {
-			return tier
-		}
-	}
-	return t.tier
 }
 
 // storeSecretProps moves every ACCEPTED secret-typed property value into the
@@ -1907,7 +2001,6 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 				if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 					return nil, err
 				}
-				t.mirrorSealedDelete(old)
 			}
 			continue
 		}
@@ -1966,8 +2059,10 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 				return nil, err
 			}
-			t.mirrorSealedDelete(old)
 		}
+	}
+	if err := t.settleSecretsLeftBehind(ty, owner, row, accepted); err != nil {
+		return nil, err
 	}
 	if len(drop) == 0 {
 		return accepted, nil
@@ -2130,8 +2225,11 @@ func (t *txn) admitAdjustedDiff(sp *applySpec) (bool, error) {
 		return false, fmt.Errorf("%w: adjustedDiff is written only with the accept: the same write moves decision from proposed to accepted",
 			substrate.ErrValidation)
 	}
-	if !(t.ownerHand() || t.decidesOn(sp)) || t.policyDecision {
-		return false, fmt.Errorf("%w: only the owner adjusts a change request; installed code and the policy judge decide what was proposed",
+	// The write of the request already passed the one check, which only a
+	// hand that may write change requests passes; of those, a person adjusts,
+	// or an app deciding what its scope reaches.
+	if t.installedCode() || t.policyDecision || (t.scoped && !t.decidesOn(sp)) {
+		return false, fmt.Errorf("%w: a person adjusts a change request; installed code and the policy judge decide what was proposed",
 			substrate.ErrForbidden)
 	}
 	op := requestOp(sp.existing.Props)
@@ -2176,8 +2274,8 @@ func appliedDiff(edit *erow) any {
 
 // propertyWritable reports whether a name may appear in a proposed diff for
 // ty: a declared property (state properties included — a transition is a
-// legitimate patch), the reserved title column, a declared body column, or a
-// temporal column the type binds. The identity keys `type`/`id` are never
+// legitimate patch), the reserved title column, or a temporal column the
+// type binds. The identity keys `type`/`id` are never
 // writable. A SECRET-typed property is writable in principle, but a proposal
 // never carries it (a raw secret must not sit in the request's non-secret json
 // diff) — normalizeDiff rejects it separately.
@@ -2185,8 +2283,6 @@ func propertyWritable(ty *vocabulary.Kind, name string) bool {
 	switch name {
 	case substrate.PropTitle:
 		return true
-	case substrate.PropBody:
-		return declaresBody(ty)
 	case substrate.PropAt, substrate.PropEndsAt, substrate.PropDueAt:
 		return ty.UsesHot(name)
 	}
@@ -2513,7 +2609,7 @@ func validatePatchShape(c coercer, ty *vocabulary.Kind, in substrate.PatchInput)
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	if _, err := coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels); err != nil {
+	if _, err := coerceLabels(context.Background(), substrate.ActorPerson, "", in.Labels); err != nil {
 		return err
 	}
 	return nil
@@ -2531,7 +2627,7 @@ func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) 
 	if _, err := c.props(ty, authored); err != nil {
 		return err
 	}
-	_, err = coerceLabels(context.Background(), substrate.ActorAPI, "", in.Labels)
+	_, err = coerceLabels(context.Background(), substrate.ActorPerson, "", in.Labels)
 	return err
 }
 
@@ -2547,7 +2643,6 @@ func validateCreateShape(c coercer, ty *vocabulary.Kind, in substrate.PutInput) 
 func (t *txn) setEffectEmit(emit []string) {
 	t.effEmit = emit
 	t.effEmitSet = true
-	t.tier = substrate.TierBundle
 }
 
 // authorizeRequestOp bounds an bundle actor's ACCEPT to its effective emit
@@ -2563,12 +2658,12 @@ func (t *txn) authorizeRequestOp(op, targetKind string) error {
 	if t.scoped && !t.internal && !t.deciding {
 		return fmt.Errorf("%w: an app's token does not accept a change request", substrate.ErrForbidden)
 	}
-	if t.tier != substrate.TierBundle {
+	if !t.installedCode() {
 		return nil
 	}
 	if !t.effEmitSet {
 		return fmt.Errorf("%w: %s may not accept a change request — no effective emit ceiling was carried into acceptance",
-			substrate.ErrForbidden, t.actor)
+			substrate.ErrForbidden, handWords(t.actor))
 	}
 	for _, e := range t.effEmit {
 		if e == targetKind {
@@ -2576,7 +2671,7 @@ func (t *txn) authorizeRequestOp(op, targetKind string) error {
 		}
 	}
 	return fmt.Errorf("%w: %s may not materialize a %s through an accepted %s request — %s is not in its effective emit allowlist",
-		substrate.ErrForbidden, t.actor, targetKind, op, targetKind)
+		substrate.ErrForbidden, handWords(t.actor), targetKind, op, targetKind)
 }
 
 // isRequestRefusal reports whether an error from materializing an accepted
@@ -2832,9 +2927,6 @@ func (t *txn) existingSatisfiesCreate(row *erow, ty *vocabulary.Kind, in substra
 	if hot.title != nil && row.Title != *hot.title {
 		return false, nil
 	}
-	if hot.body != nil && row.Body != *hot.body {
-		return false, nil
-	}
 	for _, hc := range []struct {
 		in  *time.Time
 		cur *time.Time
@@ -2948,6 +3040,12 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 	// closure must hold without it, and a type with live instances refuses
 	// (schemawrite.go).
 	if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
+		if err := refuseKeyOnDeclaration(ctx); err != nil {
+			return nil, err
+		}
+		if err := ds.mayWrite(ctx, actor, ty, ceiling); err != nil {
+			return nil, err
+		}
 		existing, err := ds.Get(ctx, ty.Identity, id)
 		if err != nil {
 			return nil, err
@@ -2960,31 +3058,29 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 		}
 		return ds.deleteVocabularyRecord(ctx, actor, existing, in.IfVersion)
 	}
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, in.IfVersion, in.Purge, ceiling)
+	// As put does: a machinery record is stored under `~` (decision record
+	// 0259), and a purge compares the id it was handed with the one it
+	// tombstoned.
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: vocabulary.LocalizeID(ty.Identity, id, ds.names()...)}, false, in.IfVersion, in.Purge, ceiling)
 }
 
 func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, purge bool, ceiling *effectCeiling) (*substrate.Record, error) {
-	var out *substrate.Record
-	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+	input := keyedAddress{Kind: ref.Kind, ID: ref.ID, Input: substrate.DeleteInput{IfVersion: ifVersion, Purge: purge}}
+	return ds.recordTx(ctx, actor, internal, idemDelete, input, func(t *txn) (*substrate.Record, error) {
 		ceiling.stamp(t)
 		e, err := t.softDeleteIf(ref, ifVersion)
-		out = e
 		if err != nil || !purge {
-			return err
+			return e, err
 		}
 		// A former id resolves to the merge winner, and a purge cannot be
 		// undone: purging through a loser's id would hard-delete the winner.
 		// Refuse it as a put through a former id is refused, naming the
 		// canonical id, and roll the tombstone back with it.
 		if e.ID != ref.ID {
-			return fmt.Errorf("%w: %s is a former id of %s: purge the canonical id", substrate.ErrConflict, ref.ID, e.ID)
+			return nil, fmt.Errorf("%w: %s is a former id of %s: purge the canonical id", substrate.ErrConflict, ref.ID, e.ID)
 		}
-		return t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
+		return e, t.purgeNow(eref{Kind: e.Kind, ID: e.ID}, e.Finalizers)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // softDelete tombstones one record inside the caller's transaction — the
@@ -3006,6 +3102,9 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	if err := t.lockRegistryDepShared(); err != nil {
 		return nil, err
 	}
+	// A machinery record named with the repository's full name is the `~`
+	// one, whichever path deletes it: a function's effect too.
+	ref.ID = vocabulary.LocalizeID(ref.Kind, ref.ID, t.names()...)
 	// A former id denotes its canonical record everywhere, including here, or
 	// a delete through a merged-away id 404s while every read and patch of
 	// the same id resolves. Lock, then resolve: the addressing must not race
@@ -3026,33 +3125,35 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	if err != nil {
 		return nil, err
 	}
+	if err := t.refuseInstalledPolicyWrite(ty.Identity, substrate.OpDelete); err != nil {
+		return nil, err
+	}
 	// Revoking a token is a delete; the projection prune deletes internally.
 	if !t.internal && systemKinds[ty.Identity] && ty.Identity != kindToken {
 		return nil, fmt.Errorf("%w: %s records are managed by the substrate", substrate.ErrForbidden, ty.Identity)
 	}
-	// Revoking is the owner's alone, whatever a grant names: the loader refuses
-	// the token kind in `permissions.writes`, and this holds a declaration that
-	// predates that refusal, and every other bundle-tier hand (a policy judge's
-	// accept, the agent write built-in), to the same answer.
-	if !t.internal && ty.Identity == kindToken && !t.ownerHand() {
-		if t.scoped {
-			return nil, fmt.Errorf("%w: only the owner may revoke a %s: an app's token revokes itself at /oauth/revoke",
-				substrate.ErrForbidden, ty.Identity)
+	// Revoking a token: a person revokes their own sign-ins; any other is
+	// the one check's, which a hand passes by holding `admin` or by a rule
+	// naming the kind, and which installed code passes only where its
+	// declaration names it, which the loader refuses. An app's token revokes
+	// itself at /oauth/revoke.
+	if !t.internal && ty.Identity == kindToken && t.scoped {
+		return nil, fmt.Errorf("%w: an app's token does not revoke a %s: it revokes itself at /oauth/revoke",
+			substrate.ErrForbidden, ty.Identity)
+	}
+	if !t.internal && t.scoped && t.isBundleOwnerGated(ty) {
+		return nil, fmt.Errorf("%w: an app's token does not delete a %s: connections are managed by a person",
+			substrate.ErrForbidden, ty.Name)
+	}
+	if ty.Identity != kindToken || !t.ownToken(row) {
+		if err := t.authorizeWrite(ty); err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("%w: only the owner may revoke a %s: tokens are the owner's alone, and %s writes at the %s tier",
-			substrate.ErrForbidden, ty.Identity, t.actor, t.tier)
 	}
 	// Bundle lifecycle holds deletes too: read-only when uninstalled, frozen
 	// config/accounts when disabled (engine/bundles.go); purge is internal.
 	if err := t.checkBundleDelete(ty); err != nil {
 		return nil, err
-	}
-	// External delete of a bundle's config/account record is owner-only: the
-	// facility's finalizer teardown and purge run internally and bypass; a
-	// non-owner API actor may not tear down a connection.
-	if !t.internal && t.isBundleOwnerGated(ty) && !t.ownerHand() {
-		return nil, fmt.Errorf("%w: only the owner may delete a %s — connections are owner-managed",
-			substrate.ErrForbidden, ty.Name)
 	}
 	// Before the tombstone: it bumps the version, so a check after it would
 	// compare against the write it was meant to guard. An already-deleted row
@@ -3076,6 +3177,13 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 		// failures and fire state. A restore re-initializes at its own moment.
 		if row.Kind == typeTrigger {
 			if err := t.dropTriggerBookkeeping(id); err != nil {
+				return nil, err
+			}
+		}
+		// An app whose last token is revoked is an approval that is gone: its
+		// actor record is disabled, never deleted (decision 0270).
+		if row.Kind == kindToken {
+			if err := t.disableRevokedApp(row.Props); err != nil {
 				return nil, err
 			}
 		}

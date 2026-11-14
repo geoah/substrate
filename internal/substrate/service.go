@@ -26,17 +26,25 @@ type Service interface {
 	// --- the door ---
 	//
 	// Registration is two calls and one write. BeginRegistration issues a
-	// TOTP enrollment for a repository and creates NOTHING; Register takes it
+	// TOTP enrollment for an identity and creates NOTHING; Register takes it
 	// back with one code and a password, and only then does anything durable
-	// exist. An abandoned registration leaves no row, no seed and no record.
-	// The invite code gating both is the HTTP layer's (it holds the config).
-	BeginRegistration(ctx context.Context, repository string) (TOTPEnrollment, error)
+	// exist: the identity, its repository, and the first token. An abandoned
+	// registration leaves no row, no seed and no record. The invite code
+	// gating both is the HTTP layer's (it holds the config).
+	BeginRegistration(ctx context.Context, identity string) (TOTPEnrollment, error)
 	Register(ctx context.Context, in RegisterInput) (RegisterResult, error)
 
-	// Login verifies repository + password + TOTP and MINTS A TOKEN RECORD,
-	// returning its secret exactly once (ruling RB-5: sessions ARE token
-	// records; there is no session concept beside them).
-	Login(ctx context.Context, in LoginInput) (TokenInfo, string, error)
+	// Login verifies an identity's password and TOTP, picks the repository
+	// it opens, and MINTS A TOKEN RECORD there, returning its secret exactly
+	// once (ruling RB-5: sessions ARE token records; there is no session
+	// concept beside them). A person in several repositories who names none
+	// is refused with RepositoryRequiredError, listing them.
+	Login(ctx context.Context, in LoginInput) (MintedToken, error)
+
+	// Identity is the person behind an identity id: the name they sign in
+	// with, whether they have a second factor, and the repositories they may
+	// open.
+	Identity(ctx context.Context, id string) (IdentityInfo, error)
 
 	// ChangePassword and the TOTP re-enrollment pair carry the
 	// password-factor rule: each takes BOTH current factors in
@@ -53,6 +61,21 @@ type Service interface {
 	// and the control-plane row. Nothing survives it, so the name is free to
 	// register again.
 	DeleteRepository(ctx context.Context, in LoginInput) error
+
+	// RenameRepository takes both current factors, like DeleteRepository,
+	// and gives the repository the name newName. The name it had stays one
+	// of its names for 90 days (decision record 0287): it resolves to the
+	// repository on every door and no registration or rename elsewhere takes
+	// it. Nothing stored under `~` moves; the id, the keys and the webhook
+	// address by id do not change.
+	RenameRepository(ctx context.Context, in LoginInput, newName string) (RepositoryNames, error)
+
+	// SignOutEverywhere takes both current factors, like the credential
+	// changes, and ends every token the person holds, answering how many:
+	// every sign-in, every token minted from one, every assistant's and
+	// every app's. With newPassword set, the password changes first, under
+	// the same verification.
+	SignOutEverywhere(ctx context.Context, in LoginInput, newPassword string) (int, error)
 
 	// Authenticate resolves a bearer secret to its dataset and token: one
 	// SHA-256 lookup ACROSS repositories, which is what scopes the request to
@@ -71,11 +94,25 @@ type Service interface {
 	// resolves the repository itself and answers the connected record's path.
 	// Its Dataset half is StartOAuth.
 	CompleteOAuth(ctx context.Context, state, code string) (string, error)
+	// RepositoryIDOf is the id of the repository a name or an id names now,
+	// a former name in its hold included (decision record 0287), and
+	// ErrNotFound for none. It is how a door that takes a name turns it into
+	// an id once; past it, nothing is compared by name.
+	RepositoryIDOf(ctx context.Context, nameOrID string) (string, error)
+	// PublishedReleases lists the releases a repository publishes under an
+	// authority, and PublishedClosure is one release's closure, byte for
+	// byte (decision record 0291). Both read the repository by its id
+	// without opening it, so a public read of a repository that publishes
+	// nothing opens nothing, and both answer ErrNotFound for a repository
+	// that is not served.
+	PublishedReleases(ctx context.Context, repository, authority string) ([]Release, error)
+	PublishedClosure(ctx context.Context, repository, pkg string, version int64) ([]byte, error)
 	// ReceiveWebhook is public webhook ingress. The request carries no
-	// bearer: the path names the repository's AUTHORITY and the trigger, and
-	// the trigger's own key, when it declares one, is the credential, unless
-	// ctx carries the WithWebhookGrant mark for that authority and trigger,
-	// which stands in for it. Returns the fire id the delivery runs under;
+	// bearer: the path names the repository, which the door has resolved to
+	// its id (RepositoryIDOf), and the trigger, and the trigger's own key,
+	// when it declares one, is the credential, unless ctx carries the
+	// WithWebhookGrant mark for that repository id and trigger, which stands
+	// in for it. Returns the fire id the delivery runs under;
 	// every refusal that must not distinguish "no such trigger" from "wrong
 	// key" or "disabled" is ErrNotFound.
 	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)

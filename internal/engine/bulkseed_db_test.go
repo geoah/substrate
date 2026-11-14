@@ -10,7 +10,6 @@ package engine_test
 import (
 	"context"
 	"errors"
-	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -129,36 +128,28 @@ func seedEntriesAreOneTransaction(t *testing.T, svc substrate.Service, repo, whe
 	}
 }
 
-// filesAgree fails the test unless the repository's segment files and its
-// table agree: the verification walk finds nothing (every line's checksum,
-// every stamped checksum against its line, both heads), no unfinished tail
-// is left, and an empty database that imports a copy of the directory folds
-// it to the tables this one holds.
+// filesAgree fails the test unless the repository's archive and its table
+// agree: the verification walk finds nothing, and an empty database that
+// restores a copy of the archive a pass just wrote folds it to the tables
+// this one holds.
 func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 	t.Helper()
-	report := mustVerify(t, svc, repo)
-	if !report.OK || report.FileHead != report.Head || report.TruncatedEntries != 0 {
-		t.Fatalf("%s: verify: ok %v, file head %d, table head %d, %d unfinished entries, findings %q",
-			when, report.OK, report.FileHead, report.Head, report.TruncatedEntries, report.Findings)
-	}
-	src, err := changelogfile.RepoDir(engine.DataRootOf(svc), repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
-	imported := reopenWith(t, engine.MigratedDSN(t), root, engine.WithUnitSeed(false))
-	defer func() { _ = imported.Close() }()
 	ds, err := svc.Dataset(context.Background(), repo)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := engine.ArchivePass(context.Background(), ds); err != nil {
+		t.Fatalf("%s: archive: %v", when, err)
+	}
+	report := mustVerify(t, svc, repo)
+	if !report.OK || report.ArchiveHead != report.Head {
+		t.Fatalf("%s: verify: ok %v, archive head %d, table head %d, findings %q",
+			when, report.OK, report.ArchiveHead, report.Head, report.Findings)
+	}
+	id := repositoryIDByName(t, svc, repo)
+	root := copyRepositoryDir(t, engine.DataRootOf(svc), id)
+	imported := reopenWith(t, engine.MigratedDSN(t), root, engine.WithUnitSeed(false))
+	defer func() { _ = imported.Close() }()
 	ids, err := imported.Dataset(context.Background(), repo)
 	if err != nil {
 		t.Fatalf("%s: open the imported repository: %v", when, err)
@@ -168,8 +159,9 @@ func filesAgree(t *testing.T, svc substrate.Service, repo, when string) {
 	}
 }
 
-// Register is the registration a person makes: the seed, then the
-// credential, the recovery key and the token in the same transaction. Its
+// Register is the registration a person makes: the seed, then the token in
+// the same transaction, while the person's sign-in goes beside the
+// repository, sealing nothing in it (decision 0274). Its
 // seed runs in bulk and writes what the per-record path writes, the
 // entries after it land at the same seqs, the whole transaction is one
 // frame in the table and in the files, and a rebuild reproduces the fold.
@@ -239,7 +231,7 @@ func TestRegisterSeedsInBulkAsThePerRecordPathDoes(t *testing.T) {
 		seedIsWhole(t, ds, "after the registration")
 		seedEntriesAreOneTransaction(t, svc, repo, "after the registration")
 		report := mustVerify(t, svc, repo)
-		if report.SealedOpened != report.SealedRows || report.SealedRows == 0 {
+		if !report.OK || report.SealedRows != 0 {
 			t.Fatalf("after the registration: %d sealed rows, %d opened", report.SealedRows, report.SealedOpened)
 		}
 		filesAgree(t, svc, repo, "after the registration")
@@ -328,12 +320,10 @@ func TestAFaultInARegistrationsBulkFlushLeavesNothing(t *testing.T) {
 			if _, err := svc.Dataset(ctx, repo); !errors.Is(err, substrate.ErrNotFound) {
 				t.Fatalf("the failed registration's repository opens: %v", err)
 			}
-			dir, err := changelogfile.RepoDir(engine.DataRootOf(svc), repo)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("the failed registration left its directory: %v", err)
+			// The failed creation's id is gone with it, so no directory at all
+			// is what it leaves.
+			if left, err := changelogfile.ListRepositoryDirs(engine.DataRootOf(svc)); err != nil || len(left) != 0 {
+				t.Fatalf("the failed registration left directories %v (%v)", left, err)
 			}
 			registerUser(t, svc, repo)
 			paths.want(t, "the second registration", "")
@@ -367,8 +357,8 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 		// where the faulted one never committed.
 		reseeds bool
 	}{
-		{stage: engine.BulkAfterManagers, bulk: true, reseeds: true},
-		{stage: engine.CommitAfterPrepare, reseeds: true},
+		{stage: engine.BulkAfterMarks, bulk: true, reseeds: true},
+		{stage: engine.CommitBeforeCommit, reseeds: true},
 		{stage: engine.CommitAfterCommit, reseeds: false},
 	} {
 		t.Run(c.stage, func(t *testing.T) {
@@ -409,23 +399,15 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 			} else {
 				paths.want(t, "the faulted open", "")
 			}
-			switch report := mustVerify(t, svc, repo); c.stage {
-			case engine.BulkAfterManagers:
-				// A refused write ends nothing: the files stand as the
+			if report := mustVerify(t, svc, repo); !report.OK {
+				t.Fatalf("after the fault at %s: %+v", c.stage, report)
+			}
+			if c.stage == engine.BulkAfterMarks {
+				// A refused write ends nothing: the archive stands as the
 				// table does, and neither holds a unit.
 				filesAgree(t, svc, repo, "after the fault in the flush")
 				if tab := unitsOf(t, ds); len(tab.Units) != 0 {
 					t.Fatalf("the rolled back seed left %d units", len(tab.Units))
-				}
-			case engine.CommitAfterPrepare:
-				if report.TruncatedEntries == 0 || report.FileHead != report.Head {
-					t.Fatalf("after the death past the prepare: %d unfinished entries, file head %d, table head %d; want the seed's lines unfinished and the heads equal",
-						report.TruncatedEntries, report.FileHead, report.Head)
-				}
-			case engine.CommitAfterCommit:
-				if report.TruncatedEntries == 0 || report.FileHead >= report.Head {
-					t.Fatalf("after the death past the commit: %d unfinished entries, file head %d, table head %d; want the table ahead",
-						report.TruncatedEntries, report.FileHead, report.Head)
 				}
 			}
 			_ = svc.Close()

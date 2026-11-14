@@ -5,32 +5,42 @@
     "sentence": "See all your records, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
-    "scope": "read:ada.example.com/*",
+    "scope": "read:~/*",
     "kinds": [
       {
-        "identity": "ada.example.com/people/person",
+        "identity": "~/people/person",
         "label": {
           "singular": "Person",
           "plural": "People"
         }
       },
       {
-        "identity": "ada.example.com/tasks/project",
+        "identity": "~/tasks/project",
         "label": {
           "singular": "Project",
           "plural": "Projects"
         }
       },
       {
-        "identity": "ada.example.com/tasks/task"
+        "identity": "~/tasks/task"
       }
     ],
     "sentence": "See your people, and projects and tasks, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
-    "scope": "read:ada.example.com/notes/*",
+    "scope": "read:~/notes/*",
     "kinds": [],
     "sentence": "See your Notes records, including kinds added later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "read:~/*",
+    "kinds": [],
+    "sentence": "See your records of the kinds you made or added, including kinds added later, and search them by meaning, which spends your embedding budget"
+  },
+  {
+    "scope": "read:b.example.com/*",
+    "kinds": [],
+    "sentence": "See your records from b.example.com, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
     "scope": "read:providers.substrate.reamde.dev/applehealth/account",
@@ -52,52 +62,52 @@
     "sentence": "See your LLM providers, and search them by meaning, which spends your embedding budget"
   },
   {
-    "scope": "read:ada.example.com/greek/*",
+    "scope": "read:~/greek/*",
     "kinds": [
       {
-        "identity": "ada.example.com/greek/alpha",
+        "identity": "~/greek/alpha",
         "label": {
           "singular": "Alpha",
           "plural": "Alphas"
         }
       },
       {
-        "identity": "ada.example.com/greek/beta",
+        "identity": "~/greek/beta",
         "label": {
           "singular": "Beta",
           "plural": "Betas"
         }
       },
       {
-        "identity": "ada.example.com/greek/gamma",
+        "identity": "~/greek/gamma",
         "label": {
           "singular": "Gamma",
           "plural": "Gammas"
         }
       },
       {
-        "identity": "ada.example.com/greek/delta",
+        "identity": "~/greek/delta",
         "label": {
           "singular": "Delta",
           "plural": "Deltas"
         }
       },
       {
-        "identity": "ada.example.com/greek/epsilon",
+        "identity": "~/greek/epsilon",
         "label": {
           "singular": "Epsilon",
           "plural": "Epsilons"
         }
       },
       {
-        "identity": "ada.example.com/greek/zeta",
+        "identity": "~/greek/zeta",
         "label": {
           "singular": "Zeta",
           "plural": "Zetas"
         }
       },
       {
-        "identity": "ada.example.com/greek/eta",
+        "identity": "~/greek/eta",
         "label": {
           "singular": "Eta",
           "plural": "Etas"
@@ -154,7 +164,7 @@
     "sentence": "See, add, change and delete your Apple contacts, events, reminders and visits, and 1 more kind, including kinds added later, and search them by meaning, which spends your embedding budget"
   },
   {
-    "scope": "write:ada.example.com/notes/note",
+    "scope": "write:~/notes/note",
     "kinds": [],
     "sentence": "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
   },
@@ -176,7 +186,7 @@
     "scope": "read:implements(substrate.reamde.dev/core/lifecycle)",
     "kinds": [
       {
-        "identity": "ada.example.com/tasks/task"
+        "identity": "~/tasks/task"
       }
     ],
     "sentence": "See your records of every kind with the lifecycle trait (today your tasks), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
@@ -185,10 +195,10 @@
     "scope": "write:implements(substrate.reamde.dev/core/lifecycle)",
     "kinds": [
       {
-        "identity": "ada.example.com/tasks/task"
+        "identity": "~/tasks/task"
       },
       {
-        "identity": "ada.example.com/tasks/project",
+        "identity": "~/tasks/project",
         "label": {
           "singular": "Project",
           "plural": "Projects"
@@ -222,7 +232,7 @@
     "sentence": "See, add, change and delete your records of every kind with the lifecycle trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
   },
   {
-    "scope": "read:implements(ada.example.com/scheduling/dueDate)",
+    "scope": "read:implements(~/scheduling/dueDate)",
     "kinds": [],
     "sentence": "See your records of every kind with the due date trait (no kind has it yet), including kinds that take it on later, and search them by meaning, which spends your embedding budget"
   },
@@ -237,12 +247,17 @@
     "sentence": "Talk to the agents from b.example.com, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
   },
   {
-    "scope": "agents:ada.example.com/llm/*",
+    "scope": "agents:~/*",
+    "kinds": [],
+    "sentence": "Talk to the agents you made or added, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
+  },
+  {
+    "scope": "agents:~/llm/*",
     "kinds": [],
     "sentence": "Talk to the agents in LLM, including agents added later, and through a chat have them do anything they may do; read every chat with them, yours included, answer their questions, and rename or stop any of those chats"
   },
   {
-    "scope": "agents:ada.example.com/llm/substrateEditor",
+    "scope": "agents:~/llm/substrateEditor",
     "kinds": [],
     "sentence": "Talk to Substrate editor, and through a chat have it do anything it may do; read every chat with it, yours included, answer its questions, and rename or stop any of those chats"
   },
@@ -257,7 +272,7 @@
     "sentence": "Apply or dismiss the changes the agents in X suggest, including agents added later, and edit one before applying it, as you"
   },
   {
-    "scope": "decide:ada.example.com/llm/substrateEditor",
+    "scope": "decide:~/llm/substrateEditor",
     "kinds": [],
     "sentence": "Apply or dismiss the changes Substrate editor suggests, and edit one before applying it, as you"
   },
@@ -272,12 +287,17 @@
     "sentence": "Run the functions from b.example.com, including functions added later; each runs only where the app may already see and change what it reads and writes"
   },
   {
-    "scope": "call:ada.example.com/tasks/*",
+    "scope": "call:~/*",
+    "kinds": [],
+    "sentence": "Run the functions you made or added, including functions added later; each runs only where the app may already see and change what it reads and writes"
+  },
+  {
+    "scope": "call:~/tasks/*",
     "kinds": [],
     "sentence": "Run the functions in Tasks, including functions added later; each runs only where the app may already see and change what it reads and writes"
   },
   {
-    "scope": "call:ada.example.com/tasks/summarize",
+    "scope": "call:~/tasks/summarize",
     "kinds": [],
     "sentence": "Run Summarize; it runs only where the app may already see and change what it reads and writes"
   },

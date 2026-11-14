@@ -25,7 +25,7 @@ func TestARepositoryMigrationLeavesAnUndeclaredKindsProjectionsToThePass(t *test
 	obs := pkg + "/observation"
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s %s: %v", kind, id, err)
 		}
 	}

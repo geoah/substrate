@@ -325,7 +325,7 @@ func installLiveChain(t *testing.T, ds *dataset, openai, anthropic liveChainWire
 		if p.w.baseURL != "" {
 			props["baseURL"] = p.w.baseURL
 		}
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 			Kind: typeProvider, ID: p.id, Properties: props,
 		}); err != nil {
 			t.Fatalf("put llm/provider %s: %v", p.id, err)
@@ -383,7 +383,7 @@ def main(input, host):
 			},
 		}),
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 		t.Fatalf("install the live crew: %v", err)
 	}
 }

@@ -1,7 +1,8 @@
 /** The pure half of the record page's provenance: sources fold by mapping, dedupe by
  * record and sort by title; an actor string reads as the thing it is. */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, beforeEach } from "vitest"
+import { seedActors } from "@/lib/actors.test-fixtures"
 
 import type { LinkedRecord, SubstrateRecord } from "@/lib/api/types"
 import {
@@ -14,10 +15,14 @@ import {
   differsLabel,
   everyValueYours,
   holderOf,
-  tierExplanation,
-  tierLabel,
+  standingExplanation,
+  standingLabel,
+  standingOf,
   unionMembers,
 } from "./provenance"
+import { actorLink } from "@/lib/actors.test-fixtures"
+
+beforeEach(() => seedActors())
 
 const BEEPER = "providers.substrate.reamde.dev/beeper/user"
 const GITHUB = "providers.substrate.reamde.dev/github/user"
@@ -162,71 +167,84 @@ describe("mappingLabel", () => {
   })
 })
 
-const GOOGLE_SYNC =
-  "function:providers.substrate.reamde.dev:google:synccontacts"
-const LINEAR_SYNC = "function:providers.substrate.reamde.dev:linear:linearsync"
+const GOOGLE_SYNC = "act-fn-google-synccontacts"
 
 describe("holderOf", () => {
   it("names the owner's hand You, a provider by its name, anything else by its own", () => {
-    expect(holderOf({ manager: "console", tier: "owner" })).toMatchObject({
+    expect(
+      holderOf({ pinned: true, setBy: actorLink("act-person") })
+    ).toMatchObject({
       mark: "you",
       label: "You",
     })
-    expect(holderOf({ manager: GOOGLE_SYNC, tier: "machine" })).toMatchObject({
+    expect(holderOf({ setBy: actorLink(GOOGLE_SYNC) })).toMatchObject({
       mark: "provider",
       label: "Google",
     })
     expect(
-      holderOf({ manager: "agent:ada.localhost:llm:substrate", tier: "bundle" })
+      holderOf({ pinned: true, setBy: actorLink("act-agent-llm-substrate") })
     ).toMatchObject({ mark: "actor", label: "Substrate" })
     expect(holderOf({})).toBeUndefined()
   })
 })
 
 describe("differsLabel", () => {
-  const alt = (actor: string) => ({ actor, value: "x", updatedAt: "" })
+  const alt = (ref: string) => ({
+    derivedFrom: { ref },
+    value: "x",
+    updatedAt: "",
+  })
+  const work = "providers.substrate.reamde.dev/google/contact/work-c123"
+  const home = "providers.substrate.reamde.dev/google/contact/home-c900"
+  const linear = "providers.substrate.reamde.dev/linear/issue/l1"
   it("names the one provider that disagrees, or counts several", () => {
     expect(differsLabel({})).toBeUndefined()
-    expect(differsLabel({ alternatives: [alt(GOOGLE_SYNC)] })).toBe(
+    expect(differsLabel({ alternatives: [alt(work)] })).toBe("Google differs")
+    // Two accounts of one provider are two alternatives, and one provider.
+    expect(differsLabel({ alternatives: [alt(work), alt(home)] })).toBe(
       "Google differs"
     )
-    expect(
-      differsLabel({ alternatives: [alt(GOOGLE_SYNC), alt(LINEAR_SYNC)] })
-    ).toBe("2 sources differ")
-  })
-})
-
-describe("tierLabel", () => {
-  it("says each tier in the reader's words", () => {
-    expect(tierLabel("owner")).toBe("Yours")
-    expect(tierLabel("machine")).toBe("Synced")
-    expect(tierLabel("bundle", GOOGLE_SYNC)).toBe("Set by provider")
-    expect(tierLabel("bundle", "agent:ada.localhost:llm:substrate")).toBe(
-      "Set by an agent"
+    expect(differsLabel({ alternatives: [alt(work), alt(linear)] })).toBe(
+      "2 sources differ"
     )
   })
 })
 
-describe("tierExplanation", () => {
+describe("standingOf", () => {
+  it("reads pinned and the hand from the mark, never from a tier", () => {
+    const say = (mark: Parameters<typeof standingOf>[0]) =>
+      standingLabel(standingOf(mark))
+    expect(say({ pinned: true, setBy: actorLink("act-person") })).toBe("Yours")
+    expect(say({ derivedFrom: [{ ref: `${GITHUB}/gh1` }] })).toBe("Synced")
+    expect(say({ pinned: true, setBy: actorLink(GOOGLE_SYNC) })).toBe(
+      "Set by provider"
+    )
+    expect(
+      say({ pinned: true, setBy: actorLink("act-agent-llm-substrate") })
+    ).toBe("Set by an agent")
+    // A package's own write pins nothing, and says so.
+    expect(say({ setBy: actorLink("act-pkg-google") })).toBe("Not pinned")
+    expect(say(undefined)).toBe("Written")
+  })
+})
+
+describe("standingExplanation", () => {
   // The detail's head already says "You set this"; the sentence under it
   // says what that means, not the same words again.
-  it("never repeats who set an owner's value", () => {
-    expect(tierExplanation("owner")).not.toMatch(/you set this/i)
+  it("never repeats who set the person's value", () => {
+    expect(standingExplanation("yours")).not.toMatch(/you set this/i)
   })
 })
 
 describe("unionMembers", () => {
   it("names the sources whose offer carries each item", () => {
     const members = unionMembers(["a@example.com", "b@example.com"], {
-      manager: GOOGLE_SYNC,
-      tier: "machine",
-      source: `${BEEPER}/u1`,
+      derivedFrom: [{ ref: `${BEEPER}/u1` }],
       alternatives: [
         {
-          actor: LINEAR_SYNC,
+          derivedFrom: { ref: `${GITHUB}/gh1` },
           value: ["b@example.com"],
           updatedAt: "",
-          source: `${GITHUB}/gh1`,
         },
       ],
     })
@@ -244,27 +262,32 @@ describe("unionMembers", () => {
 
 describe("departsFromDefault", () => {
   it("is quiet for the owner's own value", () => {
-    expect(departsFromDefault({ manager: "console", tier: "owner" })).toBe(
-      false
-    )
+    expect(
+      departsFromDefault({ pinned: true, setBy: actorLink("act-person") })
+    ).toBe(false)
     expect(departsFromDefault(undefined)).toBe(false)
   })
 
   it("speaks for a provider, an agent, or a source that differs", () => {
     expect(
       departsFromDefault({
-        manager: "function:providers.substrate.reamde.dev:google:sync",
-        tier: "machine",
+        setBy: actorLink("act-fn-google-sync"),
       })
     ).toBe(true)
     expect(
-      departsFromDefault({ manager: "agent:ada.example.com:llm:scribe" })
+      departsFromDefault({ setBy: actorLink("act-agent-llm-scribe") })
     ).toBe(true)
     expect(
       departsFromDefault({
-        manager: "console",
-        tier: "owner",
-        alternatives: [{ actor: "x.example.com", value: 1, updatedAt: "" }],
+        pinned: true,
+        setBy: actorLink("act-person"),
+        alternatives: [
+          {
+            derivedFrom: { ref: "x.example.com/p/k/1" },
+            value: 1,
+            updatedAt: "",
+          },
+        ],
       })
     ).toBe(true)
   })
@@ -273,7 +296,7 @@ describe("departsFromDefault", () => {
 describe("everyValueYours", () => {
   const rec = (
     properties: Record<string, unknown>,
-    propertyMeta: SubstrateRecord["propertyMeta"]
+    marks: SubstrateRecord["marks"]
   ): SubstrateRecord => ({
     id: "r",
     kind: "ada.example.com/tasks/task",
@@ -282,7 +305,7 @@ describe("everyValueYours", () => {
     version: 1,
     createdAt: "",
     updatedAt: "",
-    propertyMeta,
+    marks,
   })
 
   it("holds when every filled value is the owner's own", () => {
@@ -291,8 +314,8 @@ describe("everyValueYours", () => {
         rec(
           { name: "A", note: "" },
           {
-            name: { manager: "console", tier: "owner" },
-            note: { manager: "agent:ada.example.com:llm:scribe" },
+            name: { pinned: true, setBy: actorLink("act-person") },
+            note: { setBy: actorLink("act-agent-llm-scribe") },
           }
         )
       )
@@ -305,8 +328,8 @@ describe("everyValueYours", () => {
         rec(
           { name: "A", note: "B" },
           {
-            name: { manager: "console", tier: "owner" },
-            note: { manager: "agent:ada.example.com:llm:scribe" },
+            name: { pinned: true, setBy: actorLink("act-person") },
+            note: { setBy: actorLink("act-agent-llm-scribe") },
           }
         )
       )

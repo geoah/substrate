@@ -96,11 +96,10 @@ func openCursorDataset(t *testing.T, opts ...Option) *dataset {
 	const pkg = "widgets.test.dev/widgets"
 	widgetType := pkg + "/widget"
 	d := openInternalDataset(t, opts...)
-	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, d, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pkg, "mirror", map[string]any{
@@ -251,7 +250,7 @@ func TestListRefusesACursorFromAnotherHistory(t *testing.T) {
 	ds := openCursorDataset(t)
 	const widgetType = "widgets.test.dev/widgets/widget"
 	for _, name := range []string{"one", "two"} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": name}}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": name}}); err != nil {
 			t.Fatalf("put %s: %v", name, err)
 		}
 	}
@@ -274,7 +273,7 @@ func TestListRefusesACursorFromAnotherHistory(t *testing.T) {
 	// The same cursor, as a client that saved it before a restore would
 	// resend it: the head it carries belongs to a history this dataset does
 	// not hold, so the page is refused rather than handed a stale head.
-	q.After = encodeKeyset(tok.O, tok.K, tok.H, "another-history")
+	q.After = encodeKeyset(tok.R, tok.O, tok.K, tok.H, "another-history")
 	if _, err := ds.List(ctx, q); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a cursor from another generation listed: %v", err)
 	}

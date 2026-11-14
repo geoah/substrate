@@ -64,6 +64,12 @@ func (l *agentLoop) dispatchVocabulary(ctx context.Context, c *toolRun, args map
 		if plan {
 			continue
 		}
+		// The apply is the vocabulary door's own transaction, so the person
+		// the run acts for is held here: an agent a person starts declares
+		// nothing that person may not.
+		if err := l.ds.behalfMayWrite(ctx, ty); err != nil {
+			return toolError(fmt.Sprintf("documents[%d]: %v, nothing applied", i, err)), false
+		}
 		// A declaration is admission, not a record a request can hold, so a
 		// gate refuses here: the owner applies a gated batch the agent planned.
 		verdict, rule, err := l.ds.policyVerdict(ctx, kind, policyOpPut, l.ag.Identity())

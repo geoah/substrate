@@ -259,6 +259,11 @@ func (l *loader) parseGraphQuantitySpec(where string, d map[string]any, s *Quant
 			l.errf("%s.%s: %v", where, key, err)
 			return nil
 		}
+		// The bound's keys are read here and not by checkKeys, so they count
+		// toward the package's need here.
+		for k := range asMapOrNil(raw) {
+			l.noteKey(quantityBoundKeys, k)
+		}
 		if key == "min" {
 			s.Min = b
 		} else {
@@ -272,6 +277,10 @@ func (l *loader) parseGraphQuantitySpec(where string, d map[string]any, s *Quant
 	return s
 }
 
+// quantityBoundKeys is a quantity bound's closed key set, the shape of a
+// quantity value: its digits and its unit.
+var quantityBoundKeys = map[string]bool{QuantityValue: true, QuantityUnit: true}
+
 // parseGraphQuantityBound reads one bound of a declaration that names
 // `unit`: its digits and a unit spelling.
 func parseGraphQuantityBound(raw any) (*QuantityBound, error) {
@@ -280,7 +289,7 @@ func parseGraphQuantityBound(raw any) (*QuantityBound, error) {
 		return nil, fmt.Errorf(`a quantity bound is a quantity value {value: "40", unit: kg}`)
 	}
 	for k := range m {
-		if k != QuantityValue && k != QuantityUnit {
+		if !quantityBoundKeys[k] {
 			return nil, fmt.Errorf("a bound holds %s and %s, and %q is neither", QuantityValue, QuantityUnit, k)
 		}
 	}

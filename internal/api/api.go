@@ -32,6 +32,7 @@ import (
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // APIVersion is the ONE served API version; it versions the
@@ -108,6 +109,12 @@ type Config struct {
 	// requests per (client IP, repository), per repository and globally; zero
 	// selects the default.
 	AuthInterval time.Duration
+	// RequestsPerPerson is how many requests a second one person may send
+	// once their token is read, and RequestBurstPerPerson how many they may
+	// send at once (SUBSTRATE_REQUESTS_PER_PERSON,
+	// SUBSTRATE_REQUEST_BURST_PER_PERSON). Zero paces nothing.
+	RequestsPerPerson     float64
+	RequestBurstPerPerson int
 	// Metrics mounts the Prometheus exposition at GET /metrics, unauthenticated
 	// and DB-free like /healthz (SUBSTRATE_METRICS=1). The instruments record
 	// either way; this decides only whether the port SERVES them. Off, the
@@ -154,9 +161,14 @@ type Config struct {
 }
 
 type handler struct {
-	svc          substrate.Service
-	now          func() time.Time
-	authRate     *rateLimiter
+	svc      substrate.Service
+	now      func() time.Time
+	authRate *rateLimiter
+	// personRate paces each person's requests once their token is read
+	// (personrate.go), and ownTokenRate the requests a person sends with a
+	// token of their own to manage their tokens, which no app's reaches.
+	personRate   *personRate
+	ownTokenRate *personRate
 	inviteCode   string
 	totpDisabled bool
 	// operatorDefaults lists the operator defaults read in discovery.
@@ -180,6 +192,9 @@ type handler struct {
 	verifier  appPublishers
 	parkRate  *rateLimiter
 	publicURL string
+	// names turns what a person types into a repository's name (decision
+	// record 0288): under the public URL's host, never the request's.
+	names vocabulary.NameRule
 	// resolver and instances are domain verification's two reads of the
 	// outside world (domain.go).
 	resolver  domains.Resolver
@@ -201,7 +216,9 @@ type handler struct {
 	router http.Handler
 }
 
-// New builds the router.
+// New builds the router. Every route it registers is in exactly one feature
+// of featureTable (features.go), which is what discovery tells a client
+// about it; TestEveryRouteIsInOneFeature refuses a route in none.
 func New(cfg Config) http.Handler {
 	now := cfg.Now
 	if now == nil {
@@ -215,6 +232,8 @@ func New(cfg Config) http.Handler {
 		svc:          cfg.Service,
 		now:          now,
 		authRate:     newRateLimiter(interval, now),
+		personRate:   newPersonRate(cfg.RequestsPerPerson, cfg.RequestBurstPerPerson, now),
+		ownTokenRate: newPersonRate(cfg.RequestsPerPerson, cfg.RequestBurstPerPerson, now),
 		inviteCode:   cfg.InviteCode,
 		totpDisabled: cfg.TOTPDisabled,
 		catalog:      cfg.Catalog,
@@ -226,6 +245,7 @@ func New(cfg Config) http.Handler {
 		verifier:     cfg.Publishers,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+		names:        vocabulary.NameRuleFor(cfg.PublicURL),
 		packages:     cfg.Packages,
 		refresher:    cfg.PackageRefresher,
 		setUpEnded:   cfg.setUpEnded,
@@ -240,6 +260,7 @@ func New(cfg Config) http.Handler {
 	}
 	h.setups = appsetup.NewRunner(h.packages)
 	h.mcp = mcp.NewServer("substrate", build.Version())
+	h.mcp.OnToolCall = countMCPToolCall
 	if h.fetcher == nil {
 		h.fetcher = authorize.NewFetcher(now)
 	}
@@ -333,13 +354,18 @@ func New(cfg Config) http.Handler {
 		r.Post("/totp/enroll", h.postTOTPBegin)
 		r.Post("/totp", h.postTOTP)
 		r.Post("/repository/delete", h.postDeleteRepository)
+		r.Post("/repository/rename", h.postRenameRepository)
+		// Signing out everywhere ends every token, so a token is no evidence
+		// for it either.
+		r.Post("/signout/everywhere", h.postSignOutEverywhere)
 		// Tokens: minting and revoking need a token already, so these sit
 		// behind the ordinary bearer check. Revoking is a record delete either
 		// way — the same write the generic surface performs.
 		r.Group(func(r chi.Router) {
-			r.Use(h.requireAuth)
+			r.Use(h.requirePerson)
 			r.Post("/tokens", h.postMintToken)
 			r.Get("/tokens", h.getTokens)
+			r.Get("/identity", h.getIdentity)
 			r.Delete("/tokens/{id}", h.deleteToken)
 		})
 	})
@@ -348,8 +374,13 @@ func New(cfg Config) http.Handler {
 	// repository's authority and the trigger; the trigger's own key, when it
 	// declares one, is the credential (the trailing segment, `?key=` or a
 	// bearer header). A GET falls through to the SPA like /login does.
-	r.Post("/webhooks/{authority}/{trigger}", h.postWebhook)
-	r.Post("/webhooks/{authority}/{trigger}/{key}", h.postWebhook)
+	r.Post("/webhooks/{repository}/{trigger}", h.postWebhook)
+	r.Post("/webhooks/{repository}/{trigger}/{key}", h.postWebhook)
+	// What the repositories here publish (decision record 0291), bearer-less
+	// and outside /api for the same reason: another server reads it by the
+	// address the authority's `_substrate` record names.
+	r.Get(publishedPrefix+"/{repository}/{authority}", h.getPublishedDocument)
+	r.Get(publishedPrefix+"/{repository}/{authority}/{package}/{version}", h.getPublishedClosure)
 
 	r.Route("/api/"+APIVersion, h.mountResources)
 
@@ -503,6 +534,13 @@ func (h *handler) mountResources(r chi.Router) {
 			// name (scopedDataset.CallFunction, decision 0219). Five
 			// segments, so the record path below never shadows it.
 			r.Post("/"+corePackage+"/function/{name}/call", h.postFunctionCall)
+			// Traits as host-recognized interfaces: the kinds implementing one,
+			// each with its declaration. Their records are `GET
+			// /records?filter={"implements": …}`. An app's token is answered
+			// the implementors its grant reaches (scopedDataset), so an app
+			// over every kind with a status learns them without reading every
+			// declaration (docs/plans/tasks-sources.md). Five segments.
+			r.Get("/"+corePackage+"/trait/{id}/implementors", h.getTraitImplementors)
 			// An applet's runtime (applets.go): its reads and writes are the
 			// token's own, so an app's token reaches the applets its scopes
 			// read, held by the scopedDataset like every route here.
@@ -529,6 +567,10 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
 			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
+			// The two actions on a record's marks (decision 0284). Five
+			// segments, so the record path above never shadows them.
+			r.Post("/{a1}/{a2}/{a3}/{a4}/pin", h.postPin)
+			r.Post("/{a1}/{a2}/{a3}/{a4}/release", h.postRelease)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -565,26 +607,35 @@ func (h *handler) mountResources(r chi.Router) {
 			// The boot upgrade's preview: what this binary would move in the
 			// shipped packages here, and the guard lines it refused on.
 			r.Get("/vocabulary/upgrade", h.getVocabularyUpgrade)
+			// How long each kind's history is kept here: declared, overridden
+			// and in effect (decision 0282). An override is a record of
+			// `core/retention`, written through the records routes.
+			r.Get("/retention", h.getRetention)
 			// Merge joins two records of one kind; split reverses a merge.
 			// Creating the command record performs the operation, so these are
 			// actions, not the recordmerge/recordsplit collections.
 			r.Post("/merge", h.postMerges)
 			r.Post("/split", h.postSplits)
-			// The catalog: the bundle closures shipped in the binary. List and
-			// detail are repository reads (installed reflects this
-			// repository); the two writes are the two TIERS' doors (decision
-			// record 0048), both owner actions applying the closure through
-			// the same vocabulary-apply admission path. `install` takes a
-			// PROVIDER under the authority that publishes it; `import` takes a
-			// SAMPLE under this repository's own authority.
+			// The catalog: the bundle closures shipped in the binary and the
+			// packages authority documents publish. List and detail are
+			// repository reads (installed reflects this repository); `add` is
+			// the owner's one write, applying the closure through the same
+			// vocabulary-apply admission path. Who keeps the package decides
+			// where it lands (decision record 0258): a published package under
+			// the authority that publishes it, a sample under this
+			// repository's own authority.
 			r.Get("/catalog", h.getCatalog)
 			r.Get("/catalog/{id}", h.getCatalogItem)
-			r.Post("/catalog/{id}/install", h.postCatalogInstall)
-			r.Post("/catalog/{id}/import", h.postCatalogImport)
+			r.Post("/catalog/{id}/add", h.postCatalogAdd)
 			// Domain verification (decision 0208): the record to publish,
 			// and the check that stamps the repository record verified.
 			r.Post(domainRoute, h.postDomain)
 			r.Post(domainVerifyRoute, h.postDomainVerify)
+			// Publishing (decision record 0289): the owner moves a package
+			// out of `~` to an authority it proved, and releases it.
+			r.Post(publishRoute, h.postPublish)
+			r.Post(releaseRoute, h.postPackageRelease)
+			r.Get(releasesRoute, h.getReleases)
 
 			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level
 			// below the record ({name}/call, {id}/bind), where no id can sit, so
@@ -611,10 +662,6 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get(bundle+"/status", h.getBundleStatuses)
 			r.Get(bundle+"/{id}/status", h.getBundleStatus)
 			r.Post(bundle+"/{id}/bind", h.postBundleBind)
-			// Traits as host-recognized interfaces: the kinds implementing one.
-			// Their records are `GET /records?filter={"implements": …}`.
-			trait := "/" + corePackage + "/trait/{id}"
-			r.Get(trait+"/implementors", h.getTraitImplementors)
 			// The agent call API. Chat, the one loop streaming, and the
 			// thread routes that reach a detached turn again (decision
 			// 0169) sit on the scoped surface above, with the function call.

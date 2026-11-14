@@ -5,10 +5,12 @@
 #
 # It ships DISABLED and without a key, because an enabled trigger with no key
 # is an open endpoint that writes health records for anyone who can reach the
-# server. Set `source.webhook.key` (16 to 128 characters of [A-Za-z0-9_-]),
-# enable it, and give the app the same key as an `Authorization: Bearer <key>`
-# header; the door reads the key and strips the header before the function
-# runs.
+# server, and the server refuses to enable it without one (decision 0248).
+# Substrate Sync's approval sets a key and enables it in one write. By hand,
+# set `source.webhook.key` (16 to 128 characters of [A-Za-z0-9_-]) and
+# `enabled: true` in the same write, and give the app the same key as an
+# `Authorization: Bearer <key>` header; the door reads the key and strips the
+# header before the function runs.
 #
 # `headers` is every header the function reads: the five the app adds to each
 # request on its own, and `X-Substrate-Account`, which the owner adds to name

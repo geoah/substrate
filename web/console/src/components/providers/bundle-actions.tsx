@@ -24,6 +24,7 @@ import {
 
 import { ImportRefusal } from "@/components/import-refusal"
 import { CodeChanges } from "@/components/packages/outside-code"
+import { OUTSIDE_CODE_WORDS } from "@/lib/app-setup"
 import { useTechnicalDetails } from "@/hooks/use-console-preferences"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog, PauseDialog } from "@/components/ui/confirm-dialog"
@@ -43,9 +44,8 @@ import {
 } from "@/lib/api/bundles"
 import {
   catalogQueryOptions,
+  addBundle,
   fetchCatalogItem,
-  importBundle,
-  installBundle,
   type BundleInstallResult,
 } from "@/lib/api/catalog"
 import {
@@ -69,11 +69,14 @@ import {
   needsConfirmation,
   needsConsent,
   previewFailed,
+  publisherReviewNeeded,
   publisherUnreadable,
   blockerWords,
   readyMappings,
   REIMPORT_WARNING,
-  reviewNeeded,
+  takeRunsOutsideCode,
+  retentionShortLines,
+  sameShortenings,
   stepLines,
   upgradeHolders,
   upgradeMotion,
@@ -84,19 +87,15 @@ import { shortDateTime } from "@/lib/format"
 import { bundleParams, removalLadder, type LadderStep } from "@/lib/providers"
 import { cn } from "@/lib/utils"
 
-/** The words a row's door is called by: a provider is ADDED (the everyday
- * word for its install), a sample IMPORTED. */
-
-/** Take a row's shipped closure through its own door, with the consent its
- * preview needs: the install verb for a provider, the import verb for a
- * sample, whose closure lands rehomed over the copy this repository holds
- * (decision record 0070). */
+/** Add a row's shipped closure again, with the consent its preview needs.
+ * The one add route takes every package (decision record 0258); a sample's
+ * closure lands rehomed over the copy this repository holds (decision record
+ * 0070). */
 function takeAgain(
   row: BundleRow,
   upgrade = row.upgrade
 ): Promise<BundleInstallResult> {
-  const door = row.tier === "sample" ? importBundle : installBundle
-  return door(row.catalog?.id ?? row.id, confirmationOf(upgrade))
+  return addBundle(row.catalog?.id ?? row.id, confirmationOf(upgrade))
 }
 
 /** A step whose freshly read preview replaces something the reader has not
@@ -120,6 +119,11 @@ class ChainFailure extends Error {
     this.cause = cause
   }
 }
+
+/** A fresh preview that keeps other history for less time than the one the
+ * reader reviewed, or moved to another version: the review no longer covers
+ * what would land. */
+class ShorteningMoved extends Error {}
 
 /** ADD (or import): the row's door, taking the whole missing chain leaves
  * first, one call each, and stopping at the first refusal with the name of
@@ -172,13 +176,22 @@ export function TakeButton({
         ) {
           throw new NeedsConsent(bundle)
         }
-        // A held step whose publisher's changes need review is its own
-        // page's to update: this run shows no diff to review.
-        if (reviewNeeded(fresh.upgrade)) {
+        // A held step whose publisher's changes need review, or that keeps
+        // history for less time, is its own page's to update: this run
+        // shows neither for review.
+        if (publisherReviewNeeded(fresh.upgrade)) {
           throw new ChainFailure(
             bundle.name,
             new Error(
               "Its publisher listed changes that need your review. Update it from its own page first."
+            )
+          )
+        }
+        if (fresh.upgrade?.retentionShortens?.length) {
+          throw new ChainFailure(
+            bundle.name,
+            new Error(
+              "Updating it keeps some history for less time. Update it from its own page first, where that is listed for your review."
             )
           )
         }
@@ -209,9 +222,9 @@ export function TakeButton({
         type: "success",
         title:
           plan.bundles.length === 1
-            ? row.tier === "sample"
-              ? // A sample lands under THIS repository's authority, not the
-                // id the reader clicked (decision record 0048).
+            ? row.keptBy === "repository"
+              ? // A sample lands in the local namespace `~`, not at the id
+                // the reader clicked (decision records 0048 and 0259).
                 technical
                 ? `${called} added as ${landed.id}.`
                 : `${called} added.`
@@ -224,7 +237,7 @@ export function TakeButton({
       // package that landed with an empty required setting cannot run until
       // it is filled in, so it goes to its form. A standard collection and a
       // sample stay where they were added (decision record 0238). The id is
-      // the LANDED one: a sample's is rehomed.
+      // the LANDED one: a sample's is under `~`.
       const needsSettings = (landed.setup ?? []).some(
         (item) => item.code === "setting"
       )
@@ -318,8 +331,9 @@ export function TakeButton({
 
 /** UPDATE: the row's own door again, offered only when the server's preview
  * says the closure moved and nothing blocks it. An update that loses
- * something (a lossy plan, or a re-import over an edited sample copy), or
- * whose publisher's changes need review (decision 0220), asks first through
+ * something (a lossy plan, or a re-import over an edited sample copy), whose
+ * publisher's changes need review (decision 0220), or that keeps some
+ * history for less time at any tier (decision 0282), asks first through
  * `LossyUpgradeDialog`, which the caller renders so it outlives a re-render
  * of the row. */
 export function UpgradeButton({
@@ -405,13 +419,16 @@ export function UpgradeButton({
   )
 }
 
-/** The dialog an update that asks first goes through, for either reason:
- * it loses something (decisions 0067 and 0070), or the publisher's changes
- * need review before they land (decision 0220): code shown as diffs, or
- * what the server marked for review without one, a declaration removed or
- * a reach grown, listed by the versions that move. A review is bound to
- * what was shown: the install carries the preview's version and digest,
- * and a publisher that listed another version since answers 409.
+/** The dialog an update that asks first goes through, for any of three
+ * reasons: it loses something (decisions 0067 and 0070); the publisher's
+ * changes need review before they land (decision 0220), code shown as
+ * diffs, or what the server marked for review without one, a declaration
+ * removed or a reach grown, listed by the versions that move; or it keeps
+ * some kind's history for less time, at any tier (decision 0282). A review
+ * is bound to what was shown: the install carries the preview's version and
+ * digest, and a publisher that listed another version since answers 409. A
+ * shortening with no publisher behind it reads the preview again at the
+ * click and lands only if it shortens the same kinds at the same version.
  *
  * It reads the row's CURRENT preview: after a `409` the catalog is read
  * again, the dialog stays open and says so, and its next click confirms the
@@ -426,20 +443,28 @@ export function LossyUpgradeDialog({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
-  // Which row's confirmation the server refused, and whether it refused the
-  // reviewed version (the publisher moved) or the plan (records moved).
+  // Which row's confirmation was refused, and what moved: the reviewed
+  // version (the publisher listed another), the plan (records moved), or
+  // what the update keeps for less time.
   const [stale, setStale] = useState<{
     key: string
-    reviewed: boolean
+    moved: "publisher" | "plan" | "retention"
   } | null>(null)
   const upgrade = row?.upgrade
   const called = name ?? row?.name
-  const review = reviewNeeded(upgrade)
+  const publisher = publisherReviewNeeded(upgrade)
+  const shorter = retentionShortLines(upgrade)
   const expectation = expectationOf(upgrade)
   const upgrading = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!row || !needsConsent(upgrade)) {
         throw new Error("no plan to confirm")
+      }
+      if (shorter.length > 0 && !publisher) {
+        const fresh = await fetchCatalogItem(row.catalog?.id ?? row.id)
+        if (!sameShortenings(upgrade, fresh.upgrade)) {
+          throw new ShorteningMoved()
+        }
       }
       return takeAgain(row)
     },
@@ -460,15 +485,26 @@ export function LossyUpgradeDialog({
       // A 409 says what was confirmed moved: the publisher listed another
       // version than the one reviewed, or records changed since the plan
       // was read; a 403 `lossy` at the same head says the plan itself
-      // reads differently now. Either way the consent named something the
-      // server no longer counts: read it again.
+      // reads differently now; a fresh preview that shortens other history
+      // says the binary moved. Either way the consent named something that
+      // no longer holds: read it again.
+      if (error instanceof ShorteningMoved) {
+        setStale({ key: row?.key ?? "", moved: "retention" })
+        void queryClient.invalidateQueries({
+          queryKey: catalogQueryOptions.queryKey,
+        })
+        return
+      }
       if (
         error instanceof ApiError &&
         (error.status === 409 || error.code === "lossy")
       ) {
         setStale({
           key: row?.key ?? "",
-          reviewed: error.status === 409 && expectation !== undefined,
+          moved:
+            error.status === 409 && expectation !== undefined
+              ? "publisher"
+              : "plan",
         })
         void queryClient.invalidateQueries({
           queryKey: catalogQueryOptions.queryKey,
@@ -496,25 +532,27 @@ export function LossyUpgradeDialog({
   }, [lossless, onClose, called])
   if (!row || lossless) return null
   const losses = lossyStepLines(upgrade)
-  const changes = review ? changeLines(upgrade) : []
+  const changes = publisher ? changeLines(upgrade) : []
   const staleHere = stale !== null && stale.key === row.key
-  // A review binds the install to the version shown; a preview that did not
-  // say which version it is of cannot be confirmed as reviewed.
-  const unbound = review && !expectation
+  // A publisher's review binds the install to the version shown; a preview
+  // that did not say which version it is of cannot be confirmed as reviewed.
+  const unbound = publisher && !expectation
   const close = () => {
     setStale(null)
     onClose()
   }
   const title = upgrade?.discardsEdits
     ? `Update ${called} and replace your edits?`
-    : review
+    : publisher
       ? `Review the publisher’s changes to ${called}`
-      : `Update ${called} and remove values?`
+      : upgrade?.lossy || shorter.length === 0
+        ? `Update ${called} and remove values?`
+        : `Update ${called} and keep less history?`
   const consequence =
     (upgrade?.discardsEdits
       ? `You edited ${row.id} since you added it. Updating replaces the package with the shipped one, so your edits go with it. Your records are untouched. `
       : "") +
-    (review
+    (publisher
       ? `Its publisher listed ${
           upgrade?.candidateVersion
             ? `version ${upgrade.candidateVersion}`
@@ -522,7 +560,9 @@ export function LossyUpgradeDialog({
         } with changes that need your review before they land${
           upgrade?.codeChanges?.length
             ? ": the code it runs changed, shown below"
-            : ": what it declares, or what its code reaches, is not the same as what you hold"
+            : upgrade?.retentionShortens?.length
+              ? ": it keeps some history for less time, shown below"
+              : ": what it declares, or what its code reaches, is not the same as what you hold"
         }. `
       : "") +
     (upgrade?.lossy
@@ -531,14 +571,21 @@ export function LossyUpgradeDialog({
         } and removes some values from them. ` +
         `The removed values stay in History. `
       : "") +
-    (review
+    (shorter.length > 0 && !publisher
+      ? `Updating keeps the history of the collections below for less time. Each record’s latest state is always kept, and nothing is removed until a release that compacts history. An override of a collection’s retention keeps its history whatever the update says. `
+      : "") +
+    (publisher
       ? `Confirming updates to exactly the version reviewed here. If the publisher lists another version before it lands, the update is refused and this asks again.`
-      : `This confirms exactly the plan below. If a record or collection it changes is written before it lands, the plan is read again.`)
+      : upgrade?.lossy || upgrade?.discardsEdits
+        ? `This confirms exactly the plan below. If a record or collection it changes is written before it lands, the plan is read again.`
+        : `Confirming updates to the version shown here. If what it keeps for less time has changed when you confirm, nothing is updated and this asks again.`)
   const confirm = upgrade?.discardsEdits
     ? "Update and replace my edits"
-    : review
+    : publisher
       ? "Approve the changes and update"
-      : "Update and remove values"
+      : upgrade?.lossy || shorter.length === 0
+        ? "Update and remove values"
+        : "Keep less history and update"
   return (
     <ConfirmDialog
       title={title}
@@ -549,7 +596,7 @@ export function LossyUpgradeDialog({
       onConfirm={() => upgrading.mutate()}
       onClose={close}
     >
-      {review && upgrade?.candidateVersion !== undefined && (
+      {publisher && upgrade?.candidateVersion !== undefined && (
         <p className="text-xs text-muted-foreground">
           Reviewing version {upgrade.candidateVersion}
           {upgrade.candidateDigest ? (
@@ -563,7 +610,25 @@ export function LossyUpgradeDialog({
           .
         </p>
       )}
+      {takeRunsOutsideCode(row, []) && (
+        <p className="text-xs">
+          <span className="font-medium">Code: experimental.</span>{" "}
+          {OUTSIDE_CODE_WORDS}
+        </p>
+      )}
       <CodeChanges changes={upgrade?.codeChanges} />
+      {shorter.length > 0 && (
+        <section className="space-y-1">
+          <h3 className="text-sm font-medium">History kept for less time</h3>
+          <ul className="space-y-1 text-xs">
+            {shorter.map((line) => (
+              <li key={line} className="break-all">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {changes.length > 0 && (
         <section className="space-y-1">
           <h3 className="text-sm font-medium">Declarations that change</h3>
@@ -578,9 +643,11 @@ export function LossyUpgradeDialog({
       )}
       {staleHere && (
         <p role="status" className="text-sm text-warning">
-          {stale.reviewed
+          {stale.moved === "publisher"
             ? "The publisher listed another version since you reviewed this one, so the update was refused. Review it again below, then confirm."
-            : "A record or collection this plan changes was written since it was read, so the update was refused. Check the plan below and confirm it again."}
+            : stale.moved === "retention"
+              ? "What this update keeps for less time changed since you read it, so nothing was updated. Check it below and confirm again."
+              : "A record or collection this plan changes was written since it was read, so the update was refused. Check the plan below and confirm it again."}
         </p>
       )}
       {unbound && (
@@ -962,8 +1029,21 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const ready = readyMappings({ catalog: item })
+  const shorter = retentionShortLines(item.upgrade)
   const importing = useMutation({
-    mutationFn: () => importBundle(item.id, confirmationOf(item.upgrade)),
+    mutationFn: async () => {
+      // What it keeps for less time is bound as an update's is: the same
+      // kinds at the same version, read again at the click.
+      if (shorter.length > 0) {
+        const fresh = await fetchCatalogItem(item.id)
+        if (!sameShortenings(item.upgrade, fresh.upgrade)) {
+          throw new Error(
+            "What adding it again keeps for less time changed since you read it, so nothing was added. Read it again and confirm."
+          )
+        }
+      }
+      return addBundle(item.id, confirmationOf(item.upgrade))
+    },
     onSuccess: (status) => {
       setConfirming(false)
       toast.add({
@@ -1016,13 +1096,31 @@ export function ImportAgainNote({ item }: { item: CatalogItem }) {
             `This lands ${what}, now that the provider each one reads is here. ` +
             `Adding it again REPLACES ${item.id} rather than merging into it: a collection or a property you added is dropped by it, ` +
             `and it is refused outright while your records still hold something the shipped package no longer has. ` +
-            `Your records are untouched either way.`
+            `Your records are untouched either way.` +
+            (shorter.length > 0
+              ? ` It also keeps the history of the collections below for less time; nothing is removed until a release that compacts history.`
+              : "")
           }
           confirm="Add again"
           pending={importing.isPending}
           onConfirm={() => importing.mutate()}
           onClose={() => setConfirming(false)}
-        />
+        >
+          {shorter.length > 0 && (
+            <section className="space-y-1">
+              <h3 className="text-sm font-medium">
+                History kept for less time
+              </h3>
+              <ul className="space-y-1 text-xs">
+                {shorter.map((line) => (
+                  <li key={line} className="break-all">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </ConfirmDialog>
       )}
     </div>
   )

@@ -156,7 +156,7 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 		},
 		"only an enum or a machine lists them": {
 			"", "    note:\n      type: string\n      done: [x]\n",
-			"done and dropped name an enum's values or a state machine's states",
+			"done names an enum's values or a state machine's states",
 		},
 		"a machine starts open": {
 			bindsLifecycle, choreMachine + "      done: [completed]\n      dropped: [pending]\n",
@@ -164,11 +164,11 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 		},
 		"a list closes nothing": {
 			"", "    phases:\n      type: enum\n      repeated: true\n      values: [open, closed]\n      done: [closed]\n",
-			"done and dropped close a record by its one status",
+			"done belongs on a status that holds one value",
 		},
 		"a field closes nothing": {
 			"", "    box:\n      type: object\n      fields:\n        phase:\n          type: enum\n          values: [open, closed]\n          done: [closed]\n",
-			"never an object field or link data",
+			"done belongs on a kind's own property, never an object field or link data",
 		},
 		"link data closes nothing": {
 			"", "    parent:\n      type: reference\n      kind: ada.example.com/work/chore\n      properties:\n        phase:\n          type: enum\n          values: [open, closed]\n          done: [closed]\n",
@@ -202,6 +202,116 @@ func TestAStatusListsWhatClosesARecordAndNothingElse(t *testing.T) {
 				traits = "    - substrate.reamde.dev/core/temporal(point)\n"
 			}
 			_, err := overSeed(t, workPackage(traits, tc.properties))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// A status names the open states a record waits in until its owner accepts
+// it (decision 0247): a suggestion is born proposed, accepted into an open
+// state and dismissed into a dropped one.
+func TestAStatusNamesItsProposedStates(t *testing.T) {
+	machine := `    status:
+      type: state
+      states: [proposed, open, done, abandoned]
+      initial: proposed
+      transitions:
+        - from: proposed
+          to: open
+        - from: proposed
+          to: abandoned
+        - from: open
+          to: done
+      done: [done]
+      dropped: [abandoned]
+      proposed: [proposed]
+`
+	reg, err := overSeed(t, workPackage(bindsLifecycle, machine))
+	if err != nil {
+		t.Fatalf("a machine born proposed: %v", err)
+	}
+	if got := chore(t, reg).Props[vocabulary.LifecycleStatus].Proposed; !slices.Equal(got, []string{"proposed"}) {
+		t.Fatalf("proposed %v", got)
+	}
+	enum := "    status:\n      type: enum\n      values: [suggested, open, closed]\n      done: [closed]\n      proposed: [suggested]\n"
+	if _, err := overSeed(t, workPackage(bindsLifecycle, enum)); err != nil {
+		t.Fatalf("an enum with a proposed value: %v", err)
+	}
+	// Several proposed states, each with its own way into an open one, on a
+	// status the binding renames.
+	renamed := `    state:
+      type: state
+      states: [suggested, drafted, open, done]
+      initial: suggested
+      transitions:
+        - from: suggested
+          to: open
+        - from: drafted
+          to: open
+        - from: open
+          to: done
+      done: [done]
+      proposed: [suggested, drafted]
+`
+	reg, err = overSeed(t, workPackage(renamesState, renamed))
+	if err != nil {
+		t.Fatalf("two proposed states on a renamed status: %v", err)
+	}
+	if got := chore(t, reg).Props["state"].Proposed; !slices.Equal(got, []string{"suggested", "drafted"}) {
+		t.Fatalf("proposed %v", got)
+	}
+
+	cases := map[string]struct{ properties, want string }{
+		"a proposed value is one of its own": {
+			choreMachine + "      done: [completed]\n      proposed: [maybe]\n",
+			`"maybe" is not one of the property's values`,
+		},
+		"a proposed value is open": {
+			choreMachine + "      done: [completed]\n      proposed: [completed]\n",
+			`"completed" is already listed in done`,
+		},
+		"a proposal has an open state to be accepted into": {
+			"    status:\n      type: enum\n      values: [suggested, closed]\n      done: [closed]\n      proposed: [suggested]\n",
+			"done and proposed leave no value outside the lists to accept a proposal into",
+		},
+		"a machine can accept each proposal": {
+			choreMachine + "      done: [completed]\n      dropped: [skipped]\n      proposed: [doing]\n",
+			`"doing" has no transition to an open state`,
+		},
+		"only an enum or a machine names them": {
+			"    note:\n      type: string\n      proposed: [x]\n",
+			"proposed names an enum's values or a state machine's states",
+		},
+		"a proposed value is listed once": {
+			"    status:\n      type: enum\n      values: [suggested, open, closed]\n      done: [closed]\n      proposed: [suggested, suggested]\n",
+			`"suggested" is already listed in proposed`,
+		},
+		"a proposed value is not dropped": {
+			"    status:\n      type: enum\n      values: [suggested, open, closed]\n      done: [closed]\n      dropped: [suggested]\n      proposed: [suggested]\n",
+			`"suggested" is already listed in dropped`,
+		},
+		"the list is a list": {
+			"    status:\n      type: enum\n      values: [suggested, open, closed]\n      done: [closed]\n      proposed: suggested\n",
+			"proposed: a list of the property's own values",
+		},
+		"a list of statuses names no proposals": {
+			"    status:\n      type: enum\n      values: [suggested, open, closed]\n      done: [closed]\n    phases:\n      type: enum\n      repeated: true\n      values: [a, b]\n      proposed: [a]\n",
+			"proposed belongs on a status that holds one value",
+		},
+		"a field names no proposals": {
+			"    status:\n      type: enum\n      values: [open, closed]\n      done: [closed]\n    box:\n      type: object\n      fields:\n        phase:\n          type: enum\n          values: [a, b]\n          proposed: [a]\n",
+			"proposed belongs on a kind's own property",
+		},
+		"a proposal accepted only into another proposal is not accepted": {
+			"    status:\n      type: state\n      states: [draft, review, open, done]\n      initial: draft\n      transitions:\n        - from: draft\n          to: review\n        - from: review\n          to: open\n        - from: open\n          to: done\n      done: [done]\n      proposed: [draft, review]\n",
+			`"draft" has no transition to an open state that is not proposed`,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := overSeed(t, workPackage(bindsLifecycle, tc.properties))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got: %v", tc.want, err)
 			}

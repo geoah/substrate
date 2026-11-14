@@ -2,12 +2,12 @@ package testenv_test
 
 // The published error codes, over a real socket, against the real engine.
 //
-// internal/api is tested against a hand-written fake and internal/engine
-// against its own Go surface, so each half is held to its own half of the
-// contract and nothing holds the seam. The fake's Put ignores IfVersion, and it
-// never builds a *substrate.ValidationError, so "the engine returns sentinel X"
-// and "the API maps sentinel X to status Y" can both pass while the engine
-// returns a different sentinel for the request that matters.
+// The table holds the seam between the two halves code by code: every code
+// internal/api can answer is produced here by a request the real engine
+// refuses or fails, so a code with no engine path to it shows up as a case
+// nobody can write. internal/api's own *_db_test.go suites run the handler
+// on the real engine too (decision 0263); this file is the one list of every
+// code.
 //
 // Every case below is one HTTP request to a running substrate, and the table
 // is checked against the code* declarations parsed out of internal/api: a code
@@ -40,6 +40,10 @@ const (
 	// conformanceRef is the package identity the declarations live in, which
 	// is also the first two segments of every kind reference and every route.
 	conformanceRef = conformanceAuthority + "/" + conformancePackage
+	// conformanceLocal is the same package as every reply names it, in the
+	// repository's own namespace (decision record 0259): the suite writes the
+	// full name, which is another spelling of it.
+	conformanceLocal = "~/" + conformancePackage
 )
 
 // notesPath is the kind prefix every record case writes under; a record path is
@@ -145,7 +149,7 @@ func conformanceCases() []codeCase {
 				"properties": map[string]any{"subject": "the first write"},
 			})
 			rec := wantRecord(t, status, body, http.StatusCreated)
-			if rec.Version != 1 || rec.Kind != conformanceRef+"/note" {
+			if rec.Version != 1 || rec.Kind != conformanceLocal+"/note" {
 				t.Fatalf("created record: %+v", rec)
 			}
 			if rec.Properties["phase"] != "draft" {
@@ -359,7 +363,7 @@ func conformanceCases() []codeCase {
 		code: "totp_required",
 		run: func(t *testing.T, e *testenv.Env) {
 			attempt, err := json.Marshal(substrate.LoginRequest{
-				Repository: e.Repository, Password: "correct-horse-battery-staple",
+				Identity: e.Repository, Password: "correct-horse-battery-staple",
 			})
 			if err != nil {
 				t.Fatalf("marshal the attempt: %v", err)
@@ -384,7 +388,7 @@ func conformanceCases() []codeCase {
 			// A username of this case's own, so the per-(IP, username) bucket
 			// is untouched by the registration Start already performed.
 			attempt, err := json.Marshal(map[string]any{
-				"repository": "conformance-pacing.example.com", "password": "wrong",
+				"identity": "conformance-pacing.example.com", "password": "wrong",
 			})
 			if err != nil {
 				t.Fatalf("marshal the attempt: %v", err)

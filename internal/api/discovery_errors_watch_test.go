@@ -1,10 +1,11 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 
@@ -15,30 +16,8 @@ const changesPath = "/api/v1/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
-// wantFeatureSurfaces is the roster this deployment reports, with the
-// surfaces each entry claims, written out here rather than read off
-// api.features: a feature added to the literal without a route behind it has
-// to be added here too, by hand.
-var wantFeatureSurfaces = map[string][]string{
-	"triggers":   {surfaceREST},
-	"functions":  {surfaceREST},
-	"bundles":    {surfaceREST},
-	"blobs":      {surfaceREST},
-	"export":     {surfaceREST},
-	"changefeed": {surfaceREST},
-	"search":     {surfaceREST},
-	"aggregate":  {surfaceREST},
-	"units":      {surfaceREST},
-	"embeddings": {surfaceREST},
-	"agents":     {surfaceREST},
-	"apps":       {surfaceREST},
-	"mcp":        {surfaceMCP},
-	"applets":    {surfaceREST, surfaceMCP},
-}
-
 func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
-	svc := newFakeService()
-	h := New(Config{Service: svc})
+	h := New(Config{Service: &stubService{}})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -68,43 +47,9 @@ func TestDiscoveryReportsVersionsAndBuild(t *testing.T) {
 		t.Fatalf("server version missing")
 	}
 	// A list, never null: a client that decodes an array must not have to
-	// handle a missing one. What is in it is the two tests below.
+	// handle a missing one. What is in it is features_test.go's.
 	if body := rec.Body.String(); !strings.Contains(body, `"features":[{`) {
 		t.Fatalf("features did not serialize as a list: %s", body)
-	}
-}
-
-// Every feature says which surfaces serve it, and each name is a key of the
-// document's `surfaces` object: a client follows a feature to its door
-// instead of trying a route to see whether it exists.
-func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
-	h := New(Config{Service: newFakeService()})
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
-	doc := decodeJSON[discoveryDoc](t, rec)
-
-	want := wantFeatureSurfaces
-	seen := map[string]bool{}
-	for _, f := range doc.Features {
-		if seen[f.Name] {
-			t.Fatalf("feature %q listed twice", f.Name)
-		}
-		seen[f.Name] = true
-		if len(f.Surfaces) == 0 {
-			t.Fatalf("feature %q names no surface", f.Name)
-		}
-		if _, ok := want[f.Name]; !ok {
-			t.Fatalf("unknown feature %q: a new one has to declare its surfaces here", f.Name)
-		}
-		if !slices.Equal(f.Surfaces, want[f.Name]) {
-			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, want[f.Name])
-		}
-	}
-	for name := range want {
-		if !seen[name] {
-			t.Fatalf("feature %q missing from discovery", name)
-		}
 	}
 }
 
@@ -114,7 +59,7 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 // is read off the wire as bytes too, because a client reads JSON and a
 // renamed key would still decode into the Go struct.
 func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnv(t, nil)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 	doc := decodeJSON[discoveryDoc](t, rec)
@@ -150,98 +95,60 @@ func TestDiscoveryNamesEachSurfaceWithItsCompatibility(t *testing.T) {
 	}
 }
 
-// The `search` feature is a claim about a route, so hold the route to it:
-// `GET /records?q=` ranks, and the answer is the ranked page with a score per
-// hit. A search path of its own under /api/v1 names nothing.
-func TestSearchIsTheRecordsRouteRanking(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-	ds.put(&substrate.Record{ID: "p1", Kind: personKind, Title: "Ada Lovelace", Properties: map[string]any{}})
-	ds.put(&substrate.Record{ID: "p2", Kind: personKind, Title: "Grace Hopper", Properties: map[string]any{}})
-
-	rec := env.do(t, http.MethodGet, recordsPath+"?q=ada", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	page := decodeJSON[substrate.RankedPage](t, rec)
-	if len(page.Records) != 1 || page.Records[0].ID != "p1" {
-		t.Fatalf("ranked page = %+v", page)
-	}
-	if page.Scores[personKind+"/p1"].Lexical == 0 {
-		t.Fatalf("the hit carries no score: %+v", page.Scores)
-	}
-
-	rec = env.do(t, http.MethodGet, "/api/v1/search?q=hello", tok, nil)
+// A search path of its own under /api/v1 names nothing: the `search`
+// feature is the records route ranking (discovery_errors_watch_db_test.go),
+// and this path is the router's 404.
+func TestSearchHasNoPathOfItsOwn(t *testing.T) {
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/search?q=hello", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if body := rec.Body.String(); !strings.Contains(body, "no such API path") {
 		t.Fatalf("GET /api/v1/search = %s, want the router's 404", body)
 	}
 }
 
-// discoveryFeatures reads the feature list one service reports.
-func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
-	t.Helper()
-	h := New(Config{Service: svc})
-	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	got := map[string]string{}
-	for _, f := range decodeJSON[discoveryDoc](t, rec).Features {
-		got[f.Name] = f.Stability
-	}
-	return got
-}
-
-// Every feature carries the stability its shape has reached. `stable` means
-// frozen for v1. `search` stays beta while the ranked page's shape is young,
-// and `agents` and `embeddings` stay alpha because both shapes are still
-// moving.
-// Change a stamp here and in the features literal together, and a stable one
-// only with a decision record, as 0053 scheduled this flip: it is a promise a
-// client has already read.
-func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
-	got := discoveryFeatures(t, newFakeService())
-
-	want := map[string]string{
-		"triggers":              substrate.StabilityStable,
-		"functions":             substrate.StabilityStable,
-		"bundles":               substrate.StabilityStable,
-		"blobs":                 substrate.StabilityStable,
-		"export":                substrate.StabilityBeta,
-		"changefeed":            substrate.StabilityStable,
-		"search":                substrate.StabilityBeta,
-		"aggregate":             substrate.StabilityAlpha,
-		"units":                 substrate.StabilityAlpha,
-		"embeddings":            substrate.StabilityAlpha,
-		substrate.FeatureAgents: substrate.AgentStability,
-		"apps":                  substrate.StabilityAlpha,
-		"mcp":                   substrate.StabilityAlpha,
-		"applets":               substrate.StabilityAlpha,
-	}
-	if len(got) != len(want) {
-		t.Fatalf("features = %+v, want %d entries", got, len(want))
-	}
-	for name, stability := range want {
-		if got[name] != stability {
-			t.Fatalf("feature %q stability = %q, want %q", name, got[name], stability)
-		}
-	}
-	// The agent surface reads its stability off the substrate marker, never a
-	// literal here.
-	if got[substrate.FeatureAgents] != "alpha" {
-		t.Fatalf("agents feature = %q, want alpha", got[substrate.FeatureAgents])
-	}
-}
-
 func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
-	env := newTestEnv(t)
+	env := newStubEnv(t, nil)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 }
 
+// Discovery names the host a short repository name is completed under, the
+// public URL's (decision record 0288), and names it empty where none is
+// configured: always present, so a client tells that server from an older
+// one, which sends no field and completes under the request's host.
+func TestDiscoveryNamesTheHostAShortNameIsCompletedUnder(t *testing.T) {
+	for publicURL, want := range map[string]string{
+		"https://substrate.example.com": "substrate.example.com",
+		"http://localhost:8080":         "localhost",
+		"":                              "",
+	} {
+		env := newStubEnv(t, nil, func(c *Config) { c.PublicURL = publicURL })
+		rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
+		wantStatus(t, rec, http.StatusOK)
+		var doc struct {
+			Registration map[string]any `json:"registration"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if got, present := doc.Registration["nameHost"]; !present || got != want {
+			t.Errorf("public URL %q: registration.nameHost = %v (present %v), want %q", publicURL, got, present, want)
+		}
+	}
+}
+
+// discoveryEmptyList is a repository whose list answers an empty page at a
+// fixed head: the one read GET /records makes.
+type discoveryEmptyList struct{ changesStub }
+
+func (discoveryEmptyList) List(context.Context, substrate.Query) (*substrate.Page, error) {
+	return &substrate.Page{Records: []*substrate.Record{}}, nil
+}
+
 func TestPrimaryPrefixServesResources(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+	env := newStubEnv(t, discoveryEmptyList{})
+	rec := env.do(t, http.MethodGet, recordsPath, stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("primary /api/v1 carried a Warning header: %q", w)
@@ -251,19 +158,16 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 // An unknown version prefix is an ordinary unknown API path: a 404 problem
 // object, never a quietly aliased 200.
 func TestUnknownVersionPrefixIsNotServed(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, "/api/v1alpha1/records", tok, nil)
+	env := newStubEnv(t, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1alpha1/records", stubToken, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
 // --- A6: the closed error set is real -----------------------------------
 
 func TestUnavailableIs503WithRetryAfter(t *testing.T) {
-	env := newTestEnv(t)
-	env.svc.authErr = errors.New("repository open failed")
-	tok := env.svc.token(fakeRepository)
-	rec := env.do(t, http.MethodGet, recordsPath, tok, nil)
+	env := newStubEnvOn(t, requestLogUnavailable{stubService: &stubService{}, err: errors.New("repository open failed")})
+	rec := env.do(t, http.MethodGet, recordsPath, stubToken, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
 		t.Fatalf("503 unavailable must carry Retry-After")
@@ -271,57 +175,24 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 }
 
 func TestBadRequestIsEmittedAndCoded(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, nil)
 	// A non-numeric changelog cursor is a bad_request, named, not silence.
-	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?from=notanumber", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 // --- A4: watch frames + horizon -----------------------------------------
 
-func TestWatchTerminalErrorFrameOnMidStreamFailure(t *testing.T) {
-	env := newTestEnv(t)
-	srv := httptest.NewServer(env.h)
-	defer srv.Close()
-	tok := env.svc.token(fakeRepository)
-	ds := env.svc.datasets[fakeRepository]
-
-	// from=0 skips headSeq so the 200 + bookmark go out first; then the drain's
-	// Changes read fails, and the stream must end with a terminal error frame
-	// carrying the problem object — not a silent EOF.
-	ds.errs["Changes"] = errBoom
-	br, stop := startWatch(t, srv, changesPath+"?watch=1&from=0", tok)
-	defer stop()
-
-	if first := readLine(t, br); first["bookmark"] == nil {
-		t.Fatalf("first line = %v, want a bookmark control frame", first)
-	}
-	frame := readLine(t, br)
-	if _, hasSeq := frame["seq"]; hasSeq {
-		t.Fatalf("terminal frame carried a seq: %v", frame)
-	}
-	errObj, ok := frame["error"].(map[string]any)
-	if !ok {
-		t.Fatalf("terminal frame = %v, want an error control frame", frame)
-	}
-	if errObj["code"] != codeInternal {
-		t.Fatalf("terminal frame code = %v, want %q", errObj["code"], codeInternal)
-	}
-}
-
 func TestCompactedBelowHorizonNonWatch(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, changesStub{})
 	// horizon is 0; a from below it exercises the compacted signal path.
-	rec := env.do(t, http.MethodGet, changesPath+"?from=-1", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?from=-1", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
 }
 
 func TestCompactedBelowHorizonWatch(t *testing.T) {
-	env := newTestEnv(t)
-	tok := env.svc.token(fakeRepository)
+	env := newStubEnv(t, changesStub{})
 	// The watch path rejects a below-horizon resume before any 200/stream byte.
-	rec := env.do(t, http.MethodGet, changesPath+"?watch=1&from=-5", tok, nil)
+	rec := env.do(t, http.MethodGet, changesPath+"?watch=1&from=-5", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusGone, codeCompacted)
 }

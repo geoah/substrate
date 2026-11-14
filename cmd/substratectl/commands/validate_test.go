@@ -437,3 +437,70 @@ func TestValidatePassesEveryShippedPackage(t *testing.T) {
 		t.Fatalf("the shipped tree skipped something:\n%s", out)
 	}
 }
+
+// A `writer:` from before actor types is refused offline as the server's
+// loader refuses it, naming the type that replaced it (decision 0290).
+func TestValidateRefusesARetiredWriterNamingItsReplacement(t *testing.T) {
+	for old, instead := range map[string]string{
+		"owner":     "write person",
+		"connector": "write [function, agent]",
+		"oauth":     "write system",
+	} {
+		h := newHarness(t)
+		path := writeManifest(t, reflectionHeader+`kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ada.example.com/reflection/note
+data:
+  authority: ada.example.com
+  package: reflection
+  names:
+    singular: note
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+    cursor:
+      type: string
+      writer: `+old+"\n")
+		_, _, err := h.run("validate", "-f", path)
+		if err == nil {
+			t.Fatalf("validate admitted writer: %s", old)
+		}
+		if block, want := problemsBlock(t, err), `writer "`+old+`" is retired: `+instead; !strings.Contains(block, want) {
+			t.Errorf("writer: %s: the problems do not say %q:\n%s", old, want, block)
+		}
+	}
+}
+
+// A field of an object takes no `writer:` (decision 0290): the property's
+// guards its whole value, and validate says so offline.
+func TestValidateRefusesAWriterOnAField(t *testing.T) {
+	h := newHarness(t)
+	path := writeManifest(t, reflectionHeader+`kind: substrate.reamde.dev/core/kind
+metadata:
+  id: ada.example.com/reflection/note
+data:
+  authority: ada.example.com
+  package: reflection
+  names:
+    singular: note
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+    resume:
+      type: object
+      writer: [function, agent]
+      fields:
+        pageToken:
+          type: string
+          writer: person
+`)
+	_, _, err := h.run("validate", "-f", path)
+	if err == nil {
+		t.Fatal("validate admitted a writer on a field")
+	}
+	if block, want := problemsBlock(t, err), "a field takes no `writer:`"; !strings.Contains(block, want) {
+		t.Errorf("the problems do not say %q:\n%s", want, block)
+	}
+}

@@ -4,7 +4,9 @@
  * runs, and what a provider's kinds fill in of yours. No fetching here; the
  * pages fold these off the reads `lib/api/*` returns. */
 
+import { actorIDOf } from "@/lib/actor-directory"
 import type {
+  BundleFeature,
   BundleUpgradeHolder,
   CatalogBrings,
   KindInfo,
@@ -25,6 +27,7 @@ import { refId, toolName, writeKinds } from "@/lib/tools"
 import {
   requestPending,
   requestUnstarted,
+  splitFailure,
   syncFailing,
   type AccountView,
   type ProviderView,
@@ -170,6 +173,7 @@ export type ProblemCode =
   | "trigger-broken"
   | "parked"
   | "update-blocked"
+  | "permissions-missing"
 
 /** One reason a provider needs attention: what is wrong in a sentence, the
  * server's own words when it gave some, and what fixes it. */
@@ -180,6 +184,10 @@ export interface ProviderProblem {
   /** The server's words for it (an error, a reason, guard lines), when it
    * gave some. */
   detail?: string[]
+  /** What followed the first line of that error: the provider's or the
+   * library's own text, which a sync body keeps under its sentence for
+   * whoever has to debug it. Shown folded, never as the reason. */
+  technical?: string
   /** The account the problem is on, by record id. */
   account?: string
   fixes: ProblemFix[]
@@ -220,7 +228,12 @@ export interface StandingInput {
   accounts: (Pick<
     AccountView,
     "sync" | "label" | "tokenStatus" | "tokenError" | "legacySyncStatus"
-  > & { record: Pick<SubstrateRecord, "id"> })[]
+  > & {
+    record: Pick<SubstrateRecord, "id">
+    /** The labels of the switches it has on that its sign-in does not
+     * cover yet (`ungrantedToggles`). */
+    ungranted?: string[]
+  })[]
   /** The delivery bookkeeping of the triggers that run the provider's own
    * functions. */
   triggers?: Pick<
@@ -311,17 +324,19 @@ export function standingProblems(
 ): ProviderProblem[] {
   const out: ProviderProblem[] = []
   for (const a of s.accounts) {
-    const why = firstLine(
-      a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
-    )
+    const said = a.sync.error ?? a.sync.message ?? a.legacySyncStatus ?? ""
+    const why = firstLine(said)
+    const technical = restLines(said)
     if (a.tokenStatus === "erroring") {
       // The OAuth facility's own reason. A sync error is a different
       // failure, often an older one, so it never stands in for it.
       const reason = firstLine(a.tokenError ?? "")
+      const more = restLines(a.tokenError ?? "")
       out.push({
         code: "sign-in",
         summary: `The sign-in for ${a.label} stopped working`,
         detail: reason ? [reason] : undefined,
+        ...(more ? { technical: more } : {}),
         account: a.record.id,
         fixes: ["reconnect"],
       })
@@ -344,8 +359,24 @@ export function standingProblems(
         code: "sync",
         summary: `Syncing ${a.label} is failing`,
         detail: detail.length ? detail : undefined,
+        ...(technical ? { technical } : {}),
         account: a.record.id,
         fixes: s.oauth ? ["sync-now", "reconnect"] : ["sync-now"],
+      })
+    }
+    // A switch turned on after the account connected, or one an update of
+    // the provider asks a new scope for, waits on a consent: the sync or the
+    // tool refuses until a reconnect grants it. A sign-in that stopped
+    // working is the sign-in problem above, which a reconnect fixes too.
+    if (s.oauth && a.tokenStatus === "connected" && a.ungranted?.length) {
+      out.push({
+        code: "permissions-missing",
+        summary: `Reconnect ${a.label} to approve ${andList(a.ungranted)}`,
+        detail: [
+          `${a.ungranted.length === 1 ? "It is" : "They are"} turned on, but the account’s sign-in was approved before, so nothing can use ${a.ungranted.length === 1 ? "it" : "them"} until you approve again.`,
+        ],
+        account: a.record.id,
+        fixes: ["reconnect"],
       })
     }
   }
@@ -566,6 +597,10 @@ export function connectionWords(
       }
     case "erroring": {
       const why = firstLine(tokenError ?? "")
+      // The facility's reason is a sentence that says what to do, so it
+      // stands alone; one written before it was (a protocol answer) still
+      // gets the ask.
+      if (/[.!?]$/.test(why)) return { text: why, tone: "bad" }
       return {
         text: why
           ? `Its sign-in stopped working: ${why} · reconnect it`
@@ -759,22 +794,21 @@ export function toolActivity(
 
 // ── what a provider did ──────────────────────────────────────────────────────
 
-function colons(id: string): string {
-  return id.split("/").join(":")
-}
-
-/** The actors a provider writes as: its bundle, and each of its functions
- * (decision 0025 derives both from the declaration ids). */
+/** The ids of the actors a provider writes as: its package's own, and each of
+ * its functions', read off the actor records the console holds
+ * (decision 0270). */
 export function providerActors(
   bundleId: string,
   functionIds: readonly string[]
 ): string[] {
   return [
-    `bundle:${colons(bundleId)}`,
+    actorIDOf("package", bundleId),
     ...functionIds
       .filter((id) => id.startsWith(`${bundleId}/`))
-      .map((id) => `function:${colons(id)}`),
-  ].sort()
+      .map((id) => actorIDOf("function", id)),
+  ]
+    .filter((id): id is string => id !== undefined)
+    .sort()
 }
 
 /** When a provider last synced one of its kinds: the newest finished run of
@@ -866,7 +900,11 @@ export function firstSentence(text: string | undefined): string {
 }
 
 function firstLine(text: string): string {
-  return text.split("\n")[0].trim()
+  return splitFailure(text).line
+}
+
+function restLines(text: string): string {
+  return splitFailure(text).technical
 }
 
 function capitalise(text: string): string {
@@ -874,6 +912,32 @@ function capitalise(text: string): string {
 }
 
 /** "a", "a and b", "a, b and c". */
+/** Where one write switch stands on one account (decision record 0255):
+ * `off` until the owner allows it; `approve` once on but not yet covered by
+ * the account's sign-in, which a reconnect grants; `allowed` once both hold;
+ * and `unconnected` while the account has no working sign-in to grant it on,
+ * which Connect on the account fixes first. */
+export type PermissionState = "off" | "approve" | "allowed" | "unconnected"
+
+export function permissionState(
+  account: Pick<AccountView, "tokenStatus" | "grantedScopes"> & {
+    record: Pick<SubstrateRecord, "properties">
+  },
+  feature: Pick<BundleFeature, "toggle" | "scopes">,
+  oauth: boolean
+): PermissionState {
+  const on = account.record.properties?.[feature.toggle] === true
+  if (oauth && account.tokenStatus !== "connected") {
+    return on ? "unconnected" : "off"
+  }
+  if (!on) return "off"
+  const granted = new Set(account.grantedScopes)
+  if (oauth && feature.scopes.some((scope) => !granted.has(scope))) {
+    return "approve"
+  }
+  return "allowed"
+}
+
 export function andList(items: string[]): string {
   if (items.length <= 1) return items.join("")
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`

@@ -30,11 +30,14 @@ var reDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // coerceProps validates a write's properties against the type and returns
 // them in their stored (JSON-safe, normalised) form. A nil value is a
 // delete marker and passes through.
-// coercer holds written values to their declarations. It carries no state: a
-// quantity is held to its shape alone, and the write transaction resolves
-// its unit through the repository's graph (quantitywrite.go
-// resolveQuantities, decision 0186).
-type coercer struct{}
+// coercer holds written values to their declarations. A quantity is held to
+// its shape alone, and the write transaction resolves its unit through the
+// repository's graph (quantitywrite.go resolveQuantities, decision 0186).
+// storedZones is set where the values are ones a record already holds (a
+// restore keeping what its request leaves out): a time zone is then kept as
+// it is stored, whatever this host loads, because a zone a record holds is
+// never removed or changed by a write that does not carry it.
+type coercer struct{ storedZones bool }
 
 // coercer is how the dataset's writes hold values.
 func (ds *dataset) coercer() coercer { return coercer{} }
@@ -557,8 +560,8 @@ func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected an E.164 phone number")
 		}
 	case vocabulary.DatatypeTimezone:
-		if _, err := time.LoadLocation(s); err != nil {
-			return nil, fmt.Errorf("expected an IANA time zone name")
+		if err := checkZoneName(s); err != nil && !c.storedZones {
+			return nil, err
 		}
 	case vocabulary.DatatypeRecurrence:
 		// The whole rule must parse, not merely look ruleish: a stored
@@ -596,6 +599,46 @@ func (c coercer) scalar(p *vocabulary.Property, v any) (any, error) {
 		return nil, fmt.Errorf("does not match %s", p.Pattern.String())
 	}
 	return s, nil
+}
+
+// heldToValues reports whether scalar holds a written value of the datatype
+// to the property's `values:` list: every datatype it reads as a string, but
+// the two it answers before the list (a date and time, a blob reference).
+// The others it answers before reading a string at all. The list here and
+// the returns in scalar change together.
+func heldToValues(dt vocabulary.Datatype) bool {
+	switch dt {
+	case vocabulary.DatatypeObject, vocabulary.DatatypeReference, vocabulary.DatatypeJSON,
+		vocabulary.DatatypeBool, vocabulary.DatatypeInt, vocabulary.DatatypeDecimal,
+		vocabulary.DatatypeMoney, vocabulary.DatatypeQuantity, vocabulary.DatatypeFloat,
+		vocabulary.DatatypeDatetime, vocabulary.DatatypeBlobRef:
+		return false
+	}
+	return true
+}
+
+// checkZoneName holds a time zone value to a name that means the same zone on
+// every host: one the IANA database holds, spelled as it spells it
+// (zoneNamed), before it is loaded. time.LoadLocation reads "Local" as the
+// server's own zone, the empty string as UTC, and anything the host's own
+// zone files answer to, so a record holding any of those would change
+// meaning when the repository moves. A record that already holds one is
+// still served, a write that leaves the property alone still lands, and a
+// restore keeps it (coercer.storedZones).
+func checkZoneName(s string) error {
+	switch s {
+	case "":
+		return fmt.Errorf("expected an IANA time zone name, and the empty string names no zone: leave the property out, or write UTC")
+	case "Local":
+		return fmt.Errorf(`expected an IANA time zone name, and "Local" is the server's own zone, which differs from host to host: write the zone's IANA name`)
+	}
+	if !zoneNamed(s) {
+		return fmt.Errorf("expected an IANA time zone name, spelled as the IANA database spells it")
+	}
+	if _, err := time.LoadLocation(s); err != nil {
+		return fmt.Errorf("expected an IANA time zone name")
+	}
+	return nil
 }
 
 func checkRange(p *vocabulary.Property, f float64) error {
@@ -885,6 +928,9 @@ type titleResolver struct {
 	t   *txn
 	ty  *vocabulary.Kind
 	row *erow
+	// titles is the title a record reads with in place of its stored one,
+	// for a pass that renders before it writes (localtitles.go).
+	titles map[eref]string
 }
 
 // quantity is a quantity value as a title prints it: the symbol the
@@ -915,7 +961,7 @@ func (r *titleResolver) Prop(name string) string {
 	if _, ok := r.ty.StateProp(name); ok {
 		return r.row.States[name]
 	}
-	if isHotTime(name) || (name == substrate.PropBody && declaresBody(r.ty)) {
+	if isHotTime(name) {
 		s, _ := hotValue(r.row, name).(string)
 		return s
 	}
@@ -991,6 +1037,9 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 		return ""
 	}
 	if prop == "" {
+		if title, ok := r.titles[eref{Kind: row.Kind, ID: row.ID}]; ok {
+			return title
+		}
 		return row.Title
 	}
 	// The loader cannot check the referent's property across kinds (load.go
@@ -1211,9 +1260,7 @@ func scalarString(v any) string {
 const snippetRunes = 80
 
 // snippetOf is the first snippetRunes characters of the longest text-family
-// property. A declared `body` is one, and the row keeps it in its own column
-// rather than in Props, so it is read where it is stored, as titleResolver.Prop
-// reads it.
+// property.
 func snippetOf(ty *vocabulary.Kind, row *erow) string {
 	best := ""
 	for _, name := range ty.PropOrder {
@@ -1221,11 +1268,7 @@ func snippetOf(ty *vocabulary.Kind, row *erow) string {
 		if !vocabulary.IsLongText(p.Datatype) || p.Sensitive() {
 			continue
 		}
-		v := row.Props[name]
-		if name == substrate.PropBody {
-			v = hotValue(row, name)
-		}
-		s := scalarString(v)
+		s := scalarString(row.Props[name])
 		if len(s) > len(best) {
 			best = s
 		}
@@ -1256,8 +1299,8 @@ func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
 }
 
 // ftsBands splits a row into the three weighted search bands: title (A),
-// declared short string properties (B), body and prose (C). Properties opt
-// out with fts:false; secrets never index.
+// declared short string properties (B), long text (C). Properties opt out
+// with fts:false; secrets never index.
 //
 // A quantity indexes its digits and its stored unit id, never a symbol
 // (vocabulary.QuantitySearchText).
@@ -1283,14 +1326,6 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 			b = append(b, s)
 		}
 	}
-	// `body` lives in its own column, never in row.Props, so the loop above
-	// cannot reach it. Index it as prose (band C) only when the kind declares
-	// `body` AND the declaration keeps it searchable (#68): a declared
-	// `body: {fts: false}` is stored and served but never indexed, and a text
-	// body indexes exactly as the built-in column did before the unweld.
-	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() && row.Body != "" {
-		c = append(c, row.Body)
-	}
 	return [3]string{searchText(row.Title), searchText(strings.Join(b, " ")), searchText(strings.Join(c, " "))}
 }
 
@@ -1298,12 +1333,11 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 
 // recordOf projects a stored row onto the wire type, redacting every
 // sensitive property. EVERYTHING AUTHORED IS A PROPERTY:
-// storage keeps title, body, the temporal instants and the machine states in
-// their own columns, and the wire shows ONE properties map holding all of
-// them.
+// storage keeps title, the temporal instants and the machine states in their
+// own columns, and the wire shows ONE properties map holding all of them.
 func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	e := &substrate.Record{
-		ID: row.ID, Kind: row.Kind, Title: row.Title, Body: row.Body,
+		ID: row.ID, Kind: row.Kind, Title: row.Title,
 		At: row.At, EndsAt: row.EndsAt, DueAt: row.DueAt,
 		Properties: redactProps(ty, row.Props), Labels: row.Labels,
 		Version: row.Version, KindVersion: row.KindVersion,
@@ -1318,14 +1352,6 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	}
 	if row.Title != "" {
 		e.Properties[substrate.PropTitle] = row.Title
-	}
-	// Body is served only where the kind still declares it, symmetric with the
-	// write door and ftsBands: an undeclared body left in the column by a
-	// pre-#68 write is not projected, so `get -o yaml | apply -f` round-trips
-	// (an echoed undeclared body would be refused at coerceProps). An unknown
-	// kind has no declaration to consult, so its stored body is served.
-	if row.Body != "" && (ty == nil || declaresBody(ty)) {
-		e.Properties[substrate.PropBody] = row.Body
 	}
 	for _, hc := range []struct {
 		name string

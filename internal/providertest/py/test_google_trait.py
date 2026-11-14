@@ -35,6 +35,12 @@ def _load(stream):
 BODIES = {stream: _load(stream) for stream in STREAMS}
 
 
+def _bare(status):
+    """A legacy `*SyncStatus` string as the trait's fields hold it: the
+    sentence, without the `erroring: ` prefix (#1299)."""
+    return status[len("erroring: "):] if status.startswith("erroring: ") else status
+
+
 def _account(**props):
     base = {"tokenStatus": "connected"}
     for stream in STREAMS:
@@ -105,7 +111,7 @@ class TraitRollupTest(unittest.TestCase):
             with self.subTest(stream=stream):
                 out = self.stamp(stream, props)
                 self.assertEqual(out.get("syncState"), "erroring")
-                self.assertEqual(out.get("syncMessage"), "erroring: reconnect needed")
+                self.assertEqual(out.get("syncMessage"), "reconnect needed")
                 # The settle keeps the pair the failing stream wrote.
                 self.assertNotIn("syncError", out)
                 self.assertNotIn("syncErrorAt", out)
@@ -131,7 +137,7 @@ class TraitRollupTest(unittest.TestCase):
             with self.subTest(stream=stream):
                 out = self.stamp(stream, props)
                 self.assertEqual((out.get("syncState"), out.get("syncMessage")),
-                                 ("erroring", "erroring: 403"))
+                                 ("erroring", "403"))
         props = _account(syncStreams={"gmail": {"state": "throttled",
                                                 "message": "throttled: 429"}})
         out = self.stamp("drive", props)
@@ -142,7 +148,7 @@ class TraitRollupTest(unittest.TestCase):
         props = _account(contactsSyncStatus="erroring: reconnect needed")
         out = self.stamp("gmail", props)
         self.assertEqual((out.get("syncState"), out.get("syncMessage")),
-                         ("erroring", "erroring: reconnect needed"))
+                         ("erroring", "reconnect needed"))
 
     def test_a_disabled_streams_failure_is_not_the_accounts(self):
         props = _account(enabledContacts=False, syncStreams={"contacts": {
@@ -176,7 +182,7 @@ class TraitRollupTest(unittest.TestCase):
             with self.subTest(stream=stream):
                 out = self.stamp(stream, props, state="throttled")
                 self.assertEqual((out.get("syncState"), out.get("syncMessage")),
-                                 ("erroring", "erroring: needs reconsent"))
+                                 ("erroring", "needs reconsent"))
                 self.assertEqual(out["syncStreams"][stream]["state"], "throttled")
                 # The newest failure is still the pair's.
                 self.assertEqual(out.get("syncError"), "%s is current" % stream)
@@ -311,7 +317,7 @@ class UnstartedAckTest(unittest.TestCase):
                 stamp = patches[0]
                 entry = stamp["syncStreams"][stream]
                 self.assertEqual((entry["state"], entry["message"], entry["requestedAck"]),
-                                 ("erroring", "erroring: reconnect needed", REQUESTED))
+                                 ("erroring", "reconnect needed", REQUESTED))
                 self.assertEqual(stamp.get("syncState"), "erroring")
                 self.assertNotIn("syncError", stamp)
                 self.assertNotIn("syncErrorAt", stamp)
@@ -391,7 +397,7 @@ class RepeatedFailureTest(unittest.TestCase):
         self.assertEqual(stamp.get("syncState"), state)
         self.assertEqual(stamp["syncStreams"][stream]["state"], state)
         self.assertEqual(stamp["syncStreams"][stream]["message"],
-                         stored[stream + "SyncStatus"])
+                         _bare(stored[stream + "SyncStatus"]))
         # Nothing new failed: the pair keeps the first failure's instant.
         self.assertNotIn("syncError", stamp)
         self.assertNotIn("syncErrorAt", stamp)
@@ -479,7 +485,7 @@ class RepeatedFailureTest(unittest.TestCase):
                 self.assertEqual(len(patches), 1, patches)
                 stamp = patches[0]
                 self.assertEqual(stamp.get("syncState"), "erroring")
-                self.assertEqual(stamp.get("syncError"), stored[stream + "SyncStatus"])
+                self.assertEqual(stamp.get("syncError"), _bare(stored[stream + "SyncStatus"]))
                 self.assertTrue(stamp.get("syncErrorAt"), stamp)
 
     def test_a_repeat_answering_a_request_moves_the_error_pair(self):
@@ -505,7 +511,7 @@ class RepeatedFailureTest(unittest.TestCase):
                 self.assertEqual(len(patches), 1, patches)
                 stamp = patches[0]
                 self.assertEqual((stamp.get("syncState"), stamp.get("syncMessage")),
-                                 ("erroring", "erroring: needs reconsent"))
+                                 ("erroring", "needs reconsent"))
                 self.assertEqual(stamp["syncStreams"][stream]["state"], "throttled")
                 self.assertNotIn("syncErrorAt", stamp)
 

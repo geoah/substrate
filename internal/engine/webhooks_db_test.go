@@ -249,8 +249,9 @@ func TestReceiveWebhookHoldsTheTriggersInlineBound(t *testing.T) {
 
 // The door's webhook grant (an app's token under `webhook:`,
 // docs/plans/app-setup.md) stands in for one trigger's key and for nothing
-// else: another trigger, another repository and a disabled trigger still
-// refuse, and a declared signature still runs.
+// else: another trigger, another repository, a grant naming the repository
+// by its name rather than its id, and a disabled trigger still refuse, and a
+// declared signature still runs.
 func TestWebhookGrantStandsInForTheKeyAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -266,7 +267,9 @@ func TestWebhookGrantStandsInForTheKeyAlone(t *testing.T) {
 	)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "substrate.reamde.dev/core/secret", ID: hookSecretID, Properties: map[string]any{"value": hookSigningSecret}})
 	authority := testdb.Repository(t)
-	granted := func(trigger string) context.Context { return substrate.WithWebhookGrant(ctx, authority, trigger) }
+	granted := func(trigger string) context.Context {
+		return substrate.WithWebhookGrant(ctx, ds.Repository().ID, trigger)
+	}
 
 	if _, err := svc.CheckWebhook(granted("hook-keyed"), authority, "hook-keyed", ""); err != nil {
 		t.Fatalf("the grant did not stand in for the key: %v", err)
@@ -277,7 +280,8 @@ func TestWebhookGrantStandsInForTheKeyAlone(t *testing.T) {
 	}{
 		"no grant":                   {ctx, "hook-keyed"},
 		"another trigger's grant":    {granted("hook-other"), "hook-keyed"},
-		"another repository's grant": {substrate.WithWebhookGrant(ctx, "nobody.example.com", "hook-keyed"), "hook-keyed"},
+		"another repository's grant": {substrate.WithWebhookGrant(ctx, "rnd-nobody", "hook-keyed"), "hook-keyed"},
+		"a grant by the name":        {substrate.WithWebhookGrant(ctx, authority, "hook-keyed"), "hook-keyed"},
 		"a disabled trigger":         {granted("hook-off"), "hook-off"},
 	} {
 		if _, err := svc.CheckWebhook(c.ctx, authority, c.trigger, ""); !errors.Is(err, substrate.ErrNotFound) {
@@ -408,8 +412,8 @@ func TestWebhookDelivery(t *testing.T) {
 		if manifest.Properties["name"] != "recording.m4a" || manifest.Properties["mediaType"] != "audio/mp4" {
 			t.Fatalf("manifest = %v", manifest.Properties)
 		}
-		if manifest.Properties["createdBy"] != "substrate.webhook" {
-			t.Fatalf("createdBy = %v, want the door's actor", manifest.Properties["createdBy"])
+		if ref, _ := manifest.Properties["createdBy"].(map[string]any); ref[vocabulary.ReferenceValueKey] != vocabulary.ActorRef(vocabulary.ActorID(substrate.ActorSystem))["ref"] {
+			t.Fatalf("createdBy = %v, want the system's actor, the door's", manifest.Properties["createdBy"])
 		}
 	})
 
@@ -461,7 +465,8 @@ func TestWebhookDelivery(t *testing.T) {
 		for _, st := range statuses {
 			paths[st.ID] = st.WebhookPath
 		}
-		if paths["hook-open"] != "/webhooks/"+authority+"/hook-open" || paths["hook-keyed"] != "/webhooks/"+authority+"/hook-keyed" {
+		id := ds.Repository().ID
+		if paths["hook-open"] != "/webhooks/"+id+"/hook-open" || paths["hook-keyed"] != "/webhooks/"+id+"/hook-keyed" {
 			t.Fatalf("webhook paths = %v", paths)
 		}
 		if paths["hook-record"] != "" {

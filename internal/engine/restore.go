@@ -9,13 +9,13 @@ package engine
 // against the kind as declared now, before the writer's properties merge in:
 //
 //   - a value under a name some property declares as its `renamedFrom` moves
-//     to that property, with its manager row and vectors (rename.go);
+//     to that property, with its mark and vectors (rename.go);
 //   - a value holding a spelling some enum value declares as its
 //     `renamedFrom` takes the new spelling, in a scalar, a list or a keyed map
 //     (remapValue);
 //   - every other stored value is held to what a write of it would store
 //     (admitRestored): kept in that stored form where the declaration admits
-//     it, and removed with its manager row, vectors and sealed material where
+//     it, and removed with its mark, vectors and sealed material where
 //     it does not (an undeclared name, a retype, a removed value, a tightened
 //     pattern or bound, a reference the pin no longer admits, a blob that is
 //     gone), as a null step removes a live record's;
@@ -230,7 +230,11 @@ func (t *txn) admitRestored(sp *applySpec, name string, p *vocabulary.Property, 
 		s, isText := v.(string)
 		return v, isText && s == "", nil
 	}
-	kept, err := t.coercer().prop(sp.ty, name, p, v)
+	// The value is the record's own, which the request leaves out, so a
+	// time zone stays as it is stored (checkZoneName).
+	c := t.coercer()
+	c.storedZones = true
+	kept, err := c.prop(sp.ty, name, p, v)
 	if err != nil {
 		return nil, false, nil
 	}
@@ -260,7 +264,7 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 	ty := sp.ty
 	for _, from := range sortedKeys(s.renamed) {
 		to := s.renamed[from]
-		if err := t.moveManager(ref, from, to); err != nil {
+		if err := t.moveMark(ref, from, to); err != nil {
 			return err
 		}
 		if err := t.moveEmbeddings(ref, from, to, ty.Props[to].Embed); err != nil {
@@ -275,7 +279,7 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 		}
 	}
 	for _, name := range s.backfilled {
-		if err := t.setManager(ref, name, t.actor, t.tier); err != nil {
+		if err := t.setMark(ref, name, t.directMark(t.actor)); err != nil {
 			return err
 		}
 		if ty.Props[name].Embed {
@@ -285,7 +289,7 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 		}
 	}
 	for _, name := range sortedKeys(s.nulled) {
-		if err := t.deleteManager(ref, name); err != nil {
+		if err := t.unmark(ref, name); err != nil {
 			return err
 		}
 		if err := t.dropEmbeddings(ref, name); err != nil {
@@ -308,7 +312,6 @@ func (t *txn) settleRestoreShape(ref eref, sp *applySpec, s restoreShape) error 
 		if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
 			return err
 		}
-		t.mirrorSealedDelete(old)
 	}
 	return nil
 }

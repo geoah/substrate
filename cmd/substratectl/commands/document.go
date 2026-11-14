@@ -48,9 +48,8 @@ type documentData struct {
 
 // documentStatus is the server-set block: never sent back on apply. FormerIDs
 // is the merge trail — the ids this record used to answer to, which is store
-// bookkeeping. Properties is the managed-property bookkeeping a single-record
-// read carries (wire `propertyMeta`), absent on lists and when nothing manages
-// anything. What points AT a record is not part of its document; that is the
+// bookkeeping. Properties is each property's mark, which a single-record read
+// carries (wire `marks`), absent on lists and on a record no write marked. What points AT a record is not part of its document; that is the
 // reverse read, `get <kind> --referencing <kind>/<id>`.
 type documentStatus struct {
 	Version int64 `yaml:"version" json:"version"`
@@ -69,32 +68,30 @@ type documentStatus struct {
 	Computed bool `yaml:"computed,omitempty" json:"computed,omitempty"`
 }
 
-// statusProperty is one managed property: its manager (the actor whose write
-// stands — `owner` for a hand edit, a bundle's own actor for a mapped one), its
-// tier (`owner` | `bundle` | `machine` — machine means recompute may
-// replace the value, the other two hold), when it last changed, and the
-// alternatives — every live mapping-source offer whose value differs from
-// the stored one.
-// Server-set through and through, so it rides in status and is ignored on
-// input like the rest of the block.
+// statusProperty is one property's mark (decision 0284): whether sync
+// leaves the value alone, the actor that set it and the one it acted for, the
+// source records behind it, when it was set, and what each other live source
+// record would write instead. Releasing the property hands it back to sync,
+// which picks among those.
 type statusProperty struct {
-	Manager   string         `yaml:"manager" json:"manager"`
-	Tier      substrate.Tier `yaml:"tier,omitempty" json:"tier,omitempty"`
-	UpdatedAt time.Time      `yaml:"updatedAt" json:"updatedAt"`
-	// Source is the source record ("<kind>/<id>") a machine-held value was
-	// read from, where the read can say so (record 0094).
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
-	// Alternatives are what the other live sources would write instead —
-	// adopting one is just writing it.
+	Pinned       bool                `yaml:"pinned,omitempty" json:"pinned,omitempty"`
+	SetBy        *statusLink         `yaml:"setBy,omitempty" json:"setBy,omitempty"`
+	OnBehalfOf   *statusLink         `yaml:"onBehalfOf,omitempty" json:"onBehalfOf,omitempty"`
+	DerivedFrom  []statusLink        `yaml:"derivedFrom,omitempty" json:"derivedFrom,omitempty"`
+	SetAt        time.Time           `yaml:"setAt,omitempty" json:"setAt,omitzero"`
 	Alternatives []statusAlternative `yaml:"alternatives,omitempty" json:"alternatives,omitempty"`
 }
 
+// statusLink links one record, as a stored reference does.
+type statusLink struct {
+	Ref string `yaml:"ref" json:"ref"`
+}
+
 type statusAlternative struct {
-	Actor     string    `yaml:"actor" json:"actor"`
-	Value     any       `yaml:"value" json:"value"`
-	UpdatedAt time.Time `yaml:"updatedAt" json:"updatedAt"`
-	// Source is the source record the offer is read from.
-	Source string `yaml:"source,omitempty" json:"source,omitempty"`
+	// DerivedFrom is the source record the offer is read from.
+	DerivedFrom *statusLink `yaml:"derivedFrom,omitempty" json:"derivedFrom,omitempty"`
+	Value       any         `yaml:"value" json:"value"`
+	UpdatedAt   time.Time   `yaml:"updatedAt" json:"updatedAt"`
 }
 
 func (d *document) putInput() (substrate.PutInput, error) {
@@ -113,7 +110,7 @@ func (d *document) putInput() (substrate.PutInput, error) {
 
 // recordDocument renders a stored record as an apply-able manifest plus its
 // server-set status block. The envelope's `kind` is the record's kind
-// reference, verbatim. meta is the wire's `propertyMeta` — populated only on a
+// reference, verbatim. meta is the wire's `marks` — populated only on a
 // single-record read, so lists pass nil.
 func recordDocument(e *substrate.Record, meta map[string]statusProperty) *document {
 	d := &document{
@@ -278,8 +275,8 @@ func normalizeMap(m map[string]any) map[string]any {
 	return out
 }
 
-// normalizeMeta types the numbers inside the managed-property block: an
-// alternative's value is an untyped property value like any other.
+// normalizeMeta types the numbers inside the marks: an alternative's value is
+// an untyped property value like any other.
 func normalizeMeta(meta map[string]statusProperty) map[string]statusProperty {
 	if meta == nil {
 		return nil

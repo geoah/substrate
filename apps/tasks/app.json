@@ -22,11 +22,12 @@
   "asks": [
     {
       "package": "substrate.reamde.dev/tasks",
-      "atLeast": 1
+      "atLeast": 2
     }
   ],
   "scopes": [
-    "write:substrate.reamde.dev/tasks/*"
+    "write:substrate.reamde.dev/tasks/*",
+    "read:implements(substrate.reamde.dev/core/lifecycle)"
   ],
   "icon": "apple/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
   "accent": {

@@ -88,15 +88,22 @@ func pageEffectsOf(t *testing.T, ds *dataset, triggerID string) []pageEffect {
 	return out
 }
 
-// segmentPayloadSizes reads the byte length of every entry's payload in the
-// repository's segment files, by seq.
-func segmentPayloadSizes(t *testing.T, ds *dataset) map[int64]int {
+// archivedPayloadSizes runs an archive pass and reads the byte length of
+// every entry's payload in the repository's archive, by seq.
+func archivedPayloadSizes(t *testing.T, ds *dataset) map[int64]int {
 	t.Helper()
-	log, err := changelogfile.OpenReadOnly(changelogfile.ChangelogDir(ds.dir))
+	ctx := context.Background()
+	if err := ds.ArchivePass(ctx); err != nil {
+		t.Fatalf("archive pass: %v", err)
+	}
+	src, err := openNewestArchive(ctx, ds.svc.archive, ds.info.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cur := log.Cursor(0)
+	cur, err := src.Cursor(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer func() { _ = cur.Close() }()
 	sizes := map[int64]int{}
 	for {
@@ -115,7 +122,7 @@ func segmentPayloadSizes(t *testing.T, ds *dataset) map[int64]int {
 
 // A middle page's delivery entry names its cursor by SHA-256 and byte size
 // and stays under 2 KB while the cursor grows past 200 KB, in the table and in
-// the segment file both. The bytes live in paged_cursors, and the park that
+// the archive both. The bytes live in paged_cursors, and the park that
 // stops the drain carries them whole, once, so a restore can resume it. Not
 // parallel: the page cap is package-level.
 func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
@@ -124,7 +131,7 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 	restore := withMaxPages(3)
 	defer restore()
 
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: "pagedsize.test.dev/pagedsize/widget", Properties: map[string]any{"name": "big"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "pagedsize.test.dev/pagedsize/widget", Properties: map[string]any{"name": "big"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -157,13 +164,13 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 	if len(pages) != 3 || len(parks) != 1 {
 		t.Fatalf("%d page effects and %d parks carrying one; want the cap's 3 pages and 1 park", len(pages), len(parks))
 	}
-	files := segmentPayloadSizes(t, ds)
+	archived := archivedPayloadSizes(t, ds)
 	for i, e := range pages {
 		if e.size >= 2048 {
 			t.Fatalf("page %d rides a %d-byte entry, want under 2 KB", i+1, e.size)
 		}
-		if n, ok := files[e.seq]; !ok || n >= 2048 {
-			t.Fatalf("page %d's segment line carries %d payload bytes (found %v), want under 2 KB", i+1, n, ok)
+		if n, ok := archived[e.seq]; !ok || n >= 2048 {
+			t.Fatalf("page %d's archived line carries %d payload bytes (found %v), want under 2 KB", i+1, n, ok)
 		}
 		if _, carried := e.page["cursor"]; carried {
 			t.Fatalf("page %d carries its cursor", i+1)
@@ -190,7 +197,7 @@ func TestAPageEntryStaysSmallAsItsCursorGrows(t *testing.T) {
 	if err != nil || len(failures) != 1 {
 		t.Fatalf("failures: %v (%d)", err, len(failures))
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err != nil {
@@ -255,7 +262,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	const task = "samples.substrate.reamde.dev/tasks/task"
 
 	// Chain A parks at the cap with cursor 2.
-	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("a"), Properties: map[string]any{"name": "a"}})
+	a, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, ID: fid("a"), Properties: map[string]any{"name": "a"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +288,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 	// followed. Its tasks are absent, so a resume from cursor 3 would leave
 	// b-p-0 missing. Its cursor holds numbers jsonb respells (a negative zero,
 	// a trailing zero), which the rebuild must still match to their digest.
-	b, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: widget, ID: fid("b"), Properties: map[string]any{"name": "b"}})
+	b, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, ID: fid("b"), Properties: map[string]any{"name": "b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +399,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 
 	// A's retry resumes from page 2: pages 0 and 1 are erased first.
 	for _, id := range []string{fid("a") + "-p-0", fid("a") + "-p-1"} {
-		if _, err := d2.Delete(ctx, substrate.ActorAPI, task, id, substrate.DeleteInput{}); err != nil {
+		if _, err := d2.Delete(ctx, substrate.ActorPerson, task, id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -417,22 +424,7 @@ func TestAReplayResumesAParkedDrainAndAnImportStartsAnInterruptedOneOver(t *test
 func importIntoEmptyDatabase(t *testing.T, ds *dataset) *dataset {
 	t.Helper()
 	ctx := context.Background()
-	id := ds.Repository().ID
-	src := ds.dir
-	if err := ds.svc.Close(); err != nil {
-		t.Fatalf("close: %v", err)
-	}
-	root := t.TempDir()
-	dst, err := changelogfile.RepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
+	root := archiveCopyOf(t, ds)
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithDataRoot(root), WithCredentialKey(TestCredentialKey),
 		WithKindsFS(SeedKinds))
 	if err != nil {
@@ -444,4 +436,26 @@ func importIntoEmptyDatabase(t *testing.T, ds *dataset) *dataset {
 		t.Fatalf("open the imported repository: %v", err)
 	}
 	return imported.(*dataset)
+}
+
+// archiveCopyOf stops ds's service, as an operator stops a server before a
+// copy, and copies the repository's archive, which the close's last pass
+// left at the head, into the archive of a fresh data root: what a restore
+// boots on (decision 0278).
+func archiveCopyOf(t *testing.T, ds *dataset) string {
+	t.Helper()
+	rel := filepath.Join("archive", changelogfile.RepositoriesDir, ds.Repository().ID)
+	src := filepath.Join(ds.svc.dataRoot, rel)
+	if err := ds.svc.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	root := t.TempDir()
+	dst := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }

@@ -171,7 +171,7 @@ func (ds *dataset) settleOperator(ctx context.Context, r *operatorReservation, c
 		 WHERE id = $1 AND settled_at IS NULL`, r.id, cents, ds.svc.operatorNow().UTC()); err != nil {
 		// The row stays open and the expiry settles it at its ceiling.
 		ds.svc.log.Warn("substrate: an operator-paid call's settle was not written; its ceiling stands",
-			"repository", ds.Repository().ID, "reservation", r.id, "error", err)
+			"repository", ds.info.ID, "reservation", r.id, "error", err)
 	}
 }
 

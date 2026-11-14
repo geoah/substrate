@@ -93,10 +93,10 @@ prints as its `{ref}` shape.
 Who did something: **You** (a person on a neutral disc, never a letter), an
 agent (a bot on purple), a provider's function or bundle (the provider's
 badge), a tool of the repository's own (a bolt), the substrate itself (a
-shield). Plain names on the page; the raw actor string is in the hover card
+shield). Plain names on the page; the raw actor id is in the hover card
 and, with Technical details on, inline.
 
-- `actor`: the actor string as stored (`console`, `agent:<authority>:<package>:<name>`, `substrate`, …)
+- `actor`: the id of the [actor record](../api.md#actors) a change, a manager or a stored value links
 - `link`: `actor` (the actor's History, default), `record` (its declaration), or `false`
 - `inlineId`: show the raw actor inline in technical mode (default true); off where a copyable id sits elsewhere
 

@@ -74,7 +74,7 @@ func TestAskLandsAnInteractionAndTheAnswerResumes(t *testing.T) {
 	}
 
 	// The owner answers: one CAS'd transition carrying the answers.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{
 			"state": interactionAnswered,
 			"answers": []any{
@@ -111,7 +111,7 @@ func TestAskLandsAnInteractionAndTheAnswerResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{"answers": []any{
 			map[string]any{"question": "color", "selected": []any{"blue"}},
 			map[string]any{"question": "sure", "selected": []any{"yes"}},
@@ -137,7 +137,7 @@ func TestAskDismissalReportsBack(t *testing.T) {
 	}
 	interaction := onlyInteraction(t, ds)
 	// A dismissal carries no answers.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{
 			"state": interactionDismissed,
 			"answers": []any{
@@ -148,7 +148,7 @@ func TestAskDismissalReportsBack(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a dismissal carried answers")
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{"state": interactionDismissed},
 		IfVersion:  &interaction.Version,
 	}); err != nil {
@@ -187,7 +187,7 @@ func TestInteractionAdmissionAndGuards(t *testing.T) {
 
 	// Generic creates cannot exist: thread is loop-stamped AND required, so
 	// both roads refuse with their own reason.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindLLMInteraction,
 		Properties: map[string]any{
 			"thread":    "somethread",
@@ -196,7 +196,7 @@ func TestInteractionAdmissionAndGuards(t *testing.T) {
 	}); err == nil {
 		t.Fatal("a generic write stamped an interaction's thread")
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindLLMInteraction,
 		Properties: map[string]any{
 			"questions": []any{map[string]any{"id": "q", "prompt": "?"}},
@@ -276,7 +276,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 
 	// The owner path demands ifVersion (the marker's generalized rule) and
 	// full, valid answers.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{"state": interactionAnswered, "answers": []any{
 			map[string]any{"question": "color", "selected": []any{"red"}},
 			map[string]any{"question": "sure", "selected": []any{"yes"}},
@@ -289,7 +289,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 		{map[string]any{"question": "color", "selected": []any{"green"}}, map[string]any{"question": "sure", "selected": []any{"yes"}}},       // undeclared value
 		{map[string]any{"question": "color", "selected": []any{"red", "blue"}}, map[string]any{"question": "sure", "selected": []any{"yes"}}}, // two on single-select
 	} {
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 			Properties: map[string]any{"state": interactionAnswered, "answers": answers},
 			IfVersion:  &interaction.Version,
 		}); err == nil {
@@ -297,7 +297,7 @@ func TestOnlyTheOwnerResolvesAnInteraction(t *testing.T) {
 		}
 	}
 	// Answers without the transition refuse too.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindLLMInteraction, interaction.ID, substrate.PatchInput{
 		Properties: map[string]any{"answers": []any{
 			map[string]any{"question": "color", "selected": []any{"red"}},
 			map[string]any{"question": "sure", "selected": []any{"yes"}},

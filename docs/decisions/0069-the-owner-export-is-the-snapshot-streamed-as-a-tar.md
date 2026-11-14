@@ -1,8 +1,9 @@
 ---
-status: accepted
-date: 2026-09-08
+status: superseded
+date: 2026-11-13
 decision-makers: George Antoniadis
 amended-by: 0075, 0194
+superseded-by: 0278
 ---
 
 # 0069. The owner's export is the snapshot, streamed as a tar under the bearer token

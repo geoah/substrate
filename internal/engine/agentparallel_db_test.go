@@ -40,7 +40,7 @@ func installFanAgents(t *testing.T, ds *dataset) {
 			"budgets": budgets,
 		})
 	}
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(fanPackage, 0),
 		vocabulary.KindManifest(fanPackage, map[string]any{"singular": "note"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
@@ -117,7 +117,7 @@ func TestAgentRunsIndependentToolCallsConcurrently(t *testing.T) {
 	events := newEventLog()
 	out := make(chan agentOutcome, 1)
 	go func() {
-		res, err := ds.ChatAgent(ctx, substrate.ActorAPI, fanPackage+"/fanout", substrate.ChatInput{Message: "look around"}, events.emit)
+		res, err := ds.ChatAgent(ctx, substrate.ActorPerson, fanPackage+"/fanout", substrate.ChatInput{Message: "look around"}, events.emit)
 		out <- agentOutcome{res, err}
 	}()
 	arrives(t, scoutIn, "scout at the model")

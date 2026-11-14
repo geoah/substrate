@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
   CheckIcon,
@@ -31,6 +31,7 @@ import { useDocumentTitle } from "@/hooks/use-document-title"
 import {
   CODE_DIGITS,
   normalizeCode,
+  olderServersRecoveryKey,
   register,
   registerEnroll,
 } from "@/lib/api/auth"
@@ -131,12 +132,6 @@ function KeepKeyField({
   )
 }
 
-/** The recovery pair as an age X25519 identity and its recipient. */
-interface RecoveryPair {
-  identity: string
-  recipient: string
-}
-
 /** A name as the reader typed it, the way the server reads it: trimmed,
  * lowercase, without a trailing dot. */
 function cleanName(name: string): string {
@@ -153,11 +148,12 @@ function validDomain(name: string): boolean {
   return labels.length > 1 && labels.every((l) => LABEL.test(l))
 }
 
-/** The authority a repository name resolves to, mirroring the server's rule
- * (`vocabulary.RepositoryAuthority`) so the form shows the name the
- * repository will actually get. On this server's address the reader types one
- * label and it sits under the substrate's host, which never changes with what
- * they type: a domain of their own is the advanced option's alone, so nobody
+/** The name a repository name resolves to, mirroring the server's rule
+ * (`vocabulary.NameRule.New`) so the form shows the name the repository will
+ * actually get. The reader types one label and it sits under the host the
+ * server names in discovery (`registration.nameHost`, its public URL's host),
+ * which never changes with what they type or the address they reached this
+ * page at: a domain of their own is the advanced option's alone, so nobody
  * claims one by accident. */
 function repositoryAuthority(
   name: string,
@@ -172,7 +168,7 @@ function repositoryAuthority(
 }
 
 /** What choosing their own domain means, said before the reader commits to a
- * name nothing lets them change: it must be theirs, and it is proved after
+ * name others will reach them at: it must be theirs, and it is proved after
  * registration with one TXT record (decision 0208). */
 function OwnDomainGuide({ domain }: { domain: string }) {
   const name = domain || "home.example.org"
@@ -207,32 +203,34 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * to SAVE it first, so when step two reveals the authenticator QR the manager
  * attaches the one-time password to the login it just created rather than to
  * some existing item. Step two proves one code and commits the whole user in
- * one transaction — the repository, the sealed material, the credential and the
- * first token — ending LOGGED IN, because the response carries that token.
+ * one creation act — the person, their repository and the first token, the
+ * one name naming both (decision 0274) — ending LOGGED IN, because the
+ * response carries that token.
  * Step two may also be skipped: the account is created without a second
  * factor, which Settings turns on later (decision 0237).
  *
  * Where the substrate verifies no second factor there IS no step two: the one
  * form commits, skipping the factor nothing would check.
  *
- * The recovery pair is made HERE, as the page opens, the way substratectl
- * makes it: only the recipient rides the wire, and the identity is a field of
- * step one's form. A password manager that saves the new login when that form
- * submits saves the fields beside the password with it, so the key lands on
- * the same item as the password and, at step two, the one-time code. Where
- * the pair is not ready (the module failed to load), the registration names
- * no recipient and the substrate mints the pair, returning the identity once.
- * Either way the key is shown again once the repository exists, beside a
- * hidden username, so a manager can still add it to the login it holds.
+ * A server below `auth` revision 2 still mints a recovery key for a
+ * registration that names no recipient and returns it once (decision 0264):
+ * there, and only there, the page shows it before anything else, beside a
+ * hidden username so a password manager adds it to the login it holds.
  *
- * Once the repository exists, and after the recovery key, the page asks the
- * owner's name and saves it as their own contact, with no
- * way past it but saving. `land()` then decides where the owner goes. */
+ * Once the repository exists, the page asks the owner's name and saves it as
+ * their own contact, with no way past it but saving. `land()` then decides
+ * where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
-  const { inviteRequired, totpRequired } = useAuthPolicy()
+  const { inviteRequired, totpRequired, nameHost } = useAuthPolicy()
   const site = useSite()
-  const host = substrateHostname().replace(/\.$/, "").toLowerCase()
+  // Until discovery answers, the page's own host stands in for the preview,
+  // and the bare label is what is sent: the server completes it under its
+  // own. Once it answers with no host, there is none to complete under, and
+  // the name is typed whole.
+  const host = (nameHost ?? substrateHostname())
+    .replace(/\.$/, "")
+    .toLowerCase()
   const navigate = useNavigate()
   // A deployment whose operator supplies keys greets a new repository on
   // Providers, with a welcome that says what works now.
@@ -243,14 +241,16 @@ export function RegisterPage() {
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
   // With no host to complete a label under (a native shell whose server
-  // address does not parse), the reader's own domain is the only name there
-  // is.
+  // address does not parse, a server with no public URL), the reader's own
+  // domain is the only name there is.
   const [ownDomainChosen, setOwnDomain] = useState(false)
   const ownDomain = ownDomainChosen || !host
   // The name the repository will actually get. Sending the resolved value
   // rather than leaving the completion to the server keeps what the form
   // shows and what the repository gets one string.
   const authority = repositoryAuthority(repository, host, ownDomain)
+  const sent =
+    nameHost || ownDomain || !authority ? authority : cleanName(repository)
   const typed = cleanName(repository)
   // A domain is wrong until its last label is typed, so its error waits for
   // the reader to leave the field; a label is wrong the moment it is.
@@ -269,22 +269,6 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
-  const [pair, setPair] = useState<RecoveryPair | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    import("age-encryption")
-      .then(async (age) => {
-        const identity = await age.generateX25519Identity()
-        const recipient = await age.identityToRecipient(identity)
-        if (!cancelled) setPair({ identity, recipient })
-      })
-      .catch(() => {
-        /* no pair: the substrate mints one and returns the identity */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   // The repository's name once it exists and the session holds it: the name
   // step is due.
@@ -354,7 +338,7 @@ export function RegisterPage() {
     setError(null)
     setBusy(true)
     try {
-      setEnrolled(await registerEnroll(inviteCode.trim(), authority))
+      setEnrolled(await registerEnroll(inviteCode.trim(), sent))
     } catch (err) {
       fail(err)
     } finally {
@@ -377,25 +361,23 @@ export function RegisterPage() {
     try {
       const minted = await register({
         inviteCode: inviteCode.trim(),
-        repository: authority,
+        identity: sent,
         password,
         totpSecret: skip ? "" : (enrollment?.totpSecret ?? ""),
         totpCode: normalized,
         ...(skip && { skipTotp: true }),
-        ...(pair && { recoveryPublicKey: pair.recipient }),
         label: "console",
       })
-      // The recovery identity arrives ONCE, on this response, and no later
-      // call can produce it: it lands in state BEFORE the fallible session
-      // write, so a blocked localStorage cannot take the only showing with it,
-      // and the page holds the reader until they carry it off instead of
-      // navigating past it.
-      const kept = minted.recoveryKey ?? pair?.identity
+      // An older server's key arrives ONCE, on this response: it lands in
+      // state BEFORE the fallible session write, so a blocked localStorage
+      // cannot take the only showing with it.
+      const kept = olderServersRecoveryKey(minted)
       if (kept) setRecoveryKey(kept)
       saveSession(
         minted.secret,
         minted.repository ?? authority,
-        minted.token.id
+        minted.token.id,
+        minted.identity ?? authority
       )
       setRegistered(minted.repository ?? authority)
     } catch (err) {
@@ -426,7 +408,6 @@ export function RegisterPage() {
   const operator = site
     ? `the people who run ${site.name}`
     : "whoever runs this server"
-  const twoSteps = totpRequired && recoveryKey === null
   const errorNote = error && (
     <p
       role="alert"
@@ -441,11 +422,7 @@ export function RegisterPage() {
       <DoorLayout
         eyebrow="Substrate created"
         title="Save your recovery key"
-        description={
-          pair
-            ? "If your password manager saved it with your login, it’s kept. If not, put it there now: after this page it isn’t shown again."
-            : "It is shown once and never again. Put it in your password manager now."
-        }
+        description="This server made it for you. It is shown once and never again. Put it in your password manager now."
       >
         <form
           onSubmit={(e) => {
@@ -457,8 +434,7 @@ export function RegisterPage() {
         >
           <FieldGroup>
             {/* Which login the key belongs to: a manager asked to update an
-                existing item matches it by the username, as 1Password's
-                guide for websites asks of a form without one shown. */}
+                existing item matches it by the username. */}
             <input
               type="text"
               name="username"
@@ -506,7 +482,7 @@ export function RegisterPage() {
   return (
     <DoorLayout
       eyebrow={
-        twoSteps ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
+        totpRequired ? (enrollment ? "Step 2 of 2" : "Step 1 of 2") : undefined
       }
       title={enrollment ? "Connect an authenticator" : "Create your Substrate"}
       description={
@@ -597,10 +573,10 @@ export function RegisterPage() {
                   <span className="font-medium [overflow-wrap:anywhere] text-foreground">
                     {authority}
                   </span>
-                  . It can&rsquo;t be changed later.
+                  . You can rename it later in Settings.
                 </>
               ) : (
-                "Your Substrate’s address and sign-in name. It can’t be changed later."
+                "Your Substrate’s address and sign-in name. You can rename it later in Settings."
               )}
             </p>
             {host && (
@@ -678,21 +654,6 @@ export function RegisterPage() {
               <FieldError errors={[{ message: "The two passwords differ." }]} />
             )}
           </Field>
-          {pair && (
-            <Field>
-              <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
-              <KeepKeyField
-                id="recovery-key"
-                label="recovery key"
-                value={pair.identity}
-              />
-              <FieldDescription>
-                Made in this browser and never sent to the server. Your password
-                manager saves it with your login. With it, a download of
-                everything you keep here opens on another server.
-              </FieldDescription>
-            </Field>
-          )}
           {!enrollment && (
             <Field>
               <Button

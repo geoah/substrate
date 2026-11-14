@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -145,25 +147,36 @@ func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
 	}
 }
 
-func TestTriggerTimeoutRetriesThenParks(t *testing.T) {
+func TestTriggerTimeoutParksForItsAutomaticRetry(t *testing.T) {
 	t.Parallel()
 	// A stuck body blows the manifest timeout; the runner kills and restarts
-	// the child, and the delivery rides the full attempts before parking —
-	// a wall timeout is not deterministic (load could clear it).
-	ds := newFnDataset(t,
+	// the child. A timeout is temporary (decision 0266): the delivery parks
+	// on its first attempt, waiting for the retry the walk of temporary
+	// failures runs over minutes, rather than holding the lane through two
+	// more timeouts.
+	//
+	// The walk's clock stands at the test's start, before the park, so the
+	// retry it holds, due a gap after the park, never runs inside the test on
+	// a runner slow enough to reach that gap.
+	start := time.Now()
+	_, ds := newDataset(t, engine.WithTestRetryClock(func() time.Time { return start }))
+	if err := enginetest.Install(context.Background(), ds, owner, fnConnector(
 		[]enginetest.Trigger{trigOn("stuck", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stuck", map[string]any{"timeout": "PT0.25S"}, []any{taskType}, `
 import time
 def main(input, host):
     time.sleep(30)
     return {}
-`))
+`))); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
 
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	process(t, ds)
 
 	failure := onlyParked(t, ds, trigID("stuck"))
-	if failure.Attempts != 3 || !strings.Contains(failure.LastError, "exceeded") {
+	if failure.Attempts != 1 || !strings.Contains(failure.LastError, "exceeded") ||
+		!strings.HasPrefix(failure.LastError, "temporary, retried automatically at ") {
 		t.Fatalf("parked: %+v", failure)
 	}
 	// The killed host restarted and re-registered: a healthy neighbor of the
@@ -462,7 +475,7 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, winManifest()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, winManifest()); err != nil {
 		t.Fatalf("declare the timeline kinds: %v", err)
 	}
 	fn := pyFn("timeline", map[string]any{
@@ -473,7 +486,7 @@ func TestTriggerHostListBoundedOnAtComputesOccurrences(t *testing.T) {
 	}
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s/%s: %v", kind, id, err)
 		}
 	}

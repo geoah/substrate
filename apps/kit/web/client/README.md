@@ -104,9 +104,24 @@ can't yet …" (`judgeServer`). `parseServerVersion`, `compareServerVersions`
 and `displayServerVersion` order and say a build's version as the Swift kit's
 `ServerVersion` does.
 
+The located server's `document` lists its features, each a group of routes
+with a `stability` (`stable`, `beta` or `experimental`), a `revision` that
+only rises and, where the server announces a coming break, a `notice`.
+`hasFeature(document, name, atLeast)` answers whether the server serves one,
+at `atLeast` or a later revision where a minimum is given. The server refuses
+a request field it does not know, so an app asks this before it sends a field
+that a revision added; a server from before revisions meets no minimum.
+[The stability policy](../../../../docs/stability.md) says what each label
+promises.
+
 ## Ids and positions
 
 `uuidv7()` is the lowercase, time-ordered id a create is written under, so
-every retry lands the same row. `positionBetween(a, b)` and
+every retry lands the same row. `derivedUUID(text)` is a lowercase UUIDv8
+of the first 16 bytes of the text's SHA-256, for a record every device
+must name alike (Tasks' settings records): each derives the same id, and
+only the first create on it with `ifVersion: 0` lands. `client.implementors(trait)`
+answers the kinds that bind a trait, each with its declaration; for an
+app's token, those its grant reads. `positionBetween(a, b)` and
 `positionAfter(list)` give exact decimal positions, written as strings,
 which never run out of room.

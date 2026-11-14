@@ -64,11 +64,28 @@ const (
 var errResumeStopped = errors.New("a stopped thread is not resumed until its owner writes again")
 
 // reasonShutdown is the reason a detached chat turn the server's shutdown
-// ended settles with; reasonStoppedBy names the actor that stopped one.
+// ended settles with; reasonStoppedBy says which type of actor stopped one,
+// in words: a reason is prose, and an actor is named by a link, never by a
+// spelling (decision 0270).
 const reasonShutdown = "stopped: the server shut down during the turn"
 
 func reasonStoppedBy(actor substrate.Actor) string {
-	return "stopped by " + string(actor)
+	return stoppedByPhrase(substrate.ActorTypeOf(actor))
+}
+
+// stoppedByPhrase is the stop reason for an actor of one type.
+func stoppedByPhrase(actorType string) string {
+	switch actorType {
+	case substrate.ActorTypePerson:
+		return "stopped by its owner"
+	case substrate.ActorTypeApp:
+		return "stopped by an app"
+	case substrate.ActorTypeAgent:
+		return "stopped by an agent"
+	case substrate.ActorTypeFunction:
+		return "stopped by a function"
+	}
+	return "stopped by the substrate"
 }
 
 // stoppedCall is the result of a call a stop or the shutdown cut off, in
@@ -165,6 +182,10 @@ type agentInvocation struct {
 	threadID string
 	// parent is the calling agent's thread, on sub-agent invocations.
 	parent string
+	// root is the call chain's root thread, on sub-agent invocations: the
+	// conversation an approval a child needs is asked in (approvals.go).
+	// Empty at the root, whose own thread it is.
+	root string
 	// depth is the agentDepth: 0 at the root, +1 per sub-agent hop. A
 	// separate counter from causalDepth on purpose.
 	depth int
@@ -475,7 +496,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	// the row stores by then (keyrefusals.go).
 	pc := &providerConfig{
 		id: id, pricing: map[string]modelPrice{},
-		key: ownKeyID(ds.Repository().ID, id, storedKey), name: name,
+		key: ownKeyID(ds.info.ID, id, storedKey), name: name,
 	}
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
@@ -642,17 +663,17 @@ type agentTool struct {
 	background bool
 }
 
-// callable is the tool's identity as the message rows stamp it: the actor
-// spelling of the agent or the function behind the alias (record 0025), so
+// callable is the tool's identity as the message rows stamp it: the record
+// path of the agent or the function behind the alias (decision 0270), so
 // rows written under different aliases join on one string. A host function
-// takes its record's function spelling although its writes land under the
-// calling agent. The zero tool, a name the agent does not carry, has none.
+// takes its own record's path although its writes land under the calling
+// agent. The zero tool, a name the agent does not carry, has none.
 func (t agentTool) callable() string {
 	switch {
 	case t.sub != nil:
-		return t.sub.Actor()
+		return vocabulary.RecordPath(kindAgent, t.sub.Identity())
 	case t.fn != nil:
-		return t.fn.Actor()
+		return vocabulary.RecordPath(kindFunction, t.fn.Identity())
 	}
 	return ""
 }
@@ -858,7 +879,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		if err != nil {
 			return nil, nil, err
 		}
-		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().ID, id)
+		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.info.ID, id)
 	}
 	if in.hub != nil {
 		in.emit = in.hub.publish
@@ -913,9 +934,10 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 // context its stop and the service shutdown cancel; its writes outlive that
 // cancellation, so it settles `stopped` instead of leaving the thread
 // `running` under its lease.
-func (l *agentLoop) run(ctx context.Context) (*substrate.AgentResult, error) {
+func (l *agentLoop) run(ctx context.Context) (res *substrate.AgentResult, err error) {
 	ds, ag := l.ds, l.ag
 	defer ds.svc.invocationEnded()
+	defer func() { l.countRun(res, err) }()
 	if l.spend != nil {
 		defer ds.spend.finish(l.spend)
 	}
@@ -1024,7 +1046,7 @@ loop:
 				// get the plain refusal and what to do, and the vendor's own
 				// words go to the log.
 				l.ds.svc.log.Warn("substrate: the vendor refused an llm/provider row's key",
-					"repository", l.ds.Repository().ID, "provider", l.provider.id, "status", status, "error", err.Error())
+					"repository", l.ds.info.ID, "provider", l.provider.id, "status", status, "error", err.Error())
 				refusal := l.ds.keyRefusal(l.provider, status)
 				if serr := l.settleAfterFailure(ctx, refusal.Error(), reply); serr != nil {
 					return nil, errors.Join(refusal, serr)
@@ -1175,7 +1197,7 @@ loop:
 	if why := l.stopRequested(); why != "" && (status == threadOK || status == threadOverBudget) {
 		status, reason = threadStopped, why
 	}
-	res := &substrate.AgentResult{
+	res = &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
 		Effects: l.in.tally.effectsTotal(), Mentions: l.mentions,
@@ -1285,6 +1307,16 @@ func (l *agentLoop) settleAfterFailure(ctx context.Context, reason, reply string
 		defer cancel()
 	}
 	_, err := l.settle(sctx, threadError, reason, reply, nil)
+	if errors.Is(err, errHandGone) {
+		// The run's own hand writes nothing once its code is gone (a
+		// publish or an uninstall while it ran), so the engine settles its
+		// thread, and the person reads why at once rather than at the
+		// reaper's sweep.
+		hand := l.actor
+		l.actor = substrate.ActorSystem
+		_, err = l.settle(sctx, threadError, reason, reply, nil)
+		l.actor = hand
+	}
 	if err != nil {
 		l.ds.noteLostRun(l, reason)
 	}
@@ -1409,6 +1441,7 @@ func (l *agentLoop) charge(usage *llm.Usage) {
 	l.cacheRead += usage.CacheReadTokens
 	l.cacheWrite += usage.CacheWriteTokens
 	l.cost += turnCost
+	l.countUsage(usage, turnCost)
 	t := l.in.tally
 	t.mu.Lock()
 	t.prompt += usage.PromptTokens
@@ -1509,7 +1542,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			props[propThreadPinned] = pinned
 		}
 		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
-		if err := l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+		if err := l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 			t.causedBy = l.in.causedBy
 			if _, err := t.put(in); err != nil {
 				return err
@@ -1546,25 +1579,17 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // the same admission every resume does (budget, opt-out), so a settled
 // thread with nothing new stays settled.
 func (l *agentLoop) recheckResolutions(ctx context.Context) {
-	b := &builder{}
-	kind := b.arg(typeMessage)
-	thread, err := threadMessagesWhere(ctx, l.ds.db, b, "e", l.threadID)
-	if err != nil {
-		return
-	}
-	var n int
-	err = l.ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM records e
-		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
-		  AND e.props->>'role' = `+b.arg(msgRoleSystem)+` AND e.created_at > `+b.arg(l.openedAt)+`
-		  AND NOT (e.id = ANY(`+b.textArray(l.consumedRows())+`))`,
-		b.args...).Scan(&n)
-	// A job's end posted after the count is in the inbox, and one after the
+	first, err := l.ds.firstResolution(ctx, l.threadID, l.openedAt, l.consumedRows())
+	// A job's end posted after the read is in the inbox, and one after the
 	// close resumes the thread itself.
-	if left := l.closeJobs(); (err != nil || n == 0) && !left {
+	left := l.closeJobs()
+	if err != nil || first == "" {
+		first = left
+	}
+	if first == "" {
 		return
 	}
-	l.ds.resumeNotifiedThread(l.threadID, "")
+	l.ds.resumeNotifiedThread(l.threadID, "", first)
 }
 
 // agentLeaseSlack pads the turn lease past the loop deadline, so only a
@@ -1581,7 +1606,7 @@ func (l *agentLoop) leaseUntil() time.Time {
 // `running` with a live lease and refuses. A stale lease (a crashed
 // continuation past its deadline plus slack) is taken over.
 func (l *agentLoop) claimThread(ctx context.Context) error {
-	return l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	return l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		// The shared registry-dependency lock before the row lock below, the
 		// order every put takes (changelog < registry-dep < subject-type <
@@ -1625,6 +1650,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		l.leaseAt = l.leaseUntil()
 		l.openCost, _ = anyFloat(row.Props["costUSD"])
 		l.pinnedStored = row.Props[propThreadPinned]
+		t.claiming = true
 		_, err = t.patch(eref{Kind: typeThread, ID: l.threadID}, substrate.PatchInput{Properties: map[string]any{
 			"status": threadRunning, "leaseUntil": l.leaseAt.Format(time.RFC3339Nano),
 		}})
@@ -1763,7 +1789,7 @@ func (l *agentLoop) settle(ctx context.Context, status, reason, reply string, th
 	// patch that committed puts the chain's cost on a row (spend.go).
 	var patched bool
 	var lifetime float64
-	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
+	err = l.ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		patched, held = false, false
 		t.causedBy = l.in.causedBy
 		// The last word on a stop: one that came after the run's own check
@@ -1875,7 +1901,7 @@ func (l *agentLoop) holdsLease(row *erow) bool {
 }
 
 func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substrate.PutInput) error {
-	return l.ds.inTx(ctx, actor, false, func(t *txn) error {
+	return l.ds.runRecordTx(ctx, actor, exemptConversation, func(t *txn) error {
 		t.causedBy = l.in.causedBy
 		_, err := t.put(in)
 		return err
@@ -1923,10 +1949,10 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		if fn.Input != nil {
 			params = fn.Input
 		}
-		// The authority a new package must live under is the repository's,
-		// and nothing else the model sees names it.
+		// A new package lives under the repository's local namespace, and
+		// nothing else the model sees says so.
 		if t.Builtin == vocabulary.AgentToolVocabulary {
-			description += " The owner's authority is " + l.ds.scope.Repository + "."
+			description += " The owner's own packages live under `~`, this repository's namespace: declare `~/<package>` and kinds `~/<package>/<name>`."
 		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)
@@ -2173,6 +2199,10 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 		return l.dispatchEdit(ctx, c, args)
 	case tool.builtin == vocabulary.AgentToolAppletPreview:
 		return l.dispatchAppletPreview(ctx, args)
+	case tool.fn != nil && tool.fn.RequiresApproval():
+		// Before the background branch: a call that waits for the owner
+		// starts nothing, foreground or background, until it is approved.
+		return l.dispatchApproval(ctx, c, tool.fn, args)
 	case tool.runsInBackground(l.ag):
 		return l.dispatchBackground(c)
 	case tool.sub != nil:
@@ -2197,7 +2227,11 @@ func (l *agentLoop) dispatch(ctx context.Context, c *toolRun) (string, bool) {
 func (l *agentLoop) dispatchQuery(ctx context.Context, c *toolRun, args map[string]any) (string, bool) {
 	qctx, cancel, bound := l.toolContext(ctx, nil)
 	defer cancel()
-	out, ok, rows := l.ds.runQueryTool(qctx, queryScope{kinds: l.ag.Reads.Kinds, rows: c.readShare, requireKinds: true}, args)
+	scope, err := l.ds.heldScope(qctx, queryScope{kinds: l.ag.Reads.Kinds, rows: c.readShare, requireKinds: true})
+	if err != nil {
+		return toolError(err.Error()), false
+	}
+	out, ok, rows := l.ds.runQueryTool(qctx, scope, args)
 	l.settleRead(c, rows)
 	if late, timedOut := toolTimedOut(ctx, qctx, bound); timedOut {
 		// A read the timeout cut may still answer ok: a search whose rows
@@ -2211,19 +2245,49 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, c *toolRun, args map[stri
 }
 
 // queryScope bounds one `query` call: the kind allowlist every read is held to,
-// and the rows it may still spend. A NIL allowlist is the whole repository — what
-// a token holds, and never what an agent's `reads:` grants, which the loader
-// refuses empty.
+// and the rows it may still spend. Every kind is `all`, said in so many words:
+// what a token holds, and never what an agent's `reads:` grants. A scope that
+// is not `all` reads the kinds `kinds` lists and none where it lists none, so
+// an allowlist the run's holders emptied reads nothing.
 type queryScope struct {
+	all   bool
 	kinds []string
 	rows  int
 	// requireKinds refuses a ranked read that names no kinds: an agent's
 	// query tool sets it (record 0172), a function body's host query does not.
 	requireKinds bool
+	// held is what the persons and the apps the run works for read now
+	// (run.go heldScope), nil where nothing holds the read beyond kinds.
+	held func(kind string) bool
+}
+
+// heldScope is s held to what the work in ctx may read (run.go runReads):
+// every kind it allows is read only where the run's persons and apps read it
+// too, and a scope over the whole repository becomes the list of the kinds
+// they read.
+func (ds *dataset) heldScope(ctx context.Context, s queryScope) (queryScope, error) {
+	held, err := ds.runReads(ctx)
+	if err != nil || held == nil {
+		return s, err
+	}
+	s.held = held
+	if s.all {
+		s.all = false
+		s.kinds = []string{}
+		for _, k := range ds.registry().Kinds() {
+			if held(k.Identity) {
+				s.kinds = append(s.kinds, k.Identity)
+			}
+		}
+	}
+	return s, nil
 }
 
 func (s queryScope) allows(ident string) bool {
-	if s.kinds == nil {
+	if s.held != nil && !s.held(ident) {
+		return false
+	}
+	if s.all {
 		return true
 	}
 	for _, t := range s.kinds {
@@ -2239,7 +2303,7 @@ func (s queryScope) allows(ident string) bool {
 // `person` alone must not hand back the mirrors pointing at it. Nil rather
 // than empty, so absence reads the way a kind no mapping targets reads.
 func (s queryScope) links(links []substrate.LinkedRecord) []substrate.LinkedRecord {
-	if s.kinds == nil {
+	if s.all {
 		return links
 	}
 	var out []substrate.LinkedRecord
@@ -2251,14 +2315,14 @@ func (s queryScope) links(links []substrate.LinkedRecord) []substrate.LinkedReco
 	return out
 }
 
-// meta holds the provenance sidecar to the allowlist the same way: a source
-// path names a record of another kind (record 0094), so where that kind is
-// not granted the path is blanked and the offer's value and actor stay.
-func (s queryScope) meta(meta map[string]substrate.PropertyMeta) map[string]substrate.PropertyMeta {
-	if s.kinds == nil {
-		return meta
+// marks holds the marks to the allowlist the same way: a source record
+// names a record of another kind (record 0094), so where that kind is not
+// granted the link is left out and the offer's value and stamp stay.
+func (s queryScope) marks(marks map[string]substrate.PropertyMark) map[string]substrate.PropertyMark {
+	if s.all {
+		return marks
 	}
-	return substrate.MetaWithinKinds(meta, func(path string) bool {
+	return substrate.MarksWithinKinds(marks, func(path string) bool {
 		kind, _, ok := vocabulary.SplitRecordPath(path)
 		return ok && s.allows(kind)
 	})
@@ -2266,15 +2330,18 @@ func (s queryScope) meta(meta map[string]substrate.PropertyMeta) map[string]subs
 
 // scopeKinds is the allowlist as a list of KINDS, which is what a call naming
 // none is answered with. It is a copy, because the caller rewrites each entry
-// to its identity and the allowlist is the agent's; nil stays nil, which lists
-// the whole repository for a token.
+// to its identity and the allowlist is the agent's. Nil for an `all` scope,
+// which lists the whole repository for a token; a scope that is not `all`
+// answers a list, empty where it reads nothing, which the caller answers
+// with nothing (emptyScope) rather than pass on, since a read naming no kind
+// is a read of every kind.
 //
 // A glob is expanded here against the registry rather than passed down
 // (record 0080): `filter.kinds` takes kind references, so a pattern would only
 // fail to resolve. Expansion is what the gate would admit anyway, auth kinds
 // included in neither.
 func (ds *dataset) scopeKinds(scope queryScope) []string {
-	if scope.kinds == nil {
+	if scope.all {
 		return nil
 	}
 	globbed := false
@@ -2285,7 +2352,13 @@ func (ds *dataset) scopeKinds(scope queryScope) []string {
 		}
 	}
 	if !globbed {
-		return append([]string(nil), scope.kinds...)
+		out := make([]string, 0, len(scope.kinds))
+		for _, k := range scope.kinds {
+			if scope.held == nil || scope.held(k) {
+				out = append(out, k)
+			}
+		}
+		return out
 	}
 	var out []string
 	for _, k := range ds.registry().Kinds() {
@@ -2340,7 +2413,7 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
 		e.LinkedFrom = scope.links(e.LinkedFrom)
-		e.PropertyMeta = scope.meta(e.PropertyMeta)
+		e.Marks = scope.marks(e.Marks)
 		return toolJSON(map[string]any{"record": e}), true, 1
 	}
 	q := call.q
@@ -2365,17 +2438,25 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 		}
 		if len(in.Kinds) == 0 {
 			in.Kinds = ds.scopeKinds(scope)
+			if !scope.all && len(in.Kinds) == 0 {
+				return toolJSON(substrate.Ranked(substrate.SearchResult{Hits: []substrate.Hit{}})), true, 0
+			}
 		}
 		res, err := ds.Search(ctx, in)
 		if err != nil {
 			return toolError(err.Error()), false, 0
 		}
+		res.Hits = slices.DeleteFunc(res.Hits, func(h substrate.Hit) bool { return h.Record == nil || !scope.allows(h.Record.Kind) })
 		return toolJSON(substrate.Ranked(res)), true, len(res.Hits)
 	}
 	if len(q.Filter.Kinds) == 0 {
 		// The allowlist IS the list when the call names no kinds: nil for a
-		// token, which lists the repository.
+		// token, which lists the repository, and nothing for a scope that
+		// reads nothing.
 		q.Filter.Kinds = ds.scopeKinds(scope)
+		if !scope.all && len(q.Filter.Kinds) == 0 {
+			return toolJSON(&substrate.Page{Records: []*substrate.Record{}}), true, 0
+		}
 	}
 	for i, ident := range q.Filter.Kinds {
 		ty, err := ds.resolveType(ident)
@@ -2650,7 +2731,7 @@ func parseAggregateCall(scope queryScope, args map[string]any) (queryCall, strin
 	if len(q.Filter.Kinds) == 0 && q.Aggregate.Property != nil {
 		return queryCall{}, "filter.kinds: a property read names the kinds whose property it reduces, in filter.kinds or kind"
 	}
-	if b := q.Aggregate.Bucket; b != nil && b.Records != nil && len(b.Records.Filter.Kinds) == 0 && scope.kinds != nil {
+	if b := q.Aggregate.Bucket; b != nil && b.Records != nil && len(b.Records.Filter.Kinds) == 0 && !scope.all {
 		return queryCall{}, "aggregate.bucket.records.filter: name the kinds whose records are the buckets"
 	}
 	// The run stage fills the kinds a read names none of and lowers the
@@ -2693,7 +2774,7 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, q sub
 				q.Filter.Kinds = append(q.Filter.Kinds, ty.Identity)
 			}
 		}
-		if scope.kinds == nil {
+		if scope.all {
 			q.Filter.Kinds = nil
 		} else if len(q.Filter.Kinds) == 0 {
 			return toolError("aggregate: no kind in the reads allowlist binds " + vocabulary.TraitObservedCore +
@@ -2718,7 +2799,7 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, q sub
 		switch {
 		case !ok && n.At != "aggregate.metric.ref" && !strings.HasPrefix(n.At, "aggregate.metrics["):
 			return toolError(n.At + ": " + strconv.Quote(n.Path) + " is not a record path \"<kind>/<id>\""), false, 0
-		case !ok || scope.kinds == nil:
+		case !ok || scope.all:
 			// A malformed metric ref is the read's to refuse by name.
 		default:
 			if msg := ds.allowKind(scope, kind); msg != "" {
@@ -2726,7 +2807,7 @@ func (ds *dataset) runAggregateTool(ctx context.Context, scope queryScope, q sub
 			}
 		}
 	}
-	if scope.kinds != nil {
+	if !scope.all {
 		for _, pin := range ds.rankingSourceKinds(q) {
 			if pin == "" {
 				return toolError("aggregate.sources: with no order, the read ranks the sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order"), false, 0
@@ -2835,6 +2916,14 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, c *toolRun, args map[st
 		if err != nil {
 			return toolError(err.Error()), false
 		}
+		// Whether the target exists is a read: held to the agent's reads and
+		// to what its run may read (readsAllow), as `query` is, so a proposal
+		// probes nothing it could not read.
+		if ok, err := l.readsAllow(ctx, ty.Identity); err != nil {
+			return toolError(err.Error()), false
+		} else if !ok {
+			return toolError(ty.Identity + " is not in the reads allowlist"), false
+		}
 		row, err := l.ds.loadRowDB(ctx, eref{Kind: ty.Identity, ID: target})
 		if err != nil {
 			return toolError(err.Error()), false
@@ -2893,6 +2982,14 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, c *toolRun, args map[st
 		ty, err := l.ds.resolveType(targetKind)
 		if err != nil {
 			return toolError(err.Error()), false
+		}
+		// Whether the target exists is a read: held to the agent's reads and
+		// to what its run may read (readsAllow), as `query` is, so a proposal
+		// probes nothing it could not read.
+		if ok, err := l.readsAllow(ctx, ty.Identity); err != nil {
+			return toolError(err.Error()), false
+		} else if !ok {
+			return toolError(ty.Identity + " is not in the reads allowlist"), false
 		}
 		row, err := l.ds.loadRowDB(ctx, eref{Kind: ty.Identity, ID: target})
 		if err != nil {
@@ -3165,7 +3262,7 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, c *toolRun, sub *vocab
 	child := continued
 	res, err := l.ds.runAgent(cctx, sub, agentInvocation{
 		mode: agentModeSubagent, user: input, notAfter: notAfter,
-		parent: l.threadID, depth: depth, threadID: continued,
+		parent: l.threadID, root: l.rootThread(), depth: depth, threadID: continued,
 		// A stop of the detached turn stops the child with it, and the
 		// child settles `stopped` on its own bounded writes.
 		stopHub:  l.in.stopHub,

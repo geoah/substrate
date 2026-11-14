@@ -37,7 +37,10 @@ func TestAScheduleFireThatRetiresTheLastParkResolvesTheAlert(t *testing.T) {
 		t.Fatalf("the alert of %s is %v after two parks, want open", supersedeSync, got)
 	}
 
-	// s+1h settles and retires both parks: nothing of the trigger stands.
+	// The trigger owes the latest alone: s+1h settles and retires both
+	// parks, so nothing of the trigger stands. (One that states `all` would
+	// keep s parked, and its alert open.)
+	setMissed(t, ds, supersedeSync, "latest")
 	setJobSync(t, ds, supersedeOK)
 	rewindSchedule(t, ds, supersedeSync, s)
 	processOnce(t, ds)
@@ -88,7 +91,7 @@ func TestAnAbandonedClaimKeepsTheParkedAlertOpen(t *testing.T) {
 	ctx := context.Background()
 	// The schedules start in an hour, so only the record trigger runs.
 	ds := supersedeDataset(t, nowUTC().Add(time.Hour), "create")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -179,7 +182,7 @@ func TestARestartRaisesTheAlertOfTheAgentRunItInterrupted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 1 || changes[0].Actor != substrate.Actor(keeper.Actor()) {
+	if len(changes) != 1 || changes[0].Actor != actorID(substrate.Actor(keeper.Actor())) {
 		t.Fatalf("the alert was written by %+v, want one entry under %s", changes, keeper.Actor())
 	}
 

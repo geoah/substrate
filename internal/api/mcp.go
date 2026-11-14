@@ -51,8 +51,7 @@ var mcpRoutes = func() map[string]bool {
 		"GET " + v + "/vocabulary/upgrade",
 		"GET " + v + "/catalog",
 		"GET " + v + "/catalog/{id}",
-		"POST " + v + "/catalog/{id}/install",
-		"POST " + v + "/catalog/{id}/import",
+		"POST " + v + "/catalog/{id}/add",
 		"GET " + core + "/bundle/status",
 		"GET " + core + "/bundle/{id}/status",
 		"POST " + core + "/bundle/{id}/bind",
@@ -135,7 +134,7 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 	if ctx == nil {
 		switch status {
 		case http.StatusServiceUnavailable:
-			writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+			writeUnavailableCause(w, r, cause, unavailablePayload(cause, msg))
 		case http.StatusUnauthorized:
 			errCode := ""
 			if bearerSecret(r) != "" {
@@ -160,6 +159,12 @@ func (h *handler) serveMCP(w http.ResponseWriter, r *http.Request) {
 			r.Method+" is not served at "+mcpPath+": it holds no session and opens no stream")
 		return
 	}
+	// The door is paced as the routes are, once per request: what its tools
+	// request in process carries the charge.
+	if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID, false) {
+		return
+	}
+	ctx = withPaced(ctx)
 	body, ok := readBody(w, r, mcpBody)
 	if !ok {
 		return

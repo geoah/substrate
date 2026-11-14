@@ -64,11 +64,10 @@ func installLeaseBundle(t *testing.T, ds substrate.Dataset, triggers ...string) 
 			},
 		})
 	}
-	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
+	err := enginetest.Install(context.Background(), ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "synclease", Authority: leasePackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(leasePackage, 0),
-			vocabulary.ActorManifest(leasePackage, vocabulary.PackageActor(leasePackage)),
 			vocabulary.KindManifest(leasePackage, map[string]any{"singular": "account"},
 				map[string]any{"properties": map[string]any{
 					"name":         map[string]any{"type": "string"},

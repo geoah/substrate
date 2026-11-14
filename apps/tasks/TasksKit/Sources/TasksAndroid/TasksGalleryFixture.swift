@@ -15,6 +15,12 @@ public struct TasksGalleryFixture: Bridged, Equatable {
         case editor
         case confirmation
         case settings
+        case queue
+        case suggestion
+        case choice
+        case collections
+        case collection
+        case approval
     }
 
     public var name: String
@@ -37,6 +43,12 @@ public struct TasksGalleryFixture: Bridged, Equatable {
             case let .settings(settings):
                 out.screen = .settings
                 out.settings = settings
+            case .queue: out.screen = .queue
+            case .suggestion: out.screen = .suggestion
+            case .choice: out.screen = .choice
+            case .collections: out.screen = .collections
+            case .collection: out.screen = .collection
+            case .approval: out.screen = .approval
             }
             return out
         }

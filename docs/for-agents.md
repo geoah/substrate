@@ -17,12 +17,16 @@ there alone ([connecting an assistant](mcp.md)).
 
 **Discovery is unauthenticated.** `GET /.well-known/substrate/server.json`
 answers before you hold a token. Read three things from it: `grammar`, which
-spells the kind reference (`<authority>/<package>/<name>`), the record path
+spells the kind reference (`<authority>/<package>/<name>`, the owner's own
+under `~`), the record path
 and the records route this deployment expects; `features`, the list a client
-reads instead of probing a route, each with a `stability` (`stable`, `beta`,
-`alpha`) and its `surfaces`; and `registration`, which says whether an
-invite code and a second factor are required
-([discovery](api.md#discovery)).
+reads instead of probing a route, each with a `stability` (`stable`, `beta`
+or `experimental`), a `revision` and its `surfaces`; and `registration`,
+which says whether an invite code and a second factor are required
+([discovery](api.md#discovery)). The server refuses a request field it does
+not know, so before you send one that a later release added, check that its
+feature's `revision` has reached the number it arrived at
+([stability](stability.md#the-api)).
 
 **The token comes from the owner.** Every request carries
 `Authorization: Bearer <token>`. The owner mints one for you with
@@ -32,10 +36,12 @@ with the owner's password, and never take a password as a command line
 argument: every `substratectl` prompt has a `--*-stdin` twin for the
 headless case ([users and tokens](auth.md)).
 
-**Do not set `X-Substrate-Actor`.** A request that names no actor is
-attributed to `api`, which is what the substrate knows about you. The header
-names a door (`console`, `substratectl`), and the machine actors are refused
-to any request ([actors](api.md#actors)).
+**Your writes are the owner's, beside your token.** No request names its
+actor: a full-access token writes as the repository's person, and the
+change feed links the token it came through, so the owner reads your
+writes apart from their own by the token's label
+([actors](api.md#actors)). A token an app got through the authorization
+flow writes as that app instead.
 
 ## Learn the vocabulary before writing
 
@@ -81,14 +87,20 @@ unique per kind, never per repository.
    `console`, `observations` and `assistant` packages. Every other
    kind arrives from the catalog: the owner takes a catalog package from the
    console (a provider from Providers, a sample from All data's Add a
-   collection), with `substratectl install` or `substratectl import
+   collection), with `substratectl add
    <authority>/<package>`, or with
-   `POST /api/v1/catalog/<authority>%2F<package>/install` or `…/import`. A
-   provider, or a catalogue such as `substrate.reamde.dev/health`, installs
+   `POST /api/v1/catalog/<authority>%2F<package>/add`. A
+   provider, or a catalogue such as `substrate.reamde.dev/health`, lands
    under the authority that publishes it, so its kinds keep their shipped
-   names. A sample's import lands under the owner's own authority, so the
-   kind you then write is `<owner authority>/tasks/task`, not the catalog's
-   id ([getting started](getting-started.md)).
+   names. A sample is copied into the repository's local namespace, `~`, so
+   the kind you then write is `~/tasks/task` in every repository, not the
+   catalog's id ([getting started](getting-started.md)). The owner's full
+   name is accepted in place of `~`, and every answer says `~`, except
+   where the owner has published one of their packages under that name:
+   then the name is the published package's, as `ada.example.com/recipes`
+   is once `~/recipes` is published there. Publishing and releasing are the
+   owner's to decide, in the console or with `substratectl`; an agent and an
+   app's scoped token are refused both ([publishing](publishing.md)).
 
 ## Reading
 
@@ -184,10 +196,10 @@ Every error is one shape, and the code set is closed
 | `auth` | 401 | The token is missing, revoked or expired. Stop and ask the owner for a new one; do not try a password. |
 | `totp_required` | 401 | Only from the sign-in door: a right password on an account with a second factor, sent no code. You never sign in; ask the owner for a token. |
 | `not_found` | 404 | No such kind, or no such record at that address. Check the kind reference first. |
-| `compacted` | 410 | Your changelog cursor is below the horizon or under another history generation. List again and resume from the new `head`. |
+| `compacted` | 410 | Your changelog cursor is below the horizon or under another history generation, or your list cursor can no longer be resumed. List again from the first page and resume from the new `head`. |
 | `rate_limited`, `unavailable` | 429, 503 | Wait the `Retry-After` the response carries, then retry the same request. |
 | `bad_request` | 400 | A parameter the mode does not honor, or a malformed request. Fix the request. |
-| `internal`, `function_failed` | 500 | The server, or a function's body, faulted. Report it; do not loop. |
+| `internal`, `function_failed` | 500 | The server, or a function's body, faulted. Report it; do not loop. An `internal` or `unavailable` with the reason `in_doubt` is a write that may have landed: read the record before you write it again, or repeat the request under the same `Idempotency-Key`. |
 
 ## Following changes
 
@@ -199,8 +211,9 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 ```
 
 The stream is newline-delimited JSON: a `bookmark` frame first, then one
-frame per change with `seq`, `op`, `kind`, `recordId`, `actor` and the
-`affected` records. An empty object is a heartbeat, and a frame carrying
+frame per change with `seq`, `op`, `kind`, `recordId`, `actor` (the id of
+the [actor record](api.md#actors) that wrote it), `onBehalfOf` and `token`
+where set, and the `affected` records. An empty object is a heartbeat, and a frame carrying
 `error` is the last one. Store the last `seq` with its `generation` and
 resume from the pair; a `from` above zero without its `generation` is
 refused. `GET /api/v1/records?watch=1&filter={"kinds":[…]}` is the
@@ -215,8 +228,9 @@ is a record write through `POST /api/v1/vocabulary/apply`, which is where
 kind ([vocabulary as records](vocabulary.md)):
 
 - Every kind names an `authority` and a `package`, and a package document
-  declares the package first. The owner's authority is the one you may
-  declare into.
+  declares the package first. `~`, the repository's local namespace, is the
+  one authority you may declare into
+  ([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 - The engine maintains `version` through the API: a changed definition lands
   at the stored version plus one. Do not hand-bump.
 - Additive changes upgrade cleanly: a new kind, a new optional property, a
@@ -248,14 +262,13 @@ was fixed. The same section is the body of the release on the
 ## Never
 
 - Never read, list, export or repeat the contents of
-  `substrate.reamde.dev/core/token`, `/credential`, `/secret` or
-  `/recoverykey`. They are the owner's auth material; nothing an agent does
-  needs them.
+  `substrate.reamde.dev/core/token`, `/credential` or `/secret`. They are the
+  owner's auth material; nothing an agent does needs them.
 - Never write a key or a password anywhere but a secret-typed property, and
   never pass one as a command line argument.
 - Never invent an id, address a record without its kind, or address a
   collection by a plural, and never by a bare name
-  (`get <authority>/tasks/task`, not `get task` or `get tasks`).
+  (`get '~/tasks/task'`, not `get task` or `get tasks`).
 - Never retry a `422` unchanged, force a `403`, or loop on a `500`.
 - Never write `title` on a kind that declares its own heading property, and
   never declare a reserved property to make a write pass.

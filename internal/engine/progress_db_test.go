@@ -2,7 +2,7 @@ package engine_test
 
 // The long walks say where they are (issue 745): verify's two passes, a
 // rebuild and the boot import each log a progress line, at info and marked
-// `progress=true`, naming the segment, the seq and the bytes read so far.
+// `progress=true`, naming the seq reached.
 // The interval is zero here, so a short history prints what a two-hour one
 // prints every thirty seconds.
 
@@ -22,10 +22,10 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 	t.Parallel()
 	var logs lockedLog
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
-	// One-byte segments: every transaction rotates, so the walks cross
-	// segment boundaries and the segment named in the lines moves.
+	// One-byte pieces: every transaction is a piece of its own, so the
+	// archive's walk crosses piece boundaries.
 	svc, ds, _ := newDatasetWithDSN(t,
-		engine.WithChangelogSegmentBytes(1),
+		engine.WithArchivePieceBytes(1),
 		engine.WithTestProgressEvery(0),
 		engine.WithLogger(logger))
 	for _, name := range []string{"one", "two", "three"} {
@@ -36,6 +36,9 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 	}
 	head := maxSeq(t, ds)
 	id := repositoryIDOf(t, ds)
+	if err := engine.ArchivePass(context.Background(), ds); err != nil {
+		t.Fatal(err)
+	}
 	if report := mustVerify(t, svc, testdb.Repository(t)); !report.OK {
 		t.Fatalf("the repository does not verify: %+v", report)
 	}
@@ -59,8 +62,8 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 
 	out := logs.String()
 	for _, msg := range []string{
-		"verifying the changelog files",
-		"verifying the changelog table against the files",
+		"verifying the changelog table",
+		"verifying the archive against the table",
 		"replaying the changelog into the fold",
 		"importing the changelog rows",
 	} {
@@ -70,7 +73,7 @@ func TestVerifyRebuildAndImportSayWhereTheyAre(t *testing.T) {
 			continue
 		}
 		last := lines[len(lines)-1]
-		for _, want := range []string{"repository=" + id, "segment=", "seq=" + strconv.FormatInt(head, 10), "bytes=", "progress=true"} {
+		for _, want := range []string{"repository=" + id, "seq=" + strconv.FormatInt(head, 10), "progress=true"} {
 			if !strings.Contains(last, want) {
 				t.Errorf("the last %q line lacks %s: %s", msg, want, last)
 			}

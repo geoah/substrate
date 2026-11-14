@@ -2,6 +2,7 @@ package vocabulary
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -45,6 +46,449 @@ func RehomeAuthority(docs []map[string]any, from, to string) ([]map[string]any, 
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// LocalizeAuthority returns a copy of docs moved from the `from` authority into
+// the repository's own namespace (decision record 0259).
+//
+// Copying a sample runs it with `from` the sample's authority, and it reads
+// that name where the grammar says a string names something, as admitting
+// the repository's own declarations reads the repository's name: a
+// declaration's id and its name keys (LocalizeDeclaration), its `authority`,
+// an actor's authority, and, in the two texts a copy's code reads (a
+// function's `source` and `modules`, an agent's `prompt`), a spelled kind
+// reference (LocalizeKindRefs). Every other occurrence stays as written: a
+// URL's host, a port, an email address, a word in prose. The records a
+// closure carries beside its declarations are left as shipped; the install
+// folds them where the write reads a name (BundleInstall.Origin). The
+// authority document of the sample's authority, which describes a
+// publisher, is not carried: the local namespace has none.
+//
+// Admitting the repository's own declarations runs it with `from` its name
+// (home): that name is another spelling of `~` only where a declaration
+// names something, so only those keys move (LocalizeDeclaration), and the
+// owner's text (a description, a prompt, a function's source, a default)
+// stays as written. The repository's own authority document stays too, and
+// a record a closure carries beside its declarations moves only its id
+// (NamedID); the write folds its properties as it folds any record's.
+//
+// Two `requiresAtLeast` entries that become one package are refused, as
+// LocalizeDeclaration refuses them.
+func LocalizeAuthority(docs []map[string]any, from, home string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(docs))
+	for _, d := range docs {
+		if d["kind"] == CoreKind(DocAuthority) {
+			if id, _ := mapPath(d, "metadata", "id").(string); id == from {
+				if from == home {
+					out = append(out, d)
+				}
+				continue
+			}
+		}
+		if from == home {
+			own, err := localizeOwnDocument(d, home)
+			if err != nil {
+				return nil, fmt.Errorf("admitting %s: %w", mapPathString(d, "metadata", "id"), err)
+			}
+			out = append(out, own)
+			continue
+		}
+		copied, err := localizeCopiedDocument(d, from)
+		if err != nil {
+			return nil, fmt.Errorf("moving %s into %s: %w", from, Local, err)
+		}
+		out = append(out, copied)
+	}
+	return out, nil
+}
+
+// LocalizeOwnDocuments is the repository's own documents with its names (its
+// name, then the former names it still answers to, decision record 0287)
+// folded into `~` where they name something, as LocalizeAuthority admits them
+// under one name. An authority document of any of those names stays as
+// written: it describes a publisher, and `~` has none.
+func LocalizeOwnDocuments(docs []map[string]any, names ...string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(docs))
+	for _, d := range docs {
+		own, err := localizeOwnDocument(d, names...)
+		if err != nil {
+			return nil, fmt.Errorf("admitting %s: %w", mapPathString(d, "metadata", "id"), err)
+		}
+		out = append(out, own)
+	}
+	return out, nil
+}
+
+// localizeOwnDocument is one of the repository's own documents with its names
+// folded into `~` where they name something: a declaration's id and its name
+// keys (LocalizeDeclaration), another record's id where its kind is named by
+// a reference. An authority document stays as written.
+func localizeOwnDocument(d map[string]any, names ...string) (map[string]any, error) {
+	kind, _ := d["kind"].(string)
+	if kind == CoreKind(DocAuthority) {
+		return d, nil
+	}
+	out := make(map[string]any, len(d))
+	for k, v := range d {
+		out[k] = v
+	}
+	if meta, ok := d["metadata"].(map[string]any); ok {
+		if id, ok := meta["id"].(string); ok {
+			m := make(map[string]any, len(meta))
+			for k, v := range meta {
+				m[k] = v
+			}
+			m["id"] = LocalizeID(kind, id, names...)
+			out["metadata"] = m
+		}
+	}
+	if _, declaration := declarationKinds[kind]; declaration {
+		if data, ok := d["data"]; ok {
+			localized, err := LocalizeDeclaration(kind, data, names...)
+			if err != nil {
+				return nil, err
+			}
+			out["data"] = localized
+		}
+	}
+	return out, nil
+}
+
+// mapPathString is mapPath's string, or "".
+func mapPathString(d map[string]any, path ...string) string {
+	s, _ := mapPath(d, path...).(string)
+	return s
+}
+
+// declarationKinds are the kinds of a declaration document: what
+// LocalizeDeclaration reads by the dialect's keys.
+var declarationKinds = map[string]bool{
+	CoreKind(DocAuthority): true, CoreKind(DocPackage): true, CoreKind(DocKind): true,
+	CoreKind(DocTrait): true, CoreKind(DocPropertyType): true, CoreKind(DocRecordMapping): true,
+	CoreKind(DocFunction): true, CoreKind(DocAgent): true, CoreKind(DocActor): true,
+	CoreKind(DocBundle): true,
+}
+
+// localizeCopiedDocument is one document of a sample's closure, copied out
+// of the sample's authority, from: its names folded as the repository's own
+// documents fold the repository's name (localizeOwnDocument), and the kind
+// references spelled in its code and its prompts (posCode, posPrompt) moved
+// to `~`.
+func localizeCopiedDocument(d map[string]any, from string) (map[string]any, error) {
+	out, err := localizeOwnDocument(d, from)
+	if err != nil {
+		return nil, err
+	}
+	kind, _ := d["kind"].(string)
+	root, ok := declarationRoots[kind]
+	data, isMap := out["data"].(map[string]any)
+	if !ok || !isMap {
+		return out, nil
+	}
+	same := func(s string) string { return s }
+	local := func(s string) string { return LocalizeKindRefs(s, from) }
+	walked, err := declarationWalker{fold: same, authority: same, code: local, prompt: local}.object(root, data)
+	if err != nil {
+		return nil, err
+	}
+	out["data"] = walked
+	return out, nil
+}
+
+// LocalizeKindRefs is text with every kind reference spelled under from
+// moved to `~`: a whole mention of from followed by "/<package>/<name>",
+// each a single lowercase word, with nothing of an address around it. A
+// mention after "/", "@" or ":" (a URL's path, userinfo or an email address,
+// a scheme or an actor), one followed by anything but "/" (a port, the end
+// of a host), one with fewer than two words after it, and one whose name runs
+// on into "/", "@", ":" or a name's characters (a full stop that ends a
+// sentence is not one) stay as written.
+func LocalizeKindRefs(text, from string) string {
+	if from == "" || !strings.Contains(text, from) {
+		return text
+	}
+	var b strings.Builder
+	for i := 0; i < len(text); {
+		at := strings.Index(text[i:], from)
+		if at < 0 {
+			b.WriteString(text[i:])
+			break
+		}
+		at += i
+		end := at + len(from)
+		b.WriteString(text[i:at])
+		if spelledKindRef(text, at, end) {
+			b.WriteString(Local)
+		} else {
+			b.WriteString(from)
+		}
+		i = end
+	}
+	return b.String()
+}
+
+// spelledKindRef reports whether the mention at [at,end) of text is the
+// authority of a kind reference standing on its own.
+func spelledKindRef(text string, at, end int) bool {
+	if !authorityBoundary(text, at, end) {
+		return false
+	}
+	if at > 0 && strings.ContainsRune("/@:", rune(text[at-1])) {
+		return false
+	}
+	i := end
+	for range 2 {
+		if i >= len(text) || text[i] != '/' {
+			return false
+		}
+		n := lowerWord(text[i+1:])
+		if n == 0 {
+			return false
+		}
+		i += 1 + n
+	}
+	switch {
+	case i == len(text):
+		return true
+	case text[i] == '.':
+		// A sentence's full stop, not a name running on.
+		return i+1 == len(text) || !isNameByte(text[i+1])
+	default:
+		return !isNameByte(text[i]) && !strings.ContainsRune("/@:", rune(text[i]))
+	}
+}
+
+// lowerWord is the length of the single lowercase word s starts with: a
+// letter, then letters and digits.
+func lowerWord(s string) int {
+	n := 0
+	for n < len(s) && (s[n] >= 'a' && s[n] <= 'z' || n > 0 && s[n] >= '0' && s[n] <= '9') {
+		n++
+	}
+	return n
+}
+
+// LocalizeDeclaration is the data of a declaration of kind (a declaration
+// record kind, CoreKind(DocKind) and the rest) with the repository's names,
+// its name first, then the former names it still answers to, folded into `~`
+// where the dialect says a key names something
+// (declarationPositions): a reference position, in every form the loader
+// accepts there (a name, a pattern, a glob, a record path, a reference
+// value's object, a list of any of them), `authority` when it is one of the
+// names,
+// and the packages `requiresAtLeast` keys. Every other value stays as
+// written, whatever it looks like. The data of a kind no declaration has
+// stays whole. Two `requiresAtLeast` entries that become one package are
+// refused: the floors they set cannot both hold.
+func LocalizeDeclaration(kind string, v any, names ...string) (any, error) {
+	root, ok := declarationRoots[kind]
+	if len(names) == 0 || names[0] == "" || !ok {
+		return v, nil
+	}
+	return localWalker(names...).object(root, v)
+}
+
+// localWalker folds names into `~`: a name, a pattern or a record path under
+// one of them at a reference position (LocalizePath), and the declaring
+// authority when it is one of them.
+func localWalker(names ...string) declarationWalker {
+	return declarationWalker{
+		fold: func(s string) string { return LocalizePath(s, names...) },
+		authority: func(s string) string {
+			if slices.Contains(names, s) {
+				return Local
+			}
+			return LocalizePath(s, names...)
+		},
+	}
+}
+
+// declarationWalker rewrites the names in a declaration by the dialect's
+// positions: fold each name at a reference position and each package
+// `requiresAtLeast` keys, authority the declaring `authority`. Every other
+// value stays, whatever it looks like.
+type declarationWalker struct {
+	fold, authority func(string) string
+	// code rewrites the strings of a code position (posCode), and prompt
+	// those of a prompt (posPrompt); nil leaves them as written.
+	code, prompt func(string) string
+	// beside, when set, is a name to add beside one in a list at a reference
+	// position ("" for none): a pattern over every package of `~` that a
+	// publish takes one of out of it keeps reaching it (publishBeside).
+	beside func(string) string
+}
+
+// object walks v, an object of the key set keys or a list of them.
+func (w declarationWalker) object(keys string, v any) (any, error) {
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			var err error
+			if out[i], err = w.object(keys, x); err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			c, ok := classOf(keys, k)
+			if !ok {
+				// A key the dialect does not hold here: the loader refuses
+				// it, and nothing in it is read as a name.
+				out[k] = x
+				continue
+			}
+			var err error
+			switch c.pos {
+			case posRef:
+				out[k] = w.reference(x)
+			case posAuthority:
+				if s, ok := x.(string); ok {
+					out[k] = w.authority(s)
+				} else {
+					out[k] = w.reference(x)
+				}
+			case posPackages:
+				out[k], err = w.keys(x)
+			case posObject:
+				out[k], err = w.object(c.keys, x)
+			case posNamed:
+				out[k], err = w.named(c.keys, x)
+			case posCode, posPrompt:
+				out[k] = x
+				if text := w.text(c.pos); text != nil {
+					out[k], err = walkStrings(x, text)
+				}
+			default:
+				out[k] = x
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
+	default:
+		return v, nil
+	}
+}
+
+// text is the rewrite of a code or a prompt position, nil for none.
+func (w declarationWalker) text(pos position) func(string) string {
+	if pos == posPrompt {
+		return w.prompt
+	}
+	return w.code
+}
+
+// reference rewrites a value at a reference position by fold: a name, a
+// pattern or a record path, a reference value's `ref`, beside link
+// properties that stay, or a list of either.
+func (w declarationWalker) reference(v any) any {
+	switch t := v.(type) {
+	case string:
+		return w.fold(t)
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, x := range t {
+			out = append(out, w.reference(x))
+		}
+		if w.beside != nil {
+			for _, x := range t {
+				if s, ok := x.(string); ok {
+					if extra := w.beside(s); extra != "" && !slices.Contains(out, any(extra)) {
+						out = append(out, extra)
+					}
+				}
+			}
+		}
+		return out
+	case map[string]any:
+		r, ok := t[ReferenceValueKey].(string)
+		if !ok {
+			return v
+		}
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[k] = x
+		}
+		out[ReferenceValueKey] = w.fold(r)
+		return out
+	}
+	return v
+}
+
+// named walks a map keyed by names the author chose: each key stays as
+// written, and each value is an object of the key set keys.
+func (w declarationWalker) named(keys string, v any) (any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v, nil
+	}
+	out := make(map[string]any, len(m))
+	for k, x := range m {
+		var err error
+		if out[k], err = w.object(keys, x); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// keys is a map keyed by package identities, its keys folded. Two keys that
+// fold to one package are refused rather than one of them dropped.
+func (w declarationWalker) keys(v any) (any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return v, nil
+	}
+	out := make(map[string]any, len(m))
+	from := make(map[string]string, len(m))
+	for _, k := range sortedMapKeys(m) {
+		key := w.fold(k)
+		if other, taken := from[key]; taken {
+			return nil, fmt.Errorf("requiresAtLeast names %s twice, as %q and as %q: give it one floor", key, other, k)
+		}
+		from[key] = k
+		out[key] = m[k]
+	}
+	return out, nil
+}
+
+// walkStrings rewrites every string in v, map keys included, failing where two
+// keys of one map would become one.
+func walkStrings(v any, rewrite func(string) string) (any, error) {
+	switch t := v.(type) {
+	case string:
+		return rewrite(t), nil
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for _, k := range sortedMapKeys(t) {
+			key := rewrite(k)
+			if _, taken := out[key]; taken {
+				return nil, fmt.Errorf("two keys become %q, so one would be dropped", key)
+			}
+			val, err := walkStrings(t[k], rewrite)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = val
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			w, err := walkStrings(val, rewrite)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = w
+		}
+		return out, nil
+	default:
+		return v, nil
+	}
 }
 
 // AuthorityMentions names the documents that still mention an authority, by

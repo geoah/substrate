@@ -101,7 +101,8 @@ func TestCanonicalIDReferenceResolution(t *testing.T) {
 
 // §4.2 — merge REPOINTS NOTHING. Every pointer at the loser keeps naming the
 // loser's id and the reverse read resolves it forward through the trail; the
-// loser's own outbound pointers stay on its tombstone.
+// loser's own outbound pointers stay on its tombstone, pinned or not
+// (decision 0284).
 func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -112,7 +113,7 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/person", Properties: map[string]any{"name": "B"}})
 	org := mustPut(t, ds, owner, substrate.PutInput{Kind: "samples.substrate.reamde.dev/people/organization", Properties: map[string]any{"name": "Acme"}})
 
-	// Outgoing from the loser…
+	// Outgoing from the loser, the person's own and so pinned…
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/people/person", ID: loser.ID,
 		Properties: map[string]any{"memberOf": []any{org.ID}},
@@ -132,8 +133,8 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	if got := storedRefPaths(mustGet(t, ds, book.Kind, book.ID).Properties["author"]); !reflect.DeepEqual(got, wantAuthor) {
 		t.Fatalf("the merge rewrote an inbound pointer: %+v", got)
 	}
-	// Nothing migrated onto the winner either: its own properties are what they
-	// were before the merge.
+	// Nothing migrated onto the winner either, a pin included: its own
+	// properties are what they were before the merge.
 	if got := mustGet(t, ds, winner.Kind, winner.ID).Properties["memberOf"]; got != nil {
 		t.Fatalf("the merge moved an outbound pointer onto the winner: %+v", got)
 	}

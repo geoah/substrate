@@ -332,7 +332,6 @@ export const ALL_KINDS = "*"
 export const OWNER_ONLY_KINDS: ReadonlySet<string> = new Set([
   `${CORE_PACKAGE}/token`,
   `${CORE_PACKAGE}/credential`,
-  `${CORE_PACKAGE}/recoverykey`,
 ])
 
 /** Whether a grant entry is a glob rather than one kind. */

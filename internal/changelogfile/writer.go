@@ -9,7 +9,7 @@ import (
 )
 
 // DefaultSegmentBytes is the segment size the writer rotates at when the
-// options name none: 256 MiB, the SUBSTRATE_CHANGELOG_SEGMENT_BYTES default.
+// options name none: 256 MiB, what a 0.x server rotated at by default.
 const DefaultSegmentBytes int64 = 256 << 20
 
 // ErrWriterClosed is returned by Append after Close.
@@ -22,15 +22,6 @@ var ErrWriterClosed = errors.New("changelogfile: writer is closed")
 // the writer refuses to start what it cannot finish.
 var ErrTxnIncomplete = errors.New("changelogfile: append does not end at a transaction boundary")
 
-// ErrTxnPending is returned by Prepare, Append and AppendLines while a
-// prepared transaction awaits its Commit or Abort: the segment's tail is that
-// transaction's bytes, and a second one written after them would be read as
-// part of it.
-var ErrTxnPending = errors.New("changelogfile: a prepared transaction is pending")
-
-// ErrNoTxnPending is returned by Commit and Abort when nothing is prepared.
-var ErrNoTxnPending = errors.New("changelogfile: no prepared transaction")
-
 // WriterOptions tunes a Writer.
 type WriterOptions struct {
 	// SegmentBytes is the size at or past which the active segment is
@@ -38,14 +29,11 @@ type WriterOptions struct {
 	SegmentBytes int64
 }
 
-// Writer appends entries to a repository's changelog directory. It is not safe
-// for concurrent use: the engine serializes appends per repository already
-// (one writer's total order, decision 0017), and a second writer on one
-// directory would interleave lines.
-//
-// A Writer holds the directory's exclusive advisory lock (LockFileName) from
-// Log.Writer until Close, so a second process that opens a writer on the same
-// directory gets ErrLocked rather than a chance to interleave.
+// Writer appends entries to a changelog directory in the layout a 0.x server
+// wrote (decision 0262 retired it): no server path writes one, and the tests
+// that hold the boot's import of such a directory build theirs with it. It is
+// not safe for concurrent use: a second writer on one directory would
+// interleave lines.
 //
 // After an I/O error the writer refuses every later Append with that error.
 // Reopen it: OpenWriter rescans the directory and cuts the torn tail the
@@ -55,7 +43,6 @@ type Writer struct {
 	segmentBytes int64
 	head         int64
 	truncated    int64
-	lock         *dirLock
 	// file is the active segment, nil when none is open: a fresh directory,
 	// or right after a rotation. The next Append creates the segment named
 	// head+1, so the writer never creates an empty segment; the one empty
@@ -67,19 +54,6 @@ type Writer struct {
 	size   int64
 	failed error
 	closed bool
-	// pending is the transaction Prepare wrote and Commit has not ended: its
-	// bytes are on disk, its final newline is not. head and size describe the
-	// segment without it until Commit.
-	pending *prepared
-}
-
-// prepared is what Commit needs to end a Prepare: the head the transaction
-// brings the changelog to, the bytes it adds with its final newline, and whether
-// Prepare created the segment (so Abort removes it rather than cutting it).
-type prepared struct {
-	head    int64
-	bytes   int64
-	created bool
 }
 
 // Line is one entry as Encode rendered it, without the trailing newline, for
@@ -115,9 +89,9 @@ var ErrLogNotRepaired = errors.New("changelogfile: a read-only log cannot back a
 
 // Writer opens a Writer over a Log that Open produced, positioned at the
 // Log's head, so a caller that has already scanned the directory (to compare
-// its tail with the table, say) does not scan it a second time. It takes the
-// directory's writer lock first and then checks that the directory still
-// lists what the Log saw: a snapshot another writer has moved past is refused
+// its tail with the table, say) does not scan it a second time. It checks
+// that the directory still lists what the Log saw: a Log another writer has
+// moved past is refused
 // with ErrLogStale, because a writer opened at a stale head would write seqs
 // the file already holds. The Log is a snapshot: after the first Append it no
 // longer describes the directory.
@@ -128,20 +102,14 @@ func (l *Log) Writer(opts WriterOptions) (*Writer, error) {
 	if err := os.MkdirAll(l.dir, dirMode); err != nil {
 		return nil, fmt.Errorf("changelogfile: create the changelog directory: %w", err)
 	}
-	lock, err := lockDir(l.dir)
-	if err != nil {
-		return nil, err
-	}
 	same, err := l.unchanged()
 	if err != nil {
-		_ = lock.release()
 		return nil, err
 	}
 	if !same {
-		_ = lock.release()
 		return nil, fmt.Errorf("%w: %s", ErrLogStale, l.dir)
 	}
-	w := &Writer{dir: l.dir, segmentBytes: opts.SegmentBytes, head: l.head, truncated: l.TruncatedBytes, lock: lock}
+	w := &Writer{dir: l.dir, segmentBytes: opts.SegmentBytes, head: l.head, truncated: l.TruncatedBytes}
 	if w.segmentBytes <= 0 {
 		w.segmentBytes = DefaultSegmentBytes
 	}
@@ -149,7 +117,6 @@ func (l *Log) Writer(opts WriterOptions) (*Writer, error) {
 		active := l.segments[n-1]
 		f, err := os.OpenFile(filepath.Join(l.dir, active.Name), os.O_WRONLY|os.O_APPEND, fileMode)
 		if err != nil {
-			_ = lock.release()
 			return nil, err
 		}
 		w.file, w.name, w.size = f, active.Name, active.end
@@ -213,43 +180,21 @@ func (w *Writer) Append(entries []Entry) error {
 
 // AppendLines is Append for entries the caller has already encoded with
 // Encode. The same checks apply: gapless seqs from Head()+1, no line over
-// MaxLineBytes, whole transactions, nothing written when any is refused. It
-// is Prepare followed by Commit, so two fsyncs: a caller with no commit point
-// of its own between them (the boot's table-to-file catch-up) pays for a
-// step it does not use.
+// MaxLineBytes, whole transactions, nothing written when any is refused. The
+// lines are written in one write and fsynced, and at or past SegmentBytes
+// the segment is finished. An I/O failure rolls the segment back and refuses
+// every later call.
 func (w *Writer) AppendLines(lines []Line) error {
-	if len(lines) == 0 {
-		return w.ready()
-	}
-	if err := w.Prepare(lines); err != nil {
-		return err
-	}
-	return w.Commit()
-}
-
-// Prepare writes the lines as AppendLines would, every byte but the last
-// line's newline, and fsyncs. On disk the transaction is then an incomplete
-// tail: Open cuts it whole and OpenReadOnly stops before it (0057), so
-// nothing reads it as history until Commit writes the newline, and Head does
-// not move until then. A caller that commits elsewhere between the two (the
-// engine's Postgres transaction) has the bytes durable before its commit and
-// a file that claims nothing that commit did not make true. The lines are
-// checked as AppendLines checks them, and an I/O failure rolls the segment
-// back and refuses every later call, as an append's does.
-func (w *Writer) Prepare(lines []Line) error {
 	if err := w.ready(); err != nil {
 		return err
 	}
-	if w.pending != nil {
-		return ErrTxnPending
-	}
 	if len(lines) == 0 {
-		return errors.New("changelogfile: prepare of no lines")
+		return nil
 	}
 	var buf bytes.Buffer
 	next := w.head + 1
 	var frame txnFrame
-	for i, l := range lines {
+	for _, l := range lines {
 		if l.Seq != next {
 			return fmt.Errorf("%w: got seq %d, want %d (the head is %d)", ErrSeqGap, l.Seq, next, w.head)
 		}
@@ -260,9 +205,7 @@ func (w *Writer) Prepare(lines []Line) error {
 			return err
 		}
 		buf.Write(l.Bytes)
-		if i < len(lines)-1 {
-			buf.WriteByte('\n')
-		}
+		buf.WriteByte('\n')
 		next++
 	}
 	if frame.open != 0 {
@@ -270,9 +213,6 @@ func (w *Writer) Prepare(lines []Line) error {
 	}
 	created := false
 	if w.file == nil {
-		// O_APPEND as Writer opens an existing segment: after Abort cuts the
-		// file, the next write must land at the new end and not at the old
-		// offset with a hole of zeros before it.
 		name := SegmentName(w.head + 1)
 		f, err := os.OpenFile(filepath.Join(w.dir, name), os.O_WRONLY|os.O_APPEND|os.O_CREATE|os.O_EXCL, fileMode)
 		if err != nil {
@@ -292,78 +232,15 @@ func (w *Writer) Prepare(lines []Line) error {
 			return w.fail(false, fmt.Errorf("changelogfile: fsync directory: %w", err))
 		}
 	}
-	w.pending = &prepared{head: next - 1, bytes: int64(buf.Len()) + 1, created: created}
-	return nil
-}
-
-// Commit writes the newline that ends the prepared transaction and fsyncs;
-// from that byte on the transaction is history. It then advances the head
-// and, at or past SegmentBytes, finishes the segment. A failure rolls the
-// segment back to the bytes before Prepare and refuses every later call: the
-// transaction is not in the file, and a caller that committed it elsewhere
-// appends it again from there at the next open.
-func (w *Writer) Commit() error {
-	if err := w.ready(); err != nil {
-		return err
-	}
-	p := w.pending
-	if p == nil {
-		return ErrNoTxnPending
-	}
-	if _, err := w.file.Write([]byte{'\n'}); err != nil {
-		return w.fail(p.created, fmt.Errorf("changelogfile: write %s: %w", w.name, err))
-	}
-	if err := w.file.Sync(); err != nil {
-		return w.fail(p.created, fmt.Errorf("changelogfile: fsync %s: %w", w.name, err))
-	}
-	w.pending = nil
-	w.head = p.head
-	w.size += p.bytes
+	w.head = next - 1
+	w.size += int64(buf.Len())
 	if w.size >= w.segmentBytes {
 		return w.rotate()
 	}
 	return nil
 }
 
-// Abort cuts the prepared transaction's bytes back off the segment and
-// fsyncs, removing the segment when Prepare created it, so the file holds
-// what it held before Prepare. The writer stays usable: the caller's commit
-// failed for a reason of its own, not the disk's. A failure to cut is an I/O
-// failure and is treated as one.
-func (w *Writer) Abort() error {
-	if err := w.ready(); err != nil {
-		return err
-	}
-	p := w.pending
-	if p == nil {
-		return ErrNoTxnPending
-	}
-	w.pending = nil
-	if p.created {
-		if err := w.file.Close(); err != nil {
-			return w.fail(false, fmt.Errorf("changelogfile: close %s: %w", w.name, err))
-		}
-		name := w.name
-		w.file, w.name, w.size = nil, "", 0
-		if err := os.Remove(filepath.Join(w.dir, name)); err != nil {
-			return w.fail(false, fmt.Errorf("changelogfile: remove %s: %w", name, err))
-		}
-		if err := syncDir(w.dir); err != nil {
-			return w.fail(false, fmt.Errorf("changelogfile: fsync directory: %w", err))
-		}
-		return nil
-	}
-	if err := w.file.Truncate(w.size); err != nil {
-		return w.fail(false, fmt.Errorf("changelogfile: cut %s: %w", w.name, err))
-	}
-	if err := w.file.Sync(); err != nil {
-		return w.fail(false, fmt.Errorf("changelogfile: fsync %s: %w", w.name, err))
-	}
-	return nil
-}
-
 // ready is the standing refusal every call checks first: closed or failed.
-// Prepare alone also refuses while a transaction is pending.
 func (w *Writer) ready() error {
 	if w.closed {
 		return ErrWriterClosed
@@ -372,11 +249,10 @@ func (w *Writer) ready() error {
 }
 
 // fail records an I/O error, rolls the active file back to the bytes that
-// were durable before the append or the prepare (removing it outright when
-// that created it, so no empty segment stays behind), and closes it.
+// were durable before the append (removing it outright when that created it,
+// so no empty segment stays behind), and closes it.
 func (w *Writer) fail(created bool, err error) error {
 	w.failed = err
-	w.pending = nil
 	if w.file != nil {
 		if created {
 			_ = w.file.Close()
@@ -410,8 +286,8 @@ func (w *Writer) rotate() error {
 	return nil
 }
 
-// Close releases the active segment and the directory's writer lock. It is
-// idempotent; the segment stays active, the next OpenWriter appends to it.
+// Close releases the active segment. It is idempotent; the segment stays
+// active, the next OpenWriter appends to it.
 func (w *Writer) Close() error {
 	if w.closed {
 		return nil
@@ -422,9 +298,5 @@ func (w *Writer) Close() error {
 		err = w.file.Close()
 		w.file = nil
 	}
-	if lerr := w.lock.release(); err == nil {
-		err = lerr
-	}
-	w.lock = nil
 	return err
 }

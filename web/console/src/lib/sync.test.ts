@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest"
 import type { BundleStatus, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   accountViewOf,
+  accountViewsOf,
+  splitFailure,
   countPhrase,
   credentialHelp,
   cursorText,
@@ -318,6 +320,35 @@ describe("healthOf", () => {
   })
 })
 
+describe("accountViewsOf", () => {
+  it("tells apart two accounts of one provider that share a label", () => {
+    const kinds = [kind(ACCOUNT, ["accountconfig"])]
+    const labels = accountViewsOf(
+      [
+        record("a", {}),
+        record("b", {}),
+        record("c", { email: "x@example.com" }),
+      ],
+      kinds
+    ).map((v) => v.label)
+    expect(labels).toEqual([
+      "your Google account",
+      "your Google account (2)",
+      "x@example.com",
+    ])
+  })
+})
+
+describe("splitFailure", () => {
+  it("splits the sentence from the technical text", () => {
+    expect(splitFailure("Slack had a problem.\nHTTP 503\n<html>")).toEqual({
+      line: "Slack had a problem.",
+      technical: "HTTP 503\n<html>",
+    })
+    expect(splitFailure("ok")).toEqual({ line: "ok", technical: "" })
+  })
+})
+
 describe("accountViewOf", () => {
   const kinds = [kind(ACCOUNT, ["accountconfig", "sync"])]
   it("labels by email, folds the provider and reads the trait", () => {
@@ -338,7 +369,7 @@ describe("accountViewOf", () => {
     expect(v.syncable).toBe(true)
     expect(v.health).toBe("healthy")
   })
-  it("falls back through displayName, login and the id, and is not syncable without the trait", () => {
+  it("falls back through displayName, login and the provider's name, and is not syncable without the trait", () => {
     const plain = [kind(ACCOUNT, ["accountconfig"])]
     expect(
       accountViewOf(record("x", { displayName: "Work" }), plain).label
@@ -346,8 +377,8 @@ describe("accountViewOf", () => {
     expect(accountViewOf(record("x", { login: "geoah" }), plain).label).toBe(
       "geoah"
     )
-    const v = accountViewOf(record("x", {}), plain)
-    expect(v.label).toBe("x")
+    const v = accountViewOf(record("01m700z6k8ebmtrjx7rwcf2qd1", {}), plain)
+    expect(v.label).toBe("your Google account")
     expect(v.syncable).toBe(false)
   })
 })

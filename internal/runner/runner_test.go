@@ -37,6 +37,9 @@ type fakeBackend struct {
 	// aliases stands in for the registry: a kind's bare reference against the
 	// identity it resolves to.
 	aliases map[string]string
+	// home stands in for the registry's repository name: ResolveCallable
+	// folds it into `~`.
+	home string
 	// orderBys is every list's sort, in call order.
 	orderBys [][]substrate.Order
 	// aggregates is every aggregate read served, in call order; aggregateRows
@@ -142,6 +145,10 @@ func (f *fakeBackend) Units(context.Context) (*vocabulary.UnitGraph, error) {
 	return g, nil
 }
 
+func (f *fakeBackend) ResolveCallable(name string) string {
+	return vocabulary.LocalizeRef(name, f.home)
+}
+
 func (f *fakeBackend) ResolveKind(name string) string {
 	if ident, ok := f.aliases[name]; ok {
 		return ident
@@ -223,16 +230,15 @@ func TestGetFiltersInboundLinksByTheAllowlist(t *testing.T) {
 					Ref: "g.test/mirrors/mirror/m9", Kind: "g.test/mirrors/mirror",
 					Title: "ungranted", Property: "widget", Mapping: "g.test/widgets/mirrorwidget",
 				},
-			}, PropertyMeta: map[string]substrate.PropertyMeta{
-				// The provenance sidecar names source records the same way
-				// (record 0094): the manager's from an ungranted kind, one
+			}, Marks: map[string]substrate.PropertyMark{
+				// The marks name source records the same way (records 0094,
+				// 0284): the value's from an ungranted kind, one
 				// alternative's from the granted one.
 				"name": {
-					Manager: "function:g.test:mirrors:sync", Tier: substrate.TierMachine,
-					Source: "g.test/mirrors/mirror/m9",
+					DerivedFrom: []substrate.RecordLink{{Ref: "g.test/mirrors/mirror/m9"}},
 					Alternatives: []substrate.PropertyAlternative{
-						{Actor: "function:g.test:widgets:sync", Value: "w", Source: "g.test/widgets/widget/w2"},
-						{Actor: "function:g.test:mirrors:sync2", Value: "m", Source: "g.test/mirrors/mirror/m8"},
+						{DerivedFrom: substrate.LinkTo("g.test/widgets/widget/w2"), Value: "w"},
+						{DerivedFrom: substrate.LinkTo("g.test/mirrors/mirror/m8"), Value: "m"},
 					},
 				},
 			}},
@@ -246,12 +252,12 @@ func TestGetFiltersInboundLinksByTheAllowlist(t *testing.T) {
 def main(input, host):
     got = host.get("g.test/widgets/widget", "w1")
     links = got.get("linkedFrom") or []
-    name = (got.get("propertyMeta") or {}).get("name") or {}
+    name = (got.get("marks") or {}).get("name") or {}
     return {"effects": [{"action": "put", "kind": "g.test/widgets/widget", "id": "out",
                          "properties": {"kinds": ",".join(l["kind"] for l in links),
                                         "titles": ",".join(l.get("title", "") for l in links),
-                                        "managerSource": name.get("source", ""),
-                                        "altSources": ",".join(a.get("source", "") for a in name.get("alternatives", []))}}]}
+                                        "valueSources": ",".join(l["ref"] for l in name.get("derivedFrom") or []),
+                                        "altSources": ",".join((a.get("derivedFrom") or {}).get("ref", "") for a in name.get("alternatives", []))}}]}
 `,
 		TimeoutMs: 5000,
 		ReadTypes: []string{"g.test/widgets/widget"},
@@ -264,10 +270,10 @@ def main(input, host):
 	if props["kinds"] != "g.test/widgets/widget" || props["titles"] != "granted" {
 		t.Fatalf("the body saw %v, want the granted link alone", props)
 	}
-	// The ungranted sources are blanked, the granted one stays, and the
-	// offers themselves (value, actor) are still there to read.
-	if props["managerSource"] != "" || props["altSources"] != "g.test/widgets/widget/w2," {
-		t.Fatalf("the body saw sources %q / %q, want the granted one alone", props["managerSource"], props["altSources"])
+	// The ungranted sources are left out, the granted one stays, and the
+	// offers themselves (value, stamp) are still there to read.
+	if props["valueSources"] != "" || props["altSources"] != "g.test/widgets/widget/w2," {
+		t.Fatalf("the body saw sources %q / %q, want the granted one alone", props["valueSources"], props["altSources"])
 	}
 }
 
@@ -309,6 +315,19 @@ def main(input, host):
 	}
 	if _, err := r.Invoke(context.Background(), spec, testInput(), widgetBackend()); err != nil {
 		t.Fatalf("host died with the body error: %v", err)
+	}
+
+	// A raised sentence with its detail on the next line leads with the
+	// sentence, which is the line the sync status shows.
+	said := spec
+	said.Function = "said.g.test"
+	said.Source = "def main(input, host):\n    raise RuntimeError('Notion no longer accepts the token.\\nHTTP 401 unauthorized')\n"
+	_, err = r.Invoke(context.Background(), said, testInput(), widgetBackend())
+	if err == nil {
+		t.Fatalf("a raised sentence: no error")
+	}
+	if first, _, _ := strings.Cut(err.Error(), "\n"); !strings.HasSuffix(first, "Notion no longer accepts the token.") {
+		t.Fatalf("a raised sentence leads with %q, want the sentence", first)
 	}
 }
 
@@ -775,35 +794,77 @@ type lateTimer struct {
 
 func (c lateTimer) Deadline() (time.Time, bool) { return c.deadline, true }
 
-// A host call that returns past the invocation's deadline ends it as timed
-// out even when the deadline's timer has not fired. Before, the child was
-// handed the reply, answered, and the late timer lost the select to it: a
-// body whose agent settled at their shared deadline then succeeded
+// A host call that returns past a deadline ends the invocation there, even
+// when the deadline's timer has not fired. Before, the child was handed the
+// reply, answered, and the late timer lost the select to it: a body whose
+// agent settled at their shared deadline then succeeded
 // (TestAgentRunSettlesAtTheCallersDeadline, 7 failures on main's coverage
-// job from 2026-10-10 to 2026-11-06).
-func TestAHostCallPastTheDeadlineEndsTheInvocation(t *testing.T) {
-	r := New()
-	spec := Spec{
-		Repository: "t1", Function: "late.g.test",
-		Runtime: "python",
-		Source: `
+// job from 2026-10-10 to 2026-11-06). Whose deadline it was decides the
+// answer: the invocation's own allowance running out is the temporary
+// timeout, and a caller's earlier deadline is the caller's own end, which a
+// retry of the body would not change.
+func TestAHostCallPastADeadlineEndsTheInvocation(t *testing.T) {
+	late := func(t *testing.T, timeoutMs int, ctx context.Context) error {
+		t.Helper()
+		r := New()
+		spec := Spec{
+			Repository: "t1", Function: "late.g.test",
+			Runtime: "python",
+			Source: `
 def main(input, host):
     host.get("g.test/widgets/widget", "w1")
     return {"output": "late"}
 `,
-		TimeoutMs: 5000,
-		ReadTypes: []string{"g.test/widgets/widget"},
+			TimeoutMs: timeoutMs,
+			ReadTypes: []string{"g.test/widgets/widget"},
+		}
+		if err := r.Warm(context.Background(), spec); err != nil {
+			t.Fatalf("warm: %v", err)
+		}
+		backend := slowGetBackend{fakeBackend: widgetBackend(), pause: 400 * time.Millisecond}
+		res, err := r.Invoke(ctx, spec, testInput(), backend)
+		if err == nil {
+			t.Fatalf("a body whose host call returned past the deadline succeeded: %+v", res)
+		}
+		return err
 	}
-	if err := r.Warm(context.Background(), spec); err != nil {
-		t.Fatalf("warm: %v", err)
+	t.Run("its own allowance", func(t *testing.T) {
+		err := late(t, 200, context.Background())
+		if !Temporary(err) || !strings.Contains(err.Error(), "invocation exceeded") {
+			t.Fatalf("a body past its own allowance = %v, want the temporary timeout", err)
+		}
+	})
+	t.Run("a caller's earlier deadline", func(t *testing.T) {
+		timer, fire := context.WithCancel(context.Background())
+		defer fire()
+		ctx := lateTimer{Context: timer, deadline: time.Now().Add(200 * time.Millisecond)}
+		err := late(t, 5000, ctx)
+		if Temporary(err) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("a body past its caller's deadline, inside its own five seconds = %v, want the caller's end", err)
+		}
+	})
+}
+
+// An exchange past its own allowance answers the one temporary timeout,
+// whichever exit found it; before then, the exit's own error stands.
+func TestAnExchangePastItsAllowanceIsTheTemporaryTimeout(t *testing.T) {
+	spent := allowance{timeout: time.Second, until: time.Now().Add(-time.Millisecond)}
+	open := allowance{timeout: time.Second, until: time.Now().Add(time.Hour)}
+	for name, exit := range map[string]error{
+		"the child exited":             errors.New("runner: child exited mid-request"),
+		"a reply the child never read": fmt.Errorf("runner: reply to child: %w", syscall.EPIPE),
+		"a frame that went nowhere":    fmt.Errorf("%w: %w", errChildGone, syscall.EPIPE),
+		"the caller's end":             context.DeadlineExceeded,
+	} {
+		if got := spent.ended(exit); !Temporary(got) || !strings.Contains(got.Error(), "invocation exceeded 1s") {
+			t.Errorf("%s past the allowance = %v, want the temporary timeout", name, got)
+		}
+		if got := open.ended(exit); !errors.Is(got, exit) || Temporary(got) {
+			t.Errorf("%s inside the allowance = %v, want it as it was", name, got)
+		}
 	}
-	timer, fire := context.WithCancel(context.Background())
-	defer fire()
-	ctx := lateTimer{Context: timer, deadline: time.Now().Add(200 * time.Millisecond)}
-	backend := slowGetBackend{fakeBackend: widgetBackend(), pause: 400 * time.Millisecond}
-	res, err := r.Invoke(ctx, spec, testInput(), backend)
-	if err == nil || !strings.Contains(err.Error(), "exceeded") {
-		t.Fatalf("a body whose host call returned past its deadline: %+v, %v", res, err)
+	if spent.ended(nil) != nil {
+		t.Error("a finished exchange past its allowance answered an error")
 	}
 }
 
@@ -1052,6 +1113,25 @@ def main(input, host):
 		t.Fatalf("backend calls: %v", backend.calls)
 	}
 
+	// The allowlist is written in the identity the registry keys, `~` for the
+	// repository's own (decision record 0259): a body naming its granted
+	// callable by the repository's full name reaches it, under `~`.
+	local := spec
+	local.Function = "local.g.test"
+	local.CallTargets = []string{"~/notes/stamp"}
+	local.Source = `
+def main(input, host):
+    return {"output": host.call("ada.example.com/notes/stamp", {"n": 3})}
+`
+	backend.home = "ada.example.com"
+	if _, err := r.Invoke(context.Background(), local, testInput(), backend); err != nil {
+		t.Fatalf("a granted callable named by the full name: %v", err)
+	}
+	if len(backend.calls) != 2 || backend.calls[1] != "~/notes/stamp" {
+		t.Fatalf("backend calls: %v, want the second under ~", backend.calls)
+	}
+	backend.calls = backend.calls[:1]
+
 	// Ungranted: the trip decides the delivery even when the body swallows it.
 	ungranted := spec
 	ungranted.Function = "sneaky.g.test"
@@ -1223,7 +1303,7 @@ func TestRoundtripOnRetiredProcessIsChildGone(t *testing.T) {
 	}
 	r.sweep(nowPlus(idleTTL + 1))
 	in := testInput()
-	_, err = p.roundtrip(ctx, windowSpec.timeout(),
+	_, err = p.roundtrip(ctx, allowance{timeout: windowSpec.timeout(), until: time.Now().Add(windowSpec.timeout())},
 		frame{Op: "invoke", ID: windowSpec.Key(), Input: &in}, &readState{spec: windowSpec})
 	if !errors.Is(err, errChildGone) {
 		t.Fatalf("roundtrip on a swept process: %v, want errChildGone", err)

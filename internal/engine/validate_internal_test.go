@@ -398,9 +398,8 @@ func TestSnippetCutsOnARuneBoundary(t *testing.T) {
 	}
 }
 
-// A declared `body` is a text property like any other, but the row keeps it
-// in its own column: a snippet read only from Props titled a subject-less
-// mail message with nothing, though its body was right there.
+// A declared `body` is a text property like any other, so a subject-less mail
+// message is titled from its body, the longest text it carries.
 func TestSnippetReadsADeclaredBody(t *testing.T) {
 	ty := &vocabulary.Kind{
 		PropOrder: []string{"subject", "body", "note"},
@@ -410,11 +409,11 @@ func TestSnippetReadsADeclaredBody(t *testing.T) {
 			"note":    {Name: "note", Datatype: vocabulary.DatatypeText},
 		},
 	}
-	row := &erow{Body: "A reply with\nno subject line.", Props: map[string]any{"note": "short"}}
+	row := &erow{Props: map[string]any{"body": "A reply with\nno subject line.", "note": "short"}}
 	if got := snippetOf(ty, row); got != "A reply with no subject line." {
 		t.Fatalf("snippet = %q, want the body's opening", got)
 	}
-	row = &erow{Body: "short", Props: map[string]any{"note": "the longer of the two texts"}}
+	row = &erow{Props: map[string]any{"body": "short", "note": "the longer of the two texts"}}
 	if got := snippetOf(ty, row); got != "the longer of the two texts" {
 		t.Fatalf("snippet = %q, want the longest text, the body included in the choice", got)
 	}

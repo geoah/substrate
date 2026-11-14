@@ -145,6 +145,13 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 			"ifVersion is not supported on a bundle lifecycle transition")
 		return
 	}
+	// Nor is a retry key: the transition is not one of the writes the key
+	// store answers for, and a key it ignored would read as a promise.
+	if r.Header.Get(idempotencyHeader) != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"Idempotency-Key is not supported on a bundle lifecycle transition")
+		return
+	}
 	if len(in.Properties) != 1 {
 		writeError(w, http.StatusBadRequest, codeBadRequest,
 			"a bundle PATCH sets exactly one lifecycle state — "+propBundleDisabled+", "+

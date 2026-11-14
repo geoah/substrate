@@ -284,6 +284,7 @@ func (t *txn) checkDeclaredUnits() error {
 	if t.writeReg == nil || t.migrating || t.replaying {
 		return nil
 	}
+	t.measured(measureDeclaredUnits)
 	live := t.ds.registry()
 	var g *vocabulary.UnitGraph
 	var problems []string

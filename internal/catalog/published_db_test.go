@@ -1,6 +1,6 @@
 package catalog_test
 
-// A PROVIDER package is published: the catalog's published tier installs its
+// A PROVIDER package is published: its publisher keeps it, and the catalog installs its
 // closure with `source: published`, the repository's own token may not write
 // its declarations afterwards, and everything else about it stays the user's:
 // the records of its kinds, and every bundle lifecycle verb (decision record
@@ -173,14 +173,14 @@ func whoopClosure(t *testing.T) []map[string]any {
 
 // A provider install writes `published` on the package it lands and on the
 // declarations inside it; a sample install, through the very same verb, stays
-// `installed`. The tier is what the two installs differ by, not the shape of
-// the closure.
+// `installed`. Who keeps the package is what the two installs differ by, not
+// the shape of the closure.
 func TestProviderInstallLandsPublished(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourcePublished {
@@ -190,9 +190,9 @@ func TestProviderInstallLandsPublished(t *testing.T) {
 		t.Errorf("kind source = %q, want %q", got, vocabulary.SourcePublished)
 	}
 
-	// A sample is the other tier: installed, and the repository's own.
+	// A sample is the repository's to keep: installed, and its own.
 	const peopleID = "samples.substrate.reamde.dev/people"
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, peopleID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, peopleID, ds); err != nil {
 		t.Fatalf("install %s: %v", peopleID, err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, peopleID); got != vocabulary.SourceInstalled {
@@ -209,7 +209,7 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
 
@@ -227,7 +227,7 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 			},
 		},
 	}}
-	for _, actor := range []substrate.Actor{substrate.ActorAPI, substrate.ActorConsole, substrate.ActorCLI} {
+	for _, actor := range []substrate.Actor{substrate.ActorPerson, substrate.ActorPerson, substrate.ActorPerson} {
 		_, err := ds.ApplyVocabularyDocuments(ctx, actor, edit)
 		if !errors.Is(err, substrate.ErrForbidden) {
 			t.Fatalf("actor %s writing a published declaration: err = %v, want ErrForbidden", actor, err)
@@ -262,12 +262,12 @@ func TestPublishedDeclarationsRefuseATokenWrite(t *testing.T) {
 	if got := sourceOf(t, ds, kindKindRef, whoopID+"/recovery"); got != vocabulary.SourcePublished {
 		t.Fatalf("kind source after a reopen = %q, want %q", got, vocabulary.SourcePublished)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, edit); !errors.Is(err, substrate.ErrForbidden) {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, edit); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("a batch apply after a reopen: err = %v, want ErrForbidden", err)
 	}
 	// The other door into the same chokepoint: a declaration record is a
 	// record, so a PATCH of one is a vocabulary batch of one.
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, kindKindRef, whoopID+"/recovery", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, kindKindRef, whoopID+"/recovery", substrate.PatchInput{
 		Properties: map[string]any{"description": "mine now"},
 	}); !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("a declaration PATCH after a reopen: err = %v, want ErrForbidden", err)
@@ -289,13 +289,13 @@ func TestAProvidersRecordsAndLifecycleStayTheUsers(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
 
 	// A data record of a provider kind, written by the same token the
 	// declaration write above refused.
-	account, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	account, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: whoopID + "/account", ID: "mine",
 		Properties: map[string]any{"enabledRecovery": true},
 	})
@@ -336,7 +336,7 @@ func TestAProvidersRecordsAndLifecycleStayTheUsers(t *testing.T) {
 	// BIND writes the bundle's own DECLARATION row (a managed property on the
 	// record the chokepoint guards), so it is the lifecycle verb a published
 	// package is likeliest to catch, and the one worth naming.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: whoopID + "/config", ID: "client",
 		Properties: map[string]any{"clientId": "abc"},
 	}); err != nil {
@@ -360,7 +360,7 @@ func TestAProvidersRecordsAndLifecycleStayTheUsers(t *testing.T) {
 	}
 
 	// A record of a provider kind deletes like any other.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, whoopID+"/account", "mine", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, whoopID+"/account", "mine", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete a record of a published kind: %v", err)
 	}
 
@@ -407,7 +407,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 		t.Fatalf("a hand-applied closure landed source %q, want %q", got, vocabulary.SourceInstalled)
 	}
 
-	// The same closure through the catalog's published tier promotes it, package
+	// The same closure added as its publisher's promotes it, package
 	// row and declarations together. The promotion moves `source` alone, which
 	// is the engine's, so no declaration changed and every version stays
 	// (issue #643).
@@ -417,7 +417,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 		t.Fatalf("the shipped catalog no longer carries %s", whoopID)
 	}
 	handApplied := closureVersions(t, ds, b)
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install %s over the hand-applied closure: %v", whoopID, err)
 	}
 	assertVersionsKept(t, "the promotion", handApplied, closureVersions(t, ds, b))
@@ -429,7 +429,7 @@ func TestAnInstalledProviderIsPromotedByTheCatalogInstall(t *testing.T) {
 	}
 
 	// And it stuck: the write the hand door allowed a moment ago is refused now.
-	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{{
+	_, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{{
 		"kind":     kindKindRef,
 		"metadata": map[string]any{"id": whoopID + "/sleep"},
 		"data": map[string]any{
@@ -451,7 +451,7 @@ func TestPublishedPackageStillUpgrades(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install %s: %v", whoopID, err)
 	}
 	plan, err := c.Upgrade(ctx, whoopID, ds, nil)
@@ -464,7 +464,7 @@ func TestPublishedPackageStillUpgrades(t *testing.T) {
 	if len(plan.Blockers) != 0 {
 		t.Errorf("the preview reports blockers on a freshly installed provider: %v", plan.Blockers)
 	}
-	if _, _, err := c.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("re-install a published package: %v", err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourcePublished {
@@ -488,7 +488,7 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 		t.Fatalf("apply the whoop closure by hand: %v", err)
 	}
 	const notionID = whoopAuthority + "/notion"
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, notionID, ds); err != nil {
+	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorPerson, notionID, ds); err != nil {
 		t.Fatalf("install %s: %v", notionID, err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, notionID); got != vocabulary.SourcePublished {
@@ -501,7 +501,7 @@ func TestAProviderInstallLeavesTheAuthorityRowOpen(t *testing.T) {
 
 	// So the first provider re-applies by hand, authority document and all,
 	// which is the door the catalog install must not have shut.
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, whoopClosure(t)); err != nil {
 		t.Fatalf("re-apply the whoop closure by hand after a provider install: %v", err)
 	}
 	if got := sourceOf(t, ds, kindPackageRef, whoopID); got != vocabulary.SourceInstalled {
@@ -548,7 +548,7 @@ func TestAChangedDurationOrReferenceMovesThePackage(t *testing.T) {
 				t.Fatalf("apply the whoop closure: %v", err)
 			}
 			first := packageVersion(t, ds, whoopID)
-			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, whoopClosure(t)); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, whoopClosure(t)); err != nil {
 				t.Fatalf("apply the unchanged closure: %v", err)
 			}
 			if got := packageVersion(t, ds, whoopID); got != first {
@@ -556,7 +556,7 @@ func TestAChangedDurationOrReferenceMovesThePackage(t *testing.T) {
 			}
 			docs := whoopClosure(t)
 			tc.change(function(docs))
-			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, docs); err != nil {
 				t.Fatalf("apply the changed closure: %v", err)
 			}
 			if got := packageVersion(t, ds, whoopID); got != first+1 {

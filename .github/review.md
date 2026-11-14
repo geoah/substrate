@@ -47,7 +47,15 @@ commit message on the branch with `git log`.
    if followed literally, in order. An agent upgrading a client will follow
    them literally.
 
-3. **The docs an agent reads.** `docs/for-agents.md`, `docs/api.md`,
+3. **The revision.** A feature in `internal/api/features.go` that gains a
+   request field, a parameter or a response field a client may want to
+   check for raises its `revision` there. A test holds a new route to that
+   and nothing else, so name a field or a parameter the diff adds to a
+   feature whose revision did not move. A footer for a migration, a dialect
+   number, or a seeded declaration an older server refuses says that the
+   way back is the copy taken before the upgrade (`docs/stability.md`).
+
+4. **The docs an agent reads.** `docs/for-agents.md`, `docs/api.md`,
    `docs/substratectl.md`, `docs/agents.md` and `AGENTS.md` describe the
    surfaces above. Name any sentence in them that the diff makes false, with
    its file and line. Do not ask for docs on internal refactors.

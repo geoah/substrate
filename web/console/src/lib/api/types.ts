@@ -7,25 +7,35 @@
  * `<name>` (records 0098, 0101). There is NO tenant and NO group: one user
  * owns one repository, and authorities replace the old group concept. */
 
-/** The closed wire error set, plus `network` for a
- * transport failure that never reached the substrate. Clients switch on it. */
-export type ErrorCode =
-  | "bad_request"
+/** The closed set of codes the server answers with, in `error.code`. Clients
+ * switch on it. errorcodes.golden.json is the server's list, and
+ * errorcodes.golden.test.ts holds this union to it. */
+export type ServerErrorCode =
   | "auth"
-  | "totp_required"
+  | "bad_request"
+  | "compacted"
+  | "conflict"
   | "forbidden"
+  | "function_failed"
   | "guard"
+  | "internal"
   | "lossy"
   | "not_found"
-  | "conflict"
-  | "compacted"
-  | "validation"
+  | "parked"
   | "rate_limited"
-  | "internal"
-  | "function_failed"
-  | "unsupported"
+  | "totp_required"
   | "unavailable"
-  | "network"
+  | "validation"
+
+/** The codes the console makes up itself, for a failure that arrived without
+ * one of the server's: `network` where nothing answered, and `unsupported`
+ * for a 501, which is an older server's answer to a verb it does not
+ * implement. No server writes either into an envelope. */
+export type ClientErrorCode = "network" | "unsupported"
+
+/** What an `ApiError` carries: the server's code where the envelope had one,
+ * else the console's own. */
+export type ErrorCode = ServerErrorCode | ClientErrorCode
 
 /** The closed set of `reason`s that narrow an error code for a client that
  * acts on the case. `observed_rederiving` rides an `unavailable` (503): the
@@ -36,9 +46,31 @@ export type ErrorCode =
  * from the operator for the UTC day is used up, and the message names the
  * site and when it resets. `stale_revision` rides a `validation` (422): the
  * write's `revision` is below the stored one, so a newer write landed first
- * and this one never will. */
+ * and this one never will. `in_doubt` rides an `internal` (500) or an
+ * `unavailable` (503): the write may have landed, because the server lost the
+ * database's answer to its commit or a step after it failed.
+ * `first_attempt_running` and `first_attempt_landed` ride a `conflict` (409)
+ * on a request repeated under an Idempotency-Key: this request did not run,
+ * and the first attempt either has not answered yet or landed with an
+ * outcome too large to keep, whose record the message names. `set_aside`
+ * rides an `unavailable` (503): the server found the repository damaged when
+ * it started and serves it again only after its operator repairs it and
+ * restarts the server. `repository_required` rides a `conflict` (409) on a
+ * sign-in: the person opens several repositories and named none, and the
+ * refusal lists them in `repositories` (decision 0274). `not_permitted` rides
+ * a `forbidden` (403): no rule of the roles the person holds allows it, where
+ * an app's scope refusal carries no reason (decision 0276). */
 export type ErrorReason =
-  "observed_rederiving" | "key_refused" | "quota" | "stale_revision"
+  | "observed_rederiving"
+  | "key_refused"
+  | "quota"
+  | "stale_revision"
+  | "in_doubt"
+  | "first_attempt_running"
+  | "first_attempt_landed"
+  | "set_aside"
+  | "repository_required"
+  | "not_permitted"
 
 /** One validation problem, split into the input it concerns and the message.
  * The server derives it from the `problems` string list (`props.name: required`
@@ -55,13 +87,16 @@ export interface ProblemDetail {
  * re-list from and resume at. `reason` narrows the code where a client acts
  * on the case; a reason the console does not know is read as its code. */
 export interface ErrorPayload {
-  code: Exclude<ErrorCode, "network">
+  code: ServerErrorCode
   reason?: ErrorReason
   message: string
   problems?: string[]
   problemDetails?: ProblemDetail[]
   head?: number
   generation?: string
+  /** The repositories a person may open, on a sign-in refused with
+   * `repository_required`: one of them goes in the request's `repository`. */
+  repositories?: RepositoryChoice[]
 }
 
 /** The body every refused request answers with (`substrate.ErrorEnvelope`):
@@ -80,6 +115,9 @@ export class ApiError extends Error {
   problemDetails: ProblemDetail[]
   retryAfter?: number
   reason?: ErrorReason
+  /** The repositories to pick from, on a sign-in refused with
+   * `repository_required`. */
+  repositories?: RepositoryChoice[]
 
   constructor(
     code: ErrorCode,
@@ -88,7 +126,8 @@ export class ApiError extends Error {
     problems: string[] = [],
     problemDetails: ProblemDetail[] = [],
     retryAfter?: number,
-    reason?: ErrorReason
+    reason?: ErrorReason,
+    repositories?: RepositoryChoice[]
   ) {
     super(message)
     this.name = "ApiError"
@@ -98,12 +137,13 @@ export class ApiError extends Error {
     this.problemDetails = problemDetails
     this.retryAfter = retryAfter
     this.reason = reason
+    this.repositories = repositories
   }
 }
 
 /** One record as every read serves it (`substrate.Record`). Everything authored
- * lives in `properties` (title/state included); `propertyMeta` arrives only on
- * a single-record read.
+ * lives in `properties` (title/state included); `marks` arrives only on a
+ * single-record read.
  *
  * NAME NOTE: the server calls this `Record`; TypeScript already owns that name
  * for its `Record<K, V>` utility type, and shadowing it here would poison every
@@ -131,7 +171,8 @@ export interface SubstrateRecord {
   finalizers?: string[]
   /** The ids this record used to live under, left by merges and server-set. */
   formerIds?: string[]
-  propertyMeta?: Record<string, PropertyMeta>
+  /** Each property's mark (decision 0284). */
+  marks?: Record<string, PropertyMark>
   /** The source records whose mapping-owned subject slot points at this one,
    * ordered by kind then id. Arrives only on a single-record read, and is
    * ABSENT — never an empty array — on a kind no recordmapping targets, so
@@ -196,29 +237,46 @@ export function readReference(
   return { path, properties }
 }
 
-/** One property's provenance (`substrate.PropertyMeta`). Every field is
- * omitted at its zero value, so a row with no recorded manager carries
- * neither `manager` nor `updatedAt`. */
-export interface PropertyMeta {
-  manager?: string
-  /** The manager's standing against recompute: `machine` may be replaced,
-   * `owner` and `bundle` hold. Absent on rows written before the tiers. */
-  tier?: "owner" | "bundle" | "machine"
-  updatedAt?: string
-  /** The source record (`<kind>/<id>`) a machine-held value was read from,
-   * present only where the manager's own offer backs the stored value
-   * (decision 0094). A hand edit and a bundle pin carry none. */
-  source?: string
+/** One record, linked the way a stored reference links it
+ * (`substrate.RecordLink`). */
+export interface RecordLink {
+  ref: string
+}
+
+/** One property's mark (`substrate.PropertyMark`, decision 0284): whether
+ * sync leaves the value alone, and where it came from. Every field is
+ * omitted at its zero value. */
+export interface PropertyMark {
+  /** Sync leaves the value alone. Stored when the value was written: a
+   * person's, an app's, a function's and an agent's direct write pins. */
+  pinned?: boolean
+  /** The actor record that wrote the value directly; absent on a value sync
+   * wrote. */
+  setBy?: RecordLink
+  /** The actor record `setBy` acted for, where it acted for one. */
+  onBehalfOf?: RecordLink
+  /** The source records whose offers back the value. */
+  derivedFrom?: RecordLink[]
+  /** When the value was set. */
+  setAt?: string
   alternatives?: PropertyAlternative[]
 }
 
+/** What one live source record offers where it differs from the stored
+ * value (`substrate.PropertyAlternative`). */
 export interface PropertyAlternative {
-  actor: string
+  /** The source record the offer is read from; absent only where the read's
+   * grant hides that record's kind. */
+  derivedFrom?: RecordLink
   value: unknown
+  /** The source record's last change. */
   updatedAt: string
-  /** The source record the offer was read from; absent on a row derived
-   * before the server recorded it. */
-  source?: string
+}
+
+/** The pin and release body (`substrate.MarkInput`). */
+export interface MarkInput {
+  properties: string[]
+  ifVersion?: number
 }
 
 /** The create/upsert write body (`substrate.PutInput`). `kind` is the full
@@ -315,6 +373,10 @@ export interface AffectedRecord {
   id: string
   version?: number
   deleted?: boolean
+  /** The record's state entry: the entry stands for the record's earlier
+   * entries, which a compaction replaced, and their values are not kept
+   * (decision 0296). Since the changefeed's revision 2. */
+  state?: boolean
   /** What the entry did to each property, before and after, in name order.
    * Only on a read that asked (`values=1`, decision 0135) from a server that
    * knows it; absent otherwise, so its absence is never "nothing changed". */
@@ -340,7 +402,15 @@ export interface PropertyChange {
 export interface Change {
   seq: number
   ts: string
+  /** The id of the `substrate.reamde.dev/core/actor` record that wrote the
+   * entry (decision 0270). */
   actor: string
+  /** The id of the actor record the write acted for: the person behind an
+   * app's write, or behind installed code a person's request started. */
+  onBehalfOf?: string
+  /** The id of the token record the write stood behind: a person's or an
+   * app's. Only the owner's reads carry it. */
+  token?: string
   op: string
   recordId: string
   /** The changed record's kind reference. */
@@ -675,10 +745,12 @@ export interface ChangeRun {
   oldestSeq: number
   newestTs: string
   oldestTs: string
-  /** The name of the token behind an app's or an `api` run (its app's
-   * claimed name, else its label), which tells apart two assistants that both
-   * write as `app:local`. Only the owner's reads carry it (decision 0230). */
-  principalName?: string
+  /** The id of the token behind a person's or an app's run, and its name
+   * (its app's claimed name, else its label), which tell apart two assistants
+   * on one device and the person's own sign-ins. Only the owner's reads carry
+   * them (decisions 0230 and 0270). */
+  token?: string
+  tokenName?: string
 }
 
 /** The `runs=1` history page (`substrate.ChangeRunPage`): `first` counts
@@ -829,6 +901,82 @@ export interface DomainCheck {
   reason?: string
 }
 
+/** A publish: `POST /api/v1/packages/publish`. `package` is one of the
+ * repository's own, in `~`; `authority` is the domain it is published under.
+ * Without `confirm` the answer is the plan and nothing changes. */
+export interface PublishInput {
+  package: string
+  authority: string
+  confirm?: boolean
+}
+
+/** What a publish does, stated before it runs and answered after.
+ * `published` is the package's name for good; `kinds` the kinds that move
+ * under it; `packages` the repository's other packages whose declarations
+ * follow; `records` how many records move; `references` how many records
+ * elsewhere have a reference repointed. `blockers` refuse it now, empty
+ * where nothing does. `texts` are the declarations whose author's text (an
+ * agent's prompt) names the package in `~` and is left as written. The
+ * proof half: the TXT `record` to publish at `name`, the document it
+ * names, and whether DNS says so yet (`proven`, and the `reason` while it
+ * does not). `release` is the first release, once the publish ran. */
+export interface PublishPlan {
+  package: string
+  published: string
+  kinds: string[]
+  packages: string[]
+  records: number
+  references: number
+  blockers: string[]
+  texts: string[]
+  name: string
+  record: string
+  documentURL: string
+  proven: boolean
+  reason?: string
+  release?: Release
+}
+
+/** The next release of a package this repository publishes:
+ * `POST /api/v1/packages/release`. Without `confirm` the answer is what it
+ * would write. */
+export interface ReleaseInput {
+  package: string
+  confirm?: boolean
+}
+
+/** A package's next release, stated before it is written and answered
+ * after: the `version` it takes and the `previous` one, the SHA-256 of the
+ * closure it serves, the `declarations` the closure holds as record paths,
+ * and the `blockers` that refuse it now, empty where nothing does.
+ * `release` is the release, once written. */
+export interface ReleasePlan {
+  package: string
+  version: number
+  previous: number
+  sha256: string
+  declarations: string[]
+  blockers: string[]
+  release?: Release
+}
+
+/** One version of a package this repository publishes: the SHA-256 of its
+ * closure, the dialect its declarations need where they state one, and when
+ * it was released. */
+export interface Release {
+  package: string
+  version: number
+  sha256: string
+  dialect?: number
+  releasedAt: string
+}
+
+/** `GET /api/v1/packages/releases`: every release of every package the
+ * repository publishes, oldest version first within a package. */
+export interface Releases {
+  items: Release[]
+}
+
 /** The deployer's site, discovery's optional `site` object: absent where the
  * server has no `SUBSTRATE_SITE_DIR`. `logo`, `icon` and `landing` are
  * server-relative URLs under `/site/`; `icon` is the browser tab's icon, the
@@ -915,6 +1063,29 @@ export interface KindLabel {
   plural: string
 }
 
+/** How long one kind's history is kept past each record's latest state
+ * (decision 0282), from `GET /api/v1/retention`: each value is `all`, `none`
+ * or an ISO 8601 duration. `declared` is the kind's own key else its
+ * package's, absent where neither states one; `override` and `overrideId`
+ * are the repository's `core/retention` record, absent where none stands;
+ * `effective` is the one that applies. */
+export interface KindRetention {
+  kind: string
+  declared?: string
+  override?: string
+  overrideId?: string
+  effective: string
+}
+
+/** One kind whose history an upgrade would keep for less time
+ * (substrate.RetentionChange): its effective retention before and after,
+ * each `all`, `none` or an ISO 8601 duration. */
+export interface RetentionChange {
+  kind: string
+  from: string
+  to: string
+}
+
 /** KindInfo — the projection of one declared kind (iface.go). Replaces v0
  * `TypeInfo`: `authority` is what published the kind (empty for a
  * repository-local one), `package` is the package's own word beside it, and
@@ -949,6 +1120,10 @@ export interface KindInfo {
    * manifest that declares it (`authority`, `package`, `names`,
    * `properties`, …), key order lost to jsonb. */
   definition: Record<string, unknown>
+  /** The control class of a control kind (`triggers`, `policies`,
+   * `providers`, `settings`, `applets`, `declarations`, `actors`, `roles`),
+   * or `sign-in` for sign-in material; absent for every other kind. */
+  control?: string
 }
 
 /** One token record's metadata — never the hash, never the secret. A token
@@ -989,6 +1164,9 @@ export interface TokenInfo {
   /** The grant holds a scope a later decision retired (`declare:`), so the
    * token no longer authenticates and is only revoked. */
   retired?: boolean
+  /** The id of the identity of the person the token acts for (decision
+   * 0274); absent on a token no person stands behind. */
+  identity?: string
 }
 
 /** One add-on an approval left waiting for the provider it extends. */
@@ -1079,10 +1257,11 @@ export interface AuthorizationApp {
   uri?: string
   /** The claimed `uri` is on another host than the client id. */
   uriHostDiffers?: boolean
-  /** What the app's changes are recorded as: `app:<authority>` for a
-   * verified app, `app:local` for one whose access goes to this device,
-   * `app:<host>` otherwise (decision 0209). */
-  actor: string
+  /** The name the app's changes read under, the publisher its actor record
+   * names: its authority for a verified app, `local` for one whose access
+   * goes to this device, its client id's host otherwise (decisions 0209 and
+   * 0270). */
+  appearsAs: string
   /** The app's publisher is confirmed by its authority's `_substrate`
    * record and document, and the access goes to that authority. */
   verified: boolean
@@ -1118,8 +1297,10 @@ export interface AuthorizationRedirectTo {
 }
 
 /** One requested scope, resolved against the repository: `scope` is the
- * canonical spelling an approval names, `requested` how the app wrote it
- * (they differ where it used `~`). */
+ * canonical spelling an approval names and a token stores, `requested` how
+ * the app wrote it (they differ where it named the repository's own kinds by
+ * the repository's full name, which `scope` folds into `~`, decision record
+ * 0259). */
 export interface AuthorizationScope {
   scope: string
   requested: string
@@ -1232,7 +1413,7 @@ export interface AuthorizationPackage {
   settings?: AuthorizationSetting[]
   id: string
   description?: string
-  tier?: string
+  keptBy?: CatalogKeeper
   required: number
   held?: number
   shipped?: number
@@ -1261,6 +1442,9 @@ export interface AuthorizationPackagePublisher {
   fromFile?: boolean
   /** The SHA-256 of the closure the row would install. */
   digest?: string
+  /** The authority the publisher's document says it moved to (decision
+   * record 0293): shown, never followed. */
+  movedTo?: string
 }
 
 /** One package a requested one requires, with what it brings of its own.
@@ -1420,10 +1604,29 @@ export interface AuthorizationAnswer {
 }
 
 /** What a credential change answers (`POST /password`, `POST /totp`): the
- * repository the factors proved. No token is minted; the caller signs in
+ * identity the factors proved. No token is minted; the caller signs in
  * again. */
+/** What a rename answers (`POST /repository/rename`, decision 0287): the
+ * repository's id, which no rename moves, its name now, and each former name
+ * it still answers to and holds against everyone else, until when. */
+export interface RepositoryNames {
+  id: string
+  name: string
+  formerNames: FormerName[]
+}
+
+/** One name a repository had before a rename, and when it stops resolving to
+ * it and is free for anyone. */
+export interface FormerName {
+  name: string
+  until: string
+}
+
 export interface SessionCredential {
-  repository: string
+  identity: string
+  /** How many tokens a sign out everywhere ended, where the request asked
+   * for one (decision 0272). */
+  signedOut?: number
 }
 
 /** A mint (login, registration or `POST /tokens`): the record, plus the secret
@@ -1431,9 +1634,31 @@ export interface SessionCredential {
 export interface MintedToken {
   token: TokenInfo
   secret: string
-  /** The repository the token opens, as the door resolved it: login and
-   * registration echo it, a `POST /tokens` mint omits it. */
+  /** The repository the token opens, by the name it has now: login and
+   * registration answer it, a `POST /tokens` mint omits it. */
   repository?: string
+  /** The name of the person the token acts for, as the door resolved it:
+   * login and registration echo it (decision 0274). */
+  identity?: string
+}
+
+/** A person, as `GET /identity` reads the one a token acts for (decision
+ * 0274): the name they sign in with, whether their sign-in asks for a code,
+ * and the repositories they may open. It holds no data of its own. */
+export interface IdentityInfo {
+  id: string
+  name: string
+  secondFactor: boolean
+  repositories: RepositoryChoice[]
+}
+
+/** One repository a person may open: the id that keys its storage and the
+ * name that is its authority. */
+export interface RepositoryChoice {
+  id: string
+  name: string
+  /** The roles the person holds there, on their own read of themselves. */
+  roles?: string[]
 }
 
 /** What an OAuth start answers: the provider consent URL to open. */
@@ -1554,7 +1779,8 @@ export interface SyncStatus {
   paused: boolean
   /** The OAuth facility's `tokenStatus` on the same record (`connected`,
    * `erroring`, or a bundle's seeded `pending`), absent on a kind that
-   * carries none. `tokenError` is the last refresh failure's first line and
+   * carries none. `tokenError` is the last refresh failure, a sentence saying
+   * what to do with the provider's answer on the lines after it, and
    * `tokenErrorAt` when that reason first appeared, absent while the sign-in
    * works. A 4xx refusal needs a reconnect; a 5xx clears on its own. */
   tokenStatus?: string
@@ -1782,6 +2008,10 @@ export interface BundleUpgrade extends ConversionPlan {
    * grows, or a held version the document no longer lists. */
   reviewRequired?: boolean
   codeChanges?: BundleCodeChange[]
+  /** Every kind whose history the upgrade would keep for less time, by its
+   * effective retention (decision 0282): never a safe addition, so a
+   * published package's refresh leaves it to the owner. */
+  retentionShortens?: RetentionChange[]
   /** The version the preview is of and the digest its publisher listed
    * for it, on a document-published package: what an install sends back
    * as `expect`, so what lands is what was reviewed. */
@@ -1808,8 +2038,8 @@ export interface BundleUpgrade extends ConversionPlan {
   blockers?: string[]
 }
 
-/** The optional body of `POST /api/v1/catalog/{id}/install` and `/import`
- * (api catalogTakeRequest): the consent a lossy or edit-replacing plan needs
+/** The optional body of `POST /api/v1/catalog/{id}/add` (api
+ * catalogAddRequest): the consent a lossy or edit-replacing plan needs
  * (decision 0067), and, for a document-published package, the version and
  * digest the owner reviewed, answered 409 when the publisher listed another
  * version since. */
@@ -1837,13 +2067,13 @@ export interface ShippedUpgrade {
   upgrade: BundleUpgrade
 }
 
-/** Which of the two catalog doors a shipped closure takes (decision records
- * 0048 and 0238). A `published` package INSTALLS under the authority that
- * publishes it; a `sample` IMPORTS under this repository's own authority and
- * is the repository's to edit afterwards. It says who keeps the
- * declarations, never what the package is for: `provider`, `brings` and
- * `addonFor` say that. */
-export type CatalogTier = "published" | "sample"
+/** Who keeps a catalog package once it is added (decision record 0258): a
+ * PUBLISHED package is kept by its `publisher` and lands under the authority
+ * that publishes it; a SAMPLE is kept by the `repository`, copied into its
+ * local namespace `~` and the repository's to edit afterwards. It says
+ * nothing about what the package is for: `provider`, `brings` and `addonFor`
+ * say that. */
+export type CatalogKeeper = "publisher" | "repository"
 
 /** What taking a closure gives a reader, read from its declarations
  * (substrate.Brings*, decision record 0238): an account to connect, tools
@@ -1860,7 +2090,7 @@ export interface CatalogBundle {
   oauthHosts?: string[]
   /** The bundle's id — the PACKAGE identity it owns
    * (`providers.substrate.reamde.dev/google`), matching BundleStatus.id once
-   * installed. A SAMPLE lands under this repository's authority, so its
+   * installed. A SAMPLE lands in the local namespace (`~/<package>`), so its
    * stored bundle id is not this one. */
   id: string
   /** The owned package's own word ("google"). */
@@ -1872,12 +2102,11 @@ export interface CatalogBundle {
    * the catalog by authority, then by package. */
   package: string
   description: string
-  /** The owned package's incremental declaration version. A sample has no
-   * upgrade path, so its version is offered to nothing; an import records it
-   * as the copy's `originVersion`. */
+  /** The owned package's incremental declaration version. Adding a sample
+   * records it as the copy's `originVersion`. */
   version: number
-  /** `published` or `sample`: which door its button takes. */
-  tier: CatalogTier
+  /** Who keeps the package once it is added, and so where adding it lands. */
+  keptBy: CatalogKeeper
   /** Whether it connects the substrate to an outside service: what the
    * Providers page lists. Every closure the binary ships among its providers
    * (Apple's devices push, so its closure declares no account), and any
@@ -1925,13 +2154,13 @@ export interface CatalogBundle {
  * fit the version it does have, is refused by admission, so the door drops it
  * and reports the state below instead. */
 export interface SuggestedMapping {
-  /** The mapping declaration's id AS THIS REPOSITORY HOLDS IT: rehomed onto
-   * its own authority, because that is the record `state` is read from. */
+  /** The mapping declaration's id AS THIS REPOSITORY HOLDS IT: moved into
+   * `~`, because that is the record `state` is read from. */
   id: string
   /** The source kind: a provider mirror the declaring package does not own. */
   from: string
-  /** The subject kind, always one the declaring package owns, rehomed with
-   * the id. */
+  /** The subject kind, always one the declaring package owns, moved into `~`
+   * with the id. */
   to: string
   /** The PROVIDER package `from` lives in: what has to be installed. */
   package: string
@@ -2014,6 +2243,16 @@ export interface SetupItem {
   message: string
 }
 
+/** One account toggle of an OAuth bundle (substrate.BundleFeature, decision
+ * record 0255): the scopes turning it on asks the provider for, and whether
+ * they read the provider (`read`, a thing the account brings in) or let the
+ * bundle's tools change it (`write`, a thing the owner's agents may do). */
+export interface BundleFeature {
+  toggle: string
+  scopes: string[]
+  access: string
+}
+
 /** One installed bundle's computed status — stored nowhere, recomputed per
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
@@ -2039,6 +2278,9 @@ export interface BundleStatus {
   /** What stands between the bundle and every runtime path it ships. Omitted
    * when ready; lifecycle is separate from setup. */
   setup?: SetupItem[]
+  /** The account toggles an OAuth bundle's consent is built from, toggle
+   * order. Omitted on a bundle with no `oauth2` block. */
+  features?: BundleFeature[]
   accounts: number
   functions: number
   kinds: number

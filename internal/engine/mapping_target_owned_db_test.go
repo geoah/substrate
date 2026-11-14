@@ -48,7 +48,6 @@ func tmProviderDocs() []map[string]any {
 	meta, _ := kind["metadata"].(map[string]any)
 	return []map[string]any{
 		vocabulary.PackageManifest(tmPackage, 1),
-		vocabulary.ActorManifest(tmPackage, vocabulary.PackageActor(tmPackage)),
 		vocabulary.BundleManifest(tmPackage, map[string]any{
 			"description": "a provider that names no user kind",
 			"installs":    []any{meta["id"]},
@@ -188,7 +187,6 @@ func TestOneMirrorReachesTwoKindsThroughTwoSlots(t *testing.T) {
 		})
 	docs := []map[string]any{
 		vocabulary.PackageManifest(tmPackage, 1),
-		vocabulary.ActorManifest(tmPackage, vocabulary.PackageActor(tmPackage)),
 		kind,
 	}
 	docs = append(docs, tmTaskDocs()...)
@@ -291,7 +289,6 @@ func TestSubjectHopRefusesTwoAdmittedMappings(t *testing.T) {
 		})
 	docs := []map[string]any{
 		vocabulary.PackageManifest(tmPackage, 1),
-		vocabulary.ActorManifest(tmPackage, vocabulary.PackageActor(tmPackage)),
 		mirror,
 		vocabulary.PackageManifest(tmHomePackage, 1),
 		{
@@ -364,7 +361,6 @@ func TestDroppingAMappedSourceKindIsRefusedAtEveryDoor(t *testing.T) {
 	// the closure stands, and the bundle document lists what is left.
 	shrunk := []map[string]any{
 		vocabulary.PackageManifest(tmPackage, 2),
-		vocabulary.ActorManifest(tmPackage, vocabulary.PackageActor(tmPackage)),
 		vocabulary.BundleManifest(tmPackage, map[string]any{
 			"description": "a provider that dropped its mirror",
 			"installs":    []any{tmPackage + "/leftover"},

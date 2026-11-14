@@ -161,19 +161,19 @@ data:
 
 // `substratectl import` calls the sample door and reports what LANDED: the
 // package under this repository's own authority, not the shipped id typed.
-func TestImportCallsTheSampleDoor(t *testing.T) {
+func TestAddOfASampleReportsWhereItLanded(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	stdout, stderr, err := h.run("import", "samples.substrate.reamde.dev/tasks")
+	stdout, stderr, err := h.run("add", "samples.substrate.reamde.dev/tasks")
 	if err != nil {
 		t.Fatalf("import: %v %s", err, stderr)
 	}
 	// The id is a package reference and carries a `/`, so it rides as one
 	// escaped segment; the recorded path is what the server decoded it back to.
-	if want := "POST /api/v1/catalog/samples.substrate.reamde.dev/tasks/import"; !contains(h.fake.doorRequests(), want) {
+	if want := "POST /api/v1/catalog/samples.substrate.reamde.dev/tasks/add"; !contains(h.fake.doorRequests(), want) {
 		t.Errorf("import did not call %s: %v", want, h.fake.doorRequests())
 	}
-	if !strings.Contains(stdout, "geoah.example.com/tasks imported") {
+	if !strings.Contains(stdout, "geoah.example.com/tasks added") {
 		t.Errorf("import does not report where the sample landed: %s", stdout)
 	}
 	// AND what its suggested mappings did (decision record 0049): a reader who
@@ -182,11 +182,11 @@ func TestImportCallsTheSampleDoor(t *testing.T) {
 	if !strings.Contains(stdout, "providers.substrate.reamde.dev/github/user -> geoah.example.com/tasks/person: landed") {
 		t.Errorf("import does not report the mapping that landed, onto the kind that landed: %s", stdout)
 	}
-	want := "waiting; install providers.substrate.reamde.dev/linear, then import " +
-		"samples.substrate.reamde.dev/tasks again. Re-importing replaces that " +
-		"package and may remove your changes."
+	want := "waiting; add providers.substrate.reamde.dev/linear, then add " +
+		"samples.substrate.reamde.dev/tasks again. Adding it again replaces your " +
+		"copy and may remove your changes."
 	if !strings.Contains(stdout, want) {
-		t.Errorf("import does not say what the waiting mapping waits for and what a re-import costs: %s", stdout)
+		t.Errorf("add does not say what the waiting mapping waits for and what adding it again costs: %s", stdout)
 	}
 }
 

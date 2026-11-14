@@ -161,7 +161,7 @@ func TestAProviderInstalledOverAHigherStoredVersionIsOfferedTheNextShipped(t *te
 	shipped := whoopShipped(t)
 
 	handApplyWhoop(t, ds, shipped+2, true)
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install over the hand-applied whoop: %v", err)
 	}
 	if got := packageVersion(t, ds, whoopID); got != shipped+3 {
@@ -226,7 +226,7 @@ func TestAStampAboveTheShippedVersionOffersNothing(t *testing.T) {
 	// The whoop-only catalog does not serve the health catalogue whoop
 	// requires, so its install cannot bring it.
 	installHealth(t, ds)
-	if _, _, err := whoopCatalog(t, shipped+5, true).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := whoopCatalog(t, shipped+5, true).Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install the newer whoop: %v", err)
 	}
 	up := whoopPreview(t, loadCatalog(t), ds)
@@ -267,7 +267,7 @@ func installOverHandApplied(t *testing.T, ds substrate.Dataset) map[string]int64
 	t.Helper()
 	handApplyWhoop(t, ds, whoopShipped(t)+2, true)
 	c := loadCatalog(t)
-	if _, _, err := c.Install(context.Background(), substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := c.Install(context.Background(), substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install over the hand-applied whoop: %v", err)
 	}
 	b, _ := c.ByID(whoopID)
@@ -289,7 +289,7 @@ func takeWhoop(t *testing.T, ds substrate.Dataset, installed map[string]int64, v
 	if len(up.Changes) != 0 {
 		t.Errorf("a release that changes no declaration lists changes: %+v", up.Changes)
 	}
-	if _, _, err := next.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := next.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install the release: %v", err)
 	}
 	b, _ := loadCatalog(t).ByID(whoopID)
@@ -352,7 +352,7 @@ func TestANewKindPastTheStampPreviewsTheVersionItLandsAt(t *testing.T) {
 	if !up.Available || !namesChange(up, vocabulary.DocKind, whoopNewKind) {
 		t.Fatalf("the release adding %s is not offered naming it: %+v", whoopNewKind, up)
 	}
-	if _, _, err := next.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := next.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install the release: %v", err)
 	}
 	b, _ := next.ByID(whoopID)
@@ -379,7 +379,7 @@ func TestAnUninstallClearsTheShippedVersion(t *testing.T) {
 	ds := newDataset(t)
 	ctx := context.Background()
 	shipped := whoopShipped(t)
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install whoop: %v", err)
 	}
 	if err := ds.(bundleLifecycler).UninstallBundle(ctx, whoopID); err != nil {
@@ -427,7 +427,7 @@ func TestAChangedPackageHeaderMovesThePackage(t *testing.T) {
 		return docs
 	}
 	for i, want := range []int64{first + 1, first + 1} {
-		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, described()); err != nil {
+		if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, described()); err != nil {
 			t.Fatalf("apply the header edit %d: %v", i+1, err)
 		}
 		if got := packageVersion(t, ds, whoopID); got != want {
@@ -444,7 +444,7 @@ func TestAHeaderChangePastTheStampIsOfferedAndLandsAtStoredPlusOne(t *testing.T)
 	ctx := context.Background()
 	shipped := whoopShipped(t)
 	handApplyWhoop(t, ds, shipped+2, true)
-	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := loadCatalog(t).Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install over the hand-applied whoop: %v", err)
 	}
 	installed := packageVersion(t, ds, whoopID)
@@ -459,7 +459,7 @@ func TestAHeaderChangePastTheStampIsOfferedAndLandsAtStoredPlusOne(t *testing.T)
 			t.Errorf("the package previews %d -> %d, want %d -> %d", ch.From, ch.To, installed, installed+1)
 		}
 	}
-	if _, _, err := next.Install(ctx, substrate.ActorAPI, whoopID, ds); err != nil {
+	if _, _, err := next.Install(ctx, substrate.ActorPerson, whoopID, ds); err != nil {
 		t.Fatalf("install the header change: %v", err)
 	}
 	if got := packageVersion(t, ds, whoopID); got != installed+1 {

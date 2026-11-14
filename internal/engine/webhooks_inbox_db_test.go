@@ -10,13 +10,10 @@ package engine_test
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
@@ -414,22 +411,8 @@ func TestWebhookAcceptedRequestRestoresIntoAFreshDatabase(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	// Copy the directory into a fresh database.
-	src, err := changelogfile.RepoDir(root, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root2 := t.TempDir()
-	dst, err := changelogfile.RepoDir(root2, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.CopyFS(dst, os.DirFS(src)); err != nil {
-		t.Fatal(err)
-	}
+	// Copy the archive the close left into a fresh database.
+	root2 := copyRepositoryDir(t, root, id)
 	svc2 := mustReopen(t, engine.MigratedDSN(t), root2)
 	ds2, err := svc2.Dataset(ctx, testdb.Repository(t))
 	if err != nil {

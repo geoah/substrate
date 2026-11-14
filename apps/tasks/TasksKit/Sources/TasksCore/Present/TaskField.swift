@@ -40,16 +40,6 @@ public extension TaskPriority {
     }
 }
 
-public extension TaskStatus {
-    var words: String {
-        switch self {
-        case .open: "Open"
-        case .done: "Done"
-        case .abandoned: "Won't do"
-        }
-    }
-}
-
 /// What the owner calls a task in no list.
 public enum InboxWords {
     public static let title = "No List"

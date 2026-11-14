@@ -27,7 +27,7 @@ import kotlinx.serialization.json.buildJsonObject
 
 /** The SHA-256 of bridge.golden.json, which `start` holds equal to the Swift library's. */
 public object ProtocolFingerprint {
-    public const val VALUE: String = "13d581c309a0bff997887211476ddf9bd1e5884b287ff14cd387d1da754b75a0"
+    public const val VALUE: String = "cbe99ba2167b28c6808b8c2e3875ac42e6768f2ce96f106a14169443767727d9"
 }
 
 /**
@@ -1836,6 +1836,16 @@ public object GalleryRoot {
     }
 }
 
+public object KindStatus {
+    @Serializable
+    public enum class Standing {
+        @SerialName("proposed") proposed,
+        @SerialName("open") open,
+        @SerialName("done") done,
+        @SerialName("dropped") dropped,
+    }
+}
+
 public object Ledger {
     @Serializable(with = Ledger.Command.Serializer::class)
     public sealed interface Command {
@@ -1971,6 +1981,7 @@ public val bridgedSerializers: Map<String, KSerializer<*>> = mapOf(
     "GalleryRoot.Command" to GalleryRoot.Command.Serializer,
     "Handle" to Handle.serializer(),
     "IssueLine" to IssueLine.serializer(),
+    "KindStatus.Standing" to KindStatus.Standing.serializer(),
     "LabeledValue" to LabeledValue.serializer(),
     "Ledger.Command" to Ledger.Command.Serializer,
     "Ledger.Presentation" to Ledger.Presentation.serializer(),

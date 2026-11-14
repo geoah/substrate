@@ -6,11 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // eref is one record's full storage identity: the (type, id) pair every
@@ -37,7 +35,6 @@ type erow struct {
 	ID      string
 	Kind    string
 	Title   string
-	Body    string
 	States  map[string]string
 	At      *time.Time
 	EndsAt  *time.Time
@@ -83,7 +80,7 @@ func (r *erow) clone() *erow {
 	return &c
 }
 
-const recordCols = `id, kind, title, body, states, at, ends_at, due_at, props, labels,
+const recordCols = `id, kind, title, states, at, ends_at, due_at, props, labels,
 	version, kind_version, created_at, updated_at, deleted_at, to_jsonb(finalizers)`
 
 type scanner interface {
@@ -105,7 +102,7 @@ type recordScan struct {
 
 func (es *recordScan) dests() []any {
 	return []any{
-		&es.r.ID, &es.r.Kind, &es.r.Title, &es.r.Body, &es.states, &es.r.At, &es.r.EndsAt, &es.r.DueAt,
+		&es.r.ID, &es.r.Kind, &es.r.Title, &es.states, &es.r.At, &es.r.EndsAt, &es.r.DueAt,
 		&es.props, &es.labels, &es.r.Version, &es.r.KindVersion, &es.r.CreatedAt, &es.r.UpdatedAt, &es.r.DeletedAt, &es.finalizers,
 	}
 }
@@ -202,19 +199,18 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 	}
 	row := t.row(`
 		INSERT INTO records (
-			id, kind, title, body, states, at, ends_at, due_at, props, labels,
+			id, kind, title, states, at, ends_at, due_at, props, labels,
 			finalizers, fts, version, kind_version, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb,
-			ARRAY(SELECT jsonb_array_elements_text($11::jsonb)),
-			setweight(to_tsvector('english', $12), 'A') ||
-			setweight(to_tsvector('english', $13), 'B') ||
-			setweight(to_tsvector('english', $14), 'C'),
-			1, $18, $15, $15
+			$1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, $9::jsonb,
+			ARRAY(SELECT jsonb_array_elements_text($10::jsonb)),
+			setweight(to_tsvector('english', $11), 'A') ||
+			setweight(to_tsvector('english', $12), 'B') ||
+			setweight(to_tsvector('english', $13), 'C'),
+			1, $17, $14, $14
 		)
 		ON CONFLICT (repository, kind, id) DO UPDATE SET
 			title      = EXCLUDED.title,
-			body       = EXCLUDED.body,
 			states     = EXCLUDED.states,
 			at         = EXCLUDED.at,
 			ends_at    = EXCLUDED.ends_at,
@@ -224,13 +220,12 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 			finalizers = EXCLUDED.finalizers,
 			fts        = EXCLUDED.fts,
 			kind_version = EXCLUDED.kind_version,
-			deleted_at = CASE WHEN $16::bool THEN NULL ELSE records.deleted_at END,
+			deleted_at = CASE WHEN $15::bool THEN NULL ELSE records.deleted_at END,
 			version    = records.version + 1,
-			updated_at = $15
-		WHERE $17::bool
-		   OR ($16::bool AND records.deleted_at IS NOT NULL)
+			updated_at = $14
+		WHERE $16::bool
+		   OR ($15::bool AND records.deleted_at IS NOT NULL)
 		   OR records.title      IS DISTINCT FROM EXCLUDED.title
-		   OR records.body       IS DISTINCT FROM EXCLUDED.body
 		   OR records.states     IS DISTINCT FROM EXCLUDED.states
 		   OR records.at         IS DISTINCT FROM EXCLUDED.at
 		   OR records.ends_at    IS DISTINCT FROM EXCLUDED.ends_at
@@ -239,7 +234,7 @@ func (t *txn) upsertRecord(r *erow, fts [3]string, force, resurrect bool) (chang
 		   OR records.labels     IS DISTINCT FROM EXCLUDED.labels
 		   OR records.finalizers IS DISTINCT FROM EXCLUDED.finalizers
 		RETURNING version, (xmax = 0)`,
-		r.ID, r.Kind, r.Title, r.Body, states, r.At, r.EndsAt, r.DueAt, props, labels,
+		r.ID, r.Kind, r.Title, states, r.At, r.EndsAt, r.DueAt, props, labels,
 		finalizers, fts[0], fts[1], fts[2], t.now, resurrect, force, r.KindVersion)
 	err = row.Scan(&version, &created)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -303,6 +298,15 @@ func changeProps(entries []changeEntry) []any {
 }
 
 func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
+	if t.bulk == nil {
+		if err := t.ensureLinks(actor); err != nil {
+			return err
+		}
+	}
+	// The entry ends the line, as a replay of it ends it (foldEntry).
+	if err := t.settleTakenOut(); err != nil {
+		return err
+	}
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
 	// transaction that appends more than one entry slices its effect stream at
@@ -328,7 +332,7 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// A bulk run sends its entries in one INSERT (bulkwrite.go) and records
 	// each as below.
 	if t.bulk != nil {
-		t.bulk.entries = append(t.bulk.entries, bulkEntry{actor: actor, op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
+		t.bulk.entries = append(t.bulk.entries, bulkEntry{links: t.linksOf(actor), op: op, recordID: recordID, kind: typ, raw: raw, causedBy: causedBy})
 		return nil
 	}
 	if err := t.lockChangelog(); err != nil {
@@ -344,21 +348,22 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// until settleChecksums stamps it at commit. The pending entry and the
 	// row must agree on every column the checksum covers, so both sides of
 	// this append stamp the same principal.
+	links := t.linksOf(actor)
 	if err := t.row(`
-		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by)
-		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+		INSERT INTO changelog (seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, caused_by)
+		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
+		t.now, links.actor, links.onBehalfOf, links.token, string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
-	t.appended(actor, op, recordID, typ, causedBy, seq, stored)
+	t.appended(links, op, recordID, typ, causedBy, seq, stored)
 	return nil
 }
 
 // appended records one inserted changelog row on the transaction: its seq,
 // its address and the pending line its checksum and file write read, with
 // the payload as stored.
-func (t *txn) appended(actor substrate.Actor, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
+func (t *txn) appended(links writeLinks, op substrate.Op, recordID, typ string, causedBy sql.NullInt64, seq int64, stored []byte) {
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
@@ -369,7 +374,7 @@ func (t *txn) appended(actor substrate.Actor, op substrate.Op, recordID, typ str
 		t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
 	}
 	t.pending = append(t.pending, pendingEntry{
-		Seq: seq, TS: t.now, Actor: string(actor), Principal: t.principal,
+		Seq: seq, TS: t.now, Actor: links.actor, OnBehalfOf: links.onBehalfOf, Token: links.token,
 		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
 		PayloadText: stored,
@@ -537,167 +542,6 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 	return err == nil, err
 }
 
-// --- property managers ---
-//
-// The ledger records which actor last had a change ACCEPTED on each property,
-// at which TIER that write stood, and which PRINCIPAL
-// — the token id the door verified — stood behind it. It is
-// attribution on every direct write, and it is load-bearing:
-// mapping recompute yields to any manager row that holds above the machine
-// tier (heldTierIn, record 0113), which is how a hand edit — the owner's or a
-// function's — survives a sync, visibly. Nothing else reads it to decide who
-// may write — anyone still overwrites anything.
-
-// actorTier resolves an actor's manager tier from DATA, never from the
-// actor's spelling: the three human DOORS — api, console, substratectl — are
-// the owner tier; the engine's own actor is machine; and every actor the
-// registry answers for carries its declared tier — an authority-declared
-// `bundle:<authority>` actor defaults machine, a registered function's or
-// agent's own actor is bundle.
-//
-// An actor the registry does not answer for splits two ways. A RESERVED name
-// (the `substrate` namespace, `bundle:`, `function:`, `agent:`, and the
-// retired `connector:` spelling every repository written before record 0025
-// still carries) is one of
-// the substrate's own writing hands, which a request may never claim
-// (api/auth.go) — an undeclared one is a hand whose declaration is gone, a
-// facility like `substrate.oauth`, or a dispatch mid-uninstall, and none of
-// those is the owner's edit, so it holds at the machine tier and recompute
-// may replace it. Anything else is a name a REQUEST asserted at the door, and
-// a token writes at the owner tier: that write stands exactly where the token
-// stands, whatever door name it chose. An app's token writes as its derived
-// `app:<host>` actor, which resolves to the owner tier above the registry,
-// and the owner-only gates read txn.scoped beside the tier. Nothing here
-// escalates — the same caller can send `api` — and the entry's principal
-// records which token it was. The split is FORWARD-ONLY: a manager row an
-// undeclared reserved actor already holds at the owner tier keeps it, here
-// and through a rebuild, because the fold replays the tier the write
-// recorded, not the tier this function would resolve today.
-//
-// Direct writes read their tier off the transaction (txn.tier,
-// set once at inTx and set to bundle explicitly by function/agent
-// dispatch); recompute's own rows are always machine, whatever actor they
-// credit (mapping.go). This function is also the facility seams'
-// (StartOAuth's owner-gate) resolution, outside any transaction.
-func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
-	return actorTierIn(ds.registry(), actor)
-}
-
-// actorTier resolves an actor's tier against the transaction's declarations:
-// inside a vocabulary apply that is the candidate, so a closure installed
-// under an actor it declares writes its manager rows at the tier the closure
-// declares on the first install, not only on a re-install.
-func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
-	return actorTierIn(t.declarations(), actor)
-}
-
-func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier {
-	switch {
-	case substrate.HumanActors[actor]:
-		return substrate.TierOwner
-	// The engine's own hand is resolved before the registry, so a declaration
-	// cannot move it: `tier:` is data an installed bundle writes.
-	case actor == substrate.ActorSystem:
-		return substrate.TierMachine
-	// An app's token holds a property the way the owner's own client does
-	// (a stranger's client holds like the user, never like the machinery),
-	// and no declaration may move it either. What the owner alone may do is
-	// held apart by txn.scoped, not by the tier (decision 0194).
-	case substrate.IsAppActor(actor):
-		return substrate.TierOwner
-	}
-	if tier, ok := reg.ActorTier(string(actor)); ok {
-		return tier
-	}
-	if substrate.ReservedActor(actor) {
-		return substrate.TierMachine
-	}
-	return substrate.TierOwner
-}
-
-// heldTierIn is the tier a stored manager row holds at against recompute
-// under the declarations in reg (record 0113). A row above the machine tier
-// whose actor a live declaration now puts AT the machine tier holds at the
-// machine tier, so re-declaring an actor releases what it already wrote
-// instead of only what it writes next. Everything else keeps the tier the
-// write recorded: a machine row may be recompute's credit to the actor, so
-// promoting the actor must not freeze it; a door name resolves before any
-// declaration; and a package's bundle hand writes under the dispatch stamp,
-// a tier its declaration does not show.
-func heldTierIn(reg *vocabulary.Registry, actor string, stored substrate.Tier) substrate.Tier {
-	if stored == substrate.TierMachine || substrate.HumanActors[substrate.Actor(actor)] ||
-		strings.HasPrefix(actor, substrate.BundleActorPrefix) {
-		return stored
-	}
-	if tier, ok := reg.ActorTier(actor); ok && tier == substrate.TierMachine {
-		return substrate.TierMachine
-	}
-	return stored
-}
-
-func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) error {
-	// The effect carries the principal so a replay reproduces the row without
-	// reading the entry around it: the fold describes what the write did, in
-	// full.
-	return t.setManagerAs(ref, property, actor, tier, t.principal)
-}
-
-// setManagerAs is setManager with the principal NAMED rather than taken from
-// the transaction. A kind move carries a manager row across whole (move.go), so
-// the hand and the token behind the value it describes are the ones that wrote
-// it, not the ones carrying it.
-func (t *txn) setManagerAs(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string) error {
-	_, err := t.fold(foldOp{
-		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
-		Property: property, Actor: string(actor), Tier: string(tier),
-		Principal: principal,
-	})
-	return err
-}
-
-// deleteManager clears one property's manager row: a deleted property is
-// nobody's, so the next recompute may refill it. An
-// empty actor is the release on the wire too.
-func (t *txn) deleteManager(ref eref, property string) error {
-	_, err := t.fold(foldOp{Kind: foldManager, Ref: ref.Kind, ID: ref.ID, Property: property})
-	return err
-}
-
-func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string, at time.Time) (bool, error) {
-	if actor == "" {
-		res, err := t.exec(`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
-			ref.Kind, ref.ID, property)
-		if err != nil {
-			return false, err
-		}
-		n, err := res.RowsAffected()
-		return n > 0, err
-	}
-	// A bulk run's record holds no manager row, so the INSERT below would
-	// add one (bulkwrite.go).
-	if t.queueManager(ref, property, actor, tier, principal, at) {
-		return true, nil
-	}
-	// A different principal is a different write, so it moves the row: the
-	// ledger names the token behind the last accepted change, not merely the
-	// door it came through.
-	res, err := t.exec(`
-		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE SET
-			actor = EXCLUDED.actor, tier = EXCLUDED.tier,
-			principal = EXCLUDED.principal, updated_at = EXCLUDED.updated_at
-		WHERE property_managers.actor     IS DISTINCT FROM EXCLUDED.actor
-		   OR property_managers.tier      IS DISTINCT FROM EXCLUDED.tier
-		   OR property_managers.principal IS DISTINCT FROM EXCLUDED.principal`,
-		ref.Kind, ref.ID, property, string(actor), string(tier), principal, at)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n > 0, err
-}
-
 // --- embed queue ---
 
 func (t *txn) enqueueEmbed(ref eref, property string) error {
@@ -722,15 +566,25 @@ func (t *txn) enqueueEmbed(ref eref, property string) error {
 //
 // The record's sealed rows and their files go here too (#236): a tombstone
 // keeps them so a restore gets its secrets back, and the purge is where they
-// end. The erasure is here and not in applyPurge because a rebuild replays
-// every purge and keeps the sealed table (rebuild.go): a replayed purge of an
-// id that was later written again would erase the live record's material.
+// end. Its vectors and its queued embeds end here as well. Both erasures are
+// here and not in applyPurge because a rebuild replays every purge and keeps
+// the sealed, embeddings and embed_queue tables (rebuild.go): a replayed purge
+// of an id that was later written again would erase the live record's
+// material and its vectors, and nothing in the replay queues them again.
 func (t *txn) hardDelete(ref eref) error {
 	if err := t.recomputeSubjectsOf(ref); err != nil {
 		return err
 	}
 	if _, err := t.fold(foldOp{Kind: foldPurge, Ref: ref.Kind, ID: ref.ID}); err != nil {
 		return err
+	}
+	for _, q := range []string{
+		`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2`,
+		`DELETE FROM embed_queue WHERE record_kind = $1 AND record_id = $2`,
+	} {
+		if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {
+			return fmt.Errorf("substrate/engine: hard delete %s %s: %w", ref.Kind, ref.ID, err)
+		}
 	}
 	return t.dropSealedOf(ref)
 }
@@ -753,10 +607,8 @@ func (t *txn) applyPurge(ref eref) error {
 		`DELETE FROM unit_uses WHERE kind = $1 AND record_id = $2`,
 		`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
+		`DELETE FROM property_marks WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM embeddings WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM embed_queue WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM records WHERE kind = $1 AND id = $2`,
 	} {
 		if _, err := t.exec(q, ref.Kind, ref.ID); err != nil {

@@ -35,6 +35,9 @@ export interface ShellSession {
   secret: string
   repository: string
   tokenId: string
+  /** The name the person signs in with (decision 0274); an app from before
+   * identities gives none, and its person's is the repository's. */
+  identity?: string
 }
 
 interface ShellWindow {
@@ -93,9 +96,25 @@ export function shellSession(
   return session &&
     typeof session.secret === "string" &&
     typeof session.repository === "string" &&
-    typeof session.tokenId === "string"
+    typeof session.tokenId === "string" &&
+    (session.identity === undefined || typeof session.identity === "string")
     ? session
     : undefined
+}
+
+/** Tell the app the repository the sign-in holding `tokenId` opens is now
+ * named `repository` (decision 0287): the app keeps the new name with the
+ * sign-in and gives it to the page at its next load. */
+export function renamed(
+  tokenId: string,
+  repository: string,
+  win: unknown = globalThis
+): void {
+  ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
+    type: "renamed",
+    tokenId,
+    repository,
+  })
 }
 
 /** Tell the app the sign-in holding `tokenId` ended: the page signed out,

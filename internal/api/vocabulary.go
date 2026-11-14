@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -106,6 +107,16 @@ func holdWaitingMappings(ctx context.Context, ds substrate.Dataset, docs []map[s
 	if !hold {
 		return docs, nil, nil
 	}
+	// The engine stores the repository's own kinds under `~` (decision
+	// record 0259), so the mappings held back are named the way it would
+	// have stored them.
+	if names := ds.Repository().LocalNames(); len(names) > 0 {
+		local, err := vocabulary.LocalizeOwnDocuments(docs, names...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		}
+		docs = local
+	}
 	waiting, err := vocabulary.WaitingMappings(docs, func(kind string) (bool, error) {
 		_, err := ds.KindByRef(ctx, kind)
 		switch {
@@ -200,6 +211,17 @@ func (h *handler) planVocabulary(w http.ResponseWriter, r *http.Request) {
 // server log line and nothing a repository token can see. It sits at the
 // version root beside `/vocabulary/apply`, because it is about the shipped
 // declarations and names no kind (decision 0033).
+// getRetention answers every declared kind's retention, in reference order.
+func (h *handler) getRetention(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	items, err := DatasetFrom(ctx).KindRetentions(ctx)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, substrate.Listed(items))
+}
+
 func (h *handler) getVocabularyUpgrade(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)

@@ -24,8 +24,6 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
-
-	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // Payload framing: one marker byte, then the JSON (plain) or
@@ -93,7 +91,6 @@ func (t *txn) putCredential(ref string, account eref, tok *oauth2.Token) error {
 	if err != nil {
 		return fmt.Errorf("substrate/engine: put credential: %w", err)
 	}
-	t.mirrorSealedWrite(sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated))
 	return nil
 }
 
@@ -128,9 +125,7 @@ func (ds *dataset) updateCredential(ctx context.Context, ref string, account ere
 	if err != nil {
 		return false, fmt.Errorf("substrate/engine: update credential: %w", err)
 	}
-	// Outside inTx, so the file is written here, before the row commits.
-	rec := sealedRecordOf(ref, account.Kind, account.ID, payload, expiresAt, updated)
-	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
+	if err := ds.commitSealed(tx, wc); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -171,8 +166,7 @@ func (ds *dataset) parkRefusedCredential(ctx context.Context, ref string, accoun
 	if err != nil {
 		return false, fmt.Errorf("substrate/engine: park refused credential: %w", err)
 	}
-	rec := sealedRecordOf(ref, account.Kind, account.ID, payload, sql.NullTime{}, updated)
-	if err := ds.commitSealed(tx, wc, []sealedMirrorOp{{rec: rec}}); err != nil {
+	if err := ds.commitSealed(tx, wc); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -286,47 +280,26 @@ func (ds *dataset) deleteCredentialsFor(ctx context.Context, account eref) error
 	}
 	defer wc.release()
 	defer func() { _ = tx.Rollback() }()
-	ops, err := deleteSealedRowsOf(ctx, tx, account)
-	if err != nil {
+	if err := deleteSealedRowsOf(ctx, tx, account); err != nil {
 		return err
 	}
-	// Outside inTx, so the files go with the row commit here: a delete lands
-	// after the rows commit, and a failure to remove one is reported and
-	// latched, never silently left for the boot check.
-	return ds.commitSealed(tx, wc, ops)
+	return ds.commitSealed(tx, wc)
 }
 
-// dropSealedOf erases every sealed row a record owns inside the transaction,
-// and its file after the commit (commitAndMirror). The purge (hardDelete) and
-// the kind move call it; the OAuth teardown erases through the same
-// deleteSealedRowsOf outside inTx.
+// dropSealedOf erases every sealed row a record owns inside the transaction.
+// The purge (hardDelete) and the kind move call it; the OAuth teardown erases
+// through the same deleteSealedRowsOf outside inTx.
 func (t *txn) dropSealedOf(owner eref) error {
-	ops, err := deleteSealedRowsOf(t.ctx, t.tx, owner)
-	if err != nil {
-		return err
-	}
-	t.sealedMirror = append(t.sealedMirror, ops...)
-	return nil
+	return deleteSealedRowsOf(t.ctx, t.tx, owner)
 }
 
-// deleteSealedRowsOf deletes every sealed row a record owns inside tx and
-// returns the file deletes that follow the commit.
-func deleteSealedRowsOf(ctx context.Context, tx *sql.Tx, account eref) ([]sealedMirrorOp, error) {
-	rows, err := tx.QueryContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2 RETURNING ref`,
-		account.Kind, account.ID)
-	if err != nil {
-		return nil, fmt.Errorf("substrate/engine: delete the sealed rows of %s %s: %w", account.Kind, account.ID, err)
+// deleteSealedRowsOf deletes every sealed row a record owns inside tx.
+func deleteSealedRowsOf(ctx context.Context, tx *sql.Tx, account eref) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sealed WHERE record_kind = $1 AND record_id = $2`,
+		account.Kind, account.ID); err != nil {
+		return fmt.Errorf("substrate/engine: delete the sealed rows of %s %s: %w", account.Kind, account.ID, err)
 	}
-	defer func() { _ = rows.Close() }()
-	var ops []sealedMirrorOp
-	for rows.Next() {
-		var ref string
-		if err := rows.Scan(&ref); err != nil {
-			return nil, err
-		}
-		ops = append(ops, sealedMirrorOp{rec: changelogfile.SealedRecord{Ref: ref}, delete: true})
-	}
-	return ops, rows.Err()
+	return nil
 }
 
 // expiringCredentials lists refs whose tokens expire before the horizon —
@@ -531,7 +504,6 @@ func (t *txn) storeSecretValue(owner eref, plaintext string) (string, error) {
 		ref, owner.Kind, owner.ID, payload).Scan(&updated); err != nil {
 		return "", fmt.Errorf("substrate/engine: store secret value: %w", err)
 	}
-	t.mirrorSealedWrite(sealedRecordOf(ref, owner.Kind, owner.ID, payload, sql.NullTime{}, updated))
 	return ref, nil
 }
 

@@ -1,14 +1,49 @@
 # Users, tokens, and actors
 
-A **user** is a human principal: a repository name, a password, and, unless
-they skipped it at registration, a TOTP second factor
-([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
-A user owns exactly one **repository**,
-whose name is its authority and their login name, and a **token** is how
-anything reaches it. Both the credential and every token are
-ordinary [records](data-model.md) in the repository they belong to, so the
-same reads, the same changelog, and the same console pages that show your tasks show
-your account too.
+A **user** is a person, and three things make one
+([decision record 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)):
+
+- an **identity**, held by the server beside the repositories: the name the
+  person signs in with, a password, and, unless they skipped it at
+  registration, a TOTP second factor
+  ([decision record 0237](decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
+  It holds no data;
+- a **repository**, whose name is its authority, which holds everything the
+  person has;
+- the person's **actor** in the repository, a `substrate.reamde.dev/core/actor`
+  record of type `person` that names their identity: a person is in a
+  repository while a person actor there names them, and their writes link
+  that actor. The server keeps an index of those actors for the identities
+  it holds (`identity_repositories`), which a sign-in and every token are
+  checked against. Two rules hold the index to the actors:
+  - It is never ahead of them. While the server admits anyone, the index
+    names nobody the repository's live person actors do not name. A person
+    whose actor a restored history disabled or deleted has no access once
+    the boot that reads that history has run, nothing writes that actor
+    again, new work that acts for them is refused, what they left running
+    is settled at the next open for nobody, and only `user reset` gives the
+    repository a person, with an actor of their own. A repository from
+    before identities is the one exception, told apart by what it holds (an
+    actor kind that declares no identity, a sign-in record, or a line of
+    one): it keeps the person its old sign-in named until its first open
+    writes that person onto its actor.
+  - It is behind them only while the database refuses the write. After a
+    person's actor commits, its row of the index is written on a context
+    of its own, not the request's, and tried again until it lands or the
+    process stops; the next boot derives it.
+
+  Wherever actors arrive another way (an import, a restore, a rebuild) the
+  index is derived again from them before the repository is offered to
+  anyone, at every boot and at the end of a rebuild. A sign-in names the
+  person, who picks the repository it opens.
+
+A person has one repository today, which registration creates and names
+after them. A **token** is how anything reaches a repository; every token is
+an ordinary [record](data-model.md) in the repository it opens and names the
+identity it acts for, so the same reads, the same changelog and the same
+console pages that show your tasks show your tokens too. The identity is no
+record of any repository, so no repository's history holds the person's
+factors.
 
 ## The invite code
 
@@ -40,7 +75,7 @@ Registration is two calls, and only the second writes anything:
 
 ```http
 POST /register/enroll
-{"inviteCode": "…", "repository": "ada.example.com"}
+{"inviteCode": "…", "identity": "ada.example.com"}
 
 → 200 {"totpSecret": "JBSWY3DPEHPK3PXP",
        "otpauthUri": "otpauth://totp/Substrate:ada?secret=JBSWY3DPEHPK3PXP&issuer=Substrate&algorithm=SHA1&digits=6&period=30"}
@@ -51,12 +86,11 @@ registration leaves no row to expire and nothing to sweep:
 
 ```http
 POST /register
-{"inviteCode": "…", "repository": "ada.example.com", "password": "…",
+{"inviteCode": "…", "identity": "ada.example.com", "password": "…",
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "repository": "ada.example.com",
-       "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
+       "repository": "ada.example.com", "identity": "ada.example.com"}
 ```
 
 A registration may skip the second factor instead: `"skipTotp": true` in
@@ -67,42 +101,135 @@ is explicit: a registration that sends neither an enrollment nor `skipTotp` is
 refused `422`, so a client that lost its enrollment on the way does not create
 an account without one by accident.
 
-`repository` is the whole of the name: it BECOMES the repository's authority,
-any DNS name its user controls (`ada.example.com`, `geoah.me`), which is the
-home of every package its user declares kinds in and the name they log in
-with. A name carrying a dot is taken as it is; a bare label is completed under
-the host the request reached (`ada` reaching `substrate.example` is
-`ada.substrate.example`), and the response says what was created. It is
-lowercase DNS labels with at least one dot, within the DNS length limits,
-never under `substrate.reamde.dev` (where the shipped vocabulary publishes),
-unique across the substrate, and permanent
-([decision record 0074](decisions/0074-the-repository-name-is-the-login-name.md)).
-The repository's own `repository` record carries it, so a client that only
-speaks the record API can read it back.
+`identity` is the name the person signs in with, and the repository
+registration creates takes the same name unless the request names another in
+`repository`. The repository's name BECOMES its authority, any DNS name its
+user controls (`ada.example.com`, `geoah.me`). The packages its user declares
+kinds in live in the repository's local namespace, `~`, not under the name
+([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Both names keep that DNS-style form, so
+another server could one day vouch for a person's. A name carrying a dot is
+taken as it is; a bare label is completed under the server's public host
+([the default name](#the-default-name)), and the response says what was
+created. A name is lowercase DNS labels with at least one dot, within the DNS
+length limits, and unique across the substrate; a repository's is never under
+`substrate.reamde.dev` (where the shipped vocabulary publishes), nor a name
+another repository held in the last 90 days. An admin can rename the
+repository ([renaming a repository](#renaming-a-repository)); the person's
+name stays as registered. A request that names no `identity` is refused `400`
+with the field to send. The repository's own `repository` record carries its
+name, so a client that only speaks the record API can read it back.
 
-That one name is everywhere: a webhook URL
-(`POST /webhooks/{authority}/{trigger}`) and a delivery envelope's
-`repository.authority` carry it, `RepositoryInfo.id` on the wire is it, and
-the repository's directory under the data root is named by it
-([decision record 0052](decisions/0052-the-authority-is-the-repository-id.md)).
-
-A request that names no `recoveryPublicKey` asks the server to mint the
-recovery pair, and the response carries the age identity exactly once,
-beside the token secret: that `recoveryKey` is what opens the repository's
-`recoverykey` record in a backup, and the substrate never stores it. A
-client that generated its own pair sends `recoveryPublicKey` instead and no
-key comes back.
+That one name is everywhere a person or a client names the repository: a
+delivery envelope's `repository.authority` carries it and a webhook URL takes
+it. The repository's storage is keyed by an id minted at registration
+instead (`rnd-…`): the directory under the data root, every table, and the
+webhook address the server gives out
+([decision record 0261](decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 
 That second call is **one creation act**: the seed (the `core`, `llm` and
-`console` packages and the provider rows), the sealed material, the credential record and
-the first token all commit as one transaction in the new repository's changelog, and the control-plane row that
-_is_ the user is written last, so the user exists exactly when the repository
-is already complete. Anything that fails before that erases what it wrote: a
+`console` packages and the provider rows), the recovery key and the first
+token all commit as one transaction in the new repository's changelog, and
+the control-plane rows that make the repository and the person exist are
+written last, in one transaction of their own, so the person exists exactly
+when the repository is already complete. Anything that fails before that erases what it wrote: a
 failed registration creates nothing, and no order of failures leaves a
 half-created user.
 
 Registration therefore ends logged in: the response carries the first token's
 secret.
+
+## The default name
+
+A short name is completed under the server's **configured public host**, the
+host of `SUBSTRATE_PUBLIC_URL`, never under the address a request arrived at,
+which a caller chooses
+([decision record 0288](decisions/0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md)).
+A name under `localhost` or an IP address names nothing outside one machine,
+so a new repository may take one only in **development**: a server whose own
+public host is `localhost` or a loopback address, which is what `mise run
+dev` and `compose.yaml` configure.
+
+| You type | The server's public URL | The name |
+| --- | --- | --- |
+| `ada` | `https://substrate.example.com` | `ada.substrate.example.com` |
+| `ada` | `http://localhost:8080` | `ada.localhost` |
+| `ada` | `http://127.0.0.1:5173` | `ada.127.0.0.1` |
+| `ada.example.com` | any | `ada.example.com` |
+
+Outside development `ada.localhost` and `ada.127.0.0.1` are refused as a new
+name, at a registration (the person's and the repository's) and as a rename's
+new name. A server with no public
+URL completes nothing: a short name is refused, saying to type the whole name.
+Discovery says the host (`registration.nameHost` in
+`GET /.well-known/substrate/server.json`, empty where none is configured), so
+a client previews the name the person will get. A repository named under `localhost` before the rule keeps
+its name, is found by it, and can be renamed. Finding an existing person or
+repository by a short name (a sign-in, a delete) completes it under the public
+host, or under the request's host where none is configured, as before.
+
+## Renaming a repository
+
+A repository's name is an alias: what people type and see. Its id keys its
+storage and its own kinds are `~`, so a rename moves no stored value
+([decision record 0287](decisions/0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md)).
+
+```http
+POST /repository/rename
+{"identity": "ada.example.com", "repository": "ada.example.com",
+ "password": "…", "totpCode": "123456", "name": "lovelace.example.com"}
+
+→ 200 {"id": "rnd-01jbx…", "name": "lovelace.example.com",
+       "formerNames": [{"name": "ada.example.com", "until": "2027-02-11T12:00:00Z"}]}
+```
+
+Like the delete, it presents the person and their current factors in the
+body and no token
+([the password-factor rule](#the-credential-and-the-password-factor-rule)),
+and only an admin of the repository renames it ([roles](#roles)): a person
+who may open it and is no admin is refused `403` `not_permitted`, and a
+person who may not open it the plain `403` `forbidden`.
+`name` is completed as a registration's is ([above](#the-default-name)). A
+name another repository holds, as its name or as a former name, is refused
+`422`, as a registration of it is. A name the repository holds a package
+under is refused `409` `conflict`, naming the package: choose another name,
+or uninstall the package first. An archive import under another name is
+refused the same way, against the packages the archive holds. These
+refusals are early ones; what holds the meaning of stored names is that a
+name the repository holds a package under does not spell `~` while it
+does: should a rename and an install pass each other,
+`publisher.example/tasks/task` still names the publisher's kind, and the
+repository's own kinds are written `~`. An authority row with no package
+under it changes no name's meaning, and a rename leaves it as it is.
+
+**For 90 days after the rename the old name is a former name.** It resolves
+to the repository on every door that takes a name: a record address in the
+full-name spelling (`/api/v1/ada.example.com/tasks/task/…` is `~/tasks/task`),
+`filter.kinds`, an app's scopes and its check, the webhook door by name, a
+sign-in's choice of repository (whose answer names the repository by its
+name now), and the operator's commands. No registration or rename elsewhere takes it. At the
+moment the 90 days end it stops resolving and is free, both at once. A
+second rename starts the hold of the name it retires and leaves the first
+former name to its own moment; renaming back to a former name makes it the
+name again. While a former name answers, a package that name publishes is
+not installed here (`409` `conflict`, saying until when). Deleting the
+repository frees its name and every former name at
+once ([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
+
+**What moves at once, and what follows:** the name moves at the rename's
+commit, so from then on the new name resolves and the old one is a former
+name. The repository's own record (`name`, `authority`), the `name` of its
+first person's actor record, which reads as the repository's name, and its
+domain proof follow in the background right after; one that does not
+finish is done at the repository's next open. No person's sign-in name moves: it
+is their identity's, held beside the repositories, and the repositories they
+may open are linked by id. A [verified domain](#verify-domain) is a proof for the
+old name, so the stamp and any pending proof are cleared, and Verify domain
+answers the record for the new name. What a webhook URL, an app's token or a
+saved context hold keeps working: a webhook address the server gives out
+names the id, an app's token is bound to the repository, and an address by
+the old name resolves for the 90 days. A client stores the new name from the
+rename's answer; `substratectl rename` does, and so does the console's
+Settings. Actor texts in the history keep the name they were written with.
 
 ## Verify domain
 
@@ -164,23 +291,44 @@ the same two calls.
 
 ## Logging in
 
-A login presents the factors directly and mints a token record:
+A login names the person, presents the factors directly and mints a token
+record in the repository it opens:
 
 ```http
 POST /login
-{"repository": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
+{"identity": "ada.example.com", "password": "…", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
-       "secret": "substrate_tok_…", "repository": "ada.example.com"}
+       "secret": "substrate_tok_…", "repository": "ada.example.com",
+       "identity": "ada.example.com"}
 ```
+
+A login that names no `repository` opens the person's one repository. A
+person who may open several and names none is answered `409 conflict` with
+the reason `repository_required` and the repositories to pick from, and the
+code they sent is not spent, so the same request naming one, by its name or
+its id, signs in:
+
+```http
+→ 409 {"error": {"code": "conflict", "reason": "repository_required",
+       "message": "…", "repositories": [{"id": "rnd-…", "name": "ada.example.com"},
+                                        {"id": "rnd-…", "name": "notes.example.com"}]}}
+```
+
+A repository the person may not open is `403 forbidden`, whether it exists or
+not. `GET /identity`, with a full token, reads the person it acts for: the
+name, whether their sign-in asks for a code (`secondFactor`) and the
+repositories they may open.
 
 **There is no session concept beside the token.** A session _is_ a token
 record: the console holds one exactly like a script does, logging out revokes
 it, and there is no sessions table to reap. One consequence worth stating: a
-password change does not sign anything out. Live tokens survive it, because a
-token is data access and the credential is the account.
+password change signs nothing out unless it asks to. Live tokens survive it,
+because a token is data access and the credential is the account; a change
+that sends `"signOutEverywhere": true` also
+[signs out everywhere](#signing-out-everywhere).
 
-Every failure (an unknown repository, a wrong password, a wrong code) answers
+Every failure (an unknown name, a wrong password, a wrong code) answers
 one identical `401 auth`, and the engine does the same password-hashing and
 HMAC work on all three so timing is not an oracle either.
 
@@ -218,6 +366,15 @@ Five things follow from a token being a record:
   lookup that finds the token record, and the repository holding that record
   _is_ the request's repository
   ([0143](decisions/0143-a-token-has-full-access-to-its-repository-and-a-login-token-does-not-expire.md)).
+  It authenticates while the person it names may open that repository: one
+  a restore brought back naming a person this server does not hold is
+  refused until `user reset` gives the repository its person back
+  ([below](#losing-both-factors)). A change the server makes to who may open
+  a repository (a repository deleted, a person no actor names any more)
+  holds every token of that repository to the table from before it commits
+  until it is proved to have ended, so it takes effect at once; a change
+  made to the tables by hand, outside the server, takes effect within the
+  token cache's minute.
   Every session, script and device token is one of these. A token an app got
   through the authorization flow carries the `scopes` the owner approved and
   reaches only those kinds, on the records route (lists, window and
@@ -231,16 +388,26 @@ Five things follow from a token being a record:
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
   `DELETE /api/v1/substrate.reamde.dev/core/token/{id}`, from the console, or from
-  `substratectl token revoke`.
-- **Only the owner revokes a token.** The engine refuses a token delete from
-  installed code with `403 forbidden`, whatever its grant names: a
-  function's `delete` effect, an agent's `write` built-in, and a policy
-  judge's accept of a proposed delete all run at the bundle tier. A judged
-  proposal escalates to the owner's review instead, and the owner's own
-  accept revokes. The loader refuses a function or agent whose
-  `permissions.writes` names `substrate.reamde.dev/core/token`, `/credential`
-  or `/recoverykey`, and a stored one quarantines its package at the next
-  open.
+  `substratectl token revoke`. Every stream the token opened ends too: a
+  watch on the records route or the change feed, a chat's stream and a
+  thread's events read their token again whenever the repository's changelog
+  moves, which a revoke does, and end with an `auth` error (a terminal frame
+  on a watch, an `error` event with `"code": "auth"` on an agent stream, and
+  a plain `401` for an agent stream whose first event had not gone out). A
+  long transfer reads its token between its writes, at most once a second:
+  an export or a blob's bytes still going out are cut, which a client reads
+  as a body that ended early. [What ends with a token](#what-ends-with-a-token)
+  says which responses do which.
+- **A person revokes their own tokens; another's is an admin's.** A token is
+  sign-in material, which no rule reaches but by naming it and which the
+  `admin` role reaches by being `admin` ([roles](#roles)). The engine refuses
+  a token delete from installed code with `403 forbidden`, whatever its
+  declaration names: a function's `delete` effect, an agent's `write`
+  built-in, and a policy judge's accept of a proposed delete. A judged
+  proposal escalates to a person's review instead, and an admin's accept
+  revokes. The loader refuses a function or agent whose `permissions.writes`
+  names `substrate.reamde.dev/core/token` or `/credential`, and a stored one
+  quarantines its package at the next open.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted. Login and registration mint theirs
@@ -257,39 +424,231 @@ Present one on every request under `/api`:
 Authorization: Bearer substrate_tok_…
 ```
 
+## Roles
+
+What a person may read and write in a repository is the roles they hold
+([0275](decisions/0275-what-a-person-may-do-is-the-roles-they-hold-and-nothing-is-called-owner.md)).
+A role is a record of `substrate.reamde.dev/core/role`: a name and a list of
+rules, each a list of verbs (`read`, `write`, which includes read) over a
+list of kinds, spelled as an app's scope spells them (`*`,
+`<authority>/*`, `<authority>/<package>/*`, one kind,
+`implements(<trait>)`, `~` for the repository's own authority). Rules only
+add. A person's actor names the roles they hold (`roles`), and they are read
+on every request, so a role changed or taken away holds from the next one
+([0295](decisions/0295-a-persons-token-is-held-to-that-persons-roles.md)).
+
+| Role | May |
+| --- | --- |
+| `admin` | everything: every kind, the control kinds and sign-in material included, and changing who may do what |
+| `editor` | read and write every kind that is not a control kind |
+| `viewer` | read every kind that is not a control kind |
+
+The **control kinds** decide what code runs, what it may do, what the
+vocabulary is and who may do what
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)):
+triggers; policies; AI providers and the
+models they offer; a package's settings, the kinds its bundle takes as
+inputs, and the accounts that connect it; applets; declarations; actors;
+and roles. A kind's description says its class (`control`, with `sign-in`
+for sign-in material). A rule reaches one only by naming that kind; `*`
+never does. `admin` reaches every one by being `admin`. A change request is
+not one: deciding it writes its target as the person who decides, so an
+editor accepts or adjusts a request only where they could write its
+target.
+
+Who may do what is fixed, not a rule: no rule writes an actor or a role, a
+person's roles among them. Only an admin changes them, and the last admin
+keeps the role. Nothing is called owner: the creator is the first admin,
+and every person a repository had before roles became one. At 1.0 nothing
+on the network adds a person or changes a role; the operator's interface
+does (`AddPerson` with roles, `SetPersonRoles`).
+
+**One check holds every hand.** A write is allowed when the rules of the
+hand that writes allow it and, where it acts for someone, that person's
+rules allow it too: never more than both. A person's rules are their roles;
+an app's token is held to its scopes and to its person's roles; an
+assistant's reaches what its person's roles reach but sign-in material; a
+function or an agent is held to the writes its declaration lists, naming
+each control kind it writes (but a policy, which installed code never
+writes), and, read by read and write by write, to the
+roles of the person its turn acts for and the grant of the app that drives
+the turn, each as it stands at that read or write. So an agent a viewer
+starts writes nothing but its own conversation, a role reduced or an app's
+token revoked holds from the run's next read or write, and a function a
+trigger runs, acting for nobody, keeps its own rules. Answering a run's
+question, approving its call, writing its next message or stopping its turn
+is admitted only to a hand that could have started that run itself, and the
+work it continues is held to that hand too. Whose rules hold a run's work
+once its request is over (an approved call, a background job, a resume) is
+stored on the run's own records, `heldTo`, which the engine alone writes and
+the person's view does not show; work reads its own record's, never the
+conversation's latest turn, so a person's message between an app's call and
+its approval does not lend the call the person's rules. Work asked before
+the release that records it is refused once, and the person asks again. A
+refusal by a rule is `403 forbidden` with the reason `not_permitted`.
+
+**What a person who is not an admin reaches.** Every route is public, for
+an admin, or held to its rules
+([0294](decisions/0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md)).
+Such a person reaches the routes an app's token reaches, held by the same
+view to their roles instead of a grant: they read and write what their
+rules reach, talk to every agent whose reads their rules cover and call
+every function whose reach they cover, and a kind their rules do not read is
+answered as one the repository never declared; the unit graph is read where
+their rules read units and conversions. Their own sign-ins
+(`/tokens`) and identity (`GET /identity`, which lists the roles they hold
+in each repository) are theirs whatever their roles. The list of kind
+declarations holds the kinds their rules read, and they search the history
+of the kinds they read whole. Every other route answers them `403
+forbidden`, `not_permitted`: merging and splitting records, which rewrite
+references in kinds they may not write, and `/sync/status`, whose syncs sit
+on account kinds, among them. An app's token that delivers to a webhook
+(`webhook:`) acts for its person: it delivers only while they hold a role,
+and the delivery's run is held to their roles.
+
+## Signing out everywhere
+
+A full-access token can mint another with no password (`POST /tokens`),
+mint an assistant's token, and approve an app, so revoking a token that
+leaked does not end the leak: whatever it made meanwhile still works.
+Signing out everywhere does. It ends every token the person holds, in every
+repository they may open, with each repository's tokens that name no person:
+
+| Token | Ended | Why |
+| --- | --- | --- |
+| From `/login` or `/register` | yes | It is a sign-in. |
+| Minted from another through `POST /tokens` | yes | A leaked token can mint one, so a sign-out that left it would leave the leak a way back. |
+| An assistant's, for the MCP door (`scopes: ["mcp"]`) | yes | It reaches everything but the auth material, and a full token can mint one. |
+| An app's, from the authorization flow | yes | A full token can approve an app, `full` access included, so the same reason holds. The app asks to be approved again. |
+
+This browser or script is one of them: after a sign out everywhere every
+client signs in again. Sign-in tokens still have no expiry; this is how they
+end at once.
+
+```http
+POST /signout/everywhere
+{"identity": "ada.example.com", "password": "…", "totpCode": "123456"}
+→ 200 {"identity": "ada.example.com", "signedOut": 4}
+```
+
+It takes both current factors in the body and refuses a bearer token, like
+the credential changes below: it is how a person takes the account back from
+a leaked token, so a token is no evidence for it. A password change does the
+same in the same request with `"signOutEverywhere": true`, because the code
+it carries is spent once; its answer carries `signedOut` too. Every open
+stream of every ended token ends with an `auth` error as soon as the sign-out
+commits, and an export or a blob's bytes going out stop between two writes.
+Nothing a token set going before it mints afterwards: a token is minted
+standing on the token that asked for it (`POST /tokens`) or approved it (an
+app's code, exchanged after the approval), checked in the mint's own
+transaction to still authenticate (not revoked, not expired, and its person
+still one who may open the repository), so a mint whose request was
+authenticated before the sign-out, or a code approved before it, is refused.
+
+A sign out everywhere ends every token that exists when it commits. With a
+password change it also ends every sign-in still in flight that proved the
+old password: every door that proves the factors and then acts (a sign-in,
+a credential change, a sign out everywhere, a repository's delete) acts under
+the identity's row, the lock every change of the factors takes, and checks
+there that they are still the ones it proved. A sign-in that proves the
+factors as they stand is a new sign-in, whenever it completes: a sign out
+everywhere that changes no factor does not stop it, because whoever can
+prove the factors can sign in again a moment later. The console offers it under Settings, Signed in, and as an option of
+the password change, and `substratectl logout --everywhere` runs it
+([0272](decisions/0272-signing-out-everywhere-ends-every-token-the-person-holds-and-every-stream-ends-with-its-token.md)).
+
+## What ends with a token
+
+A token is read when a request starts. What happens when it ends while the
+response is still going out depends on whether the server goes on reading
+for that token once the answer has begun:
+
+- **A stream** is a response the server keeps open to send what happens
+  later: the watch, and an agent's event streams. It reads its token before
+  its first byte, then at every batch and every heartbeat, and whenever the
+  repository's changelog moves, and ends when the token is dead: an ordinary
+  `401` before its first byte, a terminal `auth` frame or event after it. It
+  reads the roles of the token's person with it. A change of them ends a
+  watch with no terminal frame, so its client reconnects from its cursor
+  onto the roles held now, and an agent stream `unavailable` (an ordinary
+  `503` before its first event, an `error` event after it), which a client
+  opens again rather than signing in. A read of the token or the roles that
+  cannot be made (a database that did not answer) ends either `unavailable`,
+  a watch with that terminal frame: no stream goes on under what it read
+  before.
+- **A long transfer** is a response with no bound on its size: the export
+  and a blob's bytes. It reads its token before its headers and then between
+  writes, at most once a second, and a dead token, a change of its person's
+  roles, or a read of either that cannot be made cuts it, so that no client
+  can take it for complete: the connection closes mid-body, which a client
+  reads as an unexpected end, and an export's archive lacks its last entry,
+  `snapshot.json`.
+- **Every other response is answered from what was read when it started.**
+  It is authorized then, and it completes: ending a token does not reach
+  back into a request already being answered. A stream and a long transfer
+  go on reading after their first byte (what happens later; a file, piece
+  by piece), which is why they read their token again; nothing here does.
+
+| Route | Class | What it answers from |
+| --- | --- | --- |
+| `GET /api/v1/records?watch=1`, `GET /api/v1/changes?watch=1` | stream | the changelog as it moves, until its client leaves, the server drains, or its token ends |
+| `POST …/core/agent/{name}/chat`, `GET …/llm/thread/{id}/events` | stream | the turn's events as they come, as above; the thread's events with no turn running are one line |
+| `GET /api/v1/export` | long transfer | the repository's directory, read file by file as it goes out |
+| `GET /api/v1/blobs/{digest}` | long transfer | the blob's bytes, written piece by piece |
+| `GET /api/v1/records` | answered from its start | one page, at most 500 records |
+| `GET /api/v1/changes` (`from`, `before`, `first`, `runs`) | answered from its start | one page, at most 500 changes |
+| `GET`, `PUT`, `PATCH`, `DELETE` on a record, `POST /api/v1/records` | answered from its start | one record |
+| `PUT /api/v1/blobs`, `PUT /api/v1/blobs/{digest}` | answered from its start | the stored blob's description |
+| `GET /api/v1/images` | answered from its start | one image, at most 8 MiB |
+| `POST …/core/function/{name}/call` | answered from its start | the function's reply, one frame of at most 8 MiB |
+| `POST …/core/agent/{name}/call` | answered from its start | one turn's result |
+| `* /mcp` | answered from its start | one buffered answer; a tool's result at most 32 KiB |
+| `POST …/applets/applet/{id}/render`, `/preview`, `/act` | answered from its start | one render or one act |
+| `GET /tokens`, `GET …/core/trigger/status`, `GET …/core/trigger/{id}/parked`, `GET /api/v1/sync/status`, `GET …/core/bundle/status`, `GET …/core/trait/{id}/implementors`, `GET /api/v1/units` | answered from its start | one list, unpaged, read whole when the request starts |
+| `GET /api/v1/catalog`, `GET /api/v1/catalog/{id}`, `GET /api/v1/vocabulary/upgrade` | answered from its start | the catalog this server ships |
+| Every other route that takes a token | answered from its start | one answer to one request: a write, a mint, an approval, an apply |
+
+The routes that take no token (discovery, `/healthz`, `/metrics`, the
+console's files, the webhooks, the sign-in and registration doors, the
+authorization server's metadata and token exchange) are no token's to end.
+
 ## The credential, and the password-factor rule
 
-The user's own auth material is one record,
-`substrate.reamde.dev/core/credential` at id `self`. It carries the repository it admits to and
-secret-typed references into the repository's sealed store — one for the
-password hash (argon2id), and one for the TOTP seed and its replay counter
-while the account has a second factor. `totpRef` is absent from an account
-without one, which is how a client reads whether it has one. **The
-material itself never enters the changelog or a record's data**, so the changelog shows
-"the credential changed at T" and nothing crackable, and a rotation deletes the
-old sealed rows in the same transaction rather than piling old hashes into an
-append-only sequence. A backup taken while the old password or TOTP seed was
-current still holds it
+The person's own auth material is their identity's: the password hash
+(argon2id), and the TOTP seed with its replay counter while they have a
+second factor, each sealed under a data key of the identity's own, which the
+host credential key wraps as it wraps a repository's. **The material never
+enters any repository**: no changelog, record or sealed row of a repository
+holds it, and a change of it writes the identity row alone, so no
+repository's history records one. `GET /identity` says whether the person has
+a second factor. A repository registered before identities kept the sign-in
+as its `core/credential` record; the boot gives that repository its identity
+from it, with the same password and the same seed, and the repository's
+first open purges the record. A backup of such a repository taken before
+still holds the record's sealed rows
 ([what older backups keep](operations.md#a-rotated-or-deleted-secret-stays-in-older-backups)).
 
 Three endpoints change auth material, and all three obey one rule:
 
 ```http
-POST /password        # {"repository","password","totpCode","newPassword"} → 200
-POST /totp/enroll     # {"repository","password","totpCode"} → 200 {totpSecret, otpauthUri}
+POST /password        # {"identity","password","totpCode","newPassword"} → 200
+POST /totp/enroll     # {"identity","password","totpCode"} → 200 {totpSecret, otpauthUri}
 POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
 ```
 
-Deleting the repository takes the same factors, and nothing else:
+Deleting a repository takes the same factors and the repository's name:
 
 ```http
-POST /repository/delete  # {"repository","password","totpCode"} → 204
+POST /repository/delete  # {"identity","repository","password","totpCode"} → 204
 ```
 
-It erases every record, token and file the repository holds and frees the
-name for the next registration
-([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
-The console offers it under Settings, Danger zone.
+It erases every record, token and file the repository holds, its archive
+included, and frees its name for the next registration
+([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)),
+so it is an admin's: another person of the repository who proves their own
+factors is answered `403 forbidden`, `not_permitted` ([roles](#roles)).
+A person whose last repository it was goes with it, and their name is free
+too. The console offers it under Settings, Danger zone.
 
 **The password-factor rule: changing auth material requires the current
 password, and the current TOTP code where the account has a second factor,
@@ -305,16 +664,19 @@ console's Settings offers it as **Turn on**. There is no call that turns a
 factor off again; the operator's [reset](#losing-both-factors) issues a new
 one.
 
-This is the one rule that bounds what a leaked token can do. Without it, any
-leaked token could rotate the password and outlive its own revocation; with it,
-a token's blast radius is the data, never the account. It is also why the
-console's Settings page sends no bearer token at all on either change.
+This rule keeps a leaked token from taking the account: without it, a leaked
+token could rotate the password and lock its owner out. It does not stop the
+token from minting more tokens, an assistant's included, or approving an app,
+so revoking the leaked token alone does not end the leak;
+[signing out everywhere](#signing-out-everywhere) does, and it takes the
+factors for the same reason. It is also why the console's Settings page sends
+no bearer token at all on any of these changes.
 
 The generic record API cannot touch either auth kind: the credential cannot be
 put, patched, or deleted through REST or the CLI's record surface,
 and a token can only be **deleted** there, which is exactly revocation. Both
-stay readable and listable. Auth-path writes are attributed to the `substrate`
-actor.
+stay readable and listable. Auth-path writes are made by the repository's
+`system` [actor](api.md#actors).
 
 TOTP is RFC 6238: SHA-1, six digits, a 30-second step, one step of skew either
 way. Codes are one-time — the consumed step is compare-and-swapped under a row
@@ -352,12 +714,15 @@ Everything authenticated is unmetered.
 
 ## Actors are attribution, not authorization
 
-Writes carry an [actor](api.md#actors), and it is worth restating here what it
-is not: an actor is attribution, not authorization. A token holds its whole
-repository whatever name a request puts in `X-Substrate-Actor`, so the header
-unlocks nothing. What it decides is provenance — which property manager a write
-records, which rows a function's trigger excludes as its own, and what the changelog
-says about who did this.
+Every write links an [actor record](api.md#actors), and it is worth restating
+here what it is not: an actor is attribution, not authorization. The server
+derives it from the token, never from the request: a full-access token
+writes as the person, whichever client holds it, and an app's token as its
+app, so there is nothing a request could name and nothing a name could
+unlock. The write also links the token itself, which is how two sign-ins of
+one person read apart. What the actor decides is provenance — which property
+manager a write records, which rows a function's trigger excludes as its own,
+and what the changelog says about who did this.
 
 ## The second factor can be switched off locally
 
@@ -395,11 +760,17 @@ Settings.
 
 ## Losing both factors
 
-There is no self-serve recovery. A user who has lost their factors is reset by
-the operator, on the box, with `substratectl user reset` — which writes fresh sealed
-material and a new credential record and prints a fresh enrollment. The data is
-untouched; the account gets new keys. [Running a substrate](operations.md)
-covers it.
+There is no self-serve recovery. A person who has lost their factors is reset
+by the operator, on the box, with `substratectl user reset <name>`, which
+seals a fresh password hash and seed on their identity and prints a fresh
+enrollment. It writes no repository, so the server keeps running. The data
+is untouched; the person gets new keys. Named by a repository nobody can sign
+in to (one restored without its sign-in), it gives that repository a person:
+the one its person's actor names, under the same id, so the tokens the
+directory carried authenticate again. A repository whose actor names a
+person this server already holds has that person, whom the boot let in:
+the reset is refused, names them, and makes no other.
+[Running a substrate](operations.md#operator-recovery) covers it.
 
 Next: [the changelog and watch](changelog.md), the one changelog every write
 lands in.

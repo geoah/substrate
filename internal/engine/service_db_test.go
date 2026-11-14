@@ -35,8 +35,10 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
-	if info.ID != testdb.Repository(t) {
-		t.Fatalf("repository = %+v", info)
+	// The name is the authority and the id is minted beside it (decision
+	// 0261): the two never coincide.
+	if !vocabulary.ValidRepositoryID(info.ID) || info.Authority != testdb.Repository(t) {
+		t.Fatalf("repository = %+v, want a minted id and the authority %q", info, testdb.Repository(t))
 	}
 	if _, err := svc.CreateRepository(ctx, testdb.Repository(t)); err == nil {
 		t.Fatal("expected a duplicate-repository error")
@@ -51,9 +53,9 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, enginetest.Vocabulary...)
-	// The control plane is a TABLE now, not a repository: one row per user,
-	// carrying the username and the day they arrived and nothing else — the
-	// auth material is sealed rows behind the credential record.
+	// The control plane is a TABLE now, not a repository: one row per
+	// repository, carrying its name and the day it arrived and nothing
+	// else — the person's factors are their identity's, beside it.
 	repos, err := svc.Repositories(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +72,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 			t.Fatalf("the bootstrap credential survived as %q: %v", gone, self.Properties)
 		}
 	}
-	// Type and actor projections are records in every dataset.
+	// Kind projections and actor records are records in every dataset.
 	types, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{Kinds: []string{"substrate.reamde.dev/core/kind"}}, First: 200,
 	})
@@ -99,11 +101,23 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The shipped set is core's four: the three doors (api, console, substratectl)
-	// and the engine's own hand. A connector's actor is minted at dispatch
-	// (`connector:<name>`) and is never declared.
-	if len(actors.Records) != 4 {
-		t.Fatalf("actor projections = %v", ids(actors.Records))
+	// The engine writes an actor record for every hand (decision 0270): the
+	// person and the system from the creation, each installed package and its
+	// functions and agents, and nothing a package declared.
+	actorTypes := map[string]bool{}
+	for _, a := range actors.Records {
+		typ, _ := a.Properties["type"].(string)
+		actorTypes[typ] = true
+	}
+	for _, want := range []string{substrate.ActorTypePerson, substrate.ActorTypeSystem, substrate.ActorTypePackage} {
+		if !actorTypes[want] {
+			t.Fatalf("no %s actor among %v", want, ids(actors.Records))
+		}
+	}
+	for _, id := range []string{vocabulary.ActorID(substrate.ActorPerson), vocabulary.ActorID(substrate.ActorSystem)} {
+		if _, err := ds.Get(ctx, "substrate.reamde.dev/core/actor", id); err != nil {
+			t.Fatalf("actor %s: %v", id, err)
+		}
 	}
 	ti, err := ds.KindByRef(ctx, "samples.substrate.reamde.dev/calendar/calendarevent")
 	if err != nil || ti.Identity != "samples.substrate.reamde.dev/calendar/calendarevent" {
@@ -140,7 +154,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
-	if info2.ID != tok.ID || authDS.Repository().ID != testdb.Repository(t) {
+	if info2.ID != tok.ID || authDS.Repository().ID != info.ID {
 		t.Fatalf("authenticated as %+v / %s", info2, authDS.Repository().ID)
 	}
 	if _, _, err := svc2.Authenticate(ctx, "substrate_tok_deadbeef"); err == nil {
@@ -282,8 +296,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if v, _ := vocabulary.VersionValue(pkg.Properties["version"]); v != 8 || pkg.Properties["source"] != "installed" {
 		t.Fatalf("package projection = %v", pkg.Properties)
 	}
-	// A vocabulary package declares no actors of its own; core's four are the
-	// shipped set, connector actors install with their connector.
+	// No package declares an actor (decision 0270): neither lists one.
 	if actors, _ := pkg.Properties["actors"].([]any); len(actors) != 0 {
 		t.Fatalf("package actors = %v", pkg.Properties["actors"])
 	}
@@ -291,8 +304,8 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("core package projection: %v", err)
 	}
-	if actors, _ := core.Properties["actors"].([]any); len(actors) != 4 {
-		t.Fatalf("core actors = %v", core.Properties["actors"])
+	if actors, ok := core.Properties["actors"]; ok {
+		t.Fatalf("core actors = %v", actors)
 	}
 	// No schema row stores verbatim text: the parsed facts are
 	// the row, and the source view re-renders the definition.
@@ -430,16 +443,18 @@ func TestChangesFilters(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, engram, substrate.PutInput{
+	// Two hands, each its own actor record: an app and the person.
+	app := substrate.AppActor("engram.example.com")
+	task := mustPut(t, ds, app, substrate.PutInput{
 		Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "t", "status": "proposed"},
 	})
 	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"status": "open"}})
 
-	byActor, err := ds.Changes(ctx, 0, substrate.ChangeFilter{Actors: []substrate.Actor{engram}}, 100)
+	byActor, err := ds.Changes(ctx, 0, substrate.ChangeFilter{Actors: []string{vocabulary.ActorID(app)}}, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(byActor) != 1 || byActor[0].Actor != engram {
+	if len(byActor) != 1 || byActor[0].Actor != vocabulary.ActorID(app) {
 		t.Fatalf("actor filter = %+v", byActor)
 	}
 	byType, err := ds.Changes(ctx, 0, substrate.ChangeFilter{

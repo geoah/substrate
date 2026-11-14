@@ -11,10 +11,12 @@ extension ChatApp {
     /// The refresh job the app declares to the system.
     public static let refreshJob = "dev.reamde.substrate.chat.refresh"
     /// The kinds the watch follows: the model records only where the plan
-    /// reads them, since the watch refuses a kind the token cannot read.
-    static func watched(_ plan: ChatAppAsk.Plan) -> [String] {
+    /// reads them, since the watch refuses a kind the token cannot read, and
+    /// the approvals only once a read of them was answered, since it refuses
+    /// a kind the server does not declare.
+    static func watched(_ plan: ChatAppAsk.Plan, approvals: Bool) -> [String] {
         [Kinds.thread, Kinds.message, Kinds.agent, Kinds.provider, Kinds.interaction, Kinds.request]
-            + (plan.canReadModels ? [Kinds.model] : [])
+            + (plan.canReadModels ? [Kinds.model] : []) + (approvals ? [Kinds.approval] : [])
     }
 
     public func perform(_ effect: Effect, in environment: AppEnvironment) -> Work<Event> {
@@ -242,6 +244,8 @@ extension ChatApp {
                     switch reference {
                     case let .question(id):
                         return Event(.cardRead(id, try await client.record(Kinds.interaction, id), target: nil))
+                    case let .approval(id):
+                        return Event(.cardRead(id, try await client.record(Kinds.approval, id), target: nil))
                     case let .suggestion(id):
                         let request = try await client.record(Kinds.request, id)
                         // The target is context, and often out of the token's reach.
@@ -445,10 +449,11 @@ extension ChatApp {
         error.status == 422 && error.code == "validation" && error.message.contains("unknown type \"\(Kinds.model)\"")
     }
 
-    /// The questions and suggestions waiting on the owner. An app's token
-    /// lists them only under the threads it names (the server pages before
-    /// it could filter otherwise), a batch at a time; the suggestions are
-    /// readable only with `decide:`.
+    /// The questions, suggestions and approvals waiting on the owner. An
+    /// app's token lists them only under the threads it names (the server
+    /// pages before it could filter otherwise), a batch at a time; the
+    /// suggestions are readable only with `decide:`. A refused approvals
+    /// read is no failure: a server older than the kind holds none.
     static func cards(_ client: SubstrateClient, _ plan: ChatAppAsk.Plan, threads: [String]) async throws -> ChatAppStep.Cards {
         guard plan.canChat else { return ChatAppStep.Cards(interactions: [], requests: []) }
         @Sendable func read(_ kind: String, _ condition: [String: JSONValue]) async throws -> [Record] {
@@ -465,7 +470,11 @@ extension ChatApp {
         }
         async let interactions = read(Kinds.interaction, ["state": ["eq": "pending"]])
         async let requests: [Record] = plan.canDecide ? read(Kinds.request, ["decision": ["eq": "proposed"]]) : []
-        return try await ChatAppStep.Cards(interactions: interactions, requests: requests)
+        // Only a read the server answered says it knows the kind: an app's
+        // token naming no thread asks nothing.
+        let asksApprovals = !(plan.namesThreads && threads.isEmpty)
+        async let approvals: [Record]? = asksApprovals ? try? read(Kinds.approval, ["state": ["eq": "pending"]]) : nil
+        return try await ChatAppStep.Cards(interactions: interactions, requests: requests, approvals: approvals)
     }
 
     /// Everything the list draws. The watch resumes from the earliest head
@@ -527,11 +536,12 @@ extension ChatApp {
                 out.failure = Failure(error, server: client.server)
             }
         }
-        if kinds.contains(Kinds.interaction) || kinds.contains(Kinds.request) {
+        let cardKinds: Set<String> = [Kinds.interaction, Kinds.request, Kinds.approval]
+        if !kinds.isDisjoint(with: cardKinds) {
             do {
                 out.cards = try await cards(client, plan, threads: known)
             } catch {
-                out.failed.formUnion(batch.filter { $0.kind == Kinds.interaction || $0.kind == Kinds.request })
+                out.failed.formUnion(batch.filter { cardKinds.contains($0.kind) })
                 out.failure = Failure(error, server: client.server)
             }
         }

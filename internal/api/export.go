@@ -13,22 +13,21 @@ import (
 )
 
 // exportRoute is the owner's recovery export, a non-record endpoint at the
-// version root (decision 0069).
+// version root (decisions 0069, 0278).
 const exportRoute = "/export"
 
-// getExport is GET /api/v1/export: the repository's directory as of one
-// committed point, streamed as a tar (`application/x-tar`) laid out as a data
-// root, with `snapshot.json` recording the point as its last entry. The
-// bearer token is the whole credential: a token already reads every record
-// and blob the archive carries, and its sealed files are ciphertext under a
-// key the archive does not hold.
+// getExport is GET /api/v1/export: the repository as of one committed point,
+// streamed as a tar (`application/x-tar`) in the archive's layout, with the
+// manifest naming the point as its last entry. The bearer token is the whole
+// credential: a token already reads every record and blob the archive
+// carries, and its sealed files are ciphertext under a key the archive does
+// not hold.
 //
-// The point is pinned before the status is written, so a refusal (a read-only
-// process, a directory latched behind the tables) is an ordinary error body.
-// Once the point is pinned the 200 is flushed at once, and a failure while
-// streaming cannot take it back: the response is aborted instead, which a
-// client reads as an unexpected end of the body, and the archive's missing
-// `snapshot.json` says the same to whoever extracts what arrived. A client
+// The point is pinned before the status is written, so a refusal is an
+// ordinary error body. Once the point is pinned the 200 is flushed at once,
+// and a failure while streaming cannot take it back: the response is aborted
+// instead, which a client reads as an unexpected end of the body, and the
+// missing manifest says the same to whoever extracts what arrived. A client
 // that takes longer than streamWriteDeadline over one write, and every export
 // still running when the server starts to shut down, ends the same way.
 func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +35,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	ds := DatasetFrom(ctx)
 	export, err := ds.Export(ctx)
 	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	// A long transfer reads its token before its headers, afresh: one that
+	// died while the point was pinned is an ordinary refusal, and the pin is
+	// let go, as a written export lets it go.
+	if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
+		export.Close()
 		writeSubstrateError(w, r, err)
 		return
 	}
@@ -49,7 +56,7 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 	// is a cut body, never a request that got no answer.
 	rc := http.NewResponseController(w)
 	_ = rc.Flush()
-	if _, err := export.WriteTo(&exportWriter{w: w, rc: rc, draining: h.draining}); err != nil {
+	if _, err := export.WriteTo(&exportWriter{ctx: ctx, w: w, rc: rc, draining: h.draining}); err != nil {
 		// A client that leaves mid-stream fails the next write to it with an
 		// error carrying no context.Canceled, so the request's own context is
 		// what says the client went away. net/http cancels that context on
@@ -57,6 +64,12 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 		// apart first.
 		attrs := append(requestLogAttrs(r), "head", point.Head, "error", err)
 		switch {
+		case errors.Is(err, errLeaseEnded):
+			slog.Info("export aborted mid-stream: its token was revoked or ran out", attrs...)
+		case errors.Is(err, errRolesChanged):
+			slog.Info("export aborted mid-stream: the roles of the person who took it changed", attrs...)
+		case errors.Is(err, errLeaseUnread):
+			slog.Warn("export aborted mid-stream: its token or its person's roles could not be read again", attrs...)
 		case errors.Is(err, os.ErrDeadlineExceeded):
 			slog.Warn("export aborted mid-stream: the client stopped reading", attrs...)
 		case errors.Is(ctx.Err(), context.Canceled):
@@ -76,10 +89,14 @@ func (h *handler) getExport(w http.ResponseWriter, r *http.Request) {
 var errShuttingDown = errors.New("the server is shutting down")
 
 // exportWriter is the export's view of the response: every write has
-// streamWriteDeadline to reach the client, and none starts once the server is
+// streamWriteDeadline to reach the client, none starts once the server is
 // shutting down, because http.Server.Shutdown waits for the export and an
-// archive of many gigabytes outlasts any shutdown budget.
+// archive of many gigabytes outlasts any shutdown budget, and none starts
+// once the token that asked for it no longer stands (decision 0272): an
+// archive is the whole repository, and a person signing out everywhere wants
+// it stopped. It reads the token between writes, at most once a second.
 type exportWriter struct {
+	ctx      context.Context
 	w        io.Writer
 	rc       *http.ResponseController
 	draining <-chan struct{}
@@ -90,6 +107,9 @@ func (e *exportWriter) Write(p []byte) (int, error) {
 	case <-e.draining:
 		return 0, errShuttingDown
 	default:
+	}
+	if err := leaseFrom(e.ctx).alive(e.ctx, leaseTransferEvery); err != nil {
+		return 0, err
 	}
 	_ = e.rc.SetWriteDeadline(time.Now().Add(streamWriteDeadline))
 	return e.w.Write(p)

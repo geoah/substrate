@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // maxURL bounds every URL this package accepts, so a request cannot park
@@ -214,4 +216,25 @@ func HostOf(raw string) string {
 		return ""
 	}
 	return u.Host
+}
+
+// AppActorFor is the actor an app's token writes under, from what its
+// approval proved (decision 0209): `app:<authority>` when authority was
+// verified as its publisher, `app:local` when its client id or the redirect
+// it was approved for is a loopback address, `app:<host>` of its client id
+// otherwise, and the person for a client id that names no host. The server
+// and the engine both derive it, the first to write as the app and the
+// second to write the app's actor record at its approval.
+func AppActorFor(clientID, authority string, local bool) substrate.Actor {
+	if authority != "" {
+		return substrate.AppActor(authority)
+	}
+	if c, err := ParseClientID(clientID); local || (err == nil && c.Local) {
+		return substrate.AppActorLocal
+	}
+	u, err := url.Parse(clientID)
+	if err != nil || u.Host == "" {
+		return substrate.ActorPerson
+	}
+	return substrate.AppActor(u.Host)
 }

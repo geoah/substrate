@@ -185,7 +185,7 @@ func feedMessage(t *testing.T, ds *dataset, id, personID, convID, text string) *
 
 func mustPutInternal(t *testing.T, ds *dataset, in substrate.PutInput) *substrate.Record {
 	t.Helper()
-	e, err := ds.Put(context.Background(), substrate.ActorAPI, in)
+	e, err := ds.Put(context.Background(), substrate.ActorPerson, in)
 	if err != nil {
 		t.Fatalf("put %s/%s: %v", in.Kind, in.ID, err)
 	}
@@ -200,14 +200,14 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	importVocabulary(t, ds, "messaging")
-	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorAPI); err != nil {
+	if err := enginetest.InstallAccountType(ctx, ds, substrate.ActorPerson); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
 
 	// Write the row the shipped agents name, pointing at the fake server.
 	// Creation seeds openai keyless; this put keys it and aims it at the fake.
 	fake := newFakeLLM(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "openai",
 		Properties: map[string]any{
 			"label": "openai", "wire": "openai",
@@ -219,7 +219,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 
 	// --- install the bundle atomically, from the shipped manifests ---------
 	vocabularyDocs := loadYAMLDocs(t, exampleDir+"/bundle.yaml")
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, vocabularyDocs); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, vocabularyDocs); err != nil {
 		t.Fatalf("install the reading-list bundle: %v", err)
 	}
 	row, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", rlPackage)
@@ -341,7 +341,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		blogPage).Scan(&classActor); err != nil {
 		t.Fatalf("the class-patch changelog row: %v", err)
 	}
-	if substrate.Actor(classActor) != substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/pageclassifier")) {
+	if classActor != vocabulary.ActorID(substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/pageclassifier"))) {
 		t.Fatalf("class patched by %q, not the classifier agent", classActor)
 	}
 
@@ -355,7 +355,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		ORDER BY c.seq LIMIT 1`, vocabulary.KindRecordPatchRequest).Scan(&reqID, &reqActor); err != nil {
 		t.Fatalf("the reading-list proposal: %v", err)
 	}
-	if substrate.Actor(reqActor) != substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/curator")) {
+	if reqActor != vocabulary.ActorID(substrate.AgentActor(vocabulary.SplitKindRef(rlPackage+"/curator"))) {
 		t.Fatalf("proposal authored by %q, not the curator", reqActor)
 	}
 	var target string
@@ -431,7 +431,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the proposal: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, reqID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, reqID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &reqEnt.Version,
 	}); err != nil {
 		t.Fatalf("approve the proposal: %v", err)

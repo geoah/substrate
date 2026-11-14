@@ -95,7 +95,7 @@ func aggregateToolFixture(t *testing.T) *dataset {
 	if err := enginetest.InstallCatalogues(ctx, ds, "health"); err != nil {
 		t.Fatalf("install the health catalogue: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: obsPackage + "/source", ID: fid("scale"),
 		Properties: map[string]any{"name": "Scale"},
 	}); err != nil {
@@ -103,7 +103,7 @@ func aggregateToolFixture(t *testing.T) *dataset {
 	}
 	day := time.Date(2026, 9, 1, 7, 0, 0, 0, time.UTC)
 	for d := range 3 {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: obsPackage + "/observation", ID: fid(fmt.Sprintf("w/%d", d)), Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: obsPackage + "/observation", ID: fid(fmt.Sprintf("w/%d", d)), Properties: map[string]any{
 			"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
 			"source": map[string]any{"ref": obsPackage + "/source/" + fid("scale")},
 			"value":  map[string]any{"value": fmt.Sprintf("7%d.5", d), "unit": "kg"}, "at": day.AddDate(0, 0, d).Format(time.RFC3339),
@@ -282,13 +282,13 @@ func TestAggregateRankingBySourcePrioritiesHoldsTheSourceKind(t *testing.T) {
 	observation := obsPackage + "/observation"
 	source := obsPackage + "/source"
 	for id, rank := range map[string]int{fid("scale"): 1, fid("watch"): 2} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: source, ID: id, Properties: map[string]any{
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: source, ID: id, Properties: map[string]any{
 			"name": id, "priorities": map[string]any{obsPackage + "/metric/health/body_mass": rank},
 		}}); err != nil {
 			t.Fatalf("put the %s: %v", id, err)
 		}
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: observation, ID: fid("w/watch"), Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: observation, ID: fid("w/watch"), Properties: map[string]any{
 		"metric": map[string]any{"ref": obsPackage + "/metric/health/body_mass"}, "form": "gauge", "hold": "PT0S",
 		"source": map[string]any{"ref": source + "/" + fid("watch")},
 		"value":  map[string]any{"value": "80.5", "unit": "kg"}, "at": "2026-09-01T07:00:00Z",

@@ -1,8 +1,13 @@
 package engine
 
 import (
+	"database/sql"
+	"errors"
+	"slices"
 	"sync"
 	"time"
+
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // The seams a test outside this package drives: the acceptance drill in
@@ -36,6 +41,30 @@ func WithTestHealthClock(now func() time.Time) Option {
 	return func(o *options) { o.healthNow = now }
 }
 
+// WithTestNamesClock is the clock a repository's former name lapses on
+// (repositorynames.go), and nothing else. A test advances it past the hold
+// instead of waiting 90 days.
+func WithTestNamesClock(now func() time.Time) Option {
+	return func(o *options) { o.namesNow = now }
+}
+
+// WithTestRetryClock is the clock the walk of temporary failures reads a
+// retry's due time on (temporaryretry.go), and nothing else: the parked row's
+// time and every record timestamp stay on the wall clock. A test advances it
+// past a gap instead of sleeping through one.
+func WithTestRetryClock(now func() time.Time) Option {
+	return func(o *options) { o.retryNow = now }
+}
+
+// WithTestScheduleClock is the clock a schedule trigger's due occurrences
+// are read on (dataset.scheduleNow): what a pass fires and what a status
+// read counts as owed. Every record timestamp stays on the wall clock. A
+// test holds it inside one hour, so an hourly rule's latest occurrence does
+// not move under it.
+func WithTestScheduleClock(now func() time.Time) Option {
+	return func(o *options) { o.scheduleNow = now }
+}
+
 // TOTPPeriod is the verifier's step, for a test that moves its clock one.
 const TOTPPeriod = totpPeriod
 
@@ -63,8 +92,9 @@ func (c *TestClock) Advance(d time.Duration) {
 
 // WithTestImportFault runs fn at each durable step of a boot import
 // (repodir.go importEntries): after every batch of changelog rows commits,
-// with ImportAfterBatch, and after the first fold pass commits, with
-// ImportAfterFirstFold. An error from fn ends the boot there, which is the
+// with ImportAfterBatch, and inside the refold's one transaction, after its
+// first replay and before its commit, with RefoldAfterFirstReplay and
+// RefoldBeforeCommit. An error from fn ends the boot there, which is the
 // shape of a process dying at that step. A batch above zero replaces
 // rebuildBatch for the import's row batches, so a short history spans
 // several.
@@ -72,10 +102,81 @@ func WithTestImportFault(batch int, fn func(stage string) error) Option {
 	return func(o *options) { o.importFault, o.importBatch = fn, batch }
 }
 
+// WithTestReplay runs page after each page of every replay (rebuild.go
+// txn.rebuild) with the seq it reached, and end at the replay's end, both
+// inside its transaction and before it commits, so a test can act beside a
+// replay and read what its transaction does: Postgres's counts of its own
+// reads, or the plans its statements get. Either may be nil. Tests only.
+func WithTestReplay(page func(seq int64, tx *sql.Tx), end func(tx *sql.Tx)) Option {
+	return func(o *options) { o.replayPage, o.replayEnd = page, end }
+}
+
+// WithTestStatisticsLockTimeout replaces the ten minutes the reset before a
+// replay and the ANALYZE after it wait for a table's lock, so a test can hold
+// the lock past it. Tests only.
+func WithTestStatisticsLockTimeout(d time.Duration) Option {
+	return func(o *options) { o.statisticsLockTimeout = d }
+}
+
+// WithTestReplaySQL runs fn with every statement a replay runs through its
+// transaction, so a test can hold the list of the fold's statements to what
+// it checks. Tests only.
+func WithTestReplaySQL(fn func(sqlText string)) Option {
+	return func(o *options) { o.replaySQL = fn }
+}
+
+// WithTestActorFillOff skips the open's actor fill (actorfill.go), so a
+// test can hold a repository as a binary from before the fill left it: the
+// actor records its history links and migration 9 never wrote still
+// missing, and no mark.
+func WithTestActorFillOff() Option {
+	return func(o *options) { o.noActorFill = true }
+}
+
+// WithTestRulesFault runs fn before each read of the rules a check holds a
+// hand to (ruleFault): a token's row, a person's roles, an app's grant, the
+// holders of a piece of work. An error fails that read, as a database that
+// did not answer would.
+func WithTestRulesFault(fn func(what string) error) Option {
+	return func(o *options) { o.rulesFault = fn }
+}
+
+// ruleFault is the rules' read seam (WithTestRulesFault): nil outside tests.
+func (s *service) ruleFault(what string) error {
+	if s.testRulesFault == nil {
+		return nil
+	}
+	return s.testRulesFault(what)
+}
+
+// WithTestEraseFault runs fn at each durable step of a repository's
+// deletion (repositories.go eraseRepositoryOn); an error stops the deletion
+// there, as a process killed there would.
+func WithTestEraseFault(fn func(stage string) error) Option {
+	return func(o *options) { o.eraseFault = fn }
+}
+
+// The deletion's stages WithTestEraseFault reports.
+const (
+	EraseAfterBegan         = eraseAfterBegan
+	EraseAfterMark          = eraseAfterMark
+	EraseAfterArchiveObject = eraseAfterArchiveObject
+	EraseAfterArchive       = eraseAfterArchive
+	EraseAfterDirectory     = eraseAfterDirectory
+)
+
 // The import stages WithTestImportFault reports.
 const (
-	ImportAfterBatch     = importAfterBatch
-	ImportAfterFirstFold = importAfterFirstFold
+	ImportAfterRow         = importAfterRow
+	ImportAfterSealed      = importAfterSealed
+	ImportBeforeCleanup    = importBeforeCleanup
+	CleanupSetAside        = changelogfile.RemoveHistorySetAside
+	CleanupPartly          = changelogfile.RemoveHistoryPartly
+	ImportAfterBatch       = importAfterBatch
+	RefoldAfterFirstReplay = refoldAfterFirstReplay
+	RefoldBeforeCommit     = refoldBeforeCommit
+	TakeAfterStaged        = takeAfterStaged
+	TakeAfterStaging       = takeAfterStaging
 )
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is
@@ -83,4 +184,139 @@ const (
 // that must act mid-fire (stop the server, retry it by hand) can wait for.
 func WithTestInvokeHook(fn func(function string)) Option {
 	return func(o *options) { o.invokeHook = fn }
+}
+
+// WithTestConversionStep adds one step to the conversion chain, a dialect
+// past the chain the binary carries, which rewrites every line with line: a
+// step no release ships, so a test runs a chain that is not empty over what
+// it imports, as the kept directories' comparison does with the difference
+// it expects of that step. Tests only.
+func WithTestConversionStep(name string, line func(e *changelogfile.Entry) error) Option {
+	return func(o *options) {
+		base := o.conversion
+		if base == nil {
+			base = conversionSteps
+		}
+		o.conversion = append(slices.Clone(base), conversionStep{Dialect: chainDialect(base) + 1, Name: name, Line: line})
+	}
+}
+
+// WithTestNameDoorsOpen lets a rename and an import under another name take
+// a name the repository holds a package under, which their early refusals
+// refuse (repositorynames.go), so a test can build the state the spellings
+// hold to.
+func WithTestNameDoorsOpen() Option {
+	return func(o *options) { o.nameDoorsOpen = true }
+}
+
+// WithTestAfterTitleRounds runs fn inside the open's title pass
+// (localtitles.go) once its rounds have ended and before it writes, so a
+// test can see what the pass holds then.
+func WithTestAfterTitleRounds(fn func()) Option {
+	return func(o *options) { o.afterTitleRounds = fn }
+}
+
+// WithTestAfterProof runs fn with the door's name (`login`, `password`,
+// `totp`, `signout`, `delete`, `register`) once a request has proved the
+// factors and before it acts, so a test can hold it there while the factors
+// change.
+func WithTestAfterProof(fn func(door string)) Option {
+	return func(o *options) { o.afterProof = fn }
+}
+
+// WithTestCommitTx hands every COMMIT to fn, which answers in its place: it
+// may run commit, hold it, run it in its own time and answer first, or not
+// run it at all (the transaction is then rolled back).
+func WithTestCommitTx(fn func(commit func() error) error) Option {
+	return func(o *options) { o.commitTx = fn }
+}
+
+// WithTestTokenProof runs fn before each attempt to prove that a commit in
+// doubt which moved a token has ended; an error fails that attempt, and the
+// next one follows.
+func WithTestTokenProof(fn func() error) Option {
+	return func(o *options) { o.tokenProof = fn }
+}
+
+// WithTestTokenProofAttempt is how long one attempt at that proof waits for
+// the lock before it counts as failed.
+func WithTestTokenProofAttempt(d time.Duration) Option {
+	return func(o *options) { o.tokenProofAttempt = d }
+}
+
+// WithTestCommitInDoubt answers a write's commit with an error after Postgres
+// committed it, for each write fail reports true: the shape of a connection
+// lost at the commit's answer (dataset.go commit), the CommitInDoubt stage of
+// the in-package commit seam. The write's error path runs as it would for a
+// real loss.
+func WithTestCommitInDoubt(fail func() bool) Option {
+	return func(o *options) {
+		o.commitFault = func(stage string) error {
+			if stage == commitInDoubt && fail() {
+				return errTestCommitInDoubt
+			}
+			return nil
+		}
+	}
+}
+
+var errTestCommitInDoubt = errors.New("substrate/engine: the test lost the commit's answer")
+
+// WithTestChangeReadHook runs fn with the repository each time a stream
+// following the changelog's tail (substrate.WithTailRead) reads the table's
+// rows (changetail.go): the read every stream of a repository shares, or the
+// read of one whose cursor is below the shared window.
+func WithTestChangeReadHook(fn func(repository string)) Option {
+	return func(o *options) { o.changeReadHook = fn }
+}
+
+// WithTestArchiveFault runs fn at each durable step of an archive pass, so a
+// test stops the pass there by returning an error, as a process killed there
+// stops it, and WithArchivePieceBytes cuts pieces small, so a short history
+// spans several. Tests only.
+func WithTestArchiveFault(fn func(stage string) error) Option {
+	return func(o *options) { o.archiveFault = fn }
+}
+
+// WithArchivePieceBytes sets the size archive pieces are cut at.
+func WithArchivePieceBytes(n int64) Option { return func(o *options) { o.archivePieceBytes = n } }
+
+// The archive pass's stages WithTestArchiveFault reports.
+const (
+	ArchiveAfterSpool     = archiveAfterSpool
+	ArchiveAfterListing   = archiveAfterListing
+	ArchiveAfterObjectRow = archiveAfterObjectRow
+	ArchiveAfterObjectPut = archiveAfterObjectPut
+	ArchiveAfterBlobs     = archiveAfterBlobs
+	ArchiveAfterSealed    = archiveAfterSealed
+	ArchiveAfterPiece     = archiveAfterPiece
+	ArchiveAfterPending   = archiveAfterPending
+	ArchiveAfterManifest  = archiveAfterManifest
+	ArchiveAfterPublished = archiveAfterPublished
+	ArchiveAfterMark      = archiveAfterMark
+	ArchiveAfterDeleteRow = archiveAfterDeleteRow
+	ArchiveAfterDeleteHit = archiveAfterDeleteHit
+	ArchiveAfterDelete    = archiveAfterDelete
+)
+
+// WithArchiveStepBytes sets how many blob bytes a pass copies before it
+// publishes (DefaultArchiveStepBytes).
+func WithArchiveStepBytes(n int64) Option { return func(o *options) { o.archiveStepBytes = n } }
+
+// WithTestEndOfTransactionCheck adds a check to every transaction's
+// end-of-transaction checks (dataset.go inTxOn), beside the declared units
+// and the metric rules: check is handed whether the declarations the
+// transaction leaves hold a package, and its error refuses the transaction,
+// as one of those checks would.
+func WithTestEndOfTransactionCheck(check func(declares func(pkg string) bool) error) Option {
+	return func(o *options) { o.endOfTxCheck = check }
+}
+
+// WithTestShippedUpgradeRefusal adds refusal lines to a repository's shipped
+// upgrade guards (seed.go), so an open refuses the upgrade as a binary did
+// before a guard was mended: the repository serves on the declarations it
+// stored, and the next open without the hook upgrades it. refuse answers the
+// lines for one repository's id, none to let it upgrade.
+func WithTestShippedUpgradeRefusal(refuse func(repository string) []string) Option {
+	return func(o *options) { o.shippedRefusal = refuse }
 }

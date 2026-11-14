@@ -21,8 +21,11 @@ type Context struct {
 	Name       string `yaml:"name"`
 	Server     string `yaml:"server"`
 	Repository string `yaml:"repository,omitempty"`
-	Token      string `yaml:"token,omitempty"`
-	TokenID    string `yaml:"tokenId,omitempty"`
+	// Identity is the name the person signed in with (decision 0274), which
+	// `logout --everywhere` signs out.
+	Identity string `yaml:"identity,omitempty"`
+	Token    string `yaml:"token,omitempty"`
+	TokenID  string `yaml:"tokenId,omitempty"`
 }
 
 // Config is the on-disk CLI configuration. The file holds bearer secrets and

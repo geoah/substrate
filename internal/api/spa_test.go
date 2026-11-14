@@ -36,7 +36,7 @@ func TestSPAHandlerServesNestedPathsWithDots(t *testing.T) {
 	}
 
 	h := New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  dir,
 	})
@@ -85,7 +85,7 @@ func TestSPAHandlerMissingAssetIsNotFound(t *testing.T) {
 	}
 
 	h := New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  dir,
 	})
@@ -143,7 +143,7 @@ func TestSPAHandlerCacheHeaders(t *testing.T) {
 	}
 
 	h := New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  dir,
 	})
@@ -199,7 +199,7 @@ func TestSPAHandlerRefusesTraversal(t *testing.T) {
 	}
 
 	h := New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  dir,
 	})
@@ -273,7 +273,7 @@ func TestSPAHandlerServesGzipAssets(t *testing.T) {
 	}
 
 	h := New(Config{
-		Service: newFakeService(),
+		Service: &stubService{},
 		Now:     func() time.Time { return time.Unix(1_700_000_000, 0).UTC() },
 		WebDir:  dir,
 	})

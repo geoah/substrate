@@ -37,6 +37,7 @@ import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
   departsFromDefault,
   holderOf,
+  marked,
   mappingLabel,
   mappingOfSource,
 } from "@/lib/provenance"
@@ -92,9 +93,7 @@ function Label({
                     value: (
                       <span className="inline-flex flex-wrap items-center gap-x-1.5">
                         {holder.label}
-                        {row.meta?.updatedAt
-                          ? ` · ${ago(row.meta.updatedAt)}`
-                          : ""}
+                        {row.meta?.setAt ? ` · ${ago(row.meta.setAt)}` : ""}
                         {onDetails && (
                           <button
                             type="button"
@@ -187,7 +186,7 @@ function StructuredRow({
 }) {
   const locked = Boolean(row.lock && row.lock !== "provider" && row.filled)
   const chip = Boolean(
-    row.filled && row.meta?.manager && (holders || departsFromDefault(row.meta))
+    row.filled && marked(row.meta) && (holders || departsFromDefault(row.meta))
   )
   return (
     <div
@@ -213,7 +212,7 @@ function StructuredRow({
             <Label
               row={row}
               id={labelId}
-              onDetails={row.meta?.manager ? onDetails : undefined}
+              onDetails={marked(row.meta) ? onDetails : undefined}
             />
           }
           aside={
@@ -252,7 +251,7 @@ function StructuredRow({
           {error}
         </p>
       )}
-      {detailOpen && row.meta?.manager && (
+      {detailOpen && marked(row.meta) && (
         <OwnershipDetail
           row={row}
           record={record}
@@ -376,7 +375,7 @@ export function PropertySheet({
 
   /** The mapping behind a row's synced value, off the record's own links. */
   function throughOf(row: SheetRow): Through | undefined {
-    const source = row.meta?.source
+    const source = row.meta?.derivedFrom?.[0]?.ref
     const id = source && mappingOfSource(record.linkedFrom ?? [], source)
     if (!source || !id) return undefined
     const from = splitRecordPath(source)?.kind ?? source
@@ -420,7 +419,7 @@ export function PropertySheet({
         const chip = Boolean(
           row.filled &&
           !isEditing &&
-          row.meta?.manager &&
+          marked(row.meta) &&
           (holders || departsFromDefault(row.meta))
         )
         const provenance = !isEditing && (locked || chip)
@@ -437,7 +436,7 @@ export function PropertySheet({
               row={row}
               id={`${uid}-${row.name}-label`}
               onDetails={
-                row.meta?.manager ? () => toggleDetail(row.name) : undefined
+                marked(row.meta) ? () => toggleDetail(row.name) : undefined
               }
             />
             <div
@@ -573,7 +572,7 @@ export function PropertySheet({
                 {rowErrors[row.name]}
               </p>
             )}
-            {detailOpen && row.meta?.manager && (
+            {detailOpen && marked(row.meta) && (
               <OwnershipDetail
                 row={row}
                 record={record}

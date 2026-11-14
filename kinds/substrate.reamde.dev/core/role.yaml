@@ -1,0 +1,45 @@
+# A role: what the people who hold it may read and write (decision 0275).
+# The engine writes the three that ship and nothing else writes one at 1.0;
+# a role a repository writes itself waits for the door that adds people.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/core/role
+data:
+  authority: substrate.reamde.dev
+  package: core
+  description: >-
+    What the people who hold it may read and write in this repository: a named
+    list of rules, each a list of verbs over a list of kinds. Rules only add.
+    Admin, editor and viewer ship, and nothing is called owner.
+  purpose: internal
+  names:
+    singular: role
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the role's name, as people read it
+    description:
+      type: string
+      description: what the role lets its people do
+    rules:
+      type: object
+      repeated: true
+      description: what the role allows, each rule adding to the others
+      fields:
+        verbs:
+          type: enum
+          repeated: true
+          required: true
+          values:
+            - read
+            - write
+          description: what the rule allows over its kinds; write includes
+            read
+        kinds:
+          type: string
+          repeated: true
+          required: true
+          description: the kinds the rule covers, as a scope names them; a
+            control kind or sign-in material only by its own reference

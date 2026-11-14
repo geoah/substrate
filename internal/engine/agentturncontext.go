@@ -88,11 +88,15 @@ func zoneOf(row *erow, err error) *time.Location {
 	return loc
 }
 
-// guardTimezoneSetting holds the repository's zone to what the engine reads
-// it as: an empty value (UTC) or a zone this server loads.
+// guardTimezoneSetting holds a repository zone a write names to what every
+// host reads the same: an empty value (UTC), or a name the IANA database
+// holds, spelled as it spells it (zoneNamed), that this server loads.
 func guardTimezoneSetting(value string) error {
 	if value == "" {
 		return nil
+	}
+	if value != "Local" && !zoneNamed(value) {
+		return fmt.Errorf("%w: setting %s: %q is not an IANA time zone name, spelled as the IANA database spells it", substrate.ErrValidation, timezoneSettingID, value)
 	}
 	if _, err := loadZone(value); err != nil {
 		return fmt.Errorf("%w: setting %s: %w", substrate.ErrValidation, timezoneSettingID, err)
@@ -192,7 +196,10 @@ func (ds *dataset) contextRecord(ctx context.Context, ag *vocabulary.Agent, path
 	if err != nil {
 		return nil, fmt.Errorf("%w: context %s: %w", substrate.ErrValidation, path, err)
 	}
-	scope := queryScope{kinds: ag.Reads.Kinds}
+	scope, err := ds.heldScope(ctx, queryScope{kinds: ag.Reads.Kinds})
+	if err != nil {
+		return nil, fmt.Errorf("context %s: %w", path, err)
+	}
 	if !scope.allows(ty.Identity) {
 		return nil, fmt.Errorf("%w: context %s: agent %s does not read %s: add it to the agent's reads, or ask another agent",
 			substrate.ErrValidation, path, ag.Identity(), ty.Identity)

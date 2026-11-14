@@ -42,7 +42,7 @@ func healthAgentDataset(t *testing.T) (*dataset, *fakeLLM, string, *TestClock) {
 	clock := &TestClock{}
 	ds := openInternalDataset(t, WithHealthFailingAfter(healthWindow), WithTestHealthClock(clock.Now))
 	fake := provisionAgents(t, ds)
-	tr, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -57,7 +57,7 @@ func healthAgentDataset(t *testing.T) (*dataset, *fakeLLM, string, *TestClock) {
 
 func putCrewWidget(t *testing.T, ds *dataset, id string) {
 	t.Helper()
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: id, Properties: map[string]any{"name": id},
 	}); err != nil {
 		t.Fatalf("put widget %s: %v", id, err)
@@ -213,7 +213,7 @@ func TestATriggerWhoseEveryDeliveryFailsForTheWindowReadsFailingAndOneOkClearsIt
 		kindAlert, a.ID).Scan(&actor); err != nil {
 		t.Fatal(err)
 	}
-	if substrate.Actor(actor) != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/scribe")) {
+	if actor != vocabulary.ActorID(substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/scribe"))) {
 		t.Fatalf("the alert was written by %q, want the scribe's actor", actor)
 	}
 
@@ -322,7 +322,7 @@ func TestAFailedHandRetryAfterAResolveReopensTheAlert(t *testing.T) {
 	clock.Advance(pastTheWindow)
 	healthPass(t, ds)
 	a := requireAlertState(t, ds, triggerID, alertStateOpen)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, kindAlert, a.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, kindAlert, a.ID, substrate.PatchInput{
 		Properties: map[string]any{"state": alertStateResolved},
 	}); err != nil {
 		t.Fatalf("resolve by hand: %v", err)
@@ -429,7 +429,7 @@ func TestAFailingScheduleTriggerFailsItsSync(t *testing.T) {
 	clock := &TestClock{}
 	s := nowUTC().Add(-90 * time.Minute).Truncate(time.Minute)
 	ds := supersedeDatasetOn(t, openInternalDataset(t, WithHealthFailingAfter(healthWindow), WithTestHealthClock(clock.Now)), s, "update")
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: supersedeJob, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -602,7 +602,7 @@ func TestAnOpenFailingAlertWithNoStandingParkResolvesAtTheNextPass(t *testing.T)
 		kindAlert, resolved.ID).Scan(&actor); err != nil {
 		t.Fatal(err)
 	}
-	if substrate.Actor(actor) != substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/scribe")) {
+	if actor != vocabulary.ActorID(substrate.AgentActor(vocabulary.SplitKindRef(crewPackage+"/scribe"))) {
 		t.Fatalf("the resolve was written by %q, want the scribe's actor", actor)
 	}
 	if st := triggerStatusOf(t, ds, triggerID); st.Health != substrate.HealthOK || st.FailingSince != nil {
@@ -629,7 +629,7 @@ func TestDeletingATriggerResolvesItsAlerts(t *testing.T) {
 		t.Fatalf("the parked-deliveries alert is %v, want open", a)
 	}
 
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete the trigger: %v", err)
 	}
 	clock.Advance(2 * time.Minute)
@@ -658,7 +658,8 @@ func alertWriter(t *testing.T, ds *dataset, id string) substrate.Actor {
 		kindAlert, id).Scan(&actor); err != nil {
 		t.Fatalf("the newest entry of alert %s: %v", id, err)
 	}
-	return substrate.Actor(actor)
+	// The entry links the actor record; the key behind it is the hand.
+	return ds.actorKeyFor(actor)
 }
 
 // forgetRecord forgets the trigger's parked deliveries of one record.

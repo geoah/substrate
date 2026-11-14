@@ -87,7 +87,6 @@ import { logout } from "@/lib/api/auth"
 import { splitKind } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { formatCount, recordCountQueryOptions } from "@/lib/api/records"
-import { repositoryQueryOptions } from "@/lib/api/repository"
 import { getRepository } from "@/lib/api/session"
 import type { KindInfo } from "@/lib/api/types"
 import {
@@ -381,14 +380,9 @@ export function CollectionGroupNav({ group }: { group: CollectionGroup }) {
 function CollectionGroups() {
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
-  const repository = useQuery(repositoryQueryOptions)
   const groups = useMemo(
-    () =>
-      collectionGroups(
-        registry.data ?? [],
-        repository.data?.authority ?? getRepository() ?? ""
-      ),
-    [registry.data, repository.data]
+    () => collectionGroups(registry.data ?? []),
+    [registry.data]
   )
   const listed = useListedGroups(groups)
 

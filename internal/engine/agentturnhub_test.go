@@ -128,13 +128,13 @@ func TestASlowSubscriberIsDroppedNotWaitedFor(t *testing.T) {
 func TestAStopBeforeTheRunContextTakesEffect(t *testing.T) {
 	t.Parallel()
 	h := newTurnHub()
-	h.stop(substrate.ActorConsole)
+	h.stop(substrate.ActorPerson)
 	ctx, cancel := context.WithCancel(context.Background())
 	h.setRun(ctx, cancel)
 	if ctx.Err() == nil {
 		t.Fatal("a stop before setCancel did not cancel the run")
 	}
-	if h.stopper() != substrate.ActorConsole {
+	if h.stopper() != substrate.ActorPerson {
 		t.Fatalf("stopper = %q", h.stopper())
 	}
 }

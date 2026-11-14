@@ -38,6 +38,11 @@ type Origin struct {
 // this server can read. The wrapping error's text is the owner's to read.
 var ErrNotPublished = errors.New("not published")
 
+// ErrNewerDialect is a fetched closure whose package header states a
+// vocabulary dialect this server does not read (decision 0268): the resolver
+// and a refresh pass over that version to an older one.
+var ErrNewerDialect = errors.New("written for a newer vocabulary dialect")
+
 // Origin is where b came from when an authority document published it, nil
 // when the binary ships it.
 func (b *Bundle) Origin() *Origin { return b.origin }
@@ -64,11 +69,22 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 		return b, nil
 	}
 	a, p := vocabulary.SplitPackageRef(id)
-	if !vocabulary.ValidAuthority(a) || !vocabulary.ValidPackage(p) {
+	if !vocabulary.ValidKindAuthority(a) || !vocabulary.ValidPackage(p) {
 		return nil, fmt.Errorf("%w: %s is not a package id", ErrNotPublished, id)
+	}
+	// A package of the repository's own lives in its local namespace, which
+	// no publisher lists (decision record 0259).
+	if a == vocabulary.Local {
+		return nil, fmt.Errorf("%w: %s is not in this server's catalog", ErrNotPublished, id)
 	}
 	if a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id] {
 		return nil, fmt.Errorf("%w: %s must be shipped by this server", ErrNotPublished, id)
+	}
+	// The project's own name is permanent (decision record 0292), and a
+	// package under it that the binary ships returned above, from the binary,
+	// whatever the name's DNS says.
+	if a == vocabulary.AuthorityPublisher && !projectPackageFromDocument(id) {
+		return nil, fmt.Errorf("%w: %s is under the project's name, and this server does not ship it", ErrNotPublished, id)
 	}
 	if c.reader == nil {
 		return nil, fmt.Errorf("%w: %s is not in this server's catalog", ErrNotPublished, id)
@@ -79,6 +95,15 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 	}
 	return c.resolveSource(ctx, id, atLeast, source)
 }
+
+// projectPackageFromDocument says whether a package under the project's name
+// that this binary does NOT ship is read from the project's authority
+// document, as any publisher's is. Today it is: the project publishes the
+// Workouts app's packages that way. Whether the project's name publishes only
+// what the binary ships is not decided; that answer goes here, and
+// TestAProjectPackageTheBinaryDoesNotShipIsReadFromTheProjectDocument states
+// today's.
+func projectPackageFromDocument(string) bool { return true }
 
 // ships reports whether this server answers for id itself: a closure it
 // carries, a package it seeds, or an id under the provider or sample
@@ -91,23 +116,53 @@ func (c *Catalog) ships(id string) bool {
 	return a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id]
 }
 
+// resolveSource reads the newest version at or above floor that this server
+// can read (decision 0268). A version whose listed dialect is above
+// vocabulary.Dialect is passed over before it is fetched; one that lists none
+// is fetched, and passed over too when its package header states a newer
+// dialect (ErrNewerDialect). Any other refusal of a fetched version is the
+// answer, so a broken release still says it is broken.
 func (c *Catalog) resolveSource(ctx context.Context, id string, floor int64, source authority.Source) (*Bundle, error) {
 	_, name := vocabulary.SplitPackageRef(id)
-	var newest authority.AuthorityPackageVersion
+	var candidates []authority.AuthorityPackageVersion
+	var unread error
 	for _, p := range source.Document.Packages {
 		if p.Package != name {
 			continue
 		}
 		for _, v := range p.Versions {
-			if int64(v.Version) >= floor && v.Version > newest.Version {
-				newest = v
+			if int64(v.Version) < floor {
+				continue
 			}
+			if !readableVersion(v) {
+				if unread == nil {
+					unread = fmt.Errorf("version %d: %s", v.Version, vocabulary.DialectRefusal(int64(v.Dialect)))
+				}
+				continue
+			}
+			candidates = append(candidates, v)
 		}
 	}
-	if newest.Version == 0 {
-		return nil, fmt.Errorf("%w: %s lists no version at or above %d", ErrNotPublished, id, floor)
+	slices.SortFunc(candidates, func(a, b authority.AuthorityPackageVersion) int { return b.Version - a.Version })
+	for _, v := range candidates {
+		b, err := c.readClosure(ctx, id, source, v)
+		if errors.Is(err, ErrNewerDialect) {
+			unread = err
+			continue
+		}
+		return b, err
 	}
-	return c.readClosure(ctx, id, source, newest)
+	if unread != nil {
+		return nil, fmt.Errorf("%w: %s lists no version at or above %d this server can read: %w", ErrNotPublished, id, floor, unread)
+	}
+	return nil, fmt.Errorf("%w: %s lists no version at or above %d", ErrNotPublished, id, floor)
+}
+
+// readableVersion reports whether this server reads the dialect a listed
+// version states. A version that states none is read, and its closure's own
+// header is the check.
+func readableVersion(v authority.AuthorityPackageVersion) bool {
+	return int64(v.Dialect) <= vocabulary.Dialect
 }
 
 func (c *Catalog) readClosure(ctx context.Context, id string, source authority.Source, v authority.AuthorityPackageVersion) (*Bundle, error) {
@@ -119,6 +174,12 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrNotPublished, id, err)
 	}
+	// A version listed below what its closure needs would send a server
+	// older than its keys to fetch it and stop on one, instead of passing it
+	// over to an older version. It is a broken release, refused as such.
+	if v.Dialect > 0 && int64(v.Dialect) < b.needs {
+		return nil, fmt.Errorf("%w: %s: version %d is listed at vocabulary dialect %d, and its closure needs dialect %d", ErrNotPublished, id, v.Version, v.Dialect, b.needs)
+	}
 	b.origin = &Origin{Authority: source.Document.Authority, Name: source.Document.Name, DocumentURL: source.DocURL, FromFile: source.FromFile, ClosureURL: v.Closure, SHA256: strings.ToLower(v.SHA256)}
 	for _, entry := range source.Document.Packages {
 		if entry.Package == b.Package {
@@ -127,14 +188,14 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 		}
 	}
 	b.AddonFor = c.documentAddonFor(b)
-	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256}
+	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256, MovedTo: source.Document.MovedTo}
 	return b, nil
 }
 
 // ResolveFor refuses a document owned by the receiving repository before any fetch.
 func (c *Catalog) ResolveFor(ctx context.Context, id string, floor int64, ds substrate.Dataset) (*Bundle, error) {
 	a, _ := vocabulary.SplitPackageRef(id)
-	if _, binary := c.byID[id]; !binary && c.reader != nil && a == ds.Repository().Authority {
+	if _, binary := c.byID[id]; !binary && c.reader != nil && slices.Contains(ds.Repository().LocalNames(), a) {
 		return nil, fmt.Errorf("%w: %s is your own authority; declare the package here", ErrNotPublished, id)
 	}
 	return c.Resolve(ctx, id, floor)
@@ -170,24 +231,76 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	if count != 1 {
 		return nil, fmt.Errorf("a closure needs exactly one bundle for %s", id)
 	}
+	// `~` is the installing repository's own namespace, so a published name
+	// that spells it would name whatever that repository holds there.
+	if local := vocabulary.LocalNamesIn(declarations); len(local) > 0 {
+		return nil, fmt.Errorf("the closure names %s, in the local namespace of whoever installs it: a published closure names no package in ~", strings.Join(local, ", "))
+	}
+	// The dialect before the declarations: a header written for a newer one
+	// is that, and not whatever key of it this loader would refuse further
+	// down. Only a closure with one header for the package, at the version
+	// listed, is passed over on its dialect; any other is refused below as
+	// the broken release it is.
+	var headers []map[string]any
+	for _, d := range declarations {
+		if mstr(d, "kind") == vocabulary.CoreKind(vocabulary.DocPackage) && docID(d) == id {
+			headers = append(headers, d)
+		}
+	}
+	if len(headers) == 1 {
+		data := mmap(headers[0], "data")
+		if needs, ok := vocabulary.VersionValue(data["dialect"]); ok && needs > vocabulary.Dialect {
+			if stated, _ := vocabulary.VersionValue(data["version"]); stated != version {
+				return nil, fmt.Errorf("closure version %d does not match listed version %d", stated, version)
+			}
+			return nil, fmt.Errorf("%w: %s", ErrNewerDialect, vocabulary.DialectRefusal(needs))
+		}
+	}
 	parsed, err := vocabulary.ParseDocuments(declarations)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := vocabulary.BuildPackages(parsed, vocabulary.SourcePublished); err != nil {
+	pkgs, err := vocabulary.BuildPackages(parsed, vocabulary.SourcePublished)
+	if err != nil {
 		return nil, err
 	}
 	b, err := bundleFromDocs(docs)
 	if err != nil {
 		return nil, err
 	}
+	for _, g := range pkgs {
+		if g.Identity == id {
+			b.dialect, b.needs = g.Dialect, g.NeedsDialect
+		}
+	}
 	if b.Version != version || version < 1 {
 		return nil, fmt.Errorf("closure version %d does not match listed version %d", b.Version, version)
 	}
-	b.Tier = substrate.TierPublished
+	b.KeptBy = substrate.KeptByPublisher
 	b.Provider = slices.Contains(b.Brings, substrate.BringsAccount)
 	return b, nil
 }
+
+// AdmitClosure is what an installing server admits of a closure a
+// publisher's document serves before the repository's own admission:
+// ParseClosure's boundary, and a kind it renames (decision 0269). A
+// repository that publishes runs it on every release it writes, on the bytes
+// it will serve (decision 0291). It answers the declarations and the shipped
+// records.
+func AdmitClosure(raw []byte, id string, version int64) (vocabularyDocs, dataDocs []map[string]any, err error) {
+	b, err := ParseClosure(raw, id, version)
+	if err != nil {
+		return nil, nil, err
+	}
+	if refusals := b.RenameRefusals(); len(refusals) > 0 {
+		return nil, nil, errors.New(strings.Join(refusals, "; "))
+	}
+	return b.vocabularyDocs, b.dataDocs, nil
+}
+
+// Declarations are the closure's declaration documents, as an install
+// applies them.
+func (b *Bundle) Declarations() []map[string]any { return b.vocabularyDocs }
 
 // Shared machinery belongs to a package by its id. Authentication records
 // and arbitrary records of another package never belong to this closure.

@@ -19,7 +19,7 @@ func TestAddonInstallRequiresLiveConsentInTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Delete(ctx, substrate.ActorConsole, kindToken, token.ID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, kindToken, token.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatal(err)
 	}
 	past := time.Now().Add(-time.Hour)
@@ -28,7 +28,7 @@ func TestAddonInstallRequiresLiveConsentInTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"missing", token.ID, expired.ID} {
-		if _, err := ds.InstallBundleClosure(ctx, substrate.ActorConsole, docs, nil, substrate.BundleInstall{Published: true, ApprovalTokenID: id}); !errors.Is(err, substrate.ErrForbidden) {
+		if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, docs, nil, substrate.BundleInstall{Published: true, ApprovalTokenID: id}); !errors.Is(err, substrate.ErrForbidden) {
 			t.Fatalf("consent %s: %v", id, err)
 		}
 		if _, err := ds.Get(ctx, kindPackage, pkg); !errors.Is(err, substrate.ErrNotFound) {
@@ -42,7 +42,7 @@ func TestAddonInstallRequiresLiveConsentInTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorConsole, docs, nil, substrate.BundleInstall{Published: true, ApprovalTokenID: live.ID}); err != nil {
+	if _, err := ds.InstallBundleClosure(ctx, substrate.ActorPerson, docs, nil, substrate.BundleInstall{Published: true, ApprovalTokenID: live.ID}); err != nil {
 		t.Fatal(err)
 	}
 }

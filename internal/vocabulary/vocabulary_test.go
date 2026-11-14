@@ -28,7 +28,7 @@ import (
 
 // --- fixtures ------------------------------------------------------------
 
-// coreDocs is a miniature core: the authority, its actors, the temporal
+// coreDocs is a miniature core: the authority, the temporal
 // capability every other authority binds across the boundary, and one type.
 const coreDocs = `# the substrate's own machinery
 kind: substrate.reamde.dev/core/package
@@ -38,20 +38,6 @@ data:
   authority: core.example.com
   package: core
   version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: owner
-data:
-  authority: core.example.com
-  package: core
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: engram
-data:
-  authority: core.example.com
-  package: core
 ---
 # when a thing sits on the timeline — an instant, or a span
 kind: substrate.reamde.dev/core/trait
@@ -87,14 +73,6 @@ data:
   authority: vocab.example.com
   package: vocab
   version: 1
----
-# the connector-style actor whose authority maps onto contact: the machine tier
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: connector:google
-data:
-  authority: vocab.example.com
-  package: vocab
 ---
 # Amazon's audiobook identifier: the one durable key a library row carries
 kind: substrate.reamde.dev/core/propertytype
@@ -345,12 +323,6 @@ func TestLoadManifestStream(t *testing.T) {
 		t.Fatalf("declared stamp target sentAt = %+v", p)
 	}
 
-	// Actors are their own manifests now, one document each.
-	if got := r.Actors(); len(got) != 3 || got[0] != "connector:google" ||
-		got[1] != "engram" || got[2] != "owner" {
-		t.Fatalf("actors = %v", got)
-	}
-
 	// Object properties: fields declared inline, one level deep,
 	// a bare kind as shorthand — and never FTS, never embed.
 	gc, _ := r.ByIdentity("vocab.example.com/vocab/googlecontact")
@@ -367,12 +339,6 @@ func TestLoadManifestStream(t *testing.T) {
 		emails.Fields["value"].Datatype != vocabulary.DatatypeEmail ||
 		emails.Fields["primary"].Datatype != vocabulary.DatatypeBool {
 		t.Fatalf("googlecontact.emails = %+v", emails)
-	}
-	if g, ok := r.ActorPackage("engram"); !ok || g != "core.example.com/core" {
-		t.Fatalf("actor package = %q", g)
-	}
-	if g, _ := r.PackageByName("core.example.com/core"); len(g.Actors) != 2 {
-		t.Fatalf("package actors = %v", g.Actors)
 	}
 }
 
@@ -675,7 +641,6 @@ func gmailDocs() []map[string]any {
 	const authority = "gmail.connectors.example.com/gmail"
 	return []map[string]any{
 		vocabulary.PackageManifest(authority, 1),
-		vocabulary.ActorManifest(authority, "connector:gmail"),
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "cursor"},
 			map[string]any{"properties": map[string]any{
@@ -1138,12 +1103,6 @@ func TestInstallBumpsVersion(t *testing.T) {
 	if account.To != "core.example.com/core/account" || !account.Cascades() {
 		t.Fatalf("cross-authority reference = %+v", account)
 	}
-	if !contains(r.Actors(), "connector:gmail") {
-		t.Fatal("installed actor missing")
-	}
-	if g, ok := r.ActorPackage("connector:gmail"); !ok || g != "gmail.connectors.example.com/gmail" {
-		t.Fatalf("actor authority = %q", g)
-	}
 }
 
 // A mapping installs with the package that owns its TARGET (record 49):
@@ -1159,7 +1118,6 @@ func TestInstalledMapping(t *testing.T) {
 	// whoever installed this, and this package owns none (record 49).
 	prov, err := parseInstalled(
 		vocabulary.PackageManifest(provider, 1),
-		vocabulary.ActorManifest(provider, "connector:slack"),
 		vocabulary.KindManifest(provider,
 			map[string]any{"singular": "slackuser"},
 			map[string]any{
@@ -1226,12 +1184,6 @@ func TestInstalledMapping(t *testing.T) {
 	if tos := r.MappingsTo(home + "/contactcard"); len(tos) != 1 || tos[0] != m {
 		t.Fatalf("mappings to contactcard = %v", tos)
 	}
-	// The provider's declared actor is still a package actor (the machine
-	// tier's sync half, primitives §6), even though it declares no mapping.
-	if _, ok := r.ActorPackage("connector:slack"); !ok {
-		t.Fatal("connector:slack is not a declared package actor")
-	}
-
 	// The registry-wide rules run at INSTALL, not only at load: a package
 	// installing two mappings of its own where one's `to` is the other's
 	// `from` breaks the bipartite rule, and nothing of it stays installed.
@@ -1473,15 +1425,6 @@ func TestMappings(t *testing.T) {
 	if len(r.MappingsTo(g.Identity)) != 0 {
 		t.Fatal("a source record is managed by nothing")
 	}
-	// The mapping package's declared actor is a package actor — the machine
-	// tier's sync half; a stranger is not.
-	if grp, ok := r.ActorPackage("connector:google"); !ok || grp != "vocab.example.com/vocab" {
-		t.Fatalf("ActorPackage(connector:google) = %q, %v", grp, ok)
-	}
-	if _, ok := r.ActorPackage("stranger.example.com"); ok {
-		t.Fatal("an undeclared actor is nobody's package actor")
-	}
-
 	// The path type-checker the engine reuses.
 	if p, rep, err := vocabulary.PathProperty(g, probe.From); err != nil ||
 		p.Datatype != vocabulary.DatatypeEmail || !rep {
@@ -2729,21 +2672,9 @@ data:
 metadata: {id: x.example.com/x}
 data: {authority: x.example.com, package: x, version: 1}
 `,
-		"duplicate actor": head + `kind: substrate.reamde.dev/core/actor
-metadata: {id: owner}
-data: {authority: x.example.com}
----
-kind: substrate.reamde.dev/core/actor
-metadata: {id: owner}
-data: {authority: x.example.com}
-`,
 		"bad authority name": `kind: substrate.reamde.dev/core/authority
 metadata: {id: Vocab}
 data: {version: 1}
-`,
-		"snake actor": head + `kind: substrate.reamde.dev/core/actor
-metadata: {id: my_actor}
-data: {authority: x.example.com}
 `,
 		// the body DSL
 		"missing names":     typ("  properties: {a: {type: string}}\n"),
@@ -2964,23 +2895,9 @@ data:
 `,
 		// The column-backed `title` and temporal properties may not be
 		// redeclared: two declarations of one name means the write path
-		// validates against the wrong one. `body` is declarable (#68), but
-		// only text-family: the hot column is text, so a non-text `body` names
-		// a column that cannot hold its value.
+		// validates against the wrong one.
 		"title is reserved": typ(`  names: {singular: contact}
   properties: {title: {type: string}}
-`),
-		"body must be text-family": typ(`  names: {singular: contact}
-  properties: {body: {type: int}}
-`),
-		// repeated text and keyed text are ordinarily fine; on `body` they name a
-		// list or map the single scalar column cannot hold, so the body guard
-		// refuses them where the datatype alone would pass.
-		"body cannot be repeated": typ(`  names: {singular: contact}
-  properties: {body: {type: text, repeated: true}}
-`),
-		"body cannot be keyed": typ(`  names: {singular: contact}
-  properties: {body: {type: text, keyed: true}}
 `),
 		"at is reserved": typ(`  names: {singular: contact}
   properties: {at: {type: datetime}}
@@ -3061,45 +2978,15 @@ func TestValidID(t *testing.T) {
 	}
 }
 
-// The actor grammar admits the closed domain's flat words and the machine
-// hands, which carry the full authority AND the package (records 0025 and
-// 0047). It still admits the retired `connector:<label>` spelling, because an
-// actor DECLARATION carrying it is stored in every repository written before
-// the rename and has to keep loading.
-func TestValidActor(t *testing.T) {
-	for _, ok := range []string{
-		"api", "console", "substratectl", "substrate",
-		"bundle:core", "bundle:samples.substrate.reamde.dev:web",
-		"function:samples.substrate.reamde.dev:web:harvestUrls",
-		"agent:samples.substrate.reamde.dev:web:librarian",
-		"connector:gmail",
-	} {
-		if !vocabulary.ValidActor(ok) {
-			t.Errorf("%q should be a legal actor", ok)
-		}
-	}
-	for _, bad := range []string{
-		"", "Bundle:web", "bundle:web/harvest", "function:web.example.com:Web:harvest",
-		"substrate.oauth", "bundle:", "a:b:c:d:e", "bundle:web bundles",
-	} {
-		if vocabulary.ValidActor(bad) {
-			t.Errorf("%q should not be a legal actor", bad)
-		}
-	}
-}
-
-// An actor is DERIVED from the identity that writes, never authored: a
-// declaration naming a dispatch hand is refused, so no authority can set the
-// tier another authority's callable writes at.
-func TestActorsCarryTheFullAuthority(t *testing.T) {
-	authority := "fn.example.com/fn"
-	if got := vocabulary.PackageActor(authority); got != "bundle:fn.example.com:fn" {
-		t.Fatalf("authority actor %q", got)
-	}
-	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
-		`kind: substrate.reamde.dev/core/package
+// AN ACTOR IS NEVER DECLARED (decision 0270): it is a record the substrate
+// writes for every hand, so a package that ships an actor document is refused
+// whole, whatever the actor it names.
+func TestAnActorDocumentIsRefused(t *testing.T) {
+	for _, id := range []string{"owner", "bundle:fn.example.com:fn", "function:fn.example.com:fn:mirror", "app:notes.example.org"} {
+		_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
+			`kind: substrate.reamde.dev/core/package
 metadata:
-  id: ` + authority + `
+  id: fn.example.com/fn
 data:
   authority: fn.example.com
   package: fn
@@ -3107,93 +2994,14 @@ data:
 ---
 kind: substrate.reamde.dev/core/actor
 metadata:
-  id: function:fn.example.com:fn:mirror
+  id: ` + id + `
 data:
   authority: fn.example.com
   package: fn
-  tier: owner
 `)}})
-	if err == nil || !strings.Contains(err.Error(), "minted at dispatch") {
-		t.Fatalf("a declared function actor must refuse: %v", err)
-	}
-
-	// An app's actor is derived from the token the owner approved: a package
-	// that declared one could move the tier its writes hold at.
-	_, err = vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
-		`kind: substrate.reamde.dev/core/package
-metadata:
-  id: ` + authority + `
-data:
-  authority: fn.example.com
-  package: fn
-  version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: app:notes.example.org
-data:
-  authority: fn.example.com
-  package: fn
-  tier: machine
-`)}})
-	if err == nil || !strings.Contains(err.Error(), "never declared") {
-		t.Fatalf("a declared app actor must refuse: %v", err)
-	}
-}
-
-// actorDeclaration renders one package declaring one actor at one tier — the
-// shape a bundle would ship to claim a hand.
-func actorDeclaration(pkg, actor, tier string) []byte {
-	authority, name, _ := strings.Cut(pkg, "/")
-	return []byte(`kind: substrate.reamde.dev/core/package
-metadata:
-  id: ` + pkg + `
-data:
-  authority: ` + authority + `
-  package: ` + name + `
-  version: 1
----
-kind: substrate.reamde.dev/core/actor
-metadata:
-  id: ` + actor + `
-data:
-  authority: ` + authority + `
-  package: ` + name + `
-  tier: ` + tier + `
-`)
-}
-
-// A DECLARED BUNDLE ACTOR IS ITS OWN PACKAGE'S. A tier is declared data and
-// the registry answers with it before the engine's reserved-name fallback, so
-// a package that could declare `bundle:<somebody else>` would decide the tier
-// that bundle's install and mapping writes stand at — owner tier pins against
-// the owner's own recompute. The declarer and the named package must be the
-// same.
-func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
-	const evil, victim = "evil.example.com/evil", "victim.example.com/victim"
-
-	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.PackageActor(victim), "owner"),
-	}})
-	if err == nil || !strings.Contains(err.Error(), "belongs to the package it names") {
-		t.Fatalf("one package declared another's bundle hand: %v", err)
-	}
-
-	// Its own hand is the legal declaration, and the tier it declares is the
-	// tier the registry answers with.
-	r, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
-		Data: actorDeclaration(evil, vocabulary.PackageActor(evil), "machine"),
-	}})
-	if err != nil {
-		t.Fatalf("an authority must be able to declare its own hand: %v", err)
-	}
-	tier, ok := r.ActorTier(vocabulary.PackageActor(evil))
-	if !ok || tier != substrate.TierMachine {
-		t.Fatalf("actor tier %q (%v), want machine", tier, ok)
-	}
-	// And it cannot answer for the hand it does not own, at any tier.
-	if _, ok := r.ActorTier(vocabulary.PackageActor(victim)); ok {
-		t.Fatal("the registry answers for a package it never loaded")
+		if err == nil || !strings.Contains(err.Error(), "an actor is a record the substrate writes") {
+			t.Errorf("an actor document %q must be refused: %v", id, err)
+		}
 	}
 }
 
@@ -3266,13 +3074,6 @@ func TestShippedSchemaLoads(t *testing.T) {
 	}
 	for missing := range seeded {
 		t.Errorf("the seeded tree does not declare %s", missing)
-	}
-	// The actor domain is closed and flat: the three doors
-	// and the substrate's own hand.
-	for _, a := range []string{"api", "console", "substratectl", "substrate"} {
-		if !contains(r.Actors(), a) {
-			t.Errorf("actor %q missing", a)
-		}
 	}
 	// Identity is the kind reference <authority>/<package>/<name>, everywhere.
 	for _, ty := range r.Kinds() {
@@ -3576,16 +3377,15 @@ data:
 		}
 	})
 
-	// The rewrite moves a key of `props`: body lives in its own column and a
-	// state in the states column, so neither renames, in either direction.
-	t.Run("body on either side is an error", func(t *testing.T) {
+	// `body` is an ordinary property (decision 0273), so it renames in either
+	// direction like any other.
+	t.Run("body on either side renames", func(t *testing.T) {
 		for _, props := range []string{
 			"    body: {type: text, renamedFrom: caption}\n",
 			"    label: {type: string, renamedFrom: body}\n",
 		} {
-			_, err := vocabulary.LoadFS(mk(props))
-			if err == nil || !strings.Contains(err.Error(), "body is column-backed and never renames") {
-				t.Fatalf("%s: error = %v", strings.TrimSpace(props), err)
+			if _, err := vocabulary.LoadFS(mk(props)); err != nil {
+				t.Fatalf("%s: %v", strings.TrimSpace(props), err)
 			}
 		}
 	})
@@ -3624,27 +3424,74 @@ func TestRepositoryAuthorityGrammar(t *testing.T) {
 			t.Errorf("vocabulary.ValidRepositoryAuthority(%q) = true", bad)
 		}
 	}
-	for host, want := range map[string]string{
-		"substrate.example":      "ada.substrate.example",
-		"substrate.example:8080": "ada.substrate.example",
-		"Substrate.Example.":     "ada.substrate.example",
-		"127.0.0.1:5173":         "ada.127.0.0.1",
-		"[::1]:8080":             "ada.::1",
-		"":                       "",
+}
+
+// The default name (decision record 0288), the table of the 1.0 review's F2
+// row for row: what a person types, the address their browser reached, and
+// the name they get. The address never counts: a short name is completed under
+// the server's configured public host, and a name under `localhost` or an IP
+// address is refused outside development, where the public host is itself
+// one of those.
+func TestTheDefaultNameIsCompletedUnderThePublicHost(t *testing.T) {
+	public := vocabulary.NameRuleFor("https://substrate.example.com")
+	for _, row := range []struct{ typed, reached, want string }{
+		{"ada", "https://substrate.example.com", "ada.substrate.example.com"},
+		{"ada", "http://localhost:8080", "ada.substrate.example.com"},
+		{"ada", "http://127.0.0.1:5173", "ada.substrate.example.com"},
+		{"ada.example.com", "http://localhost:8080", "ada.example.com"},
+		{"Ada.Example.COM. ", "anywhere", "ada.example.com"},
 	} {
-		if got := vocabulary.RepositoryAuthority("ada", host); got != want {
-			t.Errorf("vocabulary.RepositoryAuthority(ada, %q) = %q, want %q", host, got, want)
+		got, err := public.New(row.typed)
+		if err != nil || got != row.want {
+			t.Errorf("typed %q, reached at %s: %q, %v; want %q", row.typed, row.reached, got, err, row.want)
 		}
 	}
-	// A name that already carries a dot IS the authority: the host is not
-	// appended to it, whatever the host is.
-	for _, host := range []string{"substrate.example", "substrate.example:8080", ""} {
-		if got := vocabulary.RepositoryAuthority("Ada.Example.COM ", host); got != "ada.example.com" {
-			t.Errorf("vocabulary.RepositoryAuthority(ada.example.com, %q) = %q", host, got)
+	for _, local := range []string{"ada.localhost", "ada.127.0.0.1", "ada.10.0.0.7"} {
+		if got, err := public.New(local); err == nil {
+			t.Errorf("%q is a new name %q outside development, want it refused", local, got)
 		}
 	}
-	if vocabulary.ValidRepositoryAuthority(vocabulary.RepositoryAuthority("ada", "[::1]:8080")) {
-		t.Error("an IPv6 literal host produced a default that passes the grammar")
+
+	// Development: a server whose public host is localhost or loopback.
+	for _, url := range []string{"http://localhost:8080", "http://127.0.0.1:5173", "http://[::1]:8080"} {
+		dev := vocabulary.NameRuleFor(url)
+		if !dev.Development {
+			t.Errorf("%s is no development server", url)
+		}
+		if _, err := dev.New("ada.127.0.0.1"); err != nil {
+			t.Errorf("under %s, ada.127.0.0.1: %v, want it admitted in development", url, err)
+		}
+	}
+	if got, err := vocabulary.NameRuleFor("http://localhost:8080").New("ada"); err != nil || got != "ada.localhost" {
+		t.Errorf("ada in development = %q, %v; want ada.localhost", got, err)
+	}
+
+	// No public URL: a short new name has nothing to be completed under.
+	none := vocabulary.NameRuleFor("")
+	if got, err := none.New("ada"); err == nil {
+		t.Errorf("a short name with no public URL = %q, want it refused", got)
+	}
+	if got, err := none.New("ada.example.com"); err != nil || got != "ada.example.com" {
+		t.Errorf("a whole name with no public URL = %q, %v", got, err)
+	}
+
+	// Finding an existing repository is never refused: one named under
+	// localhost before the rule is still found, and a short name is
+	// completed under the public host, or the address reached where none is
+	// configured.
+	for _, row := range []struct {
+		rule        vocabulary.NameRule
+		typed, host string
+		want        string
+	}{
+		{public, "ada", "localhost:8080", "ada.substrate.example.com"},
+		{public, "ada.localhost", "substrate.example.com", "ada.localhost"},
+		{none, "ada", "substrate.example:8080", "ada.substrate.example"},
+		{none, "ada", "", ""},
+	} {
+		if got := row.rule.Lookup(row.typed, row.host); got != row.want {
+			t.Errorf("Lookup(%q, %q) = %q, want %q", row.typed, row.host, got, row.want)
+		}
 	}
 }
 

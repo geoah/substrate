@@ -18,8 +18,8 @@ import type { Page } from "./types"
 
 /** The repository record's own shape, the one property the console reads. */
 export interface RepositoryInfo {
-  /** The DNS-style authority this repository owns: its name, its id, and the
-   * home of every kind its user declares. Empty on a repository created
+  /** The DNS-style authority this repository owns: its name, and the home
+   * of every kind its user declares. Empty on a repository created
    * before the column existed, which the caller has to render as "unknown"
    * rather than guess. */
   authority: string

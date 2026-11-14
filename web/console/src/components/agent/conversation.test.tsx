@@ -262,7 +262,8 @@ describe("Conversation", () => {
         kind: "toolStarted",
         id: "c1",
         tool: "lookup",
-        callable: "function:substrate.reamde.dev:core:query",
+        callable:
+          "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query",
         args: '{"q":"cups"}',
       })
     )
@@ -787,19 +788,25 @@ describe("a late transcript read", () => {
     costUSD: 0,
   }
 
-  /** Every records read waits until the test answers it, by its index. */
+  /** Every transcript read waits until the test answers it, by its index.
+   * The conversation's read of its waiting approvals answers at once with
+   * none, and the change feed's watch never answers: neither is counted. */
   function deferredReads() {
     const reads: ((rows: unknown[]) => void)[] = []
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
-            reads.push((rows) =>
-              resolve(new Response(JSON.stringify({ records: rows })))
-            )
-          })
-      )
+      vi.fn((input: RequestInfo | URL) => {
+        const url = decodeURIComponent(String(input))
+        if (url.includes("llm/approval")) {
+          return Promise.resolve(new Response(JSON.stringify({ records: [] })))
+        }
+        if (url.includes("/changes")) return new Promise<Response>(() => {})
+        return new Promise<Response>((resolve) => {
+          reads.push((rows) =>
+            resolve(new Response(JSON.stringify({ records: rows })))
+          )
+        })
+      })
     )
     return reads
   }

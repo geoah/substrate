@@ -10,13 +10,13 @@ package engine
 // ONLY THE STATEMENTS ARE BATCHED. Each put runs the ordinary put path
 // (putSpec, apply), and each effect it folds goes through fold, foldOne and
 // foldRecordOp or applyManager, the code a rebuild replays the entry through,
-// so what a record, its unit uses, its refs and its managers become is
+// so what a record, its unit uses, its refs and its marks become is
 // decided by the one fold. Under t.bulk the fold's write leaves (upsertRecord,
 // replaceUnitUses, afterUnitFold, syncRefs, applyManager) and appendChange
 // queue the statement they would send for a record the run creates, with the
 // answer that statement gives for an absent row, and flushBulk sends each
 // table's queue as one statement: the created rows, their unit uses, the unit
-// graph's revision, their refs (syncRefsOfRows), their managers, and the
+// graph's revision, their refs (syncRefsOfRows), their marks, and the
 // changelog entries with the seqs a per-record append would have taken. Every
 // other effect, and a leaf the run cannot batch, runs its statement at once.
 //
@@ -32,7 +32,6 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -52,7 +51,7 @@ type bulkWrite struct {
 	uses     struct{ kinds, ids, units []string }
 	revision int
 	refs     []bulkRefs
-	managers []bulkManager
+	marks    []bulkMark
 	entries  []bulkEntry
 }
 
@@ -69,16 +68,17 @@ type bulkRefs struct {
 	row *erow
 }
 
-// bulkManager is the INSERT applyManager would have sent for a property of
-// an absent record, which holds no manager row to conflict with.
-type bulkManager struct {
-	ref                        eref
-	property, actor, tier, who string
+// bulkMark is the INSERT applyMark would have sent for a property of an
+// absent record, which holds no mark to conflict with.
+type bulkMark struct {
+	ref      eref
+	property string
+	mark     mark
 }
 
 // bulkEntry is the INSERT appendChange would have sent.
 type bulkEntry struct {
-	actor    substrate.Actor
+	links    writeLinks
 	op       substrate.Op
 	recordID string
 	kind     string
@@ -93,13 +93,13 @@ const (
 	bulkAfterUses     = "uses"
 	bulkAfterRevision = "revision"
 	bulkAfterRefs     = "refs"
-	bulkAfterManagers = "managers"
+	bulkAfterMarks    = "marks"
 	bulkAfterEntries  = "entries"
 )
 
 // bulkEligible reports whether a kind's creating puts may run in bulk: a
 // kind whose write touches nothing beyond the record, its refs, its unit
-// uses, its managers and its changelog entry. A kind the observed index
+// uses, its marks and its changelog entry. A kind the observed index
 // derives from, a metric, a mapping's source or target, a kind with an
 // embedded or sealed property, and the kinds apply admits by reading other
 // rows are not.
@@ -174,6 +174,11 @@ func (t *txn) putBulk(ins []substrate.PutInput) (bulkRefusal, error) {
 	}
 	if held {
 		return bulkHeld, nil
+	}
+	// The run's entries link the actor record of its hand, written before
+	// the run while the write path is the ordinary one (ensureLinks).
+	if err := t.ensureLinks(t.actor); err != nil {
+		return "", err
 	}
 	t.bulk = &bulkWrite{absent: refs, folded: map[eref]bool{}}
 	defer func() { t.bulk = nil }()
@@ -255,13 +260,14 @@ func (t *txn) queueRefs(ref eref, ty *vocabulary.Kind, props map[string]any) boo
 	return true
 }
 
-// queueManager takes applyManager's INSERT for a record the run creates,
-// stamped with the transaction's clock, which is every live write's.
-func (t *txn) queueManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string, at time.Time) bool {
-	if actor == "" || !at.Equal(t.now) || !t.bulkAbsent(ref) {
+// queueMark takes applyMark's INSERT for a record the run creates: a direct
+// write's mark, stamped with the transaction's clock, which is every live
+// write's, and derived from no source.
+func (t *txn) queueMark(ref eref, property string, m mark) bool {
+	if len(m.DerivedFrom) > 0 || !m.SetAt.Equal(t.now) || !t.bulkAbsent(ref) {
 		return false
 	}
-	t.bulk.managers = append(t.bulk.managers, bulkManager{ref: ref, property: property, actor: string(actor), tier: string(tier), who: principal})
+	t.bulk.marks = append(t.bulk.marks, bulkMark{ref: ref, property: property, mark: m})
 	return true
 }
 
@@ -276,7 +282,7 @@ func (t *txn) flushBulk() error {
 		{bulkAfterUses, t.flushBulkUses},
 		{bulkAfterRevision, t.flushBulkRevision},
 		{bulkAfterRefs, t.flushBulkRefs},
-		{bulkAfterManagers, t.flushBulkManagers},
+		{bulkAfterMarks, t.flushBulkMarks},
 		{bulkAfterEntries, t.flushBulkEntries},
 	} {
 		if err := step.run(b); err != nil {
@@ -296,30 +302,30 @@ func (t *txn) flushBulkRecords(b *bulkWrite) error {
 	if len(b.records) == 0 {
 		return nil
 	}
-	var ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC []string
+	var ids, kinds, titles, states, props, labels, finalizers, ftsA, ftsB, ftsC []string
 	var kindVersions []int64
 	for _, r := range b.records {
 		row := r.row
-		ids, kinds, titles, bodies = append(ids, row.ID), append(kinds, row.Kind), append(titles, row.Title), append(bodies, row.Body)
+		ids, kinds, titles = append(ids, row.ID), append(kinds, row.Kind), append(titles, row.Title)
 		states, props, labels, finalizers = append(states, string(r.states)), append(props, string(r.props)), append(labels, string(r.labels)), append(finalizers, string(r.finalizer))
 		ftsA, ftsB, ftsC = append(ftsA, r.fts[0]), append(ftsB, r.fts[1]), append(ftsC, r.fts[2])
 		kindVersions = append(kindVersions, row.KindVersion)
 	}
 	if _, err := t.exec(`
 		INSERT INTO records (
-			id, kind, title, body, states, at, ends_at, due_at, props, labels,
+			id, kind, title, states, at, ends_at, due_at, props, labels,
 			finalizers, fts, version, kind_version, created_at, updated_at
 		)
-		SELECT u.id, u.kind, u.title, u.body, u.states::jsonb, NULL, NULL, NULL, u.props::jsonb, u.labels::jsonb,
+		SELECT u.id, u.kind, u.title, u.states::jsonb, NULL, NULL, NULL, u.props::jsonb, u.labels::jsonb,
 			ARRAY(SELECT jsonb_array_elements_text(u.finalizers::jsonb)),
 			setweight(to_tsvector('english', u.a), 'A') ||
 			setweight(to_tsvector('english', u.b), 'B') ||
 			setweight(to_tsvector('english', u.c), 'C'),
 			1, u.kind_version, $1, $1
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-			$10::text[], $11::text[], $12::text[], $13::bigint[])
-			AS u(id, kind, title, body, states, props, labels, finalizers, a, b, c, kind_version)`,
-		t.now, ids, kinds, titles, bodies, states, props, labels, finalizers, ftsA, ftsB, ftsC, kindVersions); err != nil {
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[],
+			$9::text[], $10::text[], $11::text[], $12::bigint[])
+			AS u(id, kind, title, states, props, labels, finalizers, a, b, c, kind_version)`,
+		t.now, ids, kinds, titles, states, props, labels, finalizers, ftsA, ftsB, ftsC, kindVersions); err != nil {
 		return fmt.Errorf("substrate/engine: bulk put of %d records: %w", len(b.records), err)
 	}
 	return nil
@@ -370,23 +376,24 @@ func (t *txn) flushBulkRefs(b *bulkWrite) error {
 	return nil
 }
 
-// flushBulkManagers is applyManager's INSERT for every queued manager.
-func (t *txn) flushBulkManagers(b *bulkWrite) error {
-	if len(b.managers) == 0 {
+// flushBulkMarks is applyMark's INSERT for every queued mark.
+func (t *txn) flushBulkMarks(b *bulkWrite) error {
+	if len(b.marks) == 0 {
 		return nil
 	}
-	var kinds, ids, props, actors, tiers, principals []string
-	for _, m := range b.managers {
+	var kinds, ids, props, setBy, behalf []string
+	var pinned []bool
+	for _, m := range b.marks {
 		kinds, ids, props = append(kinds, m.ref.Kind), append(ids, m.ref.ID), append(props, m.property)
-		actors, tiers, principals = append(actors, m.actor), append(tiers, m.tier), append(principals, m.who)
+		pinned, setBy, behalf = append(pinned, m.mark.Pinned), append(setBy, m.mark.SetBy), append(behalf, m.mark.OnBehalfOf)
 	}
 	if _, err := t.exec(`
-		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-		SELECT u.kind, u.id, u.property, u.actor, u.tier, u.principal, $1
-		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-			AS u(kind, id, property, actor, tier, principal)`,
-		t.now, kinds, ids, props, actors, tiers, principals); err != nil {
-		return fmt.Errorf("substrate/engine: managers of a bulk put: %w", err)
+		INSERT INTO property_marks (record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at)
+		SELECT u.kind, u.id, u.property, u.pinned, u.set_by, u.on_behalf_of, '[]'::jsonb, $1
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::boolean[], $6::text[], $7::text[])
+			AS u(kind, id, property, pinned, set_by, on_behalf_of)`,
+		t.now, kinds, ids, props, pinned, setBy, behalf); err != nil {
+		return fmt.Errorf("substrate/engine: marks of a bulk put: %w", err)
 	}
 	return nil
 }
@@ -402,19 +409,20 @@ func (t *txn) flushBulkEntries(b *bulkWrite) error {
 	if err := t.lockChangelog(); err != nil {
 		return err
 	}
-	var actors, ops, ids, kinds, payloads []string
+	var actors, behalf, tokens, ops, ids, kinds, payloads []string
 	var caused []int64
 	for _, e := range entries {
-		actors, ops, ids, kinds = append(actors, string(e.actor)), append(ops, string(e.op)), append(ids, e.recordID), append(kinds, e.kind)
+		actors, behalf, tokens = append(actors, e.links.actor), append(behalf, e.links.onBehalfOf), append(tokens, e.links.token)
+		ops, ids, kinds = append(ops, string(e.op)), append(ids, e.recordID), append(kinds, e.kind)
 		payloads, caused = append(payloads, string(e.raw)), append(caused, e.causedBy.Int64)
 	}
 	rows, err := t.query(`
-		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by)
-		SELECT (SELECT coalesce(max(seq), 0) FROM changelog) + u.ord, $1, u.actor, $2, u.op, u.id, u.kind, u.payload::jsonb, NULLIF(u.caused, 0)
-		FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::bigint[]) WITH ORDINALITY
-			AS u(actor, op, id, kind, payload, caused, ord)
+		INSERT INTO changelog (seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, caused_by)
+		SELECT (SELECT coalesce(max(seq), 0) FROM changelog) + u.ord, $1, u.actor, u.behalf, u.token, u.op, u.id, u.kind, u.payload::jsonb, NULLIF(u.caused, 0)
+		FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::bigint[]) WITH ORDINALITY
+			AS u(actor, behalf, token, op, id, kind, payload, caused, ord)
 		RETURNING seq, payload::text`,
-		t.now, t.principal, actors, ops, ids, kinds, payloads, caused)
+		t.now, actors, behalf, tokens, ops, ids, kinds, payloads, caused)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: the changelog entries of a bulk put: %w", err)
 	}
@@ -442,7 +450,7 @@ func (t *txn) flushBulkEntries(b *bulkWrite) error {
 	}
 	sort.Slice(got, func(i, j int) bool { return got[i].seq < got[j].seq })
 	for i, e := range entries {
-		t.appended(e.actor, e.op, e.recordID, e.kind, e.causedBy, got[i].seq, got[i].text)
+		t.appended(e.links, e.op, e.recordID, e.kind, e.causedBy, got[i].seq, got[i].text)
 	}
 	return nil
 }

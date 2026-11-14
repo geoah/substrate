@@ -144,6 +144,102 @@ struct SuggestionCardView: View {
     }
 }
 
+/// A call an agent wants to make that waits for the owner: who asks, the
+/// tool, exactly what it would run with, then Approve or Decline; once
+/// decided, where it ended. Approving is one patch on the version read, and
+/// the engine runs the stored call, never anything the app sends.
+struct ApprovalCardView: View {
+    @Environment(ChatHost.self) private var host
+    let id: String
+    let card: ApprovalCard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Label(card.title, systemImage: symbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(card.tone == .failed ? Color.red : Color.primary)
+                Spacer(minLength: 0)
+                if card.tone == .running { ProgressView().controlSize(.small) }
+            }
+            if card.loading {
+                ProgressView().controlSize(.small)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(card.asks)
+                    Text(card.tool).monospaced()
+                }
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+            if !card.arguments.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(card.arguments) { argument in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(argument.label).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            // The model wrote it: plain text, never Markdown.
+                            // While it waits every line shows: the owner
+                            // approves all of it, not what fits.
+                            Text(verbatim: argument.value)
+                                .font(.footnote)
+                                .lineLimit(card.pending ? nil : 3)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.secondary.opacity(0.08), in: .rect(cornerRadius: 10))
+            }
+            if let error = card.error {
+                Text(verbatim: error).font(.footnote).foregroundStyle(.red)
+            }
+            if let problem = card.problem {
+                Text(problem).font(.footnote).foregroundStyle(.red)
+            }
+            if card.pending {
+                HStack {
+                    Button {
+                        host.send(.decideApproval(id, approve: true))
+                    } label: {
+                        if card.busy == "approve" { ProgressView().controlSize(.small) } else { Text(card.approve) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button {
+                        host.send(.decideApproval(id, approve: false))
+                    } label: {
+                        if card.busy == "decline" { ProgressView().controlSize(.small) } else { Text(card.decline) }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .disabled(card.busy != nil)
+            }
+        }
+        .card(tint: tint)
+        .task(id: id) { host.send(.loadCard(.approval(id))) }
+    }
+
+    private var symbol: String {
+        switch card.tone {
+        case .waiting: "hand.raised"
+        case .running: "play.circle"
+        case .done: "checkmark.circle"
+        case .failed: "exclamationmark.triangle"
+        case .declined: "xmark.circle"
+        }
+    }
+
+    private var tint: Color? {
+        switch card.tone {
+        case .waiting: .orange
+        case .running: .blue
+        case .done: .green
+        case .failed: .red
+        case .declined: nil
+        }
+    }
+}
+
 /// "Changed [Groceries]", "Suggests adding a task": the op's mark, the verb,
 /// and the record as its pill where there is one to open.
 struct ChangeHeaderView: View {

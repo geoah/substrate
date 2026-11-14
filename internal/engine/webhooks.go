@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // actorWebhook is the public webhook door's writer identity: the blobs a
@@ -49,9 +51,10 @@ var errAgentWebhookTooLarge = errors.New("webhook request too large for an agent
 var errWebhookRefused = fmt.Errorf("%w: no such webhook", substrate.ErrNotFound)
 
 // webhookPath is a webhook trigger's endpoint, relative to the server root.
-// The repository is named by its authority, which is its one name (0071).
-func webhookPath(authority, triggerID string) string {
-	return "/webhooks/" + authority + "/" + triggerID
+// The repository is named by its id, which outlives a change of its name
+// (decision 0261); the door still takes the name.
+func webhookPath(repositoryID, triggerID string) string {
+	return "/webhooks/" + repositoryID + "/" + triggerID
 }
 
 // pendingWebhookError is the error an ADMITTED webhook request carries in
@@ -187,21 +190,60 @@ func (s *service) receiveWebhook(ctx context.Context, authority, triggerID, key 
 	return fid, nil
 }
 
-// webhookTarget resolves the repository by its authority and the trigger by
-// id, and checks that the trigger takes webhooks, is enabled and runnable, and
+// RepositoryIDOf is the id of the repository nameOrID names now: an id is
+// itself, which the door's own checks read (webhookTarget), a repository the
+// start set aside before it had a row included; a name goes through the one
+// lookup (lookupRepositoryByName). A repository the start set aside answers
+// to its name as no repository does, so the door says nothing a prober could
+// learn from (setaside.go).
+func (s *service) RepositoryIDOf(ctx context.Context, nameOrID string) (string, error) {
+	if vocabulary.ValidRepositoryID(nameOrID) {
+		return nameOrID, nil
+	}
+	repo, err := s.repositoryByName(ctx, nameOrID)
+	if err != nil {
+		return "", err
+	}
+	if s.setAsideOf(repo.ID, repo.Authority) != nil {
+		return "", fmt.Errorf("%w: repository %s", substrate.ErrNotFound, nameOrID)
+	}
+	return repo.ID, nil
+}
+
+// webhookTarget resolves the repository by its id or its name and the
+// trigger by id, and checks that the trigger takes webhooks, is enabled and runnable, and
 // that the key matches when it declares one. The door's webhook grant for
-// this authority and trigger (substrate.WithWebhookGrant, an app's token)
-// stands in for the key and for nothing else. Every check that fails answers
-// errWebhookRefused.
+// the resolved repository's id and the trigger (substrate.WithWebhookGrant,
+// an app's token) stands in for the key and for nothing else: a grant names
+// an id, so a name another repository holds now never borrows it. Every
+// check that fails answers errWebhookRefused.
 func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key string) (*dataset, *trigger, error) {
-	repo, err := s.repositoryByAuthority(ctx, authority)
+	repo, err := s.repositoryByKey(ctx, authority)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
+			// A directory the start set aside before its import has no row,
+			// and its id is the address its old server gave out.
+			if vocabulary.ValidRepositoryID(authority) {
+				if err := s.refuseSetAside(authority, ""); err != nil {
+					return nil, nil, err
+				}
+			}
 			return nil, nil, errWebhookRefused
 		}
 		return nil, nil, err
 	}
 	ds, err := s.open(ctx, repo)
+	if errors.Is(err, substrate.ErrSetAside) {
+		// Set aside at the start (setaside.go): addressed by its id, the
+		// address the server gave out and only a sender it was given to
+		// holds, the door says so, and the provider retries rather than
+		// dropping the delivery. By its name it says nothing a prober could
+		// learn from, and the start's log already names it.
+		if authority == repo.ID {
+			return nil, nil, err
+		}
+		return nil, nil, errWebhookRefused
+	}
 	if err != nil {
 		// The authority resolved but the repository will not open (a failed
 		// upgrade, a quarantined vocabulary, a storage fault). The caller is
@@ -222,7 +264,7 @@ func (s *service) webhookTarget(ctx context.Context, authority, triggerID, key s
 	if !tr.Webhook || !tr.Enabled || !tr.runnable() {
 		return nil, nil, errWebhookRefused
 	}
-	if tr.WebhookKey != "" && !substrate.WebhookGranted(ctx, authority, triggerID) &&
+	if tr.WebhookKey != "" && !substrate.WebhookGranted(ctx, repo.ID, triggerID) &&
 		subtle.ConstantTimeCompare([]byte(tr.WebhookKey), []byte(key)) != 1 {
 		return nil, nil, errWebhookRefused
 	}
@@ -302,7 +344,20 @@ func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, r
 	if err != nil {
 		return foldFailure{}, err
 	}
-	envelope := runner.FireEnvelope(fid, at, ds.Repository().Authority)
+	envelope := webhookFireEnvelope(fid, at, ds.Repository().Authority, req, parts, verified)
+	payload, err := ds.parkedEnvelope(ctx, envelope, declared, blobs)
+	if err != nil {
+		return foldFailure{}, err
+	}
+	return foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}, nil
+}
+
+// webhookFireEnvelope is the envelope a public webhook request is delivered
+// in: the fire, the repository and the request, its parts as
+// spoolWebhookParts left them. It is part of the function interface, pinned
+// by functioninput_test.go.
+func webhookFireEnvelope(fid string, at time.Time, authority string, req substrate.WebhookRequest, parts []map[string]any, verified bool) map[string]any {
+	envelope := runner.FireEnvelope(fid, at, authority)
 	request := webhookRequestEnvelope(req, parts)
 	// The mark a later retry or resume reads (checkStoredWebhookSignature):
 	// this request passed the declared signature, so it is not checked
@@ -311,11 +366,7 @@ func (ds *dataset) stageWebhook(ctx context.Context, declared map[string]bool, r
 		request[requestSignatureVerified] = true
 	}
 	envelope["request"] = request
-	payload, err := ds.parkedEnvelope(ctx, envelope, declared, blobs)
-	if err != nil {
-		return foldFailure{}, err
-	}
-	return foldFailure{FireID: fid, LastError: pendingWebhookError, ParkedAt: at, Payload: payload}, nil
+	return envelope
 }
 
 // blobSpool is where a webhook request's bytes go before its envelope names
@@ -361,7 +412,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	ctx, held, err := ds.holdDelivery(ctx, tr)
 	if err != nil {
 		ds.svc.log.Error("substrate: webhook fire could not read the spend cap, the entry stays pending",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
 	if held {
@@ -370,7 +421,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 	var envelope map[string]any
 	if err := json.Unmarshal(row.Payload, &envelope); err != nil {
 		ds.svc.log.Error("substrate: webhook fire cannot read its recorded request, the entry stays pending",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID))
 		return
 	}
 	_, _, err = ds.deliverFire(ctx, tr, runner.ModeWebhook, row.FireID, row.ParkedAt, nil, envelope, &row)
@@ -383,7 +434,7 @@ func (ds *dataset) fireWebhook(ctx context.Context, tr *trigger, row foldFailure
 		return
 	}
 	outcome := webhookFireOutcome(err)
-	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
+	attrs := []any{"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID), "failure", int64(row.ID), "outcome", outcome}
 	switch outcome {
 	case fireOutcomeRunning, fireOutcomeRetired:
 		ds.svc.log.Info("substrate: webhook fire not run, another hand holds or delivered it", attrs...)
@@ -454,7 +505,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	pending, err := ds.pendingWebhooks(ctx, 0)
 	if err != nil {
 		ds.svc.log.Error("substrate: pending webhook deliveries could not be read",
-			"repository", ds.Repository().ID, "error", err)
+			"repository", ds.info.ID, "error", err)
 		return
 	}
 	held := map[string]int{}
@@ -473,7 +524,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 		current, err := ds.pendingWebhooks(ctx, int64(p.row.ID))
 		if err != nil {
 			ds.svc.log.Error("substrate: pending webhook delivery could not be read again",
-				"repository", ds.Repository().ID, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
+				"repository", ds.info.ID, "trigger", logSafeID(p.trigger), "fire", p.row.FireID, "failure", int64(p.row.ID), "error", err)
 			return
 		}
 		if len(current) == 0 {
@@ -483,7 +534,7 @@ func (ds *dataset) runPendingWebhooks(ctx context.Context) {
 	}
 	for trigger, n := range held {
 		ds.svc.log.Warn("substrate: webhook deliveries left pending, their trigger does not run",
-			"repository", ds.Repository().ID, "trigger", logSafeID(trigger), "pending", n)
+			"repository", ds.info.ID, "trigger", logSafeID(trigger), "pending", n)
 	}
 }
 
@@ -561,6 +612,26 @@ func blobNameOf(filename string) string {
 		return ""
 	}
 	return base
+}
+
+// deliveryBehalf is ctx bound to the person the admitted request at seq acts
+// for, read from its delivery line: ctx unchanged for a request nobody's
+// token delivered. A read that fails is an error, so nothing runs for want
+// of it.
+func (ds *dataset) deliveryBehalf(ctx context.Context, seq int64) (context.Context, error) {
+	var behalf string
+	err := ds.db.QueryRowContext(ctx, `SELECT coalesce(on_behalf_of, '') FROM changelog WHERE seq = $1`, seq).Scan(&behalf)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && behalf == "" {
+		return ctx, nil
+	}
+	if err != nil {
+		return ctx, fmt.Errorf("substrate/engine: read whom webhook delivery %d acts for: %w", seq, err)
+	}
+	key, err := ds.actorKeyOfID(ctx, behalf)
+	if err != nil {
+		return ctx, err
+	}
+	return substrate.WithOnBehalfOf(ctx, key), nil
 }
 
 // fireEnvelope is the envelope a fire delivers: the one the caller built (a
@@ -740,13 +811,25 @@ func spoolParkedParts(ctx context.Context, blobs blobSpool, parts []any) ([]any,
 // request nothing references (a live delivery, a fire with no body) is left
 // alone.
 func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string]any) error {
+	return restoreRequest(ctx, envelope, func(ctx context.Context, digest string) ([]byte, error) {
+		_, data, err := ds.GetBlob(ctx, digest)
+		return data, err
+	})
+}
+
+// restoreRequest is restoreParkedRequest over any blob store, fetch reading
+// one blob's bytes by digest. It is what decides the request a callable
+// reads at delivery, so the function interface's golden runs it
+// (functioninput_test.go).
+func restoreRequest(ctx context.Context, envelope map[string]any, fetch func(context.Context, string) ([]byte, error)) error {
 	req, _ := envelope["request"].(map[string]any)
 	if body, _ := req["body"].(map[string]any); body != nil && body["blob"] != nil {
-		data, encoding, _, err := ds.storedBodyBytes(ctx, body)
+		digest, _ := body["blob"].(string)
+		data, err := fetch(ctx, digest)
 		if err != nil {
-			return fmt.Errorf("substrate: parked body: %w", err)
+			return fmt.Errorf("substrate: parked body: blob %s: %w", digest, err)
 		}
-		if encoding == "base64" {
+		if encoding, _ := body["encoding"].(string); encoding == "base64" {
 			req["body"] = map[string]any{"base64": base64.StdEncoding.EncodeToString(data)}
 		} else {
 			req["body"] = map[string]any{"text": string(data)}
@@ -762,7 +845,7 @@ func (ds *dataset) restoreParkedRequest(ctx context.Context, envelope map[string
 		if digest == "" {
 			continue
 		}
-		_, data, err := ds.GetBlob(ctx, digest)
+		data, err := fetch(ctx, digest)
 		if err != nil {
 			return fmt.Errorf("substrate: parked part %q %s: %w", part["name"], digest, err)
 		}

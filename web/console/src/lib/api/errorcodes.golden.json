@@ -1,0 +1,17 @@
+[
+  "auth",
+  "bad_request",
+  "compacted",
+  "conflict",
+  "forbidden",
+  "function_failed",
+  "guard",
+  "internal",
+  "lossy",
+  "not_found",
+  "parked",
+  "rate_limited",
+  "totp_required",
+  "unavailable",
+  "validation"
+]

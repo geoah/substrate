@@ -1288,7 +1288,7 @@ func TestAggregateLatestReadAnswersTheEarliestAvailablePoint(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT id FROM observed_streams WHERE metric LIKE '%/health/body_mass'`).Scan(&stream); err != nil {
 		t.Fatalf("the stream: %v", err)
 	}
-	repo := testdb.Repository(t)
+	repo := repositoryIDByName(t, f.svc, testdb.Repository(t))
 	if _, err := f.db.Exec(`INSERT INTO observed_segments (repository, kind, record_id, stream, form, first_ts, last_ts, end_ts,
 		points, available, utc_offset_min, offset_known, codes, fingerprint)
 		SELECT $1, $2, 'nulls/' || i, $3, 'gauge', t, t, t, 1, 0, 0, true, '{}', '\x00'

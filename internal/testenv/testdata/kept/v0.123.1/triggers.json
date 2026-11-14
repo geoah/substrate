@@ -1,0 +1,53 @@
+{
+  "parked": {
+    "on-hook": [],
+    "on-mirror": [],
+    "on-page": []
+  },
+  "statuses": [
+    {
+      "callable": "kept.example.com/auto/hook",
+      "enabled": true,
+      "head": 596,
+      "health": "ok",
+      "id": "on-hook",
+      "inFlight": 0,
+      "kind": "webhook",
+      "lastOkAt": "2026-11-13T00:41:36.478945Z",
+      "parked": 0,
+      "pending": 0,
+      "webhookPath": "/webhooks/kept.example.com/on-hook"
+    },
+    {
+      "callable": "kept.example.com/auto/mirror",
+      "cursor": 557,
+      "enabled": false,
+      "head": 596,
+      "health": "ok",
+      "id": "on-mirror",
+      "inFlight": 0,
+      "kind": "record",
+      "lag": 39,
+      "lastDeliveredAt": "2026-11-13T00:41:35.940657Z",
+      "lastOkAt": "2026-11-13T00:41:35.931685Z",
+      "lastPassAt": "2026-11-13T00:41:35.929053Z",
+      "parked": 0,
+      "pending": 0
+    },
+    {
+      "callable": "kept.example.com/auto/page",
+      "cursor": 596,
+      "enabled": true,
+      "head": 596,
+      "health": "ok",
+      "id": "on-page",
+      "inFlight": 0,
+      "kind": "record",
+      "lastDeliveredAt": "2026-11-13T00:41:36.467779Z",
+      "lastOkAt": "2026-11-13T00:41:36.455074Z",
+      "lastPassAt": "2026-11-13T00:46:36.930081Z",
+      "parked": 0,
+      "pending": 0
+    }
+  ]
+}

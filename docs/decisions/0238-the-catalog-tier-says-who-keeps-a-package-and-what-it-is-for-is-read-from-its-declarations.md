@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-07
 decision-makers: George Antoniadis
+amended-by: 0258
 ---
 
 # 0238. The catalog tier says who keeps a package, and what it is for is read from its declarations

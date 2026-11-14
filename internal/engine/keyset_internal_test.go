@@ -78,12 +78,12 @@ func TestSeekPredicate(t *testing.T) {
 // signature and the key values (nil = NULL), and a corrupt token is rejected.
 func TestKeysetRoundTrip(t *testing.T) {
 	v := "hello"
-	tok := encodeKeyset("created_at DESC NULLS LAST, id DESC", []*string{&v, nil}, 42, "gen-1")
+	tok := encodeKeyset("request-1", "created_at DESC NULLS LAST, id DESC", []*string{&v, nil}, 42, "gen-1")
 	got, err := decodeKeyset(tok)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.O != "created_at DESC NULLS LAST, id DESC" || len(got.K) != 2 {
+	if got.V != keysetVersion || got.R != "request-1" || got.O != "created_at DESC NULLS LAST, id DESC" || len(got.K) != 2 {
 		t.Fatalf("token = %+v", got)
 	}
 	if got.K[0] == nil || *got.K[0] != "hello" || got.K[1] != nil {

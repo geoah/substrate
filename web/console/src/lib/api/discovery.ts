@@ -23,6 +23,26 @@ export interface AuthPolicy {
   inviteRequired: boolean
   /** False only where the second factor is switched off. */
   totpRequired: boolean
+  /** The host a short repository name is completed under: the host of the
+   * server's public URL, never the address this page was reached at
+   * (decision 0288). Empty where the server has none, and then a name is
+   * typed whole; absent until discovery answers, and from an older server,
+   * which completes a short name under the address it was reached at. */
+  nameHost?: string
+}
+
+/** One entry of server.json's `features`: a group of routes the server
+ * serves, with the label that says how far its shape is promised. The label
+ * is read as the string it is, so a value a later server adds still shows. */
+interface Feature {
+  name: string
+  /** `stable`, `beta` or `experimental`. */
+  stability: string
+  /** Counts up from 1 each time the feature gains something a client may
+   * want to check for. Absent from a server older than the count. */
+  revision?: number
+  /** Where the server announces a coming break or a deprecation. */
+  notice?: string
 }
 
 /** The fields of server.json the console reads, every one optional so an
@@ -32,7 +52,7 @@ export interface AuthPolicy {
 interface DiscoveryDoc {
   registration?: Partial<AuthPolicy>
   server?: { version?: string }
-  features?: { name: string; stability: string }[]
+  features?: Feature[]
   surfaces?: Record<string, { endpoint?: string }>
   /** The deployment's own name, logo and landing page, where it sets one.
    * `readSite` (lib/site.ts) checks it before anything uses it. */
@@ -41,10 +61,32 @@ interface DiscoveryDoc {
 
 const DISCOVERY_PATH = "/.well-known/substrate/server.json"
 
+// The last document this tab read, whichever reader asked: what the door's
+// shape follows (doorNamesAPerson), without a request of its own.
+let lastDoc: DiscoveryDoc | null = null
+
 export function fetchDiscoveryDoc(): Promise<DiscoveryDoc> {
   return request<DiscoveryDoc>("GET", DISCOVERY_PATH, undefined, {
     anonymous: true,
+  }).then((doc) => {
+    lastDoc = doc
+    return doc
   })
+}
+
+/** The `auth` revision whose door names a person (decision 0274): a sign-in,
+ * a registration and every credential change send `identity`, the name the
+ * person signs in with, and a sign-in may name the repository it opens. */
+export const PERSON_DOOR_REVISION = 3
+
+/** Whether the server's door names a person, by the last document this tab
+ * read. A console bundled in an app meets an older server at its own sign-in
+ * page, which the app keeps for a server below what it requires: that door
+ * takes the sign-in name as `repository` and refuses `identity`, and every
+ * person there signs in with their repository's name. Before any document
+ * answered, the console speaks the door of the server it was built with. */
+export function doorNamesAPerson(): boolean {
+  return lastDoc === null || hasFeature(lastDoc, "auth", PERSON_DOOR_REVISION)
 }
 
 /** The whole document, for a page that shows what the server says about
@@ -64,12 +106,26 @@ export const STRICT_AUTH_POLICY: AuthPolicy = {
   totpRequired: true,
 }
 
-/** Whether the document lists a feature by name. */
+/** Whether the document lists a feature by name and, with `atLeast`, at that
+ * revision or a later one. The server refuses a request field it does not
+ * know, so a caller about to send what revision 3 added asks for at least 3
+ * first.
+ *
+ * An entry without a revision is an older server's, from before revisions
+ * were counted, and nothing a revision added is there: it reads as 0, below
+ * every revision a caller can ask for. */
 export function hasFeature(
   doc: Pick<DiscoveryDoc, "features"> | null | undefined,
-  name: string
+  name: string,
+  atLeast = 0
 ): boolean {
-  return Boolean(doc?.features?.some((f) => f.name === name))
+  const feature = doc?.features?.find((f) => f.name === name)
+  if (!feature) return false
+  const revision =
+    typeof feature.revision === "number" && feature.revision > 0
+      ? feature.revision
+      : 0
+  return revision >= atLeast
 }
 
 /** The IN-FLIGHT request, and only that: doors mounting together share one
@@ -100,6 +156,10 @@ export function fetchAuthPolicy(): Promise<AuthPolicy> {
       ? {
           inviteRequired: doc.registration?.inviteRequired !== false,
           totpRequired: doc.registration?.totpRequired !== false,
+          nameHost:
+            typeof doc.registration?.nameHost === "string"
+              ? doc.registration.nameHost
+              : undefined,
         }
       : STRICT_AUTH_POLICY
   )
@@ -115,6 +175,7 @@ export function fetchDoorFeature(name: string): Promise<boolean> {
  * use it to keep one case's answer out of the next. */
 export function resetAuthPolicy(): void {
   pending = null
+  lastDoc = null
 }
 
 /** The policy as a hook. It renders STRICT until the answer lands, so a slow

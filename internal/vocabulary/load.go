@@ -20,11 +20,11 @@ import (
 //   - SourceBuiltin is the seed: the core package the binary writes into a new
 //     repository's changelog, and the boot upgrade that carries it forward;
 //   - SourcePublished is a PUBLISHED package (a provider or a standard
-//     package), installed from the catalog's published tier. Its publisher
+//     package), added from the catalog as its publisher keeps it. Its publisher
 //     ships its declarations and its migrations, so only a substrate path
 //     writes them (decision record 0048);
 //   - SourceInstalled is everything else: the kinds the repository declares
-//     itself and the sample packages it imported, all of them its own to
+//     itself and the sample packages it added, all of them its own to
 //     change.
 const (
 	SourceBuiltin   = "builtin"
@@ -37,7 +37,7 @@ const (
 // column remap (`substrate.reamde.dev/core/temporal(point: dueAt)`). The
 // first group still admits a bare word so the refusal can name it
 // (bareNameProblem) rather than call the whole entry unparseable.
-var reCapBinding = regexp.MustCompile(`^((?:[a-z0-9][a-z0-9.-]*/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
+var reCapBinding = regexp.MustCompile(`^((?:(?:~|[a-z0-9][a-z0-9.-]*)/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
 // LoadFS parses every declaration under fsys into one registry. The unit is
 // the document, not the file: manifests are grouped by the PACKAGE they
@@ -61,6 +61,9 @@ func LoadShipped(fsys fs.FS) (*Registry, []ShippedRecord, error) {
 	}
 	authorities, err := BuildPackages(docs, SourceBuiltin)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := holdRecordsToTheirDialect(authorities, records); err != nil {
 		return nil, nil, err
 	}
 	r := NewRegistry()
@@ -162,8 +165,8 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 		if d.Kind == DocAuthority || d.Kind == DocPackage {
 			where = "metadata.id"
 		}
-		if !ValidAuthority(authority) {
-			l.errf("%s %s: %s %q must be a DNS name", d.Kind, d.ID, where, authority)
+		if d.Kind == DocAuthority && !ValidAuthority(authority) || !ValidKindAuthority(authority) {
+			l.errf("%s %s: %s %q must be a DNS name, or %q for the repository's own", d.Kind, d.ID, where, authority, Local)
 			continue
 		}
 		if d.Kind != DocAuthority && !ValidPackage(name) {
@@ -176,8 +179,8 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 		}
 		b := bucket(pkg)
 		// The bundle closure counts every member kind, present and future:
-		// anything but the header, the actors and the bundle itself.
-		if d.Kind != DocAuthority && d.Kind != DocPackage && d.Kind != DocActor && d.Kind != DocBundle {
+		// anything but the header and the bundle itself.
+		if d.Kind != DocAuthority && d.Kind != DocPackage && d.Kind != DocBundle {
 			b.memberIDs = append(b.memberIDs, d.ID)
 		}
 		switch d.Kind {
@@ -187,8 +190,6 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 				continue
 			}
 			b.header = &d
-		case DocActor:
-			b.actors = append(b.actors, d)
 		case DocTrait:
 			b.capabilities = append(b.capabilities, d)
 		case DocPropertyType:
@@ -229,7 +230,6 @@ type packageDocs struct {
 	// header is the group's own document: a `package`, or the `authority`
 	// document of an authority row.
 	header       *Document
-	actors       []Document
 	capabilities []Document
 	datatypes    []Document
 	types        []Document
@@ -245,6 +245,11 @@ type packageDocs struct {
 type loader struct {
 	pkg      *Package
 	problems []string
+	// needs and needsKey are the highest dialect a key of the package being
+	// built arrived in, and that key (noteKey): what its header's `dialect:`
+	// may not state less than.
+	needs    int64
+	needsKey string
 	// source is the origin BuildPackages was called with. One rule reads it —
 	// `runtime: host`, which only the shipped build may declare (function.go)
 	// — because the engine implements only what the engine ships.
@@ -268,6 +273,20 @@ var packageDataKeys = map[string]bool{
 	// `retired` is the package's spent kind names (decision 0055): parsed by
 	// parsePackageRetired, refused on every admission door if declared again.
 	"retired": true,
+	// `stability` is the label the package states for its kinds (decision
+	// 0256): parsed by parsePackageStability, stored as written.
+	"stability": true,
+	// `interface` is the function interface the package's code is written
+	// against (decision 0265): parsed by parsePackageInterface, refused when
+	// this server does not run it.
+	"interface": true,
+	// `dialect` is the vocabulary dialect the package needs (decision 0268):
+	// parsed by parsePackageDialect, refused above Dialect.
+	"dialect": true,
+	// `retention` is how long the history of the package's kinds is kept
+	// where a kind states none (decision 0282): parsed by parseRetentionKey,
+	// stored as written, and acted on by nothing yet.
+	"retention": true,
 }
 
 // packageRetiredKeys is the package header's `retired:` block: the kind names
@@ -287,8 +306,6 @@ var kindRetiredKeys = map[string]bool{"properties": true, "values": true, "state
 // unmoved version is an upgrade no repository receives.
 var authorityDataKeys = map[string]bool{"description": true, "version": true}
 
-var actorDataKeys = map[string]bool{"authority": true, "package": true, "tier": true}
-
 var datatypeDataKeys = map[string]bool{
 	"authority": true, "package": true, "base": true, "pattern": true, "min": true, "max": true,
 	"values": true, "description": true,
@@ -305,6 +322,8 @@ var capabilityDataKeys = map[string]bool{
 // buildPackage assembles one group from its manifests: a package with its
 // members, or the authority row an authority document declares.
 func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *Package {
+	l.needs, l.needsKey = 0, ""
+	l.noteDocuments(gd)
 	authority, name := SplitPackageRef(identity)
 	isAuthority := name == ""
 	if isAuthority {
@@ -327,7 +346,6 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		Authority:     authority,
 		Name:          name,
 		Source:        source,
-		ActorTiers:    map[string]substrate.Tier{},
 		PropertyTypes: map[string]*PropertyType{},
 		Traits:        map[string]*Trait{},
 		Kinds:         map[string]*Kind{},
@@ -351,7 +369,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		if gd.header.Kind != DocAuthority {
 			l.errf("%s: an authority names no package, so it declares no members", where)
 		}
-		if len(gd.memberIDs) > 0 || len(gd.actors) > 0 || len(gd.bundles) > 0 {
+		if len(gd.memberIDs) > 0 || len(gd.bundles) > 0 {
 			l.errf("%s: a declaration lives in a package — name one in data.package", where)
 		}
 		return g
@@ -371,71 +389,13 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 		l.errf("%s: data.package %q, but metadata.id says %q", where, declared, name)
 	}
 	g.Description = l.parseDescription(where+": data", gd.header.Data)
+	l.parsePackageStability(where, gd.header.Data, g)
+	l.parsePackageInterface(where, gd.header.Data, g)
+	l.parsePackageDialect(where, gd.header.Data, g)
+	l.parseRetentionKey(where, gd.header.Data, &g.Retention)
 	g.Version = l.parseVersion(where, gd.header.Data)
 	if g.Version == 0 {
 		g.Version = DefaultVersion
-	}
-
-	sortDocs(gd.actors)
-	for _, d := range gd.actors {
-		where := "actor " + d.ID
-		l.checkKeys(where, d.Data, actorDataKeys)
-		if !ValidActor(d.ID) {
-			l.errf("%s: must be a lowercase dotted name", where)
-			continue
-		}
-		// A MINTED HAND IS NEVER DECLARED FOR SOMEBODY ELSE. The engine
-		// derives `bundle:`, `function:` and `agent:` actors from the identity
-		// that writes (substrate/actor.go), and an actor DECLARATION carries a
-		// tier — so an authority able to name another's hand here would set
-		// the tier that hand's writes stand at (registry ActorTier, consulted
-		// before the reserved-name fallback in engine actorTier).
-		//
-		// A dispatch hand is minted per call and declared by nobody. A bundle
-		// hand has one legal declarer, the package it names, which is the
-		// PackageActor a package declares so its own tier and mapping
-		// precedence are legible. The retired `connector:` spelling stays
-		// declarable: repositories written before record 0025 store those
-		// declarations and must keep loading, and since nothing mints one, no
-		// live writer can take a tier from it.
-		switch {
-		case strings.HasPrefix(d.ID, substrate.FunctionActorPrefix),
-			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
-			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
-			continue
-		case strings.HasPrefix(d.ID, substrate.AppActorPrefix):
-			l.errf("%s: an app's actor is derived from the token the owner approved, so it is never declared", where)
-			continue
-		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != PackageActor(identity):
-			l.errf("%s: a bundle actor belongs to the package it names — %s may declare %q and no other",
-				where, identity, PackageActor(identity))
-			continue
-		}
-		if slices.Contains(g.Actors, d.ID) {
-			l.errf("%s: declared twice in %s", where, name)
-			continue
-		}
-		// The manager tier is an EXPLICIT attribute of the actor: declared data,
-		// never inferred from the actor's spelling. Authority-declared actors
-		// are the sync machinery, so machine is the default.
-		tier := substrate.TierMachine
-		switch declared := mstr(d.Data, "tier"); declared {
-		case "":
-		case string(substrate.TierOwner), string(substrate.TierBundle), string(substrate.TierMachine):
-			tier = substrate.Tier(declared)
-		default:
-			l.errf("%s: tier must be owner, bundle or machine, got %q", where, declared)
-			continue
-		}
-		if d.ID == identity && tier != substrate.TierMachine {
-			// Record 60: a package-named actor has no record row of its own —
-			// the package row is it, and that row carries no tier to
-			// round-trip.
-			l.errf("%s: a package-named actor is the closure's own hand — its tier is machine", where)
-			continue
-		}
-		g.Actors = append(g.Actors, d.ID)
-		g.ActorTiers[d.ID] = tier
 	}
 
 	// Custom property types: refinements of a base type.
@@ -596,6 +556,7 @@ func (l *loader) buildPackage(identity string, gd *packageDocs, source string) *
 	// and the install closure checks against the package's own members; the
 	// inputs resolve in Finalize/Install, after trait bindings.
 	l.buildBundle(gd)
+	l.checkStatedDialect(identity, g)
 	return g
 }
 
@@ -704,7 +665,6 @@ func (l *loader) localName(where, identity, pkg string) (string, bool) {
 var declarationDataKeys = map[string]map[string]bool{
 	DocAuthority:     authorityDataKeys,
 	DocPackage:       packageDataKeys,
-	DocActor:         actorDataKeys,
 	DocKind:          typeDataKeys,
 	DocTrait:         capabilityDataKeys,
 	DocPropertyType:  datatypeDataKeys,
@@ -764,6 +724,7 @@ func DeletedDeclarationKeys(short string) map[string]string {
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
 	for k := range data {
 		if allowed[k] {
+			l.noteKey(allowed, k)
 			continue
 		}
 		if replacement, gone := deletedDataKeys[k]; gone {
@@ -847,6 +808,10 @@ var typeDataKeys = map[string]bool{
 	// `label` is the kind's display label, both forms (decision 0117): display
 	// text only, read by no route, filter or grant.
 	"label": true,
+	// `retention` is how long the history of the kind's records is kept
+	// (decision 0282): parsed by parseRetentionKey, stored as written, read by
+	// clients and the engine's lookup, and acted on by nothing yet.
+	"retention": true,
 }
 
 // namesKeys is the `names` block's key set: the kind's own name and nothing
@@ -915,15 +880,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		if p == nil {
 			continue
 		}
-		// `body` is the one column-backed property a kind may declare (#68). The
-		// column holds one text value, so a declared body is a single text or
-		// markdown property: a non-text datatype names a column that cannot hold
-		// its value, and a repeated or keyed body has no scalar the column can
-		// store, so every write to it would fail in splitProps.
-		if pname == "body" && (!IsLongText(p.Datatype) || p.Repeated || p.Keyed) {
-			l.errf("%s: data.properties.body: the built-in body column holds one text value; declare body as a single text or markdown property", where)
-			continue
-		}
 		t.Props[pname] = p
 		if p.Machine == nil {
 			continue
@@ -960,6 +916,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	sort.Strings(t.PropOrder)
 	l.parseMovedFrom(where, d, t)
 	l.parseKindPurpose(where, d, t)
+	l.parseRetentionKey(where, d, &t.Retention)
 	l.parseKindIDs(where, d, t)
 	// After the properties: a retired name that is also declared is refused.
 	l.parseKindRetirement(where, d, t)
@@ -968,8 +925,7 @@ func (l *loader) parseType(doc Document) *Kind {
 	// still declares (both present is not a rename), and a built-in column
 	// never renames into a declared property. The engine moves each live
 	// record's value from the old name to the new one at admission
-	// (engine/rename.go), and it moves a key of `props`: `body` lives in its
-	// own column, so neither side of a rename may be body, and two properties
+	// (engine/rename.go), and it moves a key of `props`, so two properties
 	// naming the same previous name would both claim its value. A state
 	// property's key set has no renamedFrom (its value lives in the states
 	// column), and a stored state renamed into a value is the kind change the
@@ -986,9 +942,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		}
 		if _, reserved := reservedProps[rf]; reserved {
 			l.errf("%s.renamedFrom: %q is a built-in property — it never renames", pwhere, rf)
-		}
-		if rf == "body" || pname == "body" {
-			l.errf("%s.renamedFrom: body is column-backed and never renames", pwhere)
 		}
 		if other, taken := renamedFrom[rf]; taken {
 			l.errf("%s.renamedFrom: %q is also the previous name of %q, and one property takes a renamed value", pwhere, rf, other)
@@ -1303,6 +1256,14 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 			l.errf("%s: %q is the reserved key holding the referent record", pwhere, ReferenceTargetField)
 			continue
 		}
+		if pname == ReferenceRepositoryField {
+			// Reserved beside `ref` for the repository a referent lives in,
+			// which a value will carry once a reference can point into another
+			// repository. A link property of this name would hold that key's
+			// place before anything writes it.
+			l.errf("%s: %q is the reserved key naming the repository the referent lives in; name the link property otherwise", pwhere, ReferenceRepositoryField)
+			continue
+		}
 		pd := asMapOrNil(pdef)
 		if pd == nil {
 			// No bare-datatype shorthand here, and that is deliberate: the
@@ -1369,11 +1330,8 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 // already arrives on every record, and validating a second declaration of the
 // name against the wrong one is the danger. `title` is derived (ADR 0016) and
 // `at`/`endsAt`/`dueAt` arrive through a temporal trait, so all four stay
-// reserved. `body` is NOT here: it is a declarable, column-backed text
-// property now (ADR 0041, the body half of #68). A kind that declares `body`
-// gets the hot body column (columnProp), refused only when its datatype is
-// not text-family; a kind that does not declare `body` carries none, and a
-// write naming it is refused like any undeclared property.
+// reserved. `body` is not one: it is an ordinary property a kind may declare
+// with any datatype (decision 0273).
 var reservedProps = map[string]string{
 	"title":  "every record carries `title`; a derived one is a displayTemplate",
 	"at":     "`at` is the temporal trait's, bound with `" + HotBinding("at") + "`",
@@ -1781,8 +1739,9 @@ var machineKeys = map[string]bool{
 	// picker that stops offering a deprecated property stops offering it
 	// whether the property holds a value or a state.
 	"deprecated": true,
-	// The states that close a record (decision 0226), as on an enum.
-	"done": true, "dropped": true,
+	// The states that close a record (decision 0226), as on an enum, and
+	// the open ones that wait for the owner's acceptance (decision 0247).
+	"done": true, "dropped": true, "proposed": true,
 }
 
 var transitionKeys = map[string]bool{
@@ -1863,27 +1822,44 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 }
 
 // parseClosing reads `done:` and `dropped:`, the values of an enum or the
-// states of a machine that close a record (decision 0226). declared is the
-// property's own values, nil where it holds none: there, either key is
-// refused. Each entry names a declared value, no value is listed twice, and
-// at least one is left open. The lists say when a RECORD is closed, so they
-// sit on one value of the record's own: a field, link data, a list or a map
-// would carry them where nothing reads them.
+// states of a machine that close a record (decision 0226), and `proposed:`,
+// the open ones a record waits in until the owner accepts it (decision
+// 0247). declared is the property's own values, nil where it holds none:
+// there, every key is refused. Each entry names a declared value, no value
+// is listed twice, and at least one is left in none of the lists, so a record
+// has an open state to be accepted into. The lists say where a RECORD
+// stands, so they sit on one value of the record's own: a field, link data,
+// a list or a map would carry them where nothing reads them.
 func (l *loader) parseClosing(where string, d map[string]any, p *Property, declared []string, depth int) {
 	_, hasDone := d["done"]
 	_, hasDropped := d["dropped"]
-	if !hasDone && !hasDropped {
+	_, hasProposed := d["proposed"]
+	if !hasDone && !hasDropped && !hasProposed {
 		return
+	}
+	// The keys the property wrote, so a refusal names what is there.
+	var keys []string
+	for _, k := range []struct {
+		name    string
+		present bool
+	}{{"done", hasDone}, {"dropped", hasDropped}, {"proposed", hasProposed}} {
+		if k.present {
+			keys = append(keys, k.name)
+		}
+	}
+	named, names, belongs := keys[0], "names", "belongs"
+	if len(keys) > 1 {
+		named, names, belongs = strings.Join(keys[:len(keys)-1], ", ")+" and "+keys[len(keys)-1], "name", "belong"
 	}
 	switch {
 	case declared == nil:
-		l.errf("%s: done and dropped name an enum's values or a state machine's states", where)
+		l.errf("%s: %s %s an enum's values or a state machine's states", where, named, names)
 		return
 	case depth > 1:
-		l.errf("%s: done and dropped close a record, so they sit on a kind's own property, never an object field or link data", where)
+		l.errf("%s: %s %s on a kind's own property, never an object field or link data", where, named, belongs)
 		return
 	case p.Repeated || p.Keyed:
-		l.errf("%s: done and dropped close a record by its one status: drop repeated/keyed or drop the lists", where)
+		l.errf("%s: %s %s on a status that holds one value: drop repeated/keyed or drop the lists", where, named, belongs)
 		return
 	}
 	listedIn := map[string]string{}
@@ -1913,13 +1889,37 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 	}
 	p.Done = read("done", hasDone)
 	p.Dropped = read("dropped", hasDropped)
+	p.Proposed = read("proposed", hasProposed)
 	if len(listedIn) >= len(declared) {
-		l.errf("%s: done and dropped leave no value open", where)
+		if hasProposed {
+			l.errf("%s: %s leave no value outside the lists to accept a proposal into", where, named)
+		} else {
+			l.errf("%s: done and dropped leave no value open", where)
+		}
 	}
 	// A creation that names no state lands in the initial one, and a record
-	// nobody placed is not over before it starts.
-	if p.Machine != nil && listedIn[p.Machine.Initial] != "" {
-		l.errf("%s: the initial state %q is listed in %s: a record starts open", where, p.Machine.Initial, listedIn[p.Machine.Initial])
+	// nobody placed is not over before it starts. It may start proposed: an
+	// agent's suggestion is born waiting.
+	if p.Machine != nil {
+		if in := listedIn[p.Machine.Initial]; in == "done" || in == "dropped" {
+			l.errf("%s: the initial state %q is listed in %s: a record starts open", where, p.Machine.Initial, in)
+		}
+	}
+	// Accepting a proposal moves it to an open state, and a machine moves
+	// only along its transitions, so each proposed state has one to take.
+	if p.Machine != nil {
+		for _, s := range p.Proposed {
+			accepted := false
+			for _, tr := range p.Machine.Transitions {
+				if tr.From == s && listedIn[tr.To] == "" {
+					accepted = true
+					break
+				}
+			}
+			if !accepted {
+				l.errf("%s.proposed: %q has no transition to an open state that is not proposed, so nothing can accept it", where, s)
+			}
+		}
 	}
 }
 
@@ -1930,9 +1930,10 @@ func (l *loader) parseClosing(where string, d map[string]any, p *Property, decla
 var propKeys = map[string]bool{
 	"type": true, "repeated": true, "embed": true, "fts": true, "values": true,
 	"pattern": true, "min": true, "max": true,
-	// An enum's values that close a record, done and dropped (decision 0226);
+	// An enum's values that close a record, done and dropped (decision 0226),
+	// and the open ones that wait for acceptance, proposed (decision 0247);
 	// refused on every other datatype (parseClosing).
-	"done": true, "dropped": true,
+	"done": true, "dropped": true, "proposed": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
 	// A quantity's own four (decision 0186): the anchor unit of the
@@ -1994,13 +1995,6 @@ var uniqueForbiddenKinds = map[Datatype]string{
 	DatatypeBlobRef: "a blob-ref names bytes many records may legitimately share",
 }
 
-// writerRoles is the closed set of a property's `writer:` restriction: who
-// alone may write the property, enforced in the write path after the merged
-// row is known.
-var writerRoles = map[string]bool{
-	WriterOAuth: true, WriterConnector: true, WriterOwner: true,
-}
-
 // objectPropKeys is an object property's own key set: no fts, no
 // embed, no filter machinery: object properties stay out of all three until
 // a consumer arrives. `repeated: true` is allowed, and `keyed: true` is
@@ -2012,8 +2006,8 @@ var objectPropKeys = map[string]bool{
 	"type": true, "fields": true, "repeated": true, "description": true,
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 	"deprecated": true,
-	// A connector's resume cursor is an object, and it is the connector's hand
-	// exactly as a scalar cursor is: without the role every editing surface
+	// A sync's resume cursor is an object, and its function writes it exactly
+	// as it writes a scalar cursor: without a `writer:` every editing surface
 	// offered it to the owner as a form (the Connections page asked a person
 	// to type a page token).
 	"writer": true,
@@ -2045,9 +2039,9 @@ var referencePropKeys = map[string]bool{
 	"mustExist": true, "onDelete": true, "properties": true, "subject": true,
 	"keyed": true, "keyPattern": true, "managed": true,
 	// A connection's identity (`account.user`, `account.address`) is a
-	// reference the drain writes once it knows who the token belongs to; the
-	// role keeps it off the owner's form, where it was a picker over an empty
-	// collection.
+	// reference the drain writes once it knows who the token belongs to; its
+	// `writer:` keeps it off the owner's form, where it was a picker over an
+	// empty collection.
 	"writer": true,
 	// `unique` on a pointer is the one-to-one link: at most one live record may
 	// name any given referent. Reserved like everywhere else: nothing enforces
@@ -2119,13 +2113,8 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// whatever that shape is. The write path enforces the role by property
 	// NAME (engine checkPropertyOwnership), so nothing below depends on the
 	// datatype. A state machine takes none; its key set refuses the key.
-	if w := mstr(d, "writer"); w != "" {
-		if !writerRoles[w] {
-			l.errf("%s: writer %q is not a role — one of %s, %s, %s", where, w,
-				WriterOAuth, WriterConnector, WriterOwner)
-		} else {
-			p.Writer = w
-		}
+	if raw, ok := d["writer"]; ok {
+		p.Writers = l.parseWriters(where, raw)
 	}
 	if p.Keyed && p.Repeated {
 		l.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
@@ -2631,6 +2620,13 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 		fd := asMap(fdef)
 		if s, ok := fdef.(string); ok {
 			fd = map[string]any{"type": s}
+		}
+		// A field takes no `writer:`: the write path holds a property's value
+		// whole, so the property's `writer:` is what guards its fields
+		// (decision 0290).
+		if _, has := fd["writer"]; has {
+			l.errf("%s: a field takes no `writer:` — the property's `writer:` guards its whole value, so put it on the property", fwhere)
+			continue
 		}
 		// The forbidden kinds are refused by name before the parse: a state
 		// declaration would otherwise fail on its missing machine first.
@@ -3241,3 +3237,48 @@ func mslice(m map[string]any, k string) []any {
 
 // Two bundles may share a first label: an actor carries the full authority
 // (record 0025), so the label is a display name and nothing keys on it.
+
+// parseWriters reads a property's `writer:` (decision 0290): one type of
+// actor, or a list of them, each one of substrate.ActorTypes and none twice.
+// A word from before actor types is refused naming the one that replaced it,
+// as the envelope's retired keys are.
+func (l *loader) parseWriters(where string, raw any) []string {
+	var words []string
+	switch v := raw.(type) {
+	case string:
+		words = []string{v}
+	case []any:
+		for _, w := range v {
+			s, ok := w.(string)
+			if !ok {
+				l.errf("%s: writer: each entry is a type of actor, not %v", where, w)
+				return nil
+			}
+			words = append(words, s)
+		}
+	default:
+		l.errf("%s: writer: a type of actor or a list of them — %s — not %v", where, strings.Join(substrate.ActorTypes, ", "), raw)
+		return nil
+	}
+	if len(words) == 0 {
+		l.errf("%s: writer: an empty list admits no writer — name a type of actor, or drop the key", where)
+		return nil
+	}
+	var out []string
+	for _, w := range words {
+		if instead, retired := retiredWriters[w]; retired {
+			l.errf("%s: writer %q is retired: write %s", where, w, instead)
+			return nil
+		}
+		if !slices.Contains(substrate.ActorTypes, w) {
+			l.errf("%s: writer %q is not a type of actor — %s", where, w, strings.Join(substrate.ActorTypes, ", "))
+			return nil
+		}
+		if slices.Contains(out, w) {
+			l.errf("%s: writer names %q twice", where, w)
+			return nil
+		}
+		out = append(out, w)
+	}
+	return out
+}

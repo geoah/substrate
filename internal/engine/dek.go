@@ -1,19 +1,16 @@
 package engine
 
 // The per-repository data-encryption key (DEK). Every sealed-store payload
-// seals under the repository's own random 32-byte key; the control plane
-// holds that key wrapped under the host credential key, and the repository's
-// recoverykey record holds it wrapped to the user's age recipient. The two
-// planes never mix: nothing host-keyed sits in the repository, and the user
-// plane (changelog + sealed + blobs) is recoverable with the age identity
-// alone. Every payload is bound-framed under the DEK, from the repository's
-// first write: a plain one and a host-key-sealed one are refused wherever
-// they are met (decision 0059). Each DEK wrap names the host key it is under
-// (`dek_key_id`), so a wrong SUBSTRATE_CREDENTIAL_KEY is reported as the
-// wrong key, by id, and not as damage.
+// seals under the repository's own random 32-byte key, and the control plane
+// and the manifest hold that key wrapped under the host credential key, and
+// nowhere else (decision 0264): a repository's secrets travel with the host
+// key, or not at all. Every payload is bound-framed under the DEK, from the
+// repository's first write: a plain one and a host-key-sealed one are refused
+// wherever they are met (decision 0059). Each DEK wrap names the host key it
+// is under (`dek_key_id`), so a wrong SUBSTRATE_CREDENTIAL_KEY is reported as
+// the wrong key, by id, and not as damage.
 
 import (
-	"bytes"
 	"context"
 	"crypto/cipher"
 	"crypto/rand"
@@ -23,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 
-	"filippo.io/age"
+	"github.com/geoah/substrate/internal/changelogfile"
 )
 
 // newDEK mints a repository's 32-byte data-encryption key.
@@ -182,13 +179,6 @@ func (ds *dataset) openPayload(payload, aad []byte) ([]byte, error) {
 	return openRepoPayload(payload, ds.dek, aad)
 }
 
-// OpenPayloadWithKey opens one sealed-store payload under the supplied key,
-// presenting aad as the row's binding: the recovery tooling's read, and the
-// proof that a DEK recovered through the age wrap is sufficient on its own.
-func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
-	return openRepoPayload(payload, key, aad)
-}
-
 // errPlainRefused is the refusal of a `credPlain` payload in a repository's
 // sealed store: every payload seals under the DEK, so a plain one can only
 // have been planted.
@@ -227,43 +217,15 @@ func openRepoPayload(payload, dek, aad []byte) ([]byte, error) {
 	return out, nil
 }
 
-// --- the age recovery wrap -------------------------------------------------
-
-// recoveryAlgorithm names the one recovery scheme v1 speaks.
-const recoveryAlgorithm = "age-x25519-v1"
-
-// wrapDEKToRecipient seals a DEK to the user's age recipient: the bytes only
-// the age identity opens, safe in the changelog.
-func wrapDEKToRecipient(dek []byte, publicKey string) ([]byte, error) {
-	recipient, err := age.ParseX25519Recipient(publicKey)
-	if err != nil {
-		return nil, fmt.Errorf("%w: recovery public key is not an age recipient: %w",
-			errBadRecoveryKey, err)
+// sealedFilesOpenUnder opens every sealed value under dek alone, each under
+// its own row binding, and names the first that does not: the check behind a
+// restore, whose payloads seal under its DEK and nothing else (0059).
+func sealedFilesOpenUnder(files []changelogfile.SealedRecord, dek []byte) error {
+	for _, f := range files {
+		if _, err := openRepoPayload(f.Payload, dek, sealedAAD(f.Ref, f.RecordKind, f.RecordID)); err != nil {
+			return fmt.Errorf("the sealed value %s (%s %s) does not open under the DEK: %w",
+				f.Ref, f.RecordKind, f.RecordID, err)
+		}
 	}
-	var buf bytes.Buffer
-	w, err := age.Encrypt(&buf, recipient)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := w.Write(dek); err != nil {
-		return nil, err
-	}
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// errBadRecoveryKey marks a recipient the wrap refuses.
-var errBadRecoveryKey = errors.New("substrate/engine: bad recovery key")
-
-// generateRecoveryIdentity mints an age identity server-side, for the
-// registration path that brought no recipient of its own. The identity
-// string is returned ONCE and never stored.
-func generateRecoveryIdentity() (identity, publicKey string, err error) {
-	id, err := age.GenerateX25519Identity()
-	if err != nil {
-		return "", "", err
-	}
-	return id.String(), id.Recipient().String(), nil
+	return nil
 }

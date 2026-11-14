@@ -272,8 +272,12 @@ func TestBeeperDesktopErrorStillErrors(t *testing.T) {
 	if stamp["syncState"] != "erroring" {
 		t.Fatalf("syncState = %v, want erroring for a 401 Beeper answered", stamp["syncState"])
 	}
-	if e, _ := stamp["syncError"].(string); !strings.Contains(e, "401") {
-		t.Fatalf("syncError = %v, want the 401", stamp["syncError"])
+	e, _ := stamp["syncError"].(string)
+	if !strings.HasPrefix(e, "Beeper Desktop no longer accepts the token on the Beeper config.") {
+		t.Fatalf("syncError = %q, want the 401's sentence with the fix first", e)
+	}
+	if !strings.Contains(e, "\n401 invalid token") {
+		t.Fatalf("syncError = %q, want Beeper's own words on the line after it", e)
 	}
 	if v, ok := stamp["unreachableSince"]; !ok || v != nil {
 		t.Fatalf("unreachableSince = %v (present %v), want it cleared: Beeper answered", v, ok)

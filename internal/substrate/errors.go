@@ -21,12 +21,15 @@ var (
 	// confirm it (decision 0067).
 	ErrLossyConversion = errors.New("substrate: lossy conversion refused")
 	ErrValidation      = errors.New("substrate: validation failed")
-	// ErrStaleHistory is a list cursor minted under another history
-	// generation: a restore replaced the changelog since, so the positions
-	// the cursor carries mean nothing here. The client lists again. It wraps
-	// ErrValidation so a caller that only knows the older sentinel still
-	// refuses it; the API answers it as the changelog's own 410.
-	ErrStaleHistory = fmt.Errorf("%w: cursor from another history", ErrValidation)
+	// ErrStaleHistory is a list cursor this server cannot resume, through no
+	// doing of the client's: it was minted under another history generation
+	// (a restore replaced the changelog since), or the filter and order it
+	// was cut from now resolve to another order (a declaration or a unit
+	// changed), or by another version of the cursor's format. The client
+	// lists again. It wraps ErrValidation so a caller that only knows the
+	// older sentinel still refuses it; the API answers it as the changelog's
+	// own 410.
+	ErrStaleHistory = fmt.Errorf("%w: the cursor cannot be resumed", ErrValidation)
 	ErrForbidden    = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
 	// ErrGated marks a write a policy HELD rather than refused: it converted
 	// into a recordpatchrequest awaiting review, and the message names it. The
@@ -117,6 +120,43 @@ var (
 	// ErrRestartRequired, and the payload's reason is ReasonKeyRefused. The
 	// message names the vendor and where to add a key.
 	ErrKeyRefused = errors.New("substrate: the provider refused its key")
+	// ErrWriteInDoubt marks an error that follows a write whose commit may
+	// have landed: the commit was sent and its answer was lost, or Postgres
+	// committed and a step after it failed (decision 0165). The engine wraps
+	// it together with the cause, so the cause still decides the status; the
+	// payload's reason is ReasonInDoubt. A write's error without it rolled
+	// back. The client reads the record, or repeats the request under the
+	// same Idempotency-Key, which answers the first attempt's outcome if it
+	// landed.
+	ErrWriteInDoubt = errors.New("substrate: the write may have landed")
+	// ErrFirstAttemptRunning and ErrFirstAttemptLanded mark a conflict that
+	// is about the first attempt under an Idempotency-Key, not this request,
+	// which did not run: the first has not answered yet and may still land
+	// (ReasonFirstAttemptRunning), or it landed and its outcome was too large
+	// to keep (ReasonFirstAttemptLanded), so its write stands and is read
+	// where the message says. Each follows ErrConflict, whose words lead.
+	ErrFirstAttemptRunning = errors.New("the first attempt under this key has not answered")
+	ErrFirstAttemptLanded  = errors.New("the first attempt under this key landed")
+	// ErrSignOutIncomplete marks a password change that asked to sign out
+	// everywhere and did not finish: the password changed and the tokens
+	// were not ended, or either write is in doubt (wrapped with
+	// ErrWriteInDoubt, which then means the password may have changed). The
+	// API answers it with a message that says which, and what to do (sign
+	// out everywhere again, with the new password or, while in doubt, the
+	// one that signs in), whatever the cause was.
+	ErrSignOutIncomplete = errors.New("substrate: the password change asked to sign out everywhere, and the sign-out did not finish")
+	// ErrSetAside refuses every request for a repository the server set
+	// aside at its start: its start-up check found it damaged, so the
+	// server serves the others and never opens this one, and writes nothing
+	// to it from then on. It lifts when the operator repairs it and restarts the
+	// server, so it is not ErrUnavailable, which an engine caller may retry.
+	// The API answers it 503 `unavailable` with Retry-After, and the
+	// payload's reason is ReasonSetAside.
+	ErrSetAside = errors.New("substrate: the repository is set aside")
+	// ErrNotPermitted is a refusal by the one check (decision 0276): the
+	// rules of the hand that writes, or of the actor it acts for, do not
+	// allow the write. It follows ErrForbidden, whose words lead.
+	ErrNotPermitted = errors.New("no rule allows it")
 )
 
 // ReasonObservedRederiving is the ErrorPayload reason of ErrObservedRederiving.
@@ -128,6 +168,9 @@ const ReasonQuota = "quota"
 // ReasonKeyRefused is the ErrorPayload reason of ErrKeyRefused.
 const ReasonKeyRefused = "key_refused"
 
+// ReasonSetAside is the ErrorPayload reason of ErrSetAside.
+const ReasonSetAside = "set_aside"
+
 // ReasonStaleRevision is the ErrorPayload reason of a ValidationError whose
 // problems include a written `revision` below the stored one (decision 0162):
 // a newer write of the record landed first, so that write never lands
@@ -137,6 +180,45 @@ const ReasonKeyRefused = "key_refused"
 // on it alone. A write that removes a stored revision is not stale and
 // carries no reason.
 const ReasonStaleRevision = "stale_revision"
+
+// ReasonInDoubt is the ErrorPayload reason of ErrWriteInDoubt, on `internal`
+// and on `unavailable`.
+const ReasonInDoubt = "in_doubt"
+
+// ReasonRepositoryRequired is the ErrorPayload reason of a
+// RepositoryRequiredError (auth.go), on `conflict`.
+const ReasonRepositoryRequired = "repository_required"
+
+// ReasonNotPermitted is the ErrorPayload reason of ErrNotPermitted, on
+// `forbidden`: the refusal is a rule's, so another person, or the same one
+// with another role, may make the same request.
+const ReasonNotPermitted = "not_permitted"
+
+// ReasonFirstAttemptRunning and ReasonFirstAttemptLanded are the
+// ErrorPayload reasons of ErrFirstAttemptRunning and ErrFirstAttemptLanded,
+// on `conflict`.
+const (
+	ReasonFirstAttemptRunning = "first_attempt_running"
+	ReasonFirstAttemptLanded  = "first_attempt_landed"
+)
+
+// ErrorReasons is the closed set of reasons: every Reason constant above and
+// nothing else. A client switches on a reason, so one it was never told about
+// must not reach it: the API drops a reason outside the list
+// (internal/api problemFor), and the console's union and docs/api.md are held
+// to it (internal/api errorreasons_test.go).
+var ErrorReasons = []string{
+	ReasonFirstAttemptLanded,
+	ReasonFirstAttemptRunning,
+	ReasonInDoubt,
+	ReasonKeyRefused,
+	ReasonNotPermitted,
+	ReasonObservedRederiving,
+	ReasonQuota,
+	ReasonRepositoryRequired,
+	ReasonSetAside,
+	ReasonStaleRevision,
+}
 
 // ErrorEnvelope is the one body every refused request answers with.
 type ErrorEnvelope struct {
@@ -150,8 +232,10 @@ type ErrorEnvelope struct {
 // client re-lists from and resumes at, so a refused cursor names its
 // replacement. Head is a pointer so an empty changelog's 0 is still written.
 // Reason narrows a code for a client that acts on the case, from a closed
-// set: ReasonObservedRederiving and ReasonKeyRefused on `unavailable`,
-// ReasonQuota on `guard`, and ReasonStaleRevision on `validation`.
+// set: ReasonObservedRederiving, ReasonKeyRefused and ReasonSetAside on
+// `unavailable`, ReasonQuota on `guard`, ReasonStaleRevision on `validation`,
+// ReasonInDoubt on `internal` and `unavailable`, and
+// ReasonFirstAttemptRunning and ReasonFirstAttemptLanded on `conflict`.
 // A client that does not know a reason acts on the code.
 type ErrorPayload struct {
 	Code           string          `json:"code"`
@@ -161,6 +245,10 @@ type ErrorPayload struct {
 	ProblemDetails []ProblemDetail `json:"problemDetails,omitempty"`
 	Head           *int64          `json:"head,omitempty"`
 	Generation     string          `json:"generation,omitempty"`
+	// Repositories are the repositories a person may open, on a sign-in
+	// refused with ReasonRepositoryRequired: one of them goes in the
+	// request's `repository`.
+	Repositories []RepositoryChoice `json:"repositories,omitempty"`
 }
 
 // ProblemDetail is the field-addressable form of one validation problem. The

@@ -1,8 +1,9 @@
 ---
-status: accepted
-date: 2026-09-08
+status: superseded
+date: 2026-11-13
 decision-makers: George Antoniadis
 amended-by: 0075
+superseded-by: 0278
 ---
 
 # 0065. A snapshot is a stopped-server copy that records its head and lists what it needs

@@ -29,7 +29,7 @@ func putInstruction(t *testing.T, ds *dataset, agent, text string, extra map[str
 	for k, v := range extra {
 		props[k] = v
 	}
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{Kind: vocabulary.KindLLMInstruction, Properties: props}); err != nil {
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{Kind: vocabulary.KindLLMInstruction, Properties: props}); err != nil {
 		t.Fatalf("put instruction: %v", err)
 	}
 }
@@ -55,7 +55,7 @@ func TestOwnerInstructionsRideTheirAgentsSystemPrompt(t *testing.T) {
 	putMemory(t, ds, fid("veg"), "The owner is vegetarian.", nil)
 
 	fake.script(mossModel, fakeTurn{content: "fine"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "hi"}, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	system := pinnedSystemOf(t, fake.requestsOf(mossModel)[0])
@@ -91,7 +91,7 @@ func TestAnAgentChangesHowItWorksOnlyThroughTheOwner(t *testing.T) {
 		fakeTurn{content: "noted"},
 		fakeTurn{content: "I'm Juniper."},
 	)
-	res, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "go by Juniper from now on"}, nil)
+	res, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "go by Juniper from now on"}, nil)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestAnAgentChangesHowItWorksOnlyThroughTheOwner(t *testing.T) {
 	}
 
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -119,7 +119,7 @@ func TestAnAgentChangesHowItWorksOnlyThroughTheOwner(t *testing.T) {
 		return replies >= 2
 	})
 
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, mossID, substrate.ChatInput{Message: "who are you?"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, mossID, substrate.ChatInput{Message: "who are you?"}, nil); err != nil {
 		t.Fatalf("second chat: %v", err)
 	}
 	reqs := fake.requestsOf(mossModel)

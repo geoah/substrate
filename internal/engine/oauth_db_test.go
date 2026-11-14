@@ -294,7 +294,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	}
 
 	// The echo function answers with its resolved config.
-	out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if p.refreshes != 1 {
 		t.Fatalf("provider refreshes: %d", p.refreshes)
 	}
-	out, _, err = ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	out, _, err = ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if err != nil {
 		t.Fatalf("call after refresh: %v", err)
 	}
@@ -375,8 +375,8 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	for _, d := range docs {
 		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
 			props, _ := d["data"].(map[string]any)["properties"].(map[string]any)
-			props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+			props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 		}
 	}
 	mbPointOAuthAt(docs, p.ts.URL)
@@ -440,7 +440,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	// Past the first backoff step an invocation asks the provider again, and
 	// the same reason is not written again.
 	clock.Advance(time.Minute + time.Second)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	p.mu.Lock()
@@ -454,7 +454,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	}
 	refuse(false)
 	clock.Advance(2*time.Minute + time.Second)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	wantCleared("after a good on-demand refresh")
@@ -462,7 +462,7 @@ func TestOAuthRefreshFailureStoresItsReason(t *testing.T) {
 	// The on-demand refresh an invocation makes: the stored token expires
 	// inside the inline window, so the config resolution refreshes it.
 	refuse(true)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{}); err != nil {
 		t.Fatalf("call: %v", err)
 	}
 	wantFailure("after a refused on-demand refresh")
@@ -1099,23 +1099,33 @@ func TestOAuthStartRefusesANonOwnerActor(t *testing.T) {
 }
 
 // External create and delete of a config or account record are owner-only.
-func TestAccountRecordCreateAndDeleteAreOwnerOnly(t *testing.T) {
+// An account is a control kind (decision 0276): a hand writes it only where
+// its rules name it. A function whose declaration does not name the account
+// kind neither creates nor deletes one; the connector, which names it to
+// write its sync state, deletes one, and still sets none of the properties
+// that are a person's.
+func TestAnAccountIsWrittenOnlyByAHandWhoseRulesNameIt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds, _, account := installOAuthBundle(t)
+	other := substrate.FunctionActor(vocabulary.SplitKindRef(mbMarkFn))
 	connector := substrate.FunctionActor(vocabulary.SplitKindRef(mbEchoFn))
 
+	if _, err := ds.Put(ctx, other, substrate.PutInput{Kind: mbAccountType, Properties: map[string]any{}}); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("a function that does not name the account kind created one: %v", err)
+	}
+	if _, err := ds.Delete(ctx, other, account.Kind, account.ID, substrate.DeleteInput{}); !errors.Is(err, substrate.ErrNotPermitted) {
+		t.Fatalf("a function that does not name the account kind deleted one: %v", err)
+	}
 	if _, err := ds.Put(ctx, connector, substrate.PutInput{
 		Kind: mbAccountType, Properties: map[string]any{"address": "intruder@example.com"},
 	}); err == nil {
-		t.Fatal("a non-owner created an account record")
+		t.Fatal("the connector set a person's property on an account")
 	} else {
-		wantErr(t, err, substrate.ErrForbidden, "non-owner account create")
+		wantErr(t, err, substrate.ErrForbidden, "the connector writes a person's property")
 	}
-	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID, substrate.DeleteInput{}); err == nil {
-		t.Fatal("a non-owner deleted an account record")
-	} else {
-		wantErr(t, err, substrate.ErrForbidden, "non-owner account delete")
+	if _, err := ds.Delete(ctx, connector, account.Kind, account.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("the connector, which names the account kind, deleting one: %v", err)
 	}
 }
 
@@ -1171,7 +1181,6 @@ const (
 func chatBundleDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.PackageManifest(chatPackage, 0),
-		vocabulary.ActorManifest(chatPackage, vocabulary.PackageActor(chatPackage)),
 		vocabulary.BundleManifest(chatPackage, map[string]any{
 			"description": "the chat bundle",
 			"installs":    []any{chatAccountType},
@@ -1181,10 +1190,10 @@ func chatBundleDocs() []map[string]any {
 			map[string]any{
 				"traits": []any{"substrate.reamde.dev/core/accountconfig"},
 				"properties": map[string]any{
-					"tokenRef":      map[string]any{"type": "secret", "writer": "oauth"},
-					"tokenStatus":   map[string]any{"type": "string", "writer": "oauth"},
-					"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "oauth"},
-					"handle":        map[string]any{"type": "string", "writer": "owner"},
+					"tokenRef":      map[string]any{"type": "secret", "writer": "system"},
+					"tokenStatus":   map[string]any{"type": "string", "writer": "system"},
+					"grantedScopes": map[string]any{"type": "string", "repeated": true, "writer": "system"},
+					"handle":        map[string]any{"type": "string", "writer": "person"},
 				},
 			}),
 	}
@@ -1264,8 +1273,8 @@ func syncAccountDocs(baseURL string, extra ...map[string]any) []map[string]any {
 			props[name] = decl
 		}
 	}
-	props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-	props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+	props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+	props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 	members := append([]map[string]any{
 		mbConfigTypeDoc(), account, mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource),
@@ -1338,7 +1347,7 @@ func accountChanges(t *testing.T, ds substrate.Dataset, account *substrate.Recor
 
 // TestOAuthReconnectClearsTheSyncError: the error pair on a `sync`-trait
 // account describes the grant a reconnect replaces, so the reconnect clears
-// it. The pair is `writer: connector`, which the facility's actor may not
+// it. The pair is `writer: [function, agent]`, which the facility's actor may not
 // write; the clear goes through the bundle tier. The state stays for the
 // next run to settle, and an account that never synced is asked for no run:
 // its first sync is the on-connect trigger's.
@@ -1393,7 +1402,7 @@ func TestOAuthFirstConnectRequestsNoSync(t *testing.T) {
 // before and is failing asks for a sync, so the run that says whether the new
 // grant works happens now. The request, the new status and the cleared error
 // pair are ONE changelog entry, the facility's, so a record trigger sees them
-// together; each property's manager row stands at its writer's tier.
+// together; each property's mark names the facility as the hand that set it.
 func TestOAuthReconnectRequestsASync(t *testing.T) {
 	t.Parallel()
 	svc, ds, p, account := installSyncOAuthBundle(t)
@@ -1409,8 +1418,8 @@ func TestOAuthReconnectRequestsASync(t *testing.T) {
 		t.Fatalf("the reconnect wrote %d entries on the account, want 1: %+v", len(changes)-before, changes[before:])
 	}
 	entry := changes[before]
-	if entry.Actor != "substrate.oauth" {
-		t.Fatalf("the reconnect entry's actor = %s, want the OAuth facility", entry.Actor)
+	if entry.Actor != vocabulary.ActorID(substrate.ActorSystem) {
+		t.Fatalf("the reconnect entry's actor = %s, want the system's, the OAuth facility's", entry.Actor)
 	}
 	written := map[string]bool{}
 	names, _ := entry.Payload["properties"].([]any)
@@ -1442,11 +1451,12 @@ func TestOAuthReconnectRequestsASync(t *testing.T) {
 	if started := propTime(t, got, "lastSyncStartedAt"); !requested.After(started) {
 		t.Errorf("syncRequestedAt %s is not after the failed run's start %s", requested, started)
 	}
-	if m := got.PropertyMeta["syncRequestedAt"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierOwner {
-		t.Errorf("syncRequestedAt manager = %+v, want the facility at the owner tier", m)
-	}
-	if m := got.PropertyMeta["tokenStatus"]; m.Manager != "substrate.oauth" || m.Tier != substrate.TierMachine {
-		t.Errorf("tokenStatus manager = %+v, want the facility at the machine tier", m)
+	// The facility is the system's hand (decision 0270), and the engine's
+	// write pins nothing (decision 0284).
+	for _, name := range []string{"syncRequestedAt", "tokenStatus"} {
+		if m := got.Marks[name]; markSetBy(m) != vocabulary.ActorID(substrate.ActorSystem) || m.Pinned {
+			t.Errorf("%s mark = %+v, want set by the facility and not pinned", name, m)
+		}
 	}
 }
 

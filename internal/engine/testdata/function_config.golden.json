@@ -1,0 +1,42 @@
+{
+  "input.config": {
+    "accounts": "array of object | null",
+    "bundle": "string",
+    "inputs": "object, optional",
+    "settings": "object, optional"
+  },
+  "input.config.accounts[]": {
+    "id": "string",
+    "kind": "string",
+    "properties": "object",
+    "secretErrors": "object, optional",
+    "token": "string, optional",
+    "tokenError": "string, optional",
+    "version": "number"
+  },
+  "input.config.accounts[].properties": {
+    "title": "string, optional"
+  },
+  "input.config.accounts[].secretErrors": {
+    "*": "string"
+  },
+  "input.config.inputs": {
+    "*": "object"
+  },
+  "input.config.inputs.*": {
+    "id": "string",
+    "kind": "string",
+    "properties": "object",
+    "secretErrors": "object, optional",
+    "version": "number"
+  },
+  "input.config.inputs.*.properties": {
+    "title": "string, optional"
+  },
+  "input.config.inputs.*.secretErrors": {
+    "*": "string"
+  },
+  "input.config.settings": {
+    "*": "string"
+  }
+}

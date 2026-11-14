@@ -2,98 +2,37 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// shippedUpgradeDataset is a fake that previews the boot upgrade: it answers
-// whatever the test seeded, so the handler is held to serving the engine's
-// answer verbatim, not to computing one.
-type shippedUpgradeDataset struct {
-	*fakeDataset
+// vocabularyUpgradeStub answers the boot upgrade's preview with what the test
+// gave it: nil, which no engine answers (it lists every package it ships),
+// and a failed read, a fault of the database under the engine that no
+// request can make it produce.
+type vocabularyUpgradeStub struct {
+	stubDataset
 	plans []substrate.ShippedUpgrade
 	err   error
 }
 
-func (d shippedUpgradeDataset) PlanShippedUpgrade(context.Context) ([]substrate.ShippedUpgrade, error) {
+func (d vocabularyUpgradeStub) PlanShippedUpgrade(context.Context) ([]substrate.ShippedUpgrade, error) {
 	return d.plans, d.err
 }
 
-type shippedUpgradeService struct {
-	*fakeService
-	plans []substrate.ShippedUpgrade
-	err   error
-}
-
-func (s *shippedUpgradeService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
-	ds, info, err := s.fakeService.Authenticate(ctx, secret)
-	if err != nil {
-		return nil, info, err
-	}
-	return shippedUpgradeDataset{fakeDataset: ds.(*fakeDataset), plans: s.plans, err: s.err}, info, nil
-}
-
-func newShippedUpgradeEnv(t *testing.T, plans []substrate.ShippedUpgrade, err error) *testEnv {
-	t.Helper()
-	base := newFakeService()
-	svc := &shippedUpgradeService{fakeService: base, plans: plans, err: err}
-	clock := &testClock{}
-	return &testEnv{
-		svc:   base,
-		h:     New(Config{Service: svc, Now: clock.now}),
-		clock: clock,
-	}
-}
-
 // llmPackageRef is the second seeded package (record 0077): the withheld
-// upgrade the fake reports is one of its kinds, because that is where the
+// upgrade the preview reports is one of its kinds, because that is where the
 // agent runtime's declarations live.
 const llmPackageRef = coreAuthorityName + "/llm"
 
-// A withheld shipped upgrade is readable by a repository token: the package, the
-// versions the boot compared and the guard lines it refused on, the same
-// shape a catalog entry's `upgrade` carries.
-func TestVocabularyUpgradeServesTheShippedPreview(t *testing.T) {
-	want := []substrate.ShippedUpgrade{{
-		Package: llmPackageRef,
-		Upgrade: substrate.BundleUpgrade{
-			Available: true, From: 16, To: 17,
-			Changes:  []substrate.BundleUpgradeChange{{Kind: "kind", ID: llmPackageRef + "/provider", From: 8, To: 9}},
-			Blockers: []string{`kind ` + llmPackageRef + `/provider: property "label" dropped while 1 live records still carry it — null it on them first`},
-		},
-	}}
-	env := newShippedUpgradeEnv(t, want, nil)
-	tok := env.svc.token(fakeRepository)
-
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", tok, nil)
-	wantStatus(t, rec, http.StatusOK)
-	body := decodeJSON[substrate.OperationalList[substrate.ShippedUpgrade]](t, rec)
-	if len(body.Items) != 1 {
-		t.Fatalf("items = %+v, want one", body.Items)
-	}
-	got := body.Items[0]
-	if got.Package != llmPackageRef || !got.Upgrade.Available || got.Upgrade.From != 16 || got.Upgrade.To != 17 {
-		t.Fatalf("entry = %+v", got)
-	}
-	if len(got.Upgrade.Blockers) != 1 || got.Upgrade.Blockers[0] != want[0].Upgrade.Blockers[0] {
-		t.Fatalf("blockers = %q", got.Upgrade.Blockers)
-	}
-	if len(got.Upgrade.Changes) != 1 || got.Upgrade.Changes[0].ID != llmPackageRef+"/provider" {
-		t.Fatalf("changes = %+v", got.Upgrade.Changes)
-	}
-
-	// No token, no read: the preview is a repository read like the catalog.
-	rec = env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", "", nil)
-	wantStatus(t, rec, http.StatusUnauthorized)
-}
-
-// A repository with nothing to upgrade answers an empty list, not an absent
-// one, so a client can tell "up to date" from "no answer".
+// A preview with nothing in it answers an empty list, not an absent one, so a
+// client can tell "nothing listed" from "no answer".
 func TestVocabularyUpgradeAnswersAnEmptyList(t *testing.T) {
-	env := newShippedUpgradeEnv(t, nil, nil)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
+	env := newStubEnv(t, vocabularyUpgradeStub{})
+	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", stubToken, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if got := rec.Body.String(); got != "{\"items\":[]}\n" {
 		t.Fatalf("body = %s, want an empty items list", got)
@@ -103,7 +42,10 @@ func TestVocabularyUpgradeAnswersAnEmptyList(t *testing.T) {
 // A preview that fails is the ordinary substrate error, not a 200 with
 // nothing in it.
 func TestVocabularyUpgradeReportsAFailedPreview(t *testing.T) {
-	env := newShippedUpgradeEnv(t, nil, errBoom)
-	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", env.svc.token(fakeRepository), nil)
+	env := newStubEnv(t, vocabularyUpgradeStub{err: errVocabularyUpgradeRead})
+	rec := env.do(t, http.MethodGet, "/api/v1/vocabulary/upgrade", stubToken, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
+
+// errVocabularyUpgradeRead is the stub's failed preview read.
+var errVocabularyUpgradeRead = errors.New("the preview read failed")

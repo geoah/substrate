@@ -19,9 +19,9 @@ import (
 // substrate.Dataset does not compile here until somebody decides what an
 // assistant may do with it.
 //
-// It reads what the owner reads, the token and credential records among
-// them, whose secrets are digests and secret-typed values that read back
-// redacted for every token. What it takes away:
+// It reads what the owner reads, the token records among them, whose
+// secrets are digests and secret-typed values that read back redacted for
+// every token. What it takes away:
 //   - writing the auth material: no put, patch, delete or merge of the four
 //     vocabulary.AuthKinds, and no accept of a change request whose target
 //     is one, which would write it under the owner's hand;
@@ -113,6 +113,9 @@ func withoutKeysIncluded(included map[string]*substrate.Record) map[string]*subs
 func withoutTriggerPayloads(changes []substrate.Change) []substrate.Change {
 	for i := range changes {
 		c := &changes[i]
+		// Which token stood behind a write is the owner's to read, as on an
+		// app's grant (scopedDataset.heldRow).
+		c.Token = ""
 		if c.Kind == kindTrigger {
 			c.Payload = nil
 		}
@@ -135,6 +138,10 @@ func (a *assistantDataset) Repository() substrate.RepositoryInfo { return a.inne
 
 func (a *assistantDataset) Kinds(ctx context.Context) ([]substrate.KindInfo, error) {
 	return a.inner.Kinds(ctx)
+}
+
+func (a *assistantDataset) KindRetentions(ctx context.Context) ([]substrate.KindRetention, error) {
+	return a.inner.KindRetentions(ctx)
 }
 
 func (a *assistantDataset) KindByRef(ctx context.Context, ref string) (substrate.KindInfo, error) {
@@ -284,6 +291,22 @@ func (a *assistantDataset) Delete(ctx context.Context, actor substrate.Actor, ty
 	return withoutKey(rec), err
 }
 
+func (a *assistantDataset) Pin(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := refuseAuthWrite(typ); err != nil {
+		return nil, err
+	}
+	rec, err := a.inner.Pin(ctx, actor, typ, id, in)
+	return withoutKey(rec), err
+}
+
+func (a *assistantDataset) Release(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := refuseAuthWrite(typ); err != nil {
+		return nil, err
+	}
+	rec, err := a.inner.Release(ctx, actor, typ, id, in)
+	return withoutKey(rec), err
+}
+
 func (a *assistantDataset) Merge(ctx context.Context, actor substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
 	if err := refuseAuthWrite(in.Kind); err != nil {
 		return nil, err
@@ -331,6 +354,10 @@ func (a *assistantDataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, e
 	return a.inner.Tokens(ctx)
 }
 
+func (a *assistantDataset) PersonRoles(ctx context.Context) ([]substrate.RoleRules, error) {
+	return a.inner.PersonRoles(ctx)
+}
+
 func (a *assistantDataset) Export(context.Context) (substrate.Export, error) {
 	return nil, errAssistant("the export")
 }
@@ -367,6 +394,28 @@ func (a *assistantDataset) ProcessOAuthFinalizers(context.Context) (int, error) 
 // carries the flow's credential and is the owner's to open in their browser.
 func (a *assistantDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
 	return "", errAssistant("a provider account's connect flow: the owner connects it in the console")
+}
+
+// PlanPublish is refused as Publish is: the preview is the publish's own
+// transaction, rolled back.
+func (a *assistantDataset) PlanPublish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errAssistant("publishing a package: the owner publishes it in the console")
+}
+
+func (a *assistantDataset) Publish(context.Context, substrate.Actor, substrate.PublishInput) (substrate.PublishPlan, error) {
+	return substrate.PublishPlan{}, errAssistant("publishing a package: the owner publishes it in the console")
+}
+
+func (a *assistantDataset) ReleasePackage(context.Context, substrate.Actor, substrate.ReleaseInput) (substrate.ReleasePlan, error) {
+	return substrate.ReleasePlan{}, errAssistant("releasing a package: the owner writes its next release in the console")
+}
+
+func (a *assistantDataset) Releases(ctx context.Context, authority string) ([]substrate.Release, error) {
+	return a.inner.Releases(ctx, authority)
+}
+
+func (a *assistantDataset) ReleaseClosure(ctx context.Context, pkg string, version int64) ([]byte, error) {
+	return a.inner.ReleaseClosure(ctx, pkg, version)
 }
 
 func (a *assistantDataset) DomainState(ctx context.Context) (substrate.DomainState, error) {

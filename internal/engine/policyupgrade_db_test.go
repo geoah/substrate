@@ -58,10 +58,10 @@ func oldPolicyTree(t *testing.T) string {
 	// back then it took the authority's, so the fixture drops the pin and it
 	// rides the authority's 9 with everything else.
 	patchShipped(t, coreKind(tree, "trigger.yaml"), func(doc string) string {
-		if !strings.Contains(doc, "\n  version: 25\n") {
-			t.Fatal("trigger no longer pins version 25; retune this fixture")
+		if !strings.Contains(doc, "\n  version: 26\n") {
+			t.Fatal("trigger no longer pins version 26; retune this fixture")
 		}
-		return strings.Replace(doc, "\n  version: 25\n", "\n", 1)
+		return strings.Replace(doc, "\n  version: 26\n", "\n", 1)
 	})
 	bumpPackageVersion(t, tree, corePackage, "9")
 	return tree
@@ -108,7 +108,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	if ops := policySelectorOps(t, ds); len(ops) != 0 {
 		t.Fatalf("the old declaration declares values %v", ops)
 	}
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-puts",
 		Properties: map[string]any{
 			"selector": map[string]any{"ops": []any{"put", "patch"}},
@@ -119,11 +119,11 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	// `selector: {}` with action gate is the documented "gate every agent
 	// write". A value count that read an absent field as a value outside the
 	// new set would strand exactly the policies that are most correct.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-everything",
 		Properties: map[string]any{"selector": map[string]any{}, "action": "gate"},
 	})
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-selectorless",
 		Properties: map[string]any{"action": "gate"},
 	})
@@ -143,8 +143,8 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core rode the same upgrade: `trigger` was unpinned in the
 	// old tree (oldPolicyTree), and the shipped tree lands it at its own pin.
-	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 25 {
-		t.Fatalf("trigger is at version %d, want 25", v)
+	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 26 {
+		t.Fatalf("trigger is at version %d, want 26", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {
@@ -174,7 +174,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	}
 	// The word the request a gate produces carries, which never matched a
 	// write and which the enum cannot admit.
-	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
+	mustPut(t, ds, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-creates",
 		Properties: map[string]any{
 			"selector": map[string]any{"ops": []any{"create"}},

@@ -25,8 +25,8 @@ import (
 //	                 {"op": "describe", "reqId": N}
 //	                 {"op": "invoke", "reqId": N, "id": <key>, "input": Input}
 //	child → parent   {"kind": "response", "reqId": N, "ok": true, "output": ..., "effects": [...], "more": {"cursor": ...}?}
-//	                 {"kind": "response", "reqId": N, "ok": false, "error": "..."}
-//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 6}   (describe)
+//	                 {"kind": "response", "reqId": N, "ok": false, "error": "...", "temporary": true?}
+//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 7}   (describe)
 //	                 {"kind": "log", "reqId": N, "line": "..."}   (during an invoke, unanswered)
 //
 // A body's log lines travel as `log` frames, one per line, written the moment
@@ -34,6 +34,11 @@ import (
 // reads it. Version 5 carried them on the response, so a body the runner
 // killed at its timeout lost every line it had written, and with them the
 // only account of where its time went.
+//
+// A failed response's optional `temporary` says a later attempt may not meet
+// the failure: the body raised host.Temporary, or let a network error or a
+// server's "try later" answer escape (host.py _temporary). Version 6 had no
+// such word, and every failure rode the same three quick attempts.
 //
 // A response's optional `more` is the PAGED-CHECKPOINT continuation: it means
 // "this page is done — commit its effects, then re-invoke me with this
@@ -80,7 +85,7 @@ import (
 // built it, and one SDK shipping inside this binary cannot. hostpy_test.go is
 // what refuses them drifting, so the frames a reader trusts stay the frames
 // the child serves.
-const ProtocolVersion = 6
+const ProtocolVersion = 7
 
 // The invocation modes.
 const (
@@ -182,7 +187,10 @@ type Continuation struct {
 // itself: the registry lives on the other side of this interface, and without
 // it a reads capability declared in one spelling would refuse a body that asks
 // in the other. An unknown name comes back unchanged, so it fails the
-// allowlist exactly as an undeclared kind does.
+// allowlist exactly as an undeclared kind does. ResolveCallable is the same
+// for a function or agent identity: the call allowlist is written in the
+// identity the registry keys, and a body may name a callable in any spelling
+// the registry accepts (the repository's full name for `~`).
 // Log takes one line of the body's log as the runner reads it, while the body
 // is still running, so whatever it records survives a body that never
 // returns.
@@ -194,6 +202,7 @@ type Backend interface {
 	Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error)
 	Call(ctx context.Context, function string, args any) (any, error)
 	ResolveKind(name string) string
+	ResolveCallable(name string) string
 	Log(line string)
 	// Units is the repository's unit graph the unit host calls convert
 	// through (decision 0186).
@@ -213,6 +222,22 @@ var (
 	// the trigger's next delivery loads whatever replaced it.
 	ErrRetired = errors.New("installation retired mid-delivery")
 )
+
+// ErrTemporary marks a failure a later attempt may not meet: the body said so
+// (`temporary` on its response) or ran out of time. The engine retries such
+// a delivery over minutes rather than setting it aside (decision 0266).
+var ErrTemporary = errors.New("temporary failure")
+
+// Temporary reports whether the error is a temporary failure.
+func Temporary(err error) bool { return errors.Is(err, ErrTemporary) }
+
+// temporaryError is a failure's own text marked temporary: what a reader of
+// the parked row sees is the text alone.
+type temporaryError struct{ msg string }
+
+func (e *temporaryError) Error() string { return e.msg }
+
+func (e *temporaryError) Is(target error) bool { return target == ErrTemporary }
 
 // Deterministic reports whether the error is a trip a retry would reproduce.
 func Deterministic(err error) bool {
@@ -239,7 +264,10 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryAuthority stri
 		"op":    OpOf(ch),
 		"kind":  ch.Kind,
 		"id":    ch.RecordID,
-		"actor": string(ch.Actor),
+		"actor": ch.Actor,
+	}
+	if ch.OnBehalfOf != "" {
+		change["onBehalfOf"] = ch.OnBehalfOf
 	}
 	// The changed-property names, when the payload carries them: the
 	// level-triggered contract names what moved, never the old values.

@@ -498,13 +498,18 @@ func (t *txn) derivesObserved(ty *vocabulary.Kind) bool {
 // row that pass would have found, so the record's own exit is the last moment
 // its segment can go. A kind that does not bind the trait asks the primary
 // key first, so an ordinary record costs one probe and takes no observed
-// lock. A replay derives nothing, so it drops nothing.
+// lock, and a kind that holds no segment costs nothing (observedKinds). A
+// replay derives nothing, so it drops nothing.
 func (t *txn) dropObservedOf(ref eref) error {
 	if t.observed != nil && t.observed.all {
 		return nil
 	}
 	ty, _ := t.derivationView().ByIdentity(ref.Kind)
 	if !bindsObserved(ty) {
+		if !t.ds.observedKinds.mayHold(ref.Kind) {
+			return nil
+		}
+		t.measured(measureObservedProbe)
 		var holds bool
 		if err := t.row(`SELECT EXISTS (SELECT 1 FROM observed_segments WHERE kind = $1 AND record_id = $2)`,
 			ref.Kind, ref.ID).Scan(&holds); err != nil {

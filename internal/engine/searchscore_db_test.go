@@ -24,7 +24,7 @@ func putScoreTask(t *testing.T, ds *dataset, id, name, description string) {
 	if description != "" {
 		props["description"] = description
 	}
-	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: scoreTaskKind, ID: id, Properties: props,
 	}); err != nil {
 		t.Fatal(err)
@@ -412,7 +412,7 @@ func TestIndexedCandidatesApplyTheKindsBeforeTheCap(t *testing.T) {
 		putScoreTask(t, ds, fid(fmt.Sprintf("t%d", i)), "flight", "")
 	}
 	const person = "samples.substrate.reamde.dev/people/person"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: person, ID: fid("pilot"), Properties: map[string]any{"name": "flight"},
 	}); err != nil {
 		t.Fatal(err)

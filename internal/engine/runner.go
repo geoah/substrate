@@ -43,7 +43,26 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 			return nil, err
 		}
 	}
-	return runner.Envelope(ch, e, ds.Repository().Authority), nil
+	envelope := runner.Envelope(ch, e, ds.Repository().Authority)
+	return withActorFacts(envelope, actorKeyIn(ctx, ds.db, ch.Actor)), nil
+}
+
+// withActorFacts adds to a delivery's change what its actor is, beside the
+// link to its record: its type, and the package whose code or installs it
+// is, so a guard can tell a package's own writes from everyone else's
+// without a spelling (decision 0270).
+func withActorFacts(envelope map[string]any, key substrate.Actor) map[string]any {
+	change, _ := envelope["change"].(map[string]any)
+	if change == nil {
+		return envelope
+	}
+	if typ := substrate.ActorTypeOf(key); typ != "" {
+		change["actorType"] = typ
+	}
+	if pkg := actorPackageOf(key); pkg != "" {
+		change["actorPackage"] = pkg
+	}
+	return envelope
 }
 
 // loadRowDB reads one record row by its full (type, id) identity, outside
@@ -115,7 +134,7 @@ func (ds *dataset) runnerSpec(fn *vocabulary.Function) runner.Spec {
 // live registry does not yet carry the bundle).
 func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registry) runner.Spec {
 	spec := runner.Spec{
-		Repository: ds.Repository().ID, Function: fn.Identity(),
+		Repository: ds.info.ID, Function: fn.Identity(),
 		Runtime: fn.Runtime, Source: fn.Source, TimeoutMs: int(fn.Timeout / time.Millisecond),
 		// The runner gates the union; the engine reads which list names the
 		// target to tell a function from an agent (callBackend.Call).
@@ -154,7 +173,7 @@ func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in 
 // surfaced: a non-nil *runner.Continuation means the body finished a PAGE and
 // wants re-invoking (the drain loop in functions.go). The delivery paths use
 // this; everyone else takes runCallable and ignores paging.
-func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, *runner.Continuation, error) {
+func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) (_ []effect, _ any, _ *runner.Continuation, err error) {
 	// THE BACKSTOP. A host function has no body to invoke: the engine implements
 	// it, under the grants of whoever called it. Every door that can reach one
 	// branches before here (CallFunction, the agent loop, trigger admission), so
@@ -209,6 +228,7 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 	// yields to it (segmentdigest.go); deferred, so a panic a recoverer
 	// upstream contains does not leave the count raised and every digest
 	// paused for the life of the process.
+	started := time.Now()
 	res, err := func() (*runner.Result, error) {
 		ds.svc.invocationStarted()
 		defer ds.svc.invocationEnded()
@@ -219,6 +239,12 @@ func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, 
 		ran = !errors.Is(err, runner.ErrNotStarted)
 		return res, err
 	}()
+	// Counted with the outcome the caller gets, so a body whose effects are
+	// refused below counts as the failure it is.
+	if ran {
+		elapsed := time.Since(started)
+		defer func() { ds.countInvocation(fn, in.Mode, elapsed, err) }()
+	}
 	if err != nil {
 		err = inv.scrub.err(fmt.Errorf("run: %w", err))
 		backend.failed(err)
@@ -356,6 +382,9 @@ func (b *callBackend) Units(ctx context.Context) (*vocabulary.UnitGraph, error) 
 }
 
 func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Record, error) {
+	if err := b.hostReadsHeld(ctx, typ); err != nil {
+		return nil, err
+	}
 	e, err := b.inv.ds.Get(ctx, typ, id)
 	if errors.Is(err, substrate.ErrNotFound) {
 		// Absence is a normal answer: existence probes ask exactly this.
@@ -365,7 +394,37 @@ func (b *callBackend) Get(ctx context.Context, typ, id string) (*substrate.Recor
 }
 
 func (b *callBackend) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
-	return b.inv.ds.readList(ctx, q)
+	if err := b.hostReadsHeld(ctx, q.Filter.Kinds...); err != nil {
+		return nil, err
+	}
+	page, err := b.inv.ds.readList(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	held, err := b.inv.ds.runReads(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for path, e := range page.Included {
+		if held != nil && !held(e.Kind) {
+			delete(page.Included, path)
+		}
+	}
+	return page, nil
+}
+
+// hostReadsHeld refuses a read of kinds the persons and the apps this invocation
+// works for do not read (run.go), as the runner refuses one outside the
+// function's own allowlist.
+func (b *callBackend) hostReadsHeld(ctx context.Context, kinds ...string) error {
+	resolved := make([]string, len(kinds))
+	for i, k := range kinds {
+		resolved[i] = b.ResolveKind(k)
+	}
+	if err := b.inv.ds.heldReads(ctx, resolved...); err != nil {
+		return fmt.Errorf("%w: %w", runner.ErrReadForbidden, err)
+	}
+	return nil
 }
 
 // readList is a function body's or an agent's list read. A filter bounding
@@ -390,6 +449,10 @@ func (ds *dataset) readList(ctx context.Context, q substrate.Query) (*substrate.
 // their kinds are held here, where the declarations are, and a kind outside
 // the allowlist trips.
 func (b *callBackend) Aggregate(ctx context.Context, q substrate.AggregateQuery) (*substrate.AggregateResult, error) {
+	kinds := slices.Concat(q.Filter.Kinds, b.inv.ds.rankingSourceKinds(q), b.inv.ds.sourceLinkKinds(q))
+	if err := b.hostReadsHeld(ctx, slices.DeleteFunc(kinds, func(k string) bool { return k == "" })...); err != nil {
+		return nil, err
+	}
 	for _, pin := range b.inv.ds.rankingSourceKinds(q) {
 		if pin == "" {
 			return nil, fmt.Errorf("%w: aggregate ranks its sources by their records' priorities, and the selected kinds' source reference pins no kind; name aggregate.sources.order",
@@ -424,7 +487,21 @@ func (b *callBackend) grants(kind string) bool {
 }
 
 func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) (substrate.SearchResult, error) {
-	return b.inv.ds.Search(ctx, in)
+	if err := b.hostReadsHeld(ctx, in.Kinds...); err != nil {
+		return substrate.SearchResult{}, err
+	}
+	res, err := b.inv.ds.Search(ctx, in)
+	if err != nil {
+		return res, err
+	}
+	// A search naming no kinds ranks across them: a hit of a kind this
+	// invocation's persons and apps do not read is dropped.
+	held, err := b.inv.ds.runReads(ctx)
+	if err != nil || held == nil {
+		return res, err
+	}
+	res.Hits = slices.DeleteFunc(res.Hits, func(h substrate.Hit) bool { return h.Record == nil || !held(h.Record.Kind) })
+	return res, nil
 }
 
 // ResolveKind answers the runner's reads gate in the repository's own
@@ -439,6 +516,13 @@ func (b *callBackend) ResolveKind(name string) string {
 	return ty.Identity
 }
 
+// ResolveCallable is a function or agent identity as the registry keys it:
+// the repository's full name folded into `~`. Whether anything is declared
+// there is the call's to find out.
+func (b *callBackend) ResolveCallable(name string) string {
+	return b.inv.ds.registry().Localize(name)
+}
+
 // Call runs another function to completion inside this invocation, or an
 // agent the caller names under `permissions.agents` (callAgent). The runner
 // already gated the union of the two allowlists and charged its call budget; the engine's half gates depth, recursion and the
@@ -447,6 +531,9 @@ func (b *callBackend) ResolveKind(name string) string {
 // and its output returns to the calling body.
 func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, error) {
 	ds := b.inv.ds
+	// Which list names the target is read in the identity the lists are
+	// written in (decision record 0259).
+	ident = b.ResolveCallable(ident)
 	if slices.Contains(b.fn.Caps.Agents, ident) {
 		return b.callAgent(ctx, ident, args)
 	}
@@ -461,6 +548,12 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	// the load-time refusal cannot.
 	if target.IsHost() {
 		return nil, fmt.Errorf("call: %s is a built-in — the engine runs it under a caller's grants, and a function body has none to lend", target.Identity())
+	}
+	// A call that waits for the owner's approval waits when an agent's call
+	// reaches it through another body too: inside an agent's tool call the
+	// body is the agent's hand, and a host call is no way around the card.
+	if target.RequiresApproval() && b.inv.ceilinged {
+		return nil, fmt.Errorf("call: %s waits for the owner's approval when an agent reaches it — an agent calls it as its own tool, where the owner is asked", target.Identity())
 	}
 	// Nested admission re-checks the callee's bundle lifecycle under the
 	// root's already-held fence: a live bundle cannot invoke a
@@ -877,7 +970,7 @@ func (ds *dataset) callFunctionOnce(ctx context.Context, caller substrate.Actor,
 		if err != nil {
 			return nil, 0, err
 		}
-		downstream = fmt.Sprintf("%s/%s/call/%s", ds.Repository().ID, fn.Identity(), callID)
+		downstream = fmt.Sprintf("%s/%s/call/%s", ds.info.ID, fn.Identity(), callID)
 	}
 	// A networked function's call is audited from here on: the body is about
 	// to run, and what it sends out leaves no other trace (callrun.go).
@@ -973,9 +1066,14 @@ func (ds *dataset) callHostFunction(ctx context.Context, fn *vocabulary.Function
 	var ok bool
 	switch fn.Identity() {
 	case vocabulary.HostFunctionQuery:
-		// One call, the default row budget: a token needs no kind allowlist, but a
-		// list still answers a page rather than the repository.
-		out, ok, _ = ds.runQueryTool(ctx, queryScope{rows: vocabulary.DefaultReadRows}, m)
+		// One call, the default row budget: a token needs no kind allowlist,
+		// so the scope is every kind, said as such, but a list still answers a
+		// page rather than the repository.
+		scope, err := ds.heldScope(ctx, queryScope{all: true, rows: vocabulary.DefaultReadRows})
+		if err != nil {
+			return nil, 0, err
+		}
+		out, ok, _ = ds.runQueryTool(ctx, scope, m)
 	case vocabulary.HostFunctionWait:
 		return nil, 0, fmt.Errorf("%w: %s waits on the background jobs of the CALLING AGENT's thread, and a direct call has none: declare an agent carrying %s as a tool and call the agent",
 			substrate.ErrForbidden, fn.Identity(), fn.Identity())
@@ -1062,7 +1160,7 @@ func (ds *dataset) warmFunctions() {
 					return
 				}
 				ds.svc.log.Error("substrate: function body failed to prepare at repository open — its deliveries will park until the body or toolchain is fixed",
-					"repository", ds.Repository().ID, "function", fn.Identity(), "error", err)
+					"repository", ds.info.ID, "function", fn.Identity(), "error", err)
 			}
 		}
 	})
@@ -1085,7 +1183,7 @@ func (ds *dataset) reconcileRunner(ctx context.Context) {
 	for _, fn := range fns {
 		live = append(live, ds.outsideSpec(ctx, ds.runnerSpec(fn), fn.Package))
 	}
-	runner.Shared.Reconcile(ctx, ds.Repository().ID, live)
+	runner.Shared.Reconcile(ctx, ds.info.ID, live)
 }
 
 // hostFunctionsRemoved keeps the functions that HAVE a body: the three runner

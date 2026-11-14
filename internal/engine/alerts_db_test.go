@@ -109,7 +109,7 @@ func TestAParkRaisesOneAlertAndARepeatWithinTheIntervalWritesNothing(t *testing.
 		t.Fatal(err)
 	}
 	boomActor := substrate.FunctionActor(vocabulary.SplitKindRef(fnPackage + "/boom"))
-	if len(changes) != 1 || changes[0].Actor != boomActor {
+	if len(changes) != 1 || changes[0].Actor != vocabulary.ActorID(boomActor) {
 		t.Fatalf("the alert was written by %+v, want one entry under %s", changes, boomActor)
 	}
 	// The read the console's panel makes: open alerts about one record.

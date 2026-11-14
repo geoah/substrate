@@ -112,7 +112,7 @@ func TestBootUpgradeSeedsTheObservationsPackageIntoAnOlderRepository(t *testing.
 	}
 	sawPackage := false
 	for _, ch := range changesSince(t, ds2, head) {
-		if ch.Actor != substrate.ActorSystem {
+		if ch.Actor != vocabulary.ActorID(substrate.ActorSystem) {
 			t.Fatalf("upgrade entry %d is attributed to %q", ch.Seq, ch.Actor)
 		}
 		if ch.RecordID == vocabulary.PackageObservations {

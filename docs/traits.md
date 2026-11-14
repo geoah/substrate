@@ -82,7 +82,7 @@ binding kind's own declaration then carries the pin and the `onDelete`.
 Two of core's traits ask for a third: `recurring` and `override` each expect
 `temporal` on the same kind, because a rule with no anchor names no instants
 and an override with no `at` of its own sits nowhere. The loader does not
-refuse the pair (a repository that imported the `scheduling` sample before
+refuse the pair (a repository that copied the `scheduling` sample before
 `recurring` moved to core holds exactly that shape, and must keep booting);
 a kind that binds either without `temporal` is simply not on the timeline,
 and no window read computes from it.
@@ -104,22 +104,24 @@ A trait is a vocabulary declaration, so it enters through the same doors as a
 kind: `substratectl apply -f` over the manifest files, the batch
 `POST /api/v1/vocabulary/apply`, or a [bundle](bundles.md) that ships it.
 One batch, three documents, because every declaration lives in a package and
-the batch must open with that package's manifest:
+the batch must open with that package's manifest. A package of your own lives
+in the repository's local namespace, `~`
+([vocabulary](vocabulary.md#the-declarable-kinds)):
 
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: pantry.example/kitchen
+  id: ~/kitchen
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   version: 1
 ---
 kind: substrate.reamde.dev/core/trait
 metadata:
-  id: pantry.example/kitchen/perishable
+  id: ~/kitchen/perishable
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   description: a thing that stops being good at an instant
   properties:
@@ -128,16 +130,16 @@ data:
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: pantry.example/kitchen/ingredient
+  id: ~/kitchen/ingredient
 data:
-  authority: pantry.example
+  authority: "~"
   package: kitchen
   description: one thing in the pantry
   names:
     singular: ingredient
   displayTemplate: "{name}"
   traits:
-    - perishable
+    - ~/kitchen/perishable
   properties:
     name:
       type: string
@@ -155,9 +157,9 @@ From the moment that batch commits, `ingredient` answers every
 bundle's, that binds the same trait:
 
 ```http
-GET /api/v1/records?filter={"implements":"perishable"}
+GET /api/v1/records?filter={"implements":"~/kitchen/perishable"}
 
-→ {"records": [{"id": "oat-milk", "kind": "pantry.example/kitchen/ingredient",
+→ {"records": [{"id": "oat-milk", "kind": "~/kitchen/ingredient",
                 "properties": {"name": "Oat milk", "title": "Oat milk",
                                "expiresAt": "2026-09-04T00:00:00Z", "opened": true}}, …],
    "head": 4207, "generation": "…"}
@@ -178,16 +180,16 @@ GET /api/v1/records?filter={"implements":"temporal",
                     &orderBy=at
 ```
 
-Run against a repository (authority `ada.example.com`) that imported the
-`tasks` and `calendar` samples, that query answers all three kinds in one
-ordered page; each record is the flat wire shape, trimmed here:
+Run against a repository that added the `tasks` and `calendar` samples,
+which land in its local namespace, `~`, that query answers all three kinds in
+one ordered page; each record is the flat wire shape, trimmed here:
 
 ```json
-{"id": "t9", "kind": "ada.example.com/tasks/task",
+{"id": "t9", "kind": "~/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-17T06:00:00Z"}}
-{"id": "x-cal-standup-20260817", "kind": "ada.example.com/calendar/calendarevent",
+{"id": "x-cal-standup-20260817", "kind": "~/calendar/calendarevent",
  "properties": {"summary": "Standup", "at": "2026-08-17T09:30:00Z", "endsAt": "2026-08-17T09:45:00Z"}}
-{"id": "x-tasklog-tue", "kind": "ada.example.com/tasks/tasklog",
+{"id": "x-tasklog-tue", "kind": "~/tasks/tasklog",
  "properties": {"status": "done", "at": "2026-08-18T06:20:00Z"}}
 ```
 
@@ -208,8 +210,10 @@ of `open`, anywhere" is one query over every kind that declares one.
 
 **The trait endpoint.** `GET
 /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists the kinds
-that bind a trait; their records are the `implements` filter above, which is
-how the console lists every provider's `accountconfig` accounts.
+that bind a trait, each with its declaration; their records are the
+`implements` filter above, which is how the console lists every provider's
+`accountconfig` accounts. An app's token is answered the implementors its
+grant reads.
 
 **An app's trait scope.** An app may ask for every implementor at once,
 `read:implements(<trait>)` or `write:implements(<trait>)`: its token reaches
@@ -347,6 +351,10 @@ whose status is called `state`. To work over every implementor, an app:
   the two lists;
 - reads a kind's open records as those whose status is in neither list. A
   record with no status is open;
+- reads the open values the status lists in `proposed:` as suggestions that
+  wait for the owner, offering to accept one (a move to an open value in none
+  of the lists) or dismiss it (a move to a dropped value)
+  ([record 0247](decisions/0247-a-status-names-the-open-states-a-record-waits-in-until-its-owner-accepts-it.md));
 - filters each implementor on its own, under that kind's name for the
   status. A renamed status is not called `status`, and a machine's state is
   stored apart from an enum's value;

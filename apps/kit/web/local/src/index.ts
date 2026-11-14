@@ -1,4 +1,10 @@
-export { RecordWrites, asserted, emptyOutboxFile, entryKey } from "./entry"
+export {
+  RecordWrites,
+  asserted,
+  emptyOutboxFile,
+  entryKey,
+  isHeld,
+} from "./entry"
 export type { LocalWrite, OutboxEntry, OutboxFile } from "./entry"
 export { applyEntry, foldRecords } from "./fold"
 export {

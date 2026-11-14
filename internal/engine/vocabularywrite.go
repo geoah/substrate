@@ -42,6 +42,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,13 +63,8 @@ var vocabularyRecordKinds = map[string]string{
 	kindRecordMapping: vocabulary.DocRecordMapping,
 	kindFunction:      vocabulary.DocFunction,
 	kindAgent:         vocabulary.DocAgent,
-	kindActor:         kindActorLocal,
 	kindBundle:        vocabulary.DocBundle,
 }
-
-// kindActorLocal is actor's manifest short name (vocabulary.DocActor), spelled
-// as a const so the map above stays greppable beside the identities.
-const kindActorLocal = vocabulary.DocActor
 
 // schemaKindRef resolves a manifest kind's SHORT name ("kind")
 // back to its full type identity ("substrate.reamde.dev/core/kind").
@@ -150,7 +146,28 @@ type vocabularyBatch struct {
 	// changes, when set, receives the batch's committed changelog entries:
 	// the agent vocabulary tool stamps them on its tool row, as `write` does.
 	changes *[]changeEntry
+	// publish is a PUBLISH's move (publish.go, decision record 0289): each
+	// kind of the package in `~` to the kind of the same name under the
+	// authority it is published as. The batch carries their rows (move.go)
+	// where every other door refuses a move, and publishTo, the package it
+	// creates under that authority, is the one new package outside `~` a
+	// repository's hand writes. onMoves hears the planned move.
+	publish   map[string]string
+	publishTo string
+	onMoves   func(movesPlanned)
+	// rollback runs the batch whole, the work before its transaction and
+	// the transaction to where it would commit, its end-of-transaction
+	// checks and settling included (dataset.go inTxOn, txn.dryRun), and rolls
+	// the transaction back there: a preview answered by the apply itself, so
+	// the two cannot differ (publish.go). Nothing it does outlives it but an
+	// index built and a body prepared, which the apply leaves the same way
+	// when a guard refuses it.
+	rollback bool
 }
+
+// errBatchRolledBack ends a dry run's transaction where it would commit
+// (vocabularyBatch.rollback, txn.dryRun).
+var errBatchRolledBack = errors.New("substrate/engine: the batch ran as a preview and was rolled back")
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
 
@@ -170,12 +187,69 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	return ds.applyVocabularyDocuments(ctx, actor, raw, opts, nil)
 }
 
+// localizeDocuments folds the repository's own name into `~` in declarations
+// a hand wrote (decision record 0259): a kind, a package or a record path
+// under the name is the repository's own, which is stored under its local
+// namespace whatever it was spelled as. Actor texts and prose keep the name.
+func (ds *dataset) localizeDocuments(raw []map[string]any) ([]map[string]any, error) {
+	names := ds.names()
+	if len(names) == 0 {
+		return raw, nil
+	}
+	out, err := vocabulary.LocalizeOwnDocuments(raw, names...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return out, nil
+}
+
+// closureAuthorities are the authorities raw's declarations name as their
+// own, as sent.
+func closureAuthorities(raw []map[string]any) []string {
+	var out []string
+	for _, doc := range raw {
+		data, _ := doc["data"].(map[string]any)
+		if a, _ := data["authority"].(string); a != "" && a != vocabulary.Local && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// refuseInstallFromName refuses, early and with a plain message, an install
+// of a closure a former name the repository still answers to publishes,
+// until the name lapses (repositorynames.go): it is no guarantee, which the
+// spellings are.
+func (ds *dataset) refuseInstallFromName(ctx context.Context, authorities []string) error {
+	if len(authorities) == 0 {
+		return nil
+	}
+	stored, err := ds.svc.readNames(ctx, ds.info.ID)
+	if err != nil {
+		return err
+	}
+	now := ds.svc.namesNow()
+	for _, a := range authorities {
+		for _, f := range stored.former {
+			if f.name == a && now.Before(f.until()) {
+				return fmt.Errorf("%w: %s is a former name of this repository, which answers to it until %s, so a package %s publishes is not installed here until then",
+					substrate.ErrConflict, a, f.until().UTC().Format(time.RFC3339), a)
+			}
+		}
+	}
+	return nil
+}
+
 // applyVocabularyDocuments is ApplyVocabularyDocumentsWith handing the
 // batch's committed changelog entries to changes, when set: the agent
 // vocabulary tool stamps them on its tool row.
 func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply, changes *[]changeEntry) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
+	}
+	raw, err := ds.localizeDocuments(raw)
+	if err != nil {
+		return nil, err
 	}
 	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
@@ -185,7 +259,9 @@ func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate
 		return nil, err
 	}
 	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes}
-	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
+	// The documents were folded into `~`, so the origin they are held to is
+	// too: a copy claiming its own package by the full name is refused.
+	if b.origin, b.originVersion, err = claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.names()...), docs); err != nil {
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, b)
@@ -223,6 +299,10 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if len(raw) == 0 {
 		return plan, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
+	raw, err := ds.localizeDocuments(raw)
+	if err != nil {
+		return plan, err
+	}
 	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
 		return plan, err
@@ -230,7 +310,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return plan, err
 	}
-	origin, _, err := claimedOrigin(opts.Origin, docs)
+	origin, _, err := claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.names()...), docs)
 	if err != nil {
 		return plan, err
 	}
@@ -294,6 +374,26 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 	return origin, version, nil
 }
 
+// admitPublishedDocuments is what a published package's declarations are
+// held to beyond any closure's: a published agent spends the owner's
+// provider, so it names the provider input it takes and the models it runs
+// on, and ships its own daily cap (decision 0217), whether the binary or a
+// document brought it. A repository that publishes holds each release to it
+// (publish.go admitRelease).
+func admitPublishedDocuments(docs []vocabulary.Document) error {
+	for _, doc := range docs {
+		if doc.Kind == vocabulary.DocAgent {
+			if input, _ := doc.Data["providerInput"].(string); strings.TrimSpace(input) == "" || doc.Data["provider"] != nil || doc.Data["model"] != nil {
+				return fmt.Errorf("%w: published agent %s must use providerInput and models, not provider and model", substrate.ErrValidation, doc.ID)
+			}
+		}
+	}
+	if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
+		return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return nil
+}
+
 // InstallBundleClosure admits a bundle's schema closure AND its shipped data
 // documents (the delivery wiring — triggers) as ONE repository transaction: the
 // declaration rows project, then every data document PUTs against the candidate
@@ -310,6 +410,13 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
+	if err := ds.refuseInstallFromName(ctx, closureAuthorities(vocabularyDocs)); err != nil {
+		return nil, err
+	}
+	vocabularyDocs, err := ds.localizeDocuments(vocabularyDocs)
+	if err != nil {
+		return nil, err
+	}
 	docs, err := vocabulary.ParseDocuments(vocabularyDocs)
 	if err != nil {
 		return nil, err
@@ -319,18 +426,9 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 			return nil, err
 		}
 	}
-	// A published agent spends the owner's provider, so it ships its own
-	// daily cap (decision 0217), whether the binary or a document brought it.
 	if opts.Published {
-		for _, doc := range docs {
-			if doc.Kind == vocabulary.DocAgent {
-				if input, _ := doc.Data["providerInput"].(string); strings.TrimSpace(input) == "" || doc.Data["provider"] != nil || doc.Data["model"] != nil {
-					return nil, fmt.Errorf("%w: published agent %s must use providerInput and models, not provider and model", substrate.ErrValidation, doc.ID)
-				}
-			}
-		}
-		if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
-			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		if err := admitPublishedDocuments(docs); err != nil {
+			return nil, err
 		}
 	}
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
@@ -356,7 +454,14 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 					return err
 				}
 			}
+			copiedFrom, _ := vocabulary.SplitPackageRef(opts.Origin)
 			for _, in := range dataDocs {
+				if copiedFrom != "" && copiedFrom != t.ds.name() {
+					var err error
+					if in, err = t.localizeCopied(in, copiedFrom); err != nil {
+						return fmt.Errorf("shipped record %s: %w", in.ID, err)
+					}
+				}
 				// A trigger's callable is validated against the candidate here
 				// because the internal put below skips the callable check, so
 				// an unresolvable trigger would otherwise slip in.
@@ -409,30 +514,91 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 }
 
 // anotherHandWrote reports whether a hand other than the shipping ones ever
-// wrote or deleted the record at ref: whether its changelog, the purged
-// record's included, holds an entry under any actor shippedHands(shipper)
-// does not name. An install, import, upgrade or seed writes a shipped data
-// record only where none did, so an edit, a removed property and a deletion
-// survive it whoever made them (the owner at any door they name, an agent, a
-// function, another bundle), and a record only the shipping hands wrote takes
-// the newer shipped one (records 0166 and 0191). Delivery wiring (a trigger)
-// is exempt at the caller: it names the callables the same closure ships, so
-// it moves with them. The check runs under the record's advisory lock, so a
-// concurrent writer of the same id serializes behind it.
+// wrote or deleted the record at ref (anotherHandIn). An install, import,
+// upgrade or seed writes a shipped data record only where none did, so an
+// edit, a removed property and a deletion survive it whoever made them (the
+// owner at any door they name, an agent, a function, another bundle), and a
+// record only the shipping hands wrote takes the newer shipped one (records
+// 0166 and 0191). Delivery wiring (a trigger) is exempt at the caller: it
+// names the callables the same closure ships, so it moves with them. The
+// check runs under the record's advisory lock, so a concurrent writer of the
+// same id serializes behind it.
 func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) {
 	at, err := t.lockCanonical(ref)
 	if err != nil {
 		return false, err
 	}
-	var wrote bool
-	err = t.row(anotherHandWroteSQL, at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
-	return wrote, err
+	return anotherHandIn(t.ctx, t.tx, at, shipper)
 }
 
-// anotherHandWroteSQL is anotherHandWrote's question, which a seed's open
-// catch-up also asks outside any transaction: did any actor but the shipping
-// hands ($3) ever write the record?
-const anotherHandWroteSQL = `SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`
+// anotherHandIn is anotherHandWrote's question over any handle, which a
+// seed's open catch-up asks outside a transaction: did any hand that ever
+// wrote the record, the purged record's included (recordHands), write as an
+// actor shippedHands(shipper) does not name?
+func anotherHandIn(ctx context.Context, q dbx, ref eref, shipper substrate.Actor) (bool, error) {
+	hands, err := recordHandsOf(ctx, q, []eref{ref})
+	if err != nil {
+		return false, err
+	}
+	shipping := shippedHands(shipper)
+	return slices.ContainsFunc(hands[ref], func(h recordHand) bool { return h.another(shipping) }), nil
+}
+
+// THE HANDS THAT WROTE A RECORD. A line names the actor record that wrote it
+// and the one it acted for, and a state entry keeps those of every line it
+// replaced, with the line's operation (compact.go stateHand), so the hands that ever wrote a record are
+// the lines addressed to it that remain and the writers their state entries
+// keep: the same before and after a compaction. Every rule that asks who
+// wrote a record asks here (shippedBy, anotherHandWrote and the seeds, the
+// unit seed, shippedAmong).
+
+// recordHand is one hand that wrote a record: an actor record id, the one
+// its line acted for, and the line's operation.
+type recordHand struct{ actor, onBehalfOf, op string }
+
+// another reports whether h writes as a hand other than shipping names: its
+// actor is none of them. Whom the line acted for does not enter it: every
+// line the engine writes while it serves a request acts for the request's
+// person, an install's purge among them.
+func (h recordHand) another(shipping []string) bool {
+	return !slices.Contains(shipping, h.actor)
+}
+
+// recordHandsOf is the hands that wrote each record of refs.
+func recordHandsOf(ctx context.Context, q dbx, refs []eref) (map[eref][]recordHand, error) {
+	kinds, ids := make([]string, len(refs)), make([]string, len(refs))
+	for i, r := range refs {
+		kinds[i], ids[i] = r.Kind, r.ID
+	}
+	return recordHands(ctx, q, `(c.kind, c.record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))`, kinds, ids)
+}
+
+// recordHands is the hands that wrote each record of the lines the clause
+// over `c`, the changelog, admits: those lines' own, and the writers their
+// state entries keep.
+func recordHands(ctx context.Context, q dbx, where string, args ...any) (map[eref][]recordHand, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT c.kind, c.record_id, c.actor, coalesce(c.on_behalf_of, ''), c.op FROM changelog c WHERE `+where+`
+		UNION
+		SELECT c.kind, c.record_id, w ->> 'actor', coalesce(w ->> 'onBehalfOf', ''), coalesce(w ->> 'op', '') FROM changelog c
+		CROSS JOIN LATERAL jsonb_array_elements(c.payload -> 'fold') e
+		CROSS JOIN LATERAL jsonb_array_elements(coalesce(e #> '{state,writers}', '[]'::jsonb)) w
+		WHERE `+where+` AND e ->> 'kind' = 'state' AND e ->> 'ref' = c.kind AND e ->> 'id' = c.record_id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read who wrote the records: %w", err)
+	}
+	out := map[eref][]recordHand{}
+	for rows.Next() {
+		var r eref
+		var h recordHand
+		if err := rows.Scan(&r.Kind, &r.ID, &h.actor, &h.onBehalfOf, &h.op); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		out[r] = append(out[r], h)
+	}
+	return out, errors.Join(rows.Err(), rows.Close())
+}
 
 // refuseTakenTrigger refuses a shipped trigger whose id a live trigger
 // already holds for ANOTHER package's callable (record 0192). Trigger ids are
@@ -500,14 +666,14 @@ func splitPackage(pkg string) (string, string) {
 	return authority, name
 }
 
-// shippedHands are the actors whose writes leave a shipped record the
+// shippedHands are the ids of the actors whose writes leave a shipped record the
 // shipper's to replace: the shipper, the core seed and the engine. Every one
 // is reserved (substrate.ReservedActor), so no request can claim one and pass
 // its edit off as the shipped record's own. The shipper's own sync writes
 // under the shipper's actor and so leaves the record replaceable, while its
 // functions and agents write under their own actors and hold it.
 func shippedHands(shipper substrate.Actor) []string {
-	return []string{string(shipper), string(substrate.ActorSeed), string(substrate.ActorSystem)}
+	return []string{actorID(shipper), actorID(substrate.ActorSeed), actorID(substrate.ActorSystem)}
 }
 
 // applyVocabularyBatch is the write path for schema: candidate before the
@@ -627,6 +793,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 	}()
 	err = ds.inTx(ctx, actor, true, func(t *txn) error {
 		t.changeSink = b.changes
+		t.dryRun = b.rollback
 		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
 		// #11): trigger admission holds the shared side from callable
 		// validation to commit, so the dropped-reference query below can
@@ -650,9 +817,6 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// touched package is re-admitted or removed by the batch, so none of
 		// them stays parked, and the fold's derivations here read it already.
 		t.writeParked = st.parked
-		// inTx resolved the tier against the live registry, before the
-		// candidate was set: an actor this closure declares resolves here.
-		t.tier = t.actorTier(actor)
 		// A whole-package teardown (bundle uninstall) removes the owned package's
 		// delivery wiring first — under the same lock, before the guards below —
 		// so dropping every callable never strands its own triggers. If a guard
@@ -677,6 +841,26 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// holds, so the hash a preview handed out is recomputed over the same
 		// records or refused: the work ceiling, then the confirmation a lossy
 		// plan needs (convert.go, decision 0067).
+		// A publish's move, planned under the locks this transaction holds:
+		// the rows it carries, in the order they are written, and what the
+		// store refuses it for (move.go).
+		if len(st.moves) > 0 {
+			planned, lines, err := planMoves(t, candidate, st.moves)
+			if err != nil {
+				return err
+			}
+			if lines = append(lines, moveGuards(current, carrying(planned.moves))...); len(lines) > 0 {
+				return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(lines, "; "))
+			}
+			grants, err := countGrants(t, movedTargets(st.moves))
+			if err != nil {
+				return err
+			}
+			st.conversions.moves, st.conversions.grantPatches = planned, grants
+			if b.onMoves != nil {
+				b.onMoves(planned)
+			}
+		}
 		plan, err := st.conversions.wire(t, ds.svc.conversionCeiling, true)
 		if err != nil {
 			return err
@@ -724,6 +908,9 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 			ds.logApply("rewriting records for the declared conversions")
 		}
 		if _, err := t.convertRecords(candidate, st.conversions); err != nil {
+			return err
+		}
+		if _, err := t.dropHiddenBodies(st.usableAgain); err != nil {
 			return err
 		}
 		// The refs index and `fts` are projections of stored values against
@@ -822,13 +1009,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
-		// An actor the batch declares at the machine tier, or re-declares
-		// there in a package it touches, releases what it holds above it the
-		// same way (recomputeDemotedActors).
-		if err := t.recomputeDemotedActors(ds.registry(), candidate, touched); err != nil {
-			return err
-		}
-		final, err := droppedTypeGuards(t, st.droppedTypes)
+		final, err := droppedTypeGuards(t, append(append([]string(nil), st.droppedTypes...), st.carried...))
 		if err != nil {
 			return err
 		}
@@ -845,6 +1026,9 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		t.publishReg = candidate
 		return nil
 	})
+	if b.rollback && errors.Is(err, errBatchRolledBack) {
+		return written, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -853,6 +1037,40 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 	// references anymore.
 	ds.reconcileRunner(ctx)
 	return written, nil
+}
+
+// compileCandidate is current without the touched packages and with docs,
+// their declarations, compiled whole (CEL guards, templates) before any
+// transaction opens, one BuildPackages per package with every problem in
+// every document at once, in the order `substratectl validate` prints them
+// offline (vocabulary.BuildEachPackage). Its declared defaults are refused
+// on the terms the write path refuses them on, and an index the engine
+// cannot build is refused here, where the upgrade preview looks too, so the
+// preview never admits a closure the install then refuses (indices.go). A
+// release is compiled by it into what a fresh repository holds
+// (publish.go admitRelease).
+func (ds *dataset) compileCandidate(current *vocabulary.Registry, docs []vocabulary.Document, touched map[string]bool, sourceOf func(string) string) (*vocabulary.Registry, error) {
+	candidate := current.Clone()
+	for g := range touched {
+		candidate.Remove(g)
+	}
+	rebuilt, err := vocabulary.BuildEachPackage(docs, sourceOf)
+	if err != nil {
+		return nil, err
+	}
+	if err := candidate.InstallAll(rebuilt); err != nil {
+		return nil, err
+	}
+	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
+		return nil, &substrate.ValidationError{Problems: defaults}
+	}
+	if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
+		return nil, err
+	}
+	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return candidate, nil
 }
 
 // touchedKinds lists the kinds the candidate declares in the packages a batch
@@ -884,6 +1102,10 @@ type vocabularyStage struct {
 	// (fold.go parkedSet.without), never nil.
 	parked       *parkedSet
 	droppedTypes []string
+	// carried are the kinds a publish removes and carries the rows of, and
+	// moves the move that carries them (publish.go).
+	carried []string
+	moves   []kindMove
 	// strandedMappings names the mappings another package declares FROM a kind
 	// this batch removes (record 49): uninstalling Linear while the
 	// repository's own mapping reads `linear/issue` is refused until the
@@ -912,6 +1134,11 @@ type vocabularyStage struct {
 	// reader of a renamed name (renameGuards).
 	conversions      conversionPlan
 	conversionGuards []string
+	// usableAgain are the kinds of the batch's packages the live registry
+	// does not hold (new, uninstalled before, or quarantined): their records
+	// may hold a body repository migration 11 kept while no usable
+	// declaration hid it (dropHiddenBodies).
+	usableAgain []*vocabulary.Kind
 }
 
 // guards is every refuse-breakage guard line the staged batch refuses on, read
@@ -1008,26 +1235,10 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 					}
 				}
 			}
-			if !ds.svc.foreignPackages {
-				if err := authorizeNewPackage(*actor, stored, ds.scope.Repository, g); err != nil {
+			if !ds.svc.foreignPackages && g != b.publishTo {
+				if err := authorizeNewPackage(*actor, stored, ds.name(), g); err != nil {
 					return nil, err
 				}
-			}
-		}
-		// An actor's id does not embed its authority (alone among the kinds), so a
-		// document can CLAIM any authority. Check by the actor declaration's CURRENT
-		// authority too: a shipped actor redeclared into an installed package would
-		// otherwise overwrite the shipped row from outside its package.
-		for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
-			if d.Kind != kindActorLocal {
-				continue
-			}
-			g, ok := current.ActorPackage(d.ID)
-			if !ok {
-				continue
-			}
-			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
-				return nil, fmt.Errorf("actor %s belongs to %s: %w", d.ID, g, err)
 			}
 		}
 	}
@@ -1061,20 +1272,11 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		delete(merged, docKey(d))
 	}
 
-	// The candidate: current registry minus the touched packages, plus their
-	// rebuilt replacements — compiled whole (CEL guards, templates) before the
-	// transaction opens. Every problem in every document reports at once.
-	candidate := current.Clone()
-	for g := range touched {
-		candidate.Remove(g)
-	}
 	mergedDocs := make([]vocabulary.Document, 0, len(merged))
 	for _, d := range merged {
 		mergedDocs = append(mergedDocs, d)
 	}
-	// One BuildPackages per package, the problems collected in the order
-	// `substratectl validate` prints them offline (vocabulary.BuildEachPackage).
-	rebuilt, err := vocabulary.BuildEachPackage(mergedDocs, func(aname string) string {
+	candidate, err := ds.compileCandidate(current, mergedDocs, touched, func(aname string) string {
 		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
 		// storedPackages builds it at open. Two things read the origin — the row
 		// the projection writes back, and the one loader rule keyed on it
@@ -1114,14 +1316,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err != nil {
 		return nil, err
 	}
-	if err := candidate.InstallAll(rebuilt); err != nil {
-		return nil, err
-	}
-	// A declared default is stored by the write path, so it is refused here on
-	// the terms the write path would refuse it on.
-	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
-		return nil, &substrate.ValidationError{Problems: defaults}
-	}
 
 	// Types the candidate no longer declares: refuse while instances exist,
 	// counted transactionally below. Functions carry no delivery state of
@@ -1141,15 +1335,28 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		}
 	}
 	sort.Strings(droppedTypes)
-
-	// An index the engine cannot build is refused here, where the upgrade
-	// preview looks too, so the preview never admits a closure the install
-	// then refuses (indices.go).
-	if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
-		return nil, err
-	}
-	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
-		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	// A publish carries the rows of the kinds it removes, so they are counted
+	// after the move, by the dropped-kind count that decides
+	// (applyVocabularyBatchLocked), and not before it.
+	var carried []string
+	var moves []kindMove
+	if len(b.publish) > 0 {
+		var kept []string
+		for _, k := range droppedTypes {
+			if b.publish[k] != "" {
+				carried = append(carried, k)
+			} else {
+				kept = append(kept, k)
+			}
+		}
+		droppedTypes = kept
+		for _, from := range sortedKeys(b.publish) {
+			to, ok := candidate.ByIdentity(b.publish[from])
+			if !ok {
+				return nil, fmt.Errorf("substrate/engine: publish: %s does not declare %s", b.publishTo, b.publish[from])
+			}
+			moves = append(moves, kindMove{from: from, to: to})
+		}
 	}
 
 	conversions := classifyConversions(current, candidate, touched, nil)
@@ -1179,7 +1386,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// the looser contract stands — the dispatcher skips an unresolvable
 		// callable loudly.
 		droppedTypes:     droppedTypes,
-		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
+		carried:          carried,
+		moves:            moves,
+		strandedMappings: strandedMappingGuards(candidate, append(append([]string(nil), droppedTypes...), carried...)),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojections:    reprojections,
@@ -1188,7 +1397,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
-		narrowings:   classifyNarrowings(current, candidate, touched, nil),
+		narrowings:   classifyNarrowings(current, candidate, touched, b.publish),
 		moveRefusals: moveRefusals,
 		// A rename, a backfill, a remap and a null are neither: the
 		// transaction rewrites the live records (convert.go), and what refuses
@@ -1197,7 +1406,27 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// here (admitConversion).
 		conversions:      conversions,
 		conversionGuards: renameGuards(current, candidate, conversions.renames),
+		usableAgain:      kindsNewToTheRegistry(current, candidate, touched),
 	}, nil
+}
+
+// kindsNewToTheRegistry are the kinds the candidate declares in touched
+// packages the current registry does not hold.
+func kindsNewToTheRegistry(current, candidate *vocabulary.Registry, touched map[string]bool) []*vocabulary.Kind {
+	var out []*vocabulary.Kind
+	for _, aname := range sortedKeys(touched) {
+		if cur, _ := current.PackageByName(aname); cur != nil {
+			continue
+		}
+		cand, _ := candidate.PackageByName(aname)
+		if cand == nil {
+			continue
+		}
+		for _, tn := range cand.KindOrder {
+			out = append(out, cand.Kinds[tn])
+		}
+	}
+	return out
 }
 
 // resolveDeclarationVersions is where THE API MAINTAINS THE VERSION: nobody
@@ -1258,10 +1487,11 @@ func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabula
 		explicit, _ := vocabulary.VersionValue(d.Data["version"])
 		v := explicit
 		// The header is a declaration like any other: its own content (the
-		// description, the retired names) changing moves it to stored+1. Only
-		// the document keys compare; the row's engine-owned properties
-		// (`source`, `actors`, the origin and shipped-version stamps) are not
-		// in the stored document, so a stamp alone never moves it.
+		// description, the stability, the retired names) changing moves it to
+		// stored+1. Only the document keys compare; the row's engine-owned
+		// properties (`source`, `actors`, the origin and shipped-version
+		// stamps) are not in the stored document, so a stamp alone never
+		// moves it.
 		storedDoc, held := existing[docKey(d)]
 		switch {
 		case explicit > stored:
@@ -1592,9 +1822,10 @@ func (d declaration) version() int64 {
 	return v
 }
 
-// projectPackage writes one authority's declarations: the header, its actors, and
-// every property type, trait, record type, mapping, function, agent and
-// bundle. `projecting` is the whole pass's set of kinds whose own declaration
+// projectPackage writes one authority's declarations: the header and every
+// property type, trait, record type, mapping, function, agent and bundle, and
+// the actor record of the package and of each function and agent it declares,
+// which an install is when they come to be (decision 0270). `projecting` is the whole pass's set of kinds whose own declaration
 // this projection writes, which is what projectionKind reads.
 func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]bool, decls []declaration, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
 	for _, d := range decls {
@@ -1628,6 +1859,11 @@ func (t *txn) projectPackage(reg *vocabulary.Registry, projecting map[string]boo
 		}
 		live[d.key()] = true
 		out[d.short+"\x00"+d.id] = e
+		if key := declarationActor(d); key != "" {
+			if err := t.ensureActors(key); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -1668,7 +1904,7 @@ func (t *txn) stampDeclaredBy(ty *vocabulary.Kind, d declaration, props map[stri
 	if t.actor == "" || (row != nil && row.DeletedAt == nil) {
 		return nil
 	}
-	props[propPackageDeclaredBy] = string(t.actor)
+	props[propPackageDeclaredBy] = vocabulary.ActorRef(actorID(t.actor))
 	return nil
 }
 
@@ -1786,10 +2022,6 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 		return nil
 	}
 
-	actors := make([]any, 0, len(g.Actors))
-	for _, a := range g.Actors {
-		actors = append(actors, a)
-	}
 	// An AUTHORITY row owns packages and declares nothing else, so its
 	// projection is the row and it is done.
 	if g.IsAuthority() {
@@ -1818,31 +2050,30 @@ func packageDeclarations(g *vocabulary.Package) ([]declaration, error) {
 	if len(g.RetiredKinds) > 0 {
 		header["retired"] = map[string]any{"kinds": anyList(g.RetiredKinds)}
 	}
+	// The stated label alone: a package that states none stores no key, so
+	// its row never claims a promise its header did not make (decision 0256).
+	if g.Stability != "" {
+		header["stability"] = g.Stability
+	}
+	// The named interface alone, as with the label: an absent key stores
+	// nothing and reads as 1 (decision 0265).
+	if g.Interface != 0 {
+		header["interface"] = g.Interface
+	}
+	if g.Dialect != 0 {
+		header["dialect"] = g.Dialect
+	}
+	// The stated retention alone, as the label: absent stores nothing and
+	// reads as all (decision 0282).
+	if g.Retention != "" {
+		header["retention"] = g.Retention
+	}
 	if err := add(vocabulary.DocPackage, kindPackage, g.Identity, header,
 		map[string]any{
-			"actors": actors, "source": g.Source,
+			"source":               g.Source,
 			propPackageQuarantined: nil, propPackageQuarantineReason: nil,
 		}); err != nil {
 		return nil, err
-	}
-	for _, a := range g.Actors {
-		// An actor named for its package has no row of its own: the package
-		// row above already holds that id and lists the actor.
-		if a == g.Identity {
-			continue
-		}
-		// The tier is the actor's explicit attribute: projected
-		// onto the row so the rebuild — and every reader — gets data, never
-		// an inference from the actor's spelling.
-		tier := string(substrate.TierMachine)
-		if declared, ok := g.ActorTiers[a]; ok {
-			tier = string(declared)
-		}
-		if err := add(kindActorLocal, kindActor, a,
-			map[string]any{"authority": g.Authority, "package": g.Name, "tier": tier},
-			map[string]any{"source": g.Source}); err != nil {
-			return nil, err
-		}
 	}
 	for _, n := range g.DatatypeOrder {
 		d := g.PropertyTypes[n]
@@ -2170,9 +2401,6 @@ func closureDigest(pkg string, docs []vocabulary.Document) (string, error) {
 	}
 	entries := make([]entry, 0, len(docs))
 	for _, d := range docs {
-		if d.Kind == vocabulary.DocActor && (d.ID == pkg || d.ID == vocabulary.PackageActor(pkg)) {
-			continue
-		}
 		entries = append(entries, entry{Kind: d.Kind, ID: d.ID, Data: minusVersionKey(d.Data)})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -2280,6 +2508,16 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 				return err
 			}
 		}
+		// A package, function or agent leaving takes its hand with it: its
+		// actor record is disabled in this transaction, as an uninstall
+		// disables it, and declaring it again enables it (decision 0270).
+		if short, ok := vocabularyRecordKinds[s.typ]; ok {
+			if key := declarationActor(declaration{short: short, typ: s.typ, id: s.id}); key != "" {
+				if err := t.disableActor(key); err != nil {
+					return fmt.Errorf("substrate/engine: disable the actor of %s: %w", s.id, err)
+				}
+			}
+		}
 		if _, err := t.softDelete(ref); err != nil {
 			return fmt.Errorf("substrate/engine: prune schema row %s: %w", s.id, err)
 		}
@@ -2347,7 +2585,6 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, autho
 	}
 	defer func() { _ = rows.Close() }()
 	out := map[string]vocabulary.Document{}
-	authorityActors := map[string][]string{} // authority id → declared actors
 	for rows.Next() {
 		var id, typ string
 		var raw []byte
@@ -2367,29 +2604,10 @@ func (ds *dataset) vocabularyDocumentRowsWhere(ctx context.Context, q dbx, autho
 		if !ok || !authorities[d.DeclaredPackage()] {
 			continue
 		}
-		if typ == kindPackage {
-			authorityActors[id] = append(authorityActors[id], anyStrings(props["actors"])...)
-		}
 		out[docKey(d)] = d
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
-	}
-	// Record 60: a package-named actor has no row of its own — the package row
-	// is it. Synthesize its document so the rebuilt package keeps the actor.
-	for aname, actors := range authorityActors {
-		for _, a := range actors {
-			if a != vocabulary.PackageActor(aname) {
-				continue
-			}
-			d, err := vocabulary.DocumentFromMap(vocabulary.ActorManifest(aname, a))
-			if err != nil {
-				return nil, err
-			}
-			if _, exists := out[docKey(d)]; !exists {
-				out[docKey(d)] = d
-			}
-		}
 	}
 	return out, nil
 }
@@ -2419,19 +2637,6 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 			ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
 	}
 	switch short {
-	case kindActorLocal:
-		authority, _ := props["authority"].(string)
-		pkg, _ := props["package"].(string)
-		if authority == "" || pkg == "" {
-			return vocabulary.Document{}, false, nil // a pre-promotion mirror row; the seed rewrites it
-		}
-		d.Data = map[string]any{"authority": authority, "package": pkg}
-		// machine is the parse default, so the rebuilt document omits it —
-		// the boot no-op comparison stays parsed projection against parsed
-		// projection.
-		if tier, _ := props["tier"].(string); tier != "" && tier != string(substrate.TierMachine) {
-			d.Data["tier"] = tier
-		}
 	default:
 		// A DELETED KEY IS NAMED, NEVER DROPPED. The read below is a whitelist, so
 		// a row carrying a spelling the loader retired would otherwise lose it in
@@ -2482,8 +2687,8 @@ func declarationData(short string, props map[string]any) map[string]any {
 // would otherwise send `title` into a declaration's data and be told the loader
 // does not know the key.
 var columnBackedProp = map[string]bool{
-	substrate.PropTitle: true, substrate.PropBody: true,
-	substrate.PropAt: true, substrate.PropEndsAt: true, substrate.PropDueAt: true,
+	substrate.PropTitle: true,
+	substrate.PropAt:    true, substrate.PropEndsAt: true, substrate.PropDueAt: true,
 }
 
 // anyStrings reads a jsonb string list property.
@@ -2621,6 +2826,13 @@ func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
 // candidate each. The test seam's packages (WithTestInadmissible) are refused
 // before anything installs, as a binary whose contract tightened refuses them.
 func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
+	return ds.admitStoredInto(ds.reg, built)
+}
+
+// admitStoredInto is admitStored over any registry: the live one at open, or
+// a repository migration's own, which learns what the open is about to admit
+// without installing into the live registry or writing a quarantine mark.
+func (ds *dataset) admitStoredInto(reg *vocabulary.Registry, built []*vocabulary.Package) (good, parked []*vocabulary.Package, quarantined []quarantinedPackage) {
 	candidates := built
 	if refuse := ds.svc.testInadmissible; len(refuse) > 0 {
 		candidates = nil
@@ -2633,12 +2845,12 @@ func (ds *dataset) admitStored(built []*vocabulary.Package) (good, parked []*voc
 			quarantined = append(quarantined, quarantinedPackage{name: g.Identity, reason: "refused by the test seam"})
 		}
 	}
-	if err := ds.reg.InstallAll(candidates); err == nil {
+	if err := reg.InstallAll(candidates); err == nil {
 		return candidates, parked, quarantined
 	}
-	// The failed InstallAll removed everything it added, so ds.reg is clean
+	// The failed InstallAll removed everything it added, so reg is clean
 	// again for the subset.
-	good, inadmissible := ds.admissibleSubset(candidates)
+	good, inadmissible := admissibleInto(reg, candidates)
 	admitted := make(map[string]bool, len(good))
 	for _, g := range good {
 		admitted[g.Identity] = true
@@ -2658,11 +2870,13 @@ func (ds *dataset) setParked(s *parkedSet) {
 	ds.parked = s
 }
 
-// admissibleSubset installs the maximal subset of built packages that admits
-// into ds.reg and returns the rest as quarantined, with each one's admission
-// error. It is a fixpoint over UNITS: a unit that depends on a sibling admits
+// admissibleInto installs the maximal subset of built packages that admits
+// into reg and returns the rest as quarantined, with each one's admission
+// error. reg is the live registry at open, or the scratch registry a
+// repository migration builds to project from or to read what the open will
+// admit. It is a fixpoint over UNITS: a unit that depends on a sibling admits
 // once that sibling is in, and a failed InstallAll self-removes everything it
-// added, so ds.reg is left holding exactly the admissible subset. n (installed
+// added, so reg is left holding exactly the admissible subset. n (installed
 // packages) is small, so the O(n^2) worst case is fine.
 //
 // The unit is one package, EXCEPT for the seeded ones, which are one unit
@@ -2670,12 +2884,6 @@ func (ds *dataset) setParked(s *parkedSet) {
 // core's `agent`, so neither admits while the other is absent, and a fixpoint
 // over single packages would quarantine both — the whole repository — over a
 // cycle that is by construction always satisfied.
-func (ds *dataset) admissibleSubset(built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
-	return admissibleInto(ds.reg, built)
-}
-
-// admissibleInto is admissibleSubset over any registry: the live one at open,
-// or the scratch registry a repository migration builds to project from.
 func admissibleInto(reg *vocabulary.Registry, built []*vocabulary.Package) (good []*vocabulary.Package, quarantined []quarantinedPackage) {
 	remaining := admissionUnits(built)
 	for {
@@ -2801,6 +3009,18 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 		}
 		if _, err := ds.patchInternal(ctx, substrate.ActorSystem, groupKind(g.Identity), g.Identity, substrate.PatchInput{
 			Properties: map[string]any{propPackageQuarantined: nil, propPackageQuarantineReason: nil},
+		}); err != nil {
+			return err
+		}
+		// Its kinds are usable again: a body repository migration 11 kept
+		// while they were not is hidden by them now.
+		kinds := make([]*vocabulary.Kind, 0, len(g.KindOrder))
+		for _, tn := range g.KindOrder {
+			kinds = append(kinds, g.Kinds[tn])
+		}
+		if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			_, err := t.dropHiddenBodies(kinds)
+			return err
 		}); err != nil {
 			return err
 		}
@@ -2988,7 +3208,14 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
 		return nil, err
 	}
-	doc, err := documentFromProps(short, in.ID, in.Properties)
+	// The properties are the declaration's data: its name keys are where the
+	// repository's full name is another spelling of `~` (decision record 0259).
+	declared, err := vocabulary.LocalizeDeclaration(vocabulary.CoreKind(short), in.Properties, ds.names()...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	localized, _ := declared.(map[string]any)
+	doc, err := documentFromProps(short, vocabulary.LocalizeRef(in.ID, ds.names()...), localized)
 	if err != nil {
 		return nil, err
 	}
@@ -3005,7 +3232,7 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 	if e, ok := written[docKey(doc)]; ok {
 		return e, nil
 	}
-	return ds.Get(ctx, ty.Identity, in.ID)
+	return getAfterCommit(ds.Get(ctx, ty.Identity, in.ID))
 }
 
 // patchSchemaRecord merges a patch's properties over the stored row and runs
@@ -3049,7 +3276,7 @@ func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor,
 	if e, ok := written[docKey(doc)]; ok {
 		return e, nil
 	}
-	return ds.Get(ctx, existing.Kind, existing.ID)
+	return getAfterCommit(ds.Get(ctx, existing.Kind, existing.ID))
 }
 
 // deleteVocabularyRecord removes one declaration through admission: the closure
@@ -3081,7 +3308,17 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 	if _, err := ds.applyVocabularyBatch(ctx, actor, b); err != nil {
 		return nil, err
 	}
-	return ds.Get(ctx, existing.Kind, existing.ID)
+	return getAfterCommit(ds.Get(ctx, existing.Kind, existing.ID))
+}
+
+// getAfterCommit is the read a declaration write answers with once its batch
+// committed: an error there follows a write that landed, so it is marked in
+// doubt rather than answered as a write that failed.
+func getAfterCommit(rec *substrate.Record, err error) (*substrate.Record, error) {
+	if err != nil {
+		return nil, inDoubt(err)
+	}
+	return rec, nil
 }
 
 // documentFromProps rebuilds the loader document a generic write carries: the
@@ -3110,16 +3347,6 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 			data["description"] = desc
 		}
 		d.Data = data
-	case kindActorLocal:
-		authority, _ := props["authority"].(string)
-		pkg, _ := props["package"].(string)
-		if authority == "" || pkg == "" {
-			return d, fmt.Errorf("%w: an actor record carries `authority` and `package` — the package that declares it", substrate.ErrValidation)
-		}
-		d.Data = map[string]any{"authority": authority, "package": pkg}
-		if tier, _ := props["tier"].(string); tier != "" && tier != string(substrate.TierMachine) {
-			d.Data["tier"] = tier
-		}
 	default:
 		d.Data = declarationData(short, props)
 		if len(d.Data) == 0 {
@@ -3237,9 +3464,6 @@ func ftsShape(reg kindLookup, ident string) string {
 	b.WriteString("declared;")
 	for _, name := range ty.PropOrder {
 		b.WriteString(propertyFTSShape(name, ty.Props[name]))
-	}
-	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() {
-		b.WriteString("body")
 	}
 	return b.String()
 }

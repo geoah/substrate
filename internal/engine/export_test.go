@@ -10,17 +10,20 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/archive"
+	"github.com/geoah/substrate/internal/changelogfile"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
-	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -73,10 +76,42 @@ func SetRepositoryConnsPerHandle(svc substrate.Service, n int) { svc.(*service).
 // repositories opened from here on.
 func SetTestMigrationHook(svc substrate.Service, fn func()) { svc.(*service).testMigrationHook = fn }
 
+// MakeMigrationPending makes repository migration version pending again for
+// repository (its name or its id), with every migration after it: the open
+// refuses a ledger that records a version above a pending one, so a test that
+// runs one migration again forgets each row from it upward, never its own
+// alone, and keeps working when the next migration lands. It writes through
+// the maint pool: the app role may only read and append the ledger.
+func MakeMigrationPending(t *testing.T, dsn, repository string, version int) {
+	t.Helper()
+	maint, err := OpenScopedDB(dsn, repository, RoleMaint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = maint.Close() }()
+	if _, err := maint.ExecContext(context.Background(),
+		`DELETE FROM repository_migrations WHERE repository = (SELECT id FROM repositories WHERE authority = $1 OR id = $1) AND version >= $2`,
+		repository, version); err != nil {
+		t.Fatalf("make repository migration %d pending: %v", version, err)
+	}
+}
+
 // SharedScopedDB is a raw handle on the service's shared repository pool,
-// pinned to one repository by the same connector every dataset rides.
+// pinned to one repository by the same connector every dataset rides. It
+// takes the repository's id or its name, as OpenScopedDB does: the scope is
+// the id, and a name no row holds scopes to nothing.
 func SharedScopedDB(svc substrate.Service, repository string) (*sql.DB, error) {
-	return svc.(*service).scopedDB(Scope{Repository: repository})
+	s := svc.(*service)
+	if !vocabulary.ValidRepositoryID(repository) {
+		repo, err := s.repositoryByName(context.Background(), repository)
+		switch {
+		case err == nil:
+			repository = repo.ID
+		case !errors.Is(err, substrate.ErrNotFound):
+			return nil, err
+		}
+	}
+	return s.scopedDB(Scope{Repository: repository})
 }
 
 // IdleRepositoryPins acquires every idle connection of the shared pool
@@ -291,7 +326,7 @@ const (
 	BulkAfterUses     = bulkAfterUses
 	BulkAfterRevision = bulkAfterRevision
 	BulkAfterRefs     = bulkAfterRefs
-	BulkAfterManagers = bulkAfterManagers
+	BulkAfterMarks    = bulkAfterMarks
 	BulkAfterEntries  = bulkAfterEntries
 )
 
@@ -312,21 +347,11 @@ const SearchIndexVersion = searchIndexVersion
 
 // The commit stages WithTestCommitFault reports, in the order they run.
 const (
-	CommitBeforeManifest = commitBeforeManifest
-	CommitAfterManifest  = commitAfterManifest
-	CommitAfterPrepare   = commitAfterPrepare
-	CommitUnpublished    = commitUnpublished
-	CommitInDoubt        = commitInDoubt
-	CommitAfterCommit    = commitAfterCommit
+	CommitBeforeCommit = commitBeforeCommit
+	CommitUnpublished  = commitUnpublished
+	CommitInDoubt      = commitInDoubt
+	CommitAfterCommit  = commitAfterCommit
 )
-
-// WithTestSnapshotFault installs a hook the snapshot runs after each copy
-// step with the partial directory it is building (snapshot.go). A test
-// damages a copied file there, or returns an error to fail the snapshot
-// mid-copy; a nil hook is the production path.
-func WithTestSnapshotFault(fn func(stage, dir string) error) Option {
-	return func(o *options) { o.snapshotFault = fn }
-}
 
 // WithTestProgressEvery sets how often a long walk reports its position
 // (progress.go). Zero reports at every tick, so a test with a short history
@@ -335,45 +360,23 @@ func WithTestProgressEvery(every time.Duration) Option {
 	return func(o *options) { o.progressEvery = every }
 }
 
-// WithTestDigestHook runs fn with each finished changelog segment whose
-// bytes a check of a repository's directory hashes: the server's digest
-// behind the open (segmentdigest.go), a snapshot's read-back of what it
-// copied, and an open of segments no earlier check and no sidecar vouched
-// for (progress.go checkProgress). It can run on more than one goroutine at
-// once.
-func WithTestDigestHook(fn func(repository, segment string)) Option {
-	return func(o *options) { o.digestHook = fn }
+// WithTestArchivePaceHook runs fn after each copy an archive pass paces
+// (archivepace.go), with the repository and the bytes so far, so a test can
+// say how far a pass moved while something else ran.
+func WithTestArchivePaceHook(fn func(repository string, bytes int64)) Option {
+	return func(o *options) { o.archivePaceHook = fn }
 }
 
-// WithTestDigestPaceHook runs fn after each read the background digest
-// paces (segmentdigest.go digestPacer), with the repository and the bytes
-// read so far, so a test can say how far the digest moved while something
-// else ran.
-func WithTestDigestPaceHook(fn func(repository string, bytes int64)) Option {
-	return func(o *options) { o.digestPaceHook = fn }
+// WithTestArchiveYieldMax sets the longest a pass waits for invocations to
+// return (archivepace.go yield), in place of archiveYieldMax.
+func WithTestArchiveYieldMax(d time.Duration) Option {
+	return func(o *options) { o.archiveYieldMax = d }
 }
 
-// WithTestDigestYieldMax sets the longest the background digest waits for
-// invocations to return before one read (segmentdigest.go yield), in place
-// of digestYieldMax.
-func WithTestDigestYieldMax(d time.Duration) Option {
-	return func(o *options) { o.digestYieldMax = d }
-}
-
-// SegmentDigestDone is closed when the dataset's background digest of its
-// changelog segments has returned, finished or stopped; a dataset whose open
-// started none returns a closed channel.
-func SegmentDigestDone(ds substrate.Dataset) <-chan struct{} {
-	d := ds.(*dataset)
-	d.digestMu.Lock()
-	done := d.digestDone
-	d.digestMu.Unlock()
-	if done != nil {
-		return done
-	}
-	closed := make(chan struct{})
-	close(closed)
-	return closed
+// PutBounded is the write an agent's write built-in makes: a put under the
+// run's ceiling, emit the kinds it names.
+func PutBounded(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, in substrate.PutInput, emit []string) (*substrate.Record, error) {
+	return ds.(*dataset).putBounded(ctx, actor, in, &effectCeiling{emit: emit})
 }
 
 // WithTestOperator opens the service as OpenOperator opens substratectl's:
@@ -534,6 +537,7 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 	if named.kindsFS == nil && named.kindsDir == "" && named.registry == nil {
 		seed = []Option{WithKindsFS(SeedKinds)}
 	}
+
 	all := append(seed, []Option{
 		WithCredentialKey(TestCredentialKey),
 		WithTestTOTPClock(ClockOf(t).Now),
@@ -547,93 +551,6 @@ func OpenForTest(t *testing.T, ctx context.Context, dsn string, opts ...Option) 
 	}...)
 	all = append(all, opts...)
 	return Open(ctx, dsn, all...)
-}
-
-// The snapshot stages WithTestSnapshotFault reports, in the order they run.
-const (
-	SnapshotAfterChangelog = snapshotAfterChangelog
-	SnapshotAfterCopy      = snapshotAfterCopy
-)
-
-// BreakSealedStore replaces a dataset's sealed-file writer with one that
-// fails every call, under its mutex, so the next write that touches the
-// sealed table is refused the way a full disk would refuse it: before its
-// transaction commits, with nothing durable anywhere (ErrDirectoryWrite).
-func BreakSealedStore(ds substrate.Dataset) {
-	d := ds.(*dataset)
-	d.writerMu.Lock()
-	defer d.writerMu.Unlock()
-	d.sealed = brokenSealedStore{}
-}
-
-// RepairSealedStore puts a dataset's sealed-file writer back to the files
-// themselves, undoing BreakSealedStore.
-func RepairSealedStore(ds substrate.Dataset) {
-	d := ds.(*dataset)
-	d.writerMu.Lock()
-	defer d.writerMu.Unlock()
-	d.sealed = nil
-}
-
-// BreakSealedStoreTimes replaces a dataset's sealed-file writer with one
-// whose Stage fails the next n calls and then writes the files as usual.
-func BreakSealedStoreTimes(ds substrate.Dataset, n int) {
-	d := ds.(*dataset)
-	d.writerMu.Lock()
-	defer d.writerMu.Unlock()
-	d.sealed = &failingSealedStore{left: n}
-}
-
-type failingSealedStore struct {
-	fileSealedStore
-	mu   sync.Mutex
-	left int
-}
-
-func (s *failingSealedStore) Stage(repoDir string, rec changelogfile.SealedRecord) error {
-	s.mu.Lock()
-	fail := s.left > 0
-	if fail {
-		s.left--
-	}
-	s.mu.Unlock()
-	if fail {
-		return ErrSealedStoreBroken
-	}
-	return s.fileSealedStore.Stage(repoDir, rec)
-}
-
-// ErrSealedStoreBroken is what BreakSealedStore's store fails with.
-var ErrSealedStoreBroken = errors.New("engine test: the sealed store is broken")
-
-type brokenSealedStore struct{}
-
-func (brokenSealedStore) Write(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
-
-func (brokenSealedStore) Stage(string, changelogfile.SealedRecord) error { return ErrSealedStoreBroken }
-
-func (brokenSealedStore) Commit(string, string) error { return ErrSealedStoreBroken }
-
-func (brokenSealedStore) Delete(string, string) error { return ErrSealedStoreBroken }
-
-// BreakSealedStoreAfterStage replaces a dataset's sealed-file writer with one
-// whose Stage writes the pending file and then fails, the shape of a rename
-// that landed and a directory fsync that did not: the write must be refused
-// and the pending file must not be left behind.
-func BreakSealedStoreAfterStage(ds substrate.Dataset) {
-	d := ds.(*dataset)
-	d.writerMu.Lock()
-	defer d.writerMu.Unlock()
-	d.sealed = stagedThenFails{}
-}
-
-type stagedThenFails struct{ fileSealedStore }
-
-func (s stagedThenFails) Stage(repoDir string, rec changelogfile.SealedRecord) error {
-	if err := s.fileSealedStore.Stage(repoDir, rec); err != nil {
-		return err
-	}
-	return ErrSealedStoreBroken
 }
 
 // ImportIncomplete reports whether the repository's import-progress marker
@@ -784,25 +701,31 @@ func ChangelogLockKey(ds substrate.Dataset) string {
 // a write inside that phase.
 const CommitBudget = commitBudget
 
-// BreakChangelogWriter closes a dataset's changelog writer under its mutex, so
-// the next write's prepare fails the way a full disk would: the write is
-// refused before its transaction commits, neither store takes it, and the
-// dataset latches ErrChangelogFileBehind, because a failed writer serves
-// nothing until a restart. The closed writer also releases the directory's
-// lock, so a reopened service can take it.
-func BreakChangelogWriter(ds substrate.Dataset) {
-	d := ds.(*dataset)
-	d.writerMu.Lock()
-	defer d.writerMu.Unlock()
-	_ = d.writer.Close()
-}
-
 // SealedAAD builds the additional data a sealed-store row binds to, so a test
 // opens a payload the way the engine does (ADR 0023).
 func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, recordKind, recordID) }
 
 // DEKAAD builds the additional data the control-plane DEK wrap binds to.
 func DEKAAD(repoID string) []byte { return dekAAD(repoID) }
+
+// WithoutConversionSteps opens a binary that carries no conversion step: its
+// changelog dialect is 1, and the first append claims an unclaimed history
+// that a binary carrying a step converts and claims at its boot. It is the
+// regime the stamp's own tests describe, whatever the chain grows to.
+func WithoutConversionSteps() Option {
+	return func(o *options) { o.conversion = []conversionStep{} }
+}
+
+// ChangelogDialectOf is the changelog dialect a service writes: the last of
+// its conversion chain.
+func ChangelogDialectOf(svc substrate.Service) int { return svc.(*service).maxDialect }
+
+// OpenPayloadWithKey opens one sealed payload, or a DEK wrap, under the
+// supplied key, presenting aad as the row's binding, so a test reads what is
+// stored underneath the engine.
+func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
+	return openRepoPayload(payload, key, aad)
+}
 
 // SealWithKey seals raw under key bound to aad, the way the host credential
 // key wraps a DEK, so a test can build a directory another binary wrote.
@@ -1177,3 +1100,190 @@ func ObservedPoints(ctx context.Context, ds substrate.Dataset) ([]ObservedPoint,
 // name derived into the minted shape (decision 0228); helpers_db_test.go
 // has the twin for the external test package.
 func fid(name string) string { return vocabulary.DerivedMintedID("fixture", name) }
+
+// ArchivePass runs one archive pass of ds now (archive.go).
+func ArchivePass(ctx context.Context, ds substrate.Dataset) error {
+	return ds.(*dataset).ArchivePass(ctx)
+}
+
+// ArchiveTick runs one pass as the archiver's loop runs it, recording how it
+// went, and returns what the repository's archive status says after it.
+func ArchiveTick(ctx context.Context, ds substrate.Dataset) ArchiveStatus {
+	d := ds.(*dataset)
+	d.runArchivePass(ctx)
+	st, _ := d.ArchiveStatus()
+	return st
+}
+
+// WithoutArchive opens a service that writes no archive, as SUBSTRATE_ARCHIVE
+// set to off does.
+func WithoutArchive() Option { return WithArchive(nil) }
+
+// ErrSealedStoreBroken is what BreakSealedStore's refusal is.
+var ErrSealedStoreBroken = errors.New("engine test: the sealed store is broken")
+
+// BreakSealedStore refuses every write of a dataset's credentials outside a
+// transaction of its own (a refreshed token, a parked one) before it
+// commits, as a database that cannot take the write would.
+func BreakSealedStore(ds substrate.Dataset) {
+	fail := func() error { return ErrSealedStoreBroken }
+	ds.(*dataset).testSealedFault.Store(&fail)
+}
+
+// RepairSealedStore undoes BreakSealedStore.
+func RepairSealedStore(ds substrate.Dataset) {
+	ds.(*dataset).testSealedFault.Store(nil)
+}
+
+// BreakSealedStoreTimes refuses the next n such writes and then lets them
+// through.
+func BreakSealedStoreTimes(ds substrate.Dataset, n int) {
+	var mu sync.Mutex
+	fail := func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		if n == 0 {
+			return nil
+		}
+		n--
+		return ErrSealedStoreBroken
+	}
+	ds.(*dataset).testSealedFault.Store(&fail)
+}
+
+// OpenArchiveForTest reads the archive of repository id under the directory
+// root, returning a reader of its entries after a seq.
+func OpenArchiveForTest(ctx context.Context, root, id string) (func(after int64) ([]changelogfile.Entry, error), error) {
+	store, err := archive.NewDir(root)
+	if err != nil {
+		return nil, err
+	}
+	src, err := openNewestArchive(ctx, store, id, nil)
+	if err != nil {
+		return nil, err
+	}
+	return func(after int64) ([]changelogfile.Entry, error) {
+		cur, err := src.Cursor(ctx, after)
+		if err != nil {
+			return nil, err
+		}
+		var out []changelogfile.Entry
+		for {
+			entries, err := cur.Next(1000)
+			if err != nil || len(entries) == 0 {
+				return out, err
+			}
+			out = append(out, entries...)
+		}
+	}, nil
+}
+
+// OpenSealedForTest opens a sealed value's payload under the repository's key
+// and the binding of the record kind and id given, as a restore that serves
+// the record opens it.
+func OpenSealedForTest(ctx context.Context, svc substrate.Service, repository, ref, kind, id string, payload []byte) error {
+	s := svc.(*service)
+	repo, err := s.repositoryByKey(ctx, repository)
+	if err != nil {
+		return err
+	}
+	keys, err := s.repoKeysOn(ctx, s.maint, repo.ID)
+	if err != nil {
+		return err
+	}
+	_, err = openRepoPayload(payload, keys.dek, sealedAAD(ref, kind, id))
+	return err
+}
+
+// ResealForTest opens a sealed value's payload and seals the same plaintext
+// again under the repository's key and the same binding: another ciphertext
+// of the same length, as a refreshed credential of the same size is.
+func ResealForTest(ctx context.Context, svc substrate.Service, repository, ref, kind, id string, payload []byte) ([]byte, error) {
+	s := svc.(*service)
+	repo, err := s.repositoryByKey(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := s.repoKeysOn(ctx, s.maint, repo.ID)
+	if err != nil {
+		return nil, err
+	}
+	aad := sealedAAD(ref, kind, id)
+	plain, err := openRepoPayload(payload, keys.dek, aad)
+	if err != nil {
+		return nil, err
+	}
+	return s.sealRepoPayload(keys.dek, plain, aad)
+}
+
+// ArchiveStatusOf is the archive's status as the dataset's process reports
+// it.
+func ArchiveStatusOf(ds substrate.Dataset) (ArchiveStatus, bool) {
+	return ds.(*dataset).ArchiveStatus()
+}
+
+// ListArchiveIDs is the ids of the archives of repository id the service's
+// store lists with a manifest, oldest first.
+func ListArchiveIDs(ctx context.Context, svc substrate.Service, id string) ([]string, error) {
+	listed, err := listArchives(ctx, svc.(*service).archive, id)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, aid := range listed.ids() {
+		if len(listed[aid].byEpoch) > 0 {
+			out = append(out, aid)
+		}
+	}
+	return out, nil
+}
+
+// ArchiveCovered reports whether the newest archive of repository id that
+// store lists with a manifest is covered by a deletion mark: what every
+// reader decides a restore by.
+func ArchiveCovered(ctx context.Context, store archive.Store, id string) (bool, error) {
+	listed, err := listArchives(ctx, store, id)
+	if err != nil {
+		return false, err
+	}
+	_, _, err = restorable(listed)
+	return errors.Is(err, errArchiveCovered), nil
+}
+
+// WithTestPeopleFault fails the start's people pass for each repository fn
+// answers an error for (identityboot.go).
+func WithTestPeopleFault(fn func(repository string) error) Option {
+	return func(o *options) { o.peopleFault = fn }
+}
+
+// PublishHistoryKinds are the kinds whose records a publish leaves whole, as
+// history (publishRecordPositions): a scan for the names a publish left
+// passes over them, and over nothing else.
+func PublishHistoryKinds() []string {
+	var out []string
+	for kind, positions := range publishRecordPositions {
+		if p, ok := positions[recordWhole]; ok && p.answer == vocabulary.PublishHistory {
+			out = append(out, kind)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// LandApproval lands an approval as the agent loop does (approvals.go), for
+// a test of what reads one.
+func LandApproval(ctx context.Context, ds substrate.Dataset, id string, props map[string]any) error {
+	return ds.(*dataset).inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		t.approvalLoop = true
+		_, err := t.put(substrate.PutInput{Kind: vocabulary.KindLLMApproval, ID: id, Properties: props})
+		return err
+	})
+}
+
+// SetArchivePageRows reads the history n rows at a time in archive passes
+// and exports for one test, which must not run in parallel.
+func SetArchivePageRows(t *testing.T, n int) {
+	prev := archivePageRows
+	archivePageRows = n
+	t.Cleanup(func() { archivePageRows = prev })
+}

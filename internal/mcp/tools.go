@@ -24,9 +24,9 @@ import (
 // keeps the first 512 characters and Claude Code the first 4096, so the first
 // line stands alone and the whole stays under the shorter cut; what a topic
 // teaches is the guide's, read when the work needs it.
-const Instructions = `Call overview first: it names the owner's authority, packages, agents and applets and lists the guide topics. Read a guide topic before your first work in its area, and describe_kind before writing a kind.
+const Instructions = `Call overview first: it names the owner's packages, agents and applets and lists the guide topics. Read a guide topic before your first work in its area, and describe_kind before writing a kind.
 This is the owner's substrate: their records, their vocabulary (packages of kinds), their agents, functions, triggers and applets. You act for them, and your changes are recorded as yours.
-- Every kind is named in full, <authority>/<package>/<name>, and a record holds only the properties its kind declares. Write the property its displayTemplate names (name, summary, subject), never title; a state moves only along a declared transition, by a patch.
+- Every kind is named in full, <authority>/<package>/<name>; the owner's own live under ~, as ~/<package>/<name>. A record holds only the properties its kind declares. Write the property its displayTemplate names (name, summary, subject), never title; a state moves only along a declared transition, by a patch.
 - Ids come from results. Never compose or guess one, and always carry the kind beside it.
 - Hold a write to what you read: pass the version you read as ifVersion, and on a conflict read again and decide again.
 - Give a write you may repeat an idempotencyKey.
@@ -213,7 +213,7 @@ func kindsTool() Tool {
 		Title: "List the kinds",
 		Description: "List the kinds this repository holds, grouped by package and ordered by reference: each one's name, its " +
 			"purpose (primary for the owner's data, supporting and internal for machinery) and the first sentence of its " +
-			"description. package narrows it to one package (<authority>/<package>) or one authority, purposes to some purposes, " +
+			"description. package narrows it to one package (<authority>/<package>, ~/<package> for the owner's own) or one authority, purposes to some purposes, " +
 			"q to kinds whose reference or description holds the words. Page with first and the cursor answered, passed back as " +
 			"after. describe_kind reads one in full.",
 		Input: object(map[string]any{
@@ -553,7 +553,7 @@ func historyTool() Tool {
 			"kind":       kindArg,
 			"id":         str("a record id; with kind, that record's changes"),
 			"kinds":      stringList("kinds to narrow to"),
-			"actors":     stringList("actors to narrow to, such as console or app:local"),
+			"actors":     stringList("actors to narrow to: ids of substrate.reamde.dev/core/actor records"),
 			"values":     boolean("include the values before and after each change"),
 			"first":      firstArg,
 			"before":     integer("the previous page's cursor: read the changes below it"),
@@ -787,14 +787,16 @@ func packagesTool() Tool {
 	return Tool{
 		Name:  "packages",
 		Title: "Packages and the catalog",
-		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. install takes a " +
-			"published package (a provider or a catalogue) under the authority that publishes it; import copies a sample " +
-			"under the owner's authority. status reads one " +
+		Description: "The catalog and the installed packages. catalog lists what the server offers; item reads one. add takes one: " +
+			"a published package (a provider or a catalogue) lands under the authority that publishes it, and a sample is copied " +
+			"under the owner's authority (keptBy on the catalog entry says which); it reads the entry's preview first and refuses " +
+			"an update that keeps some kind's history for less time (retentionShortens), which the person takes on the package's " +
+			"page in the console. status reads one " +
 			"installed package's state, or every one's without id. enable and disable switch one; bind points one of its inputs at a " +
 			"record. upgrades previews what this server would move in the shipped packages. Connecting a provider account " +
 			"(on the console's Providers page), and uninstalling or purging a package, are the owner's.",
 		Input: object(map[string]any{
-			"action": enum("what to do", "catalog", "item", "install", "import", "status", "enable", "disable", "bind", "upgrades"),
+			"action": enum("what to do", "catalog", "item", "add", "status", "enable", "disable", "bind", "upgrades"),
 			"id":     str("the package, <authority>/<package>"),
 			"input":  str("bind: the declared input's name"),
 			"record": str("bind: the record path, <kind>/<id>, to bind it to"),
@@ -834,8 +836,11 @@ func packagesTool() Tool {
 			switch in.Action {
 			case "item":
 				return send(ctx, api, Request{Method: http.MethodGet, Path: "/catalog/" + Escape(in.ID)})
-			case "install", "import":
-				return send(ctx, api, Request{Method: http.MethodPost, Path: "/catalog/" + Escape(in.ID) + "/" + in.Action})
+			case "add":
+				if err := refuseShorterHistory(ctx, api, in.ID); err != nil {
+					return nil, err
+				}
+				return send(ctx, api, Request{Method: http.MethodPost, Path: "/catalog/" + Escape(in.ID) + "/add"})
 			case "enable", "disable":
 				return send(ctx, api, Request{
 					Method: http.MethodPatch, Path: bundle + Escape(in.ID),
@@ -850,9 +855,43 @@ func packagesTool() Tool {
 					Body: map[string]any{"input": in.Input, "record": in.Record},
 				})
 			}
-			return nil, refuse("action is one of catalog, item, install, import, status, enable, disable, bind, upgrades")
+			return nil, refuse("action is one of catalog, item, add, status, enable, disable, bind, upgrades")
 		},
 	}
+}
+
+// refuseShorterHistory reads the catalog entry's preview before an add and
+// refuses one that keeps some kind's history for less time (decision 0282).
+// A preview that does not decode is refused too, never read as one with no
+// shortening, so a change of its shape cannot quietly stop this door asking.
+// The add route takes the caller's word, so this door asks instead: the
+// person reviews each kind on the package's page in the console.
+func refuseShorterHistory(ctx context.Context, api API, id string) error {
+	body, err := send(ctx, api, Request{Method: http.MethodGet, Path: "/catalog/" + Escape(id)})
+	if err != nil {
+		return err
+	}
+	var item struct {
+		Upgrade *struct {
+			RetentionShortens []struct {
+				Kind string `json:"kind"`
+				From string `json:"from"`
+				To   string `json:"to"`
+			} `json:"retentionShortens"`
+		} `json:"upgrade"`
+	}
+	if err := json.Unmarshal(body, &item); err != nil {
+		return refuse("the preview of %s could not be read, so nothing is added: send the person to the package's page in the console (%v)", id, err)
+	}
+	if item.Upgrade == nil || len(item.Upgrade.RetentionShortens) == 0 {
+		return nil
+	}
+	kinds := make([]string, 0, len(item.Upgrade.RetentionShortens))
+	for _, c := range item.Upgrade.RetentionShortens {
+		kinds = append(kinds, c.Kind+": "+c.From+" -> "+c.To)
+	}
+	return refuse("adding %s again keeps the history of %d kind(s) for less time (%s), which this tool does not take: tell the person, and send them to the package's page in the console, which lists each kind for their review",
+		id, len(kinds), strings.Join(kinds, "; "))
 }
 
 // --- call ---

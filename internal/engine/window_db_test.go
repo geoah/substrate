@@ -75,12 +75,12 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, winManifest()); err != nil {
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, winManifest()); err != nil {
 		t.Fatalf("declare the timeline kinds: %v", err)
 	}
 	put := func(kind, id string, props map[string]any) {
 		t.Helper()
-		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: props}); err != nil {
 			t.Fatalf("put %s/%s: %v", kind, id, err)
 		}
 	}
@@ -109,7 +109,7 @@ func TestWindowReadsRowsSeriesAndOverridesOnOneSnapshot(t *testing.T) {
 	// A series outside the window's kinds must not be a candidate; a deleted
 	// row must not be anything.
 	put(winMeeting, fid("gone"), map[string]any{"name": "Gone", "at": "2026-07-04T12:00:00Z", "endsAt": "2026-07-04T13:00:00Z"})
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, winMeeting, fid("gone"), substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, winMeeting, fid("gone"), substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 

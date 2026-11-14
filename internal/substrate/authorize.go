@@ -194,7 +194,7 @@ type AuthorizationBlock struct {
 type AuthorizationPackage struct {
 	ID          string `json:"id"`
 	Description string `json:"description,omitempty"`
-	Tier        string `json:"tier,omitempty"`
+	KeptBy      string `json:"keptBy,omitempty"`
 	Required    int64  `json:"required"`
 	Held        int64  `json:"held,omitempty"`
 	Shipped     int64  `json:"shipped,omitempty"`
@@ -238,6 +238,9 @@ type AuthorizationPackagePublisher struct {
 	// Digest is the SHA-256 of the closure the row would install, which
 	// binds the approval to that closure (appsetup.Moved).
 	Digest string `json:"digest,omitempty"`
+	// MovedTo is the authority the publisher's document says it moved to
+	// (decision record 0293): shown, never followed.
+	MovedTo string `json:"movedTo,omitempty"`
 }
 
 // AuthorizationPackageStep is one package a requested one requires, with
@@ -386,10 +389,11 @@ type AuthorizationApp struct {
 	// the page warns about: the app is naming a site its client id does not
 	// prove it runs.
 	URIHostDiffers bool `json:"uriHostDiffers,omitempty"`
-	// Actor is what the app's changes are recorded as: `app:<authority>`
-	// for a verified app, `app:local` for one whose access goes to this
-	// device, `app:<host>` otherwise (decision 0209).
-	Actor string `json:"actor"`
+	// AppearsAs is the name the app's changes read under, the publisher its
+	// actor record names (decision 0270): its authority for a verified app,
+	// `local` for one whose access goes to this device, its client id's host
+	// otherwise (decision 0209).
+	AppearsAs string `json:"appearsAs"`
 	// Verified is true when the app's publisher is confirmed: its document
 	// claims an authority, the authority's `_substrate` record names a
 	// document that lists this client id, and the access goes to the
@@ -430,10 +434,11 @@ type AuthorizationRedirectTo struct {
 	Loopback bool `json:"loopback,omitempty"`
 }
 
-// AuthorizationScope is one requested scope, resolved against the
-// repository. Scope is the canonical, resolved spelling the token would
-// store and the approval names; Requested is how the app wrote it, which
-// differs when it used `~` for the repository's authority.
+// AuthorizationScope is one requested scope, read against the repository.
+// Scope is the canonical spelling the token would store and the approval
+// names, the repository's own kinds under `~`; Requested is how the app
+// wrote it, which differs when it spelled them with the repository's full
+// name (decision record 0259).
 type AuthorizationScope struct {
 	Scope     string `json:"scope"`
 	Requested string `json:"requested"`

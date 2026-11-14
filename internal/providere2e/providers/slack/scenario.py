@@ -1763,6 +1763,13 @@ def main():
         ok(str(broke.get("syncStatus") or "").startswith("erroring"),
            "the trait says erroring and syncStatus says %r"
            % broke.get("syncStatus"))
+        # The owner reads the first line: a sentence that says what to do,
+        # never Slack's error word, which rides the second line.
+        said = str(broke.get("syncError") or "").split("\n")
+        ok("token" in said[0] and "invalid_auth" not in said[0]
+           and "invalid_auth" in "\n".join(said[1:]),
+           "a refused token's syncError does not say so in words first: %r"
+           % broke.get("syncError"))
         broken_streams = broke.get("syncStreams") or {}
         ok(all((broken_streams.get(n) or {}).get("state") == "erroring"
                for n in want_streams),
@@ -1775,7 +1782,8 @@ def main():
 
         # A token without team:read (#718). The 401 left the walk done, so
         # this run starts a new walk at team.info, and its `missing_scope`
-        # names the scope to grant in syncError.
+        # names the scope to grant in syncError: the permission in words on
+        # the first line, Slack's needed and provided on the second.
         faults([{"match": "GET /api/team.info", "status": [200],
                  "body": {"ok": False, "error": "missing_scope",
                           "needed": "team:read", "provided": "users:read"}}])
@@ -1786,6 +1794,10 @@ def main():
            in str(scoped.get("syncError") or ""),
            "a team.info missing_scope left syncState %r and syncError %r"
            % (scoped.get("syncState"), scoped.get("syncError")))
+        first = str(scoped.get("syncError") or "").split("\n")[0]
+        ok("(team:read)" in first and "missing_scope" not in first,
+           "the missing_scope sentence does not name the permission to add: %r"
+           % first)
 
         # RECOVERY. Every rule is spent, so the next run is an ordinary one.
         faults([])

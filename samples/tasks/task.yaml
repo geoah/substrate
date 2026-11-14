@@ -13,7 +13,10 @@ data:
   # 13: `lifecycle` (decision record 0226): `done` closes a task done and
   # `abandoned` closes it dropped, so an app over every lifecycle kind lists a
   # proposed or open task as open.
-  version: 13
+  # 14: `proposed` names the state a suggestion waits in (decision record
+  # 0247), so an app lists a proposed task as a suggestion to accept or
+  # dismiss rather than as work the owner took on.
+  version: 14
   names:
     singular: task
   # `recurring` (core's) is the repeat rule seeded off dueAt; `override`
@@ -111,6 +114,8 @@ data:
         - done
       dropped:
         - abandoned
+      proposed:
+        - proposed
       transitions:
         - from: proposed
           to: open

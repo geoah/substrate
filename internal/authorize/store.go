@@ -141,19 +141,24 @@ func (r *Request) snapshot() Request {
 type Approval struct {
 	AppAddons  []substrate.AppAddon
 	Repository string
-	// Dataset is the approving repository's handle: the exchange mints the
-	// token through it, so the code never names a repository a later
-	// request could swap.
-	Dataset    substrate.Dataset
-	Scopes     []string
-	Lifetime   time.Duration
-	ClientName string
+	// RepositoryID is the approving repository's id: the exchange opens the
+	// repository by it and mints the token there, so the code names one
+	// repository, whatever it is called by the exchange (decision record
+	// 0287), and never one a later request could swap.
+	RepositoryID string
+	Scopes       []string
+	Lifetime     time.Duration
+	ClientName   string
 	// AppAuthority is the publisher the approval page showed as verified,
 	// "" when it showed none: the token's actor is derived from it.
 	AppAuthority string
 	// Details are what the approval set up, or found in place, which the
 	// token response lists.
 	Details []substrate.AuthorizationDetail
+	// ApprovedBy is the id of the token that approved: the exchange mints
+	// standing on it, so a code approved by a token since revoked, or by a
+	// person who signed out everywhere since, mints nothing.
+	ApprovedBy string
 }
 
 // Code is a code's bookkeeping.

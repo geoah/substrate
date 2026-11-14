@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -65,6 +66,9 @@ func (h *handler) record(w http.ResponseWriter, r *http.Request) (substrate.Data
 		writeSubstrateError(w, r, err)
 		return nil, substrate.KindInfo{}, address{}, false
 	}
+	// A declaration's id is its identity, so one under the repository's full
+	// name is the `~` one (decision record 0259).
+	addr.id = vocabulary.LocalizeID(ti.Identity, addr.id, ds.Repository().LocalNames()...)
 	return ds, ti, addr, true
 }
 
@@ -124,13 +128,17 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if bad := writeParamRefusal(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
 	var in substrate.PutInput
 	if !readRecordJSON(w, r, &in) {
 		return
 	}
 	in.Kind = ti.Identity
 	in.ID = addr.id
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
@@ -142,6 +150,10 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	ds, ti, addr, ok := h.record(w, r)
 	if !ok {
+		return
+	}
+	if bad := writeParamRefusal(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
 		return
 	}
 	// A bundle's runtime lifecycle IS record state the substrate owns
@@ -157,8 +169,44 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 	if !readRecordJSON(w, r, &in) {
 		return
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
+	if err != nil {
+		writeSubstrateError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ent)
+}
+
+// postPin and postRelease are the two actions on a record's marks (decision
+// 0284): pin keeps the named properties' values against sync, release hands
+// them back to it. The body names the properties and may carry the version
+// read; the answer is the record with its marks.
+func (h *handler) postPin(w http.ResponseWriter, r *http.Request) {
+	h.markAction(w, r, substrate.Dataset.Pin)
+}
+
+func (h *handler) postRelease(w http.ResponseWriter, r *http.Request) {
+	h.markAction(w, r, substrate.Dataset.Release)
+}
+
+func (h *handler) markAction(w http.ResponseWriter, r *http.Request,
+	act func(substrate.Dataset, context.Context, substrate.Actor, string, string, substrate.MarkInput) (*substrate.Record, error),
+) {
+	ds, ti, addr, ok := h.record(w, r)
+	if !ok {
+		return
+	}
+	if bad := unsupportedParam(r); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
+	var in substrate.MarkInput
+	if !readRecordJSON(w, r, &in) {
+		return
+	}
+	ctx := r.Context()
+	ent, err := act(ds, ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
@@ -206,7 +254,7 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	ctx := r.Context()
+	ctx := idempotentContext(r)
 	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, r, err)
@@ -224,6 +272,10 @@ var (
 	// `withEdges`, a typo) is one it would ignore, and the refusal is the
 	// only way the caller learns that.
 	getParams []string
+	// writeParams is a record put's and patch's grammar: empty. Both read
+	// `ifVersion` from the body, so a `?ifVersion=` would be a guard the
+	// write never reads and the record written with none.
+	writeParams []string
 	// deleteParams is a record delete's grammar: the version precondition
 	// and the purge flag.
 	deleteParams = []string{"ifVersion", "purge"}
@@ -264,6 +316,16 @@ func unsupportedParam(r *http.Request, allowed ...string) string {
 		msg += " — did you mean " + strconv.Quote(alt) + "?"
 	}
 	return msg
+}
+
+// writeParamRefusal is unsupportedParam over writeParams, pointing a refused
+// `ifVersion` at the body, where a put and a patch read it.
+func writeParamRefusal(r *http.Request) string {
+	bad := unsupportedParam(r, writeParams...)
+	if bad != "" && r.URL.Query().Has("ifVersion") {
+		bad += "; put and patch take ifVersion in the body"
+	}
+	return bad
 }
 
 // malformedQuery names the parse error of a query string that does not parse,

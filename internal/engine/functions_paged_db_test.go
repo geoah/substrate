@@ -3,15 +3,18 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -35,11 +38,10 @@ func openPagedDataset(t *testing.T, pkg, source string) (*dataset, string) {
 	widgetType := pkg + "/widget"
 	triggerID := "on-page." + authority
 	d := openInternalDataset(t)
-	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, d, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: authority,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(pkg, "page", map[string]any{
@@ -216,7 +218,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 	// Erase the already-committed pages: a resume must leave them erased, a
 	// restart-from-zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", id, substrate.DeleteInput{}); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", id, substrate.DeleteInput{}); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -694,11 +696,10 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 	t.Helper()
 	ctx := context.Background()
 	triggerID := "on-pagedsecret"
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "pagedsecret", Authority: pagedSecretPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pagedSecretPackage, 0),
-			vocabulary.ActorManifest(pagedSecretPackage, vocabulary.PackageActor(pagedSecretPackage)),
 			vocabulary.BundleManifest(pagedSecretPackage, map[string]any{
 				"description": "the paged secret bundle",
 				"inputs": map[string]any{
@@ -742,7 +743,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("register paged secret bundle: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pagedSecretPackage + "/sconfig", ID: fid("ps-cfg"),
 		Properties: map[string]any{"apiToken": pagedSecretValue},
 	}); err != nil {
@@ -761,7 +762,7 @@ func TestPagedContinuationSecretRejected(t *testing.T) {
 	ctx := context.Background()
 	triggerID := installPagedSecretBundle(t, ds)
 
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: pagedSecretPackage + "/widget", Properties: map[string]any{"name": "trip"},
 	})
 	if err != nil {
@@ -823,7 +824,7 @@ func TestPagedCursorLifecycleDropAndSweep(t *testing.T) {
 	}
 
 	// Deleting the trigger drops its paged rows in the same transaction.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeTrigger, triggerID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete trigger: %v", err)
 	}
 	if _, ok := pagedCursor(t, ds, chain); ok {
@@ -866,7 +867,7 @@ func parkMidChain(t *testing.T, pkg string) (*dataset, string, int64, substrate.
 	t.Helper()
 	ctx := context.Background()
 	ds, triggerID := openPagedDataset(t, pkg, brokenPagedBody)
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: pkg + "/widget", Properties: map[string]any{"name": "go"}})
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: pkg + "/widget", Properties: map[string]any{"name": "go"}})
 	if err != nil {
 		t.Fatalf("put widget: %v", err)
 	}
@@ -890,7 +891,7 @@ func parkMidChain(t *testing.T, pkg string) (*dataset, string, int64, substrate.
 // fixPagedBody applies pagedBody(3) over brokenPagedBody, same identity.
 func fixPagedBody(t *testing.T, ds *dataset, pkg string) {
 	t.Helper()
-	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(context.Background(), substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(pkg, "page", map[string]any{
 			"description": "a paged backfill body",
 			"runtime":     vocabulary.RuntimePython,
@@ -914,7 +915,7 @@ func TestAMidChainParkRetriedUnderAFixedBodyRetires(t *testing.T) {
 
 	fixPagedBody(t, ds, pkg)
 	for _, enabled := range []bool{false, true} {
-		if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
 			Properties: map[string]any{"enabled": enabled},
 		}); err != nil {
 			t.Fatalf("set enabled=%v: %v", enabled, err)
@@ -926,7 +927,7 @@ func TestAMidChainParkRetriedUnderAFixedBodyRetires(t *testing.T) {
 
 	// Erase the committed page: a resume leaves it erased, a restart from
 	// page zero would write it again.
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, "samples.substrate.reamde.dev/tasks/task", "p-0", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete p-0: %v", err)
 	}
 	ran, err := ds.RetryTriggerFailure(ctx, triggerID, parked.ID)
@@ -962,7 +963,7 @@ func TestAMidChainParkRetriedAsASkipRetiresTheRow(t *testing.T) {
 	pkg := "pagedskip.test.dev/pagedskip"
 	ds, triggerID, seq, parked := parkMidChain(t, pkg)
 
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, "substrate.reamde.dev/core/trigger", triggerID, substrate.PatchInput{
 		Properties: map[string]any{"source": map[string]any{"record": map[string]any{
 			"kinds": []any{pkg + "/widget"},
 			"when":  `record != null && record.properties.name == "go"`,
@@ -970,7 +971,7 @@ func TestAMidChainParkRetriedAsASkipRetiresTheRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("guard the trigger: %v", err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, pkg+"/widget", parked.RecordID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, pkg+"/widget", parked.RecordID, substrate.PatchInput{
 		Properties: map[string]any{"name": "done"},
 	}); err != nil {
 		t.Fatalf("satisfy the widget: %v", err)
@@ -1013,4 +1014,456 @@ func TestForgettingAMidChainParkRetiresTheRow(t *testing.T) {
 	if failures, err := ds.TriggerFailures(ctx, triggerID); err != nil || len(failures) != 0 {
 		t.Fatalf("forget left %+v parked (%v)", failures, err)
 	}
+}
+
+// A sweep that pages through records in id order with a list token in its
+// saved continuation, as the Gmail sweep and the WHOOP scan keep theirs, is
+// interrupted under the order before migration 0021, the database's locale:
+// a, b, Zed, zz. It leaves a continuation after `b`, with `Zed` and `zz`
+// owed. 0021 puts the ids in byte order, Zed, a, b, zz, so that position,
+// resumed, would pass over `Zed` for good. The token carries the order it was
+// minted under, so it is refused as list again and a retry alone parks on
+// it; repository migration 7 starts the drain over, and the retry then
+// reaches `Zed`.
+func TestAnInterruptedSweepStartsOverAfterTheByteOrderChange(t *testing.T) {
+	ctx := context.Background()
+	const pkg = "sweep.test.dev/sweep"
+	widgetType, itemType := pkg+"/widget", pkg+"/item"
+	triggerID := "on-sweep.sweep.test.dev"
+	dsn, root, repo := MigratedDSN(t), t.TempDir(), testdb.Repository(t)
+	open := func() *dataset {
+		t.Helper()
+		svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithKindsFS(SeedKinds), WithCredentialKey(TestCredentialKey))
+		if err != nil {
+			t.Fatalf("open engine: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		d, err := svc.Dataset(ctx, repo)
+		if err != nil {
+			t.Fatalf("open dataset: %v", err)
+		}
+		return d.(*dataset)
+	}
+	svc, err := OpenForTest(t, ctx, dsn, WithDataRoot(root), WithKindsFS(SeedKinds), WithCredentialKey(TestCredentialKey))
+	if err != nil {
+		t.Fatalf("open engine: %v", err)
+	}
+	if _, err := svc.CreateRepository(ctx, repo); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	_ = svc.Close()
+	ds := open()
+	importVocabulary(t, ds, "tasks")
+	raw := rawDBOf(t, dsn)
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
+		Name: "sweep", Authority: "sweep.test.dev",
+		Manifests: []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "widget"},
+				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "item"}, map[string]any{
+				"ids":        map[string]any{"type": vocabulary.IDsNamed},
+				"properties": map[string]any{"name": map[string]any{"type": "string"}},
+			}),
+			vocabulary.FunctionManifest(pkg, "sweep", map[string]any{
+				"description": "sweeps every item in id order, one a page",
+				"runtime":     vocabulary.RuntimePython,
+				"permissions": map[string]any{
+					"reads":  map[string]any{"kinds": []any{itemType}},
+					"writes": []any{"samples.substrate.reamde.dev/tasks/task"},
+				},
+				"source": `
+def main(input, host):
+    page = host.records.list("` + itemType + `", first=1, order="id", after=input.get("resume") or None)
+    effects = [{"action": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
+                "id": "seen-" + r["id"], "properties": {"name": r["id"]}}
+               for r in page.get("records") or []]
+    if page.get("cursor"):
+        return {"effects": effects, "more": {"cursor": page["cursor"]}}
+    return {"effects": effects}
+`,
+			}),
+		},
+		Triggers: []enginetest.Trigger{{
+			ID: triggerID,
+			Properties: map[string]any{
+				"enabled":  true,
+				"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
+				"callable": vocabulary.RecordPath("substrate.reamde.dev/core/function", pkg+"/sweep"),
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("install the sweep: %v", err)
+	}
+	all := []string{"a", "b", "Zed", "zz"}
+	for _, id := range all {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: itemType, ID: id, Properties: map[string]any{"name": id}}); err != nil {
+			t.Fatalf("put item %s: %v", id, err)
+		}
+	}
+	seen := func() (out []string) {
+		for _, id := range all {
+			if liveExists(t, ds, "seen-"+id) {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+
+	// Before the upgrade: the identity columns in the database's own
+	// collation, as every database stood before 0021, and no mark of
+	// migration 7 in the repository's history.
+	restoreViews := stageTheLocaleOrder(t, raw)
+	forgetCachedPlans(ds)
+	forgetContinuationOrder(t, ds)
+	if got := itemOrder(t, ds.db, itemType); got != "a,b,Zed,zz" {
+		t.Fatalf("the database's own collation orders the items %s; the test needs one that sorts case together (the pgvector image's en_US)", got)
+	}
+	restore := withMaxPages(2)
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "go"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wch, err := ds.latestChangeOf(ctx, w.Kind, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	restore()
+	chain := chainKey(ds, triggerID, wch.Seq)
+	if got := seen(); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("the interrupted sweep saw %v, want a and b, the old order's first two pages", got)
+	}
+
+	// The continuation it left is after `b`. The server before the upgrade
+	// minted it at its own order's version; this one mints its own, so that
+	// one field is set back, and the position and the counts are kept.
+	var token string
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		owner, version, err := tx.lockPagedCursor(chain)
+		if err != nil {
+			return err
+		}
+		var cur []byte
+		var pages, effects, bytes int64
+		var startedAt time.Time
+		if err := tx.row(`SELECT cursor, pages, effects, bytes, started_at FROM paged_cursors WHERE chain = $1`, chain).
+			Scan(&cur, &pages, &effects, &bytes, &startedAt); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(cur, &token); err != nil {
+			return fmt.Errorf("the saved continuation %s is no list token: %w", cur, err)
+		}
+		k, err := decodeKeyset(token)
+		if err != nil {
+			return err
+		}
+		if len(k.K) == 0 || k.K[0] == nil || *k.K[0] != "b" {
+			return fmt.Errorf("the saved continuation stands at %v, want after b", k.K)
+		}
+		k.V = substrate.IdentityOrder - 1
+		old, _ := json.Marshal(k)
+		if err := tx.pageTx(owner, chain, base64.RawURLEncoding.EncodeToString(old), version+1, pages, effects, bytes, startedAt); err != nil {
+			return err
+		}
+		return tx.settleDelivery(owner.triggerID)
+	}); err != nil {
+		t.Fatalf("the saved continuation: %v", err)
+	}
+
+	// The upgrade: the server stopped, 0021's own SQL, the server started.
+	upgrade, err := migrationsFS.ReadFile("migrations/0021_identity_columns_byte_order.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.svc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.ExecContext(ctx, string(upgrade)); err != nil {
+		t.Fatalf("0021: %v", err)
+	}
+	restoreViews()
+	ds = open()
+	if got := itemOrder(t, ds.db, itemType); got != "Zed,a,b,zz" {
+		t.Fatalf("after 0021 the items order %s, want byte order", got)
+	}
+	// What the refusal prevents: that position, resumed in byte order,
+	// passes over Zed.
+	if page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{itemType}}, OrderBy: []substrate.Order{{Property: "id"}}, First: 10, After: token,
+	}); err != nil || len(page.Records) != 1 || page.Records[0].ID != "zz" {
+		t.Fatalf("the position after b, read in byte order: %v, %v; want zz alone", page, err)
+	}
+
+	retry := func() []substrate.TriggerFailure {
+		t.Helper()
+		failures, err := ds.TriggerFailures(ctx, triggerID)
+		if err != nil || len(failures) != 1 {
+			t.Fatalf("the parked sweep: %v, %v", failures, err)
+		}
+		_, _ = ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID)
+		after, err := ds.TriggerFailures(ctx, triggerID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return after
+	}
+	// The retry alone resumes from the refused token and parks again.
+	if after := retry(); len(after) != 1 || !strings.Contains(after[0].LastError, "list again") {
+		t.Fatalf("a retry from the old token: %+v, want it parked on the refusal", after)
+	}
+	if got := seen(); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("the sweep went on past a token it was refused: saw %v", got)
+	}
+
+	// The upgrade's repository migration starts the drain over.
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		_, err := migrateStartPagedDrainsOver(tx)
+		return err
+	}); err != nil {
+		t.Fatalf("migration 7: %v", err)
+	}
+	if after := retry(); len(after) != 0 {
+		t.Fatalf("the sweep after the migration: %+v, want it done", after)
+	}
+	if got := seen(); !slices.Equal(got, all) {
+		t.Errorf("the sweep that started over saw %v, want every item, Zed included", got)
+	}
+	if _, ok := pagedCursor(t, ds, chain); ok {
+		t.Error("the finished sweep left its resume row")
+	}
+}
+
+// Repository migration 7 leaves its mark in the repository's history, so an
+// import, which runs it again under a ledger with nothing for the
+// repository, finds the order the saved continuations are of. A creation
+// leaves the mark, so the first open has nothing to do; a run that finds it
+// writes nothing and keeps a parked drain where it stands; a rebuild replays
+// it; and a directory without it, as one written before the mark existed,
+// starts the drain over at its import and gains the mark there.
+func TestMigrationSevenLeavesItsMarkAndAnImportWithoutItStartsTheDrainOver(t *testing.T) {
+	ds, triggerID := openPagedDataset(t, "pagedmark.test.dev/pagedmark", keyedPagedBody)
+	ctx := context.Background()
+	restore := withMaxPages(2)
+	defer restore()
+	if order := continuationOrderOf(t, ds); order != substrate.IdentityOrder {
+		t.Fatalf("a new repository's mark says %d, want %d", order, substrate.IdentityOrder)
+	}
+
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "pagedmark.test.dev/pagedmark/widget", ID: fid("a"), Properties: map[string]any{"name": "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wch, err := ds.latestChangeOf(ctx, w.Kind, w.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	chain := chainKey(ds, triggerID, wch.Seq)
+	parked, ok := pagedRowOf(t, ds, chain)
+	if !ok || parked.cursor != "2" {
+		t.Fatalf("the drain: %+v (%v), want it parked at cursor 2", parked, ok)
+	}
+
+	head, err := ds.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var did string
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		did, err = migrateStartPagedDrainsOver(tx)
+		return err
+	}); err != nil {
+		t.Fatalf("migration 7 again: %v", err)
+	}
+	if after, err := ds.Head(ctx); err != nil || after != head {
+		t.Fatalf("migration 7 run again (%q) moved the head from %+v to %+v (%v)", did, head, after, err)
+	}
+	if got, ok := pagedRowOf(t, ds, chain); !ok || got != parked {
+		t.Fatalf("migration 7 run again left the drain at %+v (%v), want %+v", got, ok, parked)
+	}
+
+	if _, err := ds.svc.RebuildRepository(ctx, ds.Repository().ID); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if order := continuationOrderOf(t, ds); order != substrate.IdentityOrder {
+		t.Fatalf("after a rebuild the mark says %d, want %d", order, substrate.IdentityOrder)
+	}
+
+	forgetContinuationOrder(t, ds)
+	imported := importIntoEmptyDatabase(t, ds)
+	if got, ok := pagedRowOf(t, imported, chain); !ok || got.cursor != "null" || got.version != parked.version+1 {
+		t.Fatalf("a directory without the mark imported the drain as %+v (%v), want it started over at version %d", got, ok, parked.version+1)
+	}
+	if order := continuationOrderOf(t, imported); order != substrate.IdentityOrder {
+		t.Fatalf("the import left the mark at %d, want %d", order, substrate.IdentityOrder)
+	}
+}
+
+// continuationOrderOf reads the mark migration 7 leaves on the repository's
+// record.
+func continuationOrderOf(t *testing.T, ds *dataset) int {
+	t.Helper()
+	var order int
+	if err := ds.inTx(context.Background(), substrate.ActorSystem, true, func(tx *txn) error {
+		var err error
+		order, err = tx.continuationOrder(eref{Kind: kindRepository, ID: ds.Repository().ID})
+		return err
+	}); err != nil {
+		t.Fatalf("read the continuation order: %v", err)
+	}
+	return order
+}
+
+// forgetContinuationOrder takes migration 7's mark off the repository's
+// record, through the changelog, as a repository stood before the mark
+// existed.
+func forgetContinuationOrder(t *testing.T, ds *dataset) {
+	t.Helper()
+	self := eref{Kind: kindRepository, ID: ds.Repository().ID}
+	if err := ds.inTx(context.Background(), substrate.ActorSystem, true, func(tx *txn) error {
+		if _, err := tx.putAnnotation(self, annContinuationOrder, nil); err != nil {
+			return err
+		}
+		return tx.appendChange(substrate.ActorSystem, substrate.OpPatch, self.ID, self.Kind, nil)
+	}); err != nil {
+		t.Fatalf("take migration 7's mark off: %v", err)
+	}
+}
+
+// stageTheLocaleOrder puts every identity column 0021 changes back in the
+// database's own collation, as a database stood before 0021: the
+// migration's statement that changes them, run the other way. Its refusal
+// beside a running server is the migration's, not the staging's, so it is
+// left out. The engine's own views over those columns are a later
+// migration's, which a database before 0021 did not have, and Postgres
+// alters no column a view reads, so they are set aside with the staging: it
+// answers what puts them back as they stood, which a test runs once its own
+// 0021 has run, as the later migration would in a real upgrade.
+func stageTheLocaleOrder(t *testing.T, raw *sql.DB) (restoreViews func()) {
+	t.Helper()
+	body, err := migrationsFS.ReadFile("migrations/0021_identity_columns_byte_order.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, change, found := strings.Cut(string(body), "DO $$\nDECLARE\n    byte_order oid")
+	stmt, _, ok := strings.Cut("DO $$\nDECLARE\n    byte_order oid"+change, "-- A reprojection the server had not finished")
+	ok = ok && found
+	back := strings.NewReplacer(
+		`a.attcollation IS DISTINCT FROM byte_order`, `a.attcollation = byte_order`,
+		`ALTER COLUMN %I TYPE text COLLATE "C"`, `ALTER COLUMN %I TYPE text COLLATE "default"`,
+	).Replace(stmt)
+	if !ok || back == stmt {
+		t.Fatal("0021 no longer reads as this staging expects")
+	}
+	views := setViewsAside(t, raw)
+	if _, err := raw.ExecContext(context.Background(), back); err != nil {
+		t.Fatalf("stage the locale's order: %v", err)
+	}
+	return views
+}
+
+// setViewsAside drops every view of the schema and answers what creates
+// each again as it stood: its definition, its options and its grants.
+func setViewsAside(t *testing.T, raw *sql.DB) func() {
+	t.Helper()
+	ctx := context.Background()
+	type view struct{ name, def, options string }
+	var views []view
+	rows, err := raw.QueryContext(ctx, `
+		SELECT c.relname, pg_get_viewdef(c.oid), coalesce(array_to_string(c.reloptions, ', '), '')
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE c.relkind = 'v' AND n.nspname = current_schema() ORDER BY c.relname`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var v view
+		if err := rows.Scan(&v.name, &v.def, &v.options); err != nil {
+			t.Fatal(err)
+		}
+		views = append(views, v)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		t.Fatal(err)
+	}
+	grants := map[string][]string{}
+	for _, v := range views {
+		rows, err := raw.QueryContext(ctx, `
+			SELECT format('GRANT %s ON %I TO %I', privilege_type, table_name, grantee)
+			FROM information_schema.role_table_grants
+			WHERE table_schema = current_schema() AND table_name = $1 AND grantee <> current_user`, v.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var g string
+			if err := rows.Scan(&g); err != nil {
+				t.Fatal(err)
+			}
+			grants[v.name] = append(grants[v.name], g)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := raw.ExecContext(ctx, `DROP VIEW `+pq(v.name)); err != nil {
+			t.Fatalf("set the view %s aside: %v", v.name, err)
+		}
+	}
+	return func() {
+		t.Helper()
+		for _, v := range views {
+			with := ""
+			if v.options != "" {
+				with = " WITH (" + v.options + ")"
+			}
+			if _, err := raw.ExecContext(ctx, `CREATE VIEW `+pq(v.name)+with+` AS `+v.def); err != nil {
+				t.Fatalf("put the view %s back: %v", v.name, err)
+			}
+			for _, g := range grants[v.name] {
+				if _, err := raw.ExecContext(ctx, g); err != nil {
+					t.Fatalf("grant on the view %s again: %v", v.name, err)
+				}
+			}
+		}
+	}
+}
+
+// pq quotes an identifier for a statement a test builds.
+func pq(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }
+
+// forgetCachedPlans closes the server's pooled connections: a statement a
+// connection prepared before a column's collation changed is refused after
+// it ("cached plan must not change result type"), which a real upgrade never
+// meets, because it changes the columns before the server connects.
+func forgetCachedPlans(ds *dataset) {
+	ds.svc.repoPool.Reset()
+	ds.svc.maint.SetMaxIdleConns(0)
+	ds.svc.maint.SetMaxIdleConns(5)
+}
+
+// itemOrder is the ids of kind's rows in the order of their column.
+func itemOrder(t *testing.T, raw *sql.DB, kind string) string {
+	t.Helper()
+	rows, err := raw.QueryContext(context.Background(), `SELECT id FROM records WHERE kind = $1 ORDER BY id`, kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(ids, ",")
 }

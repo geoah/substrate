@@ -71,6 +71,101 @@ const settled = (o: Outbox) => () =>
   !o.getSnapshot().flushing && o.getSnapshot().sendable === 0
 
 describe("the outbox", () => {
+  describe("a held write", () => {
+    const tick = (ms: number) => new Promise((r) => setTimeout(r, ms))
+    const held = (until: number) =>
+      RecordWrites.edit(kind, "a1", { status: "open" }, 1, {
+        until,
+        tag: "accept",
+      })
+
+    it("is kept at once, sent only at its moment, and once", async () => {
+      fake.seed(kind, "a1", { status: "proposed" })
+      const o = open()
+      await o.write(held(Date.now() + 150))
+      expect(o.getSnapshot().entries).toMatchObject([
+        { method: "PATCH", baseVersion: 1, guarded: false, tag: "accept" },
+      ])
+      expect(o.getSnapshot().sendable).toBe(0)
+      await tick(60)
+      expect(fake.writes()).toEqual([])
+      await until(() => fake.writes().length === 1, 2000, "the moment")
+      await until(settled(o))
+      await tick(50)
+      expect(fake.writes()).toEqual([`PATCH ${kind}/a1`])
+      expect(fake.requests.at(-1)?.body).toEqual({
+        properties: { status: "open" },
+        ifVersion: 1,
+      })
+    })
+
+    it("is taken back before its moment without a request, and not after it", async () => {
+      fake.seed(kind, "a1", { status: "proposed" })
+      const o = open()
+      await o.write(held(Date.now() + 100))
+      const [e] = o.getSnapshot().entries
+      expect(await o.withdraw(e.id)).toBe(true)
+      expect(o.getSnapshot().waiting).toBe(0)
+      await tick(200)
+      expect(fake.writes()).toEqual([])
+
+      net.set(false)
+      await o.write(held(Date.now() + 20))
+      await tick(60)
+      const [late] = o.getSnapshot().entries
+      expect(await o.withdraw(late.id)).toBe(false)
+      expect(o.getSnapshot().waiting).toBe(1)
+    })
+
+    it("outlives a reload before its moment, and is sent at it", async () => {
+      fake.seed(kind, "a1", { status: "proposed" })
+      const first = open()
+      await first.write(held(Date.now() + 250))
+      await first.close()
+      const second = open()
+      await second.ready
+      expect(second.getSnapshot().entries.map((e) => e.tag)).toEqual(["accept"])
+      await tick(50)
+      expect(fake.writes()).toEqual([])
+      await until(() => fake.writes().length === 1, 2000, "the moment")
+      await until(settled(second))
+      expect(second.getSnapshot().waiting).toBe(0)
+    })
+
+    it("is sent once at the next open after its moment passed while closed, offline included", async () => {
+      fake.seed(kind, "a1", { status: "proposed" })
+      const first = open()
+      await first.write(held(Date.now() + 30))
+      await first.close()
+      await tick(80)
+      net.set(false)
+      const second = open()
+      await second.ready
+      await second.flush()
+      expect(second.getSnapshot().state.type).toBe("offline")
+      expect(fake.writes()).toEqual([])
+      net.set(true)
+      await until(settled(second), 2000, "the send")
+      await tick(50)
+      expect(fake.writes()).toEqual([`PATCH ${kind}/a1`])
+    })
+
+    it("holds back its record's later writes until it goes", async () => {
+      fake.seed(kind, "a1", { status: "proposed" })
+      const o = open()
+      await o.write(held(Date.now() + 120))
+      await o.write(RecordWrites.change(kind, "a1", { name: "Milk" }))
+      await tick(50)
+      expect(fake.writes()).toEqual([])
+      await until(() => fake.writes().length === 2, 2000, "both")
+      expect(fake.writes()).toEqual([`PATCH ${kind}/a1`, `PATCH ${kind}/a1`])
+      expect(fake.live(kind, "a1")?.properties).toMatchObject({
+        status: "open",
+        name: "Milk",
+      })
+    })
+  })
+
   it("keeps a create made offline across a reload and sends it when the network is back", async () => {
     net.set(false)
     const first = open()

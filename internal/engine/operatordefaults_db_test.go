@@ -164,7 +164,7 @@ func emptyTheChatRow(t *testing.T, ds *dataset, rowURL string) {
 
 func mustPatchInternal(t *testing.T, ds *dataset, kind, id string, props map[string]any) {
 	t.Helper()
-	if _, err := ds.Patch(context.Background(), substrate.ActorAPI, kind, id, substrate.PatchInput{Properties: props}); err != nil {
+	if _, err := ds.Patch(context.Background(), substrate.ActorPerson, kind, id, substrate.PatchInput{Properties: props}); err != nil {
 		t.Fatalf("patch %s/%s: %v", kind, id, err)
 	}
 }
@@ -212,7 +212,7 @@ func TestOperatorTransportServesAnEmptyOperatorListedRow(t *testing.T) {
 	emptyTheChatRow(t, ds, rowFake.srv.URL)
 
 	op.script("chat", fakeTurn{content: "hello from the operator"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
 	if n := len(rowFake.requestsOf("chat")); n != 0 {
@@ -254,7 +254,7 @@ func TestOperatorTransportServesAnEmptyOperatorListedRow(t *testing.T) {
 	// again.
 	mustPatchInternal(t, ds, typeProvider, "chatllm", map[string]any{"apiKey": "row-own-key"})
 	rowFake.script("chat", fakeTurn{content: "hello from the row"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "again"}, func(substrate.AgentEvent) {}); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "again"}, func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat on the person's key: %v", err)
 	}
 	if n := len(op.requestsOf("chat")); n != 1 {
@@ -279,7 +279,7 @@ func TestOperatorTransportRefusesAModelOffItsList(t *testing.T) {
 		return c
 	})
 	emptyTheChatRow(t, ds, rowFake.srv.URL)
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
+	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "runs on Example's key, which serves only small") ||
 		!strings.Contains(err.Error(), "add your own key to the row") {
 		t.Fatalf("chat = %v, want the model refused naming the site and its list", err)
@@ -297,10 +297,10 @@ func TestOperatorDoesNotReviveADeletedRow(t *testing.T) {
 	ctx := context.Background()
 	ds, rowFake, op, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config { return operatorChatConfig(u, "", 1000) })
 	emptyTheChatRow(t, ds, rowFake.srv.URL)
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, typeProvider, "chatllm", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, typeProvider, "chatllm", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
+	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {})
 	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "does not resolve") {
 		t.Fatalf("chat on a deleted row = %v", err)
 	}
@@ -316,7 +316,7 @@ func TestOperatorDoesNotReviveADeletedRow(t *testing.T) {
 		!strings.Contains(item.Message, "create it without an apiKey to use Example's key") {
 		t.Fatalf("deleted row's item = %+v", item)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{"wire": "openai"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{"wire": "openai"}}); err != nil {
 		t.Fatalf("recreate: %v", err)
 	}
 	pc, err := ds.resolveProvider(ctx, "chatllm")
@@ -464,7 +464,7 @@ func TestOperatorEmbeddingsServeARepositoryWhoseRowsClaimNone(t *testing.T) {
 	if err := enginetest.InstallShelf(ctx, ds); err != nil {
 		t.Fatal(err)
 	}
-	book, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	book, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: "shelf.test.dev/shelf/book", Properties: map[string]any{"title": "Atlas", "description": "saxophone almanac chapter"},
 	})
 	if err != nil {
@@ -523,7 +523,7 @@ func TestOperatorEmbeddingsServeARepositoryWhoseRowsClaimNone(t *testing.T) {
 
 	// A row that claims embedModel pays with its own key: a keyless one the
 	// operator lists is refused rather than run on the operator's.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "chatllm", Properties: map[string]any{
 		"wire": "openai", "baseURL": emb.srv.URL, "embedModel": "text-embedding-3-small",
 	}}); err != nil {
 		t.Fatal(err)
@@ -544,7 +544,7 @@ func TestOperatorDefaultsReportsSourcesAndAllowance(t *testing.T) {
 	emb := newOperatorEmbedFake(t)
 	ds, rowFake, _, _ := openOperatorDataset(t, func(u string) *operatordefaults.Config { return operatorChatConfig(u, emb.srv.URL, 200) })
 	emptyTheChatRow(t, ds, rowFake.srv.URL)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "bare", Properties: map[string]any{"wire": "anthropic"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "bare", Properties: map[string]any{"wire": "anthropic"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ds.reserveOperator(ctx, substrate.SlotLLM, 36.2); err != nil {
@@ -605,7 +605,7 @@ func TestOperatorDefaultsReportsSourcesAndAllowance(t *testing.T) {
 
 	// The row the embeddings entry is nested under, once it exists, is the
 	// embeddings target.
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{Kind: typeProvider, ID: "vectors", Properties: map[string]any{"wire": "openai"}}); err != nil {
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeProvider, ID: "vectors", Properties: map[string]any{"wire": "openai"}}); err != nil {
 		t.Fatal(err)
 	}
 	if it := operatorItem(t, read(), "embeddings"); it.Source != substrate.SourceOperator || it.Target != vocabulary.RecordPath(typeProvider, "vectors") {
@@ -675,7 +675,7 @@ func TestNoOperatorDefaultsFileKeepsTodaysBehavior(t *testing.T) {
 		t.Fatalf("embeddings = %+v", it)
 	}
 	fake.script("chat", fakeTurn{content: "ok"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, func(substrate.AgentEvent) {}); !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("chat on a keyless row with no defaults file = %v", err)
 	}
 	var n int

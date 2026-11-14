@@ -8,6 +8,9 @@ enum Kinds {
     static let core = "substrate.reamde.dev/core"
     static let llm = "substrate.reamde.dev/llm"
     static let agent = "\(core)/agent"
+    /// A function's declaration. A tool call's `callable` is the record
+    /// path of the function or the agent it ran (decision 0270).
+    static let function = "\(core)/function"
     /// A kind's own declaration, as a `vocabulary` call's documents name it.
     static let kind = "\(core)/kind"
     static let request = "\(core)/recordpatchrequest"
@@ -18,6 +21,9 @@ enum Kinds {
     static let thread = "\(llm)/thread"
     static let message = "\(llm)/message"
     static let interaction = "\(llm)/interaction"
+    /// A call an agent made to a function that waits for the owner's
+    /// approval (decision record 0254).
+    static let approval = "\(llm)/approval"
     /// What the owner keeps for their assistants: a standing fact about
     /// them, and a standing instruction to one agent (decision 0241).
     static let memory = "\(llm)/memory"

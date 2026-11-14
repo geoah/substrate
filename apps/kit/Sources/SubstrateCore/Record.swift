@@ -62,15 +62,21 @@ public func recordTitle(_ properties: JSONValue?) -> String? {
 }
 
 /// A kind reference split in three: the authority (the one segment with a
-/// dot), the package and the name (decision 0047).
+/// dot, or `~`), the package and the name (decision 0047).
 public struct KindReference: Hashable, Sendable {
+    /// The authority of the repository's own packages (decision record
+    /// 0259): what it declares and the samples it copies sit under `~`,
+    /// whatever the repository is called. The one authority without a dot.
+    public static let local = "~"
+
     public var authority: String
     public var package: String
     public var name: String
 
     public init?(_ reference: String) {
         let parts = reference.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 3, parts[0].contains("."), !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
+        guard parts.count == 3, parts[0] == Self.local || parts[0].contains("."), !parts[1].isEmpty, !parts[2].isEmpty
+        else { return nil }
         (authority, package, name) = (parts[0], parts[1], parts[2])
     }
 

@@ -115,7 +115,7 @@ func TestARecordTriggerThatPanicsDoesNotStopTheTriggersAfterIt(t *testing.T) {
 	const records, widgets = 2, 3
 	ctx := context.Background()
 	ds := laneDataset(t, 0, 0, records, widgets)
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.FunctionManifest(lanePkg, "boom", map[string]any{
 			"description": "a delivery whose settlement panics",
 			"runtime":     vocabulary.RuntimePython,
@@ -129,7 +129,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install boom: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger, ID: "a-0-boom",
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{lanePkg + "/widget"}}},
@@ -229,7 +229,7 @@ func TestARunningAgentRecordDeliveryCountsInFlightOnce(t *testing.T) {
 	// flight already; the same delivery is not counted again.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	tr, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -245,7 +245,7 @@ func TestARunningAgentRecordDeliveryCountsInFlightOnce(t *testing.T) {
 	release := func() { once.Do(func() { close(held) }) }
 	t.Cleanup(release)
 	fake.script("keep", fakeTurn{content: "kept", arrived: arrived, release: held})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", Properties: map[string]any{"name": "held"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -276,7 +276,7 @@ func TestARunningAgentRecordDeliveryCountsInFlightOnce(t *testing.T) {
 // keeper agent.
 func keeperRecordTrigger(t *testing.T, ds *dataset) string {
 	t.Helper()
-	tr, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+	tr, err := ds.Put(context.Background(), substrate.ActorPerson, substrate.PutInput{
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewPackage + "/widget"}, "ops": []any{"create"}}},
@@ -319,7 +319,7 @@ func TestAHandRetryBesideAReplayedDispatchCountsTwiceInFlight(t *testing.T) {
 	ds, fake := openAgentDataset(t)
 	trigger := keeperRecordTrigger(t, ds)
 	fake.script("keep", fakeTurn{status: 500}, fakeTurn{status: 500}, fakeTurn{status: 500})
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", Properties: map[string]any{"name": "twice"},
 	}); err != nil {
 		t.Fatalf("put widget: %v", err)
@@ -458,7 +458,7 @@ func TestAnAgentDeliveryThatPanicsKeepsItsClaimAsInterrupted(t *testing.T) {
 		return nil
 	}
 	ds.mu.Unlock()
-	w, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	w, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", Properties: map[string]any{"name": "held"},
 	})
 	if err != nil {

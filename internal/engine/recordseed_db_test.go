@@ -183,7 +183,7 @@ func TestRecordSeedRefreshesOnlyWhatNoOtherHandWrote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, collectionViewKind, "memory-active", substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, collectionViewKind, "memory-active", substrate.PatchInput{
 		Properties: map[string]any{"name": "Current"},
 	}); err != nil {
 		t.Fatalf("the owner renames the Active view: %v", err)
@@ -233,7 +233,7 @@ data:
 		t.Fatalf("after the newer binary's open the views are named %v, want %v", got, want)
 	}
 
-	if _, err := ds.Delete(ctx, substrate.ActorAPI, collectionViewKind, "memory-retired", substrate.DeleteInput{}); err != nil {
+	if _, err := ds.Delete(ctx, substrate.ActorPerson, collectionViewKind, "memory-retired", substrate.DeleteInput{}); err != nil {
 		t.Fatalf("the owner deletes the Retired view: %v", err)
 	}
 	_ = svc.Close()
@@ -264,14 +264,14 @@ func TestCollectionViewNeedsItsKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	_, err = ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: collectionViewKind, ID: "nameless",
 		Properties: map[string]any{"name": "Open", "where": map[string]any{"active": map[string]any{"eq": true}}},
 	})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a view naming no kind was admitted: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: collectionViewKind, ID: "sorted",
 		Properties: map[string]any{"appliesTo": memoryDeclaration, "name": "By text", "sort": "text"},
 	}); !errors.Is(err, substrate.ErrValidation) {

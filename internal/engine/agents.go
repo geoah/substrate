@@ -55,7 +55,7 @@ func (ds *dataset) deliverToAgent(ctx context.Context, tr *trigger, ch substrate
 		// The stable delivery identity (the function-trigger key shape):
 		// tool idempotency keys derive from it, so a RETRIED delivery — a
 		// fresh thread by construction — reproduces the same keys.
-		delivery: fmt.Sprintf("%s/%s/%d", ds.Repository().ID, tr.ID, ch.Seq),
+		delivery: fmt.Sprintf("%s/%s/%d", ds.info.ID, tr.ID, ch.Seq),
 		complete: agentCompletion(settle, claim, advance),
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		turnContext: renderTurnContext(at, ds.repositoryZone(ctx), nil),
 		// Stable per occurrence: a retried fire reuses the fire id, so tool
 		// keys survive the retry (the functionFire key shape).
-		delivery: fmt.Sprintf("%s/%s/%s", ds.Repository().ID, tr.ID, fid),
+		delivery: fmt.Sprintf("%s/%s/%s", ds.info.ID, tr.ID, fid),
 		complete: agentCompletion(settle, claim, false),
 	})
 	if err != nil {
@@ -291,6 +291,13 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		return nil, fmt.Errorf("%w: agent %s is hidden from chat: call it from another agent, or drop data.hiddenFromChat from its declaration",
 			substrate.ErrValidation, ag.Identity())
 	}
+	// A message into a thread continues its run: admitted where the hand
+	// could have started it (run.go).
+	if in.Thread != "" {
+		if err := ds.mayContinue(ctx, actor, in.Thread, false); err != nil {
+			return nil, err
+		}
+	}
 	// Admission under the lifecycle fence, held through the whole chat turn's
 	// writes (thread claim/mint, every message, settlement): the detached
 	// task releases it, so a bundle disable waits for the turn as it did
@@ -316,18 +323,18 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 		// A shutdown never opens a thread it will not run.
 		return nil, fmt.Errorf("%w: the server is shutting down: send the message again once it is back", substrate.ErrUnavailable)
 	}
-	// A slot among the repository's running chat turns, held until the
-	// turn settles: a detached turn outlives its client, so nothing else
-	// bounds how many a client can leave running.
-	if n := ds.chatTurns.Add(1); n > maxRunningChatTurns {
-		ds.chatTurns.Add(-1)
-		return nil, fmt.Errorf("%w: %d chat turns are already running in this repository: wait for one to finish, or stop one",
-			substrate.ErrConflict, maxRunningChatTurns)
+	// A slot among the person's running chat turns, held until the turn
+	// settles: a detached turn outlives its client, so nothing else bounds
+	// how many a client can leave running.
+	person, limit := substrate.PersonOf(ctx, ds.scope.Repository), ds.svc.chatTurnsPerPerson
+	if !ds.chatTurns.take(person, limit) {
+		return nil, fmt.Errorf("%w: %d chat turns are already running for this person: wait for one to finish, or stop one",
+			substrate.ErrConflict, limit)
 	}
 	slotHeld := true
 	defer func() {
 		if slotHeld {
-			ds.chatTurns.Add(-1)
+			ds.chatTurns.give(person)
 		}
 	}()
 	hub := newTurnHub()
@@ -349,7 +356,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 	stopOnShutdown := context.AfterFunc(ds.svc.bg.ctx, cancel)
 	slotHeld = false
 	turn := func() {
-		defer ds.chatTurns.Add(-1)
+		defer ds.chatTurns.give(person)
 		defer stopOnShutdown()
 		defer cancel()
 		res, err := (*substrate.AgentResult)(nil), errors.New("the chat turn ended without settling")
@@ -373,8 +380,9 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 	return hub.attach(ctx, emit)
 }
 
-// maxRunningChatTurns is how many detached chat turns a repository runs at
-// once. Each holds a model call, the lifecycle fence's read lock and up to
+// maxRunningChatTurns is how many detached chat turns one person runs at once
+// unless the server sets another number (WithChatTurnsPerPerson). Each holds
+// a model call, the lifecycle fence's read lock and up to
 // agentTurnReplayBytes of replay, and none ends when its client leaves.
 const maxRunningChatTurns = 4
 
@@ -411,6 +419,12 @@ func (ds *dataset) AttachAgentTurn(ctx context.Context, threadID string, emit fu
 // for its settle: the result is the turn's own, `stopped` unless it settled
 // first. A triggered run is not stoppable: it ends within its own budget.
 func (ds *dataset) StopAgentTurn(ctx context.Context, actor substrate.Actor, threadID string) (*substrate.AgentResult, error) {
+	// A stop continues the run: it settles the turn and its jobs, which are
+	// the run's work. A person or an app stops only a run it could have
+	// started itself (run.go mayContinue), as it answers or approves one.
+	if err := ds.mayContinue(ctx, actor, threadID, false); err != nil {
+		return nil, err
+	}
 	hub, err := ds.runningTurn(ctx, threadID)
 	// The turn is stopped before its jobs are read: a job the turn registers
 	// after that read takes the stop from the turn (startJob).
@@ -475,7 +489,10 @@ func (ds *dataset) settleInterruptedAgentRuns(ctx context.Context) error {
 	if err := ds.settleInterruptedThreads(ctx); err != nil {
 		return err
 	}
-	return ds.settleInterruptedJobs(ctx)
+	if err := ds.settleInterruptedJobs(ctx); err != nil {
+		return err
+	}
+	return ds.settleInterruptedApprovals(ctx)
 }
 
 // settleInterruptedClaims rewrites every stored claim to interruptedAgentError,
@@ -593,7 +610,7 @@ func (ds *dataset) runInterruptedAgentReruns(ctx context.Context) bool {
 	if err != nil {
 		if ctx.Err() == nil {
 			ds.svc.log.Error("substrate: interrupted agent deliveries could not be read for their rerun",
-				"repository", ds.Repository().ID, "error", err)
+				"repository", ds.info.ID, "error", err)
 		}
 		return false
 	}
@@ -640,7 +657,7 @@ const (
 // one the rerun runs) and the outcome as a fixed word, never the error,
 // which may quote the request or the model.
 func (ds *dataset) rerunInterruptedAgentRun(ctx context.Context, triggerID string, failureID int64) {
-	attrs := []any{"repository", ds.Repository().ID, "trigger", logSafeID(triggerID), "failure", failureID}
+	attrs := []any{"repository", ds.info.ID, "trigger", logSafeID(triggerID), "failure", failureID}
 	skipped := func(outcome string, extra ...any) {
 		ds.svc.log.Warn("substrate: agent delivery a restart interrupted was not rerun, it stays parked",
 			append(append(attrs, "outcome", outcome), extra...)...)
@@ -792,8 +809,15 @@ func (ds *dataset) settleLostThreads(ctx context.Context) error {
 		if _, live := ds.runningThreads.Load(id); live {
 			continue
 		}
+		// The settlement is the lost run's, a turn cut short: held to the
+		// thread's holders, its turn's (heldto.go), unless they are no
+		// longer there.
+		rctx, err := ds.settlingHeld(ctx, typeThread, id)
+		if err != nil {
+			return fmt.Errorf("settle lost thread %s: %w", id, err)
+		}
 		var settled bool
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		err = ds.inTx(rctx, substrate.ActorSystem, true, func(t *txn) error {
 			settled = false
 			if err := t.lockRegistryDepShared(); err != nil {
 				return err
@@ -919,7 +943,14 @@ func (ds *dataset) settleInterruptedThreads(ctx context.Context) error {
 		return err
 	}
 	for _, id := range ids {
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// The settlement is the interrupted run's, a turn cut short: held to
+		// the thread's holders, its turn's (heldto.go), unless they are no
+		// longer there.
+		rctx, err := ds.settlingHeld(ctx, typeThread, id)
+		if err != nil {
+			return fmt.Errorf("settle interrupted thread %s: %w", id, err)
+		}
+		err = ds.inTx(rctx, substrate.ActorSystem, true, func(t *txn) error {
 			_, err := t.patch(eref{Kind: typeThread, ID: id}, substrate.PatchInput{Properties: map[string]any{
 				"status":     threadError,
 				"reason":     interruptedThreadReason,

@@ -83,10 +83,11 @@ write and the hosts each declares, its triggers, and everything its code
 reaches with what reaches it and the scope that covers it; the account's
 kind and id; the webhook's trigger, whether
 it is on and whether it has a key, which is never shared; the name the app's
-changes are recorded under, which history shows as the app's and never as
-yours: `app:` and the verified authority, `app:local` for an app whose
-access goes to this device, or `app:` and the host of its client id; and the `authorization_details` as the app sent
-them, to copy.
+changes appear under, which history shows as the app's and never as yours
+(`app.appearsAs`, since revision 3 of the `apps` feature): the verified
+authority, `local` for an app whose access goes to this device, or the host
+of its client id, the `publisher` its [actor record](api.md#actors) will
+carry; and the `authorization_details` as the app sent them, to copy.
 
 Approving a request that sets something up runs the set up on your server,
 as you, before the app receives anything: the packages first, each after
@@ -214,12 +215,15 @@ unverified app may still ask for everything a verified one may, `full`
 included; for `full` the page adds that nothing confirms which program
 receives a token equal to the owner's password.
 
-The token records the verified authority, and the app writes as
-`app:<authority>`. An app whose access went to a loopback address writes as
-`app:local`, and any other as `app:` and the host of its client id. Its
-label and annotation keys go under its actor's namespace, and a token may
-still write keys under `app:` and the host of its client id, the namespace
-an earlier binary gave it.
+The token records the verified authority, and the app writes as an
+[actor record](api.md#actors) of type `app` whose `publisher` is that
+authority. An app whose access went to a loopback address writes as the app
+whose publisher is `local`, and any other as the one whose publisher is the
+host of its client id; the approval writes the record. Its label and
+annotation keys go under its namespace, `app:` and its publisher
+(`app:example.org/…`, `app:local/…`), and a token may still write keys under
+`app:` and the host of its client id, the namespace an earlier binary gave
+it.
 
 The page shows the publisher it checked, and an approval and the token
 exchange check it again: when the record was withdrawn or now names
@@ -323,6 +327,15 @@ The record names the server and proves nothing about the repository on its
 own: a repository that proved its name carries `domainVerifiedAt` on its
 `repository` record ([Verify domain](auth.md#verify-domain)).
 
+`/.well-known/substrate/server.json` also lists the server's features, each
+with a stability and a revision ([discovery](api.md#discovery)). App
+authorization is the `apps` feature, and it is `beta`: supported, with a
+break announced one minor release ahead in that entry's `notice`
+([stability](stability.md)). Before an app sends a request field that a
+later release added, it checks that the feature's `revision` has reached the
+number the field arrived at, because the server refuses a field it does not
+know.
+
 ### Ask for access
 
 Send the browser to the authorization endpoint:
@@ -402,7 +415,8 @@ already there, live or deleted, is never written.
 The kind implements `substrate.reamde.dev/core/accountconfig` and belongs to
 a package a `package` entry of the same request names. Each property is one
 the kind declares, and none is a `secret` (the owner types those), `managed`
-(the server's to write) or restricted to a `writer` other than `owner`.
+(the server's to write) or restricted by its `writer` to types of actor
+other than `person`.
 
 **`webhook`**: the trigger the app delivers to.
 
@@ -415,9 +429,11 @@ The trigger takes webhook deliveries, declares no
 `source.webhook.signature` (a provider that signs what it sends holds the
 secret, so no app can deliver there), and runs a callable of a package a
 `package` entry of the same request names. Approving turns it on, and gives
-it a key only when it has none; the key is never shared. The token carries
-`webhook:<trigger>`, which delivers to that trigger with the token itself. A
-request never asks for `webhook:` in `scope`.
+it a key only when it has none; the key is never shared. The key and the
+switch land in one write, because the server turns on a webhook trigger a
+package shipped only with a key ([triggers](functions.md#triggers)). The
+token carries `webhook:<trigger>`, which delivers to that trigger with the
+token itself. A request never asks for `webhook:` in `scope`.
 
 What the error page refuses is the request's shape. What the repository
 decides is the approval page's: a row approving cannot run keeps the action
@@ -432,7 +448,7 @@ that cannot be installed blocks the row of the package that needs it.
 | --- | --- | --- |
 | `server-update` | the catalog ships the package, or one it requires, below the version needed | none: only a newer server ships it |
 | `not-shipped` | this server ships no catalog at all, or a package the catalog ships requires one it does not | none |
-| `not-published` | neither the catalog nor an authority document this server can read offers the package, or one it requires, at the version needed (the owner's own packages and the samples they imported included); `problem` carries the catalog's words, which name the package and the reason | none |
+| `not-published` | neither the catalog nor an authority document this server can read offers the package, or one it requires, at the version needed (the owner's own packages and the samples they added included); `problem` carries the catalog's words, which name the package and the reason | none |
 | `sample` | the package, or one it requires, is a sample, which the owner adds from All data | `/data` |
 | `quarantined` | the repository's copy of the package, or of one it requires, is quarantined | its provider page |
 | `declared-by-owner` | the owner declared the package, or one it requires, by hand (its package record is `installed` and no provider install stamped it, whether it declares kinds or only functions or traits), and installing or upgrading the published one would replace theirs; one they hold as a bundle at the version needed is in place and left alone | its provider page |
@@ -464,7 +480,8 @@ internal kinds by name, `write:substrate.reamde.dev/health/sleep`,
 
 The page plans against the scopes left checked: its read takes them as
 `?scope=` query parameters (`GET /api/v1/authorizations/{id}?scope=…`,
-one per scope, in the resolved spelling the page shows; absent, every
+one per scope, in the spelling the page shows, `~` for the repository's
+own; absent, every
 requested scope is checked, and `scope=` alone is none), the approval
 plans against the scopes it names, and the token's check against the
 token's own. A package row carries `reach`, one entry per kind or glob and
@@ -473,10 +490,11 @@ the scope that would, and each function its `reads`, `writes` and declared
 `network` hosts.
 
 The owner sees one row per entry and approves them with the scopes or not
-at all, as themselves: a request that carries entries is approved through
-the console, `substratectl` or the API, and an approval under any other
-`X-Substrate-Actor` is refused with `403` before anything is planned, the
-request still waiting for the owner. The approval runs the set up before the
+at all, as themselves: a request that carries entries is approved with a
+full-access token, through the console, `substratectl` or the API, and an
+approval that writes as anything but the person (an app's or an assistant's
+token) is refused with `403` before anything is planned, the request still
+waiting for the owner. The approval runs the set up before the
 code exists, so the code can take longer to arrive than for scopes alone:
 the set up has up to 15 minutes, and the request then waits up to 10 more
 for the approval page to come back and send the browser on, so an app that
@@ -538,7 +556,7 @@ grant_type=authorization_code&code=…&client_id=…&redirect_uri=…&code_verif
 {
   "access_token": "substrate_tok_…",
   "token_type": "Bearer",
-  "scope": "read:ada.example.com/tasks/* write:ada.example.com/tasks/task",
+  "scope": "read:~/tasks/* write:~/tasks/task",
   "expires_in": 2592000,
   "repository": "ada.example.com",
   "token_id": "2mjnmydr2be6"
@@ -567,7 +585,7 @@ deliver to, `<issuer>/webhooks/<repository>/<trigger>`.
   {"type": "package", "package": "providers.substrate.reamde.dev/applehealth", "version": 5},
   {"type": "account", "kind": "providers.substrate.reamde.dev/applehealth/account", "id": "phone-1a2b3c4d"},
   {"type": "webhook", "trigger": "applehealth-webhook",
-   "url": "https://ada.example.com/webhooks/ada.example.com/applehealth-webhook"}
+   "url": "https://ada.example.com/webhooks/rnd-0vrkvsgbs6bnz2sjy4196kccck/applehealth-webhook"}
 ]
 ```
 
@@ -587,7 +605,7 @@ approved:
 
 ```json
 {
-  "scopes": {"missing": ["read:ada.example.com/notes/*"]},
+  "scopes": {"missing": ["read:~/notes/*"]},
   "setup": [
     {"type": "package", "action": "upgrade",
      "package": {"id": "providers.substrate.reamde.dev/applehealth", "required": 6, "held": 5, "shipped": 6}},
@@ -600,8 +618,8 @@ approved:
 }
 ```
 
-- `scopes.missing`: the requested scopes, resolved, that the token does not
-  cover. Coverage is by reach, not spelling: a `write` covers the `read` of
+- `scopes.missing`: the requested scopes, with the repository's name folded
+  into `~`, that the token does not cover. Coverage is by reach, not spelling: a `write` covers the `read` of
   the same pattern, and a wider pattern a narrower one (`read:*` covers
   `read:~/notes/*`), except that a kind that is `internal`, or that the
   repository does not hold yet, is covered by its exact scope alone;
@@ -642,7 +660,8 @@ server.
 Send it as `Authorization: Bearer substrate_tok_…`. An app's token reaches
 the records route (`GET /api/v1/records` for lists, window and aggregate
 reads and every mode of search, `POST /api/v1/records`), the record path
-(`/api/v1/{authority}/{package}/{kind}/{id}`), the unit reads, the change
+(`/api/v1/{authority}/{package}/{kind}/{id}`), the unit reads, a trait's
+implementors, the change
 feed ([follow changes](#follow-changes)), the set up check, blob storage
 and blob reads under the blob rules below, under a `call:` scope the
 function call ([run functions](#run-functions)), under an `agents:` scope
@@ -676,6 +695,14 @@ door and that trigger's parked list
   records are, and the sources an aggregate names are cut to the kinds it
   reads. Neither carries a changelog head;
 - a list carries no changelog head, in its body or in its cursor;
+- `GET /api/v1/substrate.reamde.dev/core/trait/{id}/implementors` lists, with
+  each declaration, only the implementors the token reads, so an app over
+  every kind with a trait learns them without a scope on
+  `substrate.reamde.dev/core/kind`;
+- `GET /api/v1/substrate.reamde.dev/core/kind/{kind}`, the kind percent-encoded,
+  answers the declaration of a kind the token reads, and `404` for any other,
+  so an app learns the label and the properties of a kind it was approved to
+  read;
 - inbound links, property provenance and expanded referents of other kinds
   are left out of every record it receives;
 - a trigger (`substrate.reamde.dev/core/trigger`, which only an exact scope
@@ -706,16 +733,16 @@ door and that trigger's parked list
 
 Everything else answers `403`: the vocabulary, the catalog, a function
 call from a token with no `call:` scope, the agent call API, the export and
-the token endpoints. Writes are attributed to the app's own actor, whatever
-`X-Substrate-Actor` says: `app:<authority>` for an app whose publisher was
-verified, `app:local` for one whose access went to a loopback address, and
-`app:<host>` of its client id otherwise
-([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)); no
-request can claim that name. Two apps of one publisher, or on one host,
-share it, and the changelog's principal (the token, which names the exact
-client id) tells them apart. Labels and annotations an app writes go in its
-own namespace, the actor and a slash (`app:example.org/…`), like an
-agent's or a function's.
+the token endpoints. Writes are made by the app's own
+[actor record](api.md#actors), on behalf of the person: its `publisher` is
+its authority for an app whose publisher was verified, `local` for one whose
+access went to a loopback address, and the host of its client id otherwise
+([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)),
+and no request names another. Two apps of one publisher, or on one host,
+share it, and the write's `token` (which names the exact client id) tells
+them apart. Labels and annotations an app writes go in its own namespace,
+`app:`, its publisher and a slash (`app:example.org/…`), like an agent's or
+a function's.
 
 ### Talk to agents
 
@@ -727,8 +754,7 @@ records their chats are made of:
   naming a thread of another agent does;
 - `POST /api/v1/substrate.reamde.dev/core/agent/{id}/chat`, the id one
   path segment (`%2F` for its slashes), streaming as it does for the owner.
-  The message is written as the app's own actor (`app:<authority>`,
-  `app:local` or `app:<host>`, as above); the agent runs under
+  The message is written by the app's own actor, as above; the agent runs under
   its own permissions, so it reads and writes what it would in the
   owner's chat. A chat's `context` may name only records the app's own
   token reads; any other path is refused with the `404 not_found` a read
@@ -745,8 +771,8 @@ A `decide:<pattern>` scope reaches the change requests
 (`substrate.reamde.dev/core/recordpatchrequest`) whose `thread` is a thread
 of a matching agent: list and read, and a `PATCH` of `decision` to
 `accepted` or `rejected` with the request's `ifVersion`, optionally an
-`adjustedDiff` on an accept and a note under the app's own namespace (its
-actor and `/note`: `app:example.org/note` for an app example.org
+`adjustedDiff` on an accept and a note under the app's own namespace (`app:`,
+its publisher and `/note`: `app:example.org/note` for an app example.org
 publishes). The accept applies the change as the owner's would,
 and the decision is recorded as the app's. An accept that would revoke a
 token or write an account is refused. `decide:` without `agents:` decides
@@ -773,8 +799,9 @@ as for the owner), the history pages (`before`, `first`), the run summaries
 ([the change feed](changelog.md)). Each carries only the rows of records
 the token reads, through its read and write scopes and the rows `agents:`
 and `decide:` reach, and each row names alone: `seq`, `ts`, `op`, `kind`,
-`recordId`, `actor`, and `affected` cut to records the token reads. No
-`payload`, `hash` or trigger states. A history page stays full while more
+`recordId`, `actor`, `onBehalfOf` where set, and `affected` cut to records
+the token reads. No `payload`, `hash`, `token` or trigger states, and a run
+summary carries no `token` or `tokenName`. A history page stays full while more
 lies below, so its cursor is right whatever the token cannot see between
 its rows. `values=1` and `q` answer `403` on every route; a `kinds` entry
 the token cannot read answers `404`.
@@ -791,12 +818,21 @@ ends with a terminal error frame whose code is `auth`, and an agent's
 stream with an `error` event, before anything more is written. The turn
 itself runs on; the app signs in again to follow it.
 
+### Write while offline
+
+An app that works without a connection keeps its unsent writes in a queue on
+the device and sends them in order once the server answers, each with the
+`ifVersion` it was made against; the app kit's outbox is that queue. The
+server never merges a second history into a repository's changelog, so a
+write it refuses goes back to the person
+([stability](stability.md#offline-use)).
+
 ### Run functions
 
 A `call:<pattern>` scope names functions by their ids
 (`<authority>/<package>/<name>`), with the kind pattern grammar: `*`, an
 authority's, a package's or one function; `~` is the repository's
-authority. A function of `substrate.reamde.dev/core` or
+local namespace. A function of `substrate.reamde.dev/core` or
 `substrate.reamde.dev/llm` is never an app's to call: naming one outright,
 or either package's own glob, is refused, and a wider glob
 (`substrate.reamde.dev/*`, `*`) skips them. Under it,
@@ -813,7 +849,7 @@ scopes do not match is answered `404`, as a kind it cannot read is; one it reach
 whose reach its scopes do not cover answers `403` naming what is missing
 (`read <kind>`, `write <kind>`). The call runs under the function's own
 permissions, as a trigger's does: the app's actor is the caller, and the
-function's effects land as the function's.
+function's effects land as the function's, on behalf of the person.
 
 The approval page lists, under a `call:` scope, the functions it matches
 today with each one's reach and whether the request's other scopes cover
@@ -826,14 +862,17 @@ A `webhook:<trigger>` scope names one webhook trigger by its id. An app
 never asks for it in `scope`, which refuses it: only an approved `webhook`
 authorization detail puts it on a token. Under it:
 
-- `POST /webhooks/{authority}/{trigger}` takes the token as
+- `POST /webhooks/{repository}/{trigger}` takes the token as
   `Authorization: Bearer` in place of the trigger's key. The door admits the
   delivery when the token is live, opens the repository the path names and
   holds `webhook:` for that trigger; any other bearer is read as a key, so a
   revoked, expired or full-access token, or one without the scope, answers
   the door's one `404`, as a wrong key does. The token is read again once
   the body has arrived, so one revoked or past its time meanwhile delivers
-  nothing. A signature the trigger declares is still checked, and the header
+  nothing. The delivery acts for the token's person: a token whose person
+  holds no role in the repository is read as a key, and the callable's run
+  is held to the person's roles, read when it runs, so a person made a
+  viewer delivers what the callable then may not write. A signature the trigger declares is still checked, and the header
   never reaches the callable. Revoking the app, or its access ending, ends
   its deliveries. Looking a bearer up is a database read anybody can ask
   for, so one that looks like a token and is none is charged to its
@@ -899,15 +938,19 @@ named in full, and `~` may stand for its authority. How a kind binds it,
 `temporal(point: dueAt)` say, does not matter, only that it does.
 
 An agent's id is its authority, package and name,
-`ada.example.com/notes/notekeeper`.
-`~` in place of the authority is the repository's own authority, the one an
-imported sample lives under: `read:~/tasks/*` becomes
-`read:ada.example.com/tasks/*` on the approval page and in the token, and
-`agents:~/notes/*` the agents imported with the notes sample. Some things no
+`~/notes/notekeeper` for the one the notes sample adds.
+`~` in place of the authority is the repository's local namespace, where its
+own packages and the samples it added live
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), and a scope keeps
+it as written: `read:~/tasks/*` is `read:~/tasks/*` on the approval page and
+in the token, the same for every repository the app is approved in, and
+`agents:~/notes/*` reaches the agents added with the notes sample. An app
+that spells the repository's full name (`read:ada.example.com/tasks/*`) is
+asking for the same thing, and the token stores it as `~`. Some things no
 scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
-  `…/secret`, `…/recoverykey`), read or write;
+  `…/secret`), read or write;
 - an `internal` kind through a pattern ending in `*` or a trait pattern; an
   exact scope such as `read:substrate.reamde.dev/core/kind` may read one;
 - a write to `substrate.reamde.dev/core` or `substrate.reamde.dev/llm`, which
@@ -918,7 +961,12 @@ scope reaches:
 - an agent, through `agents:`, that reads a kind the token's own `read` and
   `write` scopes do not cover: a glob the agent reads is covered by a glob at
   least as wide, an `internal` kind by its exact scope alone, so an agent is
-  no channel to data the app could not read itself.
+  no channel to data the app could not read itself;
+- what an agent reads or writes in a turn the app drives, or a function it
+  calls, beyond the token's own scopes: the engine holds each read and each
+  write of that work to the grant as it stands, and a revoked token
+  refuses the rest of it
+  ([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)).
 
 ### Full access
 
@@ -929,11 +977,13 @@ in Safari rather than typing a password into the app, and the app holds the
 session in the Keychain and hands it to the console it runs. A request names it
 alone, with no `authorization_details`; anything beside it is refused. The
 approval page leads with a warning, offers nothing to uncheck, and takes the
-approval only through a human door. Approving mints a token without scopes,
+approval only from the person, never from an app's or an assistant's token.
+Approving mints a token without scopes,
 which is full access, keeping the app's client id and name: the owner sees
 it under Apps, the app revokes it at the revocation endpoint or deletes its
-own record (`token_id`) as a sign-in does, and its writes are the owner's,
-not `app:<host>`. A server lists `full` in `scopes_supported` when it can
+own record (`token_id`) as a sign-in does, and its writes are the person's,
+with its token beside them, never an app actor's. A server lists `full` in
+`scopes_supported` when it can
 grant it.
 
 ## Running it
@@ -976,23 +1026,52 @@ that change, revoke every app token under Settings > Apps.
 List the package in your authority document's `packages` array. Each entry
 has `package` (the package name), optional `addonFor` (a package id), and
 `versions`: positive, unique integer versions with `closure` (an HTTPS
-URL) and `sha256` (64 hexadecimal characters). Keep every published
-version's bytes unchanged.
+URL), `sha256` (64 hexadecimal characters) and optional `dialect`, the
+vocabulary dialect the closure needs. Keep every published version's bytes
+unchanged.
+
+```json
+{"package": "garden",
+ "versions": [{"version": 3, "closure": "https://example.com/garden-3.yaml",
+               "sha256": "…", "dialect": 3},
+              {"version": 4, "closure": "https://example.com/garden-4.yaml",
+               "sha256": "…", "dialect": 4}]}
+```
+
+A server installs the newest version whose dialect it reads, the one it
+publishes as `vocabulary.dialect` in [discovery](api.md#discovery): above,
+a server at dialect 3 installs version 3 and passes over version 4. List a
+version's dialect wherever its header states one; a version that lists none
+is fetched first, and passed over when its header needs a newer dialect
+([the dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)).
 
 A closure is multi-document YAML: one package header, one bundle
 declaration for that package, and its declarations and records. The header's
 version matches the listed version. Every declaration belongs to the
 package; records of shared machinery kinds use ids beneath the package id.
-The binary wins for packages it already ships. A repository's own authority
-is declared locally rather than installed from its document.
+The binary wins for packages it already ships. A repository's own packages
+live in `~` and are declared locally, never installed from a document. A webhook
+trigger the closure ships is disabled and keyless unless it declares a
+`signature`: an install of one enabled with neither is refused, and the
+app's `webhook` detail is what keys it and turns it on
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
 
 Check the candidate with `substratectl publish --check` before uploading
-it. Upload the immutable closure first, update the authority document
+it: it prints the version's entry, with the dialect the header states. Upload the immutable closure first, update the authority document
 second, and release the app build requesting that version last. A changed
 digest at an existing version and a version below the newest published
-version fail the check. Removing or renaming declarations needs
-`--allow-narrowing`; connected builds can still hold the server upgrade
-back until they check in with a sufficient floor or their access ends.
+version fail the check. Removing a declaration needs `--allow-narrowing`,
+but for a kind: removing a kind any listed version published is refused,
+with the flag or without it, and so is renaming a kind with `movedFrom`:
+keep the old kind, mark it `deprecated: true`, and declare the new one
+beside it
+([decision 0269](decisions/0269-a-publisher-may-not-rename-a-kind-and-code-from-outside-publishers-is-experimental.md)).
+Connected builds can still hold the server upgrade back until they check in
+with a sufficient floor or their access ends.
+
+Functions a published package ships are `experimental` at 1.0, whatever the
+package's label: their review and their confinement may change in any
+release ([stability](stability.md#a-packages-code)).
 
 For packages whose agents use provider inputs, approval offers a provider
 picker for each input. Each option shows the provider label and the model

@@ -13,7 +13,8 @@ One entry, as the wire carries it, for the task created on the
 ```json
 {"seq": 4190,
  "ts": "2026-08-04T10:00:00.183742Z",
- "actor": "api",
+ "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+ "token": "01jbx9k0token000000000000a",
  "op": "put",
  "kind": "samples.substrate.reamde.dev/tasks/task",
  "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
@@ -22,16 +23,20 @@ One entry, as the wire carries it, for the task created on the
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
-`actor` names what wrote ([the actor domain](api.md#actors) is closed) and is
-the caller's own claim; the entry also stores a **principal**
-beside it, the id of the token the door resolved from the bearer secret,
-which no caller can name. Two tokens writing as `api` are one actor and two
-principals. The entry's checksum covers it, and it is not a secret: it is a
-token record's id, which the repository's own reader can already list. It has
-no field of its own on the wire; a write's recorded effects name it beside
-each property manager they set. A write no token stands behind — the seed, the
-boot upgrade, a background worker, registration and login — carries an empty
-principal. `op` is the mutation
+`actor` is the id of the [actor record](api.md#actors) that wrote the entry:
+here the person. `onBehalfOf` is the id of the one it acted for, present only
+where it acted for someone: an app always acts for the person, and a
+function or an agent acts for the person when a person's request started it.
+`token` is the id of the token record the write stood behind, present only
+where one did: the person's sign-in, or the app's token. The server derives
+all three from the bearer secret and the code that runs, and no caller names
+any of them. Two sign-ins of one person are one actor and two tokens. A
+write no token stands behind (the seed, the boot upgrade, a background
+worker, a sync on a schedule, registration and login) carries no `token`.
+The entry's checksum covers the three. The token is not a secret, since it is a
+token record's id, which the repository's own reader can already list, but
+it is the owner's to read: a change an app's token or an assistant's reads
+carries no `token`. `op` is the mutation
 that made the row (`put`, `patch`, `delete`, `merge`, `split`, plus the
 engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. `payload` names what
@@ -57,8 +62,10 @@ the fold effects it applied, under the payload key `fold`, which is what makes
 the changelog replayable rather than merely informative: `substratectl
 repository rebuild` replays the changelog through the same fold code
 ([running a substrate](operations.md#operator-recovery)). The effects never
-reach the wire: no response carries `fold`, so a change to how
-the fold spells an effect is a storage change and not an API change. A
+reach the wire: no response carries `fold`. They are the
+[stored format](stored-format.md#the-effects) instead, which every export
+carries and every later release reads, so a change to how an effect is spelled
+raises the changelog dialect and ships a conversion. A
 secret-typed value never reaches the changelog at all: the effect carries an
 opaque ref into the sealed store, the material lives there encrypted, and a
 read of the record renders the property `<redacted>`.
@@ -71,7 +78,7 @@ one element per record, in the order the entry touched them.
 ```json
 {"seq": 4207, "op": "merge", "kind": "samples.substrate.reamde.dev/people/person", "recordId": "p1",
  "payload": {"winner": "p1", "loser": "p2",
-             "moved": {"formerIds": [], "managers": {}, "labels": {}, "annotations": {},
+             "moved": {"formerIds": [], "marks": [], "labels": {}, "annotations": {},
                        "applied": ["email"], "overwritten": []}},
  "affected": [
    {"kind": "samples.substrate.reamde.dev/people/person", "id": "p1", "version": 6},
@@ -89,6 +96,17 @@ one element per record, in the order the entry touched them.
 - `deleted` is `true` when the entry tombstoned or purged the record. A read
   of a tombstoned record still answers, with `deletedAt` set; a purged one is
   `not_found`.
+- `state` is `true` where the entry holds the record's **state entry**: a
+  compaction replaced the record's earlier entries with the record's whole
+  state as of this one, which keeps its seq, time and actor
+  ([the stored format](stored-format.md#state-entries)). A client reads it as
+  any change: the record changed, and the version is its own. A `put` or a
+  `patch` whose state stands for the record's creation reads as the creation
+  (`op` `put`, `payload.created`), so a reader that starts from the beginning
+  meets each record once, created in its latest state; a filter on `op`
+  reads the same operation. A record a kind move carried is not created by
+  its state: the state reads as the line it sits on, and on the carry's own
+  line keeps its `movedFrom`. Since revision 4 of the `changefeed` feature.
 
 The list holds the addressed record and any other the entry moved: a `merge`
 names the winner and the tombstoned loser, a `split` the loser and the
@@ -123,7 +141,7 @@ did to each property it moved, before and after, in name order:
 added, or any property of a creation), and `after` is absent where the entry
 cleared it. The values are the ones a read of the record renders, under the
 same names: the declared properties, `title` where the kind does not render
-it from a template, a declared `body`, the instants, and each state. A
+it from a template, the instants, and each state. A
 sensitive property reads `<redacted>` on both sides, exactly as a record read
 renders it, and a kind the repository no longer declares carries no values.
 
@@ -155,7 +173,9 @@ versions run unbroken. Where it cannot answer (a gap in them, an entry written
 before entries held values, a history with no creation, or a previous write
 further back than the read's budget of 4096 earlier entries, which every
 record on the page shares) the property carries `"beforeUnknown": true` and
-no `before`, which is not the same as "there was none"
+no `before`, which is not the same as "there was none". A state entry lists
+every value its record holds, each `beforeUnknown`: the values before it are
+not kept, and a walk from a later entry stops at it
 ([decision 0135](decisions/0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
 The walk costs a read per record on the page, so a client that does not ask
 pays nothing and gets the same rows without `properties`. Every mode of
@@ -165,16 +185,20 @@ Two guarantees consumers may lean on:
 
 - **Sequence order is commit-visibility order**: no reader ever sees entry N
   with N-1 still uncommitted, so resuming from a remembered `seq` misses
-  nothing. Gapless resume is a guarantee, not a convention, and it survives a
+  nothing. A compacted history has gaps where entries were replaced, and a
+  record whose changes after the position were replaced is met at its state
+  entry, once, so a resume still misses no record. Resume is a guarantee, not a convention, and it survives a
   restart because the counter is the repository's own `max(seq)`, never process
   state. A seq is a position in one **history generation** ([watching](#watching)),
-  and a resume is held to it, so a cursor saved before an older directory was
+  and a resume is held to it, so a cursor saved before an older copy was
   restored is refused rather than resumed against numbering it never saw.
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
   engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
-  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`,
-  `affected` and the entry's `hash` (below); a row of `/changes` adds
+  carries `seq`, `ts`, `actor`, `onBehalfOf` and `token` where set, `op`,
+  `kind`, `recordId`, `payload`, `affected` and the entry's `hash` (below);
+  since revision 2 of the `changefeed` feature, `actor` is an actor record's
+  id and `onBehalfOf` and `token` are beside it. A row of `/changes` adds
   `triggers` ([watching](#watching)).
 
 ## Change verbs
@@ -237,91 +261,75 @@ proposal already holds it, where a `put` overwrites.
 #the-chain, and an accepted record's body may not change. -->
 <a id="the-chain"></a>
 
-## The checksum and the segment files
+## The checksum and the archive
 
 Every entry carries a SHA-256 **checksum** of its own canonical line, stamped
 by the writing transaction into the `changelog.hash` column and returned on the
 wire as `hash`. The checksum covers the entry's own bytes and nothing else: it
 does not chain to the previous entry, and nothing signs it.
-`substratectl repository verify` recomputes every line's checksum from the
-segment files, holds every table row's stamped checksum to its line's, and
-names each seq that disagrees; with `--recanonicalize` it also recomputes each
-row's checksum from its stored columns
-([running a substrate](operations.md#operator-recovery)).
+`substratectl repository verify` holds the table's rows to their seqs and
+transactions, holds every line of the archive to the checksum the table
+stamped for its seq, and names each seq that disagrees; with
+`--recanonicalize` it also recomputes each row's checksum from its stored
+columns ([running a substrate](operations.md#operator-recovery)).
 
-The Postgres `changelog` table is the live index: the change feed, the triggers
-and the causal walk read it. The truth on disk is the repository's directory
-under `SUBSTRATE_DATA_ROOT`
-([the repository directory](operations.md#the-repository-directory)), where
-`changelog/` holds the same entries as newline-delimited JSON segment files,
-one object per line, keys sorted, the checksum in `sum`:
+The Postgres `changelog` table is the history: the change feed, the triggers
+and the causal walk read it, and every fold, a rebuild and an import alike,
+is folded from it. A write is confirmed when its transaction commits there,
+and nothing else is written before its answer
+([decision 0262](decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)).
+Its copy is the repository's **archive**
+([the archive](operations.md#the-archive)), which a background pass writes
+behind the commits: the same entries as pieces of newline-delimited JSON,
+one object per line, keys sorted, the checksum in `sum`
+([pieces](stored-format.md#pieces)):
 
 ```json
-{"actor":"api","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"principal":"k7…","recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
+{"actor":"6nk6ekkczdgh399nt2pqpccjz0","kind":"samples.substrate.reamde.dev/tasks/task","op":"put","payload":{"created":true,"fold":[{"…":"…"}],"properties":["name","dueAt"]},"recordId":"01jbx9m2qz7k4c5v8n3w6t1hrd","seq":4190,"sum":"sha256:5f0c…","token":"01jbx9k0token000000000000a","ts":"2026-08-04T10:00:00.183742Z","txn":4191}
 ```
 
 `sum` is `sha256:` plus the hex digest of the same line with the `sum` key
 absent, and the `hash` column and the wire field hold the same 32 bytes.
-`causedBy` appears only on an entry a delivery caused. `txn` is the seq of the
+`causedBy` appears only on an entry a delivery caused, `onBehalfOf` only where
+the actor acted for another and `token` only where a token stood behind the
+write ([the stored format](stored-format.md#the-line)). `txn` is the seq of the
 last entry of the transaction that appended the line: a transaction of one
 entry has `txn` equal to `seq`, and a merge, which writes the loser's
 tombstone and the winner's entry in one commit, gives both lines the second
-one's seq. The `changelog.txn` column holds the same value. A segment is named
-by the seq of its first line (`000000000000001.ndjson`); the highest-numbered
-one is the active segment and grows. When it passes
-`SUBSTRATE_CHANGELOG_SEGMENT_BYTES` (256 MiB by default) the writer finishes
-it with a `.sha256` sidecar holding the digest of the whole file and opens the
-next. A finished segment never changes. One transaction is one append, and
-the segment rotates only after an append, so a transaction never crosses a
-segment, however large it is.
+one's seq. The `changelog.txn` column holds the same value. A piece holds
+whole transactions, so a transaction never crosses two, and a reader holds
+every line to its `sum`, its seq to its place and the piece to the seqs its
+name says: a piece that is not that run is a named refusal, never a tail to
+cut.
 
-The transaction's lines are written and fsynced before Postgres commits,
-without the newline that ends the last line; that newline lands after the
-commit and is the commit marker. A sealed value is staged as a pending file
-the same way and renamed into place after. A directory that cannot be written
-before the commit rolls the write back with `503 unavailable`
-(`ErrDirectoryWrite`); a crash between the commit and the newline leaves an
-unfinished transaction the next boot completes from Postgres
-([what happens at boot](operations.md#what-happens-at-boot)). Once a write is
-ready to commit, a client that disconnects no longer stops it: the commit and
-the file steps run to the end, and the server gives the Postgres side of them
-a 30-second budget of its own. A commit that reports an error after Postgres
-applied it has its lines cut, and the next write appends that transaction
-from the table before its own. Only when that repair fails does the
-repository refuse every write until a restart, with `503 unavailable` and a
-message that names the restart. A reader accepts
-exactly one kind of damage, an unfinished transaction at the end of the active
-segment: a torn last line and, before it, the complete lines that carry the
-same `txn`. It cuts them together, back to the last line that ends its
-transaction, so half a commit never opens as history; the server then appends
-the transaction again from the table, and a restore from a copy of the
-directory loses that transaction whole, never in part. A bad `sum`, a seq
-that does not follow the previous one, a line whose `txn` does not fit the
-transaction around it, or a finished segment whose sidecar does not match is
-a named refusal, not a repair. An open reads a finished segment's first and
-last lines and the server hashes the rest after the open, so a sidecar that
-does not match refuses the repository's writes rather than its boot
-([decision 0146](decisions/0146-a-finished-segment-is-read-at-its-end-lines-and-a-snapshot-links-what-its-base-holds.md)).
+Once a write is ready to commit, a client that disconnects no longer stops
+it: the server gives the commit a 30-second budget of its own. A commit
+whose answer is lost may have applied, and the error says so
+([what a client may conclude](api.md#what-a-client-may-conclude-after-a-failure)).
+For a record write that is the whole of it. A vocabulary change whose
+commit answer is lost leaves the server unsure which declarations it holds,
+so the repository refuses every write with `503 unavailable` and a message
+that names the restart, until the server restarts and loads what Postgres
+committed.
 
-Every line carries `txn`; one without it is the same named refusal
+Every line carries `txn`; one without it is a named refusal
 ([decision 0057](decisions/0057-a-changelog-line-names-its-transaction-and-an-unfinished-one-is-cut-whole.md)).
 
-What the checksum proves: an entry is undamaged, in the file and in the table,
-and the two agree. What it does not prove: authenticity. Whoever can write the
-database or the directory can rewrite a line and its `sum` together, and no
-checksum sees that
-([decision 0050](decisions/0050-the-changelog-is-checksummed-segment-files-and-postgres-indexes-it.md)).
-The `hash` a consumer reads on the wire is a **receipt** for the entry it
-came with, not a proof: the wire payload is redacted, so the consumer cannot
-recompute it, and checking a receipt means running `repository verify` on the
-repository.
+What the checksum proves: an entry is undamaged, in the table and in the
+archive, and the two agree. What it does not prove: authenticity. Whoever
+can write the database or the archive can rewrite a line and its `sum`
+together, and no checksum sees that. The `hash` a consumer reads on the wire
+is a **receipt** for the entry it came with, not a proof: the wire payload is
+redacted, so the consumer cannot recompute it, and checking a receipt means
+running `repository verify` on the repository.
 
 ## The dialect a changelog is written in
 
 Each repository carries a **changelog dialect**: a monotonic integer naming the
 ops and fold effects a binary must understand to replay its entries. The
-effects are storage ([the change event](#the-change-event) is what a reader
-gets), so the dialect names what a binary replays, never what a client parses. The claim
+effects are the [stored format](stored-format.md), never the wire
+([the change event](#the-change-event) is what a reader gets), so the dialect
+names what a binary replays, never what a client parses. The claim
 rides the append: the first transaction a binary appends with writes the stamp
 alongside its entries, so the stamp covers every entry and no store is barred
 over entries nobody wrote. Opening only reads it, and a binary whose maximum is
@@ -336,7 +344,16 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-1 today, the ops, fold effects and entry frame this release writes: the record
+7 today, the ops, fold effects and entry frame this release writes: every
+property's mark held as its own `mark` and `unmark` effects
+([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)),
+which is what dialect 5 added, the repository's own kinds spelled `~/…`
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)),
+which is what dialect 6 added, the state entries a compaction writes, which
+is what dialect 7 added, every
+entry linking its actor, the one it acted for and its token as records
+([decision 0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)),
+which is what dialect 3 added, the record
 ops and the `delivery` op with the seven effects a trigger's bookkeeping
 replays through
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
@@ -346,14 +363,23 @@ every `record` delta carrying the kind version that wrote the row
 ([decision 0060](decisions/0060-a-record-carries-the-kind-version-that-last-wrote-it.md))
 and every `manager` effect carrying the stamp a property rename moved with it
 ([decision 0063](decisions/0063-a-property-rename-is-ordinary-record-writes.md)).
+Dialect 2 spells nothing dialect 1 did not: it is a history
+[conversion step 2](stored-format.md#conversions) has emptied of the recovery
+wrap. Dialect 4 carries a record's `body` among its properties, never as a
+delta field of its own
+([decision 0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)).
+Dialect 7 adds the two state entries a compaction writes, `state` and
+`ledger`
+([decision 0296](decisions/0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
 The next number is spent when a writer learns a spelling an older binary's
-fold would refuse or misread.
+fold would refuse or misread, and a change to a shape the history already
+holds ships a [conversion step](stored-format.md#conversions) to it, which
+the boot check runs once over each repository below it.
 No dialect is on the wire at all ([discovery](api.md#discovery)), and neither
-are the entries written in one. The dialect is in the repository directory, as
-`changelogDialect` in `repository.json`, which the transaction that records the
-claim rewrites before it appends, so a copy of the directory never holds
-segments its manifest understates
-([the repository directory](operations.md#the-repository-directory)).
+are the entries written in one. The archive carries it, as `changelogDialect`
+in its manifest and as the directory its pieces sit under, so an archive never
+holds lines in a dialect its manifest understates
+([the stored format](stored-format.md#the-manifest)).
 
 `repository rebuild` reads the stamp again, under the changelog lock and
 before it touches anything: it replays every entry, and a process that opened
@@ -377,7 +403,8 @@ GET /api/v1/changes?from=4189&generation=7f3a0c2e9b1d4e6f&watch=1
 
 {"bookmark": 4189, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 4190, "op": "put", "kind": "samples.substrate.reamde.dev/tasks/task",
- "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd", "actor": "api",
+ "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd", "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+ "token": "01jbx9k0token000000000000a",
  "affected": [{"kind": "samples.substrate.reamde.dev/tasks/task", "id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "version": 1}]}
 ```
 
@@ -386,13 +413,13 @@ bookmark is the seq it opened at and the generation that seq belongs to, so
 remembering the pair is all a resume needs.
 
 The **history generation** is an opaque string the server mints for a
-repository when it registers, and mints again when its directory is imported
+repository when it registers, and mints again when its history is restored
 into a database that holds no row for it, which is what a
 [restore](operations.md#backups) into a fresh database is. A database dump
 keeps the row and its generation, so a restore that starts from a dump runs
 `substratectl repository rotate-generation` once per repository. A restart and
-`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the directory
-imported over an emptied database restarts the numbering below whatever
+`repository rebuild` keep it. A seq is a position in one generation only: an older copy of the archive
+restored into an emptied database restarts the numbering below whatever
 cursors clients saved, and a bare seq cannot tell the two histories apart. So
 `from` or `before` above 0 carries the `generation` it was read under, and the server
 refuses a cursor under another generation, above the head, or with no
@@ -403,6 +430,8 @@ The same endpoint pages backward through history with `before=`, and filters
 the same way in watch and history modes alike. Every filter parameter is plural
 and takes a repeated parameter or a comma-separated list: `kinds`, `ops`,
 `actors`, and their negations `excludeKinds`, `excludeOps`, `excludeActors`.
+`actors` and `excludeActors` take [actor record](api.md#actors) ids, and
+match a row by its `actor`.
 `q` matches free text across the row's kind, actor, record id and payload
 text. `values=1` narrows nothing: it adds each record's
 [before and after values](#values-on-request) to the rows. Scoping the feed to one record takes **both** `recordId` and
@@ -441,8 +470,8 @@ misses nothing and double-sees nothing.
 ### Run summaries
 
 `runs=1` turns the history page into run summaries: consecutive rows of the
-filtered feed that share an actor, a kind and a verb, each with its count, so
-a client says "added 60 tasks" from one read
+filtered feed that share an actor, a kind, a verb and a token, each with its
+count, so a client says "added 60 tasks" from one read
 ([0126](decisions/0126-the-changes-read-summarizes-runs-and-never-ends-a-page-inside-one.md)).
 The verb is `create` for a `put` whose payload carries `created: true`,
 `restore` for one carrying `restored: true`, `update` for any other `put` and
@@ -454,14 +483,24 @@ run.
 GET /api/v1/changes?runs=1&first=2
 
 {"runs": [
-  {"actor": "api", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
+  {"actor": "5fz1hzkw85g0a9ytnkzrj7tzth", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "update",
    "count": 3, "records": 1, "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
-   "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…"},
-  {"actor": "console", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
+   "newestSeq": 4190, "oldestSeq": 4188, "newestTs": "…", "oldestTs": "…",
+   "token": "01jbx9k0token000000000000c", "tokenName": "Chat"},
+  {"actor": "6nk6ekkczdgh399nt2pqpccjz0", "kind": "samples.substrate.reamde.dev/tasks/task", "verb": "create",
    "count": 60, "records": 60,
-   "newestSeq": 4187, "oldestSeq": 4128, "newestTs": "…", "oldestTs": "…"}],
+   "newestSeq": 4187, "oldestSeq": 4128, "newestTs": "…", "oldestTs": "…",
+   "token": "01jbx9k0token000000000000a", "tokenName": "laptop"}],
  "cursor": 4128, "head": 4190, "generation": "7f3a0c2e9b1d4e6f"}
 ```
+
+A run splits on the token, so two of the person's sign-ins are two runs, and
+so are two assistants on one device, which are one local app's actor
+([0230](decisions/0230-an-assistant-reaches-a-substrate-through-mcp-with-a-token-that-works-there-alone.md)).
+On the owner's reads a run whose writes stood behind a token carries it:
+`token`, its id, and `tokenName`, the app's claimed name or the token's
+label, a revoked token's included. An app's and an assistant's reads carry
+neither.
 
 `first` counts runs (default 50, at most 500), and a page never ends inside
 one: the server reads each run to the row that breaks it, so the oldest run's
@@ -489,9 +528,12 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 {"error": {"code": "internal", "message": "…"}}
 ```
 
-A stream also ends cleanly, with no error frame, when the server shuts down:
+A stream also ends cleanly, with no error frame, when the server shuts down,
+and when the roles of the person its token acts for change, since it reads
+through the view those roles built
+([0295](decisions/0295-a-persons-token-is-held-to-that-persons-roles.md)):
 every row it sent is a row the client holds, so the client resumes with the
-`from` and `generation` it last read. A client that leaves a frame unread for
+`from` and `generation` it last read, on a view of the roles held now. A client that leaves a frame unread for
 60 seconds is disconnected.
 
 The changelog has a **horizon**: the oldest seq still resumable. Requesting `from=`
@@ -503,9 +545,15 @@ or resumes after a restore, is told plainly instead of silently missing rows,
 and its handler is one it **must** have: re-list, then resume the watch from
 the head and generation the response names. The horizon is reported in
 [API discovery](api.md#discovery), and it is
-**0 today**: nothing prunes or compacts the changelog, so replaying any consumer from
-any seq, zero included, is possible. Retention is a deployment **policy**, not
-a wire guarantee: the wire promises gapless resume from any seq at or above the
+**0 today**. A compaction replaces a record's entries with its state entry
+(but a record a package ships, whose entries it leaves for now, [decision
+0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md))
+and leaves the horizon where it was: several changes arriving as one is
+harmless, because a client fetches the record either way, so a consumer
+resumed from any seq, zero included, still meets every record that changed
+after it. What moves the horizon is forgetting a deletion, which no release
+does yet. Retention is a deployment **policy**, not a wire guarantee: the
+wire promises a resume that misses no record from any seq at or above the
 horizon, and the horizon is where policy lives.
 
 ## Who consumes it
@@ -519,8 +567,8 @@ horizon, and the horizon is where policy lives.
   terminal ([substratectl](substratectl.md)). Providers reconcile from it.
 - **The console's History page** is the same feed, paged backward through
   history and filtered ([web console](console.md#history)).
-- **`rebuild`** replays it from the segment files, which is what makes the
-  fold disposable and the repository directory the thing you back up
+- **`rebuild`** replays it from the table, which is what makes the fold
+  disposable; the archive is its copy, and the thing a restore reads
   ([running a substrate](operations.md#backups)).
 
 The to-do list, its GitHub feed, and anything you build next are all consumers

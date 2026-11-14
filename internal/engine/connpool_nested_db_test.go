@@ -102,7 +102,7 @@ func TestNoPathTakesASecondConnectionWhileHoldingOne(t *testing.T) {
 		t.Cleanup(func() { _ = raw.Close() })
 		if _, err := raw.ExecContext(ctx,
 			`UPDATE records SET props = props || '{"quarantined": "true", "quarantineReason": "test"}'::jsonb
-			 WHERE kind = 'substrate.reamde.dev/core/package' AND id = $1`, pkg); err != nil {
+			 WHERE kind = 'substrate.reamde.dev/core/package' AND id = $1`, vocabulary.LocalizeRef(pkg, home)); err != nil {
 			t.Fatalf("mark the copy quarantined: %v", err)
 		}
 		statuses, err := ds.BundleStatuses(ctx)
@@ -110,7 +110,7 @@ func TestNoPathTakesASecondConnectionWhileHoldingOne(t *testing.T) {
 			t.Fatalf("bundle statuses on one connection: %v", err)
 		}
 		for _, st := range statuses {
-			if st.ID == pkg && st.Quarantined && st.Origin == "samples.example.com/tools" {
+			if st.ID == vocabulary.LocalizeRef(pkg, home) && st.Quarantined && st.Origin == "samples.example.com/tools" {
 				return
 			}
 		}

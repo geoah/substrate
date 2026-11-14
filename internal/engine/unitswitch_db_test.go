@@ -78,7 +78,7 @@ def main(input, host):
 	switchedUnits(t, ds)
 	call := func() map[string]any {
 		t.Helper()
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, fnPackage+"/convert", map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, fnPackage+"/convert", map[string]any{})
 		if err != nil {
 			t.Fatalf("call: %v", err)
 		}
@@ -117,7 +117,6 @@ func TestChangeRequestQuantitiesResolveThroughTheGraph(t *testing.T) {
 		Name: "cargo", Authority: cargoPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(cargoPackage, 0),
-			vocabulary.ActorManifest(cargoPackage, vocabulary.PackageActor(cargoPackage)),
 			vocabulary.KindManifest(cargoPackage, map[string]any{"singular": "crate"}, map[string]any{
 				"properties": map[string]any{
 					"name": map[string]any{"type": "string"},

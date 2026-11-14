@@ -25,7 +25,7 @@ func (s *service) ReindexObserved(ctx context.Context, repository string) (Reind
 	if s.readOnly {
 		return ReindexReport{}, ErrDirectoryReadOnly
 	}
-	repo, err := s.repositoryByID(ctx, repository)
+	repo, err := s.repositoryByKey(ctx, repository)
 	if err != nil {
 		return ReindexReport{}, err
 	}

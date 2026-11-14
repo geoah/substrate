@@ -78,7 +78,7 @@ func TestKindMoveIsRefusedAtTheApplyDoor(t *testing.T) {
 	if err == nil {
 		t.Fatal("the apply door must refuse a move, not perform one")
 	}
-	if !strings.Contains(err.Error(), "movedFrom is honored for the shipped vocabulary only") {
+	if !strings.Contains(err.Error(), "a kind is renamed only by the packages this server ships") {
 		t.Fatalf("the refusal does not name the reason: %v", err)
 	}
 	// The row is where it was, and the destination kind did not land either:
@@ -108,7 +108,7 @@ func TestKindMovePreviewBlocksAtTheApplyDoor(t *testing.T) {
 		t.Fatalf("preview: %v", err)
 	}
 	if len(plan.Blockers) == 0 ||
-		!strings.Contains(strings.Join(plan.Blockers, "; "), "movedFrom is honored for the shipped vocabulary only") {
+		!strings.Contains(strings.Join(plan.Blockers, "; "), "a kind is renamed only by the packages this server ships") {
 		t.Fatalf("the preview does not block the move: %q", plan.Blockers)
 	}
 	for _, step := range plan.ConversionPlan.Steps {

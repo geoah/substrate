@@ -155,7 +155,7 @@ export function SourcesSection({
   if (!links) {
     const others = [
       ...new Set(
-        Object.values(record.propertyMeta ?? {})
+        Object.values(record.marks ?? {})
           .map(holderOf)
           .filter((h) => h && h.mark !== "you")
           .map((h) => h!.label)

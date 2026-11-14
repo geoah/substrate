@@ -68,3 +68,56 @@ func TestPublishCheckRequiresConsentToNarrow(t *testing.T) {
 	}
 	h.mustRun(append(args, "--allow-narrowing")...)
 }
+
+// A published kind stays: a candidate that drops one is refused whatever
+// --allow-narrowing says, and so is one that drops a kind an older version
+// published, though the newest already lacks it. Declaring a new kind beside
+// a removed one is no rename the movedFrom check would catch (decision 0269).
+func TestPublishCheckRefusesARemovedKind(t *testing.T) {
+	h := newHarness(t)
+	release := func(version int, kinds ...string) []byte {
+		body := fmt.Sprintf("kind: substrate.reamde.dev/core/package\nmetadata:\n  id: example.com/notes\ndata:\n  authority: example.com\n  package: notes\n  version: %d\n---\nkind: substrate.reamde.dev/core/bundle\nmetadata:\n  id: example.com/notes\ndata:\n  authority: example.com\n  package: notes\n  installs: [", version)
+		for i, k := range kinds {
+			if i > 0 {
+				body += ", "
+			}
+			body += "example.com/notes/" + k
+		}
+		body += "]\n"
+		for _, k := range kinds {
+			body += fmt.Sprintf("---\nkind: substrate.reamde.dev/core/kind\nmetadata:\n  id: example.com/notes/%[1]s\ndata:\n  authority: example.com\n  package: notes\n  names:\n    singular: %[1]s\n  properties:\n    name:\n      type: string\n", k)
+		}
+		return []byte(body)
+	}
+	check := func(t *testing.T, published map[int][]byte, candidate []byte, version int, want string) {
+		t.Helper()
+		dir := t.TempDir()
+		var entries []string
+		for v, body := range published {
+			name := fmt.Sprintf("v%d.yaml", v)
+			sum := sha256.Sum256(body)
+			entries = append(entries, fmt.Sprintf(`{"version":%d,"closure":%q,"sha256":"%s"}`, v, name, hex.EncodeToString(sum[:])))
+			if err := os.WriteFile(filepath.Join(dir, name), body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		doc := `{"authority":"example.com","packages":[{"package":"notes","versions":[` + strings.Join(entries, ",") + `]}]}`
+		for name, body := range map[string][]byte{"candidate.yaml": candidate, "authority.json": []byte(doc)} {
+			if err := os.WriteFile(filepath.Join(dir, name), body, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, _, err := h.run("publish", "example.com/notes", "--check", "--allow-narrowing", "--file", filepath.Join(dir, "candidate.yaml"),
+			"--version", fmt.Sprint(version), "--closure", "candidate.yaml", "--document", filepath.Join(dir, "authority.json"))
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("publish --check --allow-narrowing = %v, want a refusal naming %q", err, want)
+		}
+	}
+	t.Run("from the newest release", func(t *testing.T) {
+		check(t, map[int][]byte{1: release(1, "note")}, release(2, "memo"), 2, "removes example.com/notes/note, which version 1 published")
+	})
+	t.Run("from an older release the newest already dropped", func(t *testing.T) {
+		check(t, map[int][]byte{1: release(1, "note"), 2: release(2, "note", "memo"), 3: release(3, "memo")},
+			release(4, "memo"), 4, "removes example.com/notes/note, which version")
+	})
+}

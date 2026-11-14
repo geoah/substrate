@@ -21,14 +21,14 @@ func provisionShop(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	product, note := shopPackage+"/product", shopPackage+"/note"
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "cataloguellm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-cataloguellm"},
 	}); err != nil {
 		t.Fatalf("put the provider row: %v", err)
 	}
 	query := []any{map[string]any{"function": vocabulary.HostFunctionQuery}}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(shopPackage, 1),
 		vocabulary.KindManifest(shopPackage, map[string]any{"singular": "product"}, map[string]any{
 			"description":     "A thing the shop sells. Synced nightly.",
@@ -69,7 +69,7 @@ func provisionShop(t *testing.T) (*dataset, *fakeLLM) {
 		{Kind: product, ID: fid("cup"), Properties: map[string]any{"name": "Tajimi cup"}},
 		{Kind: note, ID: fid("said"), Properties: map[string]any{"text": "the user asked about the tajimi cup"}},
 	} {
-		if _, err := ds.Put(ctx, substrate.ActorAPI, in); err != nil {
+		if _, err := ds.Put(ctx, substrate.ActorPerson, in); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -191,7 +191,7 @@ func TestDirectQueryCallKeepsItsSearchDefaults(t *testing.T) {
 		for k, v := range extra {
 			args[k] = v
 		}
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, vocabulary.HostFunctionQuery, args)
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, vocabulary.HostFunctionQuery, args)
 		if err != nil {
 			t.Fatalf("search %v: %v", extra, err)
 		}

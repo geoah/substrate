@@ -25,7 +25,7 @@ func provisionOfferedTools(t *testing.T) (*dataset, *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: typeProvider, ID: "offerllm",
 		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-offerllm"},
 	}); err != nil {
@@ -50,7 +50,7 @@ def main(input, host):
 		return vocabulary.FunctionManifest(pkg, name, data)
 	}
 	agents := map[string]any{"agents": true}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(offersPackage, 0),
 		vocabulary.BundleManifest(offersPackage, map[string]any{
 			"description": "a bundle offering functions",
@@ -80,7 +80,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install the offering bundle: %v", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(otherPackage, 0),
 		vocabulary.BundleManifest(otherPackage, map[string]any{
 			"description": "a second bundle offering one function",
@@ -90,7 +90,7 @@ def main(input, host):
 	}); err != nil {
 		t.Fatalf("install the second bundle: %v", err)
 	}
-	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(askerPackage, 0),
 		vocabulary.AgentManifest(askerPackage, "asst", map[string]any{
 			"description": "takes offered functions", "prompt": "You assist.",

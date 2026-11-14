@@ -89,7 +89,7 @@ const SPECS = new Map<string, PropSpec>([
   ["temperature", spec("temperature", "quantity")],
   ["readings", spec("readings", "quantity", { repeated: true })],
   ["originDigest", spec("originDigest", "string", { managed: true })],
-  ["syncToken", spec("syncToken", "string", { writer: "connector" })],
+  ["syncToken", spec("syncToken", "string", { writer: ["function", "agent"] })],
 ])
 
 function show(moves: ValueMove[], technical = false) {

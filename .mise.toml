@@ -8,7 +8,7 @@ min_version = { soft = "2026.9.2" }
 # Held to every golang stage in the Dockerfile and to go.mod's `go` and
 # `toolchain` lines by `lint:toolchain`: GOTOOLCHAIN=auto would otherwise let
 # a raised go.mod line download a Go no pin names, in CI and in a release.
-go = "1.27.3"
+go = "1.27.4"
 # Held to the Dockerfile's web stage by `lint:toolchain`, exactly: this is the
 # node the console is TESTED on, so it is the node the image builds it on.
 node = "26.12.1"
@@ -179,7 +179,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 #
 # -timeout 45m: Go's default of 10m has killed the engine suite on a slow CI
 # runner with no test failing. It was 30m before internal/providere2e joined.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 45m -skip '^TestLive' ./internal/engine/... ./internal/api/... ./internal/catalog/... ./internal/providere2e/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/... ./cmd/substrated/..."
 
 # `test:db` cut in two for the runner. The engine package is most of the
 # suite's time, so CI runs it as parallel shards and every other database
@@ -200,10 +200,10 @@ description = "The engine suite alone, or one shard of it: SHARD and SHARDS from
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."test:db:rest"]
-description = "Every database package but the engine and the provider suite: catalog, providertest, testenv"
+description = "Every database package but the engine and the provider suite: api, catalog, providertest, testenv, the operator's commands in cmd/substratectl, and substrated"
 # -p 1 for the same reason `test:db` has it: one binary at a time against one
 # server, so no two race on CREATE EXTENSION.
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/catalog/... ./internal/providertest/... ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' ./internal/api/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/... ./cmd/substrated/..."
 
 [tasks."test:db:providers"]
 description = "The provider suite: seven of the eight closures synced end to end against a substrated the test starts, over recorded upstreams; Apple Health, a webhook receiver, is in providertest"
@@ -248,7 +248,7 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # The database half takes the machine-wide slot, as `test:db` does.
 run = [
   "go test -count=1 -short -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.short.out ./...",
-  ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/...",
+  ".mise/dblock.sh go test -count=1 -p 1 -timeout 30m -skip '^TestLive' -covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=coverage.db.out ./internal/engine/... ./internal/api/... ./internal/catalog/... ./internal/providertest/... ./internal/testenv/... ./cmd/substratectl/... ./cmd/substrated/...",
   """
     .mise/covermerge.sh coverage.out coverage.short.out coverage.db.out
     rm -f coverage.short.out coverage.db.out
@@ -552,11 +552,25 @@ description = "Refuse a kinds/ or samples/ change that skips a version bump, or 
 run = ".mise/kindscheck.sh"
 
 # `frozen:check` is the same shape as `kinds:check` and not in `lint` for the
-# same reason: it reads the diff. What it holds is the pair of things this tree
-# writes once, a landed migration and an accepted decision record.
+# same reason: it reads the diff. What it holds is what this tree writes once:
+# a landed migration or conversion step, a kept directory and an accepted
+# decision record.
 [tasks."frozen:check"]
-description = "Refuse an edit to a landed migration or an accepted decision record"
+description = "Refuse an edit to a landed migration, a conversion step, a kept directory or an accepted decision record"
 run = ".mise/frozencheck.sh"
+
+# The third of that shape: a discovery feature's revision against the base
+# branch's, which the golden in the tree cannot hold because a branch rewrites
+# it (decision 0256).
+[tasks."features:check"]
+description = "Refuse a discovery feature whose routes changed under an unchanged revision, or whose revision went down"
+run = ".mise/featurescheck.sh"
+
+# The same against the base branch for the vocabulary dialect: a declaration
+# key that changed under an unchanged vocabulary.Dialect (decision 0268).
+[tasks."dialect:check"]
+description = "Refuse a declaration key set that changed under an unchanged vocabulary dialect, or a dialect that went down"
+run = ".mise/dialectcheck.sh"
 
 # Not in `lint` either: it reads the OTHER branches on origin, so its answer
 # depends on what has been pushed. lint:docs refuses two records with one
@@ -566,7 +580,7 @@ run = ".mise/frozencheck.sh"
 description = "Refuse a decision record whose number main or another branch already took"
 run = ".mise/decisionscheck.sh"
 
-# The fourth diff guard, and the one the `pr` workflow runs rather than `lint`:
+# The fifth diff guard, and the one the `pr` workflow runs rather than `lint`:
 # it reads the PR title as well as the branch, and the title can change
 # without a push. Every commit subject is held, not only the title, because
 # main takes rebase merges too and a rebase lands each commit as it is.
@@ -1191,6 +1205,16 @@ run = "goreleaser check"
 description = "Full release dry run: builds everything, publishes nothing"
 run = "goreleaser release --snapshot --clean --skip=publish"
 
+[tasks."release:keep"]
+description = "Keep a released tag's repository directory and the records it served under internal/testenv/testdata/kept/<tag>"
+# Run once per release, after the tag exists (docs/releasing.md): it builds
+# the tag, not the tree, runs it in Linux against a throwaway Postgres and
+# drives it through every sort of change the stored format holds. About six
+# minutes, most of it the release's GC sweep. TestKeptDirectories imports
+# every directory kept here under the current code (docs/stored-format.md).
+usage = 'arg "<tag>" help="The release tag, vX.Y.Z"'
+run = '.mise/keptdir.sh "$usage_tag"'
+
 [tasks."repo:settings"]
 description = "Apply .github/rulesets/main.json and the merge buttons to the GitHub repository (admin only; --dry-run prints)"
 # By hand, never from CI: a token that can rewrite the ruleset can lift it.
@@ -1227,10 +1251,12 @@ description = "CI job `lint`: every linter and formatter check but Go's and the 
 # checks, which no CI job runs since none installs their toolchains, and
 # `lint:ci` holds that, so a linter added to `lint` and to no job fails
 # there.
-# The three diff guards ride here because they need a base branch and `lint`
+# The four diff guards ride here because they need a base branch and `lint`
 # does not have one: `kinds:check` holds a changed declaration to a version
 # bump and a new kind's name to docs/terms.md and its family, `frozen:check`
-# holds the files this tree writes once, and
+# holds the files this tree writes once, `features:check` holds a discovery
+# feature's revision to the base branch's, `dialect:check` the vocabulary
+# dialect to the base branch's, and
 # `decisions:check` holds a decision number against the other branches.
 depends = [
   "fmt:yaml:check",
@@ -1246,6 +1272,8 @@ depends = [
   "release:check",
   "kinds:check",
   "frozen:check",
+  "features:check",
+  "dialect:check",
   "decisions:check",
 ]
 
@@ -1286,6 +1314,15 @@ description = "CI job `go test`: the short suite, no database"
 env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
 run = "mise run test:short"
 
+[tasks."ci:db:api"]
+description = "CI job `db api k/n`: one shard of internal/api against the database, SHARD and SHARDS from the environment"
+# The API's tests of engine behavior run the handler on the real engine
+# (decision 0263), one database per test, so the package is cut the way
+# catalog is. A shard also runs its slice of the package's tests of the
+# handler alone, which `go test` runs too: they take milliseconds.
+env = { PKG = "internal/api", SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
+run = ".mise/dblock.sh .mise/dbshard.sh"
+
 [tasks."ci:db:catalog"]
 description = "CI job `db catalog k/n`: one shard of internal/catalog against the database, SHARD and SHARDS from the environment"
 # The second-slowest database package, so it is sharded the way the engine is.
@@ -1305,11 +1342,11 @@ env = { PKG = "internal/providertest", SUBSTRATE_REQUIRE_PROVIDER_SUITES = "1", 
 run = ".mise/dblock.sh .mise/dbshard.sh"
 
 [tasks."ci:db:rest"]
-description = "CI job `db rest`: testenv against the database, without the acceptance drill"
+description = "CI job `db rest`: testenv, the operator's commands and substrated's loops against the database, without the acceptance drill"
 # The acceptance drill is one serial scenario longer than this job's budget,
 # so it is `ci:drill`.
 env = { SUBSTRATE_TEST_COVERPROFILE = "coverage.part.out" }
-run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ${SUBSTRATE_TEST_COVERPROFILE:+-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=$SUBSTRATE_TEST_COVERPROFILE} ./internal/testenv/..."
+run = ".mise/dblock.sh go test -count=1 -p 1 -timeout 12m -skip '^TestLive|^TestReleaseAcceptanceDrill$' ${SUBSTRATE_TEST_COVERPROFILE:+-covermode=atomic -coverpkg=github.com/geoah/substrate/... -coverprofile=$SUBSTRATE_TEST_COVERPROFILE} ./internal/testenv/... ./cmd/substratectl/... ./cmd/substrated/..."
 
 [tasks."ci:drill"]
 description = "CI job `acceptance drill`: internal/testenv's release acceptance drill, alone"

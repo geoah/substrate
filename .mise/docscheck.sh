@@ -277,15 +277,29 @@ if grep_docs -rnE '/incoming\b|trait/\{id\}/records'; then
   flag "a page prints a removed route; the reverse read is filter.referencing and a trait's records are filter.implements (decision 0079)"
 fi
 
-# --- the stability the supported REST features reached ------------------
+# --- the stability labels -----------------------------------------------
 #
-# Every feature of the supported REST surface reports `stable` since the
-# release's wire changes landed (decision 0053 scheduled the flip); `agents`
-# and `embeddings` stay alpha and `search` beta. The phrasings that said
-# nothing was stable are grepped for, because each is a claim discovery now
-# contradicts.
+# docs/stability.md is the policy, and the labels are read off the server: a
+# feature's from discovery, a package's from its header. Two kinds of
+# sentence contradict them and are grepped for.
+#
+# The first says nothing is stable. `records`, `changefeed`, `triggers` and
+# the other settled features report `stable`, and the `core` package states
+# it, so each of those phrasings is a claim the server contradicts.
+#
+# The second calls something `alpha`. The three labels are `stable`, `beta`
+# and `experimental`; `alpha` was the third one's name, and a client that
+# compares a label with it matches nothing. The word is matched whole, in any
+# case, with no exception: nothing in `files` uses it in another sense. The
+# two other senses in the tree are outside `files` (the `[ALPHA]` tags the
+# Linear provider's bundle quotes from upstream, and the console's
+# navigation stage in web/console), and a page that has to name either says
+# what it is in other words. `alphabet` is not the word.
 if grep_docs -rniE 'nothing reports .stable|no (discovery )?feature reports .?stable|every other feature[a-z ]* reports .beta'; then
-  flag "a page says no feature is stable; the supported REST features report stable (decision 0053)"
+  flag "a page says no feature is stable; discovery lists the stable features (docs/stability.md)"
+fi
+if grep_docs -rniE '\balpha\b'; then
+  flag "a page calls something alpha; the three stability labels are stable, beta and experimental (docs/stability.md)"
 fi
 
 # --- the task names the pages tell people to run ------------------------
@@ -490,7 +504,7 @@ grep_urls() {
 # `<authority>/<package>/<kind>`. Matching it straight after the authority
 # would now fire on every package whose name is a plural word (`tasks`,
 # `people`, `notes`), which is what a package is called.
-shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|interactions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|providers|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
+shipped_plurals='accounts|actors|agents|authorities|blobs|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|functions|interactions|issues|kinds|llminteractions|llmmessages|llmproviders|llmthreads|messages|notes|organizations|pages|people|projects|propertytypes|providers|pullrequests|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|repositories|rooms|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workouts'
 if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/[a-z][a-z0-9]*/(${shipped_plurals})\b"; then
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi

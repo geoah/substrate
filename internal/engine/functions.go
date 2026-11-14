@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -248,6 +249,9 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 	// what drains the spool the last process left.
 	ds.kickSpoolDrain()
 	ds.resumeWebhooks()
+	// The temporary failures whose retry is due, detached for the same
+	// reason (temporaryretry.go).
+	ds.retryTemporaryFailures()
 	// The agent deliveries the last stop interrupted, rerun once at the
 	// open's first pass. Detached for the same reason as the resume
 	// (agents.go rerunInterruptedAgentRuns).
@@ -276,7 +280,7 @@ func (ds *dataset) ProcessTriggers(ctx context.Context) (int, error) {
 		defer func() {
 			if r := recover(); r != nil {
 				ds.svc.log.Error("substrate: the schedule lane panicked and was contained; this pass fires no more schedules",
-					"repository", ds.Repository().ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+					"repository", ds.info.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 				res.errs = append(res.errs, fmt.Errorf("schedule lane panicked: %v", r))
 			}
 			scheduled <- res
@@ -350,7 +354,7 @@ func (ds *dataset) passRecordTrigger(ctx context.Context, tr *trigger, pass *pas
 	defer func() {
 		if r := recover(); r != nil {
 			ds.svc.log.Error("substrate: a record trigger's delivery panicked and was contained; the pass goes on to the next trigger",
-				"repository", ds.Repository().ID, "trigger", tr.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+				"repository", ds.info.ID, "trigger", tr.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 			ran, err = 0, fmt.Errorf("delivery panicked: %v", r)
 		}
 	}()
@@ -570,7 +574,7 @@ func (ds *dataset) scheduleLane(ctx context.Context, pass *passStart, first []lo
 					mu.Lock()
 					if r != nil {
 						ds.svc.log.Error("substrate: a schedule fire panicked and was contained; this pass fires the trigger no more",
-							"repository", ds.Repository().ID, "trigger", lt.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+							"repository", ds.info.ID, "trigger", lt.ID, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 						fired[lt.ID] = scheduleDrainPerPass
 						fail(lt.ID, fmt.Errorf("schedule fire panicked: %v", r))
 					}
@@ -792,14 +796,15 @@ func (ds *dataset) processRecordTrigger(ctx context.Context, tr *trigger, deadli
 // is by the CALLABLE's actor — a callable never sees its own writes,
 // whatever trigger delivers them, by the run type, since every delivery
 // writes a run row and a `*` subscription over runs would feed itself, and by
-// the delivery entry, which is the ledger's own bookkeeping (delivery.go).
+// the delivery entry, which is the ledger's own bookkeeping (delivery.go),
+// and by what a kind move writes (movedLine).
 // (An agent's thread/message rows carry the agent's actor, so the same
 // exclusion keeps an agent off its own transcript.) A function's self also
 // covers the agents it may run (trigger.selfActors).
-func matchChanges(tr *trigger, self map[substrate.Actor]bool, changes []substrate.Change) []substrate.Change {
+func matchChanges(tr *trigger, self map[string]bool, changes []substrate.Change) []substrate.Change {
 	var out []substrate.Change
 	for _, ch := range changes {
-		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery {
+		if self[ch.Actor] || ch.Kind == typeTriggerRun || ch.Op == substrate.OpDelivery || movedLine(ch) {
 			continue
 		}
 		if !tr.Record.matches(ch.Kind, runner.OpOf(ch)) {
@@ -808,6 +813,27 @@ func matchChanges(tr *trigger, self map[substrate.Actor]bool, changes []substrat
 		out = append(out, ch)
 	}
 	return out
+}
+
+// movedLine reports whether ch is a line a kind move writes (move.go), which
+// no trigger delivers, whatever its source (decision record 0298): the put
+// of a record it carries under the kind it arrives at (`movedFrom`), the
+// tombstone under the kind it leaves (`movedTo`), and a line that only moves
+// the names a record holds to where they now point (`repointed`). Each is
+// the same record saying the same thing, so none is a creation, an update
+// or a deletion to anything that reacts to one. A repoint's line that holds
+// its record's state entry (compact.go) stands for the record's history,
+// creation included where the state says so, and is delivered as the state.
+func movedLine(ch substrate.Change) bool {
+	if ch.Payload["movedFrom"] != nil || ch.Payload["movedTo"] != nil {
+		return true
+	}
+	if ch.Payload["repointed"] == nil {
+		return false
+	}
+	return !slices.ContainsFunc(ch.Affected, func(a substrate.AffectedRecord) bool {
+		return a.State && a.Kind == ch.Kind && a.ID == ch.RecordID
+	})
 }
 
 // coalesceChanges keeps the LAST pending change per record, in seq order:
@@ -949,11 +975,13 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 		lastErr = err
 		// A deterministic trip — a read or call outside the allowlist, a
 		// blown budget — reproduces on every retry, so it parks immediately
-		// (the errCausalDepth precedent). A timeout is not deterministic
-		// (db load) and rides the attempts. A paged drain that already
+		// (the errCausalDepth precedent). A temporary failure, a timeout
+		// among them, parks now too: the walk of temporary failures retries
+		// it over minutes (temporaryretry.go), where a retry here would
+		// meet the same outage. A paged drain that already
 		// committed pages (errPagedParked) also parks now: re-running it would
 		// only resume the same chain, so leave it to the parked-failure retry.
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
+		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errAgentThreadOpened) {
 			attempts = attempt + 1
 			break
 		}
@@ -1037,6 +1065,11 @@ type settlement struct {
 	// started is when the dispatch began the delivery; zero on a retry,
 	// which measures from its own start.
 	started time.Time
+	// unattended is the walk's automatic retry of a temporary failure
+	// (temporaryretry.go): the delivery runs its callable only where no
+	// person needs to see it first (autoRetryable), checked against the one
+	// it is about to run.
+	unattended bool
 	// sync is the delivery's hand on a `sync`-trait record (sync.go): set
 	// by deliver once the guard passed on a record whose kind binds the
 	// trait, nil for every other delivery.
@@ -1049,7 +1082,8 @@ type settlement struct {
 	callable string
 	// supersedes is the occurrence a schedule fire delivers, dispatched or
 	// retried, zero on every other delivery: once it settles, the trigger's
-	// parked fires at or before it retire with it (retireSupersededFires).
+	// parked fires at or before it retire with it, unless the trigger states
+	// `missed: all` when it commits (retireSupersededFires).
 	supersedes time.Time
 	// superseded is the parked fires this settlement holds in runningClaims
 	// while it retires them; release gives them back.
@@ -1280,7 +1314,10 @@ func (s *settlement) release() {
 
 // retireSupersededFires retires, once a schedule occurrence settles, every
 // parked fire of the same trigger at or before that occurrence (decision
-// 0142). A schedule fire carries nothing a later one does not carry again,
+// 0142), for a trigger that owes the latest occurrence alone; one that
+// states `missed: all` retires only the settled occurrence's own older parks
+// (scheduleOwesAll). A schedule fire
+// carries nothing a later one does not carry again,
 // so a retry of the parked fire repeats work the settled one did: a
 // provider's scheduled sync drains whatever is due when it runs. The rows
 // are DELETED through the unpark fold a delivered retry writes, on the
@@ -1305,6 +1342,26 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 	if s.supersedes.IsZero() {
 		return 0, nil
 	}
+	// The trigger's `missed` decides, as it stands when this settlement
+	// commits and not as the run that settles loaded it: an owner may change
+	// it while the body runs. It is read under the changelog lock, which
+	// every write takes to append, so an edit committed before the read is
+	// seen and one after waits for this transaction: a repository's writes
+	// are one after another, and that order is the whole of it.
+	if err := t.lockChangelog(); err != nil {
+		return 0, err
+	}
+	owesAll, err := t.scheduleOwesAll(s.trigger)
+	if err != nil {
+		return 0, err
+	}
+	// Under `all` the settled occurrence retires its own older parks alone
+	// (a restore or a fire state moved back can leave one), never another
+	// occurrence's.
+	bound := `fire_id COLLATE "C" <= $8`
+	if owesAll {
+		bound = `fire_id COLLATE "C" = $8`
+	}
 	// Held elsewhere: every id in runningClaims but the ones this settlement
 	// took on an attempt that rolled back.
 	held := []int64{}
@@ -1324,7 +1381,7 @@ func (s *settlement) retireSupersededFires(t *txn) (int, error) {
 		SELECT id FROM trigger_failures
 		WHERE trigger_id = $1 AND payload IS NULL AND last_error NOT IN ($2, $3, $4, $5, $6, $7)
 		  AND fire_id ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
-		  AND fire_id COLLATE "C" <= $8
+		  AND `+bound+`
 		  AND id NOT IN (SELECT jsonb_array_elements_text($9::jsonb)::bigint)
 		ORDER BY id LIMIT $10`,
 		s.trigger, pendingWebhookError, inFlightError, legacyInFlightError, interruptedAgentError,
@@ -1558,6 +1615,11 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 	if err := ds.refreshCallable(tr); err != nil {
 		return res, err
 	}
+	// An unattended retry runs this callable, the one just resolved, and
+	// nothing resolves it again before it runs.
+	if settle != nil && settle.unattended && !autoRetryable(tr) {
+		return res, errNotUnattended
+	}
 	envelope, err := ds.deliveryEnvelope(ctx, ch)
 	if err != nil {
 		return res, err
@@ -1720,9 +1782,10 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 				return err
 			}
 		}
+		text, parkedAt, waiting := ds.parkedError(tr, cause, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
 			ID: foldInt(id), Seq: foldInt(ch.Seq), RecordID: ch.RecordID,
-			Attempts: foldInt(attempts), LastError: cause.Error(), ParkedAt: t.now,
+			Attempts: foldInt(attempts), LastError: text, ParkedAt: parkedAt,
 		}); err != nil {
 			return err
 		}
@@ -1745,8 +1808,12 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 		}); err != nil {
 			return err
 		}
-		if err := t.raiseParkedAlert(tr, vocabulary.RecordPath(ch.Kind, ch.RecordID), cause); err != nil {
-			return err
+		// A failure the walk retries needs no person yet: the alert waits
+		// for the retries to run out.
+		if !waiting {
+			if err := t.raiseParkedAlert(tr, vocabulary.RecordPath(ch.Kind, ch.RecordID), cause); err != nil {
+				return err
+			}
 		}
 		// The park and the record's `erroring` commit together, so a reader
 		// never meets a parked delivery whose record still says `running`.
@@ -1816,7 +1883,7 @@ func (ds *dataset) skipClaimed(ctx context.Context, s *settlement, run runRecord
 // the pass began is not fired again.
 func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger, deadline passDeadline, limit int, pass *passStart) (ran, fired int, err error) {
 	if at, known := pass.firedAt(lt.ID); known {
-		owes, err := ds.owesAfter(lt.ID, lt.Schedule, lt.CreatedAt, at, nowUTC())
+		owes, err := ds.owesAfter(lt.ID, lt.Schedule, lt.CreatedAt, at, ds.scheduleNow())
 		if err != nil || !owes {
 			return 0, 0, err
 		}
@@ -1825,7 +1892,7 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 	if err != nil {
 		return 0, 0, err
 	}
-	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), limit)
+	due, err := ds.scheduleDue(ctx, lt, lastFire, limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1881,6 +1948,27 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger,
 		lastFire = at
 	}
 	return ran, fired, nil
+}
+
+// scheduleDue is what a pass fires of the trigger's occurrences after
+// lastFire: every due one, oldest first and at most limit, for a trigger
+// whose `missed` is `all`; the newest due one alone otherwise, the fire state
+// jumping over the ones before it (decision 0267).
+func (ds *dataset) scheduleDue(ctx context.Context, lt loadedTrigger, lastFire time.Time, limit int) ([]time.Time, error) {
+	if lt.Schedule.Missed == scheduleMissedAll {
+		return ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow(), limit)
+	}
+	// A walk still counting fires nothing: the newest it has counted is not
+	// yet the latest, and the next pass resumes the count.
+	latest, passed, ok, walking, err := ds.latestDue(ctx, lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow())
+	if err != nil || !ok || walking {
+		return nil, err
+	}
+	if passed > 0 {
+		ds.svc.log.Info("substrate: schedule fires the latest occurrence it missed and passes over the rest",
+			"repository", ds.info.ID, "trigger", lt.ID, "fire", fireID(latest), "passed", passed)
+	}
+	return []time.Time{latest}, nil
 }
 
 // scheduleLateAfter is how far past its occurrence a schedule fire may begin
@@ -2077,7 +2165,7 @@ func (ds *dataset) pruneActivity(triggers []loadedTrigger) {
 // delivery's acknowledgement, or the scan past rows that matched nothing.
 func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 	ds.svc.log.Debug("substrate: record trigger yielded: its cursor moved under this pass",
-		"repository", ds.Repository().ID, "trigger", triggerID, "swap", swap, "seq", seq)
+		"repository", ds.info.ID, "trigger", triggerID, "swap", swap, "seq", seq)
 }
 
 // logWalkHeld records a record trigger's walk that did not start because
@@ -2088,26 +2176,41 @@ func (ds *dataset) logYield(triggerID, swap string, seq int64) {
 func (ds *dataset) logWalkHeld(triggerID string, wake bool) {
 	if wake {
 		ds.svc.log.Info("substrate: trigger wake ran nothing: a walk of the trigger is in progress; it or a later pass delivers what the wake asked for",
-			"repository", ds.Repository().ID, "trigger", triggerID)
+			"repository", ds.info.ID, "trigger", triggerID)
 		return
 	}
 	ds.svc.log.Debug("substrate: record trigger skipped this pass: a wake walks it",
-		"repository", ds.Repository().ID, "trigger", triggerID)
+		"repository", ds.info.ID, "trigger", triggerID)
 }
 
 // logFireYield is logYield for a fire whose fire state moved under it: the
 // fire rolls back and settles nothing, without an error.
 func (ds *dataset) logFireYield(triggerID, swap, fid string) {
 	ds.svc.log.Debug("substrate: trigger fire yielded: its fire state moved under this delivery",
-		"repository", ds.Repository().ID, "trigger", triggerID, "swap", swap, "fire", fid)
+		"repository", ds.info.ID, "trigger", triggerID, "swap", swap, "fire", fid)
 }
 
 // owedFires counts a schedule trigger's occurrences that are due and not yet
 // settled or parked past: the ones this process is delivering now (inFlight)
 // and the rest (pending), which wait for a dispatcher pass to reach them.
 // At most scheduleOwedCap are counted.
-func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
-	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, nowUTC(), scheduleOwedCap)
+func (ds *dataset) owedFires(ctx context.Context, lt loadedTrigger, lastFire time.Time) (pending, inFlight int64, err error) {
+	if lt.Schedule.Missed != scheduleMissedAll {
+		// The next pass fires the latest due occurrence alone, but a fire
+		// this process started before a newer one fell due is still in flight
+		// until it settles, and it is no longer the latest. A walk still
+		// counting owes the latest it has not reached.
+		inFlight = ds.firingAfter(lt.ID, lastFire)
+		latest, _, ok, walking, err := ds.latestDue(ctx, lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow())
+		if err != nil {
+			return 0, 0, err
+		}
+		if ok && (walking || !ds.isFiring(lt.ID, fireID(latest))) {
+			pending = 1
+		}
+		return pending, inFlight, nil
+	}
+	due, err := ds.dueFires(lt.ID, lt.Schedule, lt.CreatedAt, lastFire, ds.scheduleNow(), scheduleOwedCap)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2119,6 +2222,27 @@ func (ds *dataset) owedFires(lt loadedTrigger, lastFire time.Time) (pending, inF
 		}
 	}
 	return pending, inFlight, nil
+}
+
+// firingAfter counts the schedule occurrences after lastFire this process is
+// delivering now for one trigger. An occurrence an agent fire claimed has
+// moved the fire state to it, so it is not after lastFire and is counted
+// where the claim is.
+func (ds *dataset) firingAfter(triggerID string, lastFire time.Time) int64 {
+	prefix := fireKey(triggerID, "")
+	ds.firingMu.Lock()
+	defer ds.firingMu.Unlock()
+	var n int64
+	for key, count := range ds.firing {
+		fid, ok := strings.CutPrefix(key, prefix)
+		if !ok || count <= 0 {
+			continue
+		}
+		if at, err := time.Parse(time.RFC3339, fid); err == nil && at.After(lastFire) {
+			n++
+		}
+	}
+	return n
 }
 
 // fireSettlement settles a dispatched fire: for a schedule occurrence the
@@ -2139,6 +2263,29 @@ func (ds *dataset) fireSettlement(tr *trigger, mode, fid string, at time.Time, l
 		s.supersedes = at.UTC()
 	}
 	return s
+}
+
+// scheduleNow is the time a schedule trigger's due occurrences are read at:
+// the wall clock, or a test's (WithTestScheduleClock).
+func (ds *dataset) scheduleNow() time.Time {
+	if ds.svc == nil || ds.svc.scheduleNow == nil {
+		return nowUTC()
+	}
+	return ds.svc.scheduleNow().UTC().Truncate(time.Microsecond)
+}
+
+// scheduleOwesAll reports whether the trigger, as its record stands in this
+// transaction, is a schedule that states `missed: all`: one whose every
+// occurrence is owed, so a settled occurrence retires none of its older
+// parks (decision 0267). A trigger that is gone owes nothing.
+func (t *txn) scheduleOwesAll(triggerID string) (bool, error) {
+	var missed sql.NullString
+	err := t.row(`SELECT props->'source'->'schedule'->>'missed' FROM records
+		WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`, typeTrigger, triggerID).Scan(&missed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return missed.String == scheduleMissedAll, err
 }
 
 // deliverFire runs one schedule occurrence or webhook fire through the
@@ -2174,6 +2321,14 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		if err := settle.acquire(settle.retire); err != nil {
 			return 0, false, err
 		}
+		// A request an app's token delivered acts for the token's person,
+		// whom its delivery line names (webhookBehalf): the run is held to
+		// their roles, read now, after a restart as before it.
+		held, err := ds.deliveryBehalf(ctx, settle.retire)
+		if err != nil {
+			return 0, false, err
+		}
+		ctx = held
 	}
 	// As in deliverWithRetry: a function body that ran an agent parks on
 	// its first failure after the thread opened (agentThreads).
@@ -2255,7 +2410,7 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			return 0, false, ctx.Err()
 		}
 		lastErr = err
-		if runner.Deterministic(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
+		if runner.Deterministic(err) || runner.Temporary(err) || errors.Is(err, errPagedParked) || errors.Is(err, errTriggerArguments) ||
 			errors.Is(err, errAgentThreadOpened) || errors.Is(err, errWebhookUnverified) || errors.Is(err, errAgentWebhookTooLarge) {
 			attempts = attempt + 1
 			break
@@ -2306,9 +2461,10 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 				return err
 			}
 		}
+		text, parkedAt, waiting := ds.parkedError(tr, lastErr, attempts, t.now)
 		if err := t.parkTx(tr.ID, foldFailure{
 			ID: foldInt(id), FireID: fid, Attempts: foldInt(attempts),
-			LastError: lastErr.Error(), ParkedAt: t.now, Payload: payload,
+			LastError: text, ParkedAt: parkedAt, Payload: payload,
 		}); err != nil {
 			return err
 		}
@@ -2332,6 +2488,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 			startedAt: started, errMsg: lastErr.Error(),
 		}); err != nil {
 			return err
+		}
+		if waiting {
+			return nil
 		}
 		return t.raiseParkedAlert(tr, "", lastErr)
 	})
@@ -2499,9 +2658,9 @@ type runRecord struct {
 	pages     int // committed pages for a paged (backfill) delivery; >1 only when the body paged
 	// A call run's audit (callrun.go): the door the call came through, the
 	// token behind it, and what it returned.
-	caller    substrate.Actor
-	principal string
-	output    *callOutput
+	caller substrate.Actor
+	token  string
+	output *callOutput
 }
 
 // putRun writes one run record inside the caller's transaction.
@@ -2532,10 +2691,10 @@ func (t *txn) putRun(r runRecord) error {
 		props["trigger"] = vocabulary.RecordPath(typeTrigger, r.trigger)
 	}
 	if r.caller != "" {
-		props["caller"] = string(r.caller)
+		props["caller"] = vocabulary.ActorRef(actorID(r.caller))
 	}
-	if r.principal != "" {
-		props["principal"] = r.principal
+	if r.token != "" {
+		props["token"] = r.token
 	}
 	if r.output != nil {
 		props["outputBytes"] = r.output.bytes
@@ -2577,9 +2736,12 @@ func (t *txn) putRun(r runRecord) error {
 // transaction carries it beside the effects it describes, so a crash cannot
 // commit effects with no completion recorded.
 func (t *txn) putSystemRun(r runRecord, prune bool) error {
-	prevInternal := t.internal
-	t.internal = true
-	defer func() { t.internal = prevInternal }()
+	// The run's own record, a named exemption from the one check (run.go),
+	// written by the engine's hand, which the managed properties and a
+	// system kind need.
+	prevInternal, prevExempt := t.internal, t.exempt
+	t.internal, t.exempt = true, exemptRunRecord
+	defer func() { t.internal, t.exempt = prevInternal, prevExempt }()
 	return t.asActor(substrate.ActorSystem, func() error {
 		if err := t.putRun(r); err != nil {
 			return err
@@ -3063,12 +3225,12 @@ func (ds *dataset) sweepPagedCursors(ctx context.Context) error {
 // recordChainKey is the paged-cursor key for a record-change delivery, and its
 // idempotency key: repository-qualified because per-repository changelog seqs collide.
 func (ds *dataset) recordChainKey(triggerID string, seq int64) string {
-	return fmt.Sprintf("%s/%s/%d", ds.Repository().ID, triggerID, seq)
+	return fmt.Sprintf("%s/%s/%d", ds.info.ID, triggerID, seq)
 }
 
 // fireChainKey is the paged-cursor key for a schedule or webhook fire delivery.
 func (ds *dataset) fireChainKey(triggerID, fireID string) string {
-	return fmt.Sprintf("%s/%s/%s", ds.Repository().ID, triggerID, fireID)
+	return fmt.Sprintf("%s/%s/%s", ds.info.ID, triggerID, fireID)
 }
 
 // --- cursors ---------------------------------------------------------------
@@ -3273,9 +3435,8 @@ func triggerRead(kinds []string, after, head int64) (string, []any) {
 // whole changelog. A package or authority glob matches against the kinds the
 // changelog holds, read at the moment of the batch, so a kind whose first
 // entry landed mid-drain is still read; the globs are matched in Go
-// (vocabulary.MatchTypeGlob, the matcher matchChanges uses) rather than as a
-// range in SQL, because a prefix is a contiguous range only under the C
-// collation and the column carries the database's.
+// (vocabulary.MatchTypeGlob, the matcher matchChanges uses), so the dispatcher
+// and the change feed agree on what a glob covers.
 func (ds *dataset) sourceKinds(ctx context.Context, pats []string) (kinds []string, every bool, err error) {
 	// Each kind is named once: triggerRead reads one branch per kind, so a
 	// kind named twice (listed twice, or exact and under a glob) would
@@ -3464,13 +3625,13 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			// dispatcher skips (disabled, unparseable, unresolvable) owes
 			// none it is going to run, and its Error or Enabled says why.
 			if st.LastFire != nil && lt.Enabled && st.Error == "" {
-				if owedPending, owedInFlight, err = ds.owedFires(lt, *st.LastFire); err != nil {
+				if owedPending, owedInFlight, err = ds.owedFires(ctx, lt, *st.LastFire); err != nil {
 					return nil, err
 				}
 			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
-			st.WebhookPath = webhookPath(ds.Repository().Authority, lt.ID)
+			st.WebhookPath = webhookPath(ds.info.ID, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx, `
 			WITH f AS (
@@ -3857,6 +4018,9 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 		}
 		var res deliverResult
 		res, derr = ds.deliver(ctx, tr, ch, -1, depth, resume, settle)
+		if errors.Is(derr, errNotUnattended) {
+			return 0, derr
+		}
 		n = res.ran
 		if derr == nil && res.skipped {
 			// THE GUARD NO LONGER MATCHES, and a skip is a settled delivery,
@@ -3885,8 +4049,9 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 				return err
 			}
 			f.Attempts++
-			f.LastError = derr.Error()
-			f.ParkedAt = t.now
+			text, parkedAt, waiting := ds.parkedError(tr, derr, int(f.Attempts), t.now)
+			f.LastError = text
+			f.ParkedAt = parkedAt
 			if err := t.parkTx(tr.ID, f); err != nil {
 				return err
 			}
@@ -3901,9 +4066,12 @@ func (ds *dataset) retryHeldFailure(ctx context.Context, tr *trigger, f foldFail
 				return err
 			}
 			// A delivery that fails again is the problem recurring: an alert
-			// the owner resolved by hand reopens.
-			if err := t.raiseParkedAlert(tr, record, derr); err != nil {
-				return err
+			// the owner resolved by hand reopens. One the walk retries again
+			// raises none yet.
+			if !waiting {
+				if err := t.raiseParkedAlert(tr, record, derr); err != nil {
+					return err
+				}
 			}
 			return t.syncPark(settle.sync, derr)
 		})
@@ -4025,18 +4193,31 @@ func (ds *dataset) oneChange(ctx context.Context, query, missing string, args ..
 	return ch, rows.Err()
 }
 
-// changeColumns are a changelog row as scanChange reads it.
-const changeColumns = `seq, ts, actor, op, record_id, kind, payload, hash, principal`
+// changeColumns are a changelog row as scanChange reads it, its operation
+// the one every reader is told (changeOp).
+const changeColumns = `seq, ts, actor, on_behalf_of, principal, ` + changeOp + ` AS op, record_id, kind, payload, hash`
+
+// changeOp is a line's operation as every reader of changes is told it, the
+// one place it is decided: the stored op, but `put` for a put or a patch
+// holding the state entry that stands for its addressed record's creation,
+// live, and not a kind move's carry (compact.go), which a reader takes as
+// the creation. Every read selects
+// it (changeColumns) and the change filter compares it (buildChangeFilter),
+// so a read filtered by operation, of the table or of the tail's window,
+// answers what an unfiltered read presents.
+const changeOp = `CASE WHEN op IN ('put', 'patch') AND jsonb_path_exists(payload,
+	'$.fold[*] ? (@.kind == "state" && @.ref == $kind && @.id == $id && @.state.created == true
+	  && exists(@.state.row) && !(exists(@.state.row.deletedAt)) && !(exists(@.state.movedFrom)))',
+	jsonb_build_object('kind', kind, 'id', record_id)) THEN 'put' ELSE op END`
 
 // scanChange reads one changelog row from a query over changeColumns.
 func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	var c substrate.Change
-	var actor, op string
+	var op string
 	var raw, hash []byte
-	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw, &hash, &c.Principal); err != nil {
+	if err := rows.Scan(&c.Seq, &c.TS, &c.Actor, &c.OnBehalfOf, &c.Token, &op, &c.RecordID, &c.Kind, &raw, &hash); err != nil {
 		return c, err
 	}
-	c.Actor = substrate.Actor(actor)
 	c.Op = substrate.Op(op)
 	c.TS = c.TS.UTC()
 	if len(raw) > 0 {

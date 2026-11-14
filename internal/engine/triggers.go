@@ -2,10 +2,13 @@ package engine
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -100,6 +103,13 @@ func (t *trigger) webhookMaxBody() int64 {
 // runnable reports whether the trigger's callable resolved.
 func (t *trigger) runnable() bool { return t.Callable != nil || t.Agent != nil }
 
+// open reports whether the webhook door admits a delivery to the trigger from
+// anyone who reaches the server: it takes webhooks, it is enabled, and it
+// declares neither a key nor a signature for the door to check.
+func (t *trigger) open() bool {
+	return t.Webhook && t.Enabled && t.WebhookKey == "" && t.WebhookSignature == nil
+}
+
 // callablePath is the callable's RECORD path — the value a reference at the
 // function or agent row stores. CallableKind is the LOCAL name parseTrigger
 // kept; only two are dispatchable, so the mapping back to the full kind
@@ -125,21 +135,21 @@ func (t *trigger) callableActor() string {
 	}
 }
 
-// selfActors is every actor whose writes this trigger never delivers: the
+// selfActors is the id of every actor whose writes this trigger never delivers: the
 // callable's own, and for a function the actors of the agents it may run
 // under `permissions.agents` (record 0121). A callee function's effects
 // commit under the caller's actor, but an agent's thread, messages and tool
 // effects commit under the agent's, so without this a function watching a
 // kind its agent writes would wake again on every row the agent wrote. The
 // cost: the function also misses those agents' writes from their other runs.
-func (t *trigger) selfActors(reg *vocabulary.Registry) map[substrate.Actor]bool {
-	self := map[substrate.Actor]bool{substrate.Actor(t.callableActor()): true}
+func (t *trigger) selfActors(reg *vocabulary.Registry) map[string]bool {
+	self := map[string]bool{actorID(substrate.Actor(t.callableActor())): true}
 	if t.Callable == nil {
 		return self
 	}
 	for _, id := range t.Callable.Caps.Agents {
 		if ag, err := reg.ResolveAgent(id); err == nil {
-			self[substrate.Actor(ag.Actor())] = true
+			self[actorID(substrate.Actor(ag.Actor()))] = true
 		}
 	}
 	return self
@@ -247,7 +257,17 @@ type scheduleSource struct {
 	Recurrence string
 	Timezone   string
 	StartsAt   *time.Time
+	// Missed is what a pass does with occurrences the trigger missed:
+	// scheduleMissedLatest (the default) fires the newest due one alone,
+	// scheduleMissedAll fires each, oldest first (decision 0267).
+	Missed string
 }
+
+// The values of a schedule's `missed`.
+const (
+	scheduleMissedLatest = "latest"
+	scheduleMissedAll    = "all"
+)
 
 // rule compiles the recurrence against the anchor. createdAt is the trigger
 // row's creation time, the anchor of last resort. The due occurrences are
@@ -291,7 +311,7 @@ var triggerSourceArms = map[string]bool{"record": true, "schedule": true, "webho
 
 var triggerRecordKeys = map[string]bool{"kinds": true, "ops": true, "when": true, "coalesce": true, "fromStart": true}
 
-var triggerScheduleKeys = map[string]bool{"recurrence": true, "timezone": true, "startsAt": true}
+var triggerScheduleKeys = map[string]bool{"recurrence": true, "timezone": true, "startsAt": true, "missed": true}
 
 // parseTrigger reads one trigger record's properties into the dispatch
 // shape. Pure validation — the callable resolves separately, because the
@@ -546,7 +566,7 @@ func parseRecordSource(raw any) (*recordSource, error) {
 func parseScheduleSource(raw any) (*scheduleSource, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("source.schedule: a map with recurrence/timezone/startsAt")
+		return nil, fmt.Errorf("source.schedule: a map with recurrence/timezone/startsAt/missed")
 	}
 	for k := range m {
 		if !triggerScheduleKeys[k] {
@@ -559,6 +579,15 @@ func parseScheduleSource(raw any) (*scheduleSource, error) {
 		return nil, fmt.Errorf("source.schedule.recurrence is required — an RRULE")
 	}
 	src.Timezone, _ = m["timezone"].(string)
+	src.Missed = scheduleMissedLatest
+	if raw, has := m["missed"]; has {
+		v, _ := raw.(string)
+		if v != scheduleMissedLatest && v != scheduleMissedAll {
+			return nil, fmt.Errorf("source.schedule.missed: %q is not %q or %q — %q fires the newest occurrence the trigger missed, %q fires each",
+				fmt.Sprint(raw), scheduleMissedLatest, scheduleMissedAll, scheduleMissedLatest, scheduleMissedAll)
+		}
+		src.Missed = v
+	}
 	if raw, has := m["startsAt"]; has {
 		s, _ := raw.(string)
 		ts, err := substrate.ParseInstant(s)
@@ -672,7 +701,139 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	// a crafted id cannot forge log lines and no secret-shaped value — the
 	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
-		"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+		"repository", logSafeID(ds.info.ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+}
+
+// refuseOpenShippedWebhook refuses a write that leaves a webhook trigger a
+// publisher shipped open (decision 0248). The door checks a key only when one
+// is set, so such a trigger would run its publisher's code for anyone who
+// reaches the server, and the console's Resume is one click. The owner's own
+// trigger, and one an imported sample shipped, which the import made the
+// owner's, keep decision 0045's open endpoint. Of the engine's internal
+// writes only a publisher's own hand is held (an install, an upgrade, the
+// seed), so a repository migration never wedges on a trigger stored open
+// before the rule, which stays as it is until a write keys it, turns it off
+// or deletes it.
+func (t *txn) refuseOpenShippedWebhook(tr *trigger) error {
+	if !tr.open() {
+		return nil
+	}
+	pkg := publisherOf(t.declarations(), t.actor)
+	if pkg == "" && !t.internal {
+		var err error
+		if pkg, err = shippedBy(t.ctx, t.tx, t.declarations(), tr.ID); err != nil {
+			return err
+		}
+	}
+	if pkg == "" {
+		return nil
+	}
+	return fmt.Errorf("%w: trigger %s: %s ships this webhook trigger, so it is enabled only with a key, or anyone who reaches this server could run it: set source.webhook.key (16 to 128 characters of [A-Za-z0-9_-]) in the same write, or approve the app that sets it up",
+		substrate.ErrValidation, tr.ID, pkg)
+}
+
+// shippedBy is the package that shipped trigger id while the repository does
+// not own it: the first builtin or published package whose hand
+// (`bundle:<authority>:<package>`) wrote the trigger, at its install or an
+// upgrade. "" when none did. The history keeps every hand that ever wrote
+// the id, a compaction's state entries included (recordHands), so deleting
+// the shipped trigger and writing it again by hand does not make it the
+// owner's: the next upgrade would write the shipped one over it anyway.
+func shippedBy(ctx context.Context, q dbx, reg *vocabulary.Registry, id string) (string, error) {
+	ref := eref{Kind: typeTrigger, ID: id}
+	hands, err := recordHandsOf(ctx, q, []eref{ref})
+	if err != nil {
+		return "", err
+	}
+	actors := make([]string, 0, len(hands[ref]))
+	for _, h := range hands[ref] {
+		actors = append(actors, h.actor)
+	}
+	slices.Sort(actors)
+	for _, hand := range slices.Compact(actors) {
+		if pkg := publisherOf(reg, actorKeyIn(ctx, q, hand)); pkg != "" {
+			return pkg, nil
+		}
+	}
+	return "", nil
+}
+
+// publisherOf is the package a bundle hand writes for when the repository
+// does not own that package, because it is builtin or published, and "" for
+// any other hand. The seed's hand is the builtin core's. A package reg does
+// not hold is not consulted.
+func publisherOf(reg *vocabulary.Registry, hand substrate.Actor) string {
+	rest, ok := strings.CutPrefix(string(substrate.CanonicalActor(hand)), substrate.BundleActorPrefix)
+	authority, name, split := strings.Cut(rest, ":")
+	if !ok || !split {
+		return ""
+	}
+	pkg := vocabulary.PackageRef(authority, name)
+	g, held := reg.PackageByName(pkg)
+	if !held || (g.Source != vocabulary.SourceBuiltin && g.Source != vocabulary.SourcePublished) {
+		return ""
+	}
+	return pkg
+}
+
+// reportOpenShippedWebhooks logs, at each open, every webhook trigger a
+// publisher shipped that is stored open: a binary from before decision 0248
+// let its owner enable it with no key. Nothing turns one off, and the door
+// keeps admitting what it admitted; the next write to it must key it or
+// disable it. A failure to look is logged and never fails the open.
+func (ds *dataset) reportOpenShippedWebhooks(ctx context.Context) error {
+	open, err := ds.openShippedWebhooks(ctx)
+	if err != nil {
+		ds.svc.log.Warn("substrate: could not look for open webhook triggers a package shipped",
+			"repository", logSafeID(ds.info.ID), "error", err)
+		return nil
+	}
+	for _, id := range slices.Sorted(maps.Keys(open)) {
+		ds.svc.log.Warn("substrate: a webhook trigger a package shipped is enabled with no key and no signature, so it runs for anyone who reaches the server; set its source.webhook.key or turn it off (decision 0248)",
+			"repository", logSafeID(ds.info.ID), "trigger", logSafeID(id), "package", logSafeID(open[id]))
+	}
+	return nil
+}
+
+// openShippedWebhooks is every live trigger shippedBy names whose stored
+// record is open, keyed by id, with the package that shipped it.
+func (ds *dataset) openShippedWebhooks(ctx context.Context) (map[string]string, error) {
+	rows, err := ds.db.QueryContext(ctx, `SELECT id, props FROM records WHERE kind = $1 AND deleted_at IS NULL ORDER BY id`, typeTrigger)
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		var raw []byte
+		if err := rows.Scan(&id, &raw); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		var props map[string]any
+		if err := json.Unmarshal(raw, &props); err != nil {
+			continue
+		}
+		if tr, err := parseTrigger(id, props); err == nil && tr.open() {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+	out := map[string]string{}
+	for _, id := range ids {
+		pkg, err := shippedBy(ctx, ds.db, ds.registry(), id)
+		if err != nil {
+			return nil, err
+		}
+		if pkg != "" {
+			out[id] = pkg
+		}
+	}
+	return out, nil
 }
 
 // logSafeText is logSafeID for PROSE: an admission error or a quarantine
@@ -873,6 +1034,29 @@ func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 				return err
 			}
 		}
+	}
+	return t.settleDelivery(id)
+}
+
+// initEditedSchedule gives a trigger an edit makes a schedule its fire state
+// at the edit, as initTriggerBookkeeping gives one created with a schedule:
+// the first fire is the next occurrence. Without it the next pass gives the
+// fire state, or, for a trigger disabled before one ran, the repository's
+// next open (ensureScheduleState), and the occurrences between the edit and
+// that open would be owed by nobody. A trigger that has a fire state keeps
+// it: an edit never moves one.
+func (t *txn) initEditedSchedule(id string, props map[string]any) error {
+	src, _ := props["source"].(map[string]any)
+	if _, has := src["schedule"]; !has {
+		return nil
+	}
+	var at time.Time
+	err := t.row(`SELECT fired_at FROM trigger_schedule WHERE trigger_id = $1`, id).Scan(&at)
+	if err == nil || !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := t.setScheduleTx(id, t.now); err != nil {
+		return err
 	}
 	return t.settleDelivery(id)
 }

@@ -275,12 +275,14 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 		}
 		t.Errorf("%s holds no record %q", kind, id)
 	}
-	wantRef(corePkg+"/agent", "ada.example.com/crew/scribe", "provider", llmPkg+"/provider/openai")
+	// The repository's own agent is declared under its name and stored under
+	// `~`, its local namespace (decision record 0259).
+	wantRef(corePkg+"/agent", "~/crew/scribe", "provider", llmPkg+"/provider/openai")
 	wantRef(corePkg+"/recordpatchrequest", "r-1", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/message", "m-1", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/message", "m-2", "thread", llmPkg+"/thread/th-1")
 	wantRef(llmPkg+"/interaction", "i-1", "thread", llmPkg+"/thread/th-1")
-	wantRef(llmPkg+"/thread", "th-1", "agent", corePkg+"/agent/ada.example.com/crew/scribe")
+	wantRef(llmPkg+"/thread", "th-1", "agent", corePkg+"/agent/~/crew/scribe")
 
 	// THE MOVED THREAD IS THE AGENT LOOP'S AGAIN: the transcript the loop reads
 	// is a filter on the message kind by the thread it points at, which is the
@@ -306,13 +308,13 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	for _, chained := range []struct{ id, parent string }{{"th-c", "th-b"}, {"th-b", "th-a"}} {
 		wantRef(llmPkg+"/thread", chained.id, "parent", llmPkg+"/thread/"+chained.parent)
 	}
-	// The property managers followed the values: who last wrote one, at which
-	// tier and behind which token, is a fact about the value and not about the
-	// hand that carried it.
-	if got := managerOf(t, dsn, after.Repository, llmPkg+"/provider", "openai", "label"); got.actor == "" {
-		t.Error("the moved provider's `label` has no manager; the move dropped it")
-	} else if got != managerOf(t, dsn, after.Repository, corePkg+"/llmprovider", "openai", "label") {
-		t.Errorf("the moved manager is %+v, want the one the old row carried", got)
+	// The marks followed the values: who wrote one, whether it is pinned,
+	// what it came from and when it was set are facts about the value and not
+	// about the hand that carried it.
+	if got := markOf(t, dsn, after.Repository, llmPkg+"/provider", "openai", "label"); got.setBy == "" {
+		t.Error("the moved provider's `label` has no mark; the move dropped it")
+	} else if got != markOf(t, dsn, after.Repository, corePkg+"/llmprovider", "openai", "label") {
+		t.Errorf("the moved mark is %+v, want the one the old row carried", got)
 	}
 	// The provider's key is re-sealed under its new owner, so it still opens.
 	// Every read surface redacts it, which is what proves it is sealed and not
@@ -325,11 +327,13 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	// The stored ask agent's grant names the NEW kind: nothing else rewrites a
 	// kind reference spelled as a plain string, and the loader would quarantine
 	// the package at the next open if it still named the old one.
+	asker := false
 	for _, raw := range listRecords(t, after, corePkg+"/agent", false) {
 		rec, _ := raw.(map[string]any)
-		if rec["id"] != "ada.example.com/crew/asker" {
+		if rec["id"] != "~/crew/asker" {
 			continue
 		}
+		asker = true
 		perms, _ := propOf(t, rec, "asker", "permissions").(map[string]any)
 		writes, _ := perms["writes"].([]any)
 		// A grant is stored as a REFERENCE at the kind declaration record, so
@@ -341,6 +345,9 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 		if granted["ref"] != corePkg+"/kind/"+llmPkg+"/interaction" {
 			t.Errorf("the ask agent's grant is %v, want the moved interaction kind", granted["ref"])
 		}
+	}
+	if !asker {
+		t.Error("the ask agent ~/crew/asker is not among the agents after the move")
 	}
 
 	head := changelogHead(t, after)
@@ -448,26 +455,26 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 	// What is left is what the entries must reproduce exactly.
 	rows, err := db.Query(
 		`SELECT kind, id, coalesce(props::text, ''), coalesce(title, ''),
-		        coalesce(body, ''), coalesce(labels::text, ''), version, kind_version,
+		        coalesce(labels::text, ''), version, kind_version,
 		        deleted_at IS NOT NULL, coalesce(array_to_string(finalizers, ','), ''),
 		        coalesce(at::text, ''), coalesce(ends_at::text, ''), coalesce(due_at::text, ''),
 		        coalesce(states::text, '')
-		 FROM records WHERE repository = $1 ORDER BY kind, id`, repository)
+		 FROM records WHERE repository = (SELECT r.id FROM repositories r WHERE r.authority = $1) ORDER BY kind, id`, repository)
 	if err != nil {
 		t.Fatalf("read the fold: %v", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var b strings.Builder
 	for rows.Next() {
-		var kind, id, props, title, body, labels, finalizers, at, endsAt, dueAt, states string
+		var kind, id, props, title, labels, finalizers, at, endsAt, dueAt, states string
 		var version, kindVersion int64
 		var deleted bool
-		if err := rows.Scan(&kind, &id, &props, &title, &body, &labels, &version, &kindVersion,
+		if err := rows.Scan(&kind, &id, &props, &title, &labels, &version, &kindVersion,
 			&deleted, &finalizers, &at, &endsAt, &dueAt, &states); err != nil {
 			t.Fatal(err)
 		}
-		fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%d\x1f%t\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n",
-			kind, id, props, title, body, labels, version, kindVersion, deleted, finalizers, at, endsAt, dueAt, states)
+		fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%d\x1f%d\x1f%t\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n",
+			kind, id, props, title, labels, version, kindVersion, deleted, finalizers, at, endsAt, dueAt, states)
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
@@ -475,27 +482,31 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 	return b.String()
 }
 
-// manager is one property's manager row, as the move must carry it.
-type manager struct {
-	actor, tier, principal string
+// mark is one property's mark, as the move must carry it.
+type mark struct {
+	pinned                  bool
+	setBy, onBehalfOf, from string
+	setAt                   string
 }
 
-// managerOf reads one property's manager row straight from the ledger: the
-// move's promise is that all three columns travel with the value.
-func managerOf(t *testing.T, dsn, repository, kind, id, property string) manager {
+// markOf reads one property's mark straight from its table: the move's
+// promise is that every column travels with the value. The repository is
+// named by its name, and the table is keyed by its id.
+func markOf(t *testing.T, dsn, repository, kind, id, property string) mark {
 	t.Helper()
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatalf("open the raw pool: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	var m manager
+	var m mark
 	err = db.QueryRow(
-		`SELECT actor, tier, coalesce(principal, '') FROM property_managers
-		 WHERE repository = $1 AND record_kind = $2 AND record_id = $3 AND property = $4`,
-		repository, kind, id, property).Scan(&m.actor, &m.tier, &m.principal)
+		`SELECT pinned, set_by, on_behalf_of, derived_from::text, set_at::text FROM property_marks
+		 WHERE repository = (SELECT r.id FROM repositories r WHERE r.authority = $1)
+		   AND record_kind = $2 AND record_id = $3 AND property = $4`,
+		repository, kind, id, property).Scan(&m.pinned, &m.setBy, &m.onBehalfOf, &m.from, &m.setAt)
 	if err != nil {
-		return manager{}
+		return mark{}
 	}
 	return m
 }

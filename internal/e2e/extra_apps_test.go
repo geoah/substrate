@@ -33,6 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func init() {
@@ -130,9 +132,9 @@ type xpRow struct {
 type xpRequest struct {
 	ID  string `json:"id"`
 	App struct {
-		ClientID string `json:"clientId"`
-		Local    bool   `json:"local"`
-		Actor    string `json:"actor"`
+		ClientID  string `json:"clientId"`
+		Local     bool   `json:"local"`
+		AppearsAs string `json:"appearsAs"`
 	} `json:"app"`
 	Repository string `json:"repository"`
 	Scopes     []struct {
@@ -243,13 +245,13 @@ func xpCaseAppSetUp(c *C) {
 	c.stepf("`GET /oauth/authorize` with Sync's scopes and details parked request `%s` and sent the browser to the approval page", id)
 
 	// The approval page's read: one row per detail, nothing in place yet. An
-	// app whose client id is a loopback URL acts as `app:local`, whatever its
+	// app whose client id is a loopback URL appears as `local`, whatever its
 	// host (decision 0209).
 	var v xpRequest
 	status, raw = c.do(http.MethodGet, "/api/v1/authorizations/"+id, nil, &v)
 	c.requiref(status == http.StatusOK, "the approval page's read answered %d: %s", status, raw)
-	c.requiref(v.State == "pending" && v.App.Local && v.App.Actor == "app:local" && v.Repository == r.authority,
-		"the request reads state %q, local %t, actor %q, repository %q", v.State, v.App.Local, v.App.Actor, v.Repository)
+	c.requiref(v.State == "pending" && v.App.Local && v.App.AppearsAs == "local" && v.Repository == r.authority,
+		"the request reads state %q, local %t, appearing as %q, repository %q", v.State, v.App.Local, v.App.AppearsAs, v.Repository)
 	c.requiref(len(v.Previous) == 0 || string(v.Previous) == "null", "a local app's request carries a previous token: %s", v.Previous)
 	c.requiref(v.PlanHash != "" && len(v.Setup) == 4, "the request plans %d rows under hash %q: %s", len(v.Setup), v.PlanHash, raw)
 	for i, row := range v.Setup {
@@ -305,7 +307,6 @@ func xpCaseAppSetUp(c *C) {
 	tokRaw := raw
 	var tok xpToken
 	c.requiref(json.Unmarshal(tokRaw, &tok) == nil, "the token response is not JSON")
-	webhookURL := md.Issuer + "/webhooks/" + url.PathEscape(r.authority) + "/" + xpWebhook
 	wantScopes := append(slices.Clone(approved), "webhook:"+xpWebhook)
 	gotScopes := strings.Fields(tok.Scope)
 	slices.Sort(wantScopes)
@@ -314,12 +315,21 @@ func xpCaseAppSetUp(c *C) {
 		tok.ExpiresIn != nil && *tok.ExpiresIn == 30*24*3600 && slices.Equal(gotScopes, wantScopes),
 		"the token is type %q for %q, expires_in %v, scope %q", tok.TokenType, tok.Repository, tok.ExpiresIn, tok.Scope)
 	g := tok.AuthorizationDetails
+	// The webhook's address is keyed by the repository's id (decision 0261),
+	// which nothing else the app is handed names: it is held to an id's shape
+	// here, and the delivery below proves it is the door.
+	var webhookURL string
+	if len(g) == 4 {
+		webhookURL = g[3].URL
+	}
+	hookRepository, hookTrigger, _ := strings.Cut(strings.TrimPrefix(webhookURL, md.Issuer+"/webhooks/"), "/")
 	c.requiref(len(g) == 4 &&
 		g[0].Package == xpApplePkg && g[0].Version == apple.Shipped &&
 		g[1].Package == xpAppleHealthPkg && g[1].Version == health.Shipped &&
 		g[2].Kind == xpAccountKind && g[2].ID == xpAccountID && g[2].Properties == nil &&
-		g[3].Trigger == xpWebhook && g[3].URL == webhookURL,
-		"the token's authorization_details = %+v, want the versions held and the webhook at %s", g, webhookURL)
+		g[3].Trigger == xpWebhook && strings.HasPrefix(webhookURL, md.Issuer+"/webhooks/") &&
+		vocabulary.ValidRepositoryID(hookRepository) && hookTrigger == xpWebhook,
+		"the token's authorization_details = %+v, want the versions held and the webhook at %s/webhooks/<the repository's id>/%s", g, md.Issuer, xpWebhook)
 	app := tok.AccessToken
 	c.stepf("the exchange minted a 30-day token for `%s` scoped `%s`; its details name `%s` at %d, `%s` at %d, the account, and %s",
 		tok.Repository, tok.Scope, xpApplePkg, g[0].Version, xpAppleHealthPkg, g[1].Version, webhookURL)
@@ -359,10 +369,10 @@ func xpCaseAppSetUp(c *C) {
 			accountRows++
 		}
 	}
-	c.requiref(accountRows == 1 && rows[accountAt].Actor == "api" && rows[enabledAt].Actor == "api",
-		"the account has %d rows, the first by %q, and the trigger is turned on by %q: want one write each, the owner's door's",
-		accountRows, rows[accountAt].Actor, rows[enabledAt].Actor)
-	c.stepf("the changelog holds the set up in order: `%s` (seq %d), `%s` (seq %d) before `%s` (seq %d), then the account's one write (seq %d) and the write turning the trigger on (seq %d), both as the owner's `api` door",
+	c.requiref(accountRows == 1 && c.hand(rows[accountAt].Actor) == "person" && c.hand(rows[enabledAt].Actor) == "person",
+		"the account has %d rows, the first by %q, and the trigger is turned on by %q: want one write each, the person's",
+		accountRows, c.hand(rows[accountAt].Actor), c.hand(rows[enabledAt].Actor))
+	c.stepf("the changelog holds the set up in order: `%s` (seq %d), `%s` (seq %d) before `%s` (seq %d), then the account's one write (seq %d) and the write turning the trigger on (seq %d), both as the person",
 		xpApplePkg, rows[appleAt].Seq, xpHealthPkg, rows[healthAt].Seq, xpAppleHealthPkg, rows[appleHealthAt].Seq, rows[accountAt].Seq, rows[enabledAt].Seq)
 	account := c.getRec("/api/v1/"+xpAccountKind, xpAccountID)
 	c.requiref(account.prop("displayName") == xpAccountName && account.prop("timezone") == "Europe/London",
@@ -476,10 +486,10 @@ func xpCaseAppSetUp(c *C) {
 	appRows := c.readChangesForward(head)
 	for _, want := range []struct{ kind, id string }{{xpShareKind, share.ID}, {xpBlobKind, appBlob.Digest}} {
 		i := slices.IndexFunc(appRows, func(row changeRow) bool { return row.Kind == want.kind && row.RecordID == want.id })
-		c.requiref(i >= 0 && appRows[i].Actor == v.App.Actor, "the first changelog row of %s/%s is by %q, want %q",
-			want.kind, want.id, xpActorAt(appRows, i), v.App.Actor)
+		c.requiref(i >= 0 && c.hand(appRows[i].Actor) == "app local", "the first changelog row of %s/%s is by %q, want the local app",
+			want.kind, want.id, xpActorAt(c, appRows, i))
 	}
-	c.stepf("the share and the app's blob manifest are attributed to `%s`", v.App.Actor)
+	c.stepf("the share and the app's blob manifest are attributed to the local app's actor record")
 
 	// Revoking ends the deliveries.
 	status, raw = c.xpForm(http.MethodPost, "/oauth/revoke", url.Values{"token": {app}, "client_id": {xpClientID}})
@@ -521,11 +531,11 @@ func xpFirst(items []any) any {
 	return items[0]
 }
 
-func xpActorAt(rows []changeRow, i int) string {
+func xpActorAt(c *C, rows []changeRow, i int) string {
 	if i < 0 {
 		return "(no row)"
 	}
-	return rows[i].Actor
+	return c.hand(rows[i].Actor)
 }
 
 // xpSettle reads the request as the approval page does until its set up

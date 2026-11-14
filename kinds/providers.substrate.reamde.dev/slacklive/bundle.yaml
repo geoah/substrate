@@ -35,7 +35,9 @@ data:
   package: slacklive
   # 1: the live events path of Slack bundle version 21, moved out of
   # `slacksync` into this bundle's `slackevents` (Slack bundle version 22).
-  version: 1
+  #
+  # 2: a revoked or expired token is a permanent refusal, as in `slacksync`.
+  version: 2
 ---
 # ---- the bundle document: the install unit --------------------------------
 kind: substrate.reamde.dev/core/bundle
@@ -1390,6 +1392,7 @@ data:
         "account_inactive", "invalid_arguments", "method_not_supported_for_channel_type",
         "team_access_not_granted", "restricted_action", "file_not_found",
         "file_deleted", "bot_not_found", "not_authed", "invalid_auth",
+        "token_revoked", "token_expired",
         # An EXPIRED OR MALFORMED CURSOR. Slack has already said the token is no
         # good; asking with the same token again gets the same answer, and the
         # walk that holds it restarts from the top on the next cold pass.

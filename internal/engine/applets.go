@@ -82,7 +82,9 @@ func (l *agentLoop) dispatchAppletPreview(ctx context.Context, args map[string]a
 	}
 	var rec *substrate.Record
 	if id != "" {
-		if !l.readsAllow(applet.Kind) {
+		if ok, err := l.readsAllow(ctx, applet.Kind); err != nil {
+			return toolError(err.Error()), false
+		} else if !ok {
 			return toolError(fmt.Sprintf("%s is not in agent %s's reads allowlist", applet.Kind, l.ag.Identity())), false
 		}
 		got, err := l.ds.Get(ctx, applet.Kind, id)
@@ -97,8 +99,16 @@ func (l *agentLoop) dispatchAppletPreview(ctx context.Context, args map[string]a
 	in.Screen, _ = args["screen"].(string)
 	in.Params, _ = args["params"].(map[string]any)
 	in.UI, _ = args["ui"].(map[string]any)
-	rt := applet.Runtime{Data: agentReads{ds: l.ds, allows: l.readsAllow}}
-	p, err := rt.Preview(ctx, rec, in, appletSchema{l.ds.registry()}, l.readsAllow)
+	reads := queryScope{kinds: []string{}}
+	if l.ag.Reads != nil {
+		reads.kinds = l.ag.Reads.Kinds
+	}
+	reads, err := l.ds.heldScope(ctx, reads)
+	if err != nil {
+		return toolError(err.Error()), false
+	}
+	rt := applet.Runtime{Data: agentReads{ds: l.ds, allows: reads.allows}}
+	p, err := rt.Preview(ctx, rec, in, appletSchema{l.ds.registry()}, reads.allows)
 	if err != nil {
 		return toolError(err.Error()), false
 	}

@@ -30,7 +30,7 @@ struct TaskListView: View {
             .animation(.snappy(duration: 0.3), value: list.open.rows.map(\.id))
             .refreshable { shell.send(.refresh) }
             .safeAreaInset(edge: .bottom) {
-                if !addsFromTabBar, list.empty == nil || !list.closed.rows.isEmpty {
+                if !addsFromTabBar, list.quickAdd != nil, list.empty == nil || !list.closed.rows.isEmpty {
                     NewTaskButton(title: list.newTask)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 20)
@@ -67,6 +67,12 @@ struct TaskListView: View {
             }
             .tight()
         }
+        if let queue = list.queue {
+            Section {
+                CountedRowView(row: queue, symbol: "suggestion")
+                    .listRowBackground(TasksSymbols.card)
+            }
+        }
         if let empty = list.empty, list.closed.rows.isEmpty {
             Section {
                 VStack(spacing: 16) {
@@ -78,7 +84,7 @@ struct TaskListView: View {
                     Text(empty.message)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                    NewTaskButton(title: list.newTask)
+                    if list.quickAdd != nil { NewTaskButton(title: list.newTask) }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
@@ -99,10 +105,10 @@ struct TaskListView: View {
                 Section {
                     ForEach(list.open.rows.filter { $0.band == band.band }) { row in rowView(row) }
                 } header: {
-                    if band.band == .upcoming {
-                        heading(band.title, count: band.count, note: nil)
-                    } else if band.band == .later {
+                    if band.band == .later {
                         fold(band.title)
+                    } else {
+                        heading(band.title, count: band.count, note: nil)
                     }
                 }
             }
@@ -123,6 +129,12 @@ struct TaskListView: View {
                 ForEach(list.closed.rows) { row in rowView(row) }
             } header: {
                 heading(list.closedTitle, count: list.closed.rows.count, note: nil)
+            }
+        }
+        if let noDate = list.noDate {
+            Section {
+                CountedRowView(row: noDate, symbol: "nodate")
+                    .listRowBackground(TasksSymbols.card)
             }
         }
     }
@@ -178,20 +190,30 @@ struct TaskListView: View {
         .listRowBackground(selected ? Color.brandAccent.opacity(0.08) : TasksSymbols.card)
         .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 6))
         .swipeActions(edge: .leading) {
-            Button(row.toggle) { shell.send(row.status == .open && !row.pending ? .complete(row.id) : .reopen(row.id)) }
-                .tint(.green)
+            if row.suggestion, !row.pending, row.decisions.contains(where: { $0.action == .accept }) {
+                Button(list.rowMenu.accept) { shell.send(.accept(row.id)) }.tint(Color.brandAccent)
+            } else if let toggle = row.toggle {
+                Button(toggle) { shell.send(row.standing == .open && !row.pending ? .complete(row.id) : .reopen(row.id)) }
+                    .tint(.green)
+            }
         }
         // Deleting is never a full swipe: it takes the revealed button.
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(list.rowMenu.swipeDelete, role: .destructive) { shell.send(.deleteTask(row.id)) }
-            if row.status == .open {
-                Button(list.rowMenu.abandon) { shell.send(.abandon(row.id)) }
+        .swipeActions(edge: .trailing, allowsFullSwipe: row.suggestion) {
+            if row.suggestion, !row.pending, row.decisions.contains(where: { $0.action == .dismiss }) {
+                Button(list.rowMenu.dismiss) { shell.send(.dismiss(row.id)) }
+            } else {
+                if row.editable {
+                    Button(list.rowMenu.swipeDelete, role: .destructive) { shell.send(.deleteTask(row.id)) }
+                }
+                if row.standing == .open, row.decisions.contains(where: { $0.action == .abandon }) || row.toggle != nil {
+                    Button(list.rowMenu.abandon) { shell.send(.abandon(row.id)) }
+                }
             }
         }
         .contextMenu {
             TaskMenu(
-                task: row.id, status: row.status, pending: row.pending, priority: row.priority?.priority ?? .none, sidebar: app.sidebar,
-                words: list.rowMenu)
+                task: row.id, standing: row.standing, pending: row.pending, editable: row.editable,
+                priority: row.priority?.priority ?? .none, sidebar: app.sidebar, words: list.rowMenu)
         }
     }
 
@@ -221,6 +243,22 @@ struct TaskListView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if let pin = list.pin {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    switch pin.action {
+                    case let .pin(path): shell.send(.pin(path))
+                    case let .unpin(path): shell.send(.unpin(path))
+                    }
+                } label: {
+                    if case .unpin = pin.action {
+                        Label(pin.title, systemImage: "pin.fill")
+                    } else {
+                        Label(pin.title, systemImage: "pin")
+                    }
+                }
+            }
+        }
         if offersViewOptions || !list.actions.isEmpty {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -265,21 +303,30 @@ struct TaskListView: View {
 struct TaskMenu: View {
     @Environment(TasksShell.self) private var shell
     let task: String
-    let status: TaskStatus
+    let standing: KindStatus.Standing
     var pending = false
+    var editable = true
     let priority: TaskPriority
     let sidebar: SidebarPresentation
     let words: TaskMenuWords
 
     var body: some View {
         if pending {
-            Button("Undo", systemImage: "arrow.uturn.backward") { shell.send(.reopen(task)) }
-        } else if status == .open {
+            Button(words.undo, systemImage: "arrow.uturn.backward") { shell.send(.undo(task)) }
+        } else if standing == .proposed {
+            Button(words.accept, systemImage: "checkmark.circle") { shell.send(.accept(task)) }
+            Button(words.dismiss, systemImage: "xmark.circle") { shell.send(.dismiss(task)) }
+        } else if standing == .open {
             Button(words.complete, systemImage: "checkmark.circle") { shell.send(.complete(task)) }
             Button(words.abandon, systemImage: "xmark.circle") { shell.send(.abandon(task)) }
         } else {
             Button(words.reopen, systemImage: "circle") { shell.send(.reopen(task)) }
         }
+        if editable { editing }
+    }
+
+    @ViewBuilder
+    private var editing: some View {
         Button(words.edit, systemImage: "pencil") { shell.send(.edit(task)) }
         Menu(words.priority) {
             ForEach(words.priorities) { level in
@@ -291,7 +338,8 @@ struct TaskMenu: View {
             }
         }
         Menu(words.move) {
-            ForEach(sidebar.fixed.filter { $0.selection != .needsYou } + sidebar.lists.rows) { row in
+            Button(InboxWords.title) { shell.send(.move(task, toList: nil)) }
+            ForEach(sidebar.sections.filter(\.reorders).flatMap { ($0.rows + $0.quiet).filter { $0.selection.listID != nil } }) { row in
                 Button(row.title) { shell.send(.move(task, toList: row.selection.listID)) }
             }
         }
@@ -326,7 +374,7 @@ private struct ChipsBar: View {
                     Button {
                         shell.send(.filter(chip.selection))
                     } label: {
-                        Text(chip.title)
+                        Text("\(chip.title)\(Text(chip.count.map { "  \($0)" } ?? "").foregroundStyle(.secondary))")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(chip.selected ? TasksSymbols.card : Color.primary)
                             .padding(.horizontal, 13)
@@ -341,6 +389,38 @@ private struct ChipsBar: View {
             .padding(.vertical, 4)
         }
         .animation(.snappy(duration: 0.2), value: chips.map(\.selected))
+    }
+}
+
+/// A row that stands for a list of its own: the suggestions, the tasks with
+/// no date; its mark, its title and words, its count, and a disclosure.
+struct CountedRowView: View {
+    @Environment(TasksShell.self) private var shell
+    let row: CountedRow
+    let symbol: String
+
+    var body: some View {
+        Button {
+            shell.send(.show(row.selection))
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: TasksSymbols.symbol(symbol))
+                    .font(.title3)
+                    .foregroundStyle(Color.brandAccent)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.title).font(.body.weight(.semibold)).foregroundStyle(Color.primary)
+                    Text(row.detail).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if symbol == "nodate" { Text(row.count, format: .number).foregroundStyle(.secondary) }
+                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondary.opacity(0.6))
+            }
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 }
 

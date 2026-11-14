@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // A bundle is the install unit (record 63): one document declaring the PACKAGE
@@ -248,6 +250,13 @@ type BundleOAuth2 struct {
 	// toggles; a toggle absent here (an unwired feature) requests nothing — so
 	// gmail/calendar cannot be requested while they remain unmapped.
 	FeatureScopes map[string][]string
+	// FeatureAccess names the toggles whose scopes let the bundle's code
+	// change the provider rather than read it, by an entry's `access: write`
+	// (absent is `read`). Nothing in the facility reads it: the scopes are
+	// requested the same way. It tells a surface which switches say what the
+	// owner's agents may do as against what the account brings in, and an
+	// absent toggle is a read one.
+	FeatureAccess map[string]string
 	// EmailEndpoint is the OPTIONAL provider endpoint (https) the facility GETs
 	// with the fresh access token right after the exchange to learn the
 	// connected account's own address — Google's People `people/me` or any
@@ -256,7 +265,7 @@ type BundleOAuth2 struct {
 	// metadata:{primary}}]}` (People).
 	EmailEndpoint string
 	// EmailProperty is the OPTIONAL account property the derived email lands in
-	// (writer: oauth, so the facility's actor may set it and the user cannot).
+	// (writer: system, so the facility's actor may set it and the user cannot).
 	// Set together with EmailEndpoint; empty disables the write.
 	EmailProperty string
 }
@@ -272,8 +281,16 @@ var bundleDataKeys = map[string]bool{
 }
 
 // featureScopeKeys is one feature toggle's entry: the scopes enabling it
-// requests, in the object form.
-var featureScopeKeys = map[string]bool{"scopes": true}
+// requests, in the object form, and whether they read the provider or change
+// it.
+var featureScopeKeys = map[string]bool{"scopes": true, "access": true}
+
+// The two values a featureScopes entry's `access` takes: what the toggle's
+// scopes let the bundle's code do at the provider.
+const (
+	FeatureAccessRead  = "read"
+	FeatureAccessWrite = "write"
+)
 
 var oauth2MetaKeys = map[string]bool{
 	"authorizationEndpoint": true, "tokenEndpoint": true,
@@ -470,7 +487,7 @@ func (l *loader) parseBundleRequires(where, own string, data map[string]any) []s
 		pkg := strings.TrimSpace(fmt.Sprint(rv))
 		authority, name := SplitPackageRef(pkg)
 		switch {
-		case !ValidAuthority(authority) || !ValidPackage(name):
+		case !ValidKindAuthority(authority) || !ValidPackage(name):
 			l.errf("%s: data.requires[%d]: %q must be a package identity — an authority and a package, not a kind reference", where, i, pkg)
 		case pkg == own:
 			l.errf("%s: data.requires[%d]: %q is the bundle's own package", where, i, pkg)
@@ -668,6 +685,19 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			if len(out) > 0 {
 				o.FeatureScopes[toggle] = out
 			}
+			if raw, declared := inner["access"]; declared {
+				access, _ := raw.(string)
+				switch access {
+				case FeatureAccessRead:
+				case FeatureAccessWrite:
+					if o.FeatureAccess == nil {
+						o.FeatureAccess = map[string]string{}
+					}
+					o.FeatureAccess[toggle] = access
+				default:
+					l.errf("%s.featureScopes[%q].access: %v — %q or %q", w, toggle, raw, FeatureAccessRead, FeatureAccessWrite)
+				}
+			}
 		}
 	}
 	return o
@@ -840,11 +870,11 @@ func (r *Registry) resolveBundle(g *Package) []string {
 					where, toggle))
 			}
 		}
-		// emailProperty must name a writer: oauth property on some bundle type —
-		// the facility writes it as its own actor, and only a writer: oauth slot
+		// emailProperty must name a writer: system property on some bundle type —
+		// the facility writes it as its own actor, and only a writer: system slot
 		// keeps the owner out of it.
 		if name := b.OAuth2.EmailProperty; name != "" && !g.hasOAuthWritableProp(name) {
-			problems = append(problems, fmt.Sprintf("%s: data.oauth2.emailProperty %q names no `writer: oauth` property on any of the bundle's types",
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.emailProperty %q names no `writer: system` property on any of the bundle's types",
 				where, name))
 		}
 	}
@@ -863,11 +893,11 @@ func (g *Package) hasBoolToggle(name string) bool {
 }
 
 // hasOAuthWritableProp reports whether some type in the authority declares name as
-// a `writer: oauth` property — the slot the facility writes the derived email
-// into, unreachable to the owner.
+// a `writer: system` property — the slot the facility writes the derived email
+// into, unreachable to a person.
 func (g *Package) hasOAuthWritableProp(name string) bool {
 	for _, tn := range g.KindOrder {
-		if p, ok := g.Kinds[tn].Prop(name); ok && p.Writer == WriterOAuth {
+		if p, ok := g.Kinds[tn].Prop(name); ok && p.WrittenOnlyBy(substrate.ActorTypeSystem) {
 			return true
 		}
 	}

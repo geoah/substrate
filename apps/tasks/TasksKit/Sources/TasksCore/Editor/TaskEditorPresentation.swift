@@ -3,15 +3,16 @@ import SubstrateCore
 import SubstrateScreens
 
 /// The edit form: each field under the label the read view gives it, with
-/// what it holds, and Save and Cancel.
+/// what it holds, and Save and Cancel. A field the collection has no reading
+/// for is absent.
 public struct TaskEditorPresentation: Bridged, Equatable, Sendable {
     public var title: String
     public var name: EditorText
-    public var notes: EditorText
-    public var link: EditorText
-    public var list: EditorChoice
-    public var due: EditorDue
-    public var priority: EditorChoice
+    public var notes: EditorText?
+    public var link: EditorText?
+    public var list: EditorChoice?
+    public var due: EditorDue?
+    public var priority: EditorChoice?
     public var save: String
     public var canSave: Bool
     public var cancel: String
@@ -24,7 +25,13 @@ public struct TaskEditorPresentation: Bridged, Equatable, Sendable {
     /// Each field's label, by the fact it edits: what the read view's
     /// labels are held to.
     public var labels: [TaskField: String] {
-        [.taskName: name.label, .notes: notes.label, .link: link.label, .list: list.label, .due: due.label, .priority: priority.label]
+        var out: [TaskField: String] = [.taskName: name.label]
+        out[.notes] = notes?.label
+        out[.link] = link?.label
+        out[.list] = list?.label
+        out[.due] = due?.label
+        out[.priority] = priority?.label
+        return out
     }
 }
 

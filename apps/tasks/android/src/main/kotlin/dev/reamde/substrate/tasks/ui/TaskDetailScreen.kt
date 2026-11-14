@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import dev.reamde.substrate.kit.bridge.ActionButton
+import dev.reamde.substrate.kit.bridge.KindStatus
 import dev.reamde.substrate.kit.ui.KitDestructiveRow
 import dev.reamde.substrate.kit.ui.KitMark
 import dev.reamde.substrate.kit.ui.KitRow
@@ -45,17 +46,17 @@ import dev.reamde.substrate.kit.ui.KitText
 import dev.reamde.substrate.kit.ui.KitValueRow
 import dev.reamde.substrate.kit.ui.kitRowPadding
 import dev.reamde.substrate.kit.ui.style
+import dev.reamde.substrate.tasks.bridge.DetailFact
 import dev.reamde.substrate.tasks.bridge.DetailField
 import dev.reamde.substrate.tasks.bridge.TaskAction
 import dev.reamde.substrate.tasks.bridge.TaskDetailPresentation
 import dev.reamde.substrate.tasks.bridge.TaskField
 import dev.reamde.substrate.tasks.bridge.TaskPriority
-import dev.reamde.substrate.tasks.bridge.TaskStatus
 import dev.reamde.substrate.tasks.bridge.TasksApp
 
 /**
  * The open task: its name, then each fact once under the label the editor gives it, the list and the priority as the choices that change them where they stand,
- * then what can be done to it. Edit is the top bar's.
+ * every other property under Details, then what can be done to it. Edit is the top bar's, for the app's own tasks.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +66,7 @@ internal fun TaskDetailScreen(detail: TaskDetailPresentation, actions: TasksActi
             TopAppBar(
                 title = {},
                 navigationIcon = { onBack?.let { IconButton(onClick = it) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") } } },
-                actions = { TextButton(onClick = { actions.send(TasksApp.Command.Edit(detail.id)) }) { Text(detail.edit) } },
+                actions = { detail.edit?.let { edit -> TextButton(onClick = { actions.send(TasksApp.Command.Edit(detail.id)) }) { Text(edit) } } },
             )
         }
     ) { padding ->
@@ -73,13 +74,22 @@ internal fun TaskDetailScreen(detail: TaskDetailPresentation, actions: TasksActi
             Text(
                 detail.title,
                 style = KitText.screenTitle.style,
-                textDecoration = if (detail.status == TaskStatus.abandoned) TextDecoration.LineThrough else null,
+                textDecoration = if (detail.standing == KindStatus.Standing.dropped) TextDecoration.LineThrough else null,
                 modifier = Modifier.padding(horizontal = KitSpacing.screen, vertical = KitSpacing.medium),
             )
             KitSection(null) {
                 detail.fields.forEachIndexed { index, field ->
                     if (index > 0) KitRowDivider()
                     FactRow(field) { id -> choose(detail.id, field.field, id, actions) }
+                }
+            }
+            detail.approval?.let { ApprovalLineRow(it, actions) }
+            if (detail.details.isNotEmpty()) {
+                KitSection(detail.detailsTitle) {
+                    detail.details.forEachIndexed { index, fact ->
+                        if (index > 0) KitRowDivider()
+                        FactRow(fact)
+                    }
                 }
             }
             KitSection(null) {
@@ -94,7 +104,7 @@ internal fun TaskDetailScreen(detail: TaskDetailPresentation, actions: TasksActi
 
 /** A fact under its label: a choice as the menu that changes it, a link to open, or a value in its tone. */
 @Composable
-private fun FactRow(field: DetailField, choose: (String) -> Unit) {
+internal fun FactRow(field: DetailField, choose: (String) -> Unit) {
     val choice = field.choice
     val uri = LocalUriHandler.current
     when {
@@ -141,9 +151,26 @@ private fun FactRow(field: DetailField, choose: (String) -> Unit) {
     }
 }
 
+/** A property under Details: its label and value, and the full reference under it where it names one. */
+@Composable
+internal fun FactRow(fact: DetailFact) {
+    Column(Modifier.fillMaxWidth().kitRowPadding().padding(vertical = KitSpacing.small)) {
+        FactLine(fact.label, fact.value, MaterialTheme.colorScheme.onSurfaceVariant, Modifier)
+        fact.note?.let {
+            Text(
+                it,
+                style = referenceStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
 /** A label and a value that may run long: the label keeps its words whole, and the value wraps beside it. */
 @Composable
-private fun FactLine(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+internal fun FactLine(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
     Row(
         modifier.fillMaxWidth().kitRowPadding().padding(vertical = KitSpacing.small),
         verticalAlignment = Alignment.CenterVertically,
@@ -172,12 +199,5 @@ private fun choose(task: String, field: TaskField, id: String, actions: TasksAct
 }
 
 private fun perform(task: String, action: TaskAction, actions: TasksActions) {
-    actions.send(
-        when (action) {
-            TaskAction.Complete -> TasksApp.Command.Complete(task)
-            TaskAction.Reopen -> TasksApp.Command.Reopen(task)
-            TaskAction.Abandon -> TasksApp.Command.Abandon(task)
-            TaskAction.Delete -> TasksApp.Command.DeleteTask(task)
-        }
-    )
+    actions.send(command(action, task))
 }

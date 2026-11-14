@@ -71,7 +71,8 @@ over the first and tells you to set `SUBSTRATE_DEV_PORT`.
 ## What the dev tasks set
 
 - `SUBSTRATE_DATA_ROOT` is `.dev/data`, so each repository's directory (its
-  manifest, changelog segments, sealed files and blobs) lands there.
+  blobs and its webhook spool) lands there, and so does the archive, under
+  `.dev/data/archive`.
 - `SUBSTRATE_CREDENTIAL_KEY` is minted once into `.dev/credential.key` and
   every start reuses it. It wraps each repository's data-encryption key, and
   an operator command that writes sealed material reads the same file.
@@ -94,9 +95,9 @@ over the first and tells you to set `SUBSTRATE_DEV_PORT`.
 ## The database, the data root and the key are wiped together
 
 `mise run dev:wipe` drops this tree's database and removes the data root and
-`.dev/` around it, and it has to: a data root that outlives its database is
-imported at the next boot, and a database that outlives its root is written
-back out ([what happens at boot](operations.md#what-happens-at-boot)).
+`.dev/` around it, and it has to: an archive that outlives its database is
+restored at the next boot, and a database that outlives its root has lost
+every blob's bytes ([what happens at boot](operations.md#what-happens-at-boot)).
 Registration is one-shot per repository, so testing the door a second time
 means wiping first, or deleting the repository from Settings, Danger zone,
 which frees its name. `mise run dev:reset` is the wipe and
@@ -128,9 +129,9 @@ bin/substratectl register --server http://localhost:8080 --repository ada
 
 The operator commands take a DSN and a data root instead of a token: `--dsn`
 (or `DATABASE_URL`), which `mise run dev:dsn` prints, and
-`SUBSTRATE_DATA_ROOT`, which every operator command that opens the repository
-directory refuses to run without, naming the variable (`repository list`
-reads the database alone). The dev tasks export that variable into the server they
+`SUBSTRATE_DATA_ROOT`, which every operator command that opens the engine
+refuses to run without, naming the variable (`repository list` and
+`repository inspect` read the database alone). The dev tasks export that variable into the server they
 start, never into your shell, so the command needs it itself.
 `mise run dev:status` prints the two lines to copy: the data root, and the
 credential key the commands that write sealed material read.

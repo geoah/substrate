@@ -302,6 +302,30 @@ export function codeWords(
   return clause && `${sentence(clause)}.`
 }
 
+/** Whether a package, or one its install brings first, runs code a
+ * publisher outside this server published: its functions are `experimental`
+ * at 1.0 whatever the package's own label says (docs/stability.md). The
+ * server marks such a package by its publisher, which is what it reads too. */
+export function runsOutsideCode(pkg: AuthorizationPackage): boolean {
+  const outside = (p: {
+    publisher?: AuthorizationPackage["publisher"]
+    functions?: AuthorizationPackage["functions"]
+  }) => Boolean(p.publisher) && (p.functions?.length ?? 0) > 0
+  return (
+    outside(pkg) ||
+    (pkg.requires ?? []).some(
+      (step) =>
+        (step.action === "install" || step.action === "upgrade") &&
+        outside(step)
+    )
+  )
+}
+
+/** The qualification beside the publisher's own label, where a person
+ * decides: the code's, not the package's. */
+export const OUTSIDE_CODE_WORDS =
+  "Its code comes from a publisher outside this server, and such code is experimental: how an approval reviews it and how the server confines it may change in any release."
+
 /** Each package an install brings first, with who publishes it where a
  * document does and the code it runs of its own: "Also installs Labs, which
  * runs code on your server, automatically." What is in place already is

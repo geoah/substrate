@@ -25,10 +25,10 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	const pkg = "widgets.test.dev/widgets"
 	const jobKind = pkg + "/job"
 	connector := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "connector", "fts": false}
+		return map[string]any{"type": typ, "writer": []any{"function", "agent"}, "fts": false}
 	}
 	owner := func(typ string) map[string]any {
-		return map[string]any{"type": typ, "writer": "owner", "fts": false}
+		return map[string]any{"type": typ, "writer": "person", "fts": false}
 	}
 	failing := func(name, message string) map[string]any {
 		return vocabulary.FunctionManifest(pkg, name, map[string]any{
@@ -47,11 +47,10 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	schedule := map[string]any{"schedule": map[string]any{
 		"recurrence": "FREQ=HOURLY", "timezone": "UTC", "startsAt": startsAt.Format(time.RFC3339),
 	}}
-	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
+	if err := enginetest.Install(ctx, ds, substrate.ActorPerson, enginetest.Manifest{
 		Name: "widgets", Authority: pkg,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(pkg, 0),
-			vocabulary.ActorManifest(pkg, vocabulary.PackageActor(pkg)),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "job"}, map[string]any{
 				"traits":          []any{vocabulary.TraitSyncCore},
 				"displayTemplate": "{name}",
@@ -92,7 +91,7 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: jobKind, ID: fid("inbox"), Properties: map[string]any{"name": "inbox"},
 	}); err != nil {
 		t.Fatalf("put job: %v", err)
@@ -147,7 +146,8 @@ func TestSyncStatusCountsAParkedScheduleFire(t *testing.T) {
 	// A run that completes after the park is the newer word: the record's
 	// own `ok` stands, the park still counted beside it.
 	later := st.LastParkedAt.Add(time.Minute)
-	actor := substrate.Actor(vocabulary.PackageActor(pkg))
+	authority, name := vocabulary.SplitPackageRef(pkg)
+	actor := substrate.FunctionActor(authority, name, "jobsync")
 	if err := ds.inTx(ctx, actor, false, func(t *txn) error {
 		return t.asSyncWriter(actor, func() error {
 			_, err := t.patch(eref{Kind: jobKind, ID: fid("inbox")}, substrate.PatchInput{Properties: map[string]any{

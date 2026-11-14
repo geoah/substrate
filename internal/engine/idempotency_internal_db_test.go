@@ -256,7 +256,7 @@ func TestIdempotencyKeyExpiredRowIsDeadBeforeTheSweep(t *testing.T) {
 	ds := openInternalDataset(t)
 	ctx := context.Background()
 	const task = "samples.substrate.reamde.dev/tasks/task"
-	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorPerson,
 		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "first"}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -265,7 +265,7 @@ func TestIdempotencyKeyExpiredRowIsDeadBeforeTheSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Live, this body would be a fingerprint conflict; dead, the key is free.
-	second, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+	second, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorPerson,
 		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "second"}})
 	if err != nil {
 		t.Fatalf("create under an expired key: %v", err)
@@ -276,7 +276,7 @@ func TestIdempotencyKeyExpiredRowIsDeadBeforeTheSweep(t *testing.T) {
 	if n := keyRows(t, ds, "stale-1"); n != 1 {
 		t.Fatalf("the takeover left %d rows", n)
 	}
-	again, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorAPI,
+	again, err := ds.Put(substrate.WithIdempotencyKey(ctx, "stale-1"), substrate.ActorPerson,
 		substrate.PutInput{Kind: task, Properties: map[string]any{"name": "second"}})
 	if err != nil || again.ID != second.ID {
 		t.Fatalf("the taken-over key does not answer its new attempt: %+v %v", again, err)
@@ -347,7 +347,7 @@ func TestIdempotencyKeyExpiredIsSwept(t *testing.T) {
 	ds := openInternalDataset(t)
 	ctx := context.Background()
 	in := substrate.PutInput{Kind: "samples.substrate.reamde.dev/tasks/task", Properties: map[string]any{"name": "aging"}}
-	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "old-1"), substrate.ActorAPI, in)
+	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "old-1"), substrate.ActorPerson, in)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestIdempotencyKeyExpiredIsSwept(t *testing.T) {
 		t.Fatalf("the sweep left an expired key: %d rows", n)
 	}
 	// A swept key is a fresh key: the same body creates again.
-	again, err := ds.Put(substrate.WithIdempotencyKey(ctx, "old-1"), substrate.ActorAPI, in)
+	again, err := ds.Put(substrate.WithIdempotencyKey(ctx, "old-1"), substrate.ActorPerson, in)
 	if err != nil {
 		t.Fatalf("create after the sweep: %v", err)
 	}
@@ -392,11 +392,11 @@ func TestIdempotencyKeyOverCapCreateNamesTheRecord(t *testing.T) {
 	t.Cleanup(func() { idempotencyOutcomeCap = cap })
 
 	in := substrate.PutInput{Kind: task, Properties: map[string]any{"name": "too big to keep"}}
-	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorAPI, in)
+	first, err := ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorPerson, in)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	_, err = ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorAPI, in)
+	_, err = ds.Put(substrate.WithIdempotencyKey(ctx, "big-1"), substrate.ActorPerson, in)
 	if !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("repeat of an over-cap create: %v, want ErrConflict", err)
 	}
@@ -417,7 +417,7 @@ func TestIdempotencyKeyRetryPresentsTheSameDownstreamKey(t *testing.T) {
 	ctx := context.Background()
 	kctx := substrate.WithIdempotencyKey(ctx, "echo-dk")
 	echoed := func(ctx context.Context) string {
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, crewPackage+"/keyecho", nil)
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, crewPackage+"/keyecho", nil)
 		if err != nil {
 			t.Fatalf("keyecho: %v", err)
 		}

@@ -74,6 +74,9 @@ type Config struct {
 	// Data is the data root every repository directory lives under. Its own
 	// type, because the operator hat loads it without the rest (LoadData).
 	Data Data
+	// Archive is where each repository is copied after its writes commit
+	// (archive.go).
+	Archive Archive
 	// InviteCode gates the ONE door into a fresh substrate: registering
 	// creates a repository and its user, and with a code set the door
 	// admits only a request that presents it. UNSET, THE DOOR READS NO CODE
@@ -90,20 +93,19 @@ type Config struct {
 	// the previews say so (decision 0067). In records; 0 removes the ceiling.
 	ConversionCeiling int64 `envconfig:"SUBSTRATE_CONVERSION_CEILING" default:"10000"`
 
-	// DigestBytesPerSecond caps the rate the process hashes its
-	// repositories' finished changelog segments at, behind their opens, over
-	// every repository together: hashing is one core busy for as long as
-	// the bytes last, and unpaced it starved the function bodies beside it
-	// on a four-core box. The digests also pause while any function or
-	// agent runs, whatever the cap. 0 removes the cap; a value above 0 and
-	// below MinDigestBytesPerSecond is refused, since it is a unit mistake
-	// (8 for 8 MiB) that would make a history of gigabytes take years with
-	// nothing logged.
-	DigestBytesPerSecond int64 `envconfig:"SUBSTRATE_DIGEST_BYTES_PER_SECOND" default:"8388608"`
+	// ArchiveBytesPerSecond caps the rate the process's archive passes copy
+	// at, over every repository together: a pass encodes and checksums each
+	// line, one core busy for as long as the bytes last, and unpaced that
+	// starved the function bodies beside it on a four-core box. The passes
+	// also pause while any function or agent runs, whatever the cap. 0
+	// removes the cap; a value above 0 and below MinArchiveBytesPerSecond is
+	// refused, since it is a unit mistake (8 for 8 MiB) that would make a
+	// history of gigabytes take years with nothing logged.
+	ArchiveBytesPerSecond int64 `envconfig:"SUBSTRATE_ARCHIVE_BYTES_PER_SECOND" default:"8388608"`
 
 	// OrphanGrace turns the GC sweep's ORPHAN COLLECTION on and sets its
 	// grace window: a mapping target whose live sources are all gone, whose
-	// properties are all machine-held, and that no live record points at is
+	// properties are all unpinned, and that no live record points at is
 	// tombstoned once it has carried the mark for this long. UNSET OR ZERO IS
 	// OFF, which is the default: the mark is derived either way and
 	// `filter.orphaned` lists it, so the destructive half is something a
@@ -125,6 +127,21 @@ type Config struct {
 	// start together without raising what the process runs at once. From 1,
 	// which fires one schedule at a time, to MaxTriggerLaneWorkers.
 	TriggerLaneWorkers int `envconfig:"SUBSTRATE_TRIGGER_LANE_WORKERS" default:"4"`
+
+	// RequestsPerPerson is how many requests a second one person may send
+	// once their token is read, and RequestBurstPerPerson how many they may
+	// send at once; past them a request answers 429 with a Retry-After. A
+	// person is a repository's sign-in today. The defaults sit far above
+	// what a person clicking through the console, or an app syncing a
+	// device, sends, and bound a script left running in a loop. A rate of 0
+	// paces nothing; a negative rate, or a burst below 1 beside a positive
+	// rate, is refused.
+	RequestsPerPerson     float64 `envconfig:"SUBSTRATE_REQUESTS_PER_PERSON" default:"100"`
+	RequestBurstPerPerson int     `envconfig:"SUBSTRATE_REQUEST_BURST_PER_PERSON" default:"500"`
+	// ChatTurnsPerPerson is how many chat turns with an agent one person runs
+	// at once. Each holds a model call and outlives the client that started
+	// it. 0 is the default; a negative value is refused.
+	ChatTurnsPerPerson int `envconfig:"SUBSTRATE_CHAT_TURNS_PER_PERSON" default:"4"`
 
 	// HealthFailingAfter is how long every delivery of a trigger must have
 	// parked, since its newest ok run, before the dispatcher opens the
@@ -171,6 +188,13 @@ type Config struct {
 	// names its repository does not own.
 	InsecureAllowForeignPackages bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_FOREIGN_PACKAGES" default:"false"`
 
+	// ImportWithoutSecrets names the repositories, each by its name or its
+	// id and separated by commas, that the boot imports without their
+	// secrets when this host's credential key does not open them (decision
+	// 0264): the operator's acceptance of the loss, after the refusal named
+	// the key the directory was written under. Empty imports nothing so.
+	ImportWithoutSecrets string `envconfig:"SUBSTRATE_IMPORT_WITHOUT_SECRETS" default:""`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.
@@ -205,6 +229,15 @@ type Config struct {
 	// ingress. The instruments record either way; this is only the door.
 	Metrics bool `envconfig:"SUBSTRATE_METRICS" default:"false"`
 
+	// MetricsAnonymize hashes the names the usage series carry: the
+	// repository, and every kind, package, function, agent and provider row
+	// outside the shipped vocabulary, keyed by the credential key so the
+	// hashes are stable across restarts and unreadable without it. ON by
+	// default: the usage series say what each person does, and a deployment
+	// whose operator should read that (one person's own box, or friends who
+	// agreed to it) turns it off.
+	MetricsAnonymize bool `envconfig:"SUBSTRATE_METRICS_ANONYMIZE" default:"true"`
+
 	// TrustedProxies lists the reverse proxies in front of the server, as
 	// comma-separated CIDRs or addresses. A request whose transport peer is
 	// one of them is paced by the client its X-Forwarded-For names (read
@@ -237,10 +270,10 @@ func Load() (Config, error) {
 	return c, err
 }
 
-// MinDigestBytesPerSecond is the smallest cap SUBSTRATE_DIGEST_BYTES_PER_SECOND
-// admits above zero: 64 KiB per second, under which a value is a unit
-// mistake rather than a rate anyone wants.
-const MinDigestBytesPerSecond int64 = 64 << 10
+// MinArchiveBytesPerSecond is the smallest cap
+// SUBSTRATE_ARCHIVE_BYTES_PER_SECOND admits above zero: 64 KiB per second,
+// under which a value is a unit mistake rather than a rate anyone wants.
+const MinArchiveBytesPerSecond int64 = 64 << 10
 
 // Validate refuses a configuration the service cannot run safely, before any
 // repository opens. A setting that would otherwise be dropped in silence (a
@@ -253,11 +286,14 @@ func (c Config) Validate() error {
 	if err := c.Data.Validate(); err != nil {
 		return err
 	}
+	if err := c.Archive.Validate(); err != nil {
+		return err
+	}
 	if c.RepositoryConnections < MinRepositoryConnections {
 		return fmt.Errorf("SUBSTRATE_REPOSITORY_CONNECTIONS is %d: it is the number of Postgres connections every repository shares, one repository takes half of them, and it must be at least %d so each repository gets two", c.RepositoryConnections, MinRepositoryConnections)
 	}
-	if c.DigestBytesPerSecond < 0 || (c.DigestBytesPerSecond > 0 && c.DigestBytesPerSecond < MinDigestBytesPerSecond) {
-		return fmt.Errorf("SUBSTRATE_DIGEST_BYTES_PER_SECOND is %d: it caps the bytes per second the process hashes of its repositories' changelogs behind the open, in bytes, so it is 0 (no cap) or at least %d (64 KiB); 8388608 (8 MiB) is the default", c.DigestBytesPerSecond, MinDigestBytesPerSecond)
+	if c.ArchiveBytesPerSecond < 0 || (c.ArchiveBytesPerSecond > 0 && c.ArchiveBytesPerSecond < MinArchiveBytesPerSecond) {
+		return fmt.Errorf("SUBSTRATE_ARCHIVE_BYTES_PER_SECOND is %d: it caps the bytes per second the process's archive passes copy, in bytes, so it is 0 (no cap) or at least %d (64 KiB); 8388608 (8 MiB) is the default", c.ArchiveBytesPerSecond, MinArchiveBytesPerSecond)
 	}
 	if c.OrphanGrace < 0 {
 		return errors.New("SUBSTRATE_ORPHAN_GRACE must not be negative: unset or 0 collects no orphans, and a positive duration (168h) is the window a marked record waits out before the sweep takes it")
@@ -267,6 +303,12 @@ func (c Config) Validate() error {
 	}
 	if c.TriggerLaneWorkers < 1 || c.TriggerLaneWorkers > MaxTriggerLaneWorkers {
 		return fmt.Errorf("SUBSTRATE_TRIGGER_LANE_WORKERS is %d: it is how many schedule fires one repository's dispatcher pass runs at once, so it is at least 1 and at most %d, the deliveries the whole process runs at once (4 is the default)", c.TriggerLaneWorkers, MaxTriggerLaneWorkers)
+	}
+	if c.RequestsPerPerson < 0 || (c.RequestsPerPerson > 0 && c.RequestBurstPerPerson < 1) {
+		return fmt.Errorf("SUBSTRATE_REQUESTS_PER_PERSON is %v and SUBSTRATE_REQUEST_BURST_PER_PERSON is %d: they are how many requests a second one person may send and how many at once, so the rate is 0 (no pacing) or positive, and a positive rate takes a burst of at least 1 (100 and 500 are the defaults)", c.RequestsPerPerson, c.RequestBurstPerPerson)
+	}
+	if c.ChatTurnsPerPerson < 0 {
+		return fmt.Errorf("SUBSTRATE_CHAT_TURNS_PER_PERSON is %d: it is how many chat turns one person runs at once, so it is at least 1, and 0 is the default of 4", c.ChatTurnsPerPerson)
 	}
 	if c.HealthFailingAfter <= 0 {
 		return fmt.Errorf("SUBSTRATE_HEALTH_FAILING_AFTER is %s: it is how long every delivery of a trigger must have parked before the trigger reads failing and its alert opens, and it must be a positive duration (1h is the default)", c.HealthFailingAfter)

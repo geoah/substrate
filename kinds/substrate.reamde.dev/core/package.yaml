@@ -5,7 +5,7 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: core
-  version: 24
+  version: 29
   description: >-
     One package whose kinds this repository holds: the group a declaration
     is versioned, owned and quarantined in. The row says who may write under
@@ -31,6 +31,46 @@ data:
     description:
       type: markdown
       description: what this package is for, in its own words
+    # The label the package states for its kinds (docs/stability.md, decision
+    # record 0256). Authored, not managed, and never defaulted: a header that
+    # states none stores none, and a reader treats that as experimental, the
+    # weakest promise. A kind carries no label of its own, so this is the one
+    # place a client looks. The loader holds the three values.
+    stability:
+      type: enum
+      values:
+        - stable
+        - beta
+        - experimental
+      description: how much the package's kinds may change; stable only gains
+        things, beta announces a break one release ahead, experimental may
+        change in any release, and absent reads as experimental
+    # The function interface the package's code is written against
+    # (docs/functions.md#the-interface, decision record 0265). Authored, not
+    # managed, and never defaulted: a header that names none stores none, and
+    # a reader treats that as 1. The loader refuses a version this server
+    # does not run, so a stored value is always one it runs.
+    interface:
+      type: int
+      description: the function interface the package's code is written against,
+        the input a function is handed and the object it calls back; absent
+        reads as 1
+    # The vocabulary dialect the package needs (decision record 0268).
+    # Authored, not managed, and never defaulted. The loader refuses a number
+    # above the one this server reads, so a stored value is always one it
+    # reads.
+    dialect:
+      type: int
+      description: the vocabulary dialect the package's declarations need,
+        the number a server publishes in discovery; absent needs nothing beyond
+        what the server reads
+    # How long the history of the package's kinds is kept where a kind states
+    # none (decision record 0282). Authored and inert, as a kind's own.
+    retention:
+      type: string
+      description: how long the history of this package's kinds is kept past
+        each record's latest state where a kind states none — all, none or
+        an ISO 8601 duration such as P30D; absent reads as all
     # The kind names this package has spent (decision record 0055). Authored,
     # not managed: the author writes a name here to retire it, the engine
     # carries the list into every later header of the package, and a kind
@@ -49,9 +89,12 @@ data:
       type: int
       managed: true
       description: the closure's incremental version, maintained by the engine
-    # The package's actors are read off the actor documents it declares, so
-    # the engine writes this list; nothing authors it on the header itself.
+    # The actors a package declared, when a package could declare one. No
+    # package declares an actor now (decision 0270), and the engine writes
+    # none: deprecated, so a stored list stays valid until the repository
+    # migration that clears it.
     actors:
+      deprecated: true
       type: string
       repeated: true
       managed: true
@@ -70,7 +113,8 @@ data:
     # document. A later apply, upgrade or re-import leaves it in place, so it
     # names the first declarer. Absent on a package created before the stamp.
     declaredBy:
-      type: string
+      type: reference
+      kind: substrate.reamde.dev/core/actor
       managed: true
       description: the actor that first declared this package, stamped by
         the engine when the row is created
@@ -86,7 +130,7 @@ data:
       description: the client id of the app that declared this package and
         keeps its declarations
     # The app a takeover took the package from (decision record 0205): its
-    # client id, or its actor where none was stamped.
+    # client id, or its publisher where none was stamped.
     takenOverFrom:
       type: string
       managed: true

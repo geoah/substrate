@@ -79,6 +79,18 @@ id may exist under two kinds as two unrelated records, and a record read is
 always scoped to its kind. There is no cross-kind read by bare id anywhere on
 the surface; a list that spans kinds names each one in `filter.kinds`.
 
+**A repository's own kinds are under `~`.** The packages a repository
+declares and the samples it adds live in its local namespace, the authority
+`~`, so a record of its tasks kind is at `/api/v1/~/tasks/task/01jd8…`
+whatever the repository is called
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). The repository's
+full name is another spelling of `~` on every input: an address
+(`/api/v1/ada.example.com/tasks/task/01jd8…`), a body's `kind`,
+`filter.kinds`, a reference value, a [vocabulary apply](vocabulary.md)'s
+documents and an [app](apps.md)'s requested scopes all accept it and fold it
+into `~`. Every reply says `~`: a record's `kind`, a reference's `ref`, a
+declaration's id and a kind's `authority`.
+
 An id that holds a `/` needs care: a client percent-encodes each `/` in it,
 and the API decodes it exactly once. Unencoded, each `/` starts a path
 segment, so the path names no record. A [kind declaration](vocabulary.md)'s
@@ -121,14 +133,14 @@ so a list of a heavily annotated record stays small. `expand` follows
 references one hop:
 
 ```http
-GET /api/v1/records?filter={"kinds":["ada.example.com/tasks/task"],
+GET /api/v1/records?filter={"kinds":["~/tasks/task"],
                              "properties":{"status":{"eq":"open"}}}
                     &orderBy=dueAt&first=20&expand=project,assignee
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207, "generation": "7f3a0c2e9b1d4e6f",
-   "included": {"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd": {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
-                  "kind": "ada.example.com/tasks/project", "properties": {…}, …},
-                "ada.example.com/people/person/9f2k": {…}}}
+   "included": {"~/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd": {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+                  "kind": "~/tasks/project", "properties": {…}, …},
+                "~/people/person/9f2k": {…}}}
 ```
 
 `expand=a,b` names **reference properties declared by the kinds the filter
@@ -170,13 +182,13 @@ the list to the records holding a reference AT one record, optionally through
 one named property:
 
 ```http
-GET /api/v1/records?filter={"referencing":{"ref":"ada.example.com/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd",
+GET /api/v1/records?filter={"referencing":{"ref":"~/tasks/project/01jbx9m2qz7k4c5v8n3w6t1hrd",
                                             "property":"project"}}
 
 → {"records": [...], "head": 4207, "generation": "…",
-   "matches": {"ada.example.com/tasks/task/t9": [{"property": "project"}],
-               "ada.example.com/notes/note/n4": [{"property": "project"},
-                                                  {"property": "links", "path": "related.project"}]}}
+   "matches": {"~/tasks/task/t9": [{"property": "project"}],
+               "~/notes/note/n4": [{"property": "project"},
+                                   {"property": "links", "path": "related.project"}]}}
 ```
 
 The target is matched by its canonical id **and every former id**, so a pointer
@@ -227,10 +239,10 @@ input WITH `kind`, and the server assigns the id.
 
 ```http
 POST /api/v1/records
-{"kind": "ada.example.com/tasks/task",
+{"kind": "~/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "ada.example.com/tasks/task", …, "version": 1}
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "~/tasks/task", …, "version": 1}
 ```
 
 A body with no `kind` is `422`, an unknown kind `404`, and a body carrying an
@@ -258,7 +270,7 @@ the writer's
 Requests and responses carry the **flat record**: one JSON object with
 `properties` and the server-set fields at the top level. The
 four-key [envelope](data-model.md#the-envelope) is the YAML document form;
-REST never wraps. `title`, `body`, and the temporal properties appear inside
+REST never wraps. `title` and the temporal properties appear inside
 `properties` and nowhere else, so `PutInput` and `PatchInput` accept them only
 there. `PutInput` carries an optional top-level `kind`, `id` and `ifVersion`;
 the CLI is what maps `metadata.id` and `metadata.ifVersion` onto them. On a
@@ -302,8 +314,9 @@ PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/01jbx9m2qz7k4c5v8n3w6t1hrd
 ```
 
 Read the person GitHub linked up. Single-record reads carry two sidecars a
-list never does. `propertyMeta` is per property: who wrote it, at which tier,
-and the alternatives other sources assert
+list never does. `marks` is per property: whether sync may replace it, who
+set it, the source records behind it, when it was set, and the alternatives
+other source records offer
 ([managed properties](projection.md#managed-properties) explains the
 mechanism). `linkedFrom` is the records that map ONTO this one
 ([reading the links back](projection.md#reading-the-links-back-linkedfrom)).
@@ -315,12 +328,12 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
 
 → {"id": "9f2k", "kind": "samples.substrate.reamde.dev/people/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
-   "propertyMeta": {"name": {"manager": "console", "tier": "owner",
-     "updatedAt": "2026-08-04T09:12:00Z",
+   "marks": {"name": {"pinned": true,
+     "setBy": {"ref": "substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0"},
+     "setAt": "2026-08-04T09:12:00Z",
      "alternatives": [
-       {"actor": "function:providers.substrate.reamde.dev:github:githubsync",
-        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z",
-        "source": "providers.substrate.reamde.dev/github/user/ada"}]}},
+       {"derivedFrom": {"ref": "providers.substrate.reamde.dev/github/user/ada"},
+        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}},
    "linkedFrom": [
      {"ref": "providers.substrate.reamde.dev/github/user/ada",
       "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
@@ -332,11 +345,14 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
       "mapping": "samples.substrate.reamde.dev/people/slackuserperson"}]}
 ```
 
-An alternative's `updatedAt` is its source record's, not the target's, and
-its `source` is that record's path; a machine-held property's manager names
-its `source` too, where its own offer backs the stored value.
-[Reading provenance](projection.md#reading-provenance-propertymeta) has the
-rule.
+`setBy` links the [actor record](#actors) of the person, who typed the
+name, so it is pinned. An alternative is keyed by the source record it is
+read from, its `derivedFrom`, and its `updatedAt` is that record's, not the
+target's; a value sync wrote names the records behind it in its own
+`derivedFrom`. `POST …/<id>/pin` and `POST …/<id>/release`, each with
+`{"properties": [...]}`, pin a value against sync and hand it back.
+[Where a value came from](projection.md#where-a-value-came-from-the-marks)
+has the rules.
 
 `linkedFrom` is one entry per source record whose mapping-owned subject slot
 points here: `ref` its record path, `kind` the same kind said on its own,
@@ -368,6 +384,16 @@ repository:
 | `delete` | Soft delete: tombstones the record; hard deletion waits for finalizers to release.                                                                                  |
 | `merge`  | Join two records of one kind; the loser's id resolves to the winner while the winner exists ([merges](projection.md#merges)).                                       |
 | `split`  | Reverse one merge, restoring the loser from the merge record.                                                                                                       |
+
+Beside them, two actions move a property's [mark](projection.md#where-a-value-came-from-the-marks)
+and no value: `POST <record path>/pin` keeps the named properties' values
+against sync, and `POST <record path>/release` hands them back to it, which
+picks each value again among what its source records offer. Each takes
+`{"properties": ["name"], "ifVersion": 3}` (`ifVersion` optional), answers
+the record with its marks, works on a required property, and is an entry of
+the record's history, a `patch` whose payload names what it `pinned` or
+`released`. A property the record holds no value for, or the subject slot a
+mapping fills, is refused.
 
 A pointer at another record is a property, so it is written by `put` and
 `patch` like every other value, and a record and everything it points at commit
@@ -439,6 +465,15 @@ split keeps those edits. Every one of them is the safe read-then-conditional-wri
 primitive, and every one moves the version it checked, so a retry under the
 same precondition is a `conflict` rather than a silent second effect.
 
+A version counts the writes of one record's life, not of its id. After a
+purge, the one `?purge=true` runs or the sweep's, a `put` at the same id
+creates a fresh record at version 1, so a guard of `ifVersion: 1` a client
+saved before the purge passes against the new record. Providers rely on
+reusing an id that way, so the server does not reserve a purged id
+([decision 0072](decisions/0072-reserve-a-purged-record-id-against-reuse.md)).
+A client that must know it is still writing the record it read compares the
+record's `createdAt` as well as its version.
+
 ```http
 DELETE /api/v1/samples.substrate.reamde.dev/people/person/9f2k?ifVersion=4
 POST   /api/v1/merge   {"kind": "samples.substrate.reamde.dev/people/person",
@@ -486,6 +521,10 @@ and the client cannot tell that from a merge somebody else made.
 
 Those five operations take the `Idempotency-Key` request header: the client's
 name for one attempt, any string up to 255 bytes (a UUID is the usual choice).
+So do `put`, `patch` and `delete` at a record's path, since revision 2 of the
+`records` feature, for the retry a guard alone cannot make safe: a guarded
+write whose answer was lost and that is sent again meets the version its first
+attempt moved, and its `conflict` may be its own.
 A function or agent body hands its own external effects an idempotency key
 derived from the client's, so a retry presents the same key downstream too.
 
@@ -502,7 +541,9 @@ The contract, per key:
 
 - The effect runs once. A repeat under the same key with the same body
   answers the first attempt's outcome, the same body and the same status code
-  (`201` for the record a create, a merge or a split made, `200` for a call), for 24 hours from
+  (`201` for the record a create, a merge or a split made, and for a `put`
+  that created its record; `200` for any other `put`, a `patch`, a `delete`
+  and a call), for 24 hours from
   the moment the first attempt's outcome committed (not from when the request
   arrived); after that the key is free again. The key is
   looked up before the callable is resolved or admitted, so the repeat
@@ -510,13 +551,17 @@ The contract, per key:
   redeclared in between.
 - The key binds to the repository and the operation, never to the token: a
   retry after `logout` and `login` still matches, and the same string sent to
-  `/merge` and to a create is two keys.
+  `/merge` and to a create is two keys. A `put`, a `patch` and a `delete` are
+  three operations, and each binds the key to the record it addresses as
+  well as the body, so the same key at another record is a different
+  request.
 - The same key with a different body is `409 conflict`. So is a repeat that
   arrives while the first function or agent call is still running: the
   server does not hold the second request open for a body of unknown length,
-  and the client retries after the first answers. A create, merge or split
-  runs inside the repository's one write transaction, so its repeat waits for
-  that commit and then answers the stored outcome. A running call's claim on
+  and the client retries after the first answers. A create, `put`, `patch`,
+  `delete`, merge or split runs inside the repository's one write
+  transaction, so its repeat waits for that commit and then answers the
+  stored outcome. A running call's claim on
   its key lasts its own deadline plus a minute of slack (a function call adds
   two minutes for provisioning a PEP 723 body before its timeout starts); a
   claim a dead server left behind is cleared when the repository next opens.
@@ -534,15 +579,17 @@ The contract, per key:
   failed is `409 conflict` naming that thread.
 - A stored outcome is capped at 1 MiB. A larger one is not kept: the effect
   still ran once, and the repeat is `409 conflict` saying the outcome was not
-  retained. For a create, merge or split the message names the record the
-  first attempt wrote, so the client reads it instead.
+  retained. For a write of a record the message names the record the first
+  attempt wrote, so the client reads it instead.
 - Agent chat streams and is excluded; there is no stored outcome to replay.
-  `vocabulary/apply`, catalog import and `POST /tokens` do not take the header,
-  and a `POST /api/v1/records` whose `kind` is a vocabulary kind (`kind`,
-  `trait`, ...) refuses it (`422`): a declaration is addressed by its own id.
+  `vocabulary/apply`, catalog add and `POST /tokens` do not take the header.
+  A write of a vocabulary kind (`kind`, `trait`, ...) refuses it (`422`),
+  through `POST /api/v1/records` or at the record's path: a declaration is
+  addressed by its own id. So does a bundle's lifecycle `PATCH` (`400`),
+  which is a transition and not a record write.
 
 The key store is a Postgres table, `idempotency_keys`, and not part of the
-changelog: a repository restored from its directory alone
+changelog: a repository restored from its archive alone
 ([Backups](operations.md#backups)) forgets every key, and the first retry
 after such a restore runs once more. Keys survive a restart and a
 `repository rebuild`, which replay nothing the keys answer for.
@@ -559,6 +606,30 @@ The `people` and `tasks` samples ship mappings onto their own `person` and
 ([Suggested mappings](bundles.md#suggested-mappings)), and `Idempotency-Key`
 on the `POST` is the one safe create for them.
 
+### What a client may conclude after a failure
+
+A write of one record (`put`, `patch`, `delete`, a create, `merge`, `split`)
+runs in one transaction, so it lands whole or not at all. What a client may
+conclude when it does not get the answer it expected:
+
+| After | It may conclude |
+| --- | --- |
+| A timeout on a `put` at an id it chose, with no guard | Retry. A `put` that changes nothing adds nothing to the changelog. |
+| A timeout on a guarded write, sent with an `Idempotency-Key` | Retry under the same key within 24 hours. If the first attempt landed, the retry answers its outcome. |
+| A timeout on a guarded write, sent without a key | Nothing. A retry's `conflict` may be its own first attempt: read the record and compare. |
+| A timeout on a create, a function or agent call, a merge or a split, sent with a key | Retry under the same key within 24 hours. |
+| `500 internal` or `503 unavailable` with the reason `in_doubt` | The write may have landed: the server lost the database's answer to its commit, or a step after the commit failed. Read the record, or retry under the same key. |
+| `409 conflict` with the reason `first_attempt_landed`, on a request repeated under a key | This request did not run, and the first attempt landed: its outcome was too large to keep, so read what it wrote, which the message names. |
+| `409 conflict` with the reason `first_attempt_running`, on a request repeated under a key | This request did not run, and the first attempt has not answered: it may still land. Retry under the same key once it has. |
+| Any other error on a write of one record | It did not land. A function or agent call is not one record: its body may have committed effects before the error, as [above](#idempotency-and-retries) says. |
+| A dropped watch | Resume from the saved position: in order, nothing skipped, possibly a repeat. A `410 compacted` means list again ([the changelog](changelog.md#watching)). |
+| A `410 compacted` on a list page | List again from the first page ([pagination](#pagination)). |
+
+One case is not detected. A database restored from a dump keeps the history
+generation the dump held, so a client resuming a cursor it saved after the
+dump was taken resumes silently wrong, unless the operator runs the step the
+restore procedure names ([backups](operations.md#backups)).
+
 ## The filter grammar
 
 A filter is one JSON document, URL-encoded in the records route's `?filter=`,
@@ -572,9 +643,10 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
  "labels": {"owner/starred": {"eq": true}}}
 ```
 
-- `kinds` names kinds by reference, in full (`<authority>/<package>/<name>`);
-  a bare word is `422 validation` naming every kind the repository declares
-  under it ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
+- `kinds` names kinds by reference, in full (`<authority>/<package>/<name>`,
+  `~/<package>/<name>` for the repository's own); a bare word is
+  `422 validation` naming every kind the repository declares under it
+  ([0101](decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
   Absent, the list spans every kind in the repository; a kind the repository
   never declared is `404`.
 - `properties` carries one condition per property. The operator set is one
@@ -623,7 +695,7 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   against ONE property's own text, so `{"notes": {"match": "rack lay*"}}` is
   every record whose `notes` holds a word `rack` and a word starting `lay`,
   in any form and any case. It applies to string-family and prose properties
-  (scalar or repeated, whose items are matched together), `title`, `body` and
+  (scalar or repeated, whose items are matched together), `title` and
   labels, and is refused by name on a number, an instant, a boolean, a state
   or a reference, which have no words. It vectorizes the value at read time,
   so it is exact to the property and not index-backed; the index-backed
@@ -645,7 +717,7 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   `true` lists only soft-deleted ones.
 - `orphaned` picks the **orphaned mapping targets**: `true` lists only the
   records the engine has marked — a kind something maps onto, no live covered
-  source left, and nothing above the machine tier holding a property — and `false`
+  source left, and nothing on it pinned — and `false`
   only the unmarked. Absent is every record. It is derived state, not a
   property, so a re-linked record leaves the set on its next write
   ([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)).
@@ -674,7 +746,9 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   ([above](#who-points-at-a-record-referencing)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
-a JSON list of `{property, desc}`). A number sorts as a number and an instant
+a JSON list of `{property, desc}`). A kind and an id sort in plain byte order,
+whatever the database's locale: upper case before lower case, and punctuation
+by its byte. A number sorts as a number and an instant
 as an instant; a `money` property sorts by the exact number it denotes, across
 currencies, so a list that wants one currency filters on it. A `quantity`
 property sorts by its value converted to the root of its linear component
@@ -705,8 +779,10 @@ is a `bad_request` that names it, never a silent success: `orderBy` with `q`,
 ordering column is refused naming the camelCase replacement, and a malformed
 filter document is refused naming the field that would not decode. The
 single-record `GET` honors no parameter at all, so once its kind resolves any
-one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`, and
-`DELETE` refuses every parameter but `ifVersion` and `purge`. A query string
+one it is sent (`expand`, `withEdges`, a typo) is the same `bad_request`. A
+record's `PUT` and `PATCH` honor none either: their `ifVersion` is in the body,
+so a `?ifVersion=` is refused rather than writing with no guard. `DELETE`
+refuses every parameter but `ifVersion` and `purge`. A query string
 that does not parse (a `;` separator, a bad `%` escape) is a `bad_request` on
 each of these routes and `/changes`, naming the parse error, because the pair
 it drops would otherwise read as absent.
@@ -799,6 +875,30 @@ different order or a different predicate is refused (`422 validation`) rather
 than silently seeking past rows the new predicate admits and answering a short
 page that looked complete. An exhausted list carries no `cursor` at all: there
 is no next page.
+
+A token the server can no longer resume, through nothing the client did, is
+refused with one answer, `410 compacted`, carrying the `head` and `generation`
+to start over from: list again from the first page. It is the answer for a
+request that is still valid and whose continuation is not. Four causes lead
+there. The history was replaced since the walk began (a restore). The same
+`filter` and `orderBy` now order the rows differently, because a declaration
+or a [unit](units.md) they read changed: installing a package that declares a
+property the order reads, for one, or, for an app's token, a kind its grant
+reads declared since, which the same request now reaches (a cursor is bound to
+the request the client sent, never to what its grant narrowed it to). For an
+app's token, the request now reaches nothing it can read, as when the one kind
+it read no longer has the purpose or binds the trait it asks for; the same
+request without a cursor answers an empty page. Or the token was cut in
+another order of kinds and ids: it carries, as its version, the order a
+record's kind and id compare in, and a server refuses a token cut in an order
+it does not compare in rather than resume it in its own. An upgrade that
+changes that order, as the one that put kinds and ids in byte order did, ends
+every walk in progress once, with a `410`. A request the server would refuse
+as a fresh one gets that refusal with a cursor too: one that names a kind
+since removed, or a trait whose last implementer went, or, for an app's token,
+a kind it may no longer read, answers what the same request without a cursor
+answers (`404`, `422`).
+The [window read](#the-window-read)'s token follows the same rules.
 
 ### Addressing a page by its number
 
@@ -898,55 +998,48 @@ reports: the served API versions; the server build; the
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
 registration asks for; the request surface,
-with its endpoint and its compatibility; and a feature list. No dialect
-is on the wire: the
-[vocabulary](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) and
-[changelog](changelog.md#the-dialect-a-changelog-is-written-in) dialects are
-stored per repository, and a binary too old for a store refuses to open it,
-which surfaces as `unavailable`. That
+with its endpoint and its compatibility; the
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+this server reads, `vocabulary.dialect`, since the `discovery` feature's
+revision 2; and a feature list. A publisher compares the dialect with the one
+each version of a package needs. The
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in) is not
+on the wire: it is stored per repository, and a binary too old for a store
+refuses to open it, which surfaces as `unavailable`. That
 feature list is what a client reads instead of trying a route to see whether
-it exists: each entry names a feature, its stability and the `surfaces` that
-serve it:
+it exists: each entry names a feature, which is a group of routes, with its
+stability, its revision and the `surfaces` that serve it:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "changelog": {"horizon": 0},
- "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "changefeed", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "search", "stability": "beta", "surfaces": ["rest"]},
-              {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
+ "vocabulary": {"dialect": 6},
+ "features": [{"name": "records", "stability": "stable", "revision": 1, "surfaces": ["rest"]},
+              {"name": "auth", "stability": "beta", "revision": 2, "surfaces": ["rest"],
+               "notice": "Before 1.0, sign-in names a person, who then picks a repository."},
+              {"name": "search", "stability": "beta", "revision": 1, "surfaces": ["rest"]},
+              {"name": "agents", "stability": "experimental", "revision": 1, "surfaces": ["rest"]}],
  "surfaces": {"rest": {"endpoint": "/api/v1", "compatibility": "supported"},
               "mcp": {"endpoint": "/mcp", "compatibility": "preview"}},
  "grammar": {"kind": "<authority>/<package>/<name>",
              "record": "<authority>/<package>/<kind>/<id>",
              "collection": "/api/v1/records",
              "recordPath": "/api/v1/{authority}/{package}/{kind}/{id}",
-             "actors": ["api", "console", "substratectl",
-                        "bundle:<authority>:<package>",
-                        "function:<authority>:<package>:<name>",
-                        "agent:<authority>:<package>:<name>",
-                        "app:<authority>", "app:local", "app:<host>",
-                        "substrate"]},
+             "actorTypes": ["person", "app", "function", "agent", "package", "system"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp",
                "authorize": "/oauth/authorize", "token": "/oauth/token"},
- "registration": {"inviteRequired": true, "totpRequired": true}}
+ "registration": {"inviteRequired": true, "totpRequired": true, "nameHost": "substrate.example.com"}}
 ```
 
-A feature's `surfaces` are the doors to its own operations, not to its
-records: a trigger and a blob manifest are ordinary records and read through
-the records route whatever the entry says. Every entry lists `rest` but
-`mcp`, which lists the MCP surface ([connecting an assistant](mcp.md)). The
-example above is abridged; the full list, and it is the same for every
-deployment of a given build, is `triggers`, `functions`, `bundles`, `blobs`,
-`export`, `changefeed`, `search`, `aggregate`, `units`, `embeddings`,
-`agents`, `apps` and `mcp`, and a deployment that booted with an
-[operator defaults](operations.md#operator-defaults) file adds
-`operatorDefaults` ([operator defaults](#operator-defaults)). `grammar.collection`
-is the records route and `grammar.recordPath` the record path, so a client
-checks the two shapes it must agree with the substrate about before it
-addresses anything.
+The example's feature list is abridged; [the features](#the-features) below
+names every entry. `grammar.collection` is the records route and
+`grammar.recordPath` the record path, so a client checks the two shapes it
+must agree with the substrate about before it addresses anything.
+`grammar.actorTypes` is the types of [actor record](#actors) a write may
+link, since the `discovery` feature's revision 3, where it replaced
+`grammar.actors`, the list of actor spellings.
 
 `surfaces` is the verdict per request surface, and it is a different axis from
 a feature's stability. `compatibility` is `supported` on `rest`: the REST API
@@ -954,8 +1047,8 @@ is the interface a client builds on, and a break there is announced, never
 silent. It is `preview` on `mcp`, at `/mcp`, whose tools may still move. A second, preview surface used to sit beside it and is gone
 ([decision 0079](decisions/0079-graphql-is-removed-and-the-records-read-is-one-route.md));
 the object is keyed so its removal was one key leaving, not a reshaped
-document. A feature's `stability` says how far that feature's own shape has
-settled, and it binds on the one door.
+document. A feature's `stability` says how that feature's own routes may
+change.
 
 `registration` is what the register door asks for. `registration.inviteRequired`
 is `false` only on a deployment with
@@ -964,54 +1057,123 @@ none; `registration.totpRequired` is `false` only where the second factor is
 [switched off](auth.md#the-second-factor-can-be-switched-off-locally). Both
 describe a local substrate, and a client reads them before it asks a person
 for either code. Neither field is a verdict — the service refuses on its own
-terms either way.
+terms either way. `registration.nameHost` is the host a short name is
+completed under at a registration and a rename, the host of
+`SUBSTRATE_PUBLIC_URL`, empty where none is configured, and then a name is
+typed whole ([the default name](auth.md#the-default-name)); a client previews
+the name with it.
 
-### What a feature's stability means
+### The features
 
-The stamp is a promise about **change**, not about quality: everything listed
-is served and works today.
+A feature's entry carries:
 
-| Value | Means |
-| ----- | ----- |
-| `alpha` | The shape may change or be withdrawn with no v1 wire break. Pin the server version if you depend on it. |
-| `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
-| `stable` | Frozen for v1. Changes are additive only. |
+| Key | What it says |
+| --- | ------------ |
+| `name` | The feature. |
+| `stability` | `stable`, `beta` or `experimental`: how the feature's routes may change. It is a promise about change, not about quality, and everything listed is served and works today ([stability](stability.md#the-three-labels)). |
+| `revision` | A number that starts at 1 and only goes up. It goes up when the feature gains something a client may want to check for: a route, a parameter, a request field, a response field. Always present. |
+| `surfaces` | The request surfaces that serve the feature's own operations, each a key of the document's `surfaces` object. They say nothing about its records: a trigger and a blob manifest are ordinary records and read through the records route whatever the entry lists. |
+| `notice` | Present only where the server announces a coming break to a beta feature, or a deprecation. |
 
-**The settled features report `stable`**: `triggers`, `functions`, `bundles`,
-`blobs` and `changefeed`. `search` reports `beta`: it is served, at
-`GET /api/v1/records?q=`, and the hit shape (the per-arm `scores` beside the
-page) is young. `export` reports `beta` too: `GET /api/v1/export` streams the
-repository's recovery export, a tar of its directory in the snapshot format
-([backups](operations.md#backups)), and it freezes by a decision of its own,
-not by age. `agents` and `embeddings` report `alpha` because their shapes are
-still moving; a surface in their `surfaces` says where they are served, not
-that they are frozen. `embeddings` reach a caller as the semantic arm of
-[`search`](#search), its one door.
+Every route the server registers is in exactly one feature, so an entry
+stands for every route behind it. The entries, in the order the document lists
+them:
 
-The list is a literal in the server (`internal/api/discovery.go`), and it is
-every feature the build serves: one implementation serves them all, so there
-is nothing per-deployment to compute. A client reads the list for the
-stability stamps and the `surfaces`, not to find out whether a route is
-there.
+| Feature | Stability | What it covers |
+| ------- | --------- | -------------- |
+| `discovery` | `stable` | This document and `GET /healthz`. |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`). |
+| `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
+| `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
+| `blobs` | `stable` | [Blob](#blobs) upload and read. |
+| `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
+| `functions` | `stable` | The function call ([functions](functions.md)). |
+| `bundles` | `stable` | Bundle status and `bind`, and the catalog with its one `add` ([bundles](bundles.md)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete`, `/repository/rename` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). Since revision 4 every token is held to its person's roles, a person who is not an admin reaches `/tokens` and `/identity` for their own, and `GET /identity` lists the roles held in each repository ([roles](auth.md#roles)). Since revision 5 an admin renames the repository at `/repository/rename`, its former name resolving for 90 days ([renaming a repository](auth.md#renaming-a-repository)). |
+| `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
+| `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). Since revision 3 a kind's description says its `control` class ([roles](auth.md#roles)). |
+| `retention` | `experimental` | `GET /api/v1/retention`: how long each kind's history is kept, as declared, overridden and in effect ([retention](#retention)). |
+| `merge` | `beta` | `POST /api/v1/merge` and `POST /api/v1/split`. |
+| `connect` | `beta` | Connecting an account to its provider: `POST /api/v1/oauth/start` and the callback the provider redirects to. |
+| `sync` | `beta` | `GET /api/v1/sync/status`. |
+| `domain` | `beta` | [Verify domain](auth.md#verify-domain): `POST /api/v1/repository/domain` and its `/verify`. |
+| `export` | `beta` | `GET /api/v1/export`, the repository's recovery export: its archive as one tar, the manifest last ([backups](operations.md#backups), [the stored format](stored-format.md#the-archive)). Revision 2 is the archive's layout. |
+| `search` | `beta` | The ranked read, `q=` on the records route ([search](#search)). It has no route of its own. |
+| `metrics` | `beta` | `GET /metrics`. |
+| `site` | `beta` | The deployment's site under `/site/`, and its tab icon. |
+| `aggregate` | `experimental` | [The aggregate read](#the-aggregate-read), `aggregate=` on the records route. |
+| `embeddings` | `experimental` | The semantic arm of `q=`, its one door. |
+| `units` | `experimental` | `GET /api/v1/units` and `GET /api/v1/units/convert` ([units](#units-and-conversions)). |
+| `agents` | `experimental` | The agent chat and call routes, and a thread's `events` and `stop` ([agents](agents.md)). |
+| `mcp` | `experimental` | The MCP door at `/mcp` and its protected-resource metadata ([connecting an assistant](mcp.md)). |
+| `applets` | `experimental` | An applet's `render`, `act` and `preview`, and the image proxy ([applets](#applets)). |
+| `operatorDefaults` | `experimental` | `GET /api/v1/operator/defaults` ([operator defaults](#operator-defaults)). |
+| `publishing` | `experimental` | Publishing one of the repository's own packages under an authority it proved: `POST /api/v1/packages/publish`, `POST /api/v1/packages/release` (a package's next release, not a record's `…/release`, which is the marks'), `GET /api/v1/packages/releases`, and the document and closures another server installs from under `/published/` ([publishing](publishing.md)). |
+
+Every entry lists the `rest` surface but two: `mcp` lists `mcp`, and
+`applets` lists both.
+
+The list is the same for every deployment of a given build, with one
+exception. `operatorDefaults` is listed only where the server booted with an
+[operator defaults](operations.md#operator-defaults) file, and its entry is
+what tells a client the operator pays for anything. `metrics` and `site` are
+listed on every server, whether or not the deployment turns their routes on:
+the list says what the build serves and what it promises about it, and
+whether a deployment has a site is the document's own `site` object.
 
 `embeddings` is listed like the rest. Discovery opens no repository, so it
 does not answer the narrower question of whether the CALLER's repository
 declares an [`llm/provider` row](agents.md): the first semantic query answers
-that one, naming the property no row declares. An entry stands for every route
-behind it, so `bundles` covers the lifecycle transitions and catalog install
-together.
+that one, naming the property no row declares.
+
+The list is built from one table in the server
+(`internal/api/features.go`), and a test holds that table to the router: a
+route no feature holds fails it, and so does a feature naming a route the
+server does not serve.
+
+### Reading a revision
+
+The server refuses a request field it does not know with `400 bad_request`,
+so a client that sends a field a later release added fails on an older
+server. The revision is how it asks first:
+
+- **Check a feature's revision before sending something that revision
+  added.** Find the entry by `name` and compare its `revision` with the one
+  the field, parameter or route arrived at. A server from before revisions
+  sends none, which meets no minimum.
+- **Ignore a response field you do not know.** A later release may add one
+  to any answer.
+
+A definition's `writer:` is an example: from revision 4 of `records`,
+revision 2 of `vocabulary` and revision 3 of `mcp` it is a type of actor or
+a list of them ([who may write a property](vocabulary.md#who-may-write-a-property)),
+where it was one of three words before. A client that reads or sends one
+checks the revision of the feature it goes through.
+
+Read the `stability` beside it for how the feature may change, and the
+`notice` for a break that is coming. [Stability](stability.md) is the whole
+policy: what each label promises, the label a package states for its kinds,
+and what an upgrade may change.
+
+### The API version
 
 Send every request to the `/api/v1` prefix. It is the only prefix served,
-and `versions` lists it with status `served`.
+and `versions` lists it with status `served`; `deprecated` is the other value
+the field declares.
 
-Within v1 the REST surface is **additive only**: fields and endpoints are
-added, never removed or narrowed under the same version, except where a
-feature reports `alpha`, which licenses withdrawing one of its routes
+Under `/api/v1` the API **only gains things**: routes, parameters and fields
+are added, and nothing a stable feature serves is removed, renamed or
+narrowed. A beta feature may break after a notice a release ahead, and an
+experimental one may change or lose a route in any release
 (`POST /api/v1/embeddings/reembed` was withdrawn that way, and re-embedding is
-the operator's `substratectl repository reembed`). A deprecation is
-announced in discovery before a removal: a version's `status` in `versions`
-is `served` today, and `deprecated` is the other value the field declares.
-There is no Kubernetes-style multi-version conversion machinery.
+the operator's `substratectl repository reembed`). A later `/api/v2` would be
+served beside `/api/v1`, for a period the release that adds it states. A kind
+is never served in two shapes at once, and there is no Kubernetes-style
+multi-version conversion machinery
+([stability](stability.md#only-additions-surface-by-surface)). Those promises
+are written for 1.x: the server is below 1.0, and until then a release may
+still break a stable feature, with the steps in its release notes
+([what is not in force yet](stability.md#what-is-not-in-force-yet)).
 
 ## Search
 
@@ -1021,10 +1183,10 @@ orders them, and the two answer different questions.
 
 ```http
 GET /api/v1/records?q=quarterly+review&mode=hybrid
-                    &filter={"kinds":["ada.example.com/notes/note"]}&first=20
+                    &filter={"kinds":["~/notes/note"]}&first=20
 
-→ {"records": [{"id": "n4", "kind": "ada.example.com/notes/note", …}, …],
-   "scores": {"ada.example.com/notes/note/n4": {"lexical": 0.42, "semantic": 0.81}, …},
+→ {"records": [{"id": "n4", "kind": "~/notes/note", …}, …],
+   "scores": {"~/notes/note/n4": {"lexical": 0.42, "semantic": 0.81}, …},
    "pending": 0}
 ```
 
@@ -1120,7 +1282,7 @@ threshold rather than trust a rank, as long as it reads `note` on a `capped`
 page first, and `pending`: the number of properties
 the drain has yet to buy vectors for, counted whenever the semantic arm was
 asked for. Non-zero means the ranking covers a partial index (a repository
-[restored from its directory](operations.md#backups), a `reembed` in
+[restored from its archive](operations.md#backups), a `reembed` in
 progress), and it falls to 0 as the drain buys. In a repository that has named
 no embeddings provider, hybrid degrades to lexical and `semantic` reports an
 error rather than pretending. While properties are queued and no vector from
@@ -1861,7 +2023,7 @@ repository declares itself with a `money` property `amount` and a
 `datetime` property `paidAt` (no sample ships one):
 
 ```json
-{"filter": {"kinds": ["ada.example.com/finance/expense"]},
+{"filter": {"kinds": ["~/finance/expense"]},
  "aggregate": {"property": {"name": "amount", "anchor": "paidAt"},
                "range": {"gte": "2026-01-01T00:00:00Z", "lt": "2027-01-01T00:00:00Z"},
                "bucket": {"calendar": "month", "timezone": "Europe/Athens"},
@@ -2122,6 +2284,37 @@ unknown one is `400 bad_request`; a value, a spelling no unit answers, or
 two units no route joins (`kg` to `J`) is `422 validation` naming why. Both
 routes read the repository's graph at one revision.
 
+## Retention
+
+`GET /api/v1/retention` answers how long each kind's history is kept past
+each record's latest state ([retention](vocabulary.md#the-reserved-keys)),
+one item per kind the repository declares, in reference order:
+
+```json
+{"items": [
+  {"kind": "providers.substrate.reamde.dev/google/message", "declared": "P30D", "effective": "P30D"},
+  {"kind": "substrate.reamde.dev/core/contact", "effective": "all"},
+  {"kind": "substrate.reamde.dev/core/triggerrun", "declared": "P7D", "override": "P30D",
+   "overrideId": "keep-runs", "effective": "P30D"}
+]}
+```
+
+Each value is `all`, `none` or an ISO 8601 duration. `declared` is what the
+kind's declaration states, its own `retention` else its package header's,
+and is absent where neither states one, which reads as `all`. `override`
+and `overrideId` are the repository's `substrate.reamde.dev/core/retention`
+record for the kind, absent where none stands, and `effective` is the one
+that applies. An override is written and deleted through the record routes
+like any other record: `appliesTo` names the kind's declaration
+(`{"ref": "substrate.reamde.dev/core/kind/<kind>"}`), `retention` holds the
+value, a malformed value answers `422 validation` with the reason, and a
+second record for a kind that has one answers `409 conflict` naming it. A
+scoped app's token is refused with `403 forbidden`; an app the owner
+approved for `full` access holds a token without scopes, like a sign-in's
+([0204](decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md)),
+and reads the list. The `retention` feature in
+discovery is `experimental`: nothing drops an entry by it yet.
+
 ## Operator defaults
 
 `GET /api/v1/operator/defaults` answers each slot the repository spends a
@@ -2181,60 +2374,100 @@ resets.
 
 ## Actors
 
-Every write is attributed to an **actor**: what wrote the record. The domain is
-closed, seven names:
+Every write is made by an **actor**: one record of
+`substrate.reamde.dev/core/actor` for each hand that writes in the
+repository. The engine writes them, no package declares one, and no request
+names one
+([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). An
+actor record says what the hand is in its `type`, carries a `name` to show,
+and links what it is:
 
-```
-console                                  a write from the console
-substratectl                             a write from the command line
-api                                      a write from a client holding a token, client unnamed
-bundle:<authority>:<package>             an install, and the package's own hand
-function:<authority>:<package>:<name>    a function's effects
-agent:<authority>:<package>:<name>       an agent's effects
-substrate                                the engine's own hand
-```
+| `type` | The hand | Its link | Written |
+| --- | --- | --- | --- |
+| `person` | the repository's one person, through any of its tokens | none | at the repository's creation |
+| `app` | an app the person approved | `publisher`: its verified authority, the host of its client id, or `local` where its access went to a loopback address ([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)) | at its approval |
+| `function` | an installed function | `function`, its `core/function` record | when its package is installed |
+| `agent` | an installed agent | `agent`, its `core/agent` record | when its package is installed |
+| `package` | a package's own hand: the declarations an install or the seed lays down | `package`, its `core/package` record | when the package is installed |
+| `system` | the substrate itself: recompute, merges, the boot upgrade, and the auth paths that write the credential and token records | none | at the repository's creation |
 
-A machine hand carries the full authority and the package, so two packages that
-share a name under different authorities are two writers, and the segments are
-colons because a `/` is reserved for label and annotation keys
-([0047](decisions/0047-a-kind-lives-in-a-package.md)). `connector:<label>` was
-a second spelling of the bundle hand and is retired
-([0025](decisions/0025-an-actor-carries-the-full-authority.md)); entries
-written under it keep it, because an actor is part of the hashed changelog
-preimage.
+A hand the repository holds no record for yet gets one at its first write.
+The record's id is derived from the hand, so it is opaque, in the minted
+shape, and the same in every rebuild and import: the person is one record,
+and so is the system. An uninstall disables the actor records of the
+package, its functions and its agents (`disabled: true`) rather than deleting
+them, so their old writes still link something, and an install of the
+package again enables each. The record API reads actor records and refuses
+to write one, and a package that ships a document of the actor kind is
+refused at load: an actor is a record the substrate writes for everything
+that acts. A package
+under `~`, and its functions and agents, act as `bundle:~:<package>`,
+`function:~:<package>:<name>` and `agent:~:<package>:<name>`, so the actor
+record of one of the repository's own hands has the same id whatever the
+repository is called ([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
 
-A request names its actor with the optional `X-Substrate-Actor` header, and a
-request that names none is `api`, which is exactly what the substrate knows
-about it. This is **attribution, not authorization**: a full-access token has
-its whole repository either way, so there is nothing an actor name could
-unlock, and an app's token writes as its own actor whatever it names:
-`app:<authority>` when its publisher was verified, `app:local` when its
-access went to a loopback address, else `app:<host>` of its client id
-([0209](decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)).
-What the header cannot do is claim one of the substrate's own writing hands —
-`substrate`, anything under `substrate.`, a `bundle:`/`function:`/`agent:`/`app:`
-name, or the retired `connector:` spelling — because those write past checks a
-request must not skip.
-Naming one is `403 forbidden`.
+**What a write records** is three links, on its
+[changelog entry](changelog.md) and on every change event: `actor`, the id of
+the actor record that wrote it; `onBehalfOf`, the id of the one it acted
+for, absent where it acted for no one; and `token`, the id of the token
+record it stood behind, absent where none did and on every read but the
+owner's (an app's grant and an assistant's read leave it out):
+
+| Write | `actor` | `onBehalfOf` | `token` |
+| --- | --- | --- | --- |
+| A person edits in the console | the person | none | its sign-in's token |
+| The person uses an app | the app | the person | the app's token |
+| An agent the person started | the agent | the person | none |
+| A sync on a schedule | the sync function | none | none |
+| The engine merging synced values | the system | none | none |
+
+An app always acts for the person. Installed code and the engine act for
+the person only when a person's request started them: a delivery the
+trigger pass fires acts for no one. Work that goes on after the request
+that started it returned acts for, and is held to, whom its own record's
+`heldTo` names
+([0276](decisions/0276-one-check-holds-every-hand-that-writes-and-one-list-names-the-control-kinds.md)):
+a background job its tool row's, an approved call its approval's, a resumed
+turn the report's that starts it, a thread's title the thread's. A
+settlement after a restart is that work's too, and a run a restart cut
+short in its turn is the thread's. A policy's judge acts for whom the line
+that created the request it decides names. Where `heldTo` is empty (a
+trigger's run) the work acts for no one; where a record has none, it was
+written before this release, and its work is refused: the person asks
+again.
+
+**No request names its actor.** A full-access token writes as the person,
+and an app's token as its app; which client made a write is its token's.
+This is **attribution, not authorization**: a full-access token has its
+whole repository whatever it writes as, so there is nothing an actor could
+unlock, and the substrate's own hands write past checks a request must not
+skip, so none is a request's to claim. An `X-Substrate-Actor` header an older
+client still sends is ignored, not refused.
+
+Where else a hand is named, it is by the same link: a property's mark's
+`setBy` and `onBehalfOf` in a record's `marks` (since revision 4 of the
+`records` feature), a package's `declaredBy`, a blob's `createdBy`, a
+call run's `caller`, and the [change feed's](changelog.md#watching)
+`actors=` and `excludeActors=` filters, which take actor record ids.
+Discovery's `grammar.actorTypes` lists the six types.
 
 Attribution is load-bearing three ways:
 
-- **Provenance**: every accepted write records its actor as the property's
-  manager ([managed properties](projection.md#managed-properties)), and every
-  [changelog row](changelog.md) names who wrote. Because the actor is the
-  caller's own claim, both also record the **principal** the server resolved:
-  the id of the token the request authenticated with, which the header cannot
-  touch.
-- **Yield**: mapping recompute yields to any manager outside the machine tier,
-  which is how a hand edit survives a sync.
-- **Self-exclusion**: a [function](functions.md) never sees writes carrying
+- **Provenance**: every accepted write marks each property it sets with its
+  actor and the one it acted for
+  ([managed properties](projection.md#managed-properties)), and every
+  [changelog row](changelog.md) names its actor, the one it acted for and its
+  token.
+- **Yield**: mapping recompute yields to a pinned value, which is how a hand
+  edit survives a sync; whether a write pins is its actor's type.
+- **Self-exclusion**: a [function](functions.md) never sees writes made by
   its own actor, which is one half of what keeps functions from looping.
 
-The manager **tier** a write holds at (owner, bundle, or machine) is explicit
-data on the write context, never derived from an actor's name: the three
-interactive clients (`api`, `console`, `substratectl`) write at the owner
-tier. [Managed properties](projection.md#managed-properties) owns the tier
-rules, who writes at which tier, and how recompute yields to them.
+Whether a write **pins** what it writes is stored with it, from the type of
+the actor that wrote it: a person's, an app's, a function's and an agent's
+direct write pins, a package's and the engine's do not. [Managed
+properties](projection.md#managed-properties) owns the rules, and how
+recompute yields to a pin.
 
 ## The canonical envelope
 
@@ -2312,15 +2545,16 @@ request the client can make repairs it, while `conflict` tells a client to
 re-read and retry. [`repository verify`](operations.md#operator-recovery)
 lists every damaged blob.
 
-The export (`GET /api/v1/export`) streams blob bytes into its tar after its
-`200` is sent. It hashes each blob as it copies and holds back the blob's last
-chunk until the digest checks, and does the same for each finished changelog
-segment against its `.sha256` sidecar. On a mismatch the server cuts the connection:
-the handler aborts with `http.ErrAbortHandler`, which closes an HTTP/1.1
-connection before the chunked body's terminator and resets an HTTP/2 stream.
-It logs `export aborted mid-stream` naming the digest. The client sees a
-failed transfer and an archive with no `snapshot.json`, never a complete
-`200`.
+The export (`GET /api/v1/export`) streams the repository's archive as a tar
+after its `200` is sent
+([backups](operations.md#backups)). It hashes each blob as it copies and
+holds back the blob's last chunk until the digest checks, and holds every
+history line to the checksum the table stamped for it. On a mismatch the
+server cuts the connection: the handler aborts with `http.ErrAbortHandler`,
+which closes an HTTP/1.1 connection before the chunked body's terminator and
+resets an HTTP/2 stream. It logs `export aborted mid-stream` with the error.
+The client sees a failed transfer and a tar with no manifest, which the
+archive writes last, never a complete `200`.
 
 ## Applets
 
@@ -2330,7 +2564,8 @@ is a record of `substrate.reamde.dev/applets/applet`, written like any record
 by the owner's token, the MCP door or the assistant's designer; no app scope
 writes one. Three routes run it, each under the caller's own token, so an
 applet reads and writes what that token may. The wire is
-`internal/substrate/applets.go`. Alpha (`applets` in discovery).
+`internal/substrate/applets.go`. Applets are experimental (the `applets`
+feature in [discovery](#discovery)).
 
 | Route | Body | Answers |
 | --- | --- | --- |
@@ -2372,19 +2607,22 @@ saying which. The console draws applets' images through it, so its own
 
 ## Webhooks
 
-`POST /webhooks/{authority}/{trigger}` is the one route that takes a body and
-no bearer. `authority` is the repository's authority (the name it publishes
-under, chosen at registration) and `trigger` the id of a
+`POST /webhooks/{repository}/{trigger}` is the one route that takes a body and
+no bearer. `repository` names the repository by its id (`rnd-…`, the address
+a trigger's `webhookPath` gives out, which a rename will not change) or by its
+name, its authority; `trigger` is the id of a
 `substrate.reamde.dev/core/trigger` record whose source is the `webhook` arm;
 the request becomes the delivery's envelope and the trigger's callable runs in
 the background ([functions](functions.md#the-delivery-envelope)). When the
 trigger declares `source.webhook.key`, the request carries it as a trailing
-path segment (`/webhooks/{authority}/{trigger}/{key}`), as `?key=` or as
+path segment (`/webhooks/{repository}/{trigger}/{key}`), as `?key=` or as
 `Authorization: Bearer <key>`; without one the endpoint is open to whoever can
 reach the server. An app's token that holds `webhook:<trigger>` stands in for
 the key as `Authorization: Bearer`, and is read again once the body has
 arrived; any other token there is read as a key
-([apps](apps.md#deliver-to-a-webhook)). When the trigger declares
+([apps](apps.md#deliver-to-a-webhook)). Its delivery acts for the token's
+person, and the callable's run is held to their roles, read when it runs;
+a token whose person holds no role in the repository is read as a key. When the trigger declares
 `source.webhook.signature`, the server verifies the provider's signature
 before it stores anything ([functions](functions.md#webhook-signatures)).
 
@@ -2396,7 +2634,7 @@ before it stores anything ([functions](functions.md#webhook-signatures)).
 | `400` | a multipart body the server cannot parse, a part whose name or filename decodes to a NUL (`name*=utf-8''a%00b`), which no row stores, or a body not received in time from the headers: 30 seconds per started MiB of the trigger's `maxBody` for a non-multipart body (30 seconds at the 1 MiB default, 4 minutes at 8 MiB), 2 minutes for multipart |
 | `413` | a non-multipart body past the trigger's `maxBody` (1 MiB when it declares none, at most 8 MiB), a multipart request over 32 MiB, or more than 1 MiB of body or inline part values for a trigger whose callable is an agent |
 | `431` | headers over 16 KiB |
-| `503` + `Retry-After` | more than eight deliveries in flight (while they are, a request the door would answer `404` before reading its body gets this `503` instead), a repeat of a signed request the door is still recording, the store failing while the door reads a signing secret, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded |
+| `503` + `Retry-After` | more than eight deliveries in flight (while they are, a request the door would answer `404` before reading its body gets this `503` instead), a repeat of a signed request the door is still recording, the store failing while the door reads a signing secret, or the repository's spool holds 10,000 requests or 256 MiB that the drain has not recorded; the reason `set_aside` and a five-minute wait for a repository addressed by its id that the server [set aside](operations.md#a-repository-set-aside-at-start-up) at its start (by its name, the `404`) |
 
 A multipart/form-data request's file parts are stored in the repository's
 blob store (`PUT /api/v1/blobs`) before the fire; the callable reads their
@@ -2425,12 +2663,12 @@ The code set is closed. The client-error codes:
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry. Also the accept of a change request whose change no longer applies, whatever the cause ([the patch request sibling](projection.md#the-patch-request-sibling)) — the message says which, and only an `ifVersion` says "version conflict". |
 | `parked`       | 409  | A retry of a parked delivery (`POST …/parked/{failureId}/retry`) ran and failed again: the row stays parked one attempt older, and the message names the new error's first line ([functions](functions.md#triggers)). |
 | `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
-| `lossy`        | 403  | A declaration change would remove values from the fold, or a re-import would replace a sample copy edited since it was imported, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
+| `lossy`        | 403  | A declaration change would remove values from the fold, or adding a sample again would replace a copy edited since it was added, and no confirmation for that plan came with it; preview the plan and confirm it ([bundles](bundles.md#install-and-lifecycle)). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
-| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). |
+| `auth`         | 401  | Missing, invalid, or expired token, a refused login, or a webhook signature that a keyed trigger declares and that a request carrying the key fails; a trigger with no key answers that refusal `404` ([webhooks](#webhooks)). A stream whose token is revoked, or whose person signs out everywhere, ends with it too ([signing out everywhere](auth.md#signing-out-everywhere)). |
 | `totp_required` | 401 | A login or a credential change with the right password and no code, on an account that has a second factor: send it again with the code ([logging in](auth.md#logging-in)). |
 | `not_found`    | 404  | No such record ADDRESSED by the request; a former id is not this, it resolves ([merges](projection.md#merges)). A referent a write's body names is `validation`, not this. |
-| `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
+| `rate_limited` | 429  | Slow down; the response carries `Retry-After`. The sign-in door paces its attempts, and every request with a token is paced per person ([`SUBSTRATE_REQUESTS_PER_PERSON`](operations.md#configuration)). |
 
 `bad_request` is also the code on a `405` (a wrong method at an `/api` path),
 on a `413` (a request body past its cap) and on the `431` a webhook request
@@ -2451,20 +2689,49 @@ cannot serve is diagnosable instead of looking like a bad credential; and a
 `semantic` search over a repository whose vectors have not been bought yet
 answers `unavailable` with the number of properties still queued, so an empty
 index is never mistaken for an empty match. A repository that refuses writes
-until the server restarts (its directory fell behind its tables and the
-server could not repair it while running) also answers `unavailable`, with a
-30-second `Retry-After` and a message that names the restart.
+until the server restarts (a vocabulary change's commit answered failure and
+may have committed, so the server cannot tell which declarations it holds)
+also answers `unavailable`, with a 30-second `Retry-After` and a message that
+names the restart.
 
 A `reason` beside the code narrows it where a client acts on the case. The
-set is closed and has four members: `observed_rederiving` on `unavailable`,
+set is closed and has ten members: `observed_rederiving` on `unavailable`,
 an aggregate read over an observed index the server is re-deriving
 ([readiness](#readiness)); `key_refused` on `unavailable`, a model call the
 vendor refused for its key, which answers the same until someone writes a
-working key ([operator defaults](#operator-defaults)); `quota` on
+working key ([operator defaults](#operator-defaults)); `set_aside` on
+`unavailable`, since revision 3 of the `errors` feature, with a
+five-minute `Retry-After`, a repository the server found damaged when it
+started, which it serves again only once its
+operator repairs it and restarts the server
+([a repository set aside](operations.md#a-repository-set-aside-at-start-up));
+`quota` on
 `guard`, an operator-paid call past the repository's allowance for the day;
 and `stale_revision` on `validation`, a write whose `revision` is below the
 stored one, so a newer write of the record landed first and this one never
 lands ([observations](observations.md#the-rules-the-substrate-refuses)).
+`in_doubt` on `internal` and on `unavailable`, since revision 2 of the
+`errors` feature, says a write may have landed: the server lost the
+database's answer to its commit, or a step after the commit failed, and an
+error without it on a write of one record means this request's write did
+not land, though a first attempt under the same `Idempotency-Key` may have,
+which the next two reasons say
+([what a client may conclude](#what-a-client-may-conclude-after-a-failure),
+[decision 0271](decisions/0271-an-error-that-may-follow-a-writes-commit-says-so-and-a-write-of-a-named-record-takes-a-retry-key.md)).
+`first_attempt_running` and `first_attempt_landed` on `conflict` say that the
+refusal of a request repeated under an `Idempotency-Key` is about the first
+attempt under that key, not this one, which did not run: the first has not
+answered yet and may still land, or it landed and its outcome was too large
+to keep, so its write stands and the message names what it wrote.
+`repository_required` on `conflict`, since revision 4 of the `errors`
+feature, answers a sign-in of a person who may open several repositories and
+named none: the refusal carries them in `repositories`, each with its `id`
+and `name`, and the same request naming one signs in
+([logging in](auth.md#logging-in)).
+`not_permitted` on `forbidden`, since revision 5 of the `errors` feature,
+says a rule refused the request: the roles of the person it acts for, or the
+rules of the hand that writes for them, do not reach it, so another person,
+or the same one with another role, may make it ([roles](auth.md#roles)).
 `stale_revision` rides the whole refusal whenever one of its problems is the
 falling revision, at `props.revision`, and says that one record write in the
 request was superseded: a client drops a queued write of one record on it,
@@ -2472,6 +2739,10 @@ but a function call that applies several effects is refused whole when one of
 them is stale, and dropping that call drops the others too. A write that
 removes a stored revision carries no reason. A client that does not know a
 reason acts on the code.
+
+The closed set of reasons: `first_attempt_landed`, `first_attempt_running`,
+`in_doubt`, `key_refused`, `not_permitted`, `observed_rederiving`, `quota`,
+`repository_required`, `set_aside`, `stale_revision`.
 
 ```json
 {"error": {"code": "validation", "reason": "stale_revision", "message": "…",
@@ -2493,13 +2764,18 @@ One more code answers a cursor from a history the server no longer holds:
 `compacted` (410) answers a `from=` or `before=` the changelog cannot resume,
 below the retention [horizon](changelog.md#frames-and-the-horizon), above the
 head, or under a history generation the server does not hold, and a list
-`after=` cursor minted under another generation. Its problem object names the
+`after=` cursor the server cannot resume ([pagination](#pagination)). Its problem object names the
 current `head` and `generation`, telling a consumer that has fallen too far
 behind, or resumes after a restore, to re-list rather than silently miss rows.
 
-Every code a request can receive is above; those thirteen strings are the whole
-closed set, and nothing else appears in `error.code`. The
-[policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
+Every code a request can receive is above, and nothing else appears in
+`error.code`.
+
+The closed set: `auth`, `bad_request`, `compacted`, `conflict`, `forbidden`,
+`function_failed`, `guard`, `internal`, `lossy`, `not_found`, `parked`,
+`rate_limited`, `totp_required`, `unavailable`, `validation`.
+
+The [policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
 holds an agent's write for the owner's review and surfaces as a tool result
 inside the agent loop, never as an HTTP response
 ([0037](decisions/0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md)).

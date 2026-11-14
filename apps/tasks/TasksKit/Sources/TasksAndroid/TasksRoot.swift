@@ -64,7 +64,9 @@ final class TasksRoot: BridgeRoot {
         let outbox = folder.map { Outbox(folder: $0) }
         let build = BuildFacts(version: opening.version, channel: opening.channel)
         let words = TasksApp.words(device: opening.device)
-        let app = TasksApp(cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, words: words, device: opening.device, build: build)
+        let app = TasksApp(
+            cache: folder.map { RecordCache(folder: $0) }, outbox: outbox, words: words, device: opening.device, build: build,
+            settingsCache: TasksApp.settingsCache(in: folder), closure: TasksOpening.package(in: context.environment)?.declarations ?? [])
         let packages = [TasksKinds.packageID: TasksOpening.packageVersion(in: context.environment)]
         let link = Link(
             app: app, manifest: opening.manifest(in: context.environment), sessions: sessions, outbox: outbox, packages: packages,

@@ -133,9 +133,10 @@ func TestImportQueuesEmbedsWithoutAProvider(t *testing.T) {
 	}
 }
 
-// A boot that dies between the two fold passes leaves the import-progress
-// marker and no queue rows: the queue is written by the transaction that
-// clears the marker, so the resumed import is what queues them.
+// A boot that dies after the history went in and before the fold's
+// transaction commits leaves the import-progress marker and no queue rows:
+// the queue is written by the transaction that clears the marker, so the
+// resumed import is what queues them.
 func TestAResumedImportQueuesEmbeds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -153,13 +154,13 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 		engine.WithDataRoot(root2),
 		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithTestImportFault(0, func(stage string) error {
-			if stage == engine.ImportAfterFirstFold {
+			if stage == engine.ImportAfterBatch {
 				return errKilled
 			}
 			return nil
 		}))
 	if !errors.Is(err, errKilled) {
-		t.Fatalf("the boot did not die between the fold passes: %v", err)
+		t.Fatalf("the boot did not die before the fold: %v", err)
 	}
 	raw := scopedDB(t, dsn2, testdb.Repository(t))
 	if n := countRows(t, raw, "embed_queue"); n != 0 {
@@ -171,6 +172,58 @@ func TestAResumedImportQueuesEmbeds(t *testing.T) {
 		t.Fatalf("open the repository after the import resumed: %v", err)
 	}
 	assertQueued(t, raw, ids)
+}
+
+// A boot that dies INSIDE the refold's one transaction, after its first
+// replay or after the embeddings' reconcile, leaves what it found: the fold
+// as it was before the refold (none, for this import), the marker set and
+// no queue row, since nothing of that transaction commits; the next start
+// finishes the import and queues the books.
+func TestAnImportStoppedInsideTheRefoldLeavesTheOldFold(t *testing.T) {
+	t.Parallel()
+	svc, ds := shelfRepository(t)
+	ids := putBooks(t, ds)
+	id := repositoryIDOf(t, ds)
+	repo := testdb.Repository(t)
+	root := engine.DataRootOf(svc)
+	_ = svc.Close()
+	for _, stage := range []string{engine.RefoldAfterFirstReplay, engine.RefoldBeforeCommit} {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			root2 := copyRepositoryDir(t, root, id)
+			dsn2 := engine.MigratedDSN(t)
+			errKilled := errors.New("the process died here")
+			_, err := engine.OpenForTest(t, ctx, dsn2,
+				engine.WithKindsFS(engine.SeedKinds),
+				engine.WithDataRoot(root2),
+				engine.WithCredentialKey(engine.TestCredentialKey),
+				engine.WithTestImportFault(0, func(s string) error {
+					if s == stage {
+						return errKilled
+					}
+					return nil
+				}))
+			if !errors.Is(err, errKilled) {
+				t.Fatalf("the boot did not die %s: %v", stage, err)
+			}
+			raw := scopedDB(t, dsn2, repo)
+			if n := countRows(t, raw, "records"); n != 0 {
+				t.Fatalf("the stopped refold left %d records committed, want the fold as it was: none", n)
+			}
+			if n := countRows(t, raw, "embed_queue"); n != 0 {
+				t.Fatalf("the stopped refold queued %d rows", n)
+			}
+			if incomplete, err := engine.ImportIncomplete(ctx, rawDB(t, dsn2)); err != nil || !incomplete {
+				t.Fatalf("the stopped refold cleared the marker (%v)", err)
+			}
+			svc2 := mustReopen(t, dsn2, root2)
+			if _, err := svc2.Dataset(ctx, repo); err != nil {
+				t.Fatalf("open the repository after the import resumed: %v", err)
+			}
+			assertQueued(t, raw, ids)
+		})
+	}
 }
 
 // A newer directory restored over an older database dump: the dump holds
@@ -250,7 +303,7 @@ func TestImportConvergesTheVectorsAnOlderDatabaseHolds(t *testing.T) {
 	_ = svc2.Close()
 
 	// The first database is the older dump: its vectors are the old texts'.
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
@@ -343,7 +396,7 @@ func TestImportRequeuesWhenTheDirectoryRepointsTheModel(t *testing.T) {
 	_ = svc2.Close()
 
 	// The first database is the older dump: its one vector is the old model's.
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
@@ -421,7 +474,7 @@ func TestImportDropsTheVectorsOfAPropertyNoLongerEmbedded(t *testing.T) {
 	}
 	_ = svc2.Close()
 
-	svc3 := mustReopen(t, dsn, root2)
+	svc3 := reopenBesideNewerDirectory(t, dsn, root2, id)
 	ds3, err := svc3.Dataset(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("open the repository restored over the older database: %v", err)
@@ -462,13 +515,11 @@ func raw0(t *testing.T, dsn string) *sql.DB {
 	return scopedDB(t, dsn, testdb.Repository(t))
 }
 
-// TestADeclaredBodyIsEmbedded: a declared `body` is a column-backed property
-// (decision 0041), stored in records.body and never in props, and every path
-// that reads an embeddable value must read it there. Before, the drain, the
-// re-embed and the import reconcile all read props, so a body declared
-// `embed: true` (mail, issue and comment bodies) never got a vector: the drain
-// applied an empty plan, the re-embed queued nothing and a restore queued
-// nothing.
+// TestADeclaredBodyIsEmbedded: a body declared `embed: true` (mail, issue and
+// comment bodies) gets its vectors from the drain, the re-embed and the
+// import reconcile. When a body lived in a column of its own, every one of
+// them read props and none got a vector; it is an ordinary property now
+// (decision 0273), read where every other is.
 func TestADeclaredBodyIsEmbedded(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -2,8 +2,8 @@
 """A substrate that is slow to install, for SetupTimeoutTests.
 
 Forwards every request to the substrate at UPSTREAM, and holds each catalog
-install for DELAY seconds before passing it on, as a server installing a
-bundle's requirements first does. The install still happens after the client
+add for DELAY seconds before passing it on, as a server installing a
+bundle's requirements first does. The add still happens after the client
 stopped waiting, which is what the test checks the app copes with.
 
     python3 apps/xcode/scripts/slowserver.py http://localhost:8080 8 8093
@@ -25,7 +25,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else None
         if self.command == "POST" and re.search(
-            r"/api/v1/catalog/[^/]+/install$", self.path
+            r"/api/v1/catalog/[^/]+/add$", self.path
         ):
             time.sleep(DELAY)
         request = urllib.request.Request(

@@ -1,12 +1,13 @@
 # Bundles catalog
 
-The catalog in the binary serves twenty-five bundles, in the two tiers
+The catalog in the binary serves twenty-five bundles, in the two sorts
 [decision record 0048](decisions/0048-providers-are-published-samples-are-copied.md)
-draws: fifteen in the published tier (eleven providers and four well-known
-catalogues) and ten samples. The tier says only who keeps a package; each
+draws: fifteen published packages (eleven providers and four well-known
+catalogues) and ten samples. `keptBy` says only who keeps a package; each
 entry also says whether it is a provider, what it brings and which provider
 an add-on extends
-([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)),
+([0238](decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md),
+[0258](decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)),
 so the console lists the providers on Providers and offers the catalogues as
 standard collections under Add a collection. This page covers the eleven
 providers and four of the samples; the catalogues (`health`, `labs`, `environment` and
@@ -28,7 +29,7 @@ ships no function. Apple Health has no API to read, so its provider receives
 what the Health Auto Export app on the phone sends to a webhook. WHOOP and
 Apple Health each also ship an adapter that turns their mirror rows into
 [observations](observations.md#the-adapters), and require the `health`
-catalogue it writes, which installing either installs first. Three also
+catalogue it writes, which adding either adds first. Three also
 ship one write each, a function
 nothing fires on its own: Slack's `postmessage`, Beeper's `sendmessage` and
 GitHub's `submitreview`. A write sends one request with the credential the
@@ -41,10 +42,10 @@ Do not treat the mirror as confirmation that a send happened.
 **Four samples**: LLM, notes, the reading list and Pebble.
 Garmin and Google Fit providers, with their health adapters, are planned and
 not shipped.
-Each is a worked example to read and copy, imported under the repository's own
+Each is a worked example to read and copy, added under the repository's own
 authority and owned by it afterwards. A fix here reaches a repository that
-imported it as an upgrade offer read off the copy's origin stamp, taken by
-importing again
+added it as an upgrade offer read off the copy's origin stamp, taken by
+adding it again
 ([0070](decisions/0070-a-copy-is-upgraded-through-its-origin-stamp-and-requires-pins-a-floor.md);
 [0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md) is what
 0048 amends).
@@ -55,11 +56,11 @@ package that owns that kind
 provider declares a person or task property: the `people` and `tasks`
 samples ship the five SUGGESTED MAPPINGS, and each mapping synthesises its
 subject slot on the source kind when it installs
-([0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)). An import
+([0096](decisions/0096-a-mapping-synthesises-its-subject-slot.md)). Adding a sample
 keeps a
 suggested mapping only where the provider it reads is installed and fits it,
 and reports the rest `waiting`, `blocked` or `ready`: see
-[suggested mappings](bundles.md#suggested-mappings) for the door, and each
+[suggested mappings](bundles.md#suggested-mappings) for the rule, and each
 provider section below for the mappings pointed at it.
 
 This is the map. The source of truth is each bundle's own manifests, under
@@ -69,7 +70,11 @@ records it writes beside them) is previewable through
 `GET …/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<package>/<name>`;
-each section's first line gives the package, and its lists give the name. The
+each section's first line gives the package, and its lists give the name. A
+sample's package is given as the tree spells it, and adding the sample lands
+it at `~/<package>`, the repository's local namespace
+([bundles](bundles.md#adding-a-package)): `samples.substrate.reamde.dev/notes`
+lands as `~/notes`. The
 package carries the provider, so no name repeats it — GitHub's issue mirror
 is `providers.substrate.reamde.dev/github/issue`, Linear's is
 `providers.substrate.reamde.dev/linear/issue`, and one record of either is
@@ -153,7 +158,7 @@ provider's own sync token gives them full-plus-incremental with no window.
 ## LLM (sample)
 
 Package `samples.substrate.reamde.dev/llm`: the decision-loop lessons, three
-agents and the scratchpad they practise on. Nothing imports it for you; the
+agents and the scratchpad they practise on. Nothing adds it for you; the
 owner's assistant, Moss, ships with the binary instead
 ([builtin kinds](builtin-kinds.md#substratereamdedevassistant)). Its agents
 name the seeded `openai` row, so key that row and they run.
@@ -179,11 +184,11 @@ prices are.
 Package `samples.substrate.reamde.dev/notes`. The smallest bundle that shows
 an agent calling functions as tools and delegating to a sub-agent, and the one
 to read first. It needs no network, no credentials and no other bundle's
-vocabulary, so it imports on a fresh substrate, and its two functions stand on
+vocabulary, so it lands on a fresh substrate, and its two functions stand on
 their own with no model at all:
 
 ```bash
-substratectl import samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
+substratectl add samples.substrate.reamde.dev/notes   # or: apply --as-mine -f samples/notes/bundle.yaml
 substratectl function call stats --input '{"text": "hello world"}'
 ```
 
@@ -198,12 +203,12 @@ which is the capability envelope in one closure.
 Both agents name `provider: openai`, so running them wants that
 `llm/provider` row keyed — [creation seeds it](agents.md#providers), keyless.
 Calling an agent is an API call, not a CLI verb. The path segment is the
-agent's id, `<authority>/notes/notekeeper` once the import has rehomed it, with
+agent's id, `~/notes/notekeeper` once adding it has copied it into `~`, with
 each slash written `%2F`; a bare `notekeeper` is refused
 ([calling an agent](agents.md#calling-an-agent)):
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/<authority>%2Fnotes%2Fnotekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/substrate.reamde.dev/core/agent/~%2Fnotes%2Fnotekeeper/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```
@@ -225,8 +230,11 @@ cursor and status on the account, so one stream erroring never stalls another.
 The bundle's `oauth2` block derives one scope per toggle: `enabledContacts`
 takes `contacts.readonly` and `directory.readonly`, `enabledGmail`
 `gmail.readonly`, `enabledCalendar` `calendar.readonly`, `enabledDrive`
-`drive.readonly`, and `userinfo.email` rides on all four. Read only: nothing
-is ever written back to Google.
+`drive.readonly`, and `userinfo.email` rides on all four. The mirror is read
+only. Twelve tools an agent calls read Google live and, behind two toggles of
+their own, `enabledGmailWrite` (`gmail.modify`) and `enabledCalendarWrite`
+(`calendar.events`), draft and send mail and change events
+([Google's tools](#googles-tools)).
 
 - **Kinds (14)**: `config` (the OAuth client kind, `oauth2`, named by the
   bundle's `client` input) and `account` (the Connection, `accountconfig` and
@@ -241,7 +249,7 @@ is ever written back to Google.
   series it overrides) and `calendarsync` (one calendar's own drain state).
   Drive writes `drivefile` (one Drive v3 `File`, with the exported text of a
   Doc, a Sheet or a Slides deck).
-- **Functions (4)**: `synccontacts` reads one page of `people/me/connections`
+- **Functions (16)**: `synccontacts` reads one page of `people/me/connections`
   or `people:listDirectoryPeople` per invocation, mirrors each `Person`, walks
   `contactGroups.list`, and stores a People sync token per endpoint.
   `syncgmail` reads one `messages.list` or `history.list` page, or hydrates
@@ -264,7 +272,9 @@ is ever written back to Google.
   and gives it no row, so no contact is made for it, and GitHub's one contact
   is `notifications@github.com`. A subdomain is not a relay:
   `<id>+<login>@users.noreply.github.com` is a person's commit address. The
-  list is `REPLY_RELAYS` in that body.
+  list is `REPLY_RELAYS` in that body. Beside the four syncs, twelve tools
+  share the `google_api.py` module and write no record; see
+  [Google's tools](#googles-tools).
 - **Triggers (12)**, three per stream. `google-contacts-on-connect`,
   `google-gmail-on-connect`, `google-calendar-on-connect` and
   `google-drive-on-connect` fire their stream's sync while the account is
@@ -281,10 +291,10 @@ is ever written back to Google.
   against a person's emails, and mapping `names[].displayName`,
   `emailAddresses[].value` and `phoneNumbers[].value`) and
   `googleaddressperson` (from `emailaddress`, matching `address`, and mapping
-  the address alone, because the hub carries no name). Import `people` with
-  this provider installed and both land; import it first and both are reported
+  the address alone, because the hub carries no name). Add `people` with
+  this provider installed and both land; add it first and both are reported
   `waiting` for this package, and a later install does not land them on its
-  own: import `people` again
+  own: add `people` again
   ([suggested mappings](bundles.md#suggested-mappings)).
 
 **All four scopes are wired.** The requested union is derived per consent from
@@ -298,11 +308,12 @@ other three streams sync on. The facility reads the connected address from
 `oauth2/v3/userinfo` into `account.email`, which is why `userinfo.email` rides
 on every toggle rather than on one.
 
-**The owner sets four toggles, a cadence and a depth.** `enabledContacts`
+**The owner sets six toggles, a cadence and a depth.** `enabledContacts`
 syncs the address book and the Workspace directory, `enabledGmail` the
 threads, messages, attachments and labels, `enabledCalendar` the calendar
 list, its series and its events, and `enabledDrive` the files and their
-exported text. `syncFrequency` is `off`, `hourly` or `daily` (default
+exported text. `enabledGmailWrite` and `enabledCalendarWrite` sync nothing:
+they are what the writing tools need. `syncFrequency` is `off`, `hourly` or `daily` (default
 `daily`): the hourly tick syncs a stream whose own anchor is older than that,
 and `off` stops the schedule without touching a toggle or a cursor.
 `backfillDepth` is `none`, `last30d`, `last90d`, `last1y` or `all` (default
@@ -425,6 +436,75 @@ now carries `account` and `address` and nothing else. `account.syncState` is
 retyped from an enum to a string, because the `sync` trait contracts the
 datatype.
 
+### Google's tools
+
+Twelve callables, each offered to agents under its tool name
+([offered functions](agents.md#offered-functions)), so the seeded Moss and
+its secretary take them once the provider is installed. No trigger names
+them, and none writes a record: what a tool sends or changes reaches the
+mirror when its stream next reads it, so the mirror is no confirmation
+([decision 0125](decisions/0125-a-provider-write-is-a-callable-that-writes-no-record.md)).
+
+| Tool | Function | Does | Needs |
+| --- | --- | --- | --- |
+| `gmail_search` | `searchmail` | Gmail's own search, live: threads, newest first | `enabledGmail` or `enabledGmailWrite` |
+| `gmail_read_thread` | `readthread` | one thread's messages, bodies as text | the same |
+| `gmail_draft` | `draftmail` | a new draft or a reply draft, or one replaced | `enabledGmailWrite` |
+| `gmail_send` | `sendmail` | sends a new message or a reply, from its own arguments | `enabledGmailWrite` |
+| `gmail_label_thread` | `labelthread` | archive, mark read, star, label a thread | `enabledGmailWrite` |
+| `calendar_create_event` | `createevent` | an event, with guests, Meet or a repeat rule | `enabledCalendarWrite` |
+| `calendar_update_event` | `updateevent` | only what is passed changes | `enabledCalendarWrite` |
+| `calendar_delete_event` | `deleteevent` | an event, or one occurrence | `enabledCalendarWrite` |
+| `calendar_respond` | `respondevent` | accept, decline or maybe an invitation | `enabledCalendarWrite` |
+| `calendar_free_busy` | `freebusy` | busy ranges of calendars in a window | `enabledCalendar` |
+| `drive_search` | `searchdrive` | files by words in name or text, or a Drive query | `enabledDrive` |
+| `drive_read_file` | `readfile` | one file as text: a Doc as markdown, a Sheet as CSV | `enabledDrive` |
+
+**The owner says so twice.** A tool acts as an account only when the toggle
+it needs is on and the account's `grantedScopes` carries a scope that covers
+it. The write toggles ask for their own scopes, so turning one on needs a
+reconnect, and until then the tool refuses naming it; turning one off stops
+the tools even while the grant still holds the scope. Both declare
+`access: write`, so the console lists them under **What your agents may do**
+on the provider's page and in the account dialog, and an account connected
+before version 51 reads **Off** there. One turned on without a reconnect
+needs attention, with **Reconnect**, as does any account whose grant lacks a
+switch it has on. `gmail.modify` is
+restricted, like `gmail.readonly`, so a published client needs no further
+verification for it, and the operator's client must list both write scopes
+on its consent screen. A tool takes `account`, the address to act as, which
+may be left out when one connected account can; with several it is refused
+naming them.
+
+**Ids are Google's.** Each takes the ids a mirror row carries:
+`gmailthread.threadId`, `gmailmessage.messageId`, `calendar.calendarId`
+(default the primary calendar), `calendarevent.eventId` and
+`drivefile.fileId`. A reply names the message it answers in `replyTo`: the
+tool reads its threading headers and threads the reply under it. A draft
+addresses it to the sender (`replyAll` adds everyone else but the owner) and
+keeps the subject when the call names neither; a send never does, so every
+recipient and the subject it carries are on the card the owner approves, and
+no draft is sent by its id, since its contents could change while the
+approval waits. A local event time is read in `timeZone`, else the calendar's own
+zone; `freebusy` takes instants with their offsets. A guest is emailed as
+`notify` says, and by default whenever the event has guests.
+
+**A send waits for the owner.** `gmail_send` and the four calendar changes
+(`calendar_create_event`, `calendar_update_event`, `calendar_delete_event`,
+`calendar_respond`) cannot be taken back, and because they return no effect,
+neither an agent's emit ceiling nor a policy sees them. Each declares
+`approval: required`, so an agent's call of one lands an approval in the
+chat and runs only once the owner approves it, exactly as it was asked
+([approvals](agents.md#approvals),
+[0254](decisions/0254-an-agents-call-of-a-function-that-declares-approval-waits-for-the-owner-in-chat.md)).
+A draft, a label and the reads run at once. The owner's own call of one, and
+a trigger wired straight to it, are not held.
+
+The token goes only to `https://gmail.googleapis.com` or
+`https://www.googleapis.com` on 443, or to a loopback `apiBase`, through an
+opener that refuses redirects and the environment's proxy. A Google refusal
+fails the call with Google's message.
+
 ## GitHub
 
 Package `providers.substrate.reamde.dev/github`. An OAuth provider that mirrors
@@ -468,9 +548,9 @@ writes to GitHub; `submitreview` is the one write.
   declaration as a SUGGESTED MAPPING (`githubuserperson`, beside
   `googlecontactperson`, `googleaddressperson` and `linearuserperson`): it
   matches the profile's `email` against a person's emails and maps the name, the
-  `login` as the display name, and the email. Import `people` with this provider
-  installed and it lands; import it first and it is reported `waiting`, and
-  importing `people` again after the install is what lands it ([suggested
+  `login` as the display name, and the email. Add `people` with this provider
+  installed and it lands; add it first and it is reported `waiting`, and
+  adding `people` again after the install is what lands it ([suggested
   mappings](bundles.md#suggested-mappings)).
 
 **Four toggles on the account decide the scopes and the walk.** `enabledUser`
@@ -641,16 +721,16 @@ The two samples ship them as SUGGESTED MAPPINGS. `people` declares
 `linearuserperson`, matching a member's `email` against a person's `emails`
 and mapping `name`, `displayName` and the address; `tasks` declares
 `linearissuetask`, matching an issue's `url` against a task's `url` and
-mapping `issueTitle` onto the task's name beside the link. Import either
-sample with this provider installed and its mapping lands; import it first and
-the mapping is reported `waiting` for this package, and installing this
-package afterwards is not enough on its own: import that sample again
+mapping `issueTitle` onto the task's name beside the link. Add either
+sample with this provider installed and its mapping lands; add it first and
+the mapping is reported `waiting` for this package, and adding this
+package afterwards is not enough on its own: add that sample again
 ([suggested mappings](bundles.md#suggested-mappings)). A projected task's
 `status` is not mapped and cannot be: a state moves through its declared
 transitions, never through a mapping
 ([0040](decisions/0040-the-four-occurrence-logs-say-done.md)), so the task the
 mapping mints starts `open` and every move after that is yours. `name` and
-`url` recompute at the machine tier, so retyping the heading keeps it and
+`url` are sync's until you pin them, so retyping the heading keeps it and
 Linear's next title lands only where you have not.
 
 **Setting it up takes two records and no consent step.** Mint a personal API
@@ -1110,7 +1190,9 @@ Read only: nothing here writes back to Notion.
 
 Setting it up takes two steps in Notion. Mint an internal token (Settings,
 Connections, Develop or manage) with read capabilities (the user-email one
-included, or `user.person.email` stays absent), and paste it onto the `config`
+included, or `user.person.email` stays absent; without any user-information
+capability the roster is skipped and counted as not read, and only the
+authors the pages name land, as thin rows), and paste it onto the `config`
 record. Then SHARE each top-level page, database or teamspace with the
 connection that token belongs to: `/v1/search` returns only what has been
 shared with that connection, so an unshared page is invisible to the sync
@@ -1183,8 +1265,8 @@ without its `erroring:` prefix; both truncate at 400 characters. `syncProgress`
 is `{phase, done, total, pending}` over the run's own queue. `syncStreams` is
 declared and left unwritten: one function walks one workspace as one stream. A
 database or page Notion refuses permanently (`object_not_found`,
-`restricted_resource`) is counted on the status as `unreachable: N` with the
-first few named, and a block failure lands on that page's own
+`restricted_resource`) is counted on the status as `could not read N:` with
+the first few named and why, and a block failure lands on that page's own
 `pagesync.blocksStatus`, so one unreadable page never stops the rest.
 
 **What it does not do.** No writeback. No comments: the closure declares no
@@ -1320,8 +1402,9 @@ goes onto `streamCursors.failed` with its attempt count (retried up to three
 times, and queued again at the top of the next walk), and `syncStatus` gains a
 trailing `[N failed]`. One account per repository syncs, since one token
 addresses one Beeper Desktop: the lexicographically first account with
-`enabledMessages` on is the one that walks, and every other one is stamped
-`ignored: duplicate account`.
+`enabledMessages` on is the one that walks, and every other one's status
+says it is not syncing because another connection already syncs that Beeper
+Desktop, and asks for the duplicate to be removed.
 
 The sync never writes to Beeper. It sends no message, adds no reaction,
 archives nothing and marks nothing read. It fetches no media: an attachment is mirrored
@@ -1404,15 +1487,16 @@ image only, never in a release. It shipped a `slack-events` webhook trigger,
 enabled and keyless, and upgrading to 22 leaves that record in place: a POST
 to it starts a `slacksync` walk. In order: stop the Socket Mode bridge,
 `substratectl delete substrate.reamde.dev/core/trigger slack-events`, upgrade
-the Slack bundle, install Slack live events and write its keyed trigger, then
+the Slack bundle, add Slack live events and write its keyed trigger, then
 point the bridge at the new URL.
 
 The token is a secret on the `config` record, origin-pinned: the sync sends
 it to `https` on a `slack.com` host or to loopback, and an `apiBase` naming
 any other origin refuses to sync before a request is made. Only one account
 per repository syncs: the lexicographically first live account is the
-connection, and every other live row is stamped
-`syncStatus: ignored: duplicate account`.
+connection, and every other live row's `syncStatus` says it is ignored
+because another account already syncs the workspace, and asks for it to be
+removed.
 
 Setting it up is one paste. Mint a Slack user token (`xoxp-…`) and put it on
 `config.userToken`, not on the account: the engine seals an accountconfig's
@@ -1585,10 +1669,12 @@ trigger accepted it, and POSTs batches of their payloads to
 ```
 
 **No webhook exists until an operator writes a keyed one.** The webhook door
-checks a key only when the trigger declares one, and nothing in the engine
-refuses a keyless webhook trigger, so the bundle ships no trigger: a shipped
-disabled record would be one Resume click in the console from an open
-endpoint. The operator writes the whole `slack-live-events` record, with
+checks a key only when the trigger declares one. The server refuses to turn
+on a keyless webhook trigger a package shipped
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)),
+but this bundle ships none, so installing it opens nothing, and the trigger
+the operator writes is the operator's own, which that rule does not hold to
+a key. The operator writes the whole `slack-live-events` record, with
 `source.webhook.key` (matching `^[A-Za-z0-9_-]{16,128}$`; `openssl rand -hex
 32` prints one) and `enabled: true`, in one `substratectl apply -f`; the
 bundle's README has the document. It is the operator's record, so a
@@ -1762,9 +1848,12 @@ Nothing here calls out and there is no OAuth.
 
 **Setting it up.** Install it, create an `account` per phone with an id of
 your choosing (`iphone`), then set `source.webhook.key` (16 to 128 characters
-of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger:
-an enabled trigger with no key would write health records for anyone who
-reaches the server. In the app's automation, the URL is
+of `[A-Za-z0-9_-]`) and `enabled: true` on the `applehealth-webhook` trigger
+in one write: an enabled trigger with no key would write health records for
+anyone who reaches the server, so the server refuses to turn it on without
+one
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
+In the app's automation, the URL is
 `https://<your-substrate-host>/webhooks/<authority>/applehealth-webhook`
 (`substratectl trigger status` prints the path), the headers are
 `Authorization: Bearer <key>` and `X-Substrate-Account: <account id>`, the
@@ -2060,8 +2149,8 @@ cut. An agent that takes `webscrape` must name `webdocument` in its own
 intersected with its caller's
 ([agents](agents.md#sub-agents-budgets-and-the-emit-ceiling)).
 
-**A copy of the old sample.** A repository that imported the Firecrawl sample
-keeps it under its own authority, with `scrapepage` and its own key, and the
+**A copy of the old sample.** A repository that copied the Firecrawl sample
+keeps it in its local namespace, `~`, with `scrapepage` and its own key, and the
 operator's key never reaches it. Its tools derive other names
 (`websearch` when an agent names it, `firecrawl_websearch` when its owner
 offers it), so the provider's two tools sit beside it rather than collide.
@@ -2130,7 +2219,10 @@ the capture came from the Double click & hold gesture. It requires
 https://<your-substrate-host>/webhooks/<authority>/pebble-webhook`, where
 `<authority>` is the repository's own authority;
 `substratectl trigger status` prints the path in its `WEBHOOK` column. It is
-open as shipped, and setting `source.webhook.key` on the `pebble-webhook`
+open as shipped: adding the sample makes it the repository's own trigger, which the
+server does not hold to a key the way it holds a provider's
+([decision 0248](decisions/0248-a-webhook-trigger-a-publisher-ships-is-enabled-only-with-a-key-or-a-signature.md)).
+Setting `source.webhook.key` on the `pebble-webhook`
 trigger (16 to 128 characters of `[A-Za-z0-9_-]`) makes the server require that
 key as a trailing path segment, as `?key=<key>`, or as a bearer token
 ([functions](functions.md#triggers)). In the Index app (Settings, Webhook),

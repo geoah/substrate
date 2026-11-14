@@ -1,0 +1,349 @@
+{
+  "lines": [
+    {
+      "name": "a put that creates a record: one entry, its own transaction",
+      "entry": {
+        "actor": "api",
+        "kind": "ada.example.com/tasks/task",
+        "op": "put",
+        "payload": {
+          "properties": [
+            "name",
+            "dueAt"
+          ],
+          "created": true,
+          "fold": [
+            {
+              "kind": "record",
+              "ref": "ada.example.com/tasks/task",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "version": 1,
+              "delta": {
+                "created": true,
+                "set": {
+                  "name": "Ship the fold",
+                  "dueAt": "2026-08-06T09:00:00Z",
+                  "estimate": 1.5
+                },
+                "title": "Ship the fold",
+                "kindVersion": 3
+              }
+            },
+            {
+              "kind": "manager",
+              "ref": "ada.example.com/tasks/task",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "property": "name",
+              "actor": "api",
+              "tier": "owner",
+              "principal": "01jbx9k0token000000000000a"
+            }
+          ]
+        },
+        "principal": "01jbx9k0token000000000000a",
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4190,
+        "ts": "2026-08-04T10:00:00.183742Z",
+        "txn": 4190
+      },
+      "line": "{\"actor\":\"api\",\"kind\":\"ada.example.com/tasks/task\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":3E0,\"set\":{\"dueAt\":\"2026-08-06T09:00:00Z\",\"estimate\":1.5E0,\"name\":\"Ship the fold\"},\"title\":\"Ship the fold\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"ada.example.com/tasks/task\",\"version\":1E0},{\"actor\":\"api\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"principal\":\"01jbx9k0token000000000000a\",\"property\":\"name\",\"ref\":\"ada.example.com/tasks/task\",\"tier\":\"owner\"}],\"properties\":[\"name\",\"dueAt\"]},\"principal\":\"01jbx9k0token000000000000a\",\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4190,\"sum\":\"sha256:308ac73610024745a83e81276ac52f61d3b8f406156a231984a79199f8731e31\",\"ts\":\"2026-08-04T10:00:00.183742Z\",\"txn\":4190}",
+      "sum": "sha256:308ac73610024745a83e81276ac52f61d3b8f406156a231984a79199f8731e31"
+    },
+    {
+      "name": "the first entry of a merge's transaction, which ends at the next seq",
+      "entry": {
+        "actor": "api",
+        "kind": "ada.example.com/people/person",
+        "op": "delete",
+        "payload": {
+          "fold": [
+            {
+              "kind": "tombstone",
+              "ref": "ada.example.com/people/person",
+              "id": "p2",
+              "version": 3,
+              "finalizer": "substrate.merge"
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "p2",
+        "seq": 4207,
+        "ts": "2026-08-04T10:05:00.000000Z",
+        "txn": 4208
+      },
+      "line": "{\"actor\":\"api\",\"kind\":\"ada.example.com/people/person\",\"op\":\"delete\",\"payload\":{\"fold\":[{\"finalizer\":\"substrate.merge\",\"id\":\"p2\",\"kind\":\"tombstone\",\"ref\":\"ada.example.com/people/person\",\"version\":3E0}]},\"principal\":\"\",\"recordId\":\"p2\",\"seq\":4207,\"sum\":\"sha256:3ad2e34ad66524a131c19b9c51265f56b5317304a81ad492bcfd80a07c35b86c\",\"ts\":\"2026-08-04T10:05:00.000000Z\",\"txn\":4208}",
+      "sum": "sha256:3ad2e34ad66524a131c19b9c51265f56b5317304a81ad492bcfd80a07c35b86c"
+    },
+    {
+      "name": "a delivery a webhook caused, with causedBy and text that escapes",
+      "entry": {
+        "actor": "substrate.webhook",
+        "causedBy": 4299,
+        "kind": "substrate.reamde.dev/core/trigger",
+        "op": "delivery",
+        "payload": {
+          "fold": [
+            {
+              "kind": "park",
+              "ref": "substrate.reamde.dev/core/trigger",
+              "id": "on-hook",
+              "failure": {
+                "id": 4300,
+                "fireId": "f1",
+                "attempts": 3,
+                "lastError": "gate \"closed\" <\u00e9>\u2028",
+                "parkedAt": "2026-08-04T11:00:00Z"
+              }
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "on-hook",
+        "seq": 4300,
+        "ts": "2026-08-04T11:00:00.000001Z",
+        "txn": 4300
+      },
+      "line": "{\"actor\":\"substrate.webhook\",\"causedBy\":4299,\"kind\":\"substrate.reamde.dev/core/trigger\",\"op\":\"delivery\",\"payload\":{\"fold\":[{\"failure\":{\"attempts\":3E0,\"fireId\":\"f1\",\"id\":4.3E3,\"lastError\":\"gate \\\"closed\\\" \\u003c\u00e9\\u003e\\u2028\",\"parkedAt\":\"2026-08-04T11:00:00Z\"},\"id\":\"on-hook\",\"kind\":\"park\",\"ref\":\"substrate.reamde.dev/core/trigger\"}]},\"principal\":\"\",\"recordId\":\"on-hook\",\"seq\":4300,\"sum\":\"sha256:5f6e5c091ea7ad32ca4b7924b305fd84bc711cd6b4243e654e05b7904b68b933\",\"ts\":\"2026-08-04T11:00:00.000001Z\",\"txn\":4300}",
+      "sum": "sha256:5f6e5c091ea7ad32ca4b7924b305fd84bc711cd6b4243e654e05b7904b68b933"
+    },
+    {
+      "entry": {
+        "actor": "function:ada.example.com:inbox:sync",
+        "kind": "ada.example.com/inbox/message",
+        "op": "patch",
+        "payload": {
+          "properties": [
+            "subject"
+          ],
+          "fold": [
+            {
+              "kind": "record",
+              "ref": "ada.example.com/inbox/message",
+              "id": "m1",
+              "version": 7,
+              "delta": {
+                "set": {
+                  "subject": "tab\there\bback\fform\u0001one & <two>",
+                  "size": -0.0,
+                  "bytes": 123456789012345678901234567890
+                },
+                "labels": {}
+              }
+            },
+            {
+              "kind": "annotation",
+              "ref": "ada.example.com/inbox/message",
+              "id": "m1",
+              "key": "owner/note",
+              "value": false
+            }
+          ]
+        },
+        "principal": "",
+        "recordId": "m1",
+        "seq": 4301,
+        "ts": "2026-08-04T12:00:00.500000Z",
+        "txn": 4301
+      },
+      "line": "{\"actor\":\"function:ada.example.com:inbox:sync\",\"kind\":\"ada.example.com/inbox/message\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"labels\":{},\"set\":{\"bytes\":1.2345678901234567890123456789E29,\"size\":0,\"subject\":\"tab\\there\\bback\\fform\\u0001one \\u0026 \\u003ctwo\\u003e\"}},\"id\":\"m1\",\"kind\":\"record\",\"ref\":\"ada.example.com/inbox/message\",\"version\":7E0},{\"id\":\"m1\",\"key\":\"owner/note\",\"kind\":\"annotation\",\"ref\":\"ada.example.com/inbox/message\",\"value\":false}],\"properties\":[\"subject\"]},\"principal\":\"\",\"recordId\":\"m1\",\"seq\":4301,\"sum\":\"sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8\",\"ts\":\"2026-08-04T12:00:00.500000Z\",\"txn\":4301}",
+      "name": "a patch a function wrote, with control characters, a negative zero and a number no float holds",
+      "sum": "sha256:64c8b86c5d39e338a9c8b49e64533e51b965d088b7f0037f7c633bad55862de8"
+    },
+    {
+      "name": "a person's put through a sign-in, the token beside it",
+      "entry": {
+        "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+        "kind": "substrate.reamde.dev/core/contact",
+        "op": "put",
+        "payload": {
+          "created": true,
+          "fold": [
+            {
+              "delta": {
+                "created": true,
+                "kindVersion": 2,
+                "set": {
+                  "name": "Grace"
+                },
+                "title": "Grace"
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 1
+            },
+            {
+              "actor": "6nk6ekkczdgh399nt2pqpccjz0",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "name",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "owner",
+              "token": "01jbx9k0token000000000000a"
+            }
+          ],
+          "properties": [
+            "name"
+          ]
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4812,
+        "token": "01jbx9k0token000000000000a",
+        "ts": "2026-11-13T10:00:00.000000Z",
+        "txn": 4812
+      },
+      "line": "{\"actor\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"kind\":\"substrate.reamde.dev/core/contact\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":2E0,\"set\":{\"name\":\"Grace\"},\"title\":\"Grace\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":1E0},{\"actor\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"name\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"owner\",\"token\":\"01jbx9k0token000000000000a\"}],\"properties\":[\"name\"]},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4812,\"sum\":\"sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a\",\"token\":\"01jbx9k0token000000000000a\",\"ts\":\"2026-11-13T10:00:00.000000Z\",\"txn\":4812}",
+      "sum": "sha256:c4055ba7d0d7c7f0341830675e0f284601078e216af0a1a73ed5c6bef62d2c8a"
+    },
+    {
+      "name": "an app's patch, on behalf of the person, with the app's token",
+      "entry": {
+        "actor": "5fz1hzkw85g0a9ytnkzrj7tzth",
+        "kind": "substrate.reamde.dev/core/contact",
+        "onBehalfOf": "6nk6ekkczdgh399nt2pqpccjz0",
+        "op": "patch",
+        "payload": {
+          "fold": [
+            {
+              "delta": {
+                "set": {
+                  "name": "Grace Hopper"
+                },
+                "title": "Grace Hopper"
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 2
+            },
+            {
+              "actor": "5fz1hzkw85g0a9ytnkzrj7tzth",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "name",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "owner",
+              "token": "01jbx9k0token000000000000c"
+            }
+          ],
+          "properties": [
+            "name"
+          ]
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4813,
+        "token": "01jbx9k0token000000000000c",
+        "ts": "2026-11-13T10:00:01.000000Z",
+        "txn": 4813
+      },
+      "line": "{\"actor\":\"5fz1hzkw85g0a9ytnkzrj7tzth\",\"kind\":\"substrate.reamde.dev/core/contact\",\"onBehalfOf\":\"6nk6ekkczdgh399nt2pqpccjz0\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"set\":{\"name\":\"Grace Hopper\"},\"title\":\"Grace Hopper\"},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":2E0},{\"actor\":\"5fz1hzkw85g0a9ytnkzrj7tzth\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"name\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"owner\",\"token\":\"01jbx9k0token000000000000c\"}],\"properties\":[\"name\"]},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4813,\"sum\":\"sha256:5925e70574c9a9bb6555af4da7b79acf401090d9f47e0a606d82a86a6950a07c\",\"token\":\"01jbx9k0token000000000000c\",\"ts\":\"2026-11-13T10:00:01.000000Z\",\"txn\":4813}",
+      "sum": "sha256:5925e70574c9a9bb6555af4da7b79acf401090d9f47e0a606d82a86a6950a07c"
+    },
+    {
+      "name": "a sync on a schedule, on behalf of no one and behind no token",
+      "entry": {
+        "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+        "kind": "providers.substrate.reamde.dev/google/contact",
+        "op": "put",
+        "payload": {
+          "created": true,
+          "fold": [
+            {
+              "delta": {
+                "created": true,
+                "kindVersion": 4,
+                "set": {
+                  "displayName": "Grace Hopper"
+                },
+                "title": "Grace Hopper"
+              },
+              "id": "c-grace",
+              "kind": "record",
+              "ref": "providers.substrate.reamde.dev/google/contact",
+              "version": 1
+            },
+            {
+              "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+              "id": "c-grace",
+              "kind": "manager",
+              "property": "displayName",
+              "ref": "providers.substrate.reamde.dev/google/contact",
+              "tier": "bundle"
+            }
+          ],
+          "properties": [
+            "displayName"
+          ]
+        },
+        "recordId": "c-grace",
+        "seq": 4814,
+        "ts": "2026-11-13T11:00:00.000000Z",
+        "txn": 4815
+      },
+      "line": "{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"kind\":\"providers.substrate.reamde.dev/google/contact\",\"op\":\"put\",\"payload\":{\"created\":true,\"fold\":[{\"delta\":{\"created\":true,\"kindVersion\":4E0,\"set\":{\"displayName\":\"Grace Hopper\"},\"title\":\"Grace Hopper\"},\"id\":\"c-grace\",\"kind\":\"record\",\"ref\":\"providers.substrate.reamde.dev/google/contact\",\"version\":1E0},{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"id\":\"c-grace\",\"kind\":\"manager\",\"property\":\"displayName\",\"ref\":\"providers.substrate.reamde.dev/google/contact\",\"tier\":\"bundle\"}],\"properties\":[\"displayName\"]},\"recordId\":\"c-grace\",\"seq\":4814,\"sum\":\"sha256:bf419f0fb0b03b69212a9819ac0155ab08b9c48e25e5e6689fc60aebb2ceb777\",\"ts\":\"2026-11-13T11:00:00.000000Z\",\"txn\":4815}",
+      "sum": "sha256:bf419f0fb0b03b69212a9819ac0155ab08b9c48e25e5e6689fc60aebb2ceb777"
+    },
+    {
+      "name": "the engine merging what the sync offered",
+      "entry": {
+        "actor": "4drfnb8304hpgtvb7z1p4es7ze",
+        "kind": "substrate.reamde.dev/core/contact",
+        "op": "patch",
+        "payload": {
+          "fold": [
+            {
+              "delta": {
+                "set": {
+                  "emails": [
+                    "grace@example.com"
+                  ]
+                }
+              },
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "record",
+              "ref": "substrate.reamde.dev/core/contact",
+              "version": 3
+            },
+            {
+              "actor": "71zvrabc2sg10aaafhtvd8wqp5",
+              "id": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+              "kind": "manager",
+              "property": "emails",
+              "ref": "substrate.reamde.dev/core/contact",
+              "tier": "machine"
+            }
+          ],
+          "managers": {
+            "emails": "71zvrabc2sg10aaafhtvd8wqp5"
+          },
+          "mechanism": "mapping",
+          "properties": [
+            "emails"
+          ],
+          "triggeredBy": "71zvrabc2sg10aaafhtvd8wqp5"
+        },
+        "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+        "seq": 4815,
+        "ts": "2026-11-13T11:00:00.000000Z",
+        "txn": 4815
+      },
+      "line": "{\"actor\":\"4drfnb8304hpgtvb7z1p4es7ze\",\"kind\":\"substrate.reamde.dev/core/contact\",\"op\":\"patch\",\"payload\":{\"fold\":[{\"delta\":{\"set\":{\"emails\":[\"grace@example.com\"]}},\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"record\",\"ref\":\"substrate.reamde.dev/core/contact\",\"version\":3E0},{\"actor\":\"71zvrabc2sg10aaafhtvd8wqp5\",\"id\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"kind\":\"manager\",\"property\":\"emails\",\"ref\":\"substrate.reamde.dev/core/contact\",\"tier\":\"machine\"}],\"managers\":{\"emails\":\"71zvrabc2sg10aaafhtvd8wqp5\"},\"mechanism\":\"mapping\",\"properties\":[\"emails\"],\"triggeredBy\":\"71zvrabc2sg10aaafhtvd8wqp5\"},\"recordId\":\"01jbx9m2qz7k4c5v8n3w6t1hrd\",\"seq\":4815,\"sum\":\"sha256:5cc01c6b0c09318208ed58eee268acb98d10dc5e5d47874aa2c5b37cee34602e\",\"ts\":\"2026-11-13T11:00:00.000000Z\",\"txn\":4815}",
+      "sum": "sha256:5cc01c6b0c09318208ed58eee268acb98d10dc5e5d47874aa2c5b37cee34602e"
+    }
+  ],
+  "numbers": {
+    "-0": "0",
+    "-2.5E+3": "-2.5E3",
+    "0": "0",
+    "0.000": "0",
+    "0.001": "1E-3",
+    "1": "1E0",
+    "1.5": "1.5E0",
+    "1.50": "1.5E0",
+    "1000": "1E3",
+    "123456789012345678901234567890": "1.2345678901234567890123456789E29",
+    "15e-1": "1.5E0",
+    "18": "1.8E1"
+  }
+}

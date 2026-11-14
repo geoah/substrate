@@ -9,29 +9,49 @@ facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code gates who registers, where
 one is set. Registering
-creates a **repository** and its **user**: one name, one password and a TOTP
-second factor the user may skip and turn on later
-([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)).
-That name IS the repository's one **authority** (a bare label is
-completed under the server's host; the home of the kinds the user declares,
-the name they log in with, and the repository's id on disk, in the database
-and on the wire,
-[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md),
-[0052](docs/decisions/0052-the-authority-is-the-repository-id.md),
-[0074](docs/decisions/0074-the-repository-name-is-the-login-name.md)).
+creates a **repository** and its **user**. The user is an **identity** the
+server holds beside the repositories, in a control-plane table and in no
+repository: the name they sign in with, one password and a TOTP second
+factor the user may skip and turn on later
+([0237](docs/decisions/0237-a-second-factor-is-the-owners-choice-and-sign-in-asks-for-the-code-only-of-an-account-that-has-one.md)),
+and the repositories it may open. A sign-in names the person, who picks the
+repository; a person has one today, named after them unless the
+registration named another
+([0274](docs/decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
+The repository's name IS its one **authority** (a bare label is
+completed under the server's public host, and a name under `localhost` is
+for development,
+[0288](docs/decisions/0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md);
+[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+It is an alias: an admin may rename it, and the old name keeps resolving,
+held from everyone else, for 90 days
+([0287](docs/decisions/0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md)).
+The kinds the user declares and the samples they add live in the
+repository's **local namespace**, written `~` (`~/tasks/task`), so the name
+never enters their data
+([0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)).
+Its storage is keyed by an **id** minted at registration (`rnd-…`): the
+directory on disk and in the archive, the `repository` column of every table
+and the webhook address the server gives out, so no table or path holds the
+name
+([0261](docs/decisions/0261-a-repository-is-keyed-by-a-minted-id-and-its-name-keeps-every-other-job.md)).
 There is no username.
 Everything the user has lives in it: an append-only,
-strictly sequential **changelog**, checksummed segment files in the
-repository's directory under `SUBSTRATE_DATA_ROOT` that Postgres indexes,
-is the truth and the **records** table is its fold. Tokens and the login credential are themselves records, and a token
+strictly sequential **changelog**, checksummed lines in Postgres's
+`changelog` table, is the truth and the **records** table is its fold.
+Postgres alone confirms a write, and a background pass copies each
+repository to its **archive** after the commits, a directory or an
+S3-compatible bucket that is the backup and what a restore reads
+([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md)). Tokens are themselves
+records, each naming the identity it acts for, and a token
 has full access to its repository unless it is an app's: a token an app got
 through the authorization flow carries the **scopes** the owner approved and
 reaches only those kinds, unless the owner approved it `full` access, which
 is a token without scopes like a sign-in's
 ([0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
 [0204](docs/decisions/0204-an-app-may-ask-for-full-access-and-its-owner-approves-it-whole.md),
-[apps](docs/apps.md)). There are no tenants, no identities, no user-managed
-keys, no sharing and no roles.
+[apps](docs/apps.md)). There are no tenants, no user-managed keys, no sharing
+and no roles.
 
 There is no written contract document. **The code is the contract**; the tests
 are what it promises. One will be written from the code, small, when someone
@@ -114,7 +134,7 @@ mise run dev:status     # container, this tree's database, server, console, URLs
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:stop       # stop THIS TREE'S server; the shared container keeps running
 mise run dev:logs
-mise run dev:wipe       # DROP this tree's database and DELETE .dev/ (data root, credential key, pid, log): the next start is a fresh substrate
+mise run dev:wipe       # DROP this tree's database and DELETE .dev/ (data root and the archive in it, credential key, pid, log): the next start is a fresh substrate
 mise run dev:wipe:all   # dev:wipe, then remove the container — EVERY tree's dev database
 ```
 
@@ -160,13 +180,14 @@ is enforced, and NEVER by setting the TOTP variable outside this tree.
 
 **The dev substrate has a data root.** Every `dev*` task exports
 `SUBSTRATE_DATA_ROOT` as the absolute path of `.dev/data`, so each
-repository's directory (manifest, changelog segments, sealed files, blobs)
-lands under it, and `dev:wipe` removes it with this tree's database. The two
-must go together: a data root outliving a wiped database is imported at the
-next boot, and a database outliving its root is written back out. The dev tasks
+repository's directory (blobs, webhook spool) and the archive
+(`.dev/data/archive`) land under it, and `dev:wipe` removes it with this
+tree's database. The two must go together: an archive outliving a wiped
+database is restored at the next boot, and a database outliving its root has
+lost every blob's bytes. The dev tasks
 also mint `SUBSTRATE_CREDENTIAL_KEY` once into `.dev/credential.key` and
-every start reuses it; it wraps each repository's DEK, an operator command
-that writes sealed material (`user reset`) reads the same file, and
+every start reuses it; it wraps each repository's DEK and each identity's, an
+operator command that writes sealed material (`user reset`) reads the same file, and
 `dev:status` prints both paths. There is no keyless mode: a host without the
 key refuses to boot.
 
@@ -216,23 +237,23 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, repository, password, TOTP enroll (--skip-totp for none), recovery key (auto-saved to 1Password when `op` is signed in)
-bin/substratectl login --repository <yours>  # password, then a TOTP code if the account has one; mints a token record
+bin/substratectl register                    # invite code, your name (--repository names the repository otherwise), password, TOTP enroll (--skip-totp for none)
+bin/substratectl login --identity <yours>    # password, then a TOTP code if the account has one; mints a token record in your repository (--repository picks one of several)
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get substrate.reamde.dev/core/kind <ref> -o yaml  # one kind's definition
-bin/substratectl get <authority>/tasks/task           # list one kind: GET /api/v1/records with the kind in filter.kinds
-bin/substratectl get <authority>/tasks/task <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
+bin/substratectl get '~/tasks/task'          # list one kind: GET /api/v1/records with the kind in filter.kinds; quote `~`, or the shell expands it
+bin/substratectl get '~/tasks/task' <id> -o yaml  # one record, apply-able envelope; a bare `task` is refused
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl validate -f record.yaml     # the server's declaration checks, offline; --partial accepts what needs the repository
 bin/substratectl watch                       # resumable change stream
 bin/substratectl sync status                 # every connected account's sync state, joined with its triggers (the core `sync` trait)
-bin/substratectl export                      # the recovery export: a tar of the repository directory as of one committed point
+bin/substratectl export                      # the recovery export: the repository's archive as one tar, as of one committed point
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
-bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the segment files: every line's checksum, every sidecar, both heads
-bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the segment files into a fresh fold
-bin/substratectl --dsn "$DATABASE_URL" user reset <repository>   # needs SUBSTRATE_CREDENTIAL_KEY
+bin/substratectl --dsn "$DATABASE_URL" repository verify <repository>  # walk the changelog table, hold the archive's every line to it, check sealed rows and blobs
+bin/substratectl --dsn "$DATABASE_URL" repository rebuild <repository>  # replay the changelog table into a fresh fold
+bin/substratectl --dsn "$DATABASE_URL" user reset <name>   # needs SUBSTRATE_CREDENTIAL_KEY; the server may keep running
 ```
 
 **Registration seeds `core`, `llm`, `console` (record views,
@@ -260,7 +281,7 @@ and a model
 names `anthropic` and refuses at dispatch until that row's `apiKey` is
 written; the owner shapes it with `llm/instruction` records rather than
 editing it. The LLM sample (the decision-loop lessons) is in the catalog and
-nothing imports it.
+nothing adds it.
 Creation also writes the shipped unit and conversion records
 (`substrate.reamde.dev/core/unit` and `…/core/conversion`, 216 units and 149
 conversions from `internal/engine/unitseed`, edited by hand), and every open
@@ -276,20 +297,23 @@ collection shows as tabs
 No row sets a `reasoningEffort` default: the accepted set is the MODEL's, not
 the row's (`gpt-5` refuses `none`, the gpt-5.6 family needs it for tools), so
 a tool-using agent names the value itself. `tasks` is a SAMPLE
-package the repository still imports, so a walkthrough
+package a repository adds for itself, so a walkthrough
 that reaches for any collection outside the seed takes one first. `tasks`
-`requires:` `people` and `scheduling`, and an import whose requirement is
+`requires:` `people` and `scheduling`, and adding one whose requirement is
 missing is refused, so the order is `samples.substrate.reamde.dev/people`, then
-`…/scheduling`, then `…/tasks`, each through `bin/substratectl import <sample>`
-or `POST /api/v1/catalog/{id}/import` (the id is the package, so its slash is
+`…/scheduling`, then `…/tasks`, each through `bin/substratectl add <sample>`
+or `POST /api/v1/catalog/{id}/add` (the id is the package, so its slash is
 percent-encoded: `samples.substrate.reamde.dev%2Ftasks`). The console's All
 data → Add a collection → Start from a sample is the third door to the same
-admission, and it imports the requirements first. The import REHOMES the closure onto the repository's own
-authority, so what lands is `<authority>/tasks/task`, not the shipped spelling
-(record 0048). A PUBLISHED package (a provider such as
-`providers.substrate.reamde.dev/google`, or a catalogue) takes the other door,
-`…/install`, and lands under the authority that publishes it. A
-snippet that opens with `get <authority>/people/person` on a fresh substrate
+admission, and it adds the requirements first. Adding a sample COPIES the closure into the repository's local
+namespace, so what lands is `~/tasks/task` in every repository, not the
+shipped spelling (records 0048 and
+[0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). A PUBLISHED package (a provider such as
+`providers.substrate.reamde.dev/google`, or a catalogue) takes the same route
+and lands under the authority that publishes it: who keeps a package decides
+where it lands
+([0258](docs/decisions/0258-one-catalog-route-adds-a-package-and-keptby-says-who-keeps-it.md)). A
+snippet that opens with `get '~/people/person'` on a fresh substrate
 is wrong, and one that names a kind by a bare word is refused everywhere
 ([0101](docs/decisions/0101-a-kind-trait-or-callable-is-named-in-full-on-every-surface.md)).
 
@@ -300,12 +324,12 @@ authority that are NOT seeded: `substrate.reamde.dev/health` (sleep, workout,
 `health/*` metrics), `…/labs` (lab reports and results, `labs/*` metrics,
 `convertlab`; requires `health`), `…/environment` (`environment/*`
 metrics) and `…/clinical` (the medical record as FHIR-shaped kinds; requires
-`labs`, decision 0193). The catalog serves them in the published tier, through
-the install door (`bin/substratectl install substrate.reamde.dev/labs`), they
-land published and never rehomed, and an install first installs every
-published package it requires, so installing
+`labs`, decision 0193). The catalog serves them as published packages, through
+the add route (`bin/substratectl add substrate.reamde.dev/labs`), they
+land published under their publisher's authority and never in `~`, and adding one first adds every
+published package it requires, so adding
 `providers.substrate.reamde.dev/applehealth` or `…/whoop` (each shipping its
-own adapter) brings `health`. The tier says only who keeps a package: each
+own adapter) brings `health`. `keptBy` says only who keeps a package: each
 catalog entry also says whether it is a PROVIDER (connects to an outside
 service: every package under `providers.substrate.reamde.dev`, and any other
 published one with an account kind), what it BRINGS, and which provider an
@@ -317,11 +341,12 @@ starts with the package that ships it (`health/heart_rate`,
 prefix.
 
 Config is `~/.config/substratectl/config.yaml` (override with
-`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository, token,
-tokenId}` — no URL names the repository, because the token implies it; the
-token id so `logout` can revoke the very token it forgets, and the repository
-(its authority, written by `register` and by `login`) because a webhook URL is
-built from it. `SUBSTRATE_SERVER` /
+`SUBSTRATECTL_CONFIG`): named contexts of `{name, server, repository,
+identity, token, tokenId}` — no URL names the repository, because the token
+implies it; the token id so `logout` can revoke the very token it forgets, the
+repository (its authority, written by `register` and by `login`) because a
+webhook URL is built from it, and the identity because `logout --everywhere`
+names the person. `SUBSTRATE_SERVER` /
 `SUBSTRATE_TOKEN` are canonical and override the file (`SS_*` is the one
 accepted alias); flags override both. A password is NEVER an argument — every
 prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.
@@ -354,17 +379,19 @@ words, and what each one replaced:
 | **record**    | the thing stored; `kind`/`id` in `records`, `record_kind`/`record_id` in the tables keyed by one record | entity       |
 | **kind**      | what a record is; `{authority}/{package}/{name}`           | type, schema |
 | **package**   | the kinds one authority versions, owns and quarantines together | namespace, module |
-| **authority** | who publishes a package; one DNS-style name                | group        |
+| **authority** | who publishes a package; one DNS-style name, or `~` for the repository's own | group        |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit, named for the package it ships; a record of core's `bundle` kind, and the `bundle` tier | extension |
-| **published** | a catalog tier: a package a publisher owns, INSTALLED under the authority that publishes it; it says who keeps a package, never what it is for | provider (as a tier) |
+| **published** | a package its publisher keeps (`keptBy: publisher`), ADDED under the authority that publishes it; it says who keeps a package, never what it is for | provider, tier (as who keeps a package) |
 | **provider**  | a package that connects the substrate to an outside service, as the catalog says on its entry: every package under `providers.substrate.reamde.dev`, and any other published one with an account kind ([0238](docs/decisions/0238-the-catalog-tier-says-who-keeps-a-package-and-what-it-is-for-is-read-from-its-declarations.md)) | integration |
-| **sample**    | the other catalog tier: a package the user copies, IMPORTED under the repository's own authority | example, vocabulary bundle |
+| **sample**    | a package the repository keeps (`keptBy: repository`): a copy the user ADDS into the local namespace, `~/<package>` | example, vocabulary bundle |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound reference, the id `default`, then the sole record) | config, configType, singleton |
 | **reference** | a typed pointer at one record, declared as a property and stored as `{ref: <kind>/<id>}` | relationship, edge |
-| **repository**| everything one user has; its name IS its authority, and that name is what a registration takes and a login presents | username |
+| **repository**| everything one user has; its name IS its authority, and a registration names its person after it unless told otherwise; its id (`rnd-…`) keys its storage, and its own kinds live under `~` | username |
+| **identity**  | a person's sign-in, held by the server beside the repositories: the name a login presents, the password and the second factor, and the repositories it may open; it holds no data | login credential |
+| **local namespace** | `~`, the authority of the repository's own packages: `~/tasks/task` is this repository's tasks kind, whatever the repository is called; the full name is accepted for it on input and replies say `~` | the repository's name in a kind |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.
 
@@ -377,9 +404,11 @@ one. Anywhere else, each of them is a bug.
 
 A kind reference is `{authority}/{package}/{name}`
 ([0047](docs/decisions/0047-a-kind-lives-in-a-package.md)): the authority is a
-dot-separated DNS-style name, the package and the name are single lowercase
-words, so the reference splits on its two slashes without a registry: the
-authority is the one segment carrying a dot. A stored reference value is that
+dot-separated DNS-style name or `~`, the package and the name are single
+lowercase words, so the reference splits on its two slashes without a
+registry: the authority is the one segment carrying a dot, or `~`, the
+repository's local namespace
+([0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). A stored reference value is that
 plus the id, and a record's REST path is the reference under `/api/v1/`: four
 segments, always. There is no per-kind list route: every list, ranked read and
 tail is `GET /api/v1/records` with the kind in `filter.kinds`, and a create
@@ -391,11 +420,12 @@ its package's; a stored closure the loader refuses parks its package; and
 `authorizeDeclarationWrite` reads the package row's `source`, so a
 repository's token may not write a `builtin` package (the seeded `core`,
 `llm`, `console` and `observations`) or a `published` one (an installed
-provider or catalogue), and creates a new package only under the
-repository's own authority
-([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md));
+provider or catalogue), and creates a new package only under `~`, the
+repository's full name folded into it first
+([0210](docs/decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+[0259](docs/decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md));
 its own packages and the
-samples it imported are `installed` and writable, whoever declared them: a
+samples it added are `installed` and writable, whoever declared them: a
 package an app once declared under the retired `declare:` scope is the
 owner's like any other, and `declaredByClient` is a stamp no path writes
 ([0214](docs/decisions/0214-an-apps-approval-installs-published-packages-and-declare-and-the-agent-detail-are-retired.md)).
@@ -421,13 +451,16 @@ actors are `bundle:<authority>:<package>`,
 `agent:<authority>:<package>:<name>` and an app's token's actor, from what
 its approval proved: `app:<authority>` for an app whose publisher was
 verified, `app:local` for one whose access went to a loopback address, and
-`app:<host>` of its client id otherwise. All of them are derived by the
-substrate and never declared
+`app:<host>` of its client id otherwise. A package under `~` writes as `~`
+(`bundle:~:tasks`), so its actor record is the same whatever the repository
+is called. All of them are derived
+by the substrate and never declared
 ([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md),
 [0194](docs/decisions/0194-an-app-gets-a-scoped-token-through-a-registration-free-authorization-flow.md),
 [0209](docs/decisions/0209-an-app-is-verified-by-its-authoritys-txt-record-and-document.md)). There
 is no second spelling of a kind anywhere: no generated type name, no folded
-authority. The reference is the name on every surface, and nothing keys on a
+authority, but one: an input may spell `~` as the repository's full name,
+and the reply says `~`. The reference is the name on every surface, and nothing keys on a
 first label.
 
 ## House rules
@@ -444,8 +477,12 @@ first label.
   `example.com` or a localhost default is the answer.
 - **`internal/api` never imports `internal/engine`.** The Go contract every
   consumer builds against is `internal/substrate`; the engine is one
-  implementation of it, and the API is tested entirely against a hand-written
-  fake (`internal/api/fake_test.go`).
+  implementation of it. The exception is the API's tests of engine behavior:
+  they run the handler on the real engine, in `internal/api`'s
+  `*_db_test.go` files, the only files there that may import it, and its
+  tests of the handler alone run on a stub that implements almost nothing
+  (`internal/api/stub_test.go`,
+  [0263](docs/decisions/0263-the-apis-tests-of-engine-behavior-run-on-the-real-engine-and-its-stand-in-is-deleted.md)).
 - **The top level stays empty.** Every Go package is under `internal/` (or
   `cmd/`), and four directories are the exceptions. Two are the vocabulary as
   files: `kinds/` (the seeded `core`, `llm`, `console` and `observations`
@@ -461,22 +498,28 @@ first label.
   not precedent: `web/console/src/lib/utils.ts` (the path shadcn's
   generated components import), `web/console/src/lib/api/types.ts` (the wire
   mirror below) and `internal/vocabulary/types.go`.
-- **The changelog is the truth.** It lives in the repository's directory
-  under `SUBSTRATE_DATA_ROOT` as checksummed segment files, and the
-  `changelog` table indexes them; `internal/engine/fold.go` is the one path
-  from changelog to `records`, so a live write, a boot import and
-  `RebuildRepository` cannot drift. Anything that writes `records` directly,
-  or a changelog entry that reaches one store and not the other outside
-  `inTx`, is wrong. The exceptions are derived storage, a function of the
-  fold and the declarations in force: each is written outside the fold
-  without moving `version`, `updated_at` or the changelog, and
-  `repository rebuild` derives it again. They are `fts`, the search index over
-  each row (`rederiveFTS`, run by the background pass in `reprojection.go`
-  behind a vocabulary apply or the boot upgrade and by the open-time reindex
-  in `searchindex.go`, and `reprojectFTS` for the declaration rows inside the
-  boot upgrade's transaction); `orphaned_at` and
+- **The changelog is the truth.** It is the `changelog` table, each line
+  carrying its checksum, and Postgres alone confirms a write;
+  `internal/engine/fold.go` is the one path from it to `records`, so a live
+  write, an import and `RebuildRepository` fold from the same table and
+  cannot drift. Anything that writes `records` directly, or a changelog row
+  written outside `inTx`, is wrong. The exceptions are derived storage, a
+  function of the fold and the declarations in force: each is written
+  outside the fold without moving `version`, `updated_at` or the changelog,
+  and `repository rebuild` derives it again. They are `fts`, the search
+  index over each row (`rederiveFTS`, run by the background pass in
+  `reprojection.go` behind a vocabulary apply or the boot upgrade and by the
+  open-time reindex in `searchindex.go`, and `reprojectFTS` for the
+  declaration rows inside the boot upgrade's transaction); `orphaned_at` and
   `ambiguous_at` on `records` (`orphans.go`, `ambiguous.go`); and the
-  `property_offers` table (`mapping.go`).
+  `property_offers` table (`mapping.go`). The **archive** is a copy, never a
+  second truth: `internal/engine/archive.go` writes it after the commits,
+  the blobs and sealed values before the pieces that name them and the
+  manifest last, and nothing on the write path waits for it or reads it
+  ([0262](docs/decisions/0262-postgres-alone-confirms-a-write-and-an-archive-is-copied-after-the-commit.md),
+  [0277](docs/decisions/0277-the-archive-is-pieces-blobs-and-sealed-values-and-its-manifest-is-the-mark.md)).
+  History comes into the table from an archive or a 0.x directory only
+  through the boot check's one import path (`history.go`).
 - **A changed declaration ships a changed version.** Every document under
   `kinds/` and `samples/` projects with a `version`, an incremental integer (a
   kind's own `data.version` where it pins one, else its package's, else 1). The boot
@@ -494,6 +537,20 @@ first label.
   add-and-deprecate. `deprecated: true` is the marker, on a property, a
   reference or one enum value. CI runs `mise run kinds:check` and refuses the
   merge otherwise.
+- **A changed stored shape ships a conversion step.** The archive is the
+  export's contract
+  ([docs/stored-format.md](docs/stored-format.md)): the manifest, a line's
+  keys, every effect and its fields, each a closed set. A shape the history
+  already holds changes only through a step,
+  `internal/engine/conversion_NNNN_<name>.go`, that raises
+  `maxChangelogDialect` and rewrites each row of the `changelog` table in
+  place, in one transaction at the boot check: the one writer that rewrites
+  a line, and the archive follows on its next pass. It lands with a test of what the lines
+  become, and the server reads one shape. Each release keeps the directory
+  its own server wrote (`mise run release:keep <tag>`), `TestKeptDirectories`
+  imports every one, and `frozen:check` refuses an edit to a kept directory
+  or a landed step
+  ([0260](docs/decisions/0260-the-stored-format-is-a-contract-each-release-keeps-a-directory-and-history-converts-forward-once.md)).
 - **A kind titles itself from a property it declares.** The built-in `title`
   every record carries is derived storage, never a kind's input: a kind with a
   heading declares its own property (`name`, `summary`, `subject`) and renders
@@ -506,6 +563,23 @@ first label.
   keys therefore land inert and validated, in batches, and there is no `x-`
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
+  A key added, removed or moved raises `vocabulary.Dialect`, which discovery
+  publishes and a package states under `dialect`:
+  `internal/vocabulary/testdata/dialect.golden.json` records the key sets,
+  `go test ./internal/vocabulary/ -run TestDialectKeysMatchTheGolden -update-dialect`
+  refuses sets that moved under an unchanged number, and
+  `mise run dialect:check` holds the same against the base branch. A step
+  that adds a key also adds its line to `keyIntroducedAt`
+  (`internal/vocabulary/dialect.go`) at the dialect it raises the number to,
+  which is how a package header that states less than its keys need is
+  refused; the golden holds the table, and both checks refuse a key added
+  without its line, a line whose number moved and a line dropped while its
+  key stays. A closed key set is a
+  registered `…Keys` map, and the golden's test refuses one written inline
+  in the shapes it can see (a ranged key compared with `!=` to a word, or
+  switched over words with a `default`); an `==` chain or a lookup by name
+  it does not see
+  ([0268](docs/decisions/0268-a-new-declaration-key-raises-the-dialect-and-a-package-states-the-dialect-it-needs.md)).
   `unique` and `deprecated` are reserved today: stored, refused where they
   could not be honored, and acted on by no server path. A kind's `purpose`
   (`primary`, `supporting` or `internal`; absent reads as `primary`) is
@@ -519,7 +593,13 @@ first label.
   ([0133](docs/decisions/0133-a-kind-declares-its-purpose.md),
   [0231](docs/decisions/0231-a-contact-is-a-core-kind-of-the-owners-data-and-a-setting-names-the-owners-own.md),
   [0136](docs/decisions/0136-search-ranks-by-bm25f-and-a-kinds-purpose.md),
-  [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)). `renamedFrom` is live, on a
+  [0172](docs/decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)).
+  A package header's `stability` (`stable`, `beta` or `experimental`; absent
+  stores nothing and reads as `experimental`) is validated and stored the
+  same way and refuses no write: it is the label the package states for its
+  kinds, there is none on a kind, and a client reads it off the package
+  record ([0256](docs/decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md),
+  [docs/stability.md](docs/stability.md)). `renamedFrom` is live, on a
   property and on an enum value entry alike:
   admitting the declaration moves every live record's value to the new name,
   or rewrites the old spelling to the new one, inside the apply's
@@ -559,6 +639,42 @@ first label.
   `internal/substrate`, never a bare `map[string]any`. Move a wire field and the Go test fails; regenerate with
   `go test ./internal/substrate/ -run TestWireGolden -update` and the console's
   test fails until `types.ts` follows. Do not edit the golden by hand.
+- **A route is placed in a feature, and a feature that gains something
+  raises its revision.** The feature list in
+  `GET /.well-known/substrate/server.json` is built from one table,
+  `featureTable` in `internal/api/features.go`: each feature with its
+  stability, its revision and the routes it holds
+  ([0256](docs/decisions/0256-a-stability-label-sits-on-a-package-and-on-a-feature-and-a-feature-carries-a-revision.md),
+  [docs/stability.md](docs/stability.md)). A route added to the router goes
+  into the feature it belongs to, or into a new feature at revision 1, and
+  `TestEveryRouteIsInOneFeature` fails until it does. A feature that gains
+  a route, a parameter, a request field or a response field a client may
+  want to check for goes up one revision, and a revision never comes down.
+  `internal/api/testdata/features.golden.json` records each feature's
+  routes and revision; regenerate it with
+  `go test ./internal/api/ -run TestFeaturesMatchTheGolden -update`, which
+  refuses a route set that changed under an unchanged revision, and do not
+  edit it by hand. `mise run features:check` holds the same against the base
+  branch, so two branches cannot each spend one number. Taking something
+  away is declared, never inferred: a route a feature stops serving is
+  listed in its `removed`, and a feature that goes in `removedFeatures`
+  with the routes it held. Neither list shrinks, an address or a name on
+  one is never used again, and the same guards refuse a route or a feature
+  that left the table without being listed and a `stable` label that went
+  down. A parameter, a request field and a response field are seen by no
+  guard: raising the revision for one is held by review alone. The feature
+  table in
+  `docs/api.md` follows, and `TestDocsListTheFeatures` holds it. A new error code goes into `errorCodes` in
+  `internal/api/errors.go`, then
+  `go test ./internal/api/ -run TestErrorCodes -update`, the
+  `The closed set:` line of `docs/api.md` and the console's
+  `ServerErrorCode` union. A handler names a code constant where it writes
+  one (`TestEveryEmittedCodeIsADeclaredConstant`, which cannot see an
+  envelope spelled as raw JSON: do not write one). A new reason goes into
+  `ErrorReasons` in `internal/substrate/errors.go`, then
+  `go test ./internal/api/ -run TestErrorReasons -update`, the
+  `The closed set of reasons:` line of `docs/api.md` and the console's
+  `ErrorReason` union.
 - **Comments carry constraints, not narration.** Say why a thing must be so,
   or say nothing.
 - **Every commit title is a conventional commit** —

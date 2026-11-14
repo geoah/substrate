@@ -2,9 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/authorize"
@@ -25,7 +26,47 @@ const (
 	// place an assistant's token authenticates (decision 0230). It is set on
 	// the context alone, never read from a header, so no client can claim it.
 	ctxKeyMCPDoor
+	// ctxKeyHeld marks a request whose person is not an admin: the routes
+	// for an admin alone refuse it, and the rest are held to their roles by
+	// the person's view (decision 0294).
+	ctxKeyHeld
 )
+
+// heldToRoles reports whether the request's person is held to their roles.
+func heldToRoles(ctx context.Context) bool {
+	held, _ := ctx.Value(ctxKeyHeld).(bool)
+	return held
+}
+
+// personView is the dataset a token's person reaches the repository through:
+// the repository whole for an admin, the person's view held to their roles
+// for anybody else (decision 0276). The roles are read on each request, so a
+// role changed or taken away holds from the next one; a stream outlives its
+// request, and its lease compares the roles' print (rolesPrint) with the one
+// answered here.
+func personView(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo) (substrate.Dataset, bool, string, error) {
+	held, err := ds.PersonRoles(substrate.WithIdentity(ctx, tok.Identity))
+	if err != nil {
+		return nil, false, "", err
+	}
+	at, err := rolesPrint(held)
+	if err != nil {
+		return nil, false, "", err
+	}
+	roles := rolesOf(held, ds.Repository().LocalNames()...)
+	if roles.Admin() {
+		return ds, false, at, nil
+	}
+	return newPersonDataset(ds, roles), true, at, nil
+}
+
+// rolesPrint is the roles a person holds as one comparable string: which
+// roles, and every rule of each.
+func rolesPrint(held []substrate.RoleRules) (string, error) {
+	sorted := slices.SortedFunc(slices.Values(held), func(a, b substrate.RoleRules) int { return strings.Compare(a.ID, b.ID) })
+	raw, err := json.Marshal(sorted)
+	return string(raw), err
+}
 
 // withMCPDoor marks ctx as the MCP door's.
 func withMCPDoor(ctx context.Context) context.Context {
@@ -38,22 +79,16 @@ func onMCPDoor(ctx context.Context) bool {
 	return on
 }
 
-// actorHeader names the door the caller writes as. A full-access token
-// carries no actor set, so the header is checked against one rule only: the
-// substrate's own writing hands are refused (substrate.ReservedActor,
-// authenticate below). An app's token ignores it and writes as its derived
-// actor (appActorOf): `app:<authority>` for a verified publisher, `app:local`
-// for a loopback approval, `app:<host>` otherwise, or `api` when it names no
-// client id.
-const actorHeader = "X-Substrate-Actor"
-
-// withRequestAuth binds the request's authenticated write context. The actor
-// is what the caller ASSERTED; the principal beside it is the token id this
-// door RESOLVED, and the engine stamps that on every changelog entry the
-// request appends, so attribution survives the caller's choice of actor name.
+// withRequestAuth binds the request's authenticated write context: the actor
+// the token writes as, derived from the token and never named by the request,
+// the token id the engine stamps on every changelog entry the request
+// appends, and the person the request acts for, which a function or an agent
+// it starts records as its `onBehalfOf` (decision 0270).
 func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo, actor substrate.Actor) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
 	ctx = substrate.WithPrincipal(ctx, tok.ID)
+	ctx = substrate.WithOnBehalfOf(ctx, substrate.ActorPerson)
+	ctx = substrate.WithIdentity(ctx, tok.Identity)
 	return context.WithValue(ctx, ctxKeyActor, actor)
 }
 
@@ -83,17 +118,12 @@ func bearerSecret(r *http.Request) string {
 // holding it is the repository the request runs in. A token an app received
 // gets the scoped dataset instead (decision 0194).
 //
-// The actor is ATTRIBUTION, not authorization: the caller names which door it
-// came through (`X-Substrate-Actor` — the console sends `console`, substratectl sends
-// `substratectl`), and a request that names nothing is `api`, which is exactly what
-// the substrate knows about it. The refusals are the substrate's own writing
-// hands — `substrate`, `substrate.oauth`, the `bundle:` / `function:` /
-// `agent:` paths and the retired `connector:` spelling of the first of them —
-// decided by actor-name equality at write time, so a
-// request allowed to claim one could forge a credential ref, a connected
-// account's address, or a SHIPPED kind declaration (the authority chokepoint,
-// engine/seed.go). This header is the only place a request names an actor, so
-// it is the only place that has to say no.
+// The actor is derived from the token alone: a full-access token writes as
+// the person, an app's as its app (decision 0270). No request names one, so
+// none can claim the substrate's own writing hands, which are decided at
+// write time and could forge a credential ref, a connected account's address
+// or a shipped kind declaration (the authority chokepoint, engine/seed.go).
+// Which client made a write is on its token record.
 // On a refusal ctx is nil and status, code and msg are the answer; cause is
 // set on a 503 alone, the service's error behind it, which is logged and never
 // shown.
@@ -122,6 +152,42 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 		return nil, http.StatusUnauthorized, codeAuth, "token expired", nil
 	}
 	ctx = r.Context()
+	// Every token acts for its person, and is held to that person's roles:
+	// an app's, an assistant's and the person's own.
+	whole := ds
+	ds, held, opened, err := personView(ctx, ds, tok)
+	if err != nil {
+		return nil, http.StatusServiceUnavailable, codeUnavailable, "repository temporarily unavailable", err
+	}
+	// A stream outlives this check: the lease reads the token again before
+	// the stream writes on, and whenever the repository's changelog moves, so
+	// a revoked or expired token stops every stream it opened, a full
+	// token's, an assistant's and an app's alike. It reads the person's roles
+	// too: the stream reads through the view they built, so a role changed
+	// or taken away ends it, and the client opens it again on the roles held
+	// now.
+	tokenID := tok.ID
+	lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
+		_, again, err := h.svc.Authenticate(ctx, secret)
+		if err != nil {
+			return err
+		}
+		if again.ID != tokenID {
+			return substrate.ErrAuth
+		}
+		now, err := whole.PersonRoles(substrate.WithIdentity(ctx, again.Identity))
+		if err != nil {
+			return err
+		}
+		if p, err := rolesPrint(now); err != nil || p != opened {
+			return errRolesChanged
+		}
+		return nil
+	}}
+	ctx = withTokenLease(ctx, lease)
+	if held {
+		ctx = context.WithValue(ctx, ctxKeyHeld, true)
+	}
 	if scope.IsMCP(tok.Scopes) {
 		// An assistant's token (decision 0230): the owner's tier, no scope
 		// mark, at the MCP door alone, on the dataset that keeps the auth
@@ -132,7 +198,7 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 				"an assistant's token works at " + h.issuerOf(r) + mcpPath + " alone", nil
 		}
 		actor := appActorOf(tok)
-		if actor != substrate.ActorAPI {
+		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
 		// The owner's hand at the gates a person's door alone passes
@@ -153,92 +219,72 @@ func (h *handler) authenticate(r *http.Request) (ctx context.Context, status int
 			return nil, http.StatusUnauthorized, codeAuth, "invalid token", nil
 		}
 		ctx = substrate.WithScopes(ctx, tok.Scopes)
-		// A stream outlives this check: the lease reads the token again
-		// before the stream writes on, so a revoked or expired app token
-		// stops a watch or an agent stream it opened.
-		tokenID := tok.ID
-		lease := &tokenLease{expires: tok.ExpiresAt, now: h.now, checked: h.now(), recheck: func(ctx context.Context) error {
-			_, again, err := h.svc.Authenticate(ctx, secret)
-			if err != nil {
-				return err
-			}
-			if again.ID != tokenID {
-				return substrate.ErrAuth
-			}
-			return nil
-		}}
-		ctx = withTokenLease(ctx, lease)
 		actor := appActorOf(tok)
 		// The full client id beside the actor: the label and annotation
 		// namespace the app keeps, which its host-only actor does not tell
 		// apart from another app's on the same host.
-		if actor != substrate.ActorAPI {
+		if actor != substrate.ActorPerson {
 			ctx = substrate.WithClientID(ctx, tok.ClientID)
 		}
 		return withRequestAuth(ctx, newScopedDataset(ds, grant, actor), tok, actor), 0, "", "", nil
 	}
-	actor := substrate.ActorAPI
-	if want := strings.TrimSpace(r.Header.Get(actorHeader)); want != "" {
-		if substrate.ReservedActor(substrate.Actor(want)) {
-			return nil, http.StatusForbidden, codeForbidden,
-				"actor " + want + " is reserved: the " + substrate.HostActorNamespace +
-					" namespace, the " + substrate.BundleActorPrefix + ", " +
-					substrate.FunctionActorPrefix + ", " + substrate.AgentActorPrefix + " and " +
-					substrate.AppActorPrefix + " paths, and the retired connector: spelling, are names the substrate derives", nil
-		}
-		actor = substrate.Actor(want)
-	}
-	return withRequestAuth(ctx, ds, tok, actor), 0, "", "", nil
+	// A full-access token is the person's. No request names its actor: a
+	// header an older client still sends is not read.
+	return withRequestAuth(ctx, ds, tok, substrate.ActorPerson), 0, "", "", nil
 }
 
 // appActorOf is the actor an app's token writes under, from what its
 // approval proved (decision 0209). A scoped token with no client id (none
-// the authorization flow mints) writes as `api`.
+// the authorization flow mints) writes as the person.
 func appActorOf(tok substrate.TokenInfo) substrate.Actor {
 	return appActorFor(tok.ClientID, tok.AppAuthority, tok.AppLocal)
 }
 
-// appActorFor is an app's actor: `app:<authority>` when authority was
-// verified as its publisher, `app:local` when its client id or the redirect
-// it was approved for is a loopback address, `app:<host>` of its client id
-// otherwise, and `api` for a client id that names no host.
+// appActorFor is an app's actor (authorize.AppActorFor).
 func appActorFor(clientID, authority string, local bool) substrate.Actor {
-	if authority != "" {
-		return substrate.AppActor(authority)
-	}
-	if c, err := authorize.ParseClientID(clientID); local || (err == nil && c.Local) {
-		return substrate.AppActorLocal
-	}
-	u, err := url.Parse(clientID)
-	if err != nil || u.Host == "" {
-		return substrate.ActorAPI
-	}
-	return substrate.AppActor(u.Host)
+	return authorize.AppActorFor(clientID, authority, local)
 }
 
-// requireAuth admits a full-access token and refuses an app's: every route
-// behind it is the owner's unless it is registered behind
-// requireAuthAllowingApps instead, so a route added later is the owner's by
-// default (decision 0194).
+// A route takes a token through one of three doors, which the route list
+// names (decision 0294, access_test.go):
+//   - requireAuth admits a token whose person holds `admin`, and refuses an
+//     app's and a person held to their roles: every route behind it is an
+//     admin's unless it is registered behind another, so a route added
+//     later is an admin's by default (decision 0194);
+//   - requireAuthAllowingApps admits every token, each held to its rules by
+//     the scoped view the bearer check hands it: an app's to its scopes, a
+//     person's to their roles;
+//   - requirePerson admits a person's own token, held to their roles or
+//     not, for what is theirs alone (their sign-ins and their identity),
+//     and refuses an app's.
+type door int
+
+const (
+	doorAdmin door = iota
+	doorRules
+	doorPerson
+)
+
 func (h *handler) requireAuth(next http.Handler) http.Handler {
-	return h.bearer(next, false)
+	return h.bearer(next, doorAdmin)
 }
 
-// requireAuthAllowingApps admits an app's token too, for the scoped surface
-// alone: the records route, the record path and the unit reads. Each is held
-// to the token's scopes by the scopedDataset the bearer check hands it.
 func (h *handler) requireAuthAllowingApps(next http.Handler) http.Handler {
-	return h.bearer(next, true)
+	return h.bearer(next, doorRules)
 }
 
-func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
+func (h *handler) requirePerson(next http.Handler) http.Handler {
+	return h.bearer(next, doorPerson)
+}
+
+func (h *handler) bearer(next http.Handler, d door) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, status, code, msg, cause := h.authenticate(r)
 		if ctx == nil {
 			// The cause of a 503 is a database or an open failing, which the
 			// client is not shown, so the log is the only place it surfaces.
 			if status == http.StatusServiceUnavailable {
-				writeUnavailableCause(w, r, cause, substrate.ErrorPayload{Code: codeUnavailable, Message: msg})
+				writeUnavailableCause(w, r, cause, unavailablePayload(cause, msg))
 				return
 			}
 			if status == http.StatusUnauthorized {
@@ -259,10 +305,20 @@ func (h *handler) bearer(next http.Handler, apps bool) http.Handler {
 				"an assistant's token does not reach "+r.Method+" "+r.URL.Path)
 			return
 		}
-		if _, scoped := substrate.ScopesFrom(ctx); scoped && !apps {
+		if _, scoped := substrate.ScopesFrom(ctx); scoped && d != doorRules {
 			w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 			writeError(w, http.StatusForbidden, codeForbidden,
-				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is the owner's alone")
+				"an app's token does not reach "+r.Method+" "+r.URL.Path+": it is a person's alone")
+			return
+		}
+		if heldToRoles(ctx) && d == doorAdmin {
+			writeJSON(w, http.StatusForbidden, substrate.ErrorEnvelope{Error: substrate.ErrorPayload{
+				Code: codeForbidden, Reason: substrate.ReasonNotPermitted,
+				Message: r.Method + " " + r.URL.Path + " is for a person who holds the admin role",
+			}})
+			return
+		}
+		if h.paced(ctx, w, DatasetFrom(ctx).Repository().ID, ownTokenRequest(ctx, r)) {
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))

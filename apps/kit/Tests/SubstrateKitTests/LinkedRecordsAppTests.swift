@@ -135,7 +135,7 @@ struct LinkedRecordsAppTests {
         #expect(harness.effects.contains(.records(.followOutbox)))
         await harness.deliver(.records(.loaded([], cursor: nil, queue: [])))
         await harness.runtime.linkChanged(reachable)
-        #expect(harness.effects.contains(.records(.read)))
+        #expect(harness.effects.contains(.records(.read(over: [shelfKind]))))
         harness.clearTrace()
         await harness.send(.add("Dune"))
         // The records' effect, then the app's own, from one event.
@@ -149,7 +149,7 @@ struct LinkedRecordsAppTests {
         #expect(await harness.state.problem == "Not kept.")
         #expect(Shelf.Event.records(.relistNeeded).recordsEvent == .relistNeeded)
         #expect(Shelf.Event.problemDismissed.recordsEvent == nil)
-        #expect(shelf().key(of: .records(.read)) == "records.watch")
+        #expect(shelf().key(of: .records(.read(over: [shelfKind]))) == "records.watch")
         #expect(shelf().key(of: .count(1)) == "count")
         #expect(shelf().report(of: .records(.watchEnded(.needsApproval, ""))) == .needsApproval)
         #expect(shelf().coalescing(of: .records(.changed("k", nil))) == .within(.milliseconds(100)))
@@ -189,7 +189,7 @@ struct StoppedReadTests {
         var stepper = Stepper()
         _ = stepper.step(.loaded([], cursor: nil, queue: []))
         // A cold start: signed in, the network not reported yet.
-        #expect(stepper.step(.linked(reachable)) == [.read])
+        #expect(stepper.step(.linked(reachable)) == [.read(over: [shelfKind])])
         _ = stepper.step(.readFailed("Not in scope.", .needsApproval))
         #expect(stepper.state.phase == .stopped(.needsApproval, "Not in scope."))
         // The network's first report, and the app coming forward, ask nothing again.
@@ -200,7 +200,7 @@ struct StoppedReadTests {
         // A new approval is a new token: it reads again.
         var approved = online
         approved.scopes = ["write:example.com/shelf/*", "read:example.com/people/*"]
-        #expect(stepper.step(.linked(approved)) == [.read])
+        #expect(stepper.step(.linked(approved)) == [.read(over: [shelfKind])])
     }
 
     @Test func aSignedOutWatchWaitsForASignInAndARefusedOneForTheNetwork() {
@@ -209,7 +209,7 @@ struct StoppedReadTests {
         _ = stepper.step(.loaded([], cursor: cursor, queue: []))
         var online = reachable
         online.online = true
-        #expect(stepper.step(.linked(online)) == [.follow(cursor)])
+        #expect(stepper.step(.linked(online)) == [.follow(cursor, over: [shelfKind])])
         _ = stepper.step(.watchEnded(.signedOut, "Your access ended."))
         var offline = online
         offline.online = false
@@ -218,11 +218,11 @@ struct StoppedReadTests {
         var ended = online
         ended.phase = .accessEnded
         _ = stepper.step(.linked(ended))
-        #expect(stepper.step(.linked(online)) == [.follow(cursor)])
+        #expect(stepper.step(.linked(online)) == [.follow(cursor, over: [shelfKind])])
         // Refused for the server's own reasons: the network back lifts it.
         _ = stepper.step(.watchEnded(.refused, "The server is restarting."))
         _ = stepper.step(.linked(offline))
-        #expect(stepper.step(.linked(online)) == [.follow(cursor)])
+        #expect(stepper.step(.linked(online)) == [.follow(cursor, over: [shelfKind])])
     }
 
     @Test func aReadThatStoppedAtItsLimitSaysSo() {
@@ -249,7 +249,7 @@ struct StoppedReadTests {
         var environment = AppEnvironment.testing()
         environment.client = ClientSource { client }
         let records = Stepper().records
-        guard case let .sequence(make) = records.perform(.read, in: environment) else { throw Unexpected() }
+        guard case let .sequence(make) = records.perform(.read(over: [shelfKind]), in: environment) else { throw Unexpected() }
         var events: [LinkedRecords.Event] = []
         for await event in make() { events.append(event) }
         guard case let .listed(listed, cursor, more) = events.last else { throw Unexpected() }
@@ -272,7 +272,7 @@ struct StoppedReadTests {
         let client = SubstrateClient(server: URL(string: "https://ada.example.com")!, token: "substrate_tok_test", transport: server)
         var environment = AppEnvironment.testing()
         environment.client = ClientSource { client }
-        guard case let .sequence(make) = Stepper().records.perform(.read, in: environment) else { throw Unexpected() }
+        guard case let .sequence(make) = Stepper().records.perform(.read(over: [shelfKind]), in: environment) else { throw Unexpected() }
         var events: [LinkedRecords.Event] = []
         for await event in make() { events.append(event) }
         guard events.count == 1, case .readFailed(_, .needsApproval) = events[0] else { throw Unexpected() }

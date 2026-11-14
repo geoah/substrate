@@ -34,7 +34,6 @@ func verbatimContactManifest() enginetest.Manifest {
 		Name: "book", Authority: bookPackage,
 		Manifests: []map[string]any{
 			vocabulary.PackageManifest(bookPackage, 1),
-			vocabulary.ActorManifest(bookPackage, string(book)),
 			vocabulary.KindManifest(bookPackage,
 				map[string]any{"singular": "verbatimcontact"},
 				map[string]any{

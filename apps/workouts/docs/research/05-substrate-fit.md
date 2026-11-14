@@ -189,8 +189,8 @@ aggregate read]:
   month in a zone, or the recorded-local calendar through a declared
   UTC-offset property. It takes the whole filter grammar and
   `property.groupBy` over declared string, enum or reference properties.
-  Discovery lists the `aggregate` and `units` features as `alpha`
-  [src: `internal/api/discovery.go`].
+  Discovery lists the `aggregate` and `units` features as `experimental`
+  [src: `internal/api/features.go`].
 - It **refuses a repeated or keyed property** ("holds many values; a
   property read reduces one per record") and looks the name up as a top-level
   property only [src: `internal/engine/aggregateproperty.go`]. Records
@@ -860,8 +860,8 @@ function) is optional.
   separate token per app and device gives each its own principal in the
   changelog and its own revocation [src: `docs/auth.md`].
 - **Discovery**: `GET /.well-known/substrate/server.json` lists features,
-  `aggregate` and `units` among them (both `alpha`), before any token exists
-  [src: `docs/api.md`, Discovery; `internal/api/discovery.go`].
+  `aggregate` and `units` among them (both `experimental`), before any token
+  exists [src: `docs/api.md`, Discovery; `internal/api/features.go`].
 - **Writes**: `PUT` at client ids for session and set creation, `PATCH` with
   `ifVersion` for session slots and transitions, `DELETE` for discard. Keep an
   ordered local outbox; replay it after the gym's dead zone; treat `409` on a

@@ -195,7 +195,7 @@ describe("MergeRequestDetailPage", () => {
     // The declared key reads as its label, never the bare key.
     expect(await screen.findByText("Employer")).toBeTruthy()
     expect(screen.queryByText("employer")).toBeNull()
-    // A machine-held difference is combined; the tier word is technical.
+    // An unpinned difference is combined; the word for how is technical.
     expect(screen.getAllByText("Combined").length).toBeGreaterThan(0)
     expect(screen.queryByText("recompute settles")).toBeNull()
     expect(screen.queryByText("recompute")).toBeNull()

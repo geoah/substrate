@@ -125,12 +125,14 @@ one segment, encoded exactly once: an agent's id
 | A transcript | `{"kinds":["…/llm/message"],"properties":{"thread":{"eq":id}}}`, `turn:desc,createdAt:desc`, first 500, reversed |
 | Pending questions | `{"kinds":["…/llm/interaction"],"properties":{"state":{"eq":"pending"}}}`, first 100 |
 | Pending suggestions | `{"kinds":["substrate.reamde.dev/core/recordpatchrequest"],"properties":{"decision":{"eq":"proposed"}}}`, first 100 |
+| Pending approvals | `{"kinds":["…/llm/approval"],"properties":{"state":{"eq":"pending"}}}`, first 100; a refusal (a server older than the kind) reads as none, and the watch names the kind only once this read was answered |
 | Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message}` → ndjson |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
+| Approve a call | `PATCH …/llm/approval/{id}` `{properties: {state: approved\|denied}, ifVersion}`; the engine runs the stored call, and the card reads the record again as the watch reports it move |
 | Add a model key | `PATCH …/llm/provider/{id}` `{properties: {apiKey}}`, a password sign-in only |
 | Memories and instructions | `{"kinds":["…/llm/memory"]}` and `{"kinds":["…/llm/instruction"]}`, `createdAt:desc`, every page |
 | Switch one, reword one | `PATCH …/llm/memory/{id}` or `…/llm/instruction/{id}` `{properties: {active} or {text}, ifVersion}` |
@@ -141,10 +143,11 @@ Resolving an interaction or a request must carry the version the owner read
 (`internal/engine/write.go:650`); a `409` means it moved: the card re-reads
 and asks again, never retries blind.
 
-**The actor.** Requests send no `X-Substrate-Actor`: an app token's writes
-are recorded as `app:<host>` and its token is labelled with the client's
-host; a password sign-in's are `api`, its token labelled "Substrate Chat on
-<device>". `console` would claim a door this app is not.
+**The actor.** A request names no actor: the server derives it from the
+token (decision 0270). An app token's writes link the app's actor record and
+act for the person, its token labelled with the client's host; a password
+sign-in's link the person's, its token labelled "Substrate Chat on <device>",
+which is what tells them apart in History.
 
 ### Streams: every event, every exit
 
@@ -298,8 +301,9 @@ The server has no push channel, so the app promises what it can observe:
   name, the chat's title and the start of the reply, grouped by thread.
   Tapping opens the chat. Keyed by thread and `finishedAt`, so a rename never
   notifies.
-- **Attention**: a new pending interaction ("Assistant has 2 questions") or
-  a proposed request ("Assistant suggested a change") notifies once per
+- **Attention**: a new pending interaction ("Assistant has 2 questions"),
+  a proposed request ("Assistant suggested a change") or a pending approval
+  ("Secretary wants your approval to run gmail_send") notifies once per
   record and opens the chat that asked.
 - **On iOS**, when the app leaves the screen with a turn streaming, it asks
   for a `BGContinuedProcessingTask` (iOS 26, strategy `.fail`, a fresh

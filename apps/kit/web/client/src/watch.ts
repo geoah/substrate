@@ -214,6 +214,12 @@ export function follow(
                   onEvent({ type: "relist" })
                   return "stop"
                 }
+                // The stream's token ended (revoked, or the person signed
+                // out everywhere): sign in again, as on a 401.
+                if (frame.code === "auth") {
+                  onEvent({ type: "signedOut" })
+                  return "stop"
+                }
                 onEvent({ type: "interrupted", words: frame.message })
                 return "again"
             }

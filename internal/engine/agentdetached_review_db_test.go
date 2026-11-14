@@ -26,7 +26,7 @@ func TestAStopHoldsAgainstAResolutionThatLandedMidTurn(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-stop"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -40,13 +40,13 @@ func TestAStopHoldsAgainstAResolutionThatLandedMidTurn(t *testing.T) {
 	chatted := make(chan struct{})
 	go func() {
 		defer close(chatted)
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", substrate.ChatInput{Message: "change the widget"}, log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Message: "change the widget"}, log.emit)
 	}()
 	delta := log.waitFor(t, substrate.AgentEventDelta)
 	thread := log.snapshot()[0].Thread
 
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
@@ -59,7 +59,7 @@ func TestAStopHoldsAgainstAResolutionThatLandedMidTurn(t *testing.T) {
 		t.Fatalf("the resolution row took turn %d, at or below the streaming reply's %d", sysTurn, delta.Turn)
 	}
 
-	res, err := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+	res, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)
 	if err != nil || res.Status != threadStopped {
 		t.Fatalf("stop = %+v, %v", res, err)
 	}
@@ -83,7 +83,7 @@ func TestAStopHoldsAgainstAResolutionThatLandedMidTurn(t *testing.T) {
 
 	// The owner writes again: the next turn replays the resolution.
 	fake.script("root", fakeTurn{content: "carried on"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", substrate.ChatInput{Thread: thread, Message: "carry on"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Thread: thread, Message: "carry on"}, nil); err != nil {
 		t.Fatalf("the owner's next message: %v", err)
 	}
 	reqs := fake.requestsOf("root")
@@ -106,7 +106,7 @@ func TestTheSweepLeavesAStoppedThreadAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-self"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -117,16 +117,16 @@ func TestTheSweepLeavesAStoppedThreadAlone(t *testing.T) {
 	chatted := make(chan struct{})
 	go func() {
 		defer close(chatted)
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/selfjudge", substrate.ChatInput{Message: "stand by"}, log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/selfjudge", substrate.ChatInput{Message: "stand by"}, log.emit)
 	}()
 	log.waitFor(t, substrate.AgentEventDelta)
 	thread := log.snapshot()[0].Thread
-	if res, err := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread); err != nil || res.Status != threadStopped {
+	if res, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread); err != nil || res.Status != threadStopped {
 		t.Fatalf("stop = %+v, %v", res, err)
 	}
 	<-chatted
 	time.Sleep(20 * time.Millisecond) // finishedAt strictly before the resolution row
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: "req-self",
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
@@ -165,7 +165,7 @@ func TestAStopSettlesTheSubAgentThreadStopped(t *testing.T) {
 	chatted := make(chan struct{})
 	go func() {
 		defer close(chatted)
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", substrate.ChatInput{Message: "delegate"}, log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Message: "delegate"}, log.emit)
 	}()
 	waitArrived(t, childArrived, "the sub-agent's completion")
 	thread := log.waitFor(t, substrate.AgentEventThread).Thread
@@ -173,14 +173,14 @@ func TestAStopSettlesTheSubAgentThreadStopped(t *testing.T) {
 	for _, tr := range agentThreadsOf(t, ds, "scribe") {
 		child, _ = tr["__id"].(string)
 	}
-	res, err := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+	res, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)
 	if err != nil || res.Status != threadStopped {
 		t.Fatalf("stop = %+v, %v", res, err)
 	}
 	<-chatted
 	props := threadProps(t, ds, child)
-	if props["status"] != threadStopped || props["reason"] != reasonStoppedBy(substrate.ActorConsole) {
-		t.Fatalf("child thread = %v (%v), want stopped by console", props["status"], props["reason"])
+	if props["status"] != threadStopped || props["reason"] != reasonStoppedBy(substrate.ActorPerson) {
+		t.Fatalf("child thread = %v (%v), want stopped by its owner", props["status"], props["reason"])
 	}
 	if _, live := ds.runningThreads.Load(child); live {
 		t.Fatal("the child loop is still registered")
@@ -197,7 +197,7 @@ func TestAShutdownSettlesTheSubAgentThreadStopped(t *testing.T) {
 	fake.script("sub", fakeTurn{content: "child reply", arrived: childArrived, release: childHeld})
 	log := newEventLog()
 	go func() {
-		_, _ = ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/classifier", substrate.ChatInput{Message: "delegate"}, log.emit)
+		_, _ = ds.ChatAgent(context.Background(), substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Message: "delegate"}, log.emit)
 	}()
 	waitArrived(t, childArrived, "the sub-agent's completion")
 	thread := log.waitFor(t, substrate.AgentEventThread).Thread
@@ -232,13 +232,13 @@ func TestAStopSettlesWhileAMessageWriteIsStuck(t *testing.T) {
 	fake.script("chat", fakeTurn{content: "partial reply", hold: hold})
 	log := newEventLog()
 	go func() {
-		_, _ = ds.ChatAgent(context.Background(), substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, log.emit)
+		_, _ = ds.ChatAgent(context.Background(), substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, log.emit)
 	}()
 	log.waitFor(t, substrate.AgentEventDelta)
 	thread := log.snapshot()[0].Thread
 	stopped := make(chan *substrate.AgentResult, 1)
 	go func() {
-		res, err := ds.StopAgentTurn(context.Background(), substrate.ActorAPI, thread)
+		res, err := ds.StopAgentTurn(context.Background(), substrate.ActorPerson, thread)
 		if err != nil {
 			t.Errorf("stop: %v", err)
 		}
@@ -284,14 +284,14 @@ func TestRunningChatTurnsAreCapped(t *testing.T) {
 	done := make(chan error, maxRunningChatTurns)
 	for range maxRunningChatTurns {
 		go func() {
-			_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "work"}, nil)
+			_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "work"}, nil)
 			done <- err
 		}()
 	}
 	for _, a := range arrivals {
 		waitArrived(t, a, "a running chat turn")
 	}
-	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "one more"}, nil)
+	_, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "one more"}, nil)
 	if !errors.Is(err, substrate.ErrConflict) || !strings.Contains(err.Error(), "chat turns are already running") {
 		t.Fatalf("a turn past the cap = %v, want a conflict naming the cap", err)
 	}
@@ -302,7 +302,7 @@ func TestRunningChatTurnsAreCapped(t *testing.T) {
 		}
 	}
 	fake.script("chat", fakeTurn{content: "room again"})
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "now"}, nil); err != nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "now"}, nil); err != nil {
 		t.Fatalf("a turn after the others settled: %v", err)
 	}
 }
@@ -314,7 +314,7 @@ func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: crewPackage + "/widget", ID: fid("w-late"), Properties: map[string]any{"name": "raw"},
 	}); err != nil {
 		t.Fatal(err)
@@ -337,19 +337,19 @@ func TestAStopDuringTheFinalWriteSettlesStoppedAndResumesNothing(t *testing.T) {
 	)
 	log := newEventLog()
 	go func() {
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/classifier", substrate.ChatInput{Message: "change the widget"}, log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/classifier", substrate.ChatInput{Message: "change the widget"}, log.emit)
 	}()
 	waitArrived(t, writing, "the final reply write")
 	thread := log.snapshot()[0].Thread
 	req := onlyPatchRequest(t, ds)
-	if _, err := ds.Patch(ctx, substrate.ActorAPI, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, vocabulary.KindRecordPatchRequest, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: &req.Version,
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
 	stopped := make(chan *substrate.AgentResult, 1)
 	go func() {
-		res, _ := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+		res, _ := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)
 		stopped <- res
 	}()
 	waitUntil(t, "the stop to reach the turn", func() bool {
@@ -384,7 +384,7 @@ func TestAFailedMessageWriteSettlesTheThread(t *testing.T) {
 	}
 	fake.script("chat", fakeTurn{content: "never lands"})
 	log := newEventLog()
-	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, log.emit); err == nil {
+	if _, err := ds.ChatAgent(ctx, substrate.ActorPerson, crewPackage+"/chatter", substrate.ChatInput{Message: "hi"}, log.emit); err == nil {
 		t.Fatal("a turn whose reply could not be written succeeded")
 	}
 	thread := log.snapshot()[0].Thread
@@ -408,13 +408,13 @@ func TestAStopReachesAnAgentAFunctionToolRuns(t *testing.T) {
 	fake.script("edit", fakeTurn{content: "a widget", arrived: editorArrived, release: held})
 	log := newEventLog()
 	go func() {
-		_, _ = ds.ChatAgent(ctx, substrate.ActorAPI, relayPackage+"/steward", substrate.ChatInput{Message: "make one"}, log.emit)
+		_, _ = ds.ChatAgent(ctx, substrate.ActorPerson, relayPackage+"/steward", substrate.ChatInput{Message: "make one"}, log.emit)
 	}()
 	waitArrived(t, editorArrived, "the editor's completion")
 	thread := log.snapshot()[0].Thread
 	stopped := make(chan *substrate.AgentResult, 1)
 	go func() {
-		res, _ := ds.StopAgentTurn(ctx, substrate.ActorConsole, thread)
+		res, _ := ds.StopAgentTurn(ctx, substrate.ActorPerson, thread)
 		stopped <- res
 	}()
 	select {
@@ -440,7 +440,7 @@ func TestAStopDuringSettleTimeCompactionSettlesStopped(t *testing.T) {
 	q1, q2 := "q1"+hundred, "q2"+hundred
 	r1, r2 := "r1"+hundred, "r2"+hundred
 	fake.script("compact", fakeTurn{content: r1, promptTokens: 900})
-	first, err := ds.ChatAgent(ctx, substrate.ActorAPI, compactor, substrate.ChatInput{Message: q1}, nil)
+	first, err := ds.ChatAgent(ctx, substrate.ActorPerson, compactor, substrate.ChatInput{Message: q1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,11 +452,11 @@ func TestAStopDuringSettleTimeCompactionSettlesStopped(t *testing.T) {
 	)
 	chatted := make(chan *substrate.AgentResult, 1)
 	go func() {
-		res, _ := ds.ChatAgent(ctx, substrate.ActorAPI, compactor, substrate.ChatInput{Thread: first.Thread, Message: q2}, nil)
+		res, _ := ds.ChatAgent(ctx, substrate.ActorPerson, compactor, substrate.ChatInput{Thread: first.Thread, Message: q2}, nil)
 		chatted <- res
 	}()
 	waitArrived(t, summarizing, "the settle-time summarizer")
-	res, err := ds.StopAgentTurn(ctx, substrate.ActorConsole, first.Thread)
+	res, err := ds.StopAgentTurn(ctx, substrate.ActorPerson, first.Thread)
 	if err != nil || res.Status != threadStopped || res.Reply != r2 {
 		t.Fatalf("stop = %+v, %v; want stopped keeping the reply", res, err)
 	}
@@ -464,8 +464,8 @@ func TestAStopDuringSettleTimeCompactionSettlesStopped(t *testing.T) {
 		t.Fatalf("the chat's own result = %+v", got)
 	}
 	props := threadProps(t, ds, first.Thread)
-	if props["status"] != threadStopped || props["reason"] != reasonStoppedBy(substrate.ActorConsole) {
-		t.Fatalf("thread = %v (%v), want stopped by console", props["status"], props["reason"])
+	if props["status"] != threadStopped || props["reason"] != reasonStoppedBy(substrate.ActorPerson) {
+		t.Fatalf("thread = %v (%v), want stopped by its owner", props["status"], props["reason"])
 	}
 	if ds.admitResume(ctx, first.Thread, "") {
 		t.Fatal("a resume would be admitted on the stopped thread")

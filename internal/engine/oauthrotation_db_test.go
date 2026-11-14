@@ -44,8 +44,8 @@ func withTokenErrorProps(docs []map[string]any) []map[string]any {
 	for _, d := range docs {
 		if meta, _ := d["metadata"].(map[string]any); d["kind"] == vocabulary.CoreKind(vocabulary.DocKind) && meta["id"] == mbAccountType {
 			props, _ := d["data"].(map[string]any)["properties"].(map[string]any)
-			props["tokenError"] = map[string]any{"type": "string", "writer": "oauth"}
-			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "oauth"}
+			props["tokenError"] = map[string]any{"type": "string", "writer": "system"}
+			props["tokenErrorAt"] = map[string]any{"type": "datetime", "writer": "system"}
 		}
 	}
 	return docs
@@ -148,7 +148,7 @@ func TestOAuthRefreshKeepsAnUnstoredRotatedTokenUntilItLands(t *testing.T) {
 	p.mu.Unlock()
 	fresh := func(when string) {
 		t.Helper()
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbPackage+"/fresh", map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbPackage+"/fresh", map[string]any{})
 		if err != nil {
 			t.Fatalf("%s: call: %v", when, err)
 		}
@@ -499,7 +499,7 @@ func TestOAuthRefreshSendsNothingWhileTheWriterLeaseIsLost(t *testing.T) {
 	}
 	// An invocation resolving the due token does not ask either, whether it
 	// is refused before or at the token.
-	_, _, _ = ds.CallFunction(ctx, substrate.ActorAPI, mbEchoFn, map[string]any{})
+	_, _, _ = ds.CallFunction(ctx, substrate.ActorPerson, mbEchoFn, map[string]any{})
 	if got := p.calls(); got != 0 {
 		t.Fatalf("%d provider refresh calls without the lease, want 0", got)
 	}
@@ -605,7 +605,7 @@ func TestOAuthReconnectDropsAKeptToken(t *testing.T) {
 	connectOAuthAccount(t, svc, ds, account)
 
 	engine.BreakSealedStore(ds)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbPackage+"/fresh", map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbPackage+"/fresh", map[string]any{}); err != nil {
 		t.Fatalf("the invocation whose store fails: %v", err)
 	}
 	if got := engine.OAuthUnstoredTokens(ds); got != 1 {
@@ -651,7 +651,7 @@ func TestOAuthAKeptTokenThatIsDueRefreshesWithItsOwnRefreshToken(t *testing.T) {
 	connectOAuthAccount(t, svc, ds, account)
 	token := func(when, want string) {
 		t.Helper()
-		out, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbPackage+"/token", map[string]any{})
+		out, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbPackage+"/token", map[string]any{})
 		if err != nil {
 			t.Fatalf("%s: call: %v", when, err)
 		}
@@ -703,7 +703,7 @@ func TestOAuthTeardownRevokesAKeptToken(t *testing.T) {
 	connectOAuthAccount(t, svc, ds, account)
 
 	engine.BreakSealedStore(ds)
-	if _, _, err := ds.CallFunction(ctx, substrate.ActorAPI, mbPackage+"/fresh", map[string]any{}); err != nil {
+	if _, _, err := ds.CallFunction(ctx, substrate.ActorPerson, mbPackage+"/fresh", map[string]any{}); err != nil {
 		t.Fatalf("the invocation whose store fails: %v", err)
 	}
 	engine.RepairSealedStore(ds)

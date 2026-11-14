@@ -1,6 +1,6 @@
 ---
-status: proposed
-date: 2026-10-10
+status: accepted
+date: 2026-11-13
 decision-makers: George Antoniadis
 amended-by: 0177, 0178
 ---

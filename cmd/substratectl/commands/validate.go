@@ -186,7 +186,7 @@ func validateDeclarations(raw []map[string]any) (validation, error) {
 		if d.Kind == vocabulary.DocPackage {
 			headed[g] = true
 		}
-		if authority, name := vocabulary.SplitPackageRef(g); vocabulary.ValidAuthority(authority) && vocabulary.ValidPackage(name) {
+		if authority, name := vocabulary.SplitPackageRef(g); vocabulary.ValidKindAuthority(authority) && vocabulary.ValidPackage(name) {
 			declared[g] = true
 		}
 	}
@@ -291,7 +291,7 @@ func identityPackage(id string) string {
 		g = vocabulary.KindPackage(id)
 	}
 	authority, name := vocabulary.SplitPackageRef(g)
-	if !vocabulary.ValidAuthority(authority) || !vocabulary.ValidPackage(name) {
+	if !vocabulary.ValidKindAuthority(authority) || !vocabulary.ValidPackage(name) {
 		return ""
 	}
 	return g

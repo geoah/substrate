@@ -280,8 +280,8 @@ data:
 # documents admitted whole or not at all, or previewed with `plan`. Every
 # document's kind is held to the calling agent's effective emit and passes the
 # policy door, and the batch then meets every guard the door's does: a
-# shipped or published package refuses, a new package lands only under the
-# repository's own authority, and a lossy batch waits for the owner.
+# shipped or published package refuses, a new package lands only under `~`,
+# the repository's own namespace, and a lossy batch waits for the owner.
 kind: substrate.reamde.dev/core/function
 metadata:
   id: substrate.reamde.dev/core/vocabulary
@@ -293,10 +293,10 @@ data:
     {id}, data} declarations (kind substrate.reamde.dev/core/package or substrate.reamde.dev/core/kind,
     among others), admitted together or not at all. plan true previews the
     batch, writing nothing: what it would refuse (blockers) and the record
-    conversions it would run. Declare under the owner's authority. Prefer
-    adding to narrowing: a narrowing is refused while records hold the old
-    shape, and a lossy change waits for the owner. The engine versions what
-    changes.
+    conversions it would run. Declare the owner's own packages under `~`.
+    Prefer adding to narrowing: a narrowing is refused while records hold
+    the old shape, and a lossy change waits for the owner. The engine versions
+    what changes.
   runtime: host
   arguments:
     - name: documents

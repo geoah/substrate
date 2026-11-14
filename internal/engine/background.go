@@ -106,7 +106,7 @@ func (b *background) stopping() bool {
 
 // spawn schedules a repository-scoped detached task (see service.spawn).
 func (ds *dataset) spawn(task string, fn func(context.Context)) bool {
-	return ds.svc.spawn(task, ds.Repository().ID, fn)
+	return ds.svc.spawn(task, ds.info.ID, fn)
 }
 
 // backgroundPass is the handle of one pass a dataset owns and runs behind

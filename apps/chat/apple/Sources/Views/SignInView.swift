@@ -38,6 +38,11 @@ private struct PasswordDoor: View {
     /// The server answered that this account has a second factor: the code
     /// field is shown and the next sign-in carries it.
     @State private var codeAsked = false
+    /// The server answered that the person may open several repositories and
+    /// named none (decision 0274): the pick is shown, and the next sign-in
+    /// names the one picked with the factors already given.
+    @State private var choices: [RepositoryChoiceRequired.Choice] = []
+    @State private var chosen = ""
     @State private var busy = false
     @State private var problem: String?
     @FocusState private var focus: Field?
@@ -46,11 +51,12 @@ private struct PasswordDoor: View {
 
     private var ready: Bool {
         !repository.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && (!codeAsked || !code.isEmpty)
+            && (choices.isEmpty || !chosen.isEmpty)
     }
 
     var body: some View {
         VStack(spacing: 12) {
-            field("Repository", systemImage: "person.crop.circle") {
+            field("Name", systemImage: "person.crop.circle") {
                 TextField("you.example.com", text: $repository)
                     .textContentType(.username)
                     #if os(iOS)
@@ -59,6 +65,11 @@ private struct PasswordDoor: View {
                     .autocorrectionDisabled()
                     .focused($focus, equals: .repository)
                     .onSubmit { focus = .password }
+                    .onChange(of: repository) {
+                        // Another name is another person: their repositories are theirs.
+                        choices = []
+                        chosen = ""
+                    }
             }
             field("Password", systemImage: "key") {
                 SecureField("Required", text: $password)
@@ -75,6 +86,18 @@ private struct PasswordDoor: View {
                         #endif
                         .focused($focus, equals: .code)
                         .onSubmit(signIn)
+                }
+            }
+            if !choices.isEmpty {
+                field("Repository", systemImage: "tray.full") {
+                    Picker("Repository", selection: $chosen) {
+                        ForEach(choices) { choice in
+                            Text(choice.name).tag(choice.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
@@ -125,13 +148,19 @@ private struct PasswordDoor: View {
             defer { busy = false }
             do {
                 try await host.signIn(
-                    server: probe.origin, repository: repository.trimmingCharacters(in: .whitespaces),
+                    probe, name: repository.trimmingCharacters(in: .whitespaces),
+                    repository: chosen.isEmpty ? nil : chosen,
                     password: password, totp: codeAsked ? code : nil)
                 password = ""
                 code = ""
             } catch let refused as LoginRefused where refused.codeRequired && !codeAsked {
                 codeAsked = true
                 focus = .code
+            } catch let choice as RepositoryChoiceRequired {
+                // The door spent no code: the same factors sign in once a
+                // repository is picked.
+                choices = choice.repositories
+                chosen = choice.repositories.first?.id ?? ""
             } catch {
                 code = ""
                 problem = explain(error, app: ChatManifest.appName, server: probe.origin)

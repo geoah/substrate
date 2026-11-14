@@ -15,10 +15,14 @@ metadata:
 data:
   authority: substrate.reamde.dev
   package: applets
+  # An applet's shape may change or go in any release (docs/stability.md).
+  stability: experimental
   # 2: an applet names its runtime, the renderer that draws its screens,
   #    and a2ui is the one this binary runs (decision record 0244);
   #    repository migration 4 names it on the applets written before.
-  version: 2
+  # 3: the package states its stability, experimental (decision record
+  #    0256).
+  version: 3
 ---
 # The applet. `internal`, so an agent's glob never reaches it: Moss's designer
 # names it in its writes, and every write of one is checked by the engine
