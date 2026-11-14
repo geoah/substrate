@@ -11,13 +11,32 @@ enum TurnPresenter {
         return turns.map { present($0, agent: agent, live: $0.id == liveKey, decided: decided, titles: titles) }
     }
 
+    /// The instant a turn is presented at, and the instant it must be
+    /// presented again where its rows were left as they were because the
+    /// last parse was too recent.
+    final class Pace {
+        let now: Date
+        private(set) var due: Date?
+
+        init(now: Date) {
+            self.now = now
+        }
+
+        func wait(until instant: Date?) {
+            guard let instant else { return }
+            due = min(due ?? instant, instant)
+        }
+    }
+
     /// - Parameters:
     ///   - kept: where a live turn's tool rows are kept, so a call's row is
     ///     made once and not at every piece of the reply after it.
     ///   - scope: the conversation the parts are named under.
+    ///   - pace: where there is one, a reply being written is parsed no
+    ///     more often than `Markdown.parsesPerSecond`.
     static func present(
         _ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String], kept: PresenterParts? = nil,
-        scope: String = ""
+        scope: String = "", pace: Pace? = nil
     ) -> TurnPresentation {
         switch turn.role {
         case .user:
@@ -33,7 +52,8 @@ enum TurnPresenter {
         case .assistant:
             return TurnPresentation(
                 id: turn.id,
-                body: .assistant(assistant(turn, agent: agent, live: live, decided: decided, titles: titles, kept: kept, scope: scope)))
+                body: .assistant(
+                    assistant(turn, agent: agent, live: live, decided: decided, titles: titles, kept: kept, scope: scope, pace: pace)))
         case .summary:
             return TurnPresentation(id: turn.id, body: .summary(SummaryTurn(label: "Earlier messages were summarized", content: turn.content)))
         case .system:
@@ -115,7 +135,8 @@ enum TurnPresenter {
     }
 
     private static func assistant(
-        _ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String], kept: PresenterParts?, scope: String
+        _ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String], kept: PresenterParts?, scope: String,
+        pace: Pace?
     ) -> AssistantTurn {
         var reasoning: ReasoningPresentation?
         if let text = turn.reasoning, !text.isEmpty {
@@ -130,9 +151,20 @@ enum TurnPresenter {
         // piece of reasoning or a tool's event leaves the reply's rows as
         // they were.
         let reads = BlockReads(text: turn.content, open: live)
-        let blocks =
-            kept?.part("\(scope)/blocks/\(turn.id)", reading: reads) { Blocks(reads.text, open: reads.open) }
-            ?? Blocks(reads.text, open: reads.open)
+        let name = "\(scope)/blocks/\(turn.id)"
+        let blocks: Blocks
+        if let kept, let pace, live {
+            // While it is written, no more often than the limit: sooner
+            // than that the rows stay, and the turn is presented again when
+            // the next parse may start.
+            let paced = kept.part(name, reading: reads, at: pace.now, every: 1 / Markdown.parsesPerSecond) {
+                Blocks(reads.text, open: reads.open)
+            }
+            pace.wait(until: paced.due)
+            blocks = paced.value
+        } else {
+            blocks = kept?.part(name, reading: reads) { Blocks(reads.text, open: reads.open) } ?? Blocks(reads.text, open: reads.open)
+        }
         return AssistantTurn(
             live: live, reasoning: reasoning, text: turn.content.isEmpty ? nil : turn.content,
             blocks: KeyedList(blocks.rows), pages: blocks.pages,

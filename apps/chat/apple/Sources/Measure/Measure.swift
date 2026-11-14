@@ -137,7 +137,8 @@ enum Measure {
             phases.append(Phase(name: "200 characters typed", steps: typed, entries: Meter.shared.stop()))
         }
         opened.insert(
-            String(format: "The same closed for display, parsed and made into rows: %.2f ms on average, %.2f ms at best.", rows.mean, rows.least),
+            String(
+                format: "The same as a reply being written, closed for display and made into rows: %.2f ms on average, %.2f ms at best.", rows.mean, rows.least),
             at: 0)
         return table(phases, label: label, parse: parse, opened: opened, typed: typed)
     }
@@ -173,7 +174,7 @@ enum Measure {
         }
         rows.append(("Markdown parses per step", { cell($0, "parse", time: false) }))
         rows.append(("Markdown parse, ms per step (longest parse)", { cell($0, "parse", time: true) }))
-        rows.append(("closing unfinished Markdown, ms per step (longest)", { cell($0, "close", time: true) }))
+        rows.append(("a reply being written made into blocks, ms per step (longest)", { cell($0, "write", time: true) }))
         rows.append(("inline Markdown made into text, per step", { cell($0, "inline", time: false) }))
         rows.append(("inline Markdown, ms per step (longest)", { cell($0, "inline", time: true) }))
         rows.append(("key to drawn, ms (longest)", { cell($0, "key", time: true) }))

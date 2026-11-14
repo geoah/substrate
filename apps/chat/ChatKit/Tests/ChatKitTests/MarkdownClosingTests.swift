@@ -74,15 +74,30 @@ struct MarkdownClosingTests {
         drawn(blocks).joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    /// The kinds of the blocks, in order.
+    /// Every code block's text, in order, wherever it is nested: code is
+    /// drawn as it is, so its spaces and its marks are held to the letter.
+    static func code(_ blocks: [MarkdownBlock]) -> [String] {
+        blocks.flatMap { block -> [String] in
+            switch block {
+            case let .code(_, text, _): [text]
+            case let .quote(blocks): code(blocks)
+            case let .list(_, _, items): items.flatMap { code($0.blocks) }
+            default: []
+            }
+        }
+    }
+
+    /// The kinds of the blocks, in order, with the kinds inside a quote and
+    /// inside each item of a list.
     static func kinds(_ blocks: [MarkdownBlock]) -> [String] {
         blocks.map { block in
             switch block {
             case .paragraph: "paragraph"
             case .heading: "heading"
             case .code: "code"
-            case .quote: "quote"
-            case .list: "list"
+            case let .quote(blocks): "quote(" + kinds(blocks).joined(separator: " ") + ")"
+            case let .list(ordered, _, items):
+                (ordered ? "ol(" : "ul(") + items.map { kinds($0.blocks).joined(separator: " ") }.joined(separator: ", ") + ")"
             case .table: "table"
             case .rule: "rule"
             }
@@ -156,17 +171,35 @@ struct MarkdownClosingTests {
         var prefix = ""
         for character in reply {
             prefix.append(character)
-            let closed = Markdown.closed(prefix)
-            let now = Self.words(Markdown.parse(closed))
+            let now = Self.words(Markdown.parse(writing: prefix))
             // Nothing is drawn that the whole reply does not draw there: no
             // marker waiting for its partner, no line that becomes a table.
-            #expect(whole.hasPrefix(now), "after \(prefix.count) characters the page reads “…\(now.suffix(60))”, closed from “…\(closed.suffix(60))”")
+            #expect(whole.hasPrefix(now), "after \(prefix.count) characters the page reads “…\(now.suffix(60))”")
             // And it only grows.
             #expect(now.hasPrefix(before), "after \(prefix.count) characters the page lost “\(before.suffix(40))” for “\(now.suffix(40))”")
-            before = now
             if !whole.hasPrefix(now) || !now.hasPrefix(before) { return }
+            before = now
         }
         #expect(before == whole)
+    }
+
+    @Test(arguments: replies.indices)
+    func everyPrefixDrawsItsCodeToTheLetter(_ index: Int) {
+        let reply = Self.replies[index]
+        let whole = Self.code(Markdown.parse(reply))
+        var prefix = ""
+        for character in reply {
+            prefix.append(character)
+            let now = Self.code(Markdown.parse(writing: prefix))
+            #expect(now.count <= whole.count)
+            // A block that is finished is the whole's, and the one being
+            // written is its start: not a space or a mark more.
+            for (at, text) in now.enumerated() where at < whole.count {
+                let finished = at < now.count - 1
+                #expect(
+                    finished ? text == whole[at] : whole[at].hasPrefix(text), "after \(prefix.count) characters, code block \(at) reads “…\(text.suffix(40))”")
+            }
+        }
     }
 
     @Test(arguments: replies.indices)
@@ -176,20 +209,23 @@ struct MarkdownClosingTests {
         var prefix = ""
         for character in reply {
             prefix.append(character)
-            let now = Self.kinds(Markdown.parse(Markdown.closed(prefix)))
-            // A finished block is never taken back or made another kind:
-            // only the last may still change, and only into what it grows to.
+            let now = Self.kinds(Markdown.parse(writing: prefix))
+            // A finished block is never taken back or made another kind, nor
+            // anything inside it: only the last may still change.
             let settled = before.dropLast()
             #expect(Array(now.prefix(settled.count)) == Array(settled), "after \(prefix.count) characters: \(before) became \(now)")
             if Array(now.prefix(settled.count)) != Array(settled) { return }
             before = now
         }
+        #expect(before == Self.kinds(Markdown.parse(reply)))
     }
 
     @Test(arguments: replies.indices)
-    func aFinishedReplyClosesToItself(_ index: Int) {
+    func aFinishedReplyDrawsAsItStands(_ index: Int) {
+        // Well formed, a reply being written at its last character already
+        // draws what the finished one does.
         let reply = Self.replies[index]
-        #expect(Markdown.parse(Markdown.closed(reply)) == Markdown.parse(reply))
+        #expect(Markdown.parse(writing: reply) == Markdown.parse(reply))
     }
 
     @Test(arguments: replies.indices)
@@ -207,10 +243,13 @@ struct MarkdownClosingTests {
         #expect(strays > 50)
     }
 
-    @Test func anyTextAtAllClosesToSomethingThatParses() {
-        // Marks in every order, a line at a time: nothing here is a reply,
+    @Test func anyTextAtAllIsParsedWithoutStopping() {
+        // Marks in every order, a piece at a time: nothing here is a reply,
         // and none of it may stop the app.
-        let pieces = ["*", "**", "_", "`", "``", "```", "~", "~~", "[", "]", "(", ")", "<", ">", "|", "-", "#", "\\", " ", "\n", "a", "1.", "x]", "- [", ":-"]
+        let pieces = [
+            "*", "**", "_", "`", "``", "```", "~", "~~", "[", "]", "(", ")", "<", ">", "|", "-", "#", "\\", " ", "\n", "a", "1.", "x]", "- [", ":-",
+            "\t", "    ", "> ",
+        ]
         var seed: UInt64 = 0x2545_F491_4F6C_DD1D
         func next() -> Int {
             seed ^= seed << 13
@@ -222,41 +261,57 @@ struct MarkdownClosingTests {
             var text = ""
             for _ in 0 ..< 24 {
                 text += pieces[next()]
-                let closed = Markdown.closed(text)
-                _ = Markdown.parse(closed)
-                // Closing adds a table's rule and the marks that close, and
-                // takes away only what waits: never more than it was given.
-                #expect(closed.count <= text.count * 2 + 64)
+                let blocks = Markdown.parse(writing: text)
+                // Closing adds the marks that close and nothing else: what
+                // is drawn is never much more than what was written.
+                #expect(Self.drawn(blocks).reduce(0) { $0 + $1.count } <= text.count * 2 + 16)
             }
         }
     }
 
     // MARK: Each rule
 
+    private func writing(_ text: String) -> [MarkdownBlock] { Markdown.parse(writing: text) }
+
     @Test func anOpenEmphasisACodeSpanAndAStrikeAreClosed() {
-        #expect(Markdown.closed("You have **three thi") == "You have **three thi**")
-        #expect(Markdown.closed("the *Q4 bud") == "the *Q4 bud*")
-        #expect(Markdown.closed("from `finance/act") == "from `finance/act`")
-        #expect(Markdown.closed("and ~~the old") == "and ~~the old~~")
-        #expect(Markdown.closed("***both") == "***both***")
-        #expect(Markdown.closed("**see `foo") == "**see `foo`**")
+        #expect(writing("You have **three thi") == [.paragraph("You have **three thi**")])
+        #expect(writing("the *Q4 bud") == [.paragraph("the *Q4 bud*")])
+        #expect(writing("from `finance/act") == [.paragraph("from `finance/act`")])
+        #expect(writing("and ~~the old") == [.paragraph("and ~~the old~~")])
+        #expect(writing("***both") == [.paragraph("***both***")])
+        #expect(writing("**see `foo") == [.paragraph("**see `foo`**")])
         // The closing marker touches the text it closes.
-        #expect(Markdown.closed("a **bold ") == "a **bold** ")
-        // Across the lines of one paragraph, and not into the next block.
-        #expect(Markdown.closed("a **bold\nline") == "a **bold\nline**")
-        #expect(Markdown.closed("# A **title\nand text") == "# A **title\nand text")
+        #expect(writing("a **bold ") == [.paragraph("a **bold**")])
+        // Across the lines of one paragraph, and in the block being written
+        // alone: a heading its line's end finished keeps what it left open.
+        #expect(writing("a **bold\nline") == [.paragraph("a **bold\nline**")])
+        #expect(writing("# A **title") == [.heading(level: 1, text: "A **title**")])
+        #expect(writing("# A **title\nand *text") == [.heading(level: 1, text: "A **title"), .paragraph("and *text*")])
+        // In a list's item and in a quote, whatever marks begin their lines.
+        #expect(writing("- one\n- **two") == [.list(ordered: false, start: 0, items: [item("one"), item("**two**")])])
+        #expect(writing("> said **so\n> and *more") == [.quote([.paragraph("said **so\nand *more***")])])
+        // A paragraph a blank line ended keeps what its writer left open.
+        #expect(writing("a **bold\n\n") == [.paragraph("a **bold")])
+    }
+
+    private func item(_ text: String, checked: Bool? = nil) -> MarkdownListItem {
+        MarkdownListItem(checked: checked, blocks: text.isEmpty ? [] : [.paragraph(text)])
     }
 
     @Test func aMarkerWithNothingInItYetWaits() {
-        #expect(Markdown.closed("You have **") == "You have ")
-        #expect(Markdown.closed("You have *") == "You have ")
-        #expect(Markdown.closed("use `") == "use ")
-        #expect(Markdown.closed("and ~") == "and ")
-        #expect(Markdown.closed("and ~~") == "and ")
+        #expect(writing("You have **") == [.paragraph("You have ")])
+        #expect(writing("You have *") == [.paragraph("You have ")])
+        #expect(writing("use `") == [.paragraph("use ")])
+        #expect(writing("and ~") == [.paragraph("and ")])
+        #expect(writing("and ~~") == [.paragraph("and ")])
+        // Alone, there is nothing to draw yet.
+        #expect(writing("Above.\n\n**") == [.paragraph("Above.")])
+        #expect(writing("Above.\n\n`") == [.paragraph("Above.")])
+        #expect(writing("Above.\n\n``") == [.paragraph("Above.")])
         // Half of the marker that closes.
-        #expect(Markdown.closed("**three things due*") == "**three things due**")
-        #expect(Markdown.closed("``a ` b`") == "``a ` b``")
-        #expect(Markdown.closed("an escape \\") == "an escape ")
+        #expect(writing("**three things due*") == [.paragraph("**three things due**")])
+        #expect(writing("``a ` b`") == [.paragraph("``a ` b``")])
+        #expect(writing("an escape \\") == [.paragraph("an escape ")])
     }
 
     @Test func whatIsNoMarkerIsLeftAlone() {
@@ -264,68 +319,76 @@ struct MarkdownClosingTests {
             "5*3 and 2 * 3", "a snake_case_name", "about ~15 and ~/tasks/task", "it costs 3 < 5 and 7 > 2", "see [1] and [12",
             "array[i", "done **bold** and *it* and `code`.", "a \\* star",
         ] {
-            #expect(Markdown.closed(text) == text, "“\(text)” became “\(Markdown.closed(text))”")
+            #expect(writing(text) == [.paragraph(text)], "“\(text)” became \(writing(text))")
         }
     }
 
     @Test func aLinkReadsAsItsLabelUntilItsAddressIsWhole() {
-        #expect(Markdown.closed("is in [the plan") == "is in the plan")
-        #expect(Markdown.closed("is in [the planning notes]") == "is in the planning notes")
-        #expect(Markdown.closed("is in [the planning notes](") == "is in the planning notes")
-        #expect(Markdown.closed("is in [the planning notes](https://exa") == "is in the planning notes")
-        #expect(Markdown.closed("is in [the planning notes](https://example.com)") == "is in [the planning notes](https://example.com)")
-        #expect(Markdown.closed("is in [the **plan") == "is in the **plan**")
-        #expect(Markdown.closed("ask at <https://exa") == "ask at https://exa")
-        #expect(Markdown.closed("ask at <https://example.com>") == "ask at <https://example.com>")
+        #expect(writing("is in [the plan") == [.paragraph("is in the plan")])
+        #expect(writing("is in [the planning notes]") == [.paragraph("is in the planning notes")])
+        #expect(writing("is in [the planning notes](") == [.paragraph("is in the planning notes")])
+        #expect(writing("is in [the planning notes](https://exa") == [.paragraph("is in the planning notes")])
+        #expect(writing("is in [the planning notes](https://example.com)") == [.paragraph("is in [the planning notes](https://example.com)")])
+        #expect(writing("is in [the **plan") == [.paragraph("is in the **plan**")])
+        #expect(writing("ask at <https://exa") == [.paragraph("ask at https://exa")])
+        #expect(writing("ask at <https://example.com>") == [.paragraph("ask at <https://example.com>")])
     }
 
     @Test func aTableIsAHeaderRowFromItsFirstCell() {
-        let rule = "| --- | --- |"
-        #expect(Markdown.closed("|") == "")
-        #expect(Markdown.closed("| It") == "| It\n| --- |")
-        #expect(Markdown.closed("| Item | Ow") == "| Item | Ow\n\(rule)")
-        #expect(Markdown.closed("| Item | Owner |") == "| Item | Owner |\n\(rule)")
-        #expect(Markdown.closed("| Item | Owner |\n") == "| Item | Owner |\n\(rule)\n")
-        // The line under it, in place of the part of it that has arrived.
-        #expect(Markdown.closed("| Item | Owner |\n|") == "| Item | Owner |\n\(rule)\n")
-        #expect(Markdown.closed("| Item | Owner |\n| :-") == "| Item | Owner |\n\(rule)")
-        #expect(Markdown.closed("| Item | Owner |\n| :--- | --") == "| Item | Owner |\n| :--- | --")
-        #expect(Markdown.closed("| Item | Owner |\n| :--- | ---: |\n| Q4 | **A") == "| Item | Owner |\n| :--- | ---: |\n| Q4 | **A**")
-        for prefix in ["| It", "| Item | Owner |\n", "| Item | Owner |\n| :"] {
-            guard case let .table(header, _, rows)? = Markdown.parse(Markdown.closed(prefix)).first else {
-                Issue.record("“\(prefix)” is not a table")
-                continue
-            }
-            #expect(rows.isEmpty && !header.isEmpty)
+        func header(_ cells: [String]) -> [MarkdownBlock] {
+            [.table(header: cells, alignments: Array(repeating: .leading, count: cells.count), rows: [])]
         }
+        #expect(writing("|") == [])
+        #expect(writing("| It") == header(["It"]))
+        #expect(writing("| Item | Ow") == header(["Item", "Ow"]))
+        #expect(writing("| Item | **Ow") == header(["Item", "**Ow**"]))
+        #expect(writing("| Item | Owner |") == header(["Item", "Owner"]))
+        #expect(writing("| Item | Owner |\n") == header(["Item", "Owner"]))
+        // The line under it, in place of the part of it that has arrived.
+        #expect(writing("| Item | Owner |\n|") == header(["Item", "Owner"]))
+        #expect(writing("| Item | Owner |\n| :-") == header(["Item", "Owner"]))
+        #expect(writing("| Item | Owner |\n| :--- | --") == [.table(header: ["Item", "Owner"], alignments: [.leading, .leading], rows: [])])
+        #expect(
+            writing("| Item | Owner |\n| :--- | ---: |\n| Q4 | **A")
+                == [.table(header: ["Item", "Owner"], alignments: [.leading, .trailing], rows: [["Q4", "**A**"]])])
+        // A row its line's end finished keeps what it left open.
+        #expect(
+            writing("| Item | Owner |\n| :--- | ---: |\n| Q4 | **A\n")
+                == [.table(header: ["Item", "Owner"], alignments: [.leading, .trailing], rows: [["Q4", "**A"]])])
         // Under a line of text it is that text's, as the parser reads it.
-        #expect(Markdown.closed("text\n| a | b") == "text\n| a | b")
+        #expect(writing("text\n| a | b") == [.paragraph("text\n| a | b")])
     }
 
     @Test func aBlocksFirstMarkWaitsUntilItSaysWhatItIs() {
-        for start in ["-", "- ", "--", "*", "+", "> -"] {
-            #expect(Markdown.parse(Markdown.closed("Above.\n\n" + start)) == [.paragraph("Above.")], "“\(start)” drew something")
+        for start in ["-", "- ", "--", "*", "+", "> -", "|", "- [", "- [x"] {
+            #expect(writing("Above.\n\n" + start) == [.paragraph("Above.")], "“\(start)” drew \(writing("Above.\n\n" + start).dropFirst())")
         }
-        #expect(Markdown.closed("Above.\n\n---") == "Above.\n\n---")
-        #expect(Markdown.closed("- [") == "")
-        #expect(Markdown.closed("- [x") == "")
-        #expect(Markdown.closed("- [x]") == "- [x] ")
-        #expect(Markdown.closed("- [ ] Confirm") == "- [ ] Confirm")
-        #expect(Markdown.closed("- [the link") == "- the link")
+        #expect(writing("Above.\n\n---") == [.paragraph("Above."), .rule])
+        #expect(writing("- [x]") == [.list(ordered: false, start: 0, items: [item("", checked: true)])])
+        #expect(writing("- [ ] Confirm") == [.list(ordered: false, start: 0, items: [item("Confirm", checked: false)])])
+        #expect(writing("- [the link") == [.list(ordered: false, start: 0, items: [item("the link")])])
     }
 
     @Test func codeIsNeverTouched() {
         let open = "```python\ndef due(run, **kwargs):\n    return `x"
-        #expect(Markdown.closed(open) == open)
+        let code = MarkdownBlock.code(language: "python", text: "def due(run, **kwargs):\n    return `x", closed: false)
+        #expect(writing(open) == [code])
         // The fence's closing line waits until it is whole.
-        #expect(Markdown.closed(open + "\n`") == open)
-        #expect(Markdown.closed(open + "\n``") == open)
-        #expect(Markdown.closed(open + "\n```") == open + "\n```")
-        #expect(Markdown.closed(open + "\n```\nand **after") == open + "\n```\nand **after**")
-        #expect(Markdown.closed("> ```\n> a **b") == "> ```\n> a **b")
-        let indented = "Text.\n\n    x = **kwargs"
-        #expect(Markdown.closed(indented) == indented)
+        #expect(writing(open + "\n`") == [code])
+        #expect(writing(open + "\n``") == [code])
+        #expect(writing(open + "\n```") == Markdown.parse(open + "\n```"))
+        #expect(writing(open + "\n```\nand **after").last == .paragraph("and **after**"))
+        // Wherever the parser says the code is: a quote's fence, a list
+        // item's, four spaces, a tab.
+        for text in ["> ```\n> a **b", "- ```\n  **literal", "Text.\n\n    x = **kwargs", "\t**literal", "~~~\n**kwargs"] {
+            #expect(writing(text) == Markdown.parse(text), "“\(text)” became \(writing(text))")
+        }
+        // And where it says the code ended: a quote's fence ends with it.
+        #expect(writing("> ```\n> x\n\n**bold") == [.quote([.code(language: nil, text: "x", closed: false)]), .paragraph("**bold**")])
         // Under a list item four spaces are its text.
-        #expect(Markdown.closed("- item\n\n    more **text") == "- item\n\n    more **text**")
+        #expect(
+            writing("- item\n\n    more **text") == [
+                .list(ordered: false, start: 0, items: [MarkdownListItem(checked: nil, blocks: [.paragraph("item"), .paragraph("more **text**")])])
+            ])
     }
 }

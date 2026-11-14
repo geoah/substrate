@@ -21,12 +21,18 @@ public extension Markdown {
     /// a reply's next block starts another row of the transcript.
     static let pageWeight = 1500
 
+    /// How often, at most, a reply being written is parsed again. Its
+    /// pieces share a window longer than this allows, so the limit is met
+    /// only when something else presents the tree in between: the rows then
+    /// stay as they were until the instant the next parse may start.
+    static let parsesPerSecond = 30.0
+
     /// A reply's text as rows. `open` says the reply is still being
-    /// written: its text is closed for display first (`closed(_:)`). A
-    /// finished reply is parsed as it stands, so what a stream drew at its
-    /// end is what its stored row draws.
+    /// written: its blocks are the ones it draws now, closed for display
+    /// (`parse(writing:)`). A finished reply is parsed as it stands, so what
+    /// a stream drew at its end is what its stored row draws.
     static func rows(_ text: String, open: Bool) -> [MarkdownRow] {
-        parse(open ? closed(text) : text).enumerated().map { MarkdownRow(position: $0, block: $1) }
+        (open ? parse(writing: text) : parse(text)).enumerated().map { MarkdownRow(position: $0, block: $1) }
     }
 
     /// Where each row of the transcript starts among a reply's blocks: the

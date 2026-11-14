@@ -77,10 +77,19 @@ extension ChatApp {
             empty: listed.rows.isEmpty && state.loaded ? framed.emptyList : nil, loading: listed.rows.isEmpty && !state.loaded,
             showAutomated: state.preferences.showAutomated, searchPrompt: "Search chats")
         var conversations: [ChildKey: ConversationScreen] = [:]
+        var redrawAt: Date?
         for (key, live) in input.children {
-            conversations[key] = kept.part(
-                "chat/\(key.rawValue)/screen", reading: ConversationReads(live: live, state: state.conversed(live.thread))
-            ) { conversation(state, key, live) }
+            // Kept until what it reads changes, or until the instant a
+            // reply's rows, left as they were, may be parsed again.
+            let screen = kept.timed(
+                "chat/\(key.rawValue)/screen", reading: ConversationReads(live: live, state: state.conversed(live.thread)), at: input.now
+            ) {
+                let pace = TurnPresenter.Pace(now: input.now)
+                let screen = conversation(state, key, live, pace: pace)
+                return (screen, pace.due ?? .distantFuture)
+            }
+            conversations[key] = screen.value
+            if screen.until != .distantFuture { redrawAt = min(redrawAt ?? screen.until, screen.until) }
         }
         kept.keep(under: "chat/") { name in conversations[ChildKey(String(name.dropFirst("chat/".count).prefix { $0 != "/" }))] != nil }
         let settings = kept.part("settings", reading: state.settled) { self.settings(state) }
@@ -89,8 +98,13 @@ extension ChatApp {
             host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
             routePending: state.route != nil, onScreen: framed.onScreen, streaming: framed.streaming, conversations: conversations,
             offered: framed.offered, defaultAgent: framed.defaultAgent, settings: settings, unread: listed.unread,
-            renameProblem: state.renameProblem, keys: framed.keys, keySaved: state.keySaved, answered: state.answered)
+            renameProblem: state.renameProblem, keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
+            redrawAt: redrawAt)
     }
+
+    /// The tree is presented again at the instant a reply's next parse may
+    /// start, where one was put off.
+    public func nextChange(of presentation: ChatPresentation) -> Date? { presentation.redrawAt }
 
     /// The parts the app's tree goes out in: its own under no key, with no
     /// conversation in it, and each conversation's screen under its key. A
@@ -99,6 +113,7 @@ extension ChatApp {
     public func parts(of presentation: ChatPresentation) -> [PresentationPart] {
         var own = presentation
         own.conversations = [:]
+        own.redrawAt = nil
         return [PresentationPart(own)]
             + presentation.conversations.keys.sorted().map { PresentationPart(presentation.conversations[$0], at: [$0]) }
     }
@@ -219,7 +234,7 @@ extension ChatApp {
 
     // MARK: A conversation
 
-    private func conversation(_ state: State, _ key: ChildKey, _ live: ConversationLive) -> ConversationScreen {
+    private func conversation(_ state: State, _ key: ChildKey, _ live: ConversationLive, pace: TurnPresenter.Pace) -> ConversationScreen {
         let row = live.thread.flatMap { state.thread($0) }
         let held = live.thread.flatMap { state.transcripts[$0] }
         let agent = state.agent(live.agent)
@@ -243,13 +258,19 @@ extension ChatApp {
             made.turns
             + live.turns.map { turn in
                 let isLive = turn.id == live.liveKey
-                return kept.part(
+                let presented = kept.timed(
                     "\(scope)/turn/\(turn.id)",
-                    reading: TurnReads(turn: turn, live: isLive, agent: agent?.record, decided: decided, titles: titles)
+                    reading: TurnReads(turn: turn, live: isLive, agent: agent?.record, decided: decided, titles: titles), at: pace.now
                 ) {
-                    TurnPresenter.present(
-                        turn, agent: agent, live: isLive, decided: decided, titles: titles, kept: kept, scope: scope)
+                    let own = TurnPresenter.Pace(now: pace.now)
+                    let presented = TurnPresenter.present(
+                        turn, agent: agent, live: isLive, decided: decided, titles: titles, kept: kept, scope: scope, pace: own)
+                    return (presented, own.due ?? .distantFuture)
                 }
+                // Kept or made: where its rows wait for their next parse,
+                // the screen is made again then too.
+                if presented.until != .distantFuture { pace.wait(until: presented.until) }
+                return presented.value
             }
         kept.keep(under: "\(scope)/turn/") { name in live.turns.contains { name == "\(scope)/turn/\($0.id)" } }
         kept.keep(under: "\(scope)/tool/") { name in live.turns.contains { name.hasPrefix("\(scope)/tool/\($0.id)#") } }
