@@ -36,6 +36,7 @@ var oneCheckSkips = map[string]string{
 	"agentloop.go:putRow":                           "exempt (conversation): a message the loop posts, the user's among them",
 	"agentloop.go:settle":                           "exempt (conversation): a thread settled at its turn's end",
 	"agentpinned.go:continuePinned":                 "exempt (conversation): a thread's pinned block taken again",
+	"agentqueue.go:queueMessage":                    "exempt (conversation): a message a person sent while a chat turn runs, written into that turn's thread after mayContinue admitted the hand",
 	"agentpinned.go:dropPinned":                     "exempt (conversation): a thread's pinned block dropped",
 	"agenttitle.go:writeTitle":                      "exempt (conversation): a thread's title",
 	"alerts.go:writeAlert":                          "internal: an alert the engine raises",

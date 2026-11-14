@@ -293,7 +293,7 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 	},
 
 	// Work read back from its record.
-	"agentdecision.go:continueThread": func(t *testing.T, r *runsRepository) (bool, string) {
+	"agentdecision.go:continueThreadFrom": func(t *testing.T, r *runsRepository) (bool, string) {
 		thread := r.staged(t, "scribe", fakeTurn{content: "first."})
 		var row string
 		if err := r.ds.inTx(context.Background(), substrate.ActorSystem, true, func(tx *txn) error {
