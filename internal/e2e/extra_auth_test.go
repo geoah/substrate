@@ -13,8 +13,10 @@ package e2e
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,17 +24,48 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 )
 
-// xaCoreKindPrefix is what every kind a FRESH repository is seeded with
-// starts with: registration installs core and nothing else, which is what
-// makes "core only" an assertable statement about a second user's changelog.
+// xaCoreKindPrefix is what every kind of core starts with.
 const xaCoreKindPrefix = "substrate.reamde.dev/core/"
 
-// xaSeeded reports whether a kind is one registration seeds into every
-// repository: core's and the llm package's (decision record 0077). Their
-// rows carry the same ids in every repository, so they are not evidence
-// that one repository's changelog reached another.
-func xaSeeded(kind string) bool {
-	return strings.HasPrefix(kind, xaCoreKindPrefix) || strings.HasPrefix(kind, "substrate.reamde.dev/llm/")
+// xaSeededPackages is every package a registration seeds, read from a fresh
+// repository through its token: the packages its rows say came with the
+// binary (`source: builtin`). The rows of their kinds carry the same ids in
+// every repository, so they are not evidence that one repository's changelog
+// reached another. Read, not listed here, so a package the binary starts to
+// seed is in it with no edit (#1340).
+func xaSeededPackages(c *C, token string) map[string]bool {
+	c.t.Helper()
+	seeded := map[string]bool{}
+	after := ""
+	for {
+		path := listOf("/api/v1/"+xaCoreKindPrefix+"package", "first=200")
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		var page recordsPage
+		status, raw := c.doAs(token, http.MethodGet, path, nil, &page)
+		c.requiref(status == http.StatusOK, "listing the fresh repository's packages answered %d: %s", status, raw)
+		for _, p := range page.Records {
+			if p.prop("source") == "builtin" {
+				seeded[p.prop("authority")+"/"+p.prop("package")] = true
+			}
+		}
+		if page.Cursor == "" {
+			break
+		}
+		after = page.Cursor
+	}
+	c.requiref(seeded["substrate.reamde.dev/core"], "the fresh repository holds no builtin core package among %v", seeded)
+	return seeded
+}
+
+// xaKindPackage is a kind's package: its authority and its package name.
+func xaKindPackage(kind string) string {
+	parts := strings.SplitN(kind, "/", 3)
+	if len(parts) < 3 {
+		return kind
+	}
+	return parts[0] + "/" + parts[1]
 }
 
 // xaTokenRecord is the token kind's record route: tokens are records, so the
@@ -84,7 +117,7 @@ func init() {
 		xaCaseTokenRecordRevoke)
 	registerCase(180, "ISO-01", "A second user sees none of the first user's repository",
 		"A freshly registered second user's token finds the first user's kinds unknown, its record "+
-			"404, and its own changelog holding core rows alone, while the first user's token still answers.",
+			"404, and its own changelog holding the seeded packages' rows alone, while the first user's token still answers.",
 		xaCaseIsolation)
 	registerCase(190, "ISO-02", "An install belongs to one repository",
 		"The tasks bundle reads installed=true in the first user's catalog and installed=false in the "+
@@ -291,9 +324,12 @@ func xaCaseIsolation(c *C) {
 
 	// The changelog is the truth, so isolation has to hold there too: the
 	// second repository's feed is its own registration and nothing else.
+	// What a registration seeds is read from that fresh repository.
+	seededPackages := xaSeededPackages(c, xaSecond.token)
+	seeded := func(kind string) bool { return seededPackages[xaKindPackage(kind)] }
 	mine := map[string]bool{}
 	for _, row := range c.readChangesForward(0) {
-		if !xaSeeded(row.Kind) {
+		if !seeded(row.Kind) {
 			mine[row.Kind+"/"+row.RecordID] = true
 		}
 	}
@@ -304,12 +340,12 @@ func xaCaseIsolation(c *C) {
 		c.requiref(!mine[row.Kind+"/"+row.RecordID],
 			"the second user's changelog carries the first user's %s `%s` at seq %d", row.Kind, row.RecordID, row.Seq)
 		c.requiref(row.Kind != taskKind && row.Kind != personKind,
-			"the second user's changelog carries a %s row at seq %d; registration seeds core, llm and console alone", row.Kind, row.Seq)
-		c.requiref(xaSeeded(row.Kind),
-			"the second user's changelog carries a %s row at seq %d, outside the seed", row.Kind, row.Seq)
+			"the second user's changelog carries a %s row at seq %d; a registration seeds no task or person", row.Kind, row.Seq)
+		c.requiref(seeded(row.Kind),
+			"the second user's changelog carries a %s row at seq %d, outside the seeded packages %v", row.Kind, row.Seq, slices.Sorted(maps.Keys(seededPackages)))
 	}
-	c.stepf("the second user's changelog holds %d rows, all of seeded kinds, none of the first user's %d records outside the seed",
-		len(theirs), len(mine))
+	c.stepf("the second user's changelog holds %d rows, all of the %d packages a registration seeds, none of the first user's %d records outside them",
+		len(theirs), len(seededPackages), len(mine))
 
 	// And the first user's repository is exactly where it was.
 	status, raw = c.do(http.MethodGet, listOf(tasksCollection), nil, nil)
