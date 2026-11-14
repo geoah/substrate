@@ -226,3 +226,56 @@ func classOf(keys, key string) (keyClass, bool) {
 	c, ok := declarationPositions[keys][key]
 	return c, ok
 }
+
+// WithoutAuthorText is the data of a declaration of kind with every value at
+// a position the dialect classes as the author's text, code or prompt left
+// out: the values that may spell anything, a hand among them. Every other
+// value stays, a key the dialect does not hold among them. The data of a
+// kind no declaration has stays whole.
+func WithoutAuthorText(kind string, v any) any {
+	root, ok := declarationRoots[kind]
+	if !ok {
+		return v
+	}
+	return withoutAuthorText(root, v)
+}
+
+func withoutAuthorText(keys string, v any) any {
+	switch t := v.(type) {
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = withoutAuthorText(keys, x)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			c, ok := classOf(keys, k)
+			if !ok {
+				out[k] = x
+				continue
+			}
+			switch c.pos {
+			case posText, posCode, posPrompt:
+			case posObject:
+				out[k] = withoutAuthorText(c.keys, x)
+			case posNamed:
+				named, ok := x.(map[string]any)
+				if !ok {
+					out[k] = x
+					continue
+				}
+				each := make(map[string]any, len(named))
+				for name, y := range named {
+					each[name] = withoutAuthorText(c.keys, y)
+				}
+				out[k] = each
+			default:
+				out[k] = x
+			}
+		}
+		return out
+	}
+	return v
+}
