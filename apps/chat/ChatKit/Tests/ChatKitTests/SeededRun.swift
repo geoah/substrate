@@ -101,6 +101,9 @@ struct SeededRun {
     private var suspect: Set<String> = []
     private var inFront = true
     private var signedOut = false
+    /// A conversation nothing was seen to move: as it stood, since when on
+    /// the clock, and at which step.
+    private var stuck: [ChildKey: (mark: String, since: Date, step: Int)] = [:]
     /// The waits on the clock each conversation asked for, and the list.
     private var waits: [ChildKey: [Wait]] = [:]
     private var listWaits: [Wait] = []
@@ -428,15 +431,20 @@ struct SeededRun {
     private mutating func kill() async {
         steps.append("the app is killed and launched again")
         // The kill comes once the writes the app makes at once have been
-        // made: a message it has just been handed is on its way to the
-        // folder, and a process cannot be held to what it had no time for.
-        for _ in 0 ..< 200 {
+        // made: a message it has just been handed, or has just put back
+        // into a composer, is on its way to the folder, and a process
+        // cannot be held to what it had no time for. What the folder is
+        // owed is waited for, for a moment of real time; what is still
+        // missing then is lost, and the next check says so.
+        for _ in 0 ..< 150 {
             let state = await rig.harness.state
-            var unkept = false
+            var owed: [String] = []
             for key in state.conversations.keys {
-                if let pending = await rig.live(key)?.pending, state.disk != nil, !state.keptUnsent.contains(pending.id) { unkept = true }
+                if let pending = await rig.live(key)?.pending, state.disk != nil { owed.append(pending.message) }
             }
-            if !unkept { break }
+            owed += composed.filter { text in !(typedAt[text].map { clock.now.timeIntervalSince($0) < 1 } ?? false) }
+            let kept = Self.onDisk(rig)
+            if owed.allSatisfy({ text in kept.contains { $0.contains(text) } || server.userRows(saying: text) > 0 }) { break }
             try? await Task.sleep(nanoseconds: 2_000_000)
             await drain()
         }
@@ -462,6 +470,7 @@ struct SeededRun {
         waits = [:]
         listWaits = []
         scanned = 0
+        stuck = [:]
         composed = []
         rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
         inFront = true
@@ -720,7 +729,22 @@ struct SeededRun {
             // No conversation is left waiting with no stream open.
             let waits = live.phase != .idle || live.finding || live.checking
             if waits, !moves(live, key) {
-                return broke(.streaming, "\(name) is \(Self.waiting(live)) with no request at the server and no wait on the clock")
+                // Nothing is seen to move it. That is believed once it has
+                // stood exactly so while the clock went on: the waits are
+                // read from a trace, and one read a moment late must not
+                // fail a run. A conversation that is dead stays as it is.
+                let mark = "\(Self.waiting(live))|\(live.seq)|\(live.settles)|\(live.tries)|\(live.pending?.id ?? "")"
+                if let held = stuck[key], held.mark == mark {
+                    if clock.now.timeIntervalSince(held.since) >= 100 {
+                        return broke(
+                            .streaming,
+                            "\(name) is \(Self.waiting(live)) with no request at the server and no wait of its own on the clock, since step \(held.step)")
+                    }
+                } else {
+                    stuck[key] = (mark, clock.now, steps.count)
+                }
+            } else {
+                stuck[key] = nil
             }
             if settled, waits || live.ownsTranscript || state.reading[live.thread ?? ""] != nil {
                 let reload = live.reloadFailed == nil ? "" : ", its reload failed"
