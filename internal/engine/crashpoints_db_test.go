@@ -60,21 +60,27 @@ func bootWith(t *testing.T, dsn, root string, opts ...engine.Option) (substrate.
 	return svc, err
 }
 
-// bootStoppedAt boots and dies at the first time the import reaches stage,
-// in batches of seven lines, so a stop after the first batch leaves lines
-// out.
-func bootStoppedAt(t *testing.T, dsn, root, stage string) {
+// crashBatch is the batch of lines the crash tests import in, so a stop
+// after a batch leaves lines out.
+const crashBatch = 7
+
+// bootStoppedAt boots and dies the nth time the import reaches stage, in
+// batches of crashBatch lines. A boot that reaches it fewer times fails the
+// test, so a stop meant for the last batch cannot land on an earlier one.
+func bootStoppedAt(t *testing.T, dsn, root, stage string, nth int) {
 	t.Helper()
-	fired := false
-	_, err := bootWith(t, dsn, root, engine.WithTestImportFault(7, func(s string) error {
-		if s == stage && !fired {
-			fired = true
-			return errKilledHere
+	seen := 0
+	_, err := bootWith(t, dsn, root, engine.WithTestImportFault(crashBatch, func(s string) error {
+		if s == stage {
+			seen++
+			if seen == nth {
+				return errKilledHere
+			}
 		}
 		return nil
 	}))
 	if !errors.Is(err, errKilledHere) {
-		t.Fatalf("the boot did not die %s: %v", stage, err)
+		t.Fatalf("the boot did not die the %dth time %s (it got there %d times): %v", nth, stage, seen, err)
 	}
 }
 
@@ -130,14 +136,14 @@ func TestA0xImportCutShortAtEachStepIsFinishedByTheNextBoot(t *testing.T) {
 	src := newCrashSource(t)
 	for _, stage := range []string{
 		engine.ImportAfterRow, engine.ImportAfterSealed, engine.ImportAfterBatch, engine.CleanupSetAside,
-		engine.ImportAfterFirstFold, engine.ImportBeforeCleanup, engine.CleanupPartly,
+		engine.ImportBeforeCleanup, engine.CleanupPartly,
 	} {
 		t.Run(stage, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			dir := legacyDirectory(t, filepath.Join(src.root, "archive"), root, src.id)
 			dsn := engine.MigratedDSN(t)
-			bootStoppedAt(t, dsn, root, stage)
+			bootStoppedAt(t, dsn, root, stage, 1)
 			svc, err := bootWith(t, dsn, root, engine.WithArchive(unreachableStore{}))
 			if err != nil {
 				t.Fatalf("the next boot, the archive unreachable: %v", err)
@@ -165,7 +171,7 @@ func TestA0xAdoptionCutShortAtEachStepIsFinishedByTheNextBoot(t *testing.T) {
 			if err != nil || len(segments) < 2 {
 				t.Fatalf("the directory holds %d segment files (%v); the removal cut short needs two", len(segments), err)
 			}
-			bootStoppedAt(t, src.dsn, src.root, stage)
+			bootStoppedAt(t, src.dsn, src.root, stage, 1)
 			svc, err := bootWith(t, src.dsn, src.root, engine.WithArchive(unreachableStore{}))
 			if err != nil {
 				t.Fatalf("the next boot, the archive unreachable: %v", err)
@@ -187,20 +193,38 @@ func TestA0xAdoptionCutShortAtEachStepIsFinishedByTheNextBoot(t *testing.T) {
 func TestARestoreCutShortAtEachStepIsFinishedOrRefusedByTheNextBoot(t *testing.T) {
 	t.Parallel()
 	src := newCrashSource(t)
+	var head int64
+	if err := rawDB(t, src.dsn).QueryRow(`SELECT max(seq) FROM changelog WHERE repository = $1`, src.id).Scan(&head); err != nil {
+		t.Fatal(err)
+	}
+	last := int((head + crashBatch - 1) / crashBatch)
+	if last < 2 {
+		t.Fatalf("the source's %d lines fill %d batch of %d; the cases need a first batch before the last", head, last, crashBatch)
+	}
 	for _, c := range []struct {
+		name           string
 		stage          string
+		nth            int
 		needsTheSource bool
 	}{
-		{engine.ImportAfterRow, true},
-		{engine.ImportAfterSealed, true},
-		{engine.ImportAfterBatch, true},
-		{engine.ImportAfterFirstFold, false},
+		{engine.ImportAfterRow, engine.ImportAfterRow, 1, true},
+		{engine.ImportAfterSealed, engine.ImportAfterSealed, 1, true},
+		{"after the first batch", engine.ImportAfterBatch, 1, true},
+		// Every line is in and nothing is folded: the boundary before the
+		// refold, which needs nothing more of the archive.
+		{"after the last batch", engine.ImportAfterBatch, last, false},
 	} {
-		t.Run(c.stage, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			root := copyRepositoryDir(t, src.root, src.id)
 			dsn := engine.MigratedDSN(t)
-			bootStoppedAt(t, dsn, root, c.stage)
+			bootStoppedAt(t, dsn, root, c.stage, c.nth)
+			if !c.needsTheSource {
+				var lines int64
+				if err := rawDB(t, dsn).QueryRow(`SELECT count(*) FROM changelog WHERE repository = $1`, src.id).Scan(&lines); err != nil || lines != head {
+					t.Fatalf("the stop after the last batch left %d lines of %d (%v)", lines, head, err)
+				}
+			}
 			if c.needsTheSource {
 				if _, err := bootWith(t, dsn, root, engine.WithArchive(unreachableStore{})); !errors.Is(err, engine.ErrImportIncomplete) {
 					t.Fatalf("the next boot, the archive unreachable: %v, want ErrImportIncomplete", err)

@@ -237,7 +237,7 @@ func TestABootWhoseArchiveHangsGoesOn(t *testing.T) {
 
 	root := copyRepositoryDir(t, src.root, src.id)
 	dsn := engine.MigratedDSN(t)
-	bootStoppedAt(t, dsn, root, engine.ImportAfterRow)
+	bootStoppedAt(t, dsn, root, engine.ImportAfterRow, 1)
 	if _, err := bootWithin(t, 30*time.Second, dsn, root,
 		engine.WithArchive(hangingStore{}), engine.WithArchiveTimeouts(300*time.Millisecond, 300*time.Millisecond)); !errors.Is(err, engine.ErrImportIncomplete) {
 		t.Fatalf("a begun restore beside a store that never answers: %v, want ErrImportIncomplete", err)

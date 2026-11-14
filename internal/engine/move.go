@@ -554,6 +554,9 @@ func (t *txn) moveRecords(candidate *vocabulary.Registry, p movesPlanned) (int64
 	if p.empty() {
 		return 0, nil
 	}
+	if err := t.planEveryStatement(); err != nil {
+		return 0, err
+	}
 	prev := t.writeReg
 	t.writeReg = candidate
 	defer func() { t.writeReg = prev }()

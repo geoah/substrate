@@ -1176,15 +1176,28 @@ func (t *txn) asActor(actor substrate.Actor, fn func() error) error {
 }
 
 func (t *txn) query(sqlText string, args ...any) (*sql.Rows, error) {
+	t.replayed(sqlText)
 	return t.tx.QueryContext(t.ctx, sqlText, args...)
 }
 
 func (t *txn) row(sqlText string, args ...any) *sql.Row {
+	t.replayed(sqlText)
 	return t.tx.QueryRowContext(t.ctx, sqlText, args...)
 }
 
 func (t *txn) exec(sqlText string, args ...any) (sql.Result, error) {
+	t.replayed(sqlText)
 	return t.tx.ExecContext(t.ctx, sqlText, args...)
+}
+
+// replayed hands a statement a replay runs to the test seam that lists them
+// (seams.go WithTestReplaySQL).
+func (t *txn) replayed(sqlText string) {
+	if t.replaying {
+		if f := t.ds.svc.testReplaySQL; f != nil {
+			f(sqlText)
+		}
+	}
 }
 
 // --- watch ---

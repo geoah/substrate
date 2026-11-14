@@ -276,7 +276,7 @@ func crashConversion(t *testing.T, src convertSource, stage string) {
 	}
 }
 
-var conversionCrashes = []string{conversionBeforeCommit, conversionAfterCommit, importAfterFirstFold}
+var conversionCrashes = []string{conversionBeforeCommit, conversionAfterCommit}
 
 // The process killed at each durable step of a conversion leaves a state
 // the next boot finishes into the same converted repository.

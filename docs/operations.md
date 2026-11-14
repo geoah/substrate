@@ -1311,10 +1311,12 @@ it trusts:
 
   Every import is one path: the lines past the table's head go in with
   their checksums, the history is converted to this binary's dialect, and
-  the records are rebuilt from the table through `fold.go`. The import
-  writes an `import_progress` row before its first batch of lines commits
-  and deletes it in the transaction that commits the last fold pass. A boot
-  that dies in between leaves the row, and the next boot check resumes the
+  the records are rebuilt from the table through `fold.go`, in two passes
+  that are one transaction: the fold tables are never committed in a state
+  that is not a fold of the whole history under the repository's
+  declarations. The import writes an `import_progress` row before its first
+  batch of lines commits and deletes it in that transaction. A boot that
+  dies in between leaves the row, and the next boot check resumes the
   import from the table's head: no line is inserted twice and nothing is
   appended. Until then an open of the repository refuses. A manifest whose
   `changelogDialect` or `vocabularyDialect` is above the binary's maximum
@@ -1820,8 +1822,17 @@ repository or says it must (`Refolds`): the line after it says either `the
 fold is rebuilt from it next`, and the rebuild replays the history twice, or
 `no line changed, so the fold stands`
 ([conversions](stored-format.md#conversions)). As measured on a test machine,
-not as a promise, over 502,979 lines: a step's walk ran at about 5,900 lines
-a second, and one replay, as `repository rebuild` makes it, at about 1,300.
+not as a promise, over 150,540 lines: the walk of two steps took 43 s, and
+each replay ran at about 1,000 to 1,700 lines a second, the same at its last
+line as at its first, so that start took 283 s. The replay plans every
+statement as it goes, which costs about 18% and is what keeps a line's cost
+flat. A repository an older build left between its two replays has a fold
+table vacuumed first, said before it waits (`vacuuming a fold table whose
+statistics say it is empty before a replay` in the log): 338 ms for 2,784
+pages of `refs` there. Its wait for the table's lock is at most ten minutes;
+a reset that cannot run is the warning `could not vacuum a fold table`,
+naming the table and the command to run once it is free, and the start goes
+on with a replay that may be slow.
 The boot check takes the repositories one after another, and the server
 listens only once it has finished them all, so a long conversion and rebuild
 of one repository holds the start of the whole server and every repository
@@ -2579,7 +2590,11 @@ the exec path needs nothing open at all.
   the fold needs; it does not prove who wrote them
   ([the checksum](changelog.md#the-checksum-and-the-archive)).
 - **`repository rebuild <repository>`** replays the `changelog` table into a
-  fresh fold, in one transaction, under that repository's own lock. It
+  fresh fold, in one transaction, under that repository's own lock. That
+  lock is the changelog's, so every write to the repository waits for the
+  whole rebuild: as measured on a test machine, not as a promise, about 85 s
+  for every 100,000 lines of history, of which about 18% is planning each
+  statement against the tables as they stand. It
   reproduces the fold bit for bit and appends nothing, so it is safe to run on
   a healthy repository, and it is the proof that the history alone reproduces
   the records. The search index (`fts`)
