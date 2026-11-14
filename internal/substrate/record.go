@@ -61,11 +61,11 @@ type Record struct {
 	// because a write that changes nothing leaves a fresh row at 1.
 	Created bool `json:"-"`
 
-	// PropertyMeta is per-property provenance: the manager
-	// the ledger names, when it changed, and the live offers whose value
-	// differs from the stored one. Populated on SINGLE-RECORD reads only —
+	// Marks is each property's mark: whether sync may replace the value,
+	// where it came from, and the live offers whose value differs from the
+	// stored one (decision 0284). Populated on SINGLE-RECORD reads only —
 	// lists and changes never carry it.
-	PropertyMeta map[string]PropertyMeta `json:"propertyMeta,omitempty"`
+	Marks map[string]PropertyMark `json:"marks,omitempty"`
 
 	// LinkedFrom is the source records whose mapping-owned subject slot
 	// points at this one: the mirrors that converged on this subject, one

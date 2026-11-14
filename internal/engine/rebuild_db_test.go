@@ -171,8 +171,8 @@ func writeMappedHistory(t *testing.T, ds substrate.Dataset) {
 	if _, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: personOf(t, ds, s)}); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	// The entry is the latest write, so its nickname takes displayName at the
-	// machine tier. Deleting its account has the sweep collect it, and the
+	// The entry is the latest write, so sync takes its nickname as
+	// displayName. Deleting its account has the sweep collect it, and the
 	// person must end where a delete of the entry would have left it.
 	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: fid("dir-acct"),
@@ -466,7 +466,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 }
 
 // mergedPair is the graph a merge has to carry across: two books, each with
-// its own edges, labels, annotations and manager rows, an edition whose SUBJECT
+// its own edges, labels, annotations and marks, an edition whose SUBJECT
 // edge points at the loser, and a trail from an earlier merge — so the rewrite
 // under test moves something of every kind the side stores hold.
 type mergedPair struct {
@@ -494,7 +494,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: shelf + "/book",
-		// `description` is the winner's gap: its manager row migrates.
+		// `description` is the winner's gap: its mark migrates.
 		Properties:  map[string]any{"title": "Notes on the Engine", "description": "the loser's own"},
 		Labels:      map[string]any{"owner/format": "octavo"},
 		Annotations: map[string]any{"owner/note": "the loser's, newer", "owner/extra": 7},
@@ -814,7 +814,7 @@ func firstTaskID(t *testing.T, ds substrate.Dataset) string {
 // an authority whose first label was `gmail`.
 // THE RETIRED SPELLING (record 0025). A hand that still writes under it links
 // the actor record its spelling derives (decision 0270), never the spelling:
-// the fold replays the link and the tier the entry recorded, and a rebuild
+// the fold replays the link and the mark the entry recorded, and a rebuild
 // reproduces both.
 const retiredActor = substrate.Actor("connector:gmail")
 
@@ -844,18 +844,19 @@ func TestOldActorSpellingSurvivesRebuild(t *testing.T) {
 		t.Fatalf("actor %q is not the substrate's", retiredActor)
 	}
 
-	// It gains no standing from the rename: undeclared and reserved is the
-	// machine tier, which is where it already stood, so recompute may still
-	// replace what it wrote.
-	var actor, tier string
+	// It gains no standing from the rename: the retired spelling is a
+	// package's hand, whose write pins nothing, so recompute may still replace
+	// what it wrote.
+	var setBy string
+	var pinned bool
 	if err := rawDB(t, dsn).QueryRow(`
-		SELECT actor, tier FROM property_managers
+		SELECT set_by, pinned FROM property_marks
 		WHERE record_kind = $1 AND record_id = $2 AND property = 'name'`,
-		task.Kind, task.ID).Scan(&actor, &tier); err != nil {
-		t.Fatalf("read the name manager: %v", err)
+		task.Kind, task.ID).Scan(&setBy, &pinned); err != nil {
+		t.Fatalf("read the name mark: %v", err)
 	}
-	if actor != vocabulary.ActorID(retiredActor) || tier != string(substrate.TierMachine) {
-		t.Fatalf("the manager row is %q at %q, want %q at the machine tier", actor, tier, vocabulary.ActorID(retiredActor))
+	if setBy != vocabulary.ActorID(retiredActor) || pinned {
+		t.Fatalf("the mark is set by %q, pinned %v, want %q and not pinned", setBy, pinned, vocabulary.ActorID(retiredActor))
 	}
 
 	before := foldOf(t, ds)

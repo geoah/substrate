@@ -180,18 +180,14 @@ func (t *txn) mergeRecordIf(winnerRef, loserRef eref, winnerVersion, loserVersio
 	// would be this verb reaching into records it was not asked about, and split
 	// would then have to put every one of them back.
 
-	// Properties do NOT migrate: the winner now has more sources pointing at
-	// it, so recompute rebuilds them through the same yield rules, and a hand
-	// edit on the winner survives its own merge.
-	// Copying values across would freeze a stale answer into the winner.
-	// The loser's MANAGER rows migrate where the winner has none — tier and
-	// all, recorded so split can put them back. Its offer rows go with its
-	// tombstone (afterTombstone, below the entry).
-	movedManagers, err := t.moveManagers(loserRef, winnerRef)
-	if err != nil {
-		return nil, err
-	}
-	moved["managers"] = movedManagers
+	// Properties do NOT migrate, and neither do their marks: the winner now
+	// has more sources pointing at it, so recompute rebuilds what sync
+	// supplied through the same yield rules, and a hand edit on the winner
+	// survives its own merge. A mark stands only beside the value it marks
+	// (decision 0284), so a pin stays with its value on the record it was
+	// pinned on: the loser keeps both on its tombstone, and a split returns
+	// them. Its offer rows go with its tombstone (afterTombstone, below the
+	// entry).
 
 	// Labels: the winner's stand, the loser's fill the gaps. The value goes
 	// into the record too, so split can tell a still-moved label from one
@@ -342,56 +338,61 @@ func (t *txn) openMergeOf(ref eref) (string, error) {
 	return rec, err
 }
 
-// moveManagers copies the loser's property-manager rows onto the winner
-// where the winner has none (the winner's stand), tier included: a bundle
-// pin on the loser is a bundle pin on the winner, and the
-// recorded set says so, so split can take exactly it back. The loser keeps
-// its own rows: its property values stay on the tombstone, and their
-// attribution with them.
-func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
-	rows, err := t.query(`
-		SELECT l.property, l.actor, l.tier, l.principal, l.updated_at FROM property_managers l
-		WHERE l.record_kind = $1 AND l.record_id = $2 AND NOT EXISTS (
-			SELECT 1 FROM property_managers w
-			WHERE w.record_kind = $1 AND w.record_id = $3 AND w.property = l.property)
-		ORDER BY l.property`, loserRef.Kind, loserRef.ID, winnerRef.ID)
+// returnMarks takes back the marks a merge recorded before marks stood only
+// beside their values moved onto the winner: its `managers` list, which the
+// changelog conversion turned into `marks`. Where the winner's mark is still
+// the one moved, it goes; one somebody rewrote since records a write the
+// split must not erase. A merge since moves no mark and records none.
+func (t *txn) returnMarks(winner *erow, migrated []map[string]any) error {
+	if winner == nil || len(migrated) == 0 {
+		return nil
+	}
+	current, err := t.marksOf(winner.ref())
 	if err != nil {
-		return nil, err
+		return err
 	}
-	type mrow struct {
-		property, actor, tier, principal string
-		updatedAt                        time.Time
-	}
-	var migrate []mrow
-	for rows.Next() {
-		var m mrow
-		if err := rows.Scan(&m.property, &m.actor, &m.tier, &m.principal, &m.updatedAt); err != nil {
-			_ = rows.Close()
-			return nil, err
+	for _, rec := range migrated {
+		property, m, timed := movedMark(rec)
+		cur, ok := current[property]
+		if property == "" || !ok {
+			continue
 		}
-		migrate = append(migrate, m)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	var out []map[string]any
-	for _, m := range migrate {
-		if _, err := t.exec(`
-			INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (repository, record_kind, record_id, property) DO NOTHING`,
-			winnerRef.Kind, winnerRef.ID, m.property, m.actor, m.tier, m.principal, m.updatedAt); err != nil {
-			return nil, err
+		if !timed {
+			m.SetAt = cur.SetAt
 		}
-		// The token travels with the actor and the tier: a later write by
-		// another token moves the row without moving either of those, and the
-		// split must be able to tell that row from the one it migrated.
-		out = append(out, map[string]any{
-			"property": m.property, "actor": m.actor, "tier": m.tier, "token": m.principal,
-		})
+		if !cur.equal(m) {
+			continue
+		}
+		if err := t.unmark(winner.ref(), property); err != nil {
+			return err
+		}
 	}
-	return out, nil
+	return nil
+}
+
+// movedMark reads one migrated mark back from a merge's payload. A mark a
+// conversion carried over from an old history line names no time, and any time
+// matches it.
+func movedMark(rec map[string]any) (property string, m mark, timed bool) {
+	property, _ = rec["property"].(string)
+	m.Pinned, _ = rec["pinned"].(bool)
+	m.SetBy, _ = rec["setBy"].(string)
+	m.OnBehalfOf, _ = rec["onBehalfOf"].(string)
+	switch v := rec["derivedFrom"].(type) {
+	case []string:
+		m.DerivedFrom = v
+	default:
+		m.DerivedFrom = stringsOf(v)
+	}
+	if len(m.DerivedFrom) == 0 {
+		m.DerivedFrom = nil
+	}
+	if at, ok := rec["setAt"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339Nano, at); err == nil {
+			m.SetAt, timed = parsed.UTC(), true
+		}
+	}
+	return property, m, timed
 }
 
 // moveAnnotations resolves colliding keys newest-wins. all records every one
@@ -566,34 +567,14 @@ func (t *txn) splitIf(mergeID string, ifVersion *int64) (*substrate.Record, erro
 			return nil, err
 		}
 	}
-	// The manager rows the merge migrated go back too — only where they
-	// still name the migrated actor, tier AND token, because a row somebody
-	// has since claimed records a write the split must not erase. A merge
-	// record written before the token was recorded carries no such key, and
-	// the empty string is the right match for it: migration 0006 stamped
-	// exactly that on every row it found, so a row that names anything else
-	// was written by a token after the upgrade.
-	for _, m := range mapsOf(moved["managers"]) {
-		property, _ := m["property"].(string)
-		actor, _ := m["actor"].(string)
-		tier, _ := m["tier"].(string)
-		principal, _ := m["token"].(string)
-		if property == "" || actor == "" || tier == "" {
-			continue
-		}
-		if _, err := t.exec(`
-			DELETE FROM property_managers
-			WHERE record_kind = $1 AND record_id = $2 AND property = $3
-			  AND actor = $4 AND tier = $5 AND principal = $6`,
-			winnerRef.Kind, winnerID, property, actor, tier, principal); err != nil {
-			return nil, err
-		}
-	}
 	winner, err := t.loadRow(winnerRef, true)
 	if err != nil {
 		return nil, err
 	}
 	winnerBefore := winner.clone()
+	if err := t.returnMarks(winner, mapsOf(moved["marks"])); err != nil {
+		return nil, err
+	}
 	// A split reverts the merge, not everything that happened after it: a
 	// key whose current value is no longer the one the merge moved was
 	// rewritten by its owner since, and that write stands.

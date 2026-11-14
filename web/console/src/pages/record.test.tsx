@@ -30,6 +30,7 @@ vi.mock("@/hooks/use-live-invalidation", () => ({
 }))
 
 import { RecordDocument } from "./record"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 afterEach(() => {
   cleanup()
@@ -186,9 +187,9 @@ it("shows who wrote an adapter's output and offers no edit, only how to correct 
       ...RUN.properties,
       origin: { ref: "vendor.example.com/mirror/session/abc" },
     },
-    propertyMeta: {
-      sport: { manager: sync, tier: "machine" },
-      coach: { manager: sync, tier: "machine" },
+    marks: {
+      sport: { setBy: actorLink(sync) },
+      coach: { setBy: actorLink(sync) },
     },
   }
   mount([], imported)
@@ -225,9 +226,9 @@ function adapterRun(provenance: Record<string, unknown>): SubstrateRecord {
   return {
     ...RUN,
     properties: { ...RUN.properties, ...provenance },
-    propertyMeta: {
-      sport: { manager: IMPORTER, tier: "machine" },
-      coach: { manager: IMPORTER, tier: "machine" },
+    marks: {
+      sport: { setBy: actorLink(IMPORTER) },
+      coach: { setBy: actorLink(IMPORTER) },
     },
   }
 }

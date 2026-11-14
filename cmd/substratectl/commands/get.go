@@ -54,8 +54,7 @@ is the reverse read: only the records of this kind that point at that one.
 Repeat it to read the records pointing at any of several targets in one list,
 each record once.
 --orphaned lists the mapping targets the engine marked: rows minted from a
-source that is now gone, with nothing above the machine tier holding a
-property on them. --ambiguous lists the mapping sources the engine marked: rows
+source that is now gone, with nothing on them pinned. --ambiguous lists the mapping sources the engine marked: rows
 left unlinked because a probe found several candidates.
 
 A list with more rows than --limit prints "more results available; next
@@ -193,7 +192,7 @@ func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output
 	}
 	switch output {
 	case "", "yaml":
-		// A single read is the one place `propertyMeta` is on the wire, so it
+		// A single read is the one place `marks` is on the wire, so it
 		// is the one place `status.properties` is in the document.
 		b, err := marshalDocument(documentOf(e, meta))
 		if err != nil {

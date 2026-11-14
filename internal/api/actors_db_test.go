@@ -374,16 +374,17 @@ func TestNoHistoryLineChangeEventOrStoredValueHoldsAnActorAsText(t *testing.T) {
 		link(fmt.Sprintf("change %d onBehalfOf", c.Seq), c.OnBehalfOf)
 	}
 
-	// The stored attributions: each property's manager, a package's
-	// declarer, a blob's creator.
+	// The stored attributions: each property's mark, a package's declarer,
+	// a blob's creator.
 	for _, read := range []struct{ kind, id string }{
 		{personKind, w.person}, {personKind, w.app},
 	} {
 		got := w.get(t, read.kind, read.id)
-		for name, meta := range got.PropertyMeta {
-			link(read.id+"."+name+" manager", meta.Manager)
-			for _, alt := range meta.Alternatives {
-				link(read.id+"."+name+" alternative", alt.Actor)
+		for name, m := range got.Marks {
+			for what, l := range map[string]*substrate.RecordLink{"setBy": m.SetBy, "onBehalfOf": m.OnBehalfOf} {
+				if l != nil {
+					link(read.id+"."+name+" "+what, strings.TrimPrefix(l.Ref, corePackage+"/actor/"))
+				}
 			}
 		}
 	}

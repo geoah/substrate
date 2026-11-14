@@ -120,13 +120,45 @@ func TestDeletingTheLastSourceMarksTheTargetOrphaned(t *testing.T) {
 	}
 }
 
-// A HAND HELD ONE PROPERTY, so the record is not a husk. The mark needs every
-// property_managers row at the machine tier: an owner's edit (or a bundle's
-// direct write, which pins the same way) is the record's own content, not a
-// projection of a source that has gone. This is the strict reading of the
-// third condition, and the reason the 2,727 task husks carrying a bundle-tier
-// `externalId` are not marked (decision 0092).
-func TestAPropertyHeldAboveTheMachineTierIsNotAnOrphan(t *testing.T) {
+// A PIN ON A STRANDED RECORD ENDS ITS ORPHAN MARK at once: the pinned value
+// is the record's own content from then on, as if the hand had written it
+// (decisions 0092, 0284).
+func TestPinningAStrandedValueClearsTheOrphanMark(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	installPeopleSources(t, ds)
+	contact := syncSource(t, ds, people, typeGoogleContact, fid("google:c1"), map[string]any{
+		"name":   aname("Alex Example"),
+		"emails": []any{map[string]any{"value": "alex@example.com", "primary": true}},
+	})
+	pid := personOf(t, ds, contact)
+	// The engine's own hand writes a value no mapping supplies and pins
+	// nothing, so it outlives the source unpinned.
+	if _, err := ds.Patch(ctx, substrate.ActorSystem, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "they/them"}}); err != nil {
+		t.Fatalf("write pronouns: %v", err)
+	}
+	if _, err := ds.Delete(ctx, people, typeGoogleContact, contact.ID, substrate.DeleteInput{}); err != nil {
+		t.Fatalf("delete the contact: %v", err)
+	}
+	if !holdsID(orphans(t, ds, typePerson), pid) {
+		t.Fatal("the stranded person is not marked, so the test would prove nothing")
+	}
+	if _, err := ds.Pin(ctx, owner, typePerson, pid, substrate.MarkInput{Properties: []string{"pronouns"}}); err != nil {
+		t.Fatalf("pin pronouns: %v", err)
+	}
+	if holdsID(orphans(t, ds, typePerson), pid) || !holdsID(unorphaned(t, ds, typePerson), pid) {
+		t.Fatal("the pinned person is still marked orphaned")
+	}
+}
+
+// A HAND PINNED ONE PROPERTY, so the record is not a husk. The orphan mark
+// needs no pinned property: an owner's edit (or a function's direct write,
+// which pins the same way) is the record's own content, not a projection of
+// a source that has gone. This is the strict reading of the third condition,
+// and the reason the 2,727 task husks carrying a function's `externalId` are
+// not marked (decisions 0092, 0284).
+func TestAPinnedPropertyIsNotAnOrphan(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -148,14 +180,14 @@ func TestAPropertyHeldAboveTheMachineTierIsNotAnOrphan(t *testing.T) {
 		t.Fatalf("marked %v: a person the owner edited is not a husk", got)
 	}
 
-	// Giving the property back — the documented release, a null patch — makes
-	// the record a husk again, and the next mark reads it as one.
+	// Clearing the pinned property makes the record a husk again, and the
+	// next mark reads it as one.
 	mustPatch(t, ds, owner, typePerson, pid, substrate.PatchInput{
 		Properties: map[string]any{"pronouns": nil},
 	})
 	marked := orphans(t, ds, typePerson)
 	if len(marked) != 1 || marked[0].ID != pid {
-		t.Fatalf("marked %v, want %s once the owner's hold was released", marked, pid)
+		t.Fatalf("marked %v, want %s once the owner's pin was cleared", marked, pid)
 	}
 }
 

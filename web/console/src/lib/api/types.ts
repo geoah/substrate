@@ -128,8 +128,8 @@ export class ApiError extends Error {
 }
 
 /** One record as every read serves it (`substrate.Record`). Everything authored
- * lives in `properties` (title/state included); `propertyMeta` arrives only on
- * a single-record read.
+ * lives in `properties` (title/state included); `marks` arrives only on a
+ * single-record read.
  *
  * NAME NOTE: the server calls this `Record`; TypeScript already owns that name
  * for its `Record<K, V>` utility type, and shadowing it here would poison every
@@ -157,7 +157,8 @@ export interface SubstrateRecord {
   finalizers?: string[]
   /** The ids this record used to live under, left by merges and server-set. */
   formerIds?: string[]
-  propertyMeta?: Record<string, PropertyMeta>
+  /** Each property's mark (decision 0284). */
+  marks?: Record<string, PropertyMark>
   /** The source records whose mapping-owned subject slot points at this one,
    * ordered by kind then id. Arrives only on a single-record read, and is
    * ABSENT — never an empty array — on a kind no recordmapping targets, so
@@ -222,29 +223,46 @@ export function readReference(
   return { path, properties }
 }
 
-/** One property's provenance (`substrate.PropertyMeta`). Every field is
- * omitted at its zero value, so a row with no recorded manager carries
- * neither `manager` nor `updatedAt`. */
-export interface PropertyMeta {
-  manager?: string
-  /** The manager's standing against recompute: `machine` may be replaced,
-   * `owner` and `bundle` hold. Absent on rows written before the tiers. */
-  tier?: "owner" | "bundle" | "machine"
-  updatedAt?: string
-  /** The source record (`<kind>/<id>`) a machine-held value was read from,
-   * present only where the manager's own offer backs the stored value
-   * (decision 0094). A hand edit and a bundle pin carry none. */
-  source?: string
+/** One record, linked the way a stored reference links it
+ * (`substrate.RecordLink`). */
+export interface RecordLink {
+  ref: string
+}
+
+/** One property's mark (`substrate.PropertyMark`, decision 0284): whether
+ * sync leaves the value alone, and where it came from. Every field is
+ * omitted at its zero value. */
+export interface PropertyMark {
+  /** Sync leaves the value alone. Stored when the value was written: a
+   * person's, an app's, a function's and an agent's direct write pins. */
+  pinned?: boolean
+  /** The actor record that wrote the value directly; absent on a value sync
+   * wrote. */
+  setBy?: RecordLink
+  /** The actor record `setBy` acted for, where it acted for one. */
+  onBehalfOf?: RecordLink
+  /** The source records whose offers back the value. */
+  derivedFrom?: RecordLink[]
+  /** When the value was set. */
+  setAt?: string
   alternatives?: PropertyAlternative[]
 }
 
+/** What one live source record offers where it differs from the stored
+ * value (`substrate.PropertyAlternative`). */
 export interface PropertyAlternative {
-  actor: string
+  /** The source record the offer is read from; absent only where the read's
+   * grant hides that record's kind. */
+  derivedFrom?: RecordLink
   value: unknown
+  /** The source record's last change. */
   updatedAt: string
-  /** The source record the offer was read from; absent on a row derived
-   * before the server recorded it. */
-  source?: string
+}
+
+/** The pin and release body (`substrate.MarkInput`). */
+export interface MarkInput {
+  properties: string[]
+  ifVersion?: number
 }
 
 /** The create/upsert write body (`substrate.PutInput`). `kind` is the full

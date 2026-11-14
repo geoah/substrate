@@ -72,11 +72,11 @@ func TestPurgeRecomputesTheSubjectOfAnOldTombstone(t *testing.T) {
 	var rows int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT (SELECT count(*) FROM property_offers WHERE record_kind = $1 AND record_id = $2)
-		     + (SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'name')`,
+		     + (SELECT count(*) FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'name')`,
 		sam.Kind, sam.ID).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
 	if rows != 0 {
-		t.Fatalf("%d offer or manager rows survive the purge of their source", rows)
+		t.Fatalf("%d offers or marks survive the purge of their source", rows)
 	}
 }

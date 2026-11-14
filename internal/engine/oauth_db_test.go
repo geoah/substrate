@@ -1392,7 +1392,7 @@ func TestOAuthFirstConnectRequestsNoSync(t *testing.T) {
 // before and is failing asks for a sync, so the run that says whether the new
 // grant works happens now. The request, the new status and the cleared error
 // pair are ONE changelog entry, the facility's, so a record trigger sees them
-// together; each property's manager row stands at its writer's tier.
+// together; each property's mark names the facility as the hand that set it.
 func TestOAuthReconnectRequestsASync(t *testing.T) {
 	t.Parallel()
 	svc, ds, p, account := installSyncOAuthBundle(t)
@@ -1441,12 +1441,12 @@ func TestOAuthReconnectRequestsASync(t *testing.T) {
 	if started := propTime(t, got, "lastSyncStartedAt"); !requested.After(started) {
 		t.Errorf("syncRequestedAt %s is not after the failed run's start %s", requested, started)
 	}
-	// The facility is the system's hand (decision 0270).
-	if m := got.PropertyMeta["syncRequestedAt"]; m.Manager != vocabulary.ActorID(substrate.ActorSystem) || m.Tier != substrate.TierOwner {
-		t.Errorf("syncRequestedAt manager = %+v, want the facility at the owner tier", m)
-	}
-	if m := got.PropertyMeta["tokenStatus"]; m.Manager != vocabulary.ActorID(substrate.ActorSystem) || m.Tier != substrate.TierMachine {
-		t.Errorf("tokenStatus manager = %+v, want the facility at the machine tier", m)
+	// The facility is the system's hand (decision 0270), and the engine's
+	// write pins nothing (decision 0284).
+	for _, name := range []string{"syncRequestedAt", "tokenStatus"} {
+		if m := got.Marks[name]; markSetBy(m) != vocabulary.ActorID(substrate.ActorSystem) || m.Pinned {
+			t.Errorf("%s mark = %+v, want set by the facility and not pinned", name, m)
+		}
 	}
 }
 

@@ -34,31 +34,29 @@ import (
 //     subject slot — counted over every id the target has ever had, because a
 //     source synced before its subject won a merge still names the loser
 //     (subjectSourceSites).
-//  3. NOTHING ABOVE THE MACHINE TIER HOLDS A PROPERTY. Every
-//     property_managers row on the record holds at `machine`, or there are
-//     none at all. A row at the bundle or the owner tier is a hand — a
-//     human's or installed code's — and a hand's write is the record's own
-//     content, not a projection of a source that has gone. A row holds at
-//     the tier its write stored: record 0113 let a declaration move it, and
-//     no declaration names an actor now (decision 0270).
+//  3. NOTHING IS PINNED. No property's mark on the record is pinned. A
+//     pinned value is a hand's — a person's, an app's or installed code's —
+//     and a hand's write is the record's own content, not a projection of a
+//     source that has gone. Pinned is stored when the value is written
+//     (decision 0284), so nothing later moves it but a pin or a release.
 //
 // Condition 3 is the judgement call, and it is deliberately the strict
-// reading. The other candidate was "nothing above machine that a LIVE bundle
-// wrote", which would mark a husk carrying a property some uninstalled
-// bundle's function once pinned. It is rejected twice over: a bundle's direct
-// write "pins like an owner edit" (substrate.Tier), so making it collectable
-// under some conditions makes the tier's meaning conditional; and it would
-// turn an uninstall into a retroactive delete of records the bundle merely
-// touched, which is the class of surprise decision 0096 refuses when it
-// declines to clear subject links on an uninstall. The cost is stated and
-// accepted: a husk one bundle-tier write landed on is not marked, and the way
-// to give it back to the machine is the documented one — null-patch the
-// pinned property, which releases it (docs/projection.md).
+// reading. The other candidate was "nothing pinned by a LIVE package", which
+// would mark a husk carrying a property some uninstalled package's function
+// once pinned. It is rejected twice over: a function's direct write pins like
+// a person's edit, so making it collectable under some conditions makes
+// `pinned` mean something conditional; and it would turn an uninstall into a
+// retroactive delete of records the package merely touched, which is the
+// class of surprise decision 0096 refuses when it declines to clear subject
+// links on an uninstall. The cost is stated and accepted: a husk one
+// function's write landed on is not marked, and the way to give it back to
+// sync is the documented one — release the pinned property
+// (docs/projection.md).
 
 // syncOrphaned sets or clears a target's orphan mark. It runs at the end of
 // every recompute and after every direct write onto a mapped kind, because
 // both halves of the condition move: a source leaves the live set, or a hand
-// takes a property above the machine tier.
+// pins a property.
 //
 // The UPDATE touches the derived column alone — no version, no updated_at, no
 // changelog entry — for the same reason `fts` does (fold.go reprojectFTS):
@@ -82,8 +80,8 @@ func (t *txn) syncOrphaned(target eref) error {
 }
 
 // isOrphan answers the three conditions above, cheapest first: the registry
-// decides whether the kind can orphan at all, the record's manager rows
-// decide whether a hand holds anything, and only then is the source join run.
+// decides whether the kind can orphan at all, the record's marks decide
+// whether a hand pinned anything, and only then is the source join run.
 func (t *txn) isOrphan(target eref) (bool, error) {
 	row, err := t.loadRow(target, false)
 	if err != nil || row == nil || row.DeletedAt != nil {
@@ -93,15 +91,12 @@ func (t *txn) isOrphan(target eref) (bool, error) {
 	if len(mappings) == 0 {
 		return false, nil
 	}
-	// Read through managersOf, not a tier column filter: a row stored above
-	// the machine tier whose actor is now declared at it holds at the
-	// machine tier (record 0113), here as in the yield.
-	managers, err := t.managersOf(target)
+	marks, err := t.marksOf(target)
 	if err != nil {
 		return false, err
 	}
-	for _, m := range managers {
-		if m.tier != substrate.TierMachine {
+	for _, m := range marks {
+		if m.Pinned {
 			return false, nil
 		}
 	}

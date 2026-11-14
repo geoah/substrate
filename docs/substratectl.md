@@ -145,8 +145,8 @@ several in one read, each record once
 (`--referencing <kind>/<id> --referencing <kind>/<id>` sends
 `referencing.refs`). `--orphaned` lists the
 [orphaned mapping targets](projection.md#when-the-last-source-goes-the-orphan-mark)
-of that kind — rows minted from a source that is now gone, with nothing above
-the machine tier holding a property (`--orphaned=false` is the complement).
+of that kind — rows minted from a source that is now gone, with nothing on
+them pinned (`--orphaned=false` is the complement).
 `--ambiguous` lists the
 [ambiguous mapping sources](projection.md#when-a-probe-finds-several-candidates-onambiguous)
 of that kind, rows a probe with several candidates left unlinked
@@ -345,6 +345,14 @@ the declared one. Nothing drops an entry by it yet.
   [transitions](data-model.md#validation-and-state-machines) (apply cannot
   move a state), `--prop` for properties, `--label` for labels, and `-p` for a
   raw JSON patch, where a null value deletes a key.
+- `pin <kind> <id> <property>...` keeps the named properties' values against
+  sync, and `release <kind> <id> <property>...` hands them back to it, which
+  picks each value again among what its source records offer. A write by a
+  person, an app, a function or an agent pins what it writes already, so
+  `pin` is for a value sync wrote. Both work on a required property, both are
+  recorded in the record's history, and `get -o yaml` shows each property's
+  mark under `status.properties`
+  ([projection](projection.md#where-a-value-came-from-the-marks)).
 - `delete <kind> <id>` tombstones; hard deletion waits on finalizers.
   `--purge` collects the record now, so the next `apply` at the id is a fresh
   record rather than a restore of the tombstone

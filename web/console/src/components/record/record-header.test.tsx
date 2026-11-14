@@ -52,6 +52,7 @@ import {
 } from "@/hooks/use-console-preferences"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 beforeEach(() => seedActors())
 
@@ -82,9 +83,9 @@ const rec = (over: Partial<SubstrateRecord> = {}): SubstrateRecord => ({
   version: 3,
   createdAt: "2026-09-01T00:00:00Z",
   updatedAt: "2026-09-01T00:00:00Z",
-  propertyMeta: {
-    name: { manager: "act-person", tier: "owner" },
-    location: { manager: "act-person", tier: "owner" },
+  marks: {
+    name: { pinned: true, setBy: actorLink("act-person") },
+    location: { pinned: true, setBy: actorLink("act-person") },
   },
   ...over,
 })
@@ -152,11 +153,10 @@ describe("RecordHeader meta line", () => {
   it("says nothing of the kind when a provider holds a value", () => {
     renderHeader(
       rec({
-        propertyMeta: {
-          name: { manager: "act-person", tier: "owner" },
+        marks: {
+          name: { pinned: true, setBy: actorLink("act-person") },
           location: {
-            manager: "act-fn-google-sync",
-            tier: "machine",
+            setBy: actorLink("act-fn-google-sync"),
           },
         },
       })

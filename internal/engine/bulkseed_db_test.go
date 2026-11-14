@@ -356,7 +356,7 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 		// where the faulted one never committed.
 		reseeds bool
 	}{
-		{stage: engine.BulkAfterManagers, bulk: true, reseeds: true},
+		{stage: engine.BulkAfterMarks, bulk: true, reseeds: true},
 		{stage: engine.CommitBeforeCommit, reseeds: true},
 		{stage: engine.CommitAfterCommit, reseeds: false},
 	} {
@@ -401,7 +401,7 @@ func TestAFaultAroundTheOpensBulkSeedIsRecovered(t *testing.T) {
 			if report := mustVerify(t, svc, repo); !report.OK {
 				t.Fatalf("after the fault at %s: %+v", c.stage, report)
 			}
-			if c.stage == engine.BulkAfterManagers {
+			if c.stage == engine.BulkAfterMarks {
 				// A refused write ends nothing: the archive stands as the
 				// table does, and neither holds a unit.
 				filesAgree(t, svc, repo, "after the fault in the flush")

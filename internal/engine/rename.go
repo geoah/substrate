@@ -10,8 +10,8 @@ package engine
 // where a rename composes with a backfill and a remap on the same record; this
 // file holds what travels with a renamed value.
 //
-// The property's manager row moves with its actor, tier, principal and stamp,
-// because the rename changes where a value sits and not who last wrote it; the
+// The property's mark moves whole, because the rename changes where a value
+// sits and not who wrote it, whether it is pinned or what it came from; the
 // offer rows and the embeddings rows are rekeyed, because both are keyed by
 // property and describe the same value; the old name's queue row is dropped
 // and the new name enqueued where it declares `embed`, so a worker mid-flight
@@ -19,35 +19,23 @@ package engine
 // store is keyed by record, so a secret's opaque ref moves as any other value
 // does.
 
-import (
-	"database/sql"
-	"errors"
-	"time"
-)
-
-// moveManager moves one property's manager row to the new name with its actor,
-// tier, principal and stamp: who last had a change accepted on the value, and
-// when, did not change; only the value's name did. A property nobody manages
-// moves nothing.
-func (t *txn) moveManager(ref eref, from, to string) error {
-	var actor, tier, principal string
-	var updatedAt time.Time
-	err := t.row(`SELECT actor, tier, principal, updated_at FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
-		ref.Kind, ref.ID, from).Scan(&actor, &tier, &principal, &updatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
+// moveMark moves one property's mark to the new name, whole: who wrote the
+// value, whether it is pinned, what it came from and when it was set did not
+// change; only the value's name did. A property that carries no mark moves
+// nothing.
+func (t *txn) moveMark(ref eref, from, to string) error {
+	marks, err := t.marksOf(ref)
 	if err != nil {
 		return err
 	}
-	if _, err := t.fold(foldOp{
-		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
-		Property: to, Actor: actor, Tier: tier, Token: principal,
-		UpdatedAt: &updatedAt,
-	}); err != nil {
+	m, ok := marks[from]
+	if !ok {
+		return nil
+	}
+	if err := t.setMark(ref, to, m); err != nil {
 		return err
 	}
-	return t.deleteManager(ref, from)
+	return t.unmark(ref, from)
 }
 
 // moveEmbeddings rekeys one property's vectors and queue. The vectors are of

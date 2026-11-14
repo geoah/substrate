@@ -726,7 +726,7 @@ package afterwards is not enough on its own: add that sample again
 transitions, never through a mapping
 ([0040](decisions/0040-the-four-occurrence-logs-say-done.md)), so the task the
 mapping mints starts `open` and every move after that is yours. `name` and
-`url` recompute at the machine tier, so retyping the heading keeps it and
+`url` are sync's until you pin them, so retyping the heading keeps it and
 Linear's next title lands only where you have not.
 
 **Setting it up takes two records and no consent step.** Mint a personal API

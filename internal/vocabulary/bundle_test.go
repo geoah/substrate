@@ -104,7 +104,7 @@ func TestAPackageNameIsOneWord(t *testing.T) {
 
 // Two authorities may publish a package of one name. An install writes under
 // `bundle:<authority>:<package>` (records 0025 and 0047), so the two are two
-// writers: two attributions, two sets of manager rows, and neither one's writes
+// writers: two attributions, two sets of marks, and neither one's writes
 // read as the other's trigger echo.
 func TestTwoAuthoritiesMayShareAPackageName(t *testing.T) {
 	one := "samples.substrate.reamde.dev/llm"

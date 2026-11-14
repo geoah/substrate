@@ -14,6 +14,7 @@ import {
   validateApplyDoc,
 } from "./record-yaml"
 import { SHIPPED_UNITS } from "@/lib/unit-graph.test-fixtures"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 /** An agent-like kind: the schema-driven template must cover it with no
  * kind-special-casing. Published by somebody else's authority on purpose, so
@@ -354,8 +355,8 @@ describe("applyManifestYAML (edit seed)", () => {
     version: 4,
     createdAt: "2026-08-05T16:26:27.161544Z",
     updatedAt: "2026-08-06T10:00:00.000000Z",
-    propertyMeta: {
-      prompt: { manager: "owner", tier: "owner", updatedAt: "x" },
+    marks: {
+      prompt: { pinned: true, setBy: actorLink("owner"), setAt: "x" },
     },
   }
 
@@ -373,9 +374,9 @@ describe("applyManifestYAML (edit seed)", () => {
     expect(doc.data.properties.uses).toEqual([
       "substrate.reamde.dev/core/function/gcal.fn",
     ])
-    // status / propertyMeta / version never seed the editor.
+    // status / marks / version never seed the editor.
     expect(doc).not.toHaveProperty("status")
-    expect(yaml).not.toContain("propertyMeta")
+    expect(yaml).not.toContain("marks")
     expect(yaml).not.toContain("version")
   })
 

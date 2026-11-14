@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -67,6 +69,13 @@ var keptConversions = map[int]keptConversion{
 	4: {why: "move_body_into_properties (decision 0273) moves a record delta's body into set, and a cleared one into del; " +
 		"a release served a record's body among its properties already, so no record it served changes here, and a body " +
 		"no declaration served is dropped by repository migration 11 after the head, which the appended entries explain"},
+	5: {
+		why: "marks (decision 0284) rewrites each manager row into the property's mark: an owner or bundle tier pins " +
+			"and keeps its hand as setBy, a machine tier pins nothing and keeps its hand only where the row was its own " +
+			"direct write, every mark keeps the row's time as setAt, an alternative names its source as derivedFrom, " +
+			"a split's kept result holds marks where it held manager rows, and a package's actors, which link_actors took out, keeps no mark",
+		record: keptMarks,
+	},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.
@@ -195,9 +204,9 @@ var keptPerson = vocabulary.ActorID(substrate.ActorPerson)
 const keptConvertedActor = "api.converted"
 
 // keptRespellAPIActor is a conversion step no release carries: it respells
-// the person's actor id as keptConvertedActor, on the line, in each effect that
-// names it, and in each manager row a resync re-states, and leaves a line
-// already respelled as it is.
+// the person's actor id as keptConvertedActor, on the line, in each mark that
+// names it as setBy, and in each mark row a resync re-states, and leaves a
+// line already respelled as it is.
 func keptRespellAPIActor(e *changelogfile.Entry) error {
 	if e.Actor == keptPerson {
 		e.Actor = keptConvertedActor
@@ -210,8 +219,8 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 	}
 	effects, _ := p["fold"].([]any)
 	respell := func(m map[string]any) {
-		if m["actor"] == keptPerson {
-			m["actor"] = keptConvertedActor
+		if m["setBy"] == keptPerson {
+			m["setBy"] = keptConvertedActor
 		}
 	}
 	for _, raw := range effects {
@@ -221,8 +230,8 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 		}
 		respell(eff)
 		rows, _ := eff["rows"].(map[string]any)
-		managers, _ := rows["managers"].([]any)
-		for _, row := range managers {
+		marks, _ := rows["marks"].([]any)
+		for _, row := range marks {
 			if m, ok := row.(map[string]any); ok {
 				respell(m)
 			}
@@ -236,14 +245,15 @@ func keptRespellAPIActor(e *changelogfile.Entry) error {
 	return nil
 }
 
-// keptRespelledManagers is what keptRespellAPIActor does to a record a
-// release served, written from the step: every property the person's actor
-// id managed is managed by keptConvertedActor, and nothing else moves.
-func keptRespelledManagers(rec map[string]any) map[string]any {
-	meta, _ := rec["propertyMeta"].(map[string]any)
-	for _, row := range meta {
-		if m, ok := row.(map[string]any); ok && m["manager"] == keptPerson {
-			m["manager"] = keptConvertedActor
+// keptRespelledMarks is what keptRespellAPIActor does to a record a release
+// served, written from the step: every property the person's actor id set is
+// set by keptConvertedActor, and nothing else moves.
+func keptRespelledMarks(rec map[string]any) map[string]any {
+	marks, _ := rec["marks"].(map[string]any)
+	was := map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), keptPerson)}
+	for _, row := range marks {
+		if m, ok := row.(map[string]any); ok && reflect.DeepEqual(m["setBy"], was) {
+			m["setBy"] = map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), keptConvertedActor)}
 		}
 	}
 	return rec
@@ -257,8 +267,8 @@ func TestAKeptDirectoryComparesThroughAConversion(t *testing.T) {
 	dir := filepath.Join(keptRoot, "v0.123.1")
 	chain := maps.Clone(keptConversions)
 	chain[engine.MaxChangelogDialect()+1] = keptConversion{
-		why:    "the person's actor id is respelled on every line, so every property it managed is managed by api.converted",
-		record: keptRespelledManagers,
+		why:    "the person's actor id is respelled on every line, so every property it set is set by api.converted",
+		record: keptRespelledMarks,
 	}
 	k := checkKeptDirectory(t, dir, chain, testenv.WithEngineOptions(engine.WithTestConversionStep("respell_the_api_actor", keptRespellAPIActor)))
 
@@ -275,14 +285,14 @@ func TestAKeptDirectoryComparesThroughAConversion(t *testing.T) {
 			continue
 		}
 		differ++
-		if !strings.Contains(d, ".manager:") || !strings.Contains(d, keptConvertedActor) {
+		if !strings.Contains(d, ".setBy") || !strings.Contains(d, keptConvertedActor) {
 			t.Errorf("%s differs where the step did not write: %s", rel.Path, d)
 		}
 	}
 	if differ == 0 {
 		t.Fatal("without the step's entry no record differs: the comparison would not see a conversion")
 	}
-	t.Logf("without the step's entry, %d record(s) differ, each at a manager the step respelled", differ)
+	t.Logf("without the step's entry, %d record(s) differ, each at a mark the step respelled", differ)
 }
 
 // Each of keptMaterial's checks fails on a copy of the kept directory whose
@@ -490,4 +500,248 @@ func keptActorLink(spelled any) any {
 		return spelled
 	}
 	return map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), id)}
+}
+
+// keptMarks is the marks step on a record a release served, written from the
+// step (internal/engine/conversion_0005_marks.go, its header's rules), after
+// link_actors made each hand an id. A row the release served at the machine
+// tier was either its hand's own direct write or a recompute crediting a
+// source's writer, and a recompute's row named the source its value came
+// from: the step keeps the hand of the first and not of the second. No
+// converted mark names a derivedFrom, and none names onBehalfOf but an app's
+// own direct write's, which a served record does not show: the kept
+// directories hold no write of an app.
+func keptMarks(rec map[string]any) map[string]any {
+	meta, _ := rec["propertyMeta"].(map[string]any)
+	delete(rec, "propertyMeta")
+	marks := map[string]any{}
+	for name, raw := range meta {
+		row, _ := raw.(map[string]any)
+		if row == nil {
+			continue
+		}
+		// The release served a package's `actors` with the manager row its
+		// write left on it. Step 3 takes the list out of every package line
+		// and step 5 the row with it (takenOutBelow), so no mark stands on a
+		// value no record holds.
+		if rec["kind"] == vocabulary.CoreKind("package") && name == "actors" {
+			continue
+		}
+		m := map[string]any{}
+		_, recomputed := row["source"]
+		if pinned := row["tier"] != string(substrate.TierMachine); pinned || !recomputed {
+			if pinned {
+				m["pinned"] = true
+			}
+			if id, _ := row["manager"].(string); id != "" {
+				m["setBy"] = map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(vocabulary.CoreKind(vocabulary.DocActor), id)}
+			}
+		}
+		if at, ok := row["updatedAt"]; ok {
+			m["setAt"] = at
+		}
+		if alts, ok := row["alternatives"].([]any); ok {
+			var out []any
+			for _, a := range alts {
+				am, _ := a.(map[string]any)
+				if am == nil {
+					continue
+				}
+				alt := map[string]any{"value": am["value"], "updatedAt": am["updatedAt"]}
+				if src, ok := am["source"].(string); ok && src != "" {
+					alt["derivedFrom"] = map[string]any{vocabulary.ReferenceValueKey: src}
+				}
+				out = append(out, alt)
+			}
+			m["alternatives"] = out
+		}
+		marks[name] = m
+	}
+	if len(marks) > 0 {
+		rec["marks"] = marks
+	}
+	if rec["kind"] != vocabulary.CoreKind("recordsplit") {
+		return rec
+	}
+	props, _ := rec["properties"].(map[string]any)
+	result, _ := props["result"].(map[string]any)
+	effects, _ := result["fold"].([]any)
+	for i, raw := range effects {
+		eff, _ := raw.(map[string]any)
+		switch {
+		case eff == nil:
+		case eff["kind"] == "manager":
+			// A kept result is no line, so its effects are no line's own
+			// direct write.
+			effects[i] = keptMarkOfRow(eff, true)
+		case eff["kind"] == "resync":
+			rows, _ := eff["rows"].(map[string]any)
+			managers, ok := rows["managers"].([]any)
+			if !ok {
+				continue
+			}
+			var marks []any
+			for _, r := range managers {
+				if row, ok := r.(map[string]any); ok {
+					marks = append(marks, keptMarkOfRow(row, false))
+				}
+			}
+			delete(rows, "managers")
+			if len(marks) > 0 {
+				rows["marks"] = marks
+			}
+		}
+	}
+	return rec
+}
+
+// keptMarkOfRow is the mark a manager effect (effect) or a resync's row
+// becomes in a kept result: its place, pinned and set by its hand above the
+// machine tier, and its time.
+func keptMarkOfRow(row map[string]any, effect bool) map[string]any {
+	out := map[string]any{}
+	for _, key := range []string{"ref", "id", "property"} {
+		if v, ok := row[key]; ok {
+			out[key] = v
+		}
+	}
+	actor, _ := row["actor"].(string)
+	switch {
+	case effect && actor == "":
+		out["kind"] = "unmark"
+		return out
+	case effect:
+		out["kind"] = "mark"
+	default:
+		if v, ok := row["kind"]; ok {
+			out["kind"] = v
+		}
+	}
+	if row["tier"] != string(substrate.TierMachine) {
+		out["pinned"] = true
+		if actor != "" {
+			out["setBy"] = actor
+		}
+	}
+	if at, ok := row["updatedAt"]; ok {
+		out["setAt"] = at
+	}
+	return out
+}
+
+// keptMarksWithoutValues holds the rule the marks keep (decision 0284): a
+// mark never outlives its value. It names every mark of the repository (by
+// its id) whose record the fold does not hold, or whose record holds no
+// value of the property, in its properties or in the column that backs a
+// title or a time, as a pin or a release reads it (marks.go markAction).
+func keptMarksWithoutValues(t *testing.T, dsn, repository string) []string {
+	t.Helper()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	rows, err := db.QueryContext(context.Background(), `
+		SELECT m.record_kind, m.record_id, m.property, m.pinned, r.id IS NOT NULL, coalesce(r.deleted_at IS NOT NULL, false)
+		FROM property_marks m
+		LEFT JOIN records r ON r.repository = m.repository AND r.kind = m.record_kind AND r.id = m.record_id
+		WHERE m.repository = $1 AND (r.id IS NULL OR NOT (
+			coalesce(r.props ? m.property, false)
+			OR (m.property = $2 AND coalesce(r.title, '') <> '')
+			OR (m.property = $3 AND r.at IS NOT NULL)
+			OR (m.property = $4 AND r.ends_at IS NOT NULL)
+			OR (m.property = $5 AND r.due_at IS NOT NULL)))
+		ORDER BY 1, 2, 3`,
+		repository, substrate.PropTitle, substrate.PropAt, substrate.PropEndsAt, substrate.PropDueAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for rows.Next() {
+		var kind, id, property string
+		var pinned, held, deleted bool
+		if err := rows.Scan(&kind, &id, &property, &pinned, &held, &deleted); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, fmt.Sprintf("%s/%s holds a mark on %s (pinned %t) and no value under it (the record in the fold %t, deleted %t)",
+			kind, id, property, pinned, held, deleted))
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// A HISTORY FROM BEFORE THE MARKS KEEPS THEM THROUGH A REBUILD. The kept
+// directory's lines hold manager effects, which the conversion rewrites into
+// marks (decision 0284): a rebuild of the converted history gives back the
+// property_marks and property_offers rows the import's fold holds, byte for
+// byte, pinned and unpinned marks among them. The rebuild test of every SQL
+// migration stages its stores in the binary's own dialect, so this is the
+// test of a history converted from before this step.
+func TestAConvertedHistorysMarksSurviveARebuild(t *testing.T) {
+	k := checkKeptDirectory(t, filepath.Join(keptRoot, "v0.123.1"), keptConversions)
+	db, err := sql.Open("pgx", k.e.DSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	var id string
+	if err := db.QueryRowContext(ctx, `SELECT id FROM repositories WHERE authority = $1 OR id = $1`, k.fixture.Repository).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	read := func() (string, int, int) {
+		t.Helper()
+		var b strings.Builder
+		pinned, all := 0, 0
+		for _, q := range []string{
+			`SELECT record_kind, record_id, property, pinned::text, set_by, on_behalf_of, derived_from::text, set_at::text
+			 FROM property_marks WHERE repository = $1 ORDER BY record_kind, record_id, property`,
+			`SELECT record_kind, record_id, property, source, coalesce(value::text, ''), updated_at::text, '', ''
+			 FROM property_offers WHERE repository = $1 ORDER BY record_kind, record_id, property, source`,
+		} {
+			rows, err := db.QueryContext(ctx, q, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for rows.Next() {
+				var c [8]string
+				if err := rows.Scan(&c[0], &c[1], &c[2], &c[3], &c[4], &c[5], &c[6], &c[7]); err != nil {
+					t.Fatal(err)
+				}
+				fmt.Fprintln(&b, strings.Join(c[:], "\x1f"))
+				if strings.HasPrefix(q, "SELECT record_kind, record_id, property, pinned") {
+					all++
+					if c[3] == "true" {
+						pinned++
+					}
+				}
+			}
+			if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return b.String(), pinned, all
+	}
+	before, pinned, all := read()
+	if pinned == 0 || pinned == all {
+		t.Fatalf("the converted history holds %d marks, %d of them pinned: the test needs both kinds", all, pinned)
+	}
+	rebuilder, ok := k.e.Service.(interface {
+		RebuildRepository(context.Context, string) (engine.RebuildReport, error)
+	})
+	if !ok {
+		t.Fatal("the service does not rebuild")
+	}
+	if _, err := rebuilder.RebuildRepository(ctx, id); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if after, _, _ := read(); after != before {
+		t.Fatal("a rebuild of the converted history does not give back the marks and offers the import's fold holds")
+	}
+	for _, p := range keptMarksWithoutValues(t, k.e.DSN, id) {
+		t.Errorf("after the rebuild: %s", p)
+	}
+	t.Logf("%d marks, %d of them pinned, survive the rebuild", all, pinned)
 }

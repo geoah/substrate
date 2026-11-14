@@ -35,10 +35,10 @@ type fakeSubstrate struct {
 	// `canonicalId` set — the only time that field is on the wire at all.
 	formerIDs map[string]string
 
-	// propertyMeta is the managed-property block per record, served beside the
+	// marks is the mark block per record, served beside the
 	// record's own fields on a single-record GET and NEVER on a list — the
 	// asymmetry is the contract, so the fake keeps it.
-	propertyMeta map[string]map[string]statusProperty
+	marks map[string]map[string]statusProperty
 
 	// extraTypes are registry rows appended to fakeRegistry on the types read.
 	// Empty by default so the golden `types` table is unaffected; the
@@ -136,9 +136,9 @@ type fakeSubstrate struct {
 func newFake(t *testing.T) (*fakeSubstrate, *httptest.Server) {
 	t.Helper()
 	f := &fakeSubstrate{
-		records:      map[string]*substrate.Record{},
-		formerIDs:    map[string]string{},
-		propertyMeta: map[string]map[string]statusProperty{},
+		records:   map[string]*substrate.Record{},
+		formerIDs: map[string]string{},
+		marks:     map[string]map[string]statusProperty{},
 	}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
@@ -151,11 +151,11 @@ func (f *fakeSubstrate) seed(e *substrate.Record) {
 	f.records[e.ID] = e
 }
 
-// seedMeta records the propertyMeta a single-record GET of id will carry.
+// seedMeta records the marks a single-record GET of id will carry.
 func (f *fakeSubstrate) seedMeta(id string, meta map[string]statusProperty) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.propertyMeta[id] = meta
+	f.marks[id] = meta
 }
 
 func (f *fakeSubstrate) record(id string) *substrate.Record {
@@ -246,6 +246,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("PUT "+tasksPath+"/{id}", f.handlePut)
 	mux.HandleFunc("PATCH "+tasksPath+"/{id}", f.handlePatch)
 	mux.HandleFunc("DELETE "+tasksPath+"/{id}", f.handleDelete)
+	mux.HandleFunc("POST "+tasksPath+"/{id}/pin", f.handleMark)
+	mux.HandleFunc("POST "+tasksPath+"/{id}/release", f.handleMark)
 	// The shipped-example apply test writes triggers as ordinary data records
 	// in substrate.reamde.dev/core; a generic collection store answers those puts.
 	mux.HandleFunc("GET "+triggerColPath+"/{id}", f.handleTriggerGet)
@@ -1302,7 +1304,7 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.mu.Lock()
-	meta := f.propertyMeta[id]
+	meta := f.marks[id]
 	f.mu.Unlock()
 	if !merged && meta == nil {
 		writeJSON(w, http.StatusOK, e)
@@ -1316,7 +1318,7 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 		out["canonicalId"] = canonical
 	}
 	if meta != nil {
-		out["propertyMeta"] = meta
+		out["marks"] = meta
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1604,6 +1606,40 @@ func (f *fakeSubstrate) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	e.Finalizers = []string{"gmail.google.connectors.substrate.reamde.dev/gmail/unsend"}
 	writeJSON(w, http.StatusOK, e)
+}
+
+// handleMark pins or releases the named properties of a seeded record and
+// answers it with its marks, as the server's record path does.
+func (f *fakeSubstrate) handleMark(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	id := r.PathValue("id")
+	e, ok := f.records[id]
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "no record "+id, nil)
+		return
+	}
+	var in substrate.MarkInput
+	if err := json.Unmarshal(mustRaw(f.lastBody), &in); err != nil || len(in.Properties) == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "name the properties", nil)
+		return
+	}
+	marks := f.marks[id]
+	if marks == nil {
+		marks = map[string]statusProperty{}
+		f.marks[id] = marks
+	}
+	for _, name := range in.Properties {
+		m := marks[name]
+		m.Pinned = strings.HasSuffix(r.URL.Path, "/pin")
+		marks[name] = m
+	}
+	body, _ := json.Marshal(e)
+	var out map[string]any
+	_ = json.Unmarshal(body, &out)
+	out["marks"] = marks
+	writeJSON(w, http.StatusOK, out)
 }
 
 // mustRaw re-marshals a recorded body map so it can be decoded into a typed

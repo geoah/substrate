@@ -5,7 +5,7 @@ by value. Instead each source keeps its own record, points at the one subject
 it describes, and the subject's shared properties are **projected** from all
 those sources at once, under a per-property ownership rule that protects your
 hand edits. This page is that projection: record mappings, managed properties
-and tiers, and the merges that join two subjects that turn out to be one.
+and their marks, and the merges that join two subjects that turn out to be one.
 
 ## Record mappings
 
@@ -325,7 +325,7 @@ address through `merge: union`, and a linked contact from writing an address
 it shares with another person onto the person it linked. A value the target
 already holds stays, so a duplicate that exists is the owner's to settle with
 `merge`. The withheld value is still the source's, and a read shows it as an
-[alternative](#reading-provenance-propertymeta) the owner may adopt by writing
+[alternative](#where-a-value-came-from-the-marks) the owner may adopt by writing
 it
 ([decision record 0103](decisions/0103-an-ambiguous-probe-follows-its-mappings-policy-and-a-probed-value-never-spreads.md)).
 
@@ -423,116 +423,129 @@ page, grouped by the mapping that brought each record
 
 ## Managed properties
 
-The mechanism behind "hand edits survive syncs" is per-property ownership.
-Every accepted write records its actor as the property's **manager**: the
-substrate always knows, per record per property, who holds the current value.
-Beside the actor it records a **tier**, the manager's standing against
-recompute. There are three:
+The mechanism behind "hand edits survive syncs" is per-property **marks**
+([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)).
+Every property a write sets carries one beside its value, and it holds two
+facts apart: whether sync may replace the value, and where the value came
+from.
 
-- **machine**: the sync machinery. The engine's own hand and a package's
-  own hand write here, and everything recompute writes is machine-held
-  whatever actor it credits. Machine-held values are recompute's to replace.
-- **bundle**: installed code. Every write a [function](functions.md) or
-  [agent](agents.md) makes through its dispatch holds here.
-- **owner**: you. The person writes at this tier through any of its tokens,
-  and so does an app the person approved. The moment you type a name into the
-  console, you are the manager of `name`.
+- **`pinned`**: sync leaves the value alone. It is stored when the value is
+  written, from the type of the [actor](api.md#actors) that wrote it: a
+  person's, an app's, a function's and an agent's direct write pins; a
+  package's and the engine's do not. The moment you type a name into the
+  console, `name` is pinned. Nothing works it out again later: not a
+  declaration, not the actor as it stands now.
+- **`setBy`** links the actor record that wrote the value directly, and
+  **`onBehalfOf`** the one it acted for, where it acted for someone. A
+  value sync wrote has neither: the engine wrote it.
+- **`derivedFrom`** links the source records whose offers back the value:
+  the one offering it, every one that agrees with it, or, on a union, each
+  contributing one. Both `setBy` and `derivedFrom` may be present: a
+  package's own write that a source also offers.
+- **`setAt`** is when the value was set: not a later pin, and not a change in
+  the alternatives.
 
-**The tier is an explicit attribute of the write context, never read off the
-[actor record](api.md#actors).** Function and agent dispatch stamps the
-bundle tier on its own writes. The person and an app hold at the owner tier:
-a token has full access to its repository, or the scopes its owner approved,
-so an app's client holds like you, never like the machinery. Every other hand
-is one of the substrate's own (the system, a package's own hand, a function
-or agent whose package is gone, a facility such as the OAuth refresh) and
-holds at the machine tier, so recompute replaces what it wrote. No request
-names its actor, so no request picks its tier, and no package declares an
-actor, so no declaration moves one.
-
-A manager row stores the tier its write was admitted at, and the yield below
-reads that stored tier; a kind move, a merge and a rename copy it. A
-declaration once released a row by declaring its actor at the machine tier
-([0113](decisions/0113-a-manager-row-holds-at-its-actors-live-machine-tier.md));
-with no actor declared anywhere, nothing does now
-([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)).
-
-Beside the actor and the tier, a manager row records the **token** of the
-write that set it, where one stood behind it: the person's sign-in or the
-app's token. The manager and tier a read reports are the actor and its
-standing; the token is in the store and on the
-[changelog](changelog.md) entry that wrote it, which is where "which token
-last wrote this property" is answered.
+A mark names no token: which token wrote a value is on the
+[changelog](changelog.md) entry that wrote it. A kind move, a merge and a
+rename carry the mark whole.
 
 Mapping recompute runs whenever a source record changes, and per mapped
 property it follows three rules:
 
-- **Yield.** If the manager's tier is above machine, the recompute leaves the
-  value alone and records what it would have written as an **alternative**
-  beside it. Your edit survives the sync, and so does a function's: a
-  bundle write is a visible pin, never a silent freeze.
+- **Yield.** If the value is pinned, the recompute leaves it alone, and what
+  each source record would have written is an **alternative** beside it.
+  Your edit survives the sync, and so does a function's: its write is a
+  visible pin, never a silent freeze.
 - **Select.** Otherwise the latest-updated live source wins (`atomic`, and
   `first` with the head of its repeated path in hand) or the union of every
-  live source's items lands (`union`), and the manager becomes
-  the winning source's actor at the machine tier, so the changelog says a name
-  came from GitHub, not from "the system". Nothing in a manifest ranks
-  sources; ties break deterministically by kind reference, then id.
-- **Delete.** A property no live source carries, and no outside manager holds,
-  is deleted. When the provider stops asserting a phone number, it goes; what
-  another source still asserts, stays.
+  live source's items lands (`union`), and the mark names the source records
+  behind it, so a name says it came from GitHub, not from "the system".
+  Nothing in a manifest ranks sources; ties break deterministically by kind
+  reference, then id. A value recompute leaves as it is, pinned or not,
+  keeps its mark, its `derivedFrom` held to the sources whose offers still
+  back it: a source that now offers something else is an alternative. When a
+  vocabulary apply removes the last mapping that supplied a property, a value
+  that stays (pinned, or required) keeps its mark and loses its sources.
+- **Delete.** A property no live source carries, and nothing pinned, is
+  deleted. When the provider stops asserting a phone number, it goes; what
+  another source still asserts, stays. A required property keeps its last
+  value, and its `derivedFrom` is dropped, so no link dangles.
 
-### Reading provenance: propertyMeta
+<!-- The anchor keeps decision record 0094 resolving: it links
+#reading-provenance-propertymeta, and an accepted record's body may not change. -->
+<a id="reading-provenance-propertymeta"></a>
 
-Single-record reads surface the whole ledger as `propertyMeta`: per property,
-its manager, its tier, when it changed, and the **alternatives**, every live
-source value that differs from the stored one, each naming the **source
-record** it was read from:
+### Where a value came from: the marks
+
+Single-record reads carry each property's mark as `marks`, and beside it the
+**alternatives**: what each live source record offers, where it differs from
+the stored value. Grace is one contact built from two Google address books,
+work and home; Ada fixed the name by hand, the Chat app added a nickname for
+her, and sync supplied the rest:
 
 ```json
-"propertyMeta": {
+"marks": {
   "name": {
-    "manager": "6nk6ekkczdgh399nt2pqpccjz0",
-    "tier": "owner",
+    "pinned": true,
+    "setBy": {"ref": "substrate.reamde.dev/core/actor/ada"},
+    "setAt": "2026-11-10T09:14:03Z",
     "alternatives": [
-      {"actor": "3wv04ja0n3g3n9s3q6bvkqnysj",
-       "value": "ada",
-       "source": "providers.substrate.reamde.dev/github/user/ada"}
+      {"derivedFrom": {"ref": "providers.substrate.reamde.dev/google/contact/work-c123"},
+       "value": "G. Hopper", "updatedAt": "2026-11-12T03:00:11Z"},
+      {"derivedFrom": {"ref": "providers.substrate.reamde.dev/google/contact/home-c900"},
+       "value": "Grace M. Hopper", "updatedAt": "2026-11-09T21:40:52Z"}
     ]
   },
-  "displayName": {
-    "manager": "3wv04ja0n3g3n9s3q6bvkqnysj",
-    "tier": "machine",
-    "source": "providers.substrate.reamde.dev/github/user/ada"
+  "nickname": {
+    "pinned": true,
+    "setBy": {"ref": "substrate.reamde.dev/core/actor/chat"},
+    "onBehalfOf": {"ref": "substrate.reamde.dev/core/actor/ada"},
+    "setAt": "2026-11-11T18:02:40Z"
+  },
+  "jobTitle": {
+    "derivedFrom": [{"ref": "providers.substrate.reamde.dev/google/contact/work-c123"}],
+    "setAt": "2026-11-12T03:00:11Z"
+  },
+  "emails": {
+    "derivedFrom": [
+      {"ref": "providers.substrate.reamde.dev/google/contact/home-c900"},
+      {"ref": "providers.substrate.reamde.dev/google/contact/work-c123"}
+    ],
+    "setAt": "2026-11-12T03:00:11Z"
   }
 }
 ```
 
-The owner typed "Ada Lovelace" by hand, GitHub still says "ada", and both
-facts are on the wire. A manager and an alternative's `actor` are the ids of
-[actor records](api.md#actors): here the person and the GitHub sync
-function. An alternative's `updatedAt` is the `updatedAt` of the
-source record it comes from (for a union property, the latest of that actor's
-sources carrying it), not the moment the substrate wrote the row, and its
-`source` is that record's path: like the value, both are a function of the
-live records, so a `repository rebuild` or a restore derives the same
-alternatives, stamps and sources included. The manager carries a `source` too,
-but only where the read can stand behind it: the property is machine-held and
-the manager's own offer backs the stored value (equal to it, or, on a union,
-every item of it among the stored items). On a reference property both sides
-are compared through a mirror's stored subject and the former-id trail, so an
-offer naming a `github/user` backs the person the pin stored for it
+**Alternatives are keyed by source record**, so two accounts of one
+provider, synced by one function, are two. An alternative's `updatedAt` is
+its source record's, not the moment the substrate wrote anything: like the
+value, it is a function of the live records, so a `repository rebuild` or a
+restore derives the same alternatives. On a reference property both sides
+are compared through a mirror's stored subject and the former-id trail, so
+an offer naming a `github/user` backs the person the pin stored for it
 ([decision record 0120](decisions/0120-a-map-rule-reaches-a-mirrors-subject-through-the-targets-pin.md)).
-A hand edit and a bundle pin name no
-source, because nothing stands behind them but the hand
-([decision record 0094](decisions/0094-propertymeta-names-the-source-record-behind-each-manager-and-alternative.md)).
-Lists and changes never carry `propertyMeta`; only a single-record read
-assembles it. Adopting an alternative is just writing it.
-**Releasing** a hand edit is patching the property to null: the delete clears
-the value and its manager, and the same transaction recomputes from live
-sources, so the property refills on the spot, back to following the sources.
-One deliberate cost comes with this: a held value is immune to fresher truth
-until released, which is exactly why every read shows the alternatives beside
-it. One release works for every tier: a bundle pin lets go exactly like an
-owner hold.
+A link a mapping fills (the subject slot) carries no mark: its declaration
+says which mapping fills it. Lists and changes never carry `marks`; only a
+single-record read assembles them.
+
+**`pin` and `release` are explicit actions**, each an entry of the record's
+history (`POST /api/v1/<kind>/<id>/pin` and `…/release`, with the
+properties named, [api](api.md#the-five-mutations); `substratectl pin` and
+`release`). Pin keeps a value sync wrote. Release hands a pinned property
+back to sync, which picks its value again among the alternatives at once.
+Both work on a required property, which keeps its value where no source
+offers one. Adopting an alternative is releasing the property, or writing
+the value. One deliberate cost comes with this: a pinned value is immune to
+fresher truth until released, which is exactly why every read shows the
+alternatives beside it.
+
+**A mark goes with its value.** A write that takes a property out of a
+record takes the property's mark with it, whether or not its history line
+says `unmark`, so a pin never stands on a value nobody holds and never stops
+a sync filling the property later. A mark the same line moves to another
+name stands, and a mark on a property the record never held (a subject slot
+with no value yet) is left as it is. A replay of the line does the same, so
+a `repository rebuild` gives back the marks the live writes left.
 
 ### Contributing a value
 
@@ -604,11 +617,10 @@ re-seed left 2,727 of them on one repository
 The engine marks those rows. A record is **orphaned** when all three hold:
 something maps onto its kind, no live record that mapping's `where` covers
 links to it through the mapping's subject slot (counted over every id it has
-ever had, so a merge does not hide a source), and every one of its
-`property_managers` rows holds at the machine
-tier — or it has none at all. A property held above machine is a hand's, and a
-record a hand has written on is not a husk, whether that hand was yours or a
-function's. Releasing the hold (the null patch above) makes it one again.
+ever had, so a merge does not hide a source), and nothing on it is pinned. A
+pinned property is a hand's, and a record a hand has written on is not a
+husk, whether that hand was yours or a function's. Releasing the pin, or
+clearing the property, makes it one again.
 
 The mark is derived, like an alternative: nothing writes it into the
 changelog, a re-link clears it on the next recompute, and a
@@ -646,22 +658,23 @@ loser's place in the graph:
   the graph by resolution, not by rewriting rows.
 - **Labels fill gaps**: the winner's stand, the loser's land where the winner
   has none. Annotations move too, colliding keys resolving newest-wins.
-- **Properties do not migrate.** The winner now has more sources pointing at
-  it, so its mapped properties are recomputed, through the same yield rules as
-  any sync, which is how a hand edit on the winner survives its own merge.
-  Copying values across would freeze a stale answer into the winner. The
-  loser's manager rows migrate where the winner holds nothing, tier included,
-  so a migrated bundle pin yields on the winner exactly as it did on the
-  loser.
+- **Properties do not migrate, and neither do their marks.** The winner now
+  has more sources pointing at it, so its mapped properties are recomputed,
+  through the same yield rules as any sync, which is how a hand edit on the
+  winner survives its own merge. Copying values across would freeze a stale
+  answer into the winner. A mark stands only beside the value it marks, so a
+  pin stays with its value on the record it was pinned on: the loser keeps
+  both on its tombstone, and a split returns them. A correction made on the
+  loser is set on the winner by hand.
 - **States never move.** A merge is not a transition, and nothing in it may
   demote a person or complete a task.
 - **The loser is tombstoned, not erased**: a finalizer holds garbage
   collection off it, so the merge stays reversible.
 
 Every merge writes a `recordmerge` record: an ordinary record carrying
-`winner` and `loser` references and a `moved` property recording the labels,
-annotations and manager rows the merge moved. That record is what makes the
-undo possible.
+`winner` and `loser` references and a `moved` property recording the labels
+and annotations the merge moved. That record is what makes the undo
+possible.
 
 A merge decided from a stale read can carry the versions it read:
 `winnerVersion` and `loserVersion`, each optional, each refusing the whole
@@ -698,7 +711,7 @@ POST /api/v1/split
 ```
 
 The loser comes back to life at its own id, the moved labels, annotations and
-manager rows go back where the record says they came from, the former-id trail
+marks go back where the record says they came from, the former-id trail
 drops the alias so the loser's id resolves to the loser again, and both sides
 recompute from the source sets they now have. A split
 reverts _the merge_, not everything that happened after it: a label or

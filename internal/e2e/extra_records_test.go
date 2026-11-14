@@ -36,10 +36,10 @@ func init() {
 		"Both maps demand namespaced `<actor>/<name>` keys; a list row carries the labels but never the "+
 			"annotations, `withAnnotations=1` adds them, and a single GET carries both.",
 		xrCaseLabelsAnnotations)
-	registerCase(260, "REC-08", "propertyMeta names who manages each property",
-		"Two doors write two properties of one record; the single GET's propertyMeta attributes each property to "+
-			"the actor that last wrote it, at the owner tier, and a list row carries no propertyMeta at all.",
-		xrCasePropertyMeta)
+	registerCase(260, "REC-08", "The marks say who set each property, and pin and release move them",
+		"Two doors write two properties of one record; the single GET's marks link each property to the actor "+
+			"that set it, pinned, a release hands one back with its value kept, and a list row carries no marks at all.",
+		xrCaseMarks)
 	registerCase(270, "REF-01", "Writing, keeping and clearing a reference",
 		"A put writes `assignee` as an ordinary property and a second put that omits it keeps it (a put merges, "+
 			"never prunes), so clearing a pointer is an explicit `null` through patch; the reference reads from "+
@@ -111,14 +111,15 @@ type xrRecord struct {
 	Annotations map[string]any `json:"annotations"`
 	DeletedAt   string         `json:"deletedAt"`
 
-	PropertyMeta map[string]struct {
-		Manager      string `json:"manager"`
-		Tier         string `json:"tier"`
+	Marks map[string]struct {
+		Pinned bool `json:"pinned"`
+		SetBy  *struct {
+			Ref string `json:"ref"`
+		} `json:"setBy"`
 		Alternatives []struct {
-			Actor string `json:"actor"`
-			Value any    `json:"value"`
+			Value any `json:"value"`
 		} `json:"alternatives"`
-	} `json:"propertyMeta"`
+	} `json:"marks"`
 }
 
 func (r xrRecord) prop(name string) string {
@@ -165,7 +166,7 @@ func xrTaskPath(id string) string { return tasksCollection + "/" + url.PathEscap
 func xrPersonPath(id string) string { return personCollection + "/" + url.PathEscape(id) }
 
 // xrGet reads one record into the wider shape. Single GETs carry the
-// annotations and the propertyMeta a list omits.
+// annotations and the marks a list omits.
 func xrGet(c *C, path string) xrRecord {
 	c.t.Helper()
 	var rec xrRecord
@@ -432,9 +433,10 @@ func xrCaseLabelsAnnotations(c *C) {
 	c.stepf("the single GET carries both maps, unasked")
 }
 
-// xrCasePropertyMeta: REC-08. Provenance is per PROPERTY, not per record: each
-// property's manager links the actor record of the hand that wrote it.
-func xrCasePropertyMeta(c *C) {
+// xrCaseMarks: REC-08. A mark is per PROPERTY, not per record: each one links
+// the actor record of the hand that set it, and says whether sync may replace
+// it (decision 0284).
+func xrCaseMarks(c *C) {
 	status, raw := c.do(http.MethodPut, xrTaskPath(xrActorsTask), map[string]any{
 		"properties": map[string]any{
 			"name":        "The provenance probe",
@@ -449,35 +451,52 @@ func xrCasePropertyMeta(c *C) {
 		map[string]any{"properties": map[string]any{"name": "The provenance probe, per the console"}}, nil)
 	c.requiref(status == http.StatusOK, "the console's write answered %d: %s", status, raw)
 
+	setBy := func(ref *struct {
+		Ref string `json:"ref"`
+	},
+	) string {
+		if ref == nil {
+			return ""
+		}
+		return c.hand(ref.Ref[strings.LastIndex(ref.Ref, "/")+1:])
+	}
 	got := xrGet(c, xrTaskPath(xrActorsTask))
-	name, hasName := got.PropertyMeta["name"]
-	desc, hasDesc := got.PropertyMeta["description"]
-	c.requiref(hasName && hasDesc, "propertyMeta is missing a property: %v", got.PropertyMeta)
-	c.requiref(c.hand(name.Manager) == "person" && name.Tier == "owner",
-		"`name` is managed by %q at tier %q, want the person at owner", c.hand(name.Manager), name.Tier)
-	c.requiref(c.hand(desc.Manager) == "person" && desc.Tier == "owner",
-		"`description` is managed by %q at tier %q, want the person at owner", c.hand(desc.Manager), desc.Tier)
-	c.stepf("the single GET's propertyMeta gives each property its manager: `name` and `description` both link the person's actor record, at the `owner` tier, though the second write sent a retired actor header")
+	name, hasName := got.Marks["name"]
+	desc, hasDesc := got.Marks["description"]
+	c.requiref(hasName && hasDesc, "the marks miss a property: %v", got.Marks)
+	c.requiref(setBy(name.SetBy) == "person" && name.Pinned,
+		"`name` is set by %q, pinned %v, want the person's pin", setBy(name.SetBy), name.Pinned)
+	c.requiref(setBy(desc.SetBy) == "person" && desc.Pinned,
+		"`description` is set by %q, pinned %v, want the person's pin", setBy(desc.SetBy), desc.Pinned)
+	c.stepf("the single GET's marks link each property to the person's actor record, pinned, though the second write sent a retired actor header")
 
-	// No alternative is recorded. An alternative is a live MAPPING offer that
-	// disagrees with the stored value (the property_offers rows a sync
-	// populates), so a second owner-tier write takes the property over
-	// outright instead of queueing beside it.
+	// No alternative is recorded. An alternative is a live source record's
+	// offer that disagrees with the stored value, so a second write takes
+	// the property over outright instead of queueing beside it.
 	c.requiref(len(name.Alternatives) == 0 && len(desc.Alternatives) == 0,
-		"the console's write left an alternative behind: %v; an alternative is a mapping offer, not a previous write", name.Alternatives)
-	c.stepf("neither property carries an alternative: an owner write TAKES the property, and only a mapping source offers one")
+		"the console's write left an alternative behind: %v; an alternative is a source record's offer, not a previous write", name.Alternatives)
+	c.stepf("neither property carries an alternative: a write TAKES the property, and only a source record offers one")
 
-	// The changelog says the same thing about the same two writes.
+	// A release hands `name` back to sync; nothing maps onto a task, so it
+	// keeps its value, unpinned.
+	status, raw = c.do(http.MethodPost, xrTaskPath(xrActorsTask)+"/release", map[string]any{"properties": []any{"name"}}, nil)
+	c.requiref(status == http.StatusOK, "the release answered %d: %s", status, raw)
+	got = xrGet(c, xrTaskPath(xrActorsTask))
+	c.requiref(!got.Marks["name"].Pinned && got.prop("name") == "The provenance probe, per the console",
+		"after the release `name` is %q, pinned %v; want the value kept, unpinned", got.prop("name"), got.Marks["name"].Pinned)
+	c.stepf("a release leaves `name`'s value and unpins it: no source offers another")
+
+	// The changelog says the same thing about the same three writes.
 	rows := c.rowsFor(xrActorsTask)
-	c.requiref(len(rows) == 2 && c.hand(rows[0].Actor) == "person" && c.hand(rows[1].Actor) == "person",
-		"the changelog rows for %s are %v; want two puts by the person", xrActorsTask, rows)
-	c.stepf("the changelog agrees: seq %d and seq %d are both puts by the person", rows[0].Seq, rows[1].Seq)
+	c.requiref(len(rows) == 3 && c.hand(rows[0].Actor) == "person" && c.hand(rows[1].Actor) == "person" && c.hand(rows[2].Actor) == "person",
+		"the changelog rows for %s are %v; want two puts and the release, by the person", xrActorsTask, rows)
+	c.stepf("the changelog agrees: seq %d and seq %d are puts and seq %d the release, all by the person", rows[0].Seq, rows[1].Seq, rows[2].Seq)
 
-	// A list row never carries provenance: it is a single-record read.
+	// A list row never carries marks: they are a single-record read.
 	row, ok := xrListFind(c, listOf(tasksCollection, "first=200"), xrActorsTask)
-	c.requiref(ok && len(row.PropertyMeta) == 0,
-		"a list row carries propertyMeta %v; provenance is a single-record read", row.PropertyMeta)
-	c.stepf("the list row carries no propertyMeta at all")
+	c.requiref(ok && len(row.Marks) == 0,
+		"a list row carries marks %v; they are a single-record read", row.Marks)
+	c.stepf("the list row carries no marks at all")
 }
 
 // xrCaseReferenceWrites: REF-01. There are no link verbs: a reference is an

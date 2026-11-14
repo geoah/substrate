@@ -9,6 +9,7 @@ import {
   manifestOf,
   manifestYAML,
 } from "./manifest"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 const record: SubstrateRecord = {
   id: "32llel6yd5bs",
@@ -32,11 +33,10 @@ const record: SubstrateRecord = {
   kindVersion: 2,
   createdAt: "2026-08-05T16:26:27.161544Z",
   updatedAt: "2026-08-05T16:26:27.310967Z",
-  propertyMeta: {
+  marks: {
     name: {
-      manager: "people.providers.substrate.reamde.dev/google",
-      tier: "machine",
-      updatedAt: "2026-08-05T16:26:27.161544Z",
+      setBy: actorLink("people.providers.substrate.reamde.dev/google"),
+      setAt: "2026-08-05T16:26:27.161544Z",
     },
   },
 }
@@ -65,7 +65,7 @@ describe("manifestOf", () => {
     const status = manifestOf(record).status as Record<string, unknown>
     expect(status.version).toBe(3)
     expect(status.kindVersion).toBe(2)
-    expect(status.properties).toBe(record.propertyMeta)
+    expect(status.properties).toBe(record.marks)
     expect(status).not.toHaveProperty("deletedAt")
     // A record the wire did not stamp carries no key, as `get -o yaml` prints.
     const unstamped = { ...record }
@@ -108,7 +108,7 @@ describe("manifestYAML", () => {
     expect(yaml.indexOf("data:")).toBeLessThan(yaml.indexOf("status:"))
     expect(yaml).toContain("prominence: known")
     expect(yaml).toContain(
-      "manager: people.providers.substrate.reamde.dev/google"
+      "ref: substrate.reamde.dev/core/actor/people.providers.substrate.reamde.dev/google"
     )
   })
 })

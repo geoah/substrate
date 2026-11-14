@@ -23,6 +23,7 @@ import {
   sameApplied,
   targetDrift,
 } from "@/lib/changerequests"
+import { actorLink } from "@/lib/actors.test-fixtures"
 
 const TASK_KIND = "samples.substrate.reamde.dev/tasks/task"
 
@@ -66,11 +67,11 @@ function requestRecord(
     version: opts.version ?? 1,
     createdAt: "2026-08-14T00:00:00Z",
     updatedAt: "2026-08-14T00:00:00Z",
-    propertyMeta: opts.meta
+    marks: opts.meta
       ? Object.fromEntries(
           Object.entries(opts.meta).map(([k, manager]) => [
             k,
-            { manager, updatedAt: "2026-08-14T00:00:00Z" },
+            { setBy: actorLink(manager), setAt: "2026-08-14T00:00:00Z" },
           ])
         )
       : undefined,
@@ -89,11 +90,11 @@ function targetRecord(
     version: opts.version ?? 3,
     createdAt: "2026-08-13T00:00:00Z",
     updatedAt: "2026-08-13T00:00:00Z",
-    propertyMeta: opts.meta
+    marks: opts.meta
       ? Object.fromEntries(
           Object.entries(opts.meta).map(([k, manager]) => [
             k,
-            { manager, updatedAt: "2026-08-13T00:00:00Z" },
+            { setBy: actorLink(manager), setAt: "2026-08-13T00:00:00Z" },
           ])
         )
       : undefined,
@@ -644,7 +645,7 @@ describe("proposerOf / deciderOf", () => {
     expect(
       proposerOf(requestRecord({}, { meta: { diff: "learner.substrate" } }))
     ).toBe("learner.substrate")
-    // No `diff` manager row: the next proposal property answers.
+    // No mark on `diff`: the next proposal property answers.
     expect(
       proposerOf(requestRecord({}, { meta: { rationale: "console" } }))
     ).toBe("console")

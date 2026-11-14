@@ -3,6 +3,7 @@
  * them in the actor directory, as the app shell does from the server's. */
 
 import { setActorDirectory } from "@/lib/actor-directory"
+import { CORE_PACKAGE } from "@/lib/core-kinds"
 import type { ActorInfo, ActorType } from "@/lib/api/actors"
 
 function actor(
@@ -80,4 +81,9 @@ const MORE: readonly ActorInfo[] = [
 /** Fills the actor directory with the fixture's actors and any more. */
 export function seedActors(...more: ActorInfo[]): void {
   setActorDirectory([...Object.values(ACTORS), ...MORE, ...more])
+}
+
+/** The link a mark names an actor record by. */
+export function actorLink(id: string): { ref: string } {
+  return { ref: `${CORE_PACKAGE}/actor/${id}` }
 }

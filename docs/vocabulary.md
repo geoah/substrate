@@ -651,7 +651,7 @@ Each rewritten record moves its `version`, and a record that did not carry the
 old name is left alone. So is a tombstoned one: it keeps the old name until a
 put restores it, and that put moves the value to the new name
 ([Restoring a tombstone](#restoring-a-tombstone)). What travels with the value:
-the property's manager row (who last wrote it, at which tier), the offer rows a
+the property's mark (whether it is pinned, who set it, which sources back it), the offer rows a
 mapping wrote onto it, and the embeddings of an `embed: true` property, which
 are rekeyed and re-enqueued under the new name so no vector is bought twice. A
 secret moves as its sealed reference. The key stays on the stored declaration
@@ -705,7 +705,7 @@ required, or is added as required, with a default declared, has the default
 written onto every live record holding no value for it: the key absent, or
 one of the empty values `required:` refuses. No marker is needed; the pair is
 the trigger. The value is coerced as a create's default is, the record's
-manager row for it names the actor that applied the declaration, and a
+mark for it is set by the actor that applied the declaration, and a
 property with `embed: true` is queued to embed. A record already carrying a
 value is left alone, and so is a default declared without `required:`, which
 seeds creates and nothing else. A required property's default may not be an
@@ -723,7 +723,7 @@ A state takes no `default:` and no marker: the machine's own `initial` is the
 value, and there is nothing else it could be. Without this the records would
 stand outside the machine forever — no transition leaves an absent state, and
 a `put` may not move a state at all — so an absent state on a declared machine
-is a bug and never a position. It writes no manager row, because a machine's
+is a bug and never a position. It writes no mark, because a machine's
 position is nobody's property, and a machine every record already stands in is
 not a step, so admitting the same declaration again enters nothing.
 
@@ -743,7 +743,7 @@ properties:
 
 Admitting the declaration rewrites `active` to `working` on every live
 record, in a scalar, in each element of a `repeated:` list and in each value
-of a `keyed:` map. The manager row stays: the spelling moved, not who wrote
+of a `keyed:` map. The mark stays: the spelling moved, not who wrote
 it. The same list rules hold as for a property's `renamedFrom:`: the previous
 value may not still be declared, two values may not name the same previous
 value, and the key is refused inside `fields:` and on a
@@ -753,7 +753,7 @@ that carries it, as every new key does.
 
 **Dropping a property nulls its values.** A property the new declaration no
 longer names, and no `renamedFrom:` takes, has its value removed from every
-live record carrying it: the record's manager row for it, its embedding and,
+live record carrying it: the record's mark for it, its embedding and,
 for a secret, its sealed material go with the value, exactly as a patch
 clearing the property would leave it. The old values stay in the changelog,
 where a rebuild replays the removal as the write it was. A `type: state`
@@ -818,12 +818,12 @@ merge in
 ([decision 0144](decisions/0144-a-restoring-put-completes-the-conversions-a-tombstone-missed.md)):
 
 - a value under a name some property declares as its `renamedFrom:` moves to
-  that property, with its manager row;
+  that property, with its mark;
 - a value holding a spelling some value declares as its `renamedFrom:` takes
   the new spelling;
 - every other value is held to what a `put` naming it would store: kept in
   that stored form where the declaration admits it, and removed with its
-  manager row, its embedding and its sealed material where it does not (a
+  mark, its embedding and its sealed material where it does not (a
   property the kind no longer declares, a removed enum value, a changed type,
   a tightened pattern or bound, a reference its pin no longer admits, a blob
   that is gone). An object value takes the defaults its fields declare,

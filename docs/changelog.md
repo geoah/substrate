@@ -78,7 +78,7 @@ one element per record, in the order the entry touched them.
 ```json
 {"seq": 4207, "op": "merge", "kind": "samples.substrate.reamde.dev/people/person", "recordId": "p1",
  "payload": {"winner": "p1", "loser": "p2",
-             "moved": {"formerIds": [], "managers": {}, "labels": {}, "annotations": {},
+             "moved": {"formerIds": [], "marks": [], "labels": {}, "annotations": {},
                        "applied": ["email"], "overwritten": []}},
  "affected": [
    {"kind": "samples.substrate.reamde.dev/people/person", "id": "p1", "version": 6},
@@ -329,7 +329,10 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-4 today, the ops, fold effects and entry frame this release writes: every
+5 today, the ops, fold effects and entry frame this release writes: every
+property's mark held as its own `mark` and `unmark` effects
+([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)),
+which is what dialect 5 added, every
 entry linking its actor, the one it acted for and its token as records
 ([decision 0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)),
 which is what dialect 3 added, the record

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,9 +18,9 @@ import (
 // The subject reference and its mapping. A
 // type carrying a recordmapping records what ONE SOURCE holds; the record its
 // declared subject reference points at is the subject those records describe,
-// and recompute carries the mapped properties onto it — yielding to any manager
-// row above the machine tier, so a hand edit (the owner's or a bundle's)
-// survives a sync, legibly.
+// and recompute carries the mapped properties onto it — yielding to any
+// pinned value, so a hand edit (a person's, an app's or a function's)
+// survives a sync, legibly (decision 0284).
 
 // --- subject resolution -----------------------------------------------------
 
@@ -584,12 +585,11 @@ func evalPath(row *erow, p vocabulary.Path) any {
 type mappedSource struct {
 	row *erow
 	m   *vocabulary.Mapping
-	// actor is the source's own writer: the most recent property_managers
-	// row on the record, falling back to the first declared actor of the
-	// mapping's authority. Provenance is per property, and the changelog must
-	// say a name came from Google, not from "the system".
-	actor string
 }
+
+// path is the source's record path, which a mark's derivedFrom and an offer
+// name it by.
+func (s mappedSource) path() string { return vocabulary.RecordPath(s.row.Kind, s.row.ID) }
 
 // changedMappingTargets lists the target kinds whose mapping set differs
 // between two registries: a mapping added, removed or redefined, in identity
@@ -713,11 +713,10 @@ func (t *txn) syncOffersOf(target eref) error {
 }
 
 // recompute recomputes targetID's mapped properties from its live sources.
-// Pure function of the live records, with yield: a manager row above the
-// machine tier (the owner above all, a bundle's pin beside it) keeps its
+// Pure function of the live records, with yield: a pinned value keeps its
 // property, and what the recompute would have written stays legible as the
-// source's offer row. A record with zero live
-// sources keeps only what was written to it directly.
+// source's offer row. A record with zero live sources keeps only what was
+// written to it directly.
 func (t *txn) recompute(target eref) error {
 	if t.recomputing {
 		return nil
@@ -726,38 +725,45 @@ func (t *txn) recompute(target eref) error {
 		return err
 	}
 	// LAST, and outside the value half: the mark is read off what the
-	// recompute leaves behind — no live source, and nothing above the machine
-	// tier holding a property (orphans.go). It runs even where there was
-	// nothing to recompute, because a link-only mapping's target orphans the
-	// same way a copying one's does.
+	// recompute leaves behind — no live source, and nothing pinned (orphans.go).
+	// It runs even where there was nothing to recompute, because a link-only
+	// mapping's target orphans the same way a copying one's does.
 	return t.syncOrphaned(target)
 }
 
-// recomputeValues is recompute's value half: the offers, and the mapped
-// properties the machine tier still holds.
+// recomputeValues is recompute's value half: the offers, the mapped
+// properties nothing pinned, and the marks of the values it leaves as they
+// are.
+//
+// A MARK FOLLOWS ITS SOURCES WHERE ITS VALUE DOES NOT MOVE. A value recompute
+// writes is marked with the live sources backing it (the one offering it, or
+// several where they agree; on a union each contributing one). A value it
+// leaves alone, pinned or not, keeps its mark, but `derivedFrom` is held to
+// the sources whose offers still back it, so no link dangles and none names a
+// source that offers something else: a required value whose last source has
+// gone keeps the value and loses the link. Those mark-only changes ride an
+// entry of their own (remark).
 func (t *txn) recomputeValues(target eref) error {
 	in, err := t.mappedInputsOf(target)
 	if err != nil || in == nil {
 		return err
 	}
 
-	// Offers first, accepted or yielded: one row per (property,
-	// actor), so a held value's alternatives are visible on every read.
+	// Offers first, accepted or yielded: one row per (property, source), so
+	// a pinned value's alternatives are visible on every read.
 	if err := t.syncOffers(target, in.props, in.unionProp, in.srcs); err != nil {
 		return err
 	}
 
-	managers, err := t.managersOf(target)
+	marks, err := t.marksOf(target)
 	if err != nil {
 		return err
 	}
-
 	patch := map[string]any{}
-	overrides := map[string]substrate.Actor{}
+	sources := map[string][]string{}
+	remarks := map[string]mark{}
 	for _, name := range in.props {
-		if m, held := managers[name]; held && m.tier != substrate.TierMachine {
-			continue // yield: the offer above is the whole record of it
-		}
+		m, marked := marks[name]
 		cands, err := t.throughSubjects(in.ty, name, contributionsFor(name, in.srcs))
 		if err != nil {
 			return err
@@ -767,46 +773,129 @@ func (t *txn) recomputeValues(target eref) error {
 				return err
 			}
 		}
-		value, actor := selectValue(in.unionProp[name], cands)
-		// nil deletes: release-by-omission. Not on a required property, which
-		// the write path refuses to empty (checkRequiredProps): the last value
-		// stands, and its property_managers row goes on crediting the actor
-		// whose source has gone, until something writes it. Otherwise the
-		// delete or sweep that removed the property's last source would fail
-		// on the refusal, the sweep on every pass.
-		if value == nil {
-			if p, ok := in.ty.Props[name]; ok && p.Required {
-				continue
+		if marked && m.Pinned {
+			// Yield: the offer above is the whole record of it, and the mark
+			// keeps the sources whose offers still back the pinned value.
+			if kept := backersOf(in.unionProp[name], cands, currentValue(in.row, name)); !slices.Equal(kept, m.DerivedFrom) {
+				m.DerivedFrom = kept
+				remarks[name] = m
 			}
+			continue
 		}
+		value, backing := selectValue(in.unionProp[name], cands)
+		current := currentValue(in.row, name)
+		// The value stands where recompute would write what is there, or
+		// where nothing offers a required property, which the write path
+		// refuses to empty (checkRequiredProps): otherwise the delete or the
+		// sweep that removed its last source would fail on the refusal, the
+		// sweep on every pass. Its mark keeps everything but the sources that
+		// no longer back it.
+		required := false
+		if p, ok := in.ty.Props[name]; ok && p.Required {
+			required = true
+		}
+		if (value != nil && current != nil && jsonEqual(current, value)) || (value == nil && required) {
+			if marked && !slices.Equal(m.DerivedFrom, backing) {
+				m.DerivedFrom = backing
+				remarks[name] = m
+			}
+			continue
+		}
+		// nil deletes: release-by-omission.
 		patch[name] = value
 		if value != nil {
-			overrides[name] = substrate.Actor(actor)
+			sources[name] = backing
 		}
 	}
-	if len(patch) == 0 {
+	if len(patch) > 0 {
+		if err := t.asRecompute(func() error {
+			t.recomputeSources = sources
+			_, err := t.patch(target, substrate.PatchInput{Properties: patch})
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	if len(remarks) == 0 {
 		return nil
 	}
+	return t.asRecompute(func() error { return t.remark(target, remarks) })
+}
 
-	// Recompute writes as `system`, in the trigger's transaction, through
-	// the ordinary write path — no-op suppression holds, so re-syncing
-	// identical data writes nothing — and never triggers recompute.
+// asRecompute runs fn as recompute's own hand: `system`, in the trigger's
+// transaction, through the ordinary write path — no-op suppression holds, so
+// re-syncing identical data writes nothing — and never triggering recompute.
+func (t *txn) asRecompute(fn func() error) error {
 	was := t.actor
 	t.recomputeInitiator = was
 	t.actor = substrate.ActorSystem
-	t.recomputing, t.recomputeManagers = true, overrides
+	t.recomputing = true
 	defer func() {
 		t.actor = was
-		t.recomputing, t.recomputeManagers = false, nil
+		t.recomputing, t.recomputeSources = false, nil
 		t.recomputeInitiator = ""
 	}()
-	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
-	return err
+	return fn()
+}
+
+// remark writes the marks recompute moved on values it left alone, in one
+// entry of its own: the record's version moves, as a pin moves it, and the
+// payload names the properties.
+func (t *txn) remark(target eref, marks map[string]mark) error {
+	names := sortedKeys(marks)
+	for _, name := range names {
+		if err := t.setMark(target, name, marks[name]); err != nil {
+			return err
+		}
+	}
+	if _, err := t.fold(foldOp{Kind: foldRecord, Ref: target.Kind, ID: target.ID, Delta: &rowDelta{Force: true}}); err != nil {
+		return err
+	}
+	return t.appendChange(t.actor, substrate.OpPatch, target.ID, target.Kind, map[string]any{
+		"marks":       names,
+		"mechanism":   "mapping",
+		"triggeredBy": actorID(t.recomputeInitiator),
+	})
+}
+
+// backersOf is the sources whose offers back a value recompute leaves as it
+// is, sorted: on atomic every candidate offering that value, on union every
+// one contributing an item it holds. nil when none does.
+func backersOf(union bool, cands []contribution, current any) []string {
+	if current == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range cands {
+		backs := jsonEqual(c.value, current)
+		if union {
+			for _, item := range asItems(c.value) {
+				for _, have := range asItems(current) {
+					if jsonEqual(have, item) {
+						backs = true
+					}
+				}
+			}
+		}
+		if backs {
+			out = append(out, c.path())
+		}
+	}
+	sort.Strings(out)
+	return slices.Compact(out)
+}
+
+// currentValue is the value a record holds for a property, a hot column's
+// included; nil when it holds none.
+func currentValue(row *erow, name string) any {
+	if v, ok := row.Props[name]; ok {
+		return v
+	}
+	return hotValue(row, name)
 }
 
 // subjectSourcesOf loads the live records mapped onto a record, each joined
-// through its own mapping's declared subject PROPERTY, and credits each to
-// the actor its contributions are attributed to.
+// through its own mapping's declared subject PROPERTY.
 //
 // The sites are subjectSourceSites'; this is the loading half, kept apart
 // because asking WHETHER a target still has a live source (orphans.go
@@ -829,12 +918,7 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 		if r == nil {
 			continue
 		}
-		m := bySlot[sourceSlot{c.typ, c.rel}]
-		actor, err := t.sourceActor(r.ref(), m)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, mappedSource{row: r, m: m, actor: actor})
+		out = append(out, mappedSource{row: r, m: bySlot[sourceSlot{c.typ, c.rel}]})
 	}
 	return out, nil
 }
@@ -908,40 +992,6 @@ func (t *txn) subjectSourceSites(target eref, mappings []*vocabulary.Mapping) ([
 	// A source outside its mapping's where is no source, exactly as a
 	// tombstone is not (mappingwhere.go).
 	return t.coveredSites(found, bySlot)
-}
-
-// sourceActor is the actor a source record's contributions are attributed
-// to: the most recent property_managers row of the record itself, falling back
-// to the first declared actor of the package that owns the SOURCE KIND.
-//
-// The source's package, not the mapping's: since record 49 the mapping is the
-// TARGET owner's declaration, so crediting its package would say a synced name
-// came from the repository's own vocabulary rather than from Google.
-//
-// THE SUBJECT SLOT IS NOT A CONTRIBUTION and is excluded by name. Its manager
-// is the mapping itself (record 96), written by the engine as the link
-// resolves, and it is written LAST — so without this the most recent row on
-// every freshly synced source record would be the engine's own bookkeeping,
-// and every value that record offers would be attributed to the mapping
-// instead of to the connector that fetched it.
-func (t *txn) sourceActor(src eref, m *vocabulary.Mapping) (string, error) {
-	var actor string
-	err := t.row(`
-		SELECT actor FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property <> $3
-		ORDER BY updated_at DESC, property LIMIT 1`, src.Kind, src.ID, m.Property).Scan(&actor)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	// The stored row links the actor record; the hand behind it is what
-	// recompute credits (actorKeyOf).
-	if actor != "" {
-		return string(t.actorKeyOf(actor)), nil
-	}
-	// No contribution yet: the source kind's package's own hand.
-	if authority, pkg := vocabulary.SplitPackageRef(vocabulary.KindPackage(m.From)); authority != "" && pkg != "" {
-		return string(substrate.BundleActor(authority, pkg)), nil
-	}
-	return string(substrate.ActorSystem), nil
 }
 
 // contributionOf evaluates one source's contribution to one target property,
@@ -1087,9 +1137,11 @@ type contribution struct {
 	updatedAt time.Time
 	// a, b are the deterministic tie-break keys: the source's type and id.
 	a, b  string
-	actor string
 	value any
 }
+
+// path is the record path of the source the contribution is read from.
+func (c contribution) path() string { return vocabulary.RecordPath(c.a, c.b) }
 
 // contributionsFor collects one property's candidates across the live
 // sources, ordered latest-updated first — equal instants order by the keys,
@@ -1099,7 +1151,7 @@ func contributionsFor(name string, srcs []mappedSource) []contribution {
 	for _, s := range srcs {
 		if v := contributionOf(s, name); v != nil {
 			out = append(out, contribution{
-				updatedAt: s.row.UpdatedAt, a: s.row.Kind, b: s.row.ID, actor: s.actor, value: v,
+				updatedAt: s.row.UpdatedAt, a: s.row.Kind, b: s.row.ID, value: v,
 			})
 		}
 	}
@@ -1210,25 +1262,32 @@ func (t *txn) throughSubjects(ty *vocabulary.Kind, name string, cands []contribu
 
 // selectValue applies the selection to one property's ordered candidates:
 // atomic takes the first candidate whole, union takes the deduped
-// concatenation of every candidate's items, attributed to the first
-// contributing one. nil, "" when nothing live carries the property.
-func selectValue(union bool, cands []contribution) (any, string) {
+// concatenation of every candidate's items. It answers the value and the
+// sources backing it, sorted: on atomic every candidate offering that same
+// value, on union every one contributing an item. nil, nil when nothing live
+// carries the property.
+func selectValue(union bool, cands []contribution) (any, []string) {
 	if !union {
 		if len(cands) == 0 {
-			return nil, ""
+			return nil, nil
 		}
-		return cands[0].value, cands[0].actor
+		var backing []string
+		for _, c := range cands {
+			if jsonEqual(c.value, cands[0].value) {
+				backing = append(backing, c.path())
+			}
+		}
+		sort.Strings(backing)
+		return cands[0].value, slices.Compact(backing)
 	}
 	var items []any
-	actor := ""
+	var backing []string
 	for _, c := range cands {
 		contributed := asItems(c.value)
 		if len(contributed) == 0 {
 			continue
 		}
-		if actor == "" {
-			actor = c.actor
-		}
+		backing = append(backing, c.path())
 		for _, item := range contributed {
 			dup := false
 			for _, have := range items {
@@ -1243,60 +1302,45 @@ func selectValue(union bool, cands []contribution) (any, string) {
 		}
 	}
 	if len(items) == 0 {
-		return nil, ""
+		return nil, nil
 	}
-	return items, actor
+	sort.Strings(backing)
+	return items, slices.Compact(backing)
 }
 
 // property_offers holds ONE population, because there is no bundle-offer
-// write-kind: recompute's projection of what each live source's actor would
-// write, rebuilt and pruned on every recompute, the rows behind
-// propertyMeta's alternatives. A bundle contributes by shipping its own
-// source type + recordmapping.
+// write-kind: recompute's projection of what each live source record would
+// write, rebuilt and pruned on every recompute, the rows behind a read's
+// alternatives. A bundle contributes by shipping its own source type +
+// recordmapping.
 
-// syncOffers upserts one property_offers row per (property, actor) a live
-// source contributes — computed with the same selection, restricted to that
-// actor's sources — and deletes the rows nothing live backs any more.
-// Unchanged offers write nothing.
+// syncOffers upserts one property_offers row per (property, source record) a
+// live source contributes, and deletes the rows nothing live backs any more.
+// Keyed by the source record, so two accounts of one provider synced by one
+// function are two offers. Unchanged offers write nothing.
 //
-// A row's updated_at is the updated_at of the latest source record carrying
-// the property for that actor, never the transaction's clock, and its source
-// is that record's path: both are a function of the live records exactly as
-// the value is, so a rebuild, which derives the table again (rebuild.go
-// rederiveOffers), reproduces them. For the same reason an offer spells a
-// reference as the source wrote it, a mirror included, and never through the
-// mirror's subject (#580): the subject can move without a write to the source
-// or the target. The read resolves it before comparing (propertyMeta).
+// A row's updated_at is its source record's, never the transaction's clock:
+// it is a function of the live records exactly as the value is, so a
+// rebuild, which derives the table again (rebuild.go rederiveOffers),
+// reproduces it. For the same reason an offer spells a reference as the
+// source wrote it, a mirror included, and never through the mirror's subject
+// (#580): the subject can move without a write to the source or the target.
+// The read resolves it before comparing (propertyMarks).
 func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool, srcs []mappedSource) error {
 	current := map[offerKey]offer{}
 	for _, name := range props {
-		actors := map[string]bool{}
 		for _, s := range srcs {
-			if actors[s.actor] {
+			v := contributionOf(s, name)
+			if v == nil || (unionProp[name] && len(asItems(v)) == 0) {
 				continue
 			}
-			var mine []mappedSource
-			for _, x := range srcs {
-				if x.actor == s.actor {
-					mine = append(mine, x)
-				}
+			if unionProp[name] {
+				v, _ = selectValue(true, []contribution{{value: v}})
 			}
-			cands := contributionsFor(name, mine)
-			if v, _ := selectValue(unionProp[name], cands); v != nil {
-				// cands[0] is the latest source CARRYING the path. For a union
-				// property it may carry an empty list and contribute no item,
-				// so the stamp is not always a contributing source's; it is
-				// the same on the live path and the rebuild, which is what
-				// the stamp has to be.
-				current[offerKey{name, actorID(substrate.Actor(s.actor))}] = offer{
-					value: v, at: cands[0].updatedAt,
-					source: vocabulary.RecordPath(cands[0].a, cands[0].b),
-				}
-			}
-			actors[s.actor] = true
+			current[offerKey{name, s.path()}] = offer{value: v, at: s.row.UpdatedAt}
 		}
 	}
-	rows, err := t.query(`SELECT property, actor FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
+	rows, err := t.query(`SELECT property, source FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
 		target.Kind, target.ID)
 	if err != nil {
 		return err
@@ -1304,7 +1348,7 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 	var stale []offerKey
 	for rows.Next() {
 		var k offerKey
-		if err := rows.Scan(&k.property, &k.actor); err != nil {
+		if err := rows.Scan(&k.property, &k.source); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -1320,8 +1364,8 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 	for _, k := range stale {
 		if _, err := t.exec(`
 			DELETE FROM property_offers
-			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND actor = $4`,
-			target.Kind, target.ID, k.property, k.actor); err != nil {
+			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND source = $4`,
+			target.Kind, target.ID, k.property, k.source); err != nil {
 			return err
 		}
 	}
@@ -1332,33 +1376,27 @@ func (t *txn) syncOffers(target eref, props []string, unionProp map[string]bool,
 			return err
 		}
 		if _, err := t.exec(`
-			INSERT INTO property_offers (record_kind, record_id, property, actor, value, updated_at, source)
-			VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
-			ON CONFLICT (repository, record_kind, record_id, property, actor) DO UPDATE SET
-				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at, source = EXCLUDED.source
+			INSERT INTO property_offers (record_kind, record_id, property, source, value, updated_at)
+			VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+			ON CONFLICT (repository, record_kind, record_id, property, source) DO UPDATE SET
+				value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
 			WHERE property_offers.value IS DISTINCT FROM EXCLUDED.value
-			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at
-			   OR property_offers.source IS DISTINCT FROM EXCLUDED.source`,
-			target.Kind, target.ID, k.property, k.actor, raw, o.at, o.source); err != nil {
+			   OR property_offers.updated_at IS DISTINCT FROM EXCLUDED.updated_at`,
+			target.Kind, target.ID, k.property, k.source, raw, o.at); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// offerKey addresses one property_offers row: the property, and the id of the
-// actor record that offers it.
-type offerKey struct{ property, actor string }
+// offerKey addresses one property_offers row: the property, and the record
+// path of the source record that offers it.
+type offerKey struct{ property, source string }
 
-// offer is one row's derived content: the value, its source's stamp, and the
-// source itself — the record path of the live source the value and the stamp
-// are read from (cands[0]: the latest source carrying the path), which is what
-// lets a read say WHICH mirror an alternative came from rather than only which
-// actor wrote it, when eight mirrors share one actor (record 0094).
+// offer is one row's derived content: the value, and its source's stamp.
 type offer struct {
-	value  any
-	at     time.Time
-	source string
+	value any
+	at    time.Time
 }
 
 func sortedOfferKeys(m map[offerKey]offer) []offerKey {
@@ -1370,55 +1408,9 @@ func sortedOfferKeys(m map[offerKey]offer) []offerKey {
 		if out[i].property != out[j].property {
 			return out[i].property < out[j].property
 		}
-		return out[i].actor < out[j].actor
+		return out[i].source < out[j].source
 	})
 	return out
-}
-
-// managerRow is one property's manager as recompute reads it: the actor for
-// attribution, the tier the row holds at for yield, and the tier the write
-// stored.
-type managerRow struct {
-	actor string
-	// tier is the tier the row holds at, which the yield and the orphan mark
-	// read. A declaration once moved it (record 0113); no declaration names an
-	// actor now (decision 0270), so it is the tier the write stored.
-	tier substrate.Tier
-	// stored is the tier column as the write recorded it. A kind move copies
-	// it and releaseMachineManaged decides on it, so neither rewrites nor
-	// nulls a row on the strength of a later declaration.
-	stored substrate.Tier
-	// principal is the token id the write stood behind, empty where none did.
-	// A kind move carries it with the manager (move.go), because who wrote a
-	// value is the whole row and not two thirds of it.
-	principal string
-}
-
-// managersOf reads the target's property-manager ledger, property → manager.
-// The tier column is NOT NULL, so the row and the declarations are the whole
-// answer.
-func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
-	rows, err := t.query(
-		`SELECT property, actor, tier, coalesce(principal, '') FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
-		ref.Kind, ref.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[string]managerRow{}
-	for rows.Next() {
-		var property, actor, tier, principal string
-		if err := rows.Scan(&property, &actor, &tier, &principal); err != nil {
-			return nil, err
-		}
-		out[property] = managerRow{
-			actor:     actor,
-			tier:      substrate.Tier(tier),
-			stored:    substrate.Tier(tier),
-			principal: principal,
-		}
-	}
-	return out, rows.Err()
 }
 
 // recomputeSubjectOf recomputes the record a source record points at. It
@@ -1467,14 +1459,15 @@ func (t *txn) afterTombstone(ref eref) error {
 	return t.recomputeSubjectsOf(ref)
 }
 
-// releaseMachineManaged releases the named properties on a record where the
-// machine tier manages them: what recompute wrote for mappings a vocabulary
-// apply removed (recomputeMappingTargets). Each is nulled through the same
-// recomputing patch recompute uses, so the value and its manager row go
-// together; a required property keeps its value, as recompute leaves it. A
-// property held above the machine tier, or one the machine wrote for no
-// mapping, is not named and is not touched.
-func (t *txn) releaseMachineManaged(target eref, props []string) error {
+// releaseUnpinned releases the named properties of a record where nothing
+// pinned them: what recompute wrote for mappings a vocabulary apply removed
+// (recomputeMappingTargets), which no remaining mapping supplies. Each is
+// nulled through the same recomputing patch recompute uses, so the value and
+// its mark go together; a required property keeps its value, as recompute
+// leaves it. A value it keeps, pinned or required, keeps its mark but not its
+// sources: no mapping offers it any more. One that carries no mark is not
+// touched.
+func (t *txn) releaseUnpinned(target eref, props []string) error {
 	if len(props) == 0 {
 		return nil
 	}
@@ -1486,37 +1479,38 @@ func (t *txn) releaseMachineManaged(target eref, props []string) error {
 	if err != nil {
 		return err
 	}
-	managers, err := t.managersOf(target)
+	marks, err := t.marksOf(target)
 	if err != nil {
 		return err
 	}
 	patch := map[string]any{}
+	remarks := map[string]mark{}
 	for _, name := range props {
-		// The stored tier: a row an actor wrote above the machine tier is not
-		// recompute's to null here, even once its actor is declared at the
-		// machine tier (record 0113).
-		if m, held := managers[name]; !held || m.stored != substrate.TierMachine {
+		m, marked := marks[name]
+		if !marked {
 			continue
 		}
-		if p, ok := ty.Props[name]; ok && p.Required {
+		if p, ok := ty.Props[name]; m.Pinned || (ok && p.Required) {
+			if len(m.DerivedFrom) > 0 {
+				m.DerivedFrom = nil
+				remarks[name] = m
+			}
 			continue
 		}
 		patch[name] = nil
 	}
-	if len(patch) == 0 {
+	if len(patch) > 0 {
+		if err := t.asRecompute(func() error {
+			_, err := t.patch(target, substrate.PatchInput{Properties: patch})
+			return err
+		}); err != nil {
+			return err
+		}
+	}
+	if len(remarks) == 0 {
 		return nil
 	}
-	was := t.actor
-	t.recomputeInitiator = was
-	t.actor = substrate.ActorSystem
-	t.recomputing, t.recomputeManagers = true, nil
-	defer func() {
-		t.actor = was
-		t.recomputing, t.recomputeManagers = false, nil
-		t.recomputeInitiator = ""
-	}()
-	_, err = t.patch(target, substrate.PatchInput{Properties: patch})
-	return err
+	return t.asRecompute(func() error { return t.remark(target, remarks) })
 }
 
 // recomputeSubjectsOf recomputes every subject a source record points at, one

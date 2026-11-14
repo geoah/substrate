@@ -27,20 +27,18 @@ var classKeepers = map[string]struct {
 	uses int
 	why  string
 }{
-	"internal/substrate/tier.go":                                        {6, "the classes themselves, for the manager mark (step 17)"},
-	"internal/vocabulary/types.go":                                      {2, "an actor's tier, for the manager mark (step 17)"},
-	"internal/engine/rows.go":                                           {5, "an actor's tier, for the manager mark (step 17)"},
-	"internal/engine/mapping.go":                                        {2, "recompute yields to a property a hand above machine holds (step 17)"},
-	"internal/engine/orphans.go":                                        {1, "the mark recompute holds (step 17)"},
-	"internal/engine/query.go":                                          {1, "the mark a read reports (step 17)"},
-	"internal/engine/rebuild.go":                                        {1, "the replay's own mark (step 17)"},
-	"internal/engine/repodir.go":                                        {1, "the import's own mark (step 17)"},
-	"internal/engine/sync.go":                                           {3, "the marks a reconnect's patch holds (step 17)"},
-	"internal/engine/repomigration_0005_remove_reply_relay_contacts.go": {2, "a landed migration's marks (step 17)"},
-	"internal/engine/repomigration_0006_key_the_repository_record_by_its_id.go": {1, "a landed migration's marks (step 17)"},
+	"internal/substrate/tier.go":                                        {6, "the classes themselves, which the owner's gates read (step 19)"},
+	"internal/vocabulary/types.go":                                      {2, "a function's and an agent's hand stands at the bundle tier, which the owner's gates read (step 19)"},
+	"internal/engine/rows.go":                                           {5, "an actor's tier, which the owner's gates read (step 19)"},
+	"internal/engine/rebuild.go":                                        {1, "the replay's writing context (step 19)"},
+	"internal/engine/repodir.go":                                        {1, "the import's writing context (step 19)"},
+	"internal/engine/sync.go":                                           {1, "a sync's writes stand at the bundle tier, which the owner's gates read (step 19)"},
+	"internal/engine/marks.go":                                          {1, "setManager, the landed repository migration 0006's manager words, kept as it landed"},
+	"internal/engine/repomigration_0005_remove_reply_relay_contacts.go": {2, "a landed migration's words, kept as it landed"},
+	"internal/engine/repomigration_0006_key_the_repository_record_by_its_id.go": {1, "a landed migration's words, kept as it landed"},
 	"internal/engine/oauth.go":        {1, "only the owner starts an OAuth flow (step 19)"},
 	"internal/engine/writegate.go":    {1, "only the owner passes the owner's gates (step 19)"},
-	"internal/engine/write.go":        {8, "only the owner adjusts a change request, a bundle's writes skip the version check, and installed code never writes a policy (step 19)"},
+	"internal/engine/write.go":        {6, "only the owner adjusts a change request, a bundle's writes skip the version check, and installed code never writes a policy (step 19)"},
 	"internal/engine/approvals.go":    {1, "installed code answers no approval (step 19)"},
 	"internal/engine/interactions.go": {1, "installed code answers no interaction (step 19)"},
 }
@@ -118,9 +116,9 @@ func TestNoWriterWordFromBeforeActorTypesIsLeft(t *testing.T) {
 		keep, ok := classKeepers[rel]
 		switch {
 		case !ok:
-			t.Errorf("%s names a writer class (TierOwner, TierBundle, TierMachine); a writer is a type of actor now, and only the files listed in classKeepers keep a class, for the mark (step 17) or an owner-only check (step 19)", rel)
+			t.Errorf("%s names a writer class (TierOwner, TierBundle, TierMachine); a writer is a type of actor now, and only the files listed in classKeepers keep a class, for an owner-only check (step 19) or a landed migration's words", rel)
 		case classed[rel] != keep.uses:
-			t.Errorf("%s names a class %d times and classKeepers says %d: a new use is the mark's (step 17) or an owner-only check's (step 19) to say, and a use gone lowers the number", rel, classed[rel], keep.uses)
+			t.Errorf("%s names a class %d times and classKeepers says %d: a new use is an owner-only check's (step 19) to say, and a use gone lowers the number", rel, classed[rel], keep.uses)
 		}
 	}
 	for rel := range classKeepers {

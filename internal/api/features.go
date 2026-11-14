@@ -115,13 +115,19 @@ var featureTable = []feature{
 	// each alternative link the actor record of their hand (decision 0270).
 	// Revision 4: a definition a kind's record serves names its properties'
 	// writers as a type of actor or a list of them (decision 0290).
-	{name: "records", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 5: `marks` in place of `propertyMeta`, each property's
+	// `pinned`, `setBy`, `onBehalfOf`, `derivedFrom` and `setAt`, its
+	// alternatives keyed by source record, and the `pin` and `release`
+	// actions (decision 0284).
+	{name: "records", stability: substrate.StabilityStable, revision: 5, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
 		"PUT /api/v1/{a1}/{a2}/{a3}/{a4}",
 		"PATCH /api/v1/{a1}/{a2}/{a3}/{a4}",
 		"DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
+		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/pin",
+		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/release",
 	}},
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route

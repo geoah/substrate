@@ -27,9 +27,12 @@ var (
 	dialectOneOps = []string{
 		"put", "patch", "delete", "merge", "split", "gc", "delivery",
 	}
+	// `manager` went with decision 0284: `mark` and `unmark` took its job,
+	// and the marks conversion (conversion_0005_marks.go) rewrites what
+	// history holds of it, to dialect 5.
 	dialectOneEffects = []string{
 		"record", "tombstone", "purge",
-		"annotation", "manager", "former", "resync",
+		"annotation", "mark", "unmark", "former", "resync",
 		"cursor", "schedule", "park", "unpark", "page", "unpage", "forget",
 	}
 )

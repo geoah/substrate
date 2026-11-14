@@ -306,13 +306,13 @@ func TestBootUpgradeMovesTheLLMRowsOutOfCore(t *testing.T) {
 	for _, chained := range []struct{ id, parent string }{{"th-c", "th-b"}, {"th-b", "th-a"}} {
 		wantRef(llmPkg+"/thread", chained.id, "parent", llmPkg+"/thread/"+chained.parent)
 	}
-	// The property managers followed the values: who last wrote one, at which
-	// tier and behind which token, is a fact about the value and not about the
-	// hand that carried it.
-	if got := managerOf(t, dsn, after.Repository, llmPkg+"/provider", "openai", "label"); got.actor == "" {
-		t.Error("the moved provider's `label` has no manager; the move dropped it")
-	} else if got != managerOf(t, dsn, after.Repository, corePkg+"/llmprovider", "openai", "label") {
-		t.Errorf("the moved manager is %+v, want the one the old row carried", got)
+	// The marks followed the values: who wrote one, whether it is pinned,
+	// what it came from and when it was set are facts about the value and not
+	// about the hand that carried it.
+	if got := markOf(t, dsn, after.Repository, llmPkg+"/provider", "openai", "label"); got.setBy == "" {
+		t.Error("the moved provider's `label` has no mark; the move dropped it")
+	} else if got != markOf(t, dsn, after.Repository, corePkg+"/llmprovider", "openai", "label") {
+		t.Errorf("the moved mark is %+v, want the one the old row carried", got)
 	}
 	// The provider's key is re-sealed under its new owner, so it still opens.
 	// Every read surface redacts it, which is what proves it is sealed and not
@@ -475,29 +475,31 @@ func foldDigest(t *testing.T, dsn, repository string) string {
 	return b.String()
 }
 
-// manager is one property's manager row, as the move must carry it.
-type manager struct {
-	actor, tier, principal string
+// mark is one property's mark, as the move must carry it.
+type mark struct {
+	pinned                  bool
+	setBy, onBehalfOf, from string
+	setAt                   string
 }
 
-// managerOf reads one property's manager row straight from the ledger: the
-// move's promise is that all three columns travel with the value. The
-// repository is named by its name, and the ledger is keyed by its id.
-func managerOf(t *testing.T, dsn, repository, kind, id, property string) manager {
+// markOf reads one property's mark straight from its table: the move's
+// promise is that every column travels with the value. The repository is
+// named by its name, and the table is keyed by its id.
+func markOf(t *testing.T, dsn, repository, kind, id, property string) mark {
 	t.Helper()
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		t.Fatalf("open the raw pool: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	var m manager
+	var m mark
 	err = db.QueryRow(
-		`SELECT actor, tier, coalesce(principal, '') FROM property_managers
+		`SELECT pinned, set_by, on_behalf_of, derived_from::text, set_at::text FROM property_marks
 		 WHERE repository = (SELECT r.id FROM repositories r WHERE r.authority = $1)
 		   AND record_kind = $2 AND record_id = $3 AND property = $4`,
-		repository, kind, id, property).Scan(&m.actor, &m.tier, &m.principal)
+		repository, kind, id, property).Scan(&m.pinned, &m.setBy, &m.onBehalfOf, &m.from, &m.setAt)
 	if err != nil {
-		return manager{}
+		return mark{}
 	}
 	return m
 }

@@ -304,6 +304,10 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 			return err
 		}
 	}
+	// The entry ends the line, as a replay of it ends it (foldEntry).
+	if err := t.settleTakenOut(); err != nil {
+		return err
+	}
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
 	// transaction that appends more than one entry slices its effect stream at
@@ -539,18 +543,12 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 	return err == nil, err
 }
 
-// --- property managers ---
+// --- the write's tier ---
 //
-// The ledger records which actor last had a change ACCEPTED on each property
-// (the id of its actor record, decision 0270), at which TIER that write
-// stood, and which token the door verified stood behind it (the `principal`
-// column). It is attribution on every direct write, and it is load-bearing:
-// mapping recompute yields to any manager row that holds above the machine
-// tier, which is how a hand edit — the owner's or a function's — survives a
-// sync, visibly. Nothing else reads it to decide who
-// may write — anyone still overwrites anything.
+// A property's mark is marks.go's: pinned by the type of the hand that wrote
+// it, and nothing here decides it.
 
-// actorTier resolves an actor's manager tier from what the hand is: the
+// actorTier resolves the tier a hand writes at from what the hand is: the
 // person is the owner tier; the engine's own hand is machine; an app's token
 // writes at the owner tier, and the owner-only gates read txn.scoped beside
 // it; and a function or agent the registry declares is bundle.
@@ -559,17 +557,15 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // namespace, `bundle:`, `function:`, `agent:`, and the retired `connector:`
 // prefix) is one of the substrate's own writing hands — a package's install,
 // a callable whose declaration is gone, a facility like the OAuth door, a
-// dispatch mid-uninstall — and none of those is the owner's edit, so it holds
-// at the machine tier and recompute may replace it. Anything else holds at
-// the owner tier. No request names a hand (decision 0270), so nothing here
-// escalates. The split is FORWARD-ONLY: a manager row already stored keeps
-// its tier, here and through a rebuild, because the fold replays the tier
-// the write recorded, not the tier this function would resolve today.
+// dispatch mid-uninstall — and none of those is the owner's edit, so it
+// writes at the machine tier. Anything else writes at the owner tier. No
+// request names a hand (decision 0270), so nothing here escalates. The tier
+// decides what a write may touch; whether sync may replace a value is the
+// value's mark (marks.go), stored when it is written.
 //
 // Direct writes read their tier off the transaction (txn.tier,
 // set once at inTx and set to bundle explicitly by function/agent
-// dispatch); recompute's own rows are always machine, whatever actor they
-// credit (mapping.go). This function is also the facility seams'
+// dispatch); recompute writes at the machine tier (mapping.go). This function is also the facility seams'
 // (StartOAuth's owner-gate) resolution, outside any transaction.
 func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
 	return actorTierIn(ds.registry(), actor)
@@ -577,8 +573,8 @@ func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
 
 // actorTier resolves an actor's tier against the transaction's declarations:
 // inside a vocabulary apply that is the candidate, so a closure installed
-// under an actor it declares writes its manager rows at the tier the closure
-// declares on the first install, not only on a re-install.
+// under an actor it declares writes at the tier the closure declares on the
+// first install, not only on a re-install.
 func (t *txn) actorTier(actor substrate.Actor) substrate.Tier {
 	return actorTierIn(t.declarations(), actor)
 }
@@ -605,69 +601,6 @@ func actorTierIn(reg *vocabulary.Registry, actor substrate.Actor) substrate.Tier
 		return substrate.TierMachine
 	}
 	return substrate.TierOwner
-}
-
-func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) error {
-	// The effect carries the token so a replay reproduces the row without
-	// reading the entry around it: the fold describes what the write did, in
-	// full.
-	return t.setManagerAs(ref, property, actorID(actor), tier, t.tokenOf(actor))
-}
-
-// setManagerAs is setManager with the actor record and the token NAMED rather
-// than taken from the transaction. A kind move carries a manager row across
-// whole (move.go), so the hand and the token behind the value it describes
-// are the ones that wrote it, not the ones carrying it.
-func (t *txn) setManagerAs(ref eref, property, actor string, tier substrate.Tier, token string) error {
-	_, err := t.fold(foldOp{
-		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
-		Property: property, Actor: actor, Tier: string(tier),
-		Token: token,
-	})
-	return err
-}
-
-// deleteManager clears one property's manager row: a deleted property is
-// nobody's, so the next recompute may refill it. An
-// empty actor is the release on the wire too.
-func (t *txn) deleteManager(ref eref, property string) error {
-	_, err := t.fold(foldOp{Kind: foldManager, Ref: ref.Kind, ID: ref.ID, Property: property})
-	return err
-}
-
-func (t *txn) applyManager(ref eref, property, actor string, tier substrate.Tier, principal string, at time.Time) (bool, error) {
-	if actor == "" {
-		res, err := t.exec(`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
-			ref.Kind, ref.ID, property)
-		if err != nil {
-			return false, err
-		}
-		n, err := res.RowsAffected()
-		return n > 0, err
-	}
-	// A bulk run's record holds no manager row, so the INSERT below would
-	// add one (bulkwrite.go).
-	if t.queueManager(ref, property, actor, tier, principal, at) {
-		return true, nil
-	}
-	// A different principal is a different write, so it moves the row: the
-	// ledger names the token behind the last accepted change, not merely the
-	// door it came through.
-	res, err := t.exec(`
-		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE SET
-			actor = EXCLUDED.actor, tier = EXCLUDED.tier,
-			principal = EXCLUDED.principal, updated_at = EXCLUDED.updated_at
-		WHERE property_managers.actor     IS DISTINCT FROM EXCLUDED.actor
-		   OR property_managers.tier      IS DISTINCT FROM EXCLUDED.tier
-		   OR property_managers.principal IS DISTINCT FROM EXCLUDED.principal`,
-		ref.Kind, ref.ID, property, actor, string(tier), principal, at)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n > 0, err
 }
 
 // --- embed queue ---
@@ -735,7 +668,7 @@ func (t *txn) applyPurge(ref eref) error {
 		`DELETE FROM unit_uses WHERE kind = $1 AND record_id = $2`,
 		`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
-		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
+		`DELETE FROM property_marks WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_offers WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM records WHERE kind = $1 AND id = $2`,
 	} {

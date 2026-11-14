@@ -357,7 +357,7 @@ func rawDBOf(t *testing.T, dsn string) *sql.DB {
 
 // TestKeyingTime measures the rows half of the keying on a repository of
 // SUBSTRATE_KEYING_ROWS synthetic records, each with a changelog line and a
-// property manager row beside it, and logs the time; it runs only when the
+// property mark beside it, and logs the time; it runs only when the
 // variable is set.
 func TestKeyingTime(t *testing.T) {
 	n := os.Getenv("SUBSTRATE_KEYING_ROWS")
@@ -378,15 +378,15 @@ func TestKeyingTime(t *testing.T) {
 		        jsonb_build_object('fold', jsonb_build_array(jsonb_build_object('kind', 'record', 'delta', jsonb_build_object('set', jsonb_build_object('body', repeat('note text ', 30)))))),
 		        '', 1000000 + g, sha256(g::text::bytea)
 		 FROM generate_series(1, $2::int) g`,
-		`INSERT INTO property_managers (repository, record_kind, record_id, property, actor, tier, updated_at, principal)
-		 SELECT $1, 'keying.example.com/notes/note', 'n' || g, 'body', '6nk6ekkczdgh399nt2pqpccjz0', 'owner', now(), ''
+		`INSERT INTO property_marks (repository, record_kind, record_id, property, pinned, set_by, on_behalf_of, derived_from, set_at)
+		 SELECT $1, 'keying.example.com/notes/note', 'n' || g, 'body', true, '6nk6ekkczdgh399nt2pqpccjz0', '', '[]'::jsonb, now()
 		 FROM generate_series(1, $2::int) g`,
 	} {
 		if _, err := db.ExecContext(ctx, q, k.name, n); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}
-	t.Logf("seeded %s records, changelog lines and manager rows in %s", n, time.Since(started).Round(time.Millisecond))
+	t.Logf("seeded %s records, changelog lines and marks in %s", n, time.Since(started).Round(time.Millisecond))
 	svcI, err := OpenForTest(t, ctx, k.dsn, WithDataRoot(k.root), WithDirectoryReadOnly())
 	if err != nil {
 		t.Fatal(err)

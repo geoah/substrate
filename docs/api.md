@@ -302,8 +302,9 @@ PATCH /api/v1/samples.substrate.reamde.dev/tasks/task/01jbx9m2qz7k4c5v8n3w6t1hrd
 ```
 
 Read the person GitHub linked up. Single-record reads carry two sidecars a
-list never does. `propertyMeta` is per property: who wrote it, at which tier,
-and the alternatives other sources assert
+list never does. `marks` is per property: whether sync may replace it, who
+set it, the source records behind it, when it was set, and the alternatives
+other source records offer
 ([managed properties](projection.md#managed-properties) explains the
 mechanism). `linkedFrom` is the records that map ONTO this one
 ([reading the links back](projection.md#reading-the-links-back-linkedfrom)).
@@ -315,12 +316,12 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
 
 → {"id": "9f2k", "kind": "samples.substrate.reamde.dev/people/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
-   "propertyMeta": {"name": {"manager": "6nk6ekkczdgh399nt2pqpccjz0", "tier": "owner",
-     "updatedAt": "2026-08-04T09:12:00Z",
+   "marks": {"name": {"pinned": true,
+     "setBy": {"ref": "substrate.reamde.dev/core/actor/6nk6ekkczdgh399nt2pqpccjz0"},
+     "setAt": "2026-08-04T09:12:00Z",
      "alternatives": [
-       {"actor": "3wv04ja0n3g3n9s3q6bvkqnysj",
-        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z",
-        "source": "providers.substrate.reamde.dev/github/user/ada"}]}},
+       {"derivedFrom": {"ref": "providers.substrate.reamde.dev/github/user/ada"},
+        "value": "ada", "updatedAt": "2026-08-04T08:00:00Z"}]}},
    "linkedFrom": [
      {"ref": "providers.substrate.reamde.dev/github/user/ada",
       "kind": "providers.substrate.reamde.dev/github/user", "title": "ada",
@@ -332,14 +333,14 @@ GET /api/v1/samples.substrate.reamde.dev/people/person/9f2k
       "mapping": "samples.substrate.reamde.dev/people/slackuserperson"}]}
 ```
 
-The manager and an alternative's `actor` are the ids of
-[actor records](#actors): here the person, who typed the name, and the
-GitHub sync function. An alternative's `updatedAt` is its source record's,
-not the target's, and its `source` is that record's path; a machine-held
-property's manager names its `source` too, where its own offer backs the
-stored value.
-[Reading provenance](projection.md#reading-provenance-propertymeta) has the
-rule.
+`setBy` links the [actor record](#actors) of the person, who typed the
+name, so it is pinned. An alternative is keyed by the source record it is
+read from, its `derivedFrom`, and its `updatedAt` is that record's, not the
+target's; a value sync wrote names the records behind it in its own
+`derivedFrom`. `POST …/<id>/pin` and `POST …/<id>/release`, each with
+`{"properties": [...]}`, pin a value against sync and hand it back.
+[Where a value came from](projection.md#where-a-value-came-from-the-marks)
+has the rules.
 
 `linkedFrom` is one entry per source record whose mapping-owned subject slot
 points here: `ref` its record path, `kind` the same kind said on its own,
@@ -371,6 +372,16 @@ repository:
 | `delete` | Soft delete: tombstones the record; hard deletion waits for finalizers to release.                                                                                  |
 | `merge`  | Join two records of one kind; the loser's id resolves to the winner while the winner exists ([merges](projection.md#merges)).                                       |
 | `split`  | Reverse one merge, restoring the loser from the merge record.                                                                                                       |
+
+Beside them, two actions move a property's [mark](projection.md#where-a-value-came-from-the-marks)
+and no value: `POST <record path>/pin` keeps the named properties' values
+against sync, and `POST <record path>/release` hands them back to it, which
+picks each value again among what its source records offer. Each takes
+`{"properties": ["name"], "ifVersion": 3}` (`ifVersion` optional), answers
+the record with its marks, works on a required property, and is an entry of
+the record's history, a `patch` whose payload names what it `pinned` or
+`released`. A property the record holds no value for, or the subject slot a
+mapping fills, is refused.
 
 A pointer at another record is a property, so it is written by `put` and
 `patch` like every other value, and a record and everything it points at commit
@@ -693,7 +704,7 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   `true` lists only soft-deleted ones.
 - `orphaned` picks the **orphaned mapping targets**: `true` lists only the
   records the engine has marked — a kind something maps onto, no live covered
-  source left, and nothing above the machine tier holding a property — and `false`
+  source left, and nothing on it pinned — and `false`
   only the unmarked. Absent is every record. It is derived state, not a
   property, so a re-linked record leaves the set on its next write
   ([the orphan mark](projection.md#when-the-last-source-goes-the-orphan-mark)).
@@ -1054,7 +1065,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, and the record path with its four verbs. |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |
@@ -2408,29 +2419,30 @@ unlock, and the substrate's own hands write past checks a request must not
 skip, so none is a request's to claim. An `X-Substrate-Actor` header an older
 client still sends is ignored, not refused.
 
-Where else a hand is named, it is by the same link: a property's `manager`
-and each alternative's `actor` in a record's `propertyMeta` (since revision 3
-of the `records` feature), a package's `declaredBy`, a blob's `createdBy`, a
+Where else a hand is named, it is by the same link: a property's mark's
+`setBy` and `onBehalfOf` in a record's `marks` (since revision 4 of the
+`records` feature), a package's `declaredBy`, a blob's `createdBy`, a
 call run's `caller`, and the [change feed's](changelog.md#watching)
 `actors=` and `excludeActors=` filters, which take actor record ids.
 Discovery's `grammar.actorTypes` lists the six types.
 
 Attribution is load-bearing three ways:
 
-- **Provenance**: every accepted write records its actor as the property's
-  manager ([managed properties](projection.md#managed-properties)), beside
-  the token it stood behind, and every [changelog row](changelog.md) names
-  its actor, the one it acted for and its token.
-- **Yield**: mapping recompute yields to any manager outside the machine tier,
-  which is how a hand edit survives a sync.
+- **Provenance**: every accepted write marks each property it sets with its
+  actor and the one it acted for
+  ([managed properties](projection.md#managed-properties)), and every
+  [changelog row](changelog.md) names its actor, the one it acted for and its
+  token.
+- **Yield**: mapping recompute yields to a pinned value, which is how a hand
+  edit survives a sync; whether a write pins is its actor's type.
 - **Self-exclusion**: a [function](functions.md) never sees writes made by
   its own actor, which is one half of what keeps functions from looping.
 
-The manager **tier** a write holds at (owner, bundle, or machine) is explicit
-data on the write context, never read off the actor record: the person and
-an app write at the owner tier. [Managed
-properties](projection.md#managed-properties) owns the tier rules, who writes
-at which tier, and how recompute yields to them.
+Whether a write **pins** what it writes is stored with it, from the type of
+the actor that wrote it: a person's, an app's, a function's and an agent's
+direct write pins, a package's and the engine's do not. [Managed
+properties](projection.md#managed-properties) owns the rules, and how
+recompute yields to a pin.
 
 ## The canonical envelope
 

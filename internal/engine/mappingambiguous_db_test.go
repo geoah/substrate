@@ -88,8 +88,8 @@ func TestAnAmbiguousMintDoesNotCopyTheSharedAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if meta, ok := full.PropertyMeta["emails"]; !ok || len(meta.Alternatives) == 0 {
-		t.Fatalf("no alternative carries the withheld address: %+v", full.PropertyMeta["emails"])
+	if m, ok := full.Marks["emails"]; !ok || len(m.Alternatives) == 0 {
+		t.Fatalf("no alternative carries the withheld address: %+v", full.Marks["emails"])
 	}
 
 	// The next contact on the same address sees the same two candidates, not

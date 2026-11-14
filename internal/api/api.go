@@ -555,6 +555,10 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Put("/{a1}/{a2}/{a3}/{a4}", h.putResource)
 			r.Patch("/{a1}/{a2}/{a3}/{a4}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}/{a4}", h.deleteResource)
+			// The two actions on a record's marks (decision 0284). Five
+			// segments, so the record path above never shadows them.
+			r.Post("/{a1}/{a2}/{a3}/{a4}/pin", h.postPin)
+			r.Post("/{a1}/{a2}/{a3}/{a4}/release", h.postRelease)
 		})
 
 		r.Group(func(r chi.Router) {

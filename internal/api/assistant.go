@@ -291,6 +291,22 @@ func (a *assistantDataset) Delete(ctx context.Context, actor substrate.Actor, ty
 	return withoutKey(rec), err
 }
 
+func (a *assistantDataset) Pin(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := refuseAuthWrite(typ); err != nil {
+		return nil, err
+	}
+	rec, err := a.inner.Pin(ctx, actor, typ, id, in)
+	return withoutKey(rec), err
+}
+
+func (a *assistantDataset) Release(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := refuseAuthWrite(typ); err != nil {
+		return nil, err
+	}
+	rec, err := a.inner.Release(ctx, actor, typ, id, in)
+	return withoutKey(rec), err
+}
+
 func (a *assistantDataset) Merge(ctx context.Context, actor substrate.Actor, in substrate.MergeInput) (*substrate.Record, error) {
 	if err := refuseAuthWrite(in.Kind); err != nil {
 		return nil, err

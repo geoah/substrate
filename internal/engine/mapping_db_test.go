@@ -426,7 +426,7 @@ func TestMatchLinksSingleCandidate(t *testing.T) {
 	p := mustGet(t, ds, sam.Kind, sam.ID)
 	// The owner's writes yield; the unheld properties fill.
 	if p.Properties["name"] != "Sam" {
-		t.Fatalf("recompute overwrote an owner-held name: %v", p.Properties["name"])
+		t.Fatalf("recompute overwrote a pinned name: %v", p.Properties["name"])
 	}
 	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
 		t.Fatalf("phones did not fill: %v", p.Properties["phones"])
@@ -560,21 +560,24 @@ func TestSamScenario(t *testing.T) {
 	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
 		t.Fatalf("phones did not fill: %v", p.Properties["phones"])
 	}
-	// The yielded value is an ALTERNATIVE on the single-record read.
-	meta := p.PropertyMeta
-	if meta == nil {
-		t.Fatalf("no propertyMeta on a managed person: %+v", p)
+	// The yielded value is an ALTERNATIVE on the single-record read, keyed
+	// by the source record that offers it.
+	marks := p.Marks
+	if marks == nil {
+		t.Fatalf("no marks on a written person: %+v", p)
 	}
-	if meta["name"].Manager != vocabulary.ActorID(owner) {
-		t.Fatalf("name manager = %q, want the owner", meta["name"].Manager)
+	if markSetBy(marks["name"]) != vocabulary.ActorID(owner) || !marks["name"].Pinned {
+		t.Fatalf("name mark = %+v, want pinned by the owner", marks["name"])
 	}
-	alts := meta["name"].Alternatives
-	if len(alts) != 1 || alts[0].Actor != vocabulary.ActorID(people) || alts[0].Value != "Samuel Jones" {
+	gPath := vocabulary.RecordPath(typeGoogleContact, g.ID)
+	alts := marks["name"].Alternatives
+	if len(alts) != 1 || altFrom(alts[0]) != gPath || alts[0].Value != "Samuel Jones" {
 		t.Fatalf("name alternatives = %+v", alts)
 	}
-	// An accepted recompute records the WINNING SOURCE's actor, not system.
-	if meta["phones"].Manager != vocabulary.ActorID(people) {
-		t.Fatalf("phones manager = %q, want %s", meta["phones"].Manager, people)
+	// An accepted recompute names the SOURCE RECORD behind the value, and
+	// no hand: the engine wrote it.
+	if from := markFrom(marks["phones"]); len(from) != 1 || from[0] != gPath || marks["phones"].SetBy != nil || marks["phones"].Pinned {
+		t.Fatalf("phones mark = %+v, want derived from %s", marks["phones"], gPath)
 	}
 
 	foundMapping := false
@@ -591,8 +594,8 @@ func TestSamScenario(t *testing.T) {
 		t.Fatal("mapping recompute did not record its mechanism and initiating actor")
 	}
 
-	// Releasing a hand edit is a null-patch: the delete clears the value and
-	// its manager, and the SAME transaction refills from live sources.
+	// Deleting a hand edit clears the value and its mark, and the SAME
+	// transaction refills from live sources.
 	released := mustPatch(t, ds, owner, sam.Kind, sam.ID, substrate.PatchInput{
 		Properties: map[string]any{"name": nil},
 	})
@@ -600,12 +603,12 @@ func TestSamScenario(t *testing.T) {
 		t.Fatalf("release did not refill in the same transaction: %v", released.Properties["name"])
 	}
 	p = mustGet(t, ds, sam.Kind, sam.ID)
-	if p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
-		t.Fatalf("refilled manager = %q, want %s", p.PropertyMeta["name"].Manager, people)
+	if from := markFrom(p.Marks["name"]); len(from) != 1 || from[0] != gPath {
+		t.Fatalf("refilled mark = %+v, want derived from %s", p.Marks["name"], gPath)
 	}
-	if len(p.PropertyMeta["name"].Alternatives) != 0 {
+	if len(p.Marks["name"].Alternatives) != 0 {
 		t.Fatalf("an offer equal to the stored value is not an alternative: %+v",
-			p.PropertyMeta["name"].Alternatives)
+			p.Marks["name"].Alternatives)
 	}
 
 	// Slack's sam shares nothing: a second person, never a guess.
@@ -617,46 +620,44 @@ func TestSamScenario(t *testing.T) {
 		t.Fatalf("slack's sam matched across a different address")
 	}
 
-	// The owner decides they are one person. Managers migrate where the
-	// winner lacks the property; recompute respects the owner's holds.
+	// The owner decides they are one person. Marks migrate where the winner
+	// lacks the property; recompute respects the owner's pins.
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: sam.Kind, Winner: sam.ID, Loser: second})
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
 	merged := mustGet(t, ds, sam.Kind, sam.ID)
 	if got, _ := merged.Properties["emails"].([]any); len(got) != 1 || got[0] != "sam@acme.com" {
-		t.Fatalf("an owner-held union property must survive its own merge: %v", merged.Properties["emails"])
+		t.Fatalf("a pinned union property must survive its own merge: %v", merged.Properties["emails"])
 	}
 	if merged.Properties["displayName"] != "sam" {
 		t.Fatalf("the loser's displayName did not reach the winner: %v", merged.Properties["displayName"])
 	}
-	// Slack synced last, so within the machine tier its name wins.
+	// Slack synced last, so among the sources its name wins.
 	if merged.Properties["name"] != "Sam J" {
 		t.Fatalf("latest source write should win the released name: %v", merged.Properties["name"])
 	}
 	// Slack's differing address shows as an alternative beside the hold.
+	sPath := vocabulary.RecordPath(typeSlackUser, s.ID)
 	var slackOffer bool
-	for _, alt := range merged.PropertyMeta["emails"].Alternatives {
-		if alt.Actor == vocabulary.ActorID(slack) {
+	for _, alt := range merged.Marks["emails"].Alternatives {
+		if altFrom(alt) == sPath {
 			slackOffer = true
 		}
 	}
 	if !slackOffer {
-		t.Fatalf("emails alternatives = %+v", merged.PropertyMeta["emails"].Alternatives)
+		t.Fatalf("emails alternatives = %+v", merged.Marks["emails"].Alternatives)
 	}
-	moved, _ := rec.Properties["moved"].(map[string]any)
-	var migrated bool
-	for _, m := range moved["managers"].([]any) {
-		row, _ := m.(map[string]any)
-		if row["property"] == "displayName" && row["actor"] == vocabulary.ActorID(slack) {
-			migrated = true
-		}
+	// A merge moves no mark: the winner's displayName came from slack's
+	// record through recompute, and the merge record lists no marks.
+	if from := markFrom(merged.Marks["displayName"]); len(from) != 1 || from[0] != sPath {
+		t.Fatalf("displayName mark = %+v, want derived from the slack record", merged.Marks["displayName"])
 	}
-	if !migrated {
-		t.Fatalf("the merge record should carry the migrated managers: %+v", moved["managers"])
+	if moved, _ := rec.Properties["moved"].(map[string]any); moved["marks"] != nil {
+		t.Fatalf("the merge record lists moved marks: %+v", moved["marks"])
 	}
 
-	// Split reverses it: the slack record and its managers go back, and both
+	// Split reverses it: the slack record and its marks go back, and both
 	// sides recompute from the sources they now have.
 	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
@@ -708,9 +709,9 @@ func TestUnionRecompute(t *testing.T) {
 	}
 }
 
-// Within the machine tier the LATEST-UPDATED live source wins, per property —
-// and an identical re-sync moves nothing, so "latest" means changed.
-func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
+// Among the sources the LATEST-UPDATED live one wins, per property — and an
+// identical re-sync moves nothing, so "latest" means changed.
+func TestLatestWriteWinsAmongTheSources(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -732,13 +733,13 @@ func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
 	if p.Properties["name"] != "Alexandros P." {
 		t.Fatalf("latest source = %v, want google's", p.Properties["name"])
 	}
-	if p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
-		t.Fatalf("manager = %q, want the winning source's actor", p.PropertyMeta["name"].Manager)
+	if from := markFrom(p.Marks["name"]); len(from) != 1 || from[0] != vocabulary.RecordPath(typeGoogleContact, g.ID) {
+		t.Fatalf("mark = %+v, want derived from the winning source", p.Marks["name"])
 	}
 }
 
-// A hand edit SURVIVES the sync now: the manager ledger is
-// load-bearing, and recompute yields to anyone outside the machine tier.
+// A hand edit SURVIVES the sync now: the mark is load-bearing, and recompute
+// yields to a pinned value.
 func TestHandEditSurvivesTheSync(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -753,7 +754,7 @@ func TestHandEditSurvivesTheSync(t *testing.T) {
 	if p.Properties["name"] != "Alex" {
 		t.Fatalf("a fresher source overwrote the owner's hold: %v", p.Properties["name"])
 	}
-	alts := p.PropertyMeta["name"].Alternatives
+	alts := p.Marks["name"].Alternatives
 	if len(alts) != 1 || alts[0].Value != "Alexandros P." {
 		t.Fatalf("the fresher truth must be visible as an alternative: %+v", alts)
 	}
@@ -1054,7 +1055,7 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 		t.Fatalf("the surviving record should own the name: %v", person.Properties)
 	}
 
-	// The last source goes too: the machine-held properties go with it, and
+	// The last source goes too: the unpinned properties go with it, and
 	// the owner's own write stays.
 	if _, err := ds.Delete(ctx, owner, typeSlackUser, mustGet(t, ds, typeSlackUser, fid("s-U1")).ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("delete source: %v", err)
@@ -1628,9 +1629,9 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 }
 
 // samWithDirEntry is the fixture the sweep tests share: Sam by hand, slack's
-// sam matched by email, and an account-owned entry on Sam whose nickname takes
-// displayName at the machine tier and whose fullName is an offer beside the
-// owner's held name. Deleting the account has the cascade tombstone the entry.
+// sam matched by email, and an account-owned entry on Sam whose nickname sync
+// takes as displayName and whose fullName is an offer beside the owner's
+// pinned name. Deleting the account has the cascade tombstone the entry.
 func samWithDirEntry(t *testing.T, ds substrate.Dataset) (sam, acc, entry *substrate.Record) {
 	t.Helper()
 	sam = mustPut(t, ds, owner, substrate.PutInput{
@@ -1647,15 +1648,15 @@ func samWithDirEntry(t *testing.T, ds substrate.Dataset) (sam, acc, entry *subst
 		"fullName": "Samuel J.", "nickname": "Sammy", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	p := mustGet(t, ds, sam.Kind, sam.ID)
-	if p.Properties["displayName"] != "Sammy" || !offeredBy(p, "name", dirsync) {
+	if p.Properties["displayName"] != "Sammy" || !offeredBy(p, "name", vocabulary.RecordPath(typeDirEntry, entry.ID)) {
 		t.Fatalf("the entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
-			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+			p.Properties["displayName"], p.Marks["name"].Alternatives)
 	}
 	return sam, acc, entry
 }
 
 // wantSubjectWithoutEntry asserts Sam ended where a delete of the entry would
-// have left him: displayName back to slack's, no offer from the entry's actor,
+// have left him: displayName back to slack's, no offer from the entry,
 // and a live fold a rebuild reproduces, offers included.
 func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.Dataset, sam *substrate.Record) {
 	t.Helper()
@@ -1663,8 +1664,8 @@ func wantSubjectWithoutEntry(t *testing.T, svc substrate.Service, ds substrate.D
 	if p.Properties["displayName"] != "sam" {
 		t.Fatalf("displayName = %v after its source left the live set, want slack's", p.Properties["displayName"])
 	}
-	if offeredBy(p, "name", dirsync) {
-		t.Fatalf("a source outside the live set still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	if offeredBy(p, "name", vocabulary.RecordPath(typeDirEntry, fid("e-sam"))) {
+		t.Fatalf("a source outside the live set still offers name: %+v", p.Marks["name"].Alternatives)
 	}
 	wantRebuildAgrees(t, svc, ds)
 }
@@ -1689,7 +1690,7 @@ func wantRebuildAgrees(t *testing.T, svc substrate.Service, ds substrate.Dataset
 // delete verb or a put. When the pair are SOURCES their subject must follow:
 // after the merge only the winner contributes, after the split both do again,
 // and a rebuild, deriving from the live set, must agree at each step. The two
-// entries have different writers, so the loser's contribution is its own offer
+// entries are two source records, so the loser's contribution is its own offer
 // row and its absence and return are observable; the accepted value after the
 // split is not asserted, because the split re-stamps both entries in one
 // transaction and the tie-break, not the revival, then picks the value.
@@ -1713,9 +1714,10 @@ func TestMergedSourceLeavesItsSubject(t *testing.T) {
 		"fullName": "Samuel Jones", "nickname": "Samuel", "email": "sam@acme.com", "account": acc.ID,
 	}, sam.ID)
 	p := mustGet(t, ds, sam.Kind, sam.ID)
-	if p.Properties["displayName"] != "Samuel" || !offeredBy(p, "name", dirsync2) {
+	secondPath := vocabulary.RecordPath(typeDirEntry, second.ID)
+	if p.Properties["displayName"] != "Samuel" || !offeredBy(p, "name", secondPath) {
 		t.Fatalf("the later entry took neither displayName nor a name offer, so the test would prove nothing: %v %+v",
-			p.Properties["displayName"], p.PropertyMeta["name"].Alternatives)
+			p.Properties["displayName"], p.Marks["name"].Alternatives)
 	}
 
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
@@ -1726,16 +1728,16 @@ func TestMergedSourceLeavesItsSubject(t *testing.T) {
 	if p.Properties["displayName"] != "Sammy" {
 		t.Fatalf("displayName = %v after its source lost a merge, want the winner's", p.Properties["displayName"])
 	}
-	if offeredBy(p, "name", dirsync2) {
-		t.Fatalf("a merged-away source still offers name: %+v", p.PropertyMeta["name"].Alternatives)
+	if offeredBy(p, "name", secondPath) {
+		t.Fatalf("a merged-away source still offers name: %+v", p.Marks["name"].Alternatives)
 	}
 	wantRebuildAgrees(t, svc, ds)
 
 	if _, err := ds.Split(ctx, owner, substrate.SplitInput{Merge: rec.ID}); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	if p = mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync2) {
-		t.Fatalf("the split revived a source that offers nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	if p = mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", secondPath) {
+		t.Fatalf("the split revived a source that offers nothing: %+v", p.Marks["name"].Alternatives)
 	}
 	wantRebuildAgrees(t, svc, ds)
 }
@@ -1763,6 +1765,10 @@ func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
 	if lead.Properties["name"] != "Acme Corp" || lead.Properties["email"] != "hi@acme.example" {
 		t.Fatalf("the recompute did not fill the shell, so the test would prove nothing: %v", lead.Properties)
 	}
+	if from := markFrom(lead.Marks["name"]); len(from) != 1 || from[0] != vocabulary.RecordPath(src.Kind, src.ID) {
+		t.Fatalf("name mark = %+v, want derived from its source", lead.Marks["name"])
+	}
+	setAt := lead.Marks["name"].SetAt
 
 	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID, substrate.DeleteInput{}); err != nil {
 		t.Fatalf("deleting the last source of a required property: %v", err)
@@ -1774,8 +1780,13 @@ func TestRecomputeKeepsARequiredValueWhenItsSourceLeaves(t *testing.T) {
 	if _, still := lead.Properties["email"]; still {
 		t.Fatalf("email = %v, want the optional property released", lead.Properties["email"])
 	}
-	if len(lead.PropertyMeta["name"].Alternatives) != 0 {
-		t.Fatalf("a deleted source still offers name: %+v", lead.PropertyMeta["name"].Alternatives)
+	if len(lead.Marks["name"].Alternatives) != 0 {
+		t.Fatalf("a deleted source still offers name: %+v", lead.Marks["name"].Alternatives)
+	}
+	// The kept value names no source, so no link dangles, and it was set when
+	// it was set: dropping the link moves nothing else (decision 0284).
+	if m := lead.Marks["name"]; len(m.DerivedFrom) != 0 || !m.SetAt.Equal(setAt) || m.Pinned {
+		t.Fatalf("name mark = %+v after its last source went, want no derivedFrom and setAt %v", m, setAt)
 	}
 	// No offers are left anywhere here, so compare the folds directly rather
 	// than through wantRebuildAgrees and its offers guard.
@@ -1870,8 +1881,8 @@ func TestMergedSourcesWithDistinctSubjectsKeepBothCurrent(t *testing.T) {
 	second := syncSource(t, ds, dirsync2, typeDirEntry, fid("e-2"), map[string]any{
 		"fullName": "Patricia", "nickname": "Pat", "email": "pat@acme.com", "account": acc.ID,
 	}, pat.ID)
-	if p := mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", dirsync) {
-		t.Fatalf("the entry offers Sam nothing, so the test would prove nothing: %+v", p.PropertyMeta["name"].Alternatives)
+	if p := mustGet(t, ds, sam.Kind, sam.ID); !offeredBy(p, "name", vocabulary.RecordPath(typeDirEntry, first.ID)) {
+		t.Fatalf("the entry offers Sam nothing, so the test would prove nothing: %+v", p.Marks["name"].Alternatives)
 	}
 
 	rec, err := ds.Merge(ctx, owner, substrate.MergeInput{Kind: first.Kind, Winner: first.ID, Loser: second.ID})
@@ -1906,7 +1917,7 @@ func TestRemovedMappingReleasesItsOffers(t *testing.T) {
 }
 
 // Removing one of a kind's mappings releases exactly the properties it alone
-// supplied: slack's `displayName` goes, value and manager row, while `name`
+// supplied: slack's `displayName` goes, value and mark, while `name`
 // recomputes from google and google's `phones` stand. A rebuild agrees.
 func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
 	t.Parallel()
@@ -1935,11 +1946,11 @@ func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
 	if v, still := p.Properties["displayName"]; still {
 		t.Fatalf("displayName = %v survived the removal of the only mapping that supplied it", v)
 	}
-	if _, still := p.PropertyMeta["displayName"]; still {
-		t.Fatalf("displayName keeps a manager after its mapping went: %+v", p.PropertyMeta["displayName"])
+	if _, still := p.Marks["displayName"]; still {
+		t.Fatalf("displayName keeps a mark after its mapping went: %+v", p.Marks["displayName"])
 	}
-	if p.Properties["name"] != "Samuel Jones" || p.PropertyMeta["name"].Manager != vocabulary.ActorID(people) {
-		t.Fatalf("name = %v (%+v), want google's after slack's mapping went", p.Properties["name"], p.PropertyMeta["name"])
+	if from := markFrom(p.Marks["name"]); p.Properties["name"] != "Samuel Jones" || len(from) != 1 || from[0] != vocabulary.RecordPath(typeGoogleContact, fid("g-sam")) {
+		t.Fatalf("name = %v (%+v), want google's after slack's mapping went", p.Properties["name"], p.Marks["name"])
 	}
 	if got, _ := p.Properties["phones"].([]any); len(got) != 1 || got[0] != "+441234567890" {
 		t.Fatalf("phones = %v, want google's kept", p.Properties["phones"])
@@ -1947,11 +1958,46 @@ func TestRemovedMappingReleasesOnlyItsProperties(t *testing.T) {
 	wantRebuildAgrees(t, svc, ds)
 }
 
+// A value a removed mapping's source backed that stays, because a hand
+// pinned it, keeps its mark but not its source: no mapping offers it any
+// more, so no link names one. A rebuild agrees (decision 0284).
+func TestRemovedMappingDropsTheSourceOfAValueItKeeps(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	installPeopleSources(t, ds)
+	sam := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: typePerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
+	})
+	syncSource(t, ds, people, typeGoogleContact, fid("g-sam"), map[string]any{
+		"name": aname("Samuel Jones"), "emails": gemails("sam@acme.com"),
+	})
+	syncSource(t, ds, slack, typeSlackUser, fid("s-sam"), map[string]any{
+		"realName": "Sam J", "displayName": "sam", "email": "sam@acme.com",
+	})
+	if _, err := ds.Pin(ctx, owner, typePerson, sam.ID, substrate.MarkInput{Properties: []string{"displayName"}}); err != nil {
+		t.Fatalf("pin displayName: %v", err)
+	}
+	p := mustGet(t, ds, sam.Kind, sam.ID)
+	if m := p.Marks["displayName"]; !m.Pinned || len(markFrom(m)) != 1 {
+		t.Fatalf("the fixture did not pin displayName with its source, so the test would prove nothing: %+v", m)
+	}
+
+	// The people closure with google's mapping alone: slack's is pruned.
+	if err := enginetest.DeclareMappings(ctx, ds, peopleMappings()[0]); err != nil {
+		t.Fatalf("apply the people closure without slack's mapping: %v", err)
+	}
+	p = mustGet(t, ds, sam.Kind, sam.ID)
+	if m := p.Marks["displayName"]; p.Properties["displayName"] != "sam" || !m.Pinned || len(markFrom(m)) != 0 {
+		t.Fatalf("displayName = %v %+v, want the pinned value kept with no source", p.Properties["displayName"], m)
+	}
+	wantRebuildAgrees(t, svc, ds)
+}
+
 // Removing a target kind's LAST mapping releases what that mapping supplied
-// and nothing else: the value and its manager row go, a property the machine
-// wrote for no mapping (a system write) stays with its manager, and a rebuild
-// agrees.
-func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
+// and nothing else: the value and its mark go, a property the engine wrote
+// for no mapping (a system write) stays with its mark, and a rebuild agrees.
+func TestRemovedLastMappingReleasesUnpinnedValues(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
@@ -1961,13 +2007,12 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 		"name": aname("Alexandros Papas"), "emails": gemails("alex@acme.example"),
 	})
 	pid := personOf(t, ds, g)
-	// The system's own hand writes at the machine tier, for no mapping.
+	// The system's own hand writes, pinning nothing, for no mapping.
 	mustPatch(t, ds, substrate.ActorSystem, typePerson, pid, substrate.PatchInput{Properties: map[string]any{"pronouns": "he/him"}})
 	p := mustGet(t, ds, typePerson, pid)
-	if p.Properties["name"] != "Alexandros Papas" || p.PropertyMeta["name"].Tier != substrate.TierMachine ||
-		p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
-		t.Fatalf("the fixture did not land name and pronouns at the machine tier, so the test would prove nothing: %v %+v",
-			p.Properties, p.PropertyMeta)
+	if p.Properties["name"] != "Alexandros Papas" || p.Marks["name"].Pinned || p.Marks["pronouns"].Pinned {
+		t.Fatalf("the fixture did not land name and pronouns unpinned, so the test would prove nothing: %v %+v",
+			p.Properties, p.Marks)
 	}
 
 	if err := enginetest.DeclareMappings(ctx, ds); err != nil {
@@ -1978,13 +2023,13 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 		if v, still := p.Properties[name]; still {
 			t.Fatalf("%s = %v survived the removal of the mapping that wrote it", name, v)
 		}
-		if _, still := p.PropertyMeta[name]; still {
-			t.Fatalf("%s keeps a manager after the removal of the mapping that wrote it: %+v", name, p.PropertyMeta[name])
+		if _, still := p.Marks[name]; still {
+			t.Fatalf("%s keeps a mark after the removal of the mapping that wrote it: %+v", name, p.Marks[name])
 		}
 	}
-	if p.Properties["pronouns"] != "he/him" || p.PropertyMeta["pronouns"].Tier != substrate.TierMachine {
-		t.Fatalf("a machine write no mapping supplied went with the mapping: %v %+v",
-			p.Properties["pronouns"], p.PropertyMeta["pronouns"])
+	if p.Properties["pronouns"] != "he/him" || markSetBy(p.Marks["pronouns"]) != vocabulary.ActorID(substrate.ActorSystem) {
+		t.Fatalf("a system write no mapping supplied went with the mapping: %v %+v",
+			p.Properties["pronouns"], p.Marks["pronouns"])
 	}
 	before := foldOf(t, ds)
 	if _, err := svc.(rebuilder).RebuildRepository(ctx, testdb.Repository(t)); err != nil {
@@ -1995,10 +2040,11 @@ func TestRemovedLastMappingReleasesMachineValues(t *testing.T) {
 	}
 }
 
-// offeredBy reports whether actor offers an alternative for property.
-func offeredBy(r *substrate.Record, property string, actor substrate.Actor) bool {
-	for _, alt := range r.PropertyMeta[property].Alternatives {
-		if alt.Actor == vocabulary.ActorID(actor) {
+// offeredBy reports whether the source record at path offers an alternative
+// for property.
+func offeredBy(r *substrate.Record, property, path string) bool {
+	for _, alt := range r.Marks[property].Alternatives {
+		if altFrom(alt) == path {
 			return true
 		}
 	}
@@ -2202,23 +2248,20 @@ func TestAMappingSynthesizesItsSubjectSlot(t *testing.T) {
 		t.Fatalf("the mapping did not project name: %v", person.Properties)
 	}
 
-	// The slot's manager is the MAPPING, at the machine tier: the value is
-	// match-or-mint's answer, not the connector's opinion, and only merge and
-	// split may move it.
+	// The slot carries NO MARK: its declaration says which mapping fills it,
+	// the value is match-or-mint's answer, not the connector's opinion, and
+	// only merge and split may move it (decision 0284).
 	full, err := ds.Get(ctx, c.Kind, c.ID)
 	if err != nil {
 		t.Fatalf("get the card: %v", err)
 	}
-	meta := full.PropertyMeta["person"]
-	if want := vocabulary.ActorID(substrate.Actor("mapping:" + enginetest.SamplePackage("people") + "/cardperson")); meta.Manager != want {
-		t.Fatalf("person manager = %q, want %q", meta.Manager, want)
+	if m, marked := full.Marks["person"]; marked {
+		t.Fatalf("the subject slot carries a mark: %+v", m)
 	}
-	if meta.Tier != substrate.TierMachine {
-		t.Fatalf("person tier = %q", meta.Tier)
-	}
-	// The connector still owns what it actually wrote.
-	if m := full.PropertyMeta["fullName"]; m.Manager != vocabulary.ActorID(people) {
-		t.Fatalf("fullName manager = %q, want the connector", m.Manager)
+	// The connector still marks what it actually wrote, with its own hand; a
+	// package's write pins nothing.
+	if m := full.Marks["fullName"]; markSetBy(m) != vocabulary.ActorID(people) || m.Pinned {
+		t.Fatalf("fullName mark = %+v, want the connector's, unpinned", m)
 	}
 }
 

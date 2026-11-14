@@ -715,5 +715,5 @@ func (r *Registry) MappingsTo(to string) []*Mapping {
 	return out
 }
 
-// A manager row stores its tier at write time, read from the write context's
-// actor DATA; Registry.ActorTier answers the declared-actor half of it.
+// A write's tier is read from the write context's actor DATA;
+// Registry.ActorTier answers the declared-callable half of it.

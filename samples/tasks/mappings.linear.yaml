@@ -14,9 +14,10 @@
 # `status` is not mapped and CANNOT be: it is a state, and a state moves
 # through its declared transitions, never through a mapping (record 0040). So
 # the task the mapping mints sits at `open` and every move after that is the
-# owner's, untouched by any sync. What the projection's TIERS buy is the other
-# two: `name` and `url` recompute at the machine tier, so an owner who retypes
-# the heading keeps it, and Linear's next title lands only where nobody has.
+# owner's, untouched by any sync. What the projection's PINS buy is the other
+# two: `name` and `url` are sync's until a hand pins them, so an owner who
+# retypes the heading keeps it, and Linear's next title lands only where nobody
+# has.
 kind: substrate.reamde.dev/core/recordmapping
 metadata:
   id: samples.substrate.reamde.dev/tasks/linearissuetask

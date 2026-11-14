@@ -188,8 +188,8 @@ func (s *scopedDataset) cut(ctx context.Context, rec *substrate.Record) (*substr
 			}
 		}
 	}
-	if len(rec.PropertyMeta) > 0 {
-		cp.PropertyMeta = substrate.MetaWithinKinds(rec.PropertyMeta, func(path string) bool {
+	if len(rec.Marks) > 0 {
+		cp.Marks = substrate.MarksWithinKinds(rec.Marks, func(path string) bool {
 			return allowKind(kindOfPath(path))
 		})
 	}
@@ -278,7 +278,7 @@ func withoutWebhookKeys(rec *substrate.Record) {
 		rec.Properties = maps.Clone(rec.Properties)
 		rec.Properties[triggerSource] = src
 	}
-	m, ok := rec.PropertyMeta[triggerSource]
+	m, ok := rec.Marks[triggerSource]
 	if !ok || len(m.Alternatives) == 0 {
 		return
 	}
@@ -291,8 +291,8 @@ func withoutWebhookKeys(rec *substrate.Record) {
 	}
 	if changed {
 		m.Alternatives = alts
-		rec.PropertyMeta = maps.Clone(rec.PropertyMeta)
-		rec.PropertyMeta[triggerSource] = m
+		rec.Marks = maps.Clone(rec.Marks)
+		rec.Marks[triggerSource] = m
 	}
 }
 
@@ -950,6 +950,30 @@ func (s *scopedDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id s
 }
 
 // --- everything else is the owner's ---
+
+// Pin and Release are writes on the record: a grant that writes its kind
+// may pin and release its properties, and the answer is cut to the grant.
+func (s *scopedDataset) Pin(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := s.requireWrite(ctx, typ); err != nil {
+		return nil, err
+	}
+	rec, err := s.inner.Pin(ctx, s.actor, typ, id, in)
+	if err != nil {
+		return nil, err
+	}
+	return s.cut(ctx, rec)
+}
+
+func (s *scopedDataset) Release(ctx context.Context, _ substrate.Actor, typ, id string, in substrate.MarkInput) (*substrate.Record, error) {
+	if err := s.requireWrite(ctx, typ); err != nil {
+		return nil, err
+	}
+	rec, err := s.inner.Release(ctx, s.actor, typ, id, in)
+	if err != nil {
+		return nil, err
+	}
+	return s.cut(ctx, rec)
+}
 
 func (s *scopedDataset) Merge(context.Context, substrate.Actor, substrate.MergeInput) (*substrate.Record, error) {
 	return nil, errScope("merge")

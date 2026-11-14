@@ -325,7 +325,7 @@ const (
 	BulkAfterUses     = bulkAfterUses
 	BulkAfterRevision = bulkAfterRevision
 	BulkAfterRefs     = bulkAfterRefs
-	BulkAfterManagers = bulkAfterManagers
+	BulkAfterMarks    = bulkAfterMarks
 	BulkAfterEntries  = bulkAfterEntries
 )
 

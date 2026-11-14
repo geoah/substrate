@@ -30,12 +30,14 @@ package engine
 //
 // THE RUNGS. Dialect 1 named a line's actor by its spelling and its token as
 // `principal`; dialect 2 dropped the recovery key's wrap from its lines
-// (decision 0264, conversion_0002_drop_recovery_wrap.go); dialect 3, the ops,
-// fold effects and entry frame this binary writes, links the three actor
-// records a write records (decision 0270, conversion_0003_link_actors.go);
-// dialect 4 has a record effect carry `body` among its properties, not as a
-// delta field of its own (decision 0273,
-// conversion_0004_move_body_into_properties.go).
+// (decision 0264, conversion_0002_drop_recovery_wrap.go); dialect 3 links the
+// three actor records a write records (decision 0270,
+// conversion_0003_link_actors.go); dialect 4 has a record effect carry `body`
+// among its properties, not as a delta field of its own (decision 0273,
+// conversion_0004_move_body_into_properties.go); dialect 5, the ops, fold
+// effects and entry frame this binary writes, holds each property's mark where
+// dialect 4 held who managed it and at which tier (decision 0284,
+// conversion_0005_marks.go).
 // Each step rewrites the rung below into its own. A change that teaches the writer a spelling an older binary's
 // fold would refuse or misread (a new fold effect kind, a new op, a payload
 // shape an old decoder reads differently) bumps maxChangelogDialect in the
@@ -64,7 +66,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 4
+const maxChangelogDialect = 5
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay.
 // No dialect is on the wire: it is exported for the tests outside this package

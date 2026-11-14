@@ -61,7 +61,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 // its transaction, against the candidate, so the offers and the values its
 // commit publishes are already what a rebuild under the published closure
 // derives. Here the contact mapping is the person kind's only one, so the
-// machine-held name is released rather than recomputed. The state is read
+// unpinned name is released rather than recomputed. The state is read
 // through beforePublish, after the commit and before anything else runs: a
 // process that died right there must leave nothing for a rebuild to disagree
 // with, and a rebuild would keep a stale value, since values are changelog
@@ -72,8 +72,8 @@ func TestApplyPublishesAChangedMappingsOffersAndValues(t *testing.T) {
 	ctx := context.Background()
 	installContactSource(t, ds)
 
-	// Sam by hand with an address only, so the contact's name lands at the
-	// machine tier and its second address is an offer beside the owner's list.
+	// Sam by hand with an address only, so the contact's name lands unpinned
+	// and its second address is an offer beside the owner's list.
 	sam, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{
 		Kind: subjPerson, Properties: map[string]any{"emails": []any{"sam@acme.com"}},
 	})
@@ -86,22 +86,22 @@ func TestApplyPublishesAChangedMappingsOffersAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	type state struct {
-		offers, managers int
-		name             *string
+		offers, marks int
+		name          *string
 	}
 	read := func() state {
 		var st state
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT (SELECT count(*) FROM property_offers WHERE record_kind = $1 AND record_id = $2),
-			       (SELECT count(*) FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = 'name'),
+			       (SELECT count(*) FROM property_marks WHERE record_kind = $1 AND record_id = $2 AND property = 'name'),
 			       (SELECT props->>'name' FROM records WHERE kind = $1 AND id = $2)`,
-			sam.Kind, sam.ID).Scan(&st.offers, &st.managers, &st.name); err != nil {
+			sam.Kind, sam.ID).Scan(&st.offers, &st.marks, &st.name); err != nil {
 			t.Fatal(err)
 		}
 		return st
 	}
-	if st := read(); st.name == nil || *st.name != "Samuel" || st.managers != 1 {
-		t.Fatalf("the contact did not fill Sam's name at the machine tier, so the test would prove nothing: %+v", st)
+	if st := read(); st.name == nil || *st.name != "Samuel" || st.marks != 1 {
+		t.Fatalf("the contact did not fill Sam's name, so the test would prove nothing: %+v", st)
 	}
 
 	var atPublish *state
@@ -128,12 +128,12 @@ func TestApplyPublishesAChangedMappingsOffersAndValues(t *testing.T) {
 		if at.st.offers != 0 {
 			t.Fatalf("%s: %d offer rows for a mapping the commit removed", at.when, at.st.offers)
 		}
-		if at.st.name != nil || at.st.managers != 0 {
+		if at.st.name != nil || at.st.marks != 0 {
 			name := "<nil>"
 			if at.st.name != nil {
 				name = *at.st.name
 			}
-			t.Fatalf("%s: the machine-held name survived its mapping: name=%s managers=%d", at.when, name, at.st.managers)
+			t.Fatalf("%s: the name sync wrote survived its mapping: name=%s marks=%d", at.when, name, at.st.marks)
 		}
 	}
 }

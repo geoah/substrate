@@ -155,7 +155,7 @@ func TestNoTableOrPathIsKeyedByTheName(t *testing.T) {
 		t.Fatalf("read %d key columns and %d scoped tables and found %d rows keyed by the id: the scan read nothing", len(keys), len(tables), scopedByID)
 	}
 	for _, table := range []string{
-		"records", "changelog", "refs", "property_managers", "sealed", "search_index",
+		"records", "changelog", "refs", "property_marks", "sealed", "search_index",
 		"repository_migrations", "changelog_dialect", "vocabulary_dialect",
 		"unit_graph", "unit_uses_index", "observed_index",
 	} {

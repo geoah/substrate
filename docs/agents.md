@@ -1090,8 +1090,8 @@ PATCH /api/v1/substrate.reamde.dev/llm/thread/<id>
 {"properties": {"subject": "Trip to Berlin"}}
 ```
 
-The generated title is written only while the agent's actor still manages
-`subject` (`propertyMeta.subject.manager`), so a rename by anyone else holds,
+The generated title is written only while the agent's actor still set
+`subject` (`marks.subject.setBy`), so a rename by anyone else holds,
 whether it lands before or after the title call answers. A client that wants
 the title as it lands tails
 `GET /api/v1/changes?watch=1&kinds=substrate.reamde.dev/llm/thread`.

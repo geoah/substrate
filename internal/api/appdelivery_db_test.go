@@ -505,13 +505,13 @@ func webhookKeyIn(props map[string]any) (any, bool) {
 type appDeliveryOffer struct {
 	substrate.Dataset
 	id   string
-	meta map[string]substrate.PropertyMeta
+	meta map[string]substrate.PropertyMark
 }
 
 func (d appDeliveryOffer) Get(ctx context.Context, kind, id string) (*substrate.Record, error) {
 	rec, err := d.Dataset.Get(ctx, kind, id)
 	if err == nil && kind == kindTrigger && id == d.id {
-		rec.PropertyMeta = d.meta
+		rec.Marks = d.meta
 	}
 	return rec, err
 }
@@ -519,9 +519,9 @@ func (d appDeliveryOffer) Get(ctx context.Context, kind, id string) (*substrate.
 func TestATriggerAnAppsTokenReadsNeverCarriesItsKey(t *testing.T) {
 	t.Parallel()
 	e := newAppDeliveryEnv(t, false)
-	meta := map[string]substrate.PropertyMeta{
+	meta := map[string]substrate.PropertyMark{
 		"source": {Alternatives: []substrate.PropertyAlternative{
-			{Actor: vocabulary.ActorID("bundle:example.com:hooks"), Value: map[string]any{"webhook": map[string]any{"key": appHookKey}}},
+			{DerivedFrom: substrate.LinkTo("example.com/hooks/hook/h1"), Value: map[string]any{"webhook": map[string]any{"key": appHookKey}}},
 		}},
 	}
 	e.wrap = func(ds substrate.Dataset) substrate.Dataset {
@@ -548,8 +548,8 @@ func TestATriggerAnAppsTokenReadsNeverCarriesItsKey(t *testing.T) {
 	if hook, _ := src["webhook"].(map[string]any); hook == nil || hook["headers"] == nil || rec.Properties["label"] != "Apple Health webhook" {
 		t.Fatalf("the get lost more than the key: %+v", rec.Properties)
 	}
-	if m, ok := rec.PropertyMeta["source"]; !ok || len(m.Alternatives) != 1 {
-		t.Fatalf("the get lost the offer itself: %+v", rec.PropertyMeta)
+	if m, ok := rec.Marks["source"]; !ok || len(m.Alternatives) != 1 {
+		t.Fatalf("the get lost the offer itself: %+v", rec.Marks)
 	}
 	list := "/api/v1/records?filter=" + url.QueryEscape(`{"kinds":["`+kindTrigger+`"]}`)
 	noKey("a list", read(list))
