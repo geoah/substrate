@@ -731,8 +731,11 @@ func (s *service) admitStaged(ctx context.Context, id string, choice takeChoice)
 // made here, by the same code, before a take removes anything of the
 // repository: a piece that is not the bytes its manifest names, a line that
 // does not verify, a sealed value, a spooled request or a blob that cannot
-// be read. A take reads its copy twice, here and at the restore, and
-// nothing records that this reading passed: the restore reads again.
+// be read, and a line a step of the conversion chain refuses
+// (admissionConversion). A take reads its copy twice, here and at the
+// restore, and nothing records that this reading passed: the restore reads
+// again. The fold is not tried: a line the rebuild refuses still stops the
+// restore after the removal.
 func (s *service) admitSource(ctx context.Context, src *archiveSource) error {
 	sealed, err := src.Sealed(ctx)
 	if err != nil {
@@ -744,8 +747,117 @@ func (s *service) admitSource(ctx context.Context, src *archiveSource) error {
 	if err := src.CopyFiles(ctx, discardBlobs{}, func(string, []byte) error { return nil }); err != nil {
 		return err
 	}
-	_, err = readHistory(ctx, src, 0, rebuildBatch, func([]changelogfile.Entry) error { return nil })
+	convert, err := s.admissionConversion(ctx, src)
+	if err != nil {
+		return err
+	}
+	_, err = readHistory(ctx, src, 0, rebuildBatch, convert)
 	return err
+}
+
+// admissionConversion is the conversion chain the restore runs over src's
+// lines once its rows are in (convertTableTo), as a sink for the
+// admission's reading that keeps nothing: each line through every step from
+// src's dialect to this binary's, in step order, refused as the walk refuses
+// it, naming the line and the step. A step's Line converts one line from the
+// line and what ForRepository read, which is what lets each line go through
+// every step at once.
+//
+// A step that reads the repository before its walk (ForRepository, the
+// local namespace's) is given the versions of src's declaration and actor
+// records as its walk reads them from the table: one more reading of the
+// history before the walk, which runs only those lines through only the
+// steps below it and folds each into the versions as it is read
+// (versionFolder), holding the versions and no line, so the admission holds
+// one piece at a time as the rest of the reading does. Those records' kinds
+// are core kinds no step renames, so a line is chosen by its kind as read.
+// A step's Carry, over the rows the restore loads beside the lines, is not
+// tried.
+//
+// TWO THINGS THIS RESTS ON, which a step added later must keep or change
+// this with it: the lines a reading step needs are chosen by their kind as
+// archived, which holds while no step below it changes those kinds; and a
+// reading step is handed no facility a restore has beyond the lines (no
+// Reseal, no SecretsLeftBehind), which holds while its Line needs none.
+func (s *service) admissionConversion(ctx context.Context, src *archiveSource) (func([]changelogfile.Entry) error, error) {
+	steps := pendingConversions(s.conversion, src.Dialect())
+	if len(steps) == 0 {
+		return func([]changelogfile.Entry) error { return nil }, nil
+	}
+	declarationKinds := map[string]bool{}
+	for _, k := range vocabularyKindRefs {
+		declarationKinds[k] = true
+	}
+	passes := make([]conversionPass, len(steps))
+	for i, step := range steps {
+		if step.ForRepository == nil {
+			passes[i] = conversionPass{Line: step.Line}
+			continue
+		}
+		declarations := newVersionFolder(func(ref string) bool { _, ok := vocabularyRecordKinds[ref]; return ok })
+		actors := newVersionFolder(func(ref string) bool { return ref == kindActor })
+		if _, err := readHistory(ctx, src, 0, rebuildBatch, func(entries []changelogfile.Entry) error {
+			for _, e := range entries {
+				declaration, actor := declarationKinds[e.Kind], e.Kind == kindActor
+				if !declaration && !actor {
+					continue
+				}
+				for j := range i {
+					if err := convertAdmitted(steps[j], passes[j], &e); err != nil {
+						return err
+					}
+				}
+				folder := declarations
+				if actor {
+					folder = actors
+				}
+				if err := folder.add(e); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		pass, err := step.ForRepository(conversionRepository{
+			ID: src.manifest.ID, Authority: src.manifest.Authority,
+			Declarations: func() ([]declarationVersion, error) { return declarations.out, nil },
+			Actors:       func() ([]declarationVersion, error) { return actors.out, nil },
+		})
+		if err != nil {
+			return nil, fmt.Errorf("substrate/engine: conversion step %d (%s): %w", step.Dialect, step.Name, err)
+		}
+		if pass.Line == nil {
+			return nil, fmt.Errorf("substrate/engine: conversion step %d (%s) returned no Line for repository %s", step.Dialect, step.Name, src.manifest.ID)
+		}
+		passes[i] = pass
+	}
+	return func(entries []changelogfile.Entry) error {
+		for _, e := range entries {
+			for i, pass := range passes {
+				if err := convertAdmitted(steps[i], pass, &e); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}, nil
+}
+
+// convertAdmitted is one line through one step as walkConversionStep runs
+// it, keeping nothing.
+func convertAdmitted(step conversionStep, pass conversionPass, e *changelogfile.Entry) error {
+	seq, txnSeq := e.Seq, e.Txn
+	if err := pass.Line(e); err != nil {
+		return fmt.Errorf("substrate/engine: conversion step %d (%s) at seq %d: %w", step.Dialect, step.Name, seq, err)
+	}
+	if e.Seq != seq || e.Txn != txnSeq {
+		return fmt.Errorf("substrate/engine: conversion step %d (%s) moved seq %d: a step may not move a line's seq or txn", step.Dialect, step.Name, seq)
+	}
+	if _, _, err := changelogfile.Encode(*e); err != nil {
+		return fmt.Errorf("substrate/engine: seq %d does not encode after conversion step %d: %w", seq, step.Dialect, err)
+	}
+	return nil
 }
 
 // discardBlobs is the blob store a take's admission copies into: it holds

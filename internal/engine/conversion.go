@@ -128,7 +128,12 @@ type conversionStep struct {
 	Line func(e *changelogfile.Entry) error
 	// ForRepository is called once for each repository the step converts,
 	// before its first line, and returns what the step does in that
-	// repository. An error refuses the conversion, and so the boot.
+	// repository. An error refuses the conversion, and so the boot. A take's
+	// admission calls it too (archiveops.go admissionConversion), with the
+	// Declarations and Actors of the copy chosen by their kind as archived
+	// and no Reseal: a step whose Line needs another kind's lines, a kind a
+	// step below it renames, or anything but the lines, changes the
+	// admission with it.
 	ForRepository func(r conversionRepository) (conversionPass, error)
 	// Refolds says the fold must be rebuilt after this step even where it
 	// changed no line of the repository (decision 0309): its Carry changes a
@@ -588,77 +593,97 @@ func declarationVersions(lines []changelogfile.Entry) ([]declarationVersion, err
 // recordVersions folds lines into every version of every record of a kind
 // keep admits, as declarationVersions does for the declaration kinds.
 func recordVersions(lines []changelogfile.Entry, keep func(ref string) bool) ([]declarationVersion, error) {
-	props := map[string]map[string]any{}
-	var out []declarationVersion
+	f := newVersionFolder(keep)
 	for _, e := range lines {
-		var payload map[string]any
-		if err := json.Unmarshal(e.Payload, &payload); err != nil {
-			return nil, fmt.Errorf("substrate/engine: seq %d carries an unreadable payload: %w", e.Seq, err)
-		}
-		effects, _ := payload[foldPayloadKey].([]any)
-		for _, raw := range effects {
-			eff, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			ref, _ := eff["ref"].(string)
-			id, _ := eff["id"].(string)
-			if !keep(ref) || id == "" {
-				continue
-			}
-			key := ref + "/" + id
-			switch foldKind(fmt.Sprint(eff["kind"])) {
-			case foldTombstone, foldPurge:
-				delete(props, key)
-				out = append(out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
-			case foldRecord:
-				delta, _ := eff["delta"].(map[string]any)
-				cur := props[key]
-				if created, _ := delta["created"].(bool); created || cur == nil {
-					cur = map[string]any{}
-				}
-				next := make(map[string]any, len(cur))
-				for k, v := range cur {
-					next[k] = v
-				}
-				if set, ok := delta["set"].(map[string]any); ok {
-					for k, v := range set {
-						next[k] = v
-					}
-				}
-				if del, ok := delta["del"].([]any); ok {
-					for _, k := range del {
-						if name, ok := k.(string); ok {
-							delete(next, name)
-						}
-					}
-				}
-				props[key] = next
-				v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
-				v.Document, _, v.Unread = rowDocument(id, ref, next)
-				out = append(out, v)
-			case foldState:
-				// A state entry is the declaration whole as of its line: a
-				// version of its own, and none before it is kept (compact.go).
-				state, _ := eff["state"].(map[string]any)
-				row, _ := state["row"].(map[string]any)
-				if row == nil || row["deletedAt"] != nil {
-					delete(props, key)
-					out = append(out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
-					continue
-				}
-				next, _ := row["props"].(map[string]any)
-				if next == nil {
-					next = map[string]any{}
-				}
-				props[key] = next
-				v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
-				v.Document, _, v.Unread = rowDocument(id, ref, next)
-				out = append(out, v)
-			}
+		if err := f.add(e); err != nil {
+			return nil, err
 		}
 	}
-	return out, nil
+	return f.out, nil
+}
+
+// versionFolder is recordVersions a line at a time, for a reader that holds
+// one piece of the history and not its lines: out is every version folded so
+// far, and props each record as it stands.
+type versionFolder struct {
+	keep  func(ref string) bool
+	props map[string]map[string]any
+	out   []declarationVersion
+}
+
+func newVersionFolder(keep func(ref string) bool) *versionFolder {
+	return &versionFolder{keep: keep, props: map[string]map[string]any{}}
+}
+
+// add folds the next line, in seq order.
+func (f *versionFolder) add(e changelogfile.Entry) error {
+	var payload map[string]any
+	if err := json.Unmarshal(e.Payload, &payload); err != nil {
+		return fmt.Errorf("substrate/engine: seq %d carries an unreadable payload: %w", e.Seq, err)
+	}
+	effects, _ := payload[foldPayloadKey].([]any)
+	for _, raw := range effects {
+		eff, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, _ := eff["ref"].(string)
+		id, _ := eff["id"].(string)
+		if !f.keep(ref) || id == "" {
+			continue
+		}
+		key := ref + "/" + id
+		switch foldKind(fmt.Sprint(eff["kind"])) {
+		case foldTombstone, foldPurge:
+			delete(f.props, key)
+			f.out = append(f.out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
+		case foldRecord:
+			delta, _ := eff["delta"].(map[string]any)
+			cur := f.props[key]
+			if created, _ := delta["created"].(bool); created || cur == nil {
+				cur = map[string]any{}
+			}
+			next := make(map[string]any, len(cur))
+			for k, v := range cur {
+				next[k] = v
+			}
+			if set, ok := delta["set"].(map[string]any); ok {
+				for k, v := range set {
+					next[k] = v
+				}
+			}
+			if del, ok := delta["del"].([]any); ok {
+				for _, k := range del {
+					if name, ok := k.(string); ok {
+						delete(next, name)
+					}
+				}
+			}
+			f.props[key] = next
+			v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
+			v.Document, _, v.Unread = rowDocument(id, ref, next)
+			f.out = append(f.out, v)
+		case foldState:
+			// A state entry is the declaration whole as of its line: a
+			// version of its own, and none before it is kept (compact.go).
+			state, _ := eff["state"].(map[string]any)
+			row, _ := state["row"].(map[string]any)
+			if row == nil || row["deletedAt"] != nil {
+				delete(f.props, key)
+				f.out = append(f.out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
+				continue
+			}
+			next, _ := row["props"].(map[string]any)
+			if next == nil {
+				next = map[string]any{}
+			}
+			f.props[key] = next
+			v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
+			v.Document, _, v.Unread = rowDocument(id, ref, next)
+			f.out = append(f.out, v)
+		}
+	}
+	return nil
 }
 
 // sameLineAsTable reports whether e, a line of a copy of the history in
