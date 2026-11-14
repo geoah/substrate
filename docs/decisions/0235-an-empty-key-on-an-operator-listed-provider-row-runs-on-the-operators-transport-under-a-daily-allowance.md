@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0314
 ---
 
 # 0235. An empty key on an operator-listed provider row runs on the operator's transport, under a daily allowance
