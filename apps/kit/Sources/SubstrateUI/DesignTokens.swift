@@ -1,3 +1,4 @@
+import Foundation
 import SubstrateCore
 import SubstrateScreens
 
@@ -16,6 +17,18 @@ public enum DesignTokens {
         public init(light: UInt32, dark: UInt32) {
             self.light = light
             self.dark = dark
+        }
+
+        /// This colour at `opacity` over `base`, in each mode.
+        public func over(_ base: Colour, opacity: Double) -> Colour {
+            Colour(
+                light: DesignTokens.blend(light, over: base.light, opacity: opacity),
+                dark: DesignTokens.blend(dark, over: base.dark, opacity: opacity))
+        }
+
+        /// The least of the two modes' contrast ratios with `fill`.
+        public func contrast(on fill: Colour) -> Double {
+            min(DesignTokens.contrast(light, fill.light), DesignTokens.contrast(dark, fill.dark))
         }
     }
 
@@ -72,6 +85,66 @@ public enum DesignTokens {
         case .pink: pink
         case .red: red
         }
+    }
+
+    // MARK: Words on fills
+
+    /// The page behind content: white, and black in dark mode.
+    public static let page = Colour(light: 0xFFFFFF, dark: 0x000000)
+    /// A sidebar's and a grouped screen's background, as an iPad draws it.
+    public static let grouped = Colour(light: 0xE9E8ED, dark: 0x1D1C20)
+
+    /// Quiet words that still read: 4.5:1 on the page, on a grouped
+    /// background and on a tone's pale fill over either. The system's
+    /// secondary label is 3.4:1 on a white page.
+    public static let quietText = Colour(light: 0x58585D, dark: 0xB4B4BA)
+
+    /// A tone as words: the tone's own colour is for marks and fills, and
+    /// reads as text on neither the page nor its own pale fill (orange on
+    /// white is 2.2:1). This is the tone darkened in light mode, and
+    /// lightened in dark mode where it needs it, to 4.5:1 on the page, on a
+    /// grouped background and on the tone's fill at up to `fillOpacity`
+    /// over either.
+    public static func toneText(_ tone: ScreenTone) -> Colour {
+        switch tone {
+        case .quiet: quietText
+        case .positive: Colour(light: 0x1D6D31, dark: 0x30D158)
+        case .informative: Colour(light: 0x0055B2, dark: 0x369AFF)
+        case .supporting: Colour(light: 0x1C6673, dark: 0x40CBE0)
+        case .caution: Colour(light: 0x8C5200, dark: 0xFF9F0A)
+        case .critical: Colour(light: 0xA82720, dark: 0xFF635A)
+        }
+    }
+
+    /// The most a tone's colour is laid over a background as a pale fill
+    /// with words on it: a badge's, above a card's.
+    public static let fillOpacity = 0.18
+
+    /// The WCAG 2 contrast ratio of two opaque sRGB colours, 1 to 21: 4.5
+    /// is the least for text, 3 for text of 18 points and larger or bold
+    /// 14 points and larger.
+    public static func contrast(_ a: UInt32, _ b: UInt32) -> Double {
+        let (la, lb) = (luminance(a), luminance(b))
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    /// WCAG 2's relative luminance of an sRGB colour.
+    public static func luminance(_ colour: UInt32) -> Double {
+        func linear(_ channel: UInt32) -> Double {
+            let c = Double(channel & 0xFF) / 255
+            return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(colour >> 16) + 0.7152 * linear(colour >> 8) + 0.0722 * linear(colour)
+    }
+
+    /// `top` at `opacity` over `bottom`, as a fill is drawn: the colour
+    /// words on that fill are read against.
+    public static func blend(_ top: UInt32, over bottom: UInt32, opacity: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let (t, b) = (Double((top >> shift) & 0xFF), Double((bottom >> shift) & 0xFF))
+            return UInt32((opacity * t + (1 - opacity) * b).rounded()) << shift
+        }
+        return channel(16) | channel(8) | channel(0)
     }
 
     // MARK: Marks
@@ -231,6 +304,11 @@ public enum DesignTokens {
 
 #if canImport(SwiftUI)
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 // The presentations' marks and tones as SwiftUI draws them; nothing else in
 // the renderers names a colour or a symbol.
@@ -246,6 +324,39 @@ public extension ScreenTone {
         case .critical: .red
         }
     }
+}
+
+public extension ScreenTone {
+    /// The tone as words (`DesignTokens.toneText`).
+    var textColor: Color { DesignTokens.toneText(self).color }
+}
+
+public extension DesignTokens.Colour {
+    /// The colour as SwiftUI draws it: `light`, and `dark` in dark mode.
+    var color: Color {
+        func srgb(_ value: UInt32) -> (CGFloat, CGFloat, CGFloat) {
+            (CGFloat((value >> 16) & 0xFF) / 255, CGFloat((value >> 8) & 0xFF) / 255, CGFloat(value & 0xFF) / 255)
+        }
+        let (l, d) = (srgb(light), srgb(dark))
+        #if canImport(UIKit)
+        return Color(
+            uiColor: UIColor { traits in
+                let c = traits.userInterfaceStyle == .dark ? d : l
+                return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+            })
+        #else
+        return Color(
+            nsColor: NSColor(name: nil) { appearance in
+                let c = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? d : l
+                return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+            })
+        #endif
+    }
+}
+
+public extension ShapeStyle where Self == Color {
+    /// Quiet words that still read (`DesignTokens.quietText`).
+    static var quietText: Color { DesignTokens.quietText.color }
 }
 
 public extension ScreenSymbol {

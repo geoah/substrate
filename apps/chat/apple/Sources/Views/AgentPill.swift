@@ -1,3 +1,4 @@
+import SubstrateKit
 import SwiftUI
 
 /// An agent's name in a capsule tinted with a colour of the id's own, so one
@@ -13,9 +14,9 @@ struct AgentPill: View {
     var picker = false
 
     var body: some View {
-        let tint = agentTint(id, dark: scheme == .dark)
+        let colours = AgentColours(id)
         HStack(spacing: 5) {
-            if running { PulsingDot(color: tint) }
+            if running { PulsingDot(color: colours.tint) }
             Text(name)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -25,19 +26,29 @@ struct AgentPill: View {
             }
         }
         .font(picker ? .subheadline.weight(.semibold) : .caption.weight(.semibold))
-        .foregroundStyle(tint)
+        .foregroundStyle(colours.ink)
         .padding(.horizontal, picker ? 12 : 8)
         .padding(.vertical, picker ? 0 : 3)
         .frame(height: picker ? 32 : nil)
-        .background(tint.opacity(scheme == .dark ? 0.22 : 0.13), in: .capsule)
+        .background(colours.tint.opacity(scheme == .dark ? ChatColours.agentPill.dark : ChatColours.agentPill.light), in: .capsule)
     }
 }
 
-/// A colour from the id alone: the same agent is the same colour on every
-/// device, with nothing stored.
-func agentTint(_ id: String?, dark: Bool) -> Color {
-    guard let id else { return .secondary }
-    var h: UInt64 = 1_469_598_103_934_665_603
-    for byte in id.utf8 { h = (h ^ UInt64(byte)) &* 1_099_511_628_211 }
-    return Color(hue: Double(h % 360) / 360, saturation: dark ? 0.5 : 0.7, brightness: dark ? 0.95 : 0.62)
+/// An agent's colour from its id alone (`ChatColours.hue`): the tint its
+/// pill is filled with, and the ink its name is written in, which reads on
+/// the page, on the list and on that fill. No id, no colour: quiet.
+struct AgentColours {
+    let tint: Color
+    let ink: Color
+
+    init(_ id: String?) {
+        guard let id else {
+            tint = .secondary
+            ink = .quietText
+            return
+        }
+        let hue = ChatColours.hue(of: id)
+        tint = ChatColours.agentTint(hue: hue).color
+        ink = ChatColours.agentInk(hue: hue).color
+    }
 }

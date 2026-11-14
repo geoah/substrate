@@ -30,7 +30,7 @@ struct TurnView: View, Equatable {
         case let .trigger(words):
             Label(words, systemImage: "bolt.fill")
                 .font(.footnote.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
         case let .assistant(assistant): AssistantTurnView(turn: assistant, cards: cards, expandThinking: expandThinking)
         case let .summary(summary): SummaryLine(turn: summary)
@@ -45,7 +45,7 @@ struct TurnView: View, Equatable {
             Text(text)
                 .lineLimit(3)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -68,7 +68,7 @@ private struct UserTurnView: View {
             if !turn.about.isEmpty {
                 HStack(spacing: 6) {
                     Spacer(minLength: 48)
-                    Text(turn.aboutLabel).font(.caption).foregroundStyle(.secondary)
+                    Text(turn.aboutLabel).font(.caption).foregroundStyle(.quietText)
                     ForEach(turn.about) { RecordPill($0) }
                 }
                 .font(.footnote)
@@ -119,7 +119,7 @@ private struct AssistantTurnView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(turn.linkedLabel)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.quietText)
                     WrapLayout(spacing: 6) {
                         ForEach(turn.linked) { RecordPill($0) }
                     }
@@ -173,14 +173,14 @@ struct ReasoningView: View {
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                 }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             if expanded {
                 Text(reasoning.text)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.quietText)
                     .textSelection(.enabled)
                     .padding(.leading, 12)
                     .overlay(alignment: .leading) {
@@ -231,12 +231,12 @@ struct ToolCallRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(summary)
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.quietText)
                             .multilineTextAlignment(.leading)
                         if let label = tool.statusLabel {
                             Text(label)
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(tool.status == .held ? Color.orange : Color.secondary)
+                                .foregroundStyle(tool.status == .held ? ScreenTone.caution.textColor : Color.quietText)
                         }
                     }
                     Spacer(minLength: 0)
@@ -261,10 +261,10 @@ struct ToolCallRow: View {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(tool.raw, id: \.self) { line in
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(line.label).font(.caption2.weight(.semibold)).foregroundStyle(.tertiary)
+                                    Text(line.label).font(.caption2.weight(.semibold)).foregroundStyle(.quietText)
                                     Text(line.value)
                                         .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.quietText)
                                         .textSelection(.enabled)
                                         .lineLimit(40)
                                 }
@@ -307,10 +307,10 @@ private struct DetailLine: View {
         case let .failed(reason):
             Label(reason, systemImage: "xmark.octagon")
                 .font(.footnote)
-                .foregroundStyle(.red)
+                .foregroundStyle(ScreenTone.critical.textColor)
         case let .found(words, records):
             VStack(alignment: .leading, spacing: 6) {
-                Text(words).font(.footnote).foregroundStyle(.secondary)
+                Text(words).font(.footnote).foregroundStyle(.quietText)
                 WrapLayout(spacing: 6) {
                     ForEach(records) { RecordPill($0) }
                 }
@@ -321,15 +321,15 @@ private struct DetailLine: View {
                 ForEach(Array(runs.enumerated()), id: \.offset) { _, chips in RecordChipsView(chips: chips) }
             }
         case let .wrote(words):
-            Text(words).font(.footnote).foregroundStyle(.secondary)
+            Text(words).font(.footnote).foregroundStyle(.quietText)
         case let .reply(heading, text):
             VStack(alignment: .leading, spacing: 4) {
-                Text(heading).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text(heading).font(.caption.weight(.semibold)).foregroundStyle(.quietText)
                 MarkdownView(text: text).font(.footnote)
             }
             .card()
         case let .output(raw):
-            Text(raw).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(12).textSelection(.enabled)
+            Text(raw).font(.caption.monospaced()).foregroundStyle(.quietText).lineLimit(12).textSelection(.enabled)
         }
     }
 }
@@ -344,7 +344,7 @@ private struct RecordChipsView: View {
         let shown = all ? chips.records : Array(chips.records.prefix(RecordChips.first))
         WrapLayout(spacing: 6) {
             if let lead = chips.lead {
-                Text(lead).foregroundStyle(.secondary)
+                Text(lead).foregroundStyle(.quietText)
             }
             ForEach(Array(shown.enumerated()), id: \.offset) { _, chip in
                 RecordPill(chip.record, title: chip.title)
@@ -355,7 +355,7 @@ private struct RecordChipsView: View {
                         .buttonStyle(.borderless)
                         .accessibilityHint("Shows the rest")
                 } else {
-                    Text(more).foregroundStyle(.tertiary)
+                    Text(more).foregroundStyle(.quietText)
                 }
             }
         }
@@ -378,7 +378,7 @@ private struct SummaryLine: View {
                 } label: {
                     Label(turn.label, systemImage: "rectangle.compress.vertical")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.quietText)
                         .fixedSize()
                 }
                 .buttonStyle(.plain)
@@ -386,7 +386,7 @@ private struct SummaryLine: View {
                 Rectangle().fill(.quaternary).frame(height: 1)
             }
             if open, !turn.content.isEmpty {
-                MarkdownView(text: turn.content).font(.footnote).foregroundStyle(.secondary).card()
+                MarkdownView(text: turn.content).font(.footnote).foregroundStyle(.quietText).card()
             }
         }
     }
@@ -404,7 +404,7 @@ private struct OutcomeRow: View {
                 .frame(width: 18)
             Text(line.text)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.quietText)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
