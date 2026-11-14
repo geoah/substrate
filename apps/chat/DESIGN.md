@@ -587,7 +587,11 @@ the microphone, and Send, which morphs into Stop while a turn runs
   the new text with whatever it held beyond the replaced one kept at its
   end, so a key pressed while a rewrite is on its way is never lost
   (`DraftTests`: on a send, on leaving the front, on switching chats, on a
-  refusal, on dictation).
+  refusal, on dictation). A send tells the field's whole text first,
+  whatever was told before, so two windows on one chat each send what their
+  own field shows. The drafts are written to the disk at once when the app
+  leaves the front, and at once for whatever a field says while it is
+  away; at any other time the write waits 0.6 s for more.
 
 ### Settings
 

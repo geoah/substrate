@@ -93,9 +93,9 @@ extension ChatApp {
                 storage.save(cached, lease)
                 return nil
             }
-        case let .saveDrafts(lease, drafts):
+        case let .saveDrafts(lease, drafts, atOnce):
             return .once {
-                guard await pause(0.6) else { return nil }
+                if !atOnce { guard await pause(0.6) else { return nil } }
                 storage.save(drafts: drafts, lease)
                 return nil
             }

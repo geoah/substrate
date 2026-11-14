@@ -114,7 +114,7 @@ struct DraftTests {
         // Typed and sent at once, with no pause for the conversation to
         // have heard of it.
         field.type("Hello", at: start)
-        try await tell(rig, key, field.reports.say())
+        try await tell(rig, key, field.reports.tell(field.text))
         try await rig.send(.send, to: key)
         // More keys before the field has seen its text cleared.
         field.type(" again", at: start)
@@ -204,11 +204,82 @@ struct DraftTests {
         await rig.harness.send(.phase(.inactive))
         await rig.harness.send(.phase(.background))
         #expect(await rig.harness.state.drafts["t1"] == "Not yet sai")
-        try await rig.harness.until(advancing: 1) { _ in rig.storage.drafts(try! await rig.lease())["t1"] == "Not yet sai" }
+        // Written at once: the clock does not move, and the app may not be
+        // running half a second from now.
+        let lease = try await rig.lease()
+        try await rig.harness.until { _ in rig.storage.drafts(lease)["t1"] == "Not yet sai" }
         // Back in front, the same field holds its text, once.
         await rig.harness.send(.phase(.active))
         try await tell(rig, key, field.look(await composer(rig, key)))
         #expect(field.text == "Not yet sai")
+    }
+
+    @Test func whatAFieldSaysAfterTheAppLeftTheFrontIsWrittenAtOnceToo() async throws {
+        let rig = ChatRig(platform: .ios)
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "s"))
+        let key = try #require(await rig.harness.state.scenes["s"]?.current)
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("Told late", at: start)
+        // The app's own word of leaving arrives before the field's.
+        await rig.harness.send(.phase(.inactive))
+        await rig.harness.send(.phase(.background))
+        try await tell(rig, key, field.reports.say())
+        let lease = try await rig.lease()
+        try await rig.harness.until { _ in rig.storage.drafts(lease)["t1"] == "Told late" }
+    }
+
+    @Test func twoWindowsOnOneChatEachSendWhatTheirOwnFieldShows() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
+        try await rig.signIn()
+        await rig.harness.send(.show(thread: "t1", scene: "a"))
+        await rig.harness.send(.show(thread: "t1", scene: "b"))
+        let key = try #require(await rig.harness.state.scenes["a"]?.current)
+        #expect(await rig.harness.state.scenes["b"]?.current == key)
+        // Its thread is read: the chat knows who it is with.
+        try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
+        var first = Field()
+        var second = Field()
+        _ = first.look(await composer(rig, key))
+        _ = second.look(await composer(rig, key))
+        // Each types and pauses: the conversation holds what it heard last.
+        first.type("Alpha", at: start)
+        try await tell(rig, key, first.reports.say())
+        second.type("Beta", at: start)
+        try await tell(rig, key, second.reports.say())
+        #expect(await rig.live(key)?.draft == "Beta")
+        // The first sends: what its own field shows goes.
+        try await tell(rig, key, first.reports.tell(first.text))
+        try await rig.send(.send, to: key)
+        try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
+        #expect(rig.server.body("POST", "/chat")?.contains(#""message":"Alpha""#) == true)
+        // Its field is cleared, and the other keeps what was typed into it.
+        try await tell(rig, key, first.look(await composer(rig, key)))
+        try await tell(rig, key, second.look(await composer(rig, key)))
+        #expect(first.text == "" && second.text == "Beta")
+        #expect(await rig.live(key)?.draft == "Beta")
+        rig.server.release()
+    }
+
+    @Test func textTypedOverWhatWasSentAndAlreadyToldOutlivesTheClearing() async throws {
+        let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 1))])
+        try await rig.signIn()
+        let key = try await rig.newChat()
+        var field = Field()
+        _ = field.look(await composer(rig, key))
+        field.type("Hello", at: start)
+        try await tell(rig, key, field.reports.tell(field.text))
+        try await rig.send(.send, to: key)
+        // Before the field sees its text cleared, all of it is replaced,
+        // and a pause tells the conversation so.
+        field.text = "Goodbye"
+        field.reports.typed(field.text, at: start)
+        try await tell(rig, key, field.reports.say())
+        try await tell(rig, key, field.look(await composer(rig, key)))
+        #expect(field.text == "Goodbye")
+        #expect(await rig.live(key)?.draft == "Goodbye")
+        rig.server.release()
     }
 
     @Test func aChatShownAgainStartsFromWhatWasTypedIntoIt() async throws {

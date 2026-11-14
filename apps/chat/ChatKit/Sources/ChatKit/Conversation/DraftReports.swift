@@ -80,6 +80,18 @@ public struct DraftReports: Equatable, Sendable {
         return .draft(text)
     }
 
+    /// What the field holds, said whatever was said before: before a send,
+    /// which sends what the conversation holds, and that may be what
+    /// another window's field told it since.
+    public mutating func tell(_ text: String) -> Conversation.Command {
+        told = text
+        spoken = true
+        unsaid = nil
+        unsaidSince = nil
+        typedAt = nil
+        return .draft(text)
+    }
+
     /// The field leaves the screen holding `text`: the conversation carries
     /// it in the tree from here, for the field that comes after.
     public mutating func leave(_ text: String) -> Conversation.Command {
@@ -103,7 +115,8 @@ public struct DraftReports: Equatable, Sendable {
     /// rewrote what it had heard from the field by then, which the tree
     /// names: the draft before the one rewrite the field missed, or before
     /// the first of several. Text that does not begin with the replaced one
-    /// was edited inside it, and stands as typed.
+    /// is the field's own, typed over it or never the conversation's (told
+    /// or not), and stands as it is.
     ///
     /// `say()` after it tells the conversation what the field then holds.
     /// A field that had spoken always has something to say, since what it
@@ -120,11 +133,7 @@ public struct DraftReports: Equatable, Sendable {
         }
         var next = composer.draft
         if revision != nil, text != base {
-            if text.hasPrefix(base) {
-                next = composer.draft + text.dropFirst(base.count)
-            } else if unsaid != nil {
-                next = text
-            }
+            next = text.hasPrefix(base) ? composer.draft + text.dropFirst(base.count) : text
         }
         let resay = spoken || next != composer.draft
         revision = composer.draftRevision

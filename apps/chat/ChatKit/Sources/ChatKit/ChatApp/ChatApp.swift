@@ -230,7 +230,15 @@ public struct ChatApp: LinkedApp {
         var asks = state.asks
         if let disk = state.disk, disk == previous.disk {
             if state.cached != previous.cached { asks.append(.saveState(disk, state.cached)) }
-            if state.drafts != previous.drafts { asks.append(.saveDrafts(disk, state.drafts)) }
+            // A field tells its conversation what it holds as the app leaves
+            // the front, in either order with the app's own word of it: so
+            // the drafts are written at once on that word, and at once for
+            // whatever changes them while the app is away.
+            var leaving = false
+            if case let .phase(phase) = event.step { leaving = phase != .active }
+            if leaving || state.drafts != previous.drafts {
+                asks.append(.saveDrafts(disk, state.drafts, atOnce: leaving || !state.appActive))
+            }
             if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
         }
         if state.unreadCount != previous.unreadCount { asks.append(.badge(state.unreadCount)) }
