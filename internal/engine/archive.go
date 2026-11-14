@@ -85,8 +85,9 @@ const DefaultArchiveStepBytes int64 = 1 << 30
 // Past it a piece is never rewritten.
 const archiveTailBytes int64 = 1 << 20
 
-// archivePageRows is how many changelog rows a pass reads at a time.
-const archivePageRows = 2000
+// archivePageRows is how many changelog rows a pass reads at a time. A
+// variable only so a test can page a short history.
+var archivePageRows = 2000
 
 // ErrArchiveDiverged is the refusal of a pass whose store does not hold the
 // archive as this database left it (rule 4): another archive, another
@@ -98,6 +99,7 @@ var ErrArchiveDiverged = errors.New("substrate/engine: the archive is not as thi
 
 // The pass's durable steps, as the test seam names them (testArchiveFault).
 const (
+	archiveAfterSpool     = "after the spool was copied, before the snapshot"
 	archiveAfterListing   = "after the listing was held to the record"
 	archiveAfterObjectRow = "after an object's row, before its put"
 	archiveAfterObjectPut = "after an object's put, before its row said put"
@@ -314,7 +316,7 @@ func (ds *dataset) refreshArchiveStats(ctx context.Context, passErr error) {
 	var head int64
 	var oldest sql.NullTime
 	err := ds.db.QueryRowContext(ctx, `
-		SELECT coalesce(max(seq), 0), (SELECT ts FROM changelog WHERE seq = $1 + 1)
+		SELECT coalesce(max(seq), 0), (SELECT ts FROM changelog WHERE seq > $1 ORDER BY seq LIMIT 1)
 		FROM changelog`, mark).Scan(&head, &oldest)
 	a.statMu.Lock()
 	defer a.statMu.Unlock()
@@ -362,11 +364,20 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	// The spool is read before the snapshot: a request the drain records
 	// after the snapshot's head, and then deletes from the spool, is in this
 	// copy, and one it deleted before is in the history the snapshot reads.
+	// No compaction commits between the two (spoolCopy).
+	snapshotTaken, err := ds.spoolCopy.share(ctx)
+	if err != nil {
+		return err
+	}
+	defer snapshotTaken()
 	spooled, err := spoolFilesForCopy(ds.dir)
 	if err != nil {
 		return err
 	}
 	spoolPrint := spoolPrintOf(spooled)
+	if err := ds.svc.archiveFault(archiveAfterSpool); err != nil {
+		return err
+	}
 	// Every blob is held from before the snapshot, as an export's are: a
 	// collection the snapshot does not see deletes its bytes only after it,
 	// and meets the hold. It narrows to the blobs this pass copies.
@@ -382,8 +393,18 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	snapshotTaken()
 	dialect, err := readChangelogDialect(ctx, tx)
 	if err != nil {
+		return err
+	}
+	// A compaction rewrote the lines from rewriteFrom on (compact.go): the
+	// pieces that hold them are written again from the snapshot, and the
+	// mark is cleared once a publication holds them, unless another
+	// compaction came after the snapshot.
+	var rewriteFrom sql.NullInt64
+	var rewrites int64
+	if err := tx.QueryRowContext(ctx, `SELECT rewrite_from, rewrites FROM archive_records`).Scan(&rewriteFrom, &rewrites); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	// The sealed table whole, every column of every row, hashed in the
@@ -434,7 +455,8 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	}
 	ds.reportUnrecordedManifests(listed)
 	if a.rec.pending == nil && head == a.mark && dialect == a.dialect && print == a.sealedPrint &&
-		spoolPrint == a.spoolPrint && manifestPrint == a.manifestPrint && a.missing == 0 && a.pendingBlobs == 0 && !a.anyDropped() {
+		spoolPrint == a.spoolPrint && manifestPrint == a.manifestPrint && a.missing == 0 && a.pendingBlobs == 0 && !a.anyDropped() &&
+		!rewriteFrom.Valid {
 		return nil
 	}
 
@@ -512,6 +534,15 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 			_, first, _, _, _ := changelogfile.ParsePieceObjectName(pieces[n-1].Name)
 			pieces, from = pieces[:n-1], first-1
 		}
+		// Only the pieces wholly below what a compaction rewrote still hold
+		// the lines the table holds.
+		for rewriteFrom.Valid && len(pieces) > 0 {
+			_, first, last, _, _ := changelogfile.ParsePieceObjectName(pieces[len(pieces)-1].Name)
+			if last < rewriteFrom.Int64 {
+				break
+			}
+			pieces, from = pieces[:len(pieces)-1], first-1
+		}
 	}
 	for _, p := range pieces {
 		b.selected[p.Name] = true
@@ -555,6 +586,11 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	}
 	if err := ds.finishPending(ctx, false); err != nil {
 		return err
+	}
+	if rewriteFrom.Valid {
+		if _, err := ds.db.ExecContext(ctx, `UPDATE archive_records SET rewrite_from = NULL WHERE rewrites = $1`, rewrites); err != nil {
+			return err
+		}
 	}
 	fingerprint()
 	if len(b.missing) > 0 {
@@ -767,17 +803,22 @@ func writePieces(ctx context.Context, q dbx, after, head, pieceBytes int64, pace
 		written []changelogfile.ArchivePiece
 		sum     [32]byte
 	)
+	// A piece covers the seqs from the one after the piece before it, so the
+	// pieces cover the history with no hole, a compacted one's gaps
+	// included.
+	first := after + 1
 	flush := func() error {
 		data, err := changelogfile.EncodePiece(lines)
 		if err != nil {
 			return err
 		}
-		p, err := put(lines[0].Seq, lines[len(lines)-1].Seq, data)
+		last := lines[len(lines)-1].Seq
+		p, err := put(first, last, data)
 		if err != nil {
 			return err
 		}
 		written = append(written, p)
-		lines, size = nil, 0
+		lines, size, first = nil, 0, last+1
 		return nil
 	}
 	for after < head {

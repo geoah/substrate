@@ -211,6 +211,7 @@ func WithArchivePieceBytes(n int64) Option { return func(o *options) { o.archive
 
 // The archive pass's stages WithTestArchiveFault reports.
 const (
+	ArchiveAfterSpool     = archiveAfterSpool
 	ArchiveAfterListing   = archiveAfterListing
 	ArchiveAfterObjectRow = archiveAfterObjectRow
 	ArchiveAfterObjectPut = archiveAfterObjectPut

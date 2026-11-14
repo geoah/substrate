@@ -31,6 +31,7 @@ var classKeepers = map[string]struct {
 	"internal/vocabulary/types.go":                                      {2, "a function's and an agent's hand stands at the bundle tier, which the owner's gates read (step 19)"},
 	"internal/engine/rows.go":                                           {5, "an actor's tier, which the owner's gates read (step 19)"},
 	"internal/engine/rebuild.go":                                        {1, "the replay's writing context (step 19)"},
+	"internal/engine/compact.go":                                        {2, "the capture's and the rewrite's writing context, as the replay's (step 19)"},
 	"internal/engine/repodir.go":                                        {1, "the import's writing context (step 19)"},
 	"internal/engine/sync.go":                                           {1, "a sync's writes stand at the bundle tier, which the owner's gates read (step 19)"},
 	"internal/engine/marks.go":                                          {1, "setManager, the landed repository migration 0006's manager words, kept as it landed"},

@@ -36,11 +36,21 @@ var foldWriteSites = map[string]string{
 	"rows.go:applyAnnotation":   "the annotation effect's write",
 	"marks.go:applyMark":        "the mark effect's write",
 	"marks.go:applyUnmark":      "the unmark effect's write",
-	"marks.go:insertMark":       "a mark row the resync effect restates, applied by applyResync or moved by merge before its resync is recorded",
+	"marks.go:insertMark":       "a mark row the resync effect or a state effect restates, applied by applyResync or restateSideRows, or moved by merge before its resync is recorded",
 	"rows.go:applyFormerID":     "the former-id effect's write",
 	"fold.go:applyResync":       "the resync effect's write, which merge and split record and a replay applies",
 	"delivery.go:applyDelivery": "the delivery ledger effects' writes",
 	"delivery.go:upsertPage":    "applyDelivery's page effect",
+	// The two state entries (compact.go), which a compaction writes into
+	// history in place of the effects they stand for, and which a replay
+	// applies.
+	"compact.go:writeStateRow":   "the state effect's row, written whole",
+	"compact.go:restateSideRows": "the state effect's annotations and marks",
+	"compact.go:applyLedger":     "the ledger effect's delivery rows",
+	// A compaction's capture replays one record's effects through foldOne
+	// inside a savepoint and rolls it back, so nothing it writes outlives
+	// the read of the rows it takes the state from.
+	"compact.go:replayFamily": "a capture's replay inside a savepoint it rolls back",
 
 	// Derived storage no entry carries: each is a function of the folded rows
 	// and the declarations, and a rebuild derives it again.
@@ -98,11 +108,11 @@ var foldWriteSites = map[string]string{
 // replay.
 var foldPrimitives = map[string][]string{
 	"foldEntry":       {"rebuild.go:rebuild"},
-	"foldOne":         {"fold.go:fold", "fold.go:foldEntry"},
+	"foldOne":         {"fold.go:fold", "fold.go:foldEntry", "compact.go:replayFamily"},
 	"foldRecordOp":    {"fold.go:foldOne"},
 	"upsertRecord":    {"fold.go:foldRecordOp"},
 	"applyTombstone":  {"fold.go:foldOne"},
-	"applyPurge":      {"fold.go:foldOne"},
+	"applyPurge":      {"fold.go:foldOne", "compact.go:applyState", "compact.go:replayFamily"},
 	"applyAnnotation": {"fold.go:foldOne"},
 	"applyMark":       {"fold.go:foldOne"},
 	"applyUnmark":     {"fold.go:foldOne", "fold.go:settleTakenOut"},
@@ -110,21 +120,27 @@ var foldPrimitives = map[string][]string{
 	// function of the line's record effects, which a replay applies at the
 	// same place, so the write it makes is reproduced though no effect says
 	// it. appendChange ends a live line, settleFold the last one again for
-	// the effects that join it, and foldEntry a replayed one.
-	"settleTakenOut": {"rows.go:appendChange", "fold.go:settleFold", "fold.go:foldEntry"},
-	"noteTakenOut":   {"fold.go:foldRecordOp"},
-	"insertMark":     {"fold.go:applyResync"},
-	"applyFormerID":  {"fold.go:foldOne"},
-	"applyResync":    {"fold.go:foldOne"},
-	"applyDelivery":  {"fold.go:foldOne"},
-	"upsertPage":     {"delivery.go:applyDelivery"},
+	// the effects that join it, foldEntry a replayed one, and a compaction's
+	// capture each line it replays inside the savepoint it rolls back. A
+	// state entry restates a row, which takes nothing out of it.
+	"settleTakenOut":  {"rows.go:appendChange", "fold.go:settleFold", "fold.go:foldEntry", "compact.go:replayFamily"},
+	"noteTakenOut":    {"fold.go:foldRecordOp", "compact.go:applyState"},
+	"insertMark":      {"fold.go:applyResync", "compact.go:restateSideRows"},
+	"applyFormerID":   {"fold.go:foldOne"},
+	"applyResync":     {"fold.go:foldOne"},
+	"applyDelivery":   {"fold.go:foldOne", "compact.go:applyLedger"},
+	"upsertPage":      {"delivery.go:applyDelivery", "compact.go:applyLedger"},
+	"applyState":      {"fold.go:foldOne"},
+	"applyLedger":     {"fold.go:foldOne"},
+	"writeStateRow":   {"compact.go:applyState"},
+	"restateSideRows": {"compact.go:applyState"},
 	// A bulk run batches the statements of the fold's own write leaves and
 	// nothing else (bulkwrite.go): each queue is filled by the leaf whose
 	// statement it defers, so a live bulk write and a replay decide every
 	// row in the same code.
 	"queueRecord":   {"rows.go:upsertRecord"},
 	"queueUses":     {"unitgraph.go:replaceUnitUses"},
-	"queueRevision": {"unitgraph.go:afterUnitFold"},
+	"queueRevision": {"unitgraph.go:afterUnitFoldBy"},
 	"queueRefs":     {"refs.go:syncRefs"},
 	"queueMark":     {"marks.go:applyMark"},
 	// A bulk run's flush sends what the fold's leaves queued, once, at the
@@ -135,7 +151,7 @@ var foldPrimitives = map[string][]string{
 	"flushBulkRevision": {"bulkwrite.go:flushBulk"},
 	"flushBulkRefs":     {"bulkwrite.go:flushBulk"},
 	"flushBulkMarks":    {"bulkwrite.go:flushBulk"},
-	"moveUnitRevision":  {"unitgraph.go:afterUnitFold", "bulkwrite.go:flushBulkRevision"},
+	"moveUnitRevision":  {"unitgraph.go:afterUnitFoldBy", "bulkwrite.go:flushBulkRevision"},
 }
 
 // foldWriteRe matches one write statement's head. The table is a name,

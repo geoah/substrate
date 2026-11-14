@@ -96,6 +96,15 @@ one element per record, in the order the entry touched them.
 - `deleted` is `true` when the entry tombstoned or purged the record. A read
   of a tombstoned record still answers, with `deletedAt` set; a purged one is
   `not_found`.
+- `state` is `true` where the entry holds the record's **state entry**: a
+  compaction replaced the record's earlier entries with the record's whole
+  state as of this one, which keeps its seq, time and actor
+  ([the stored format](stored-format.md#state-entries)). A client reads it as
+  any change: the record changed, and the version is its own. A `put` or a
+  `patch` whose state stands for the record's creation reads as the creation
+  (`op` `put`, `payload.created`), so a reader that starts from the beginning
+  meets each record once, created in its latest state. Since revision 3 of
+  the `changefeed` feature.
 
 The list holds the addressed record and any other the entry moved: a `merge`
 names the winner and the tombstoned loser, a `split` the loser and the
@@ -162,7 +171,9 @@ versions run unbroken. Where it cannot answer (a gap in them, an entry written
 before entries held values, a history with no creation, or a previous write
 further back than the read's budget of 4096 earlier entries, which every
 record on the page shares) the property carries `"beforeUnknown": true` and
-no `before`, which is not the same as "there was none"
+no `before`, which is not the same as "there was none". A state entry lists
+every value its record holds, each `beforeUnknown`: the values before it are
+not kept, and a walk from a later entry stops at it
 ([decision 0135](decisions/0135-a-change-row-carries-before-and-after-values-on-request-derived-at-read.md)).
 The walk costs a read per record on the page, so a client that does not ask
 pays nothing and gets the same rows without `properties`. Every mode of
@@ -172,7 +183,9 @@ Two guarantees consumers may lean on:
 
 - **Sequence order is commit-visibility order**: no reader ever sees entry N
   with N-1 still uncommitted, so resuming from a remembered `seq` misses
-  nothing. Gapless resume is a guarantee, not a convention, and it survives a
+  nothing. A compacted history has gaps where entries were replaced, and a
+  record whose changes after the position were replaced is met at its state
+  entry, once, so a resume still misses no record. Resume is a guarantee, not a convention, and it survives a
   restart because the counter is the repository's own `max(seq)`, never process
   state. A seq is a position in one **history generation** ([watching](#watching)),
   and a resume is held to it, so a cursor saved before an older copy was
@@ -329,13 +342,15 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-5 today, the ops, fold effects and entry frame this release writes: every
+6 today, the ops, fold effects and entry frame this release writes: every
 property's mark held as its own `mark` and `unmark` effects
 ([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)),
-which is what dialect 5 added, every
+which is what dialect 5 added, the state entries a compaction writes, which
+is what dialect 6 added, every
 entry linking its actor, the one it acted for and its token as records
 ([decision 0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)),
-which is what dialect 3 added, the record
+which is what dialect 3 added, the state entries a compaction writes, which
+is what dialect 4 added, the record
 ops and the `delivery` op with the seven effects a trigger's bookkeeping
 replays through
 ([decision 0064](decisions/0064-trigger-bookkeeping-is-a-delivery-ledger-folded-from-the-changelog.md)),
@@ -350,6 +365,9 @@ Dialect 2 spells nothing dialect 1 did not: it is a history
 wrap. Dialect 4 carries a record's `body` among its properties, never as a
 delta field of its own
 ([decision 0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)).
+Dialect 6 adds the two state entries a compaction writes, `state` and
+`ledger`
+([decision 0296](decisions/0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread, and a change to a shape the history already
 holds ships a [conversion step](stored-format.md#conversions) to it, which
@@ -521,9 +539,13 @@ or resumes after a restore, is told plainly instead of silently missing rows,
 and its handler is one it **must** have: re-list, then resume the watch from
 the head and generation the response names. The horizon is reported in
 [API discovery](api.md#discovery), and it is
-**0 today**: nothing prunes or compacts the changelog, so replaying any consumer from
-any seq, zero included, is possible. Retention is a deployment **policy**, not
-a wire guarantee: the wire promises gapless resume from any seq at or above the
+**0 today**. A compaction replaces a record's entries with its state entry
+and leaves the horizon where it was: several changes arriving as one is
+harmless, because a client fetches the record either way, so a consumer
+resumed from any seq, zero included, still meets every record that changed
+after it. What moves the horizon is forgetting a deletion, which no release
+does yet. Retention is a deployment **policy**, not a wire guarantee: the
+wire promises a resume that misses no record from any seq at or above the
 horizon, and the horizon is where policy lives.
 
 ## Who consumes it

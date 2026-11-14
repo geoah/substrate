@@ -23,6 +23,9 @@ type Operator interface {
 	// RebuildRepository replays a repository's changelog into its fold
 	// (rebuild.go).
 	RebuildRepository(ctx context.Context, repository string) (RebuildReport, error)
+	// CompactRepository replaces each record's history up to a seq with one
+	// state entry (compact.go).
+	CompactRepository(ctx context.Context, repository string, upTo int64) (CompactReport, error)
 	// VerifyRepository checks a repository's files against its fold
 	// (verify.go).
 	VerifyRepository(ctx context.Context, repository string) (VerifyReport, error)

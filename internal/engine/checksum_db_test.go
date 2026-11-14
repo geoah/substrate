@@ -203,6 +203,50 @@ func TestVerifyNamesDamageBySeq(t *testing.T) {
 	}
 }
 
+// A compacted history has gaps, and verify holds them to the highest line a
+// state entry stands at: a seq absent at or below it is one a compaction may
+// have taken, counted and no finding; one absent above it is damage, named as
+// in a history never compacted (TestVerifyNamesDamageBySeq).
+func TestVerifyHoldsACompactedHistoryAboveItsHighestState(t *testing.T) {
+	t.Parallel()
+	svc, ds, dsn := newDatasetWithDSN(t)
+	const task = "samples.substrate.reamde.dev/tasks/task"
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: task, Properties: map[string]any{"name": "a"}})
+	mustPatch(t, ds, owner, a.Kind, a.ID, substrate.PatchInput{Properties: map[string]any{"name": "a1"}})
+	mustPatch(t, ds, owner, a.Kind, a.ID, substrate.PatchInput{Properties: map[string]any{"name": "a2"}})
+	if report := compactTo(t, svc, 0); report.Removed == 0 {
+		t.Fatalf("the compaction removed nothing: %+v", report)
+	}
+	compacted := mustVerify(t, svc, testdb.Repository(t))
+	if !compacted.OK || compacted.CompactedUpTo == 0 || compacted.Absent == 0 {
+		t.Fatalf("a compacted history does not verify, or says nothing of its gaps: %+v", compacted)
+	}
+	// Writes after the compaction stand above every state: one of them gone
+	// is damage.
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: task, Properties: map[string]any{"name": "b"}})
+	mustPatch(t, ds, owner, b.Kind, b.ID, substrate.PatchInput{Properties: map[string]any{"name": "b1"}})
+	mustPatch(t, ds, owner, b.Kind, b.ID, substrate.PatchInput{Properties: map[string]any{"name": "b2"}})
+	db := rawDB(t, dsn)
+	var head int64
+	if err := db.QueryRow(`SELECT max(seq) FROM changelog`).Scan(&head); err != nil {
+		t.Fatal(err)
+	}
+	if head-1 <= compacted.CompactedUpTo {
+		t.Fatalf("seq %d is not above the highest state, %d: the test proves nothing", head-1, compacted.CompactedUpTo)
+	}
+	if _, err := db.Exec(`DELETE FROM changelog WHERE seq = $1`, head-1); err != nil {
+		t.Fatal(err)
+	}
+	report := mustVerify(t, svc, testdb.Repository(t))
+	want := "seq " + strconv.FormatInt(head, 10) + " follows " + strconv.FormatInt(head-2, 10) + ": the sequence has a gap"
+	if report.OK || !findingContaining(report, want) {
+		t.Fatalf("a line gone above the highest state: no finding contains %q: %+v", want, report.Findings)
+	}
+	if report.Absent != compacted.Absent {
+		t.Fatalf("the seqs absent at or below the highest state moved from %d to %d", compacted.Absent, report.Absent)
+	}
+}
+
 // A row whose stamped checksum is not the sum its archived line carries is
 // named by the default pass, which compares the two and nothing else of the
 // row.

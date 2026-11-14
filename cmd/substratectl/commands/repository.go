@@ -36,7 +36,7 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
-		a.repositoryRebuildCommand(), a.repositoryReembedCommand(),
+		a.repositoryRebuildCommand(), a.repositoryCompactCommand(), a.repositoryReembedCommand(),
 		a.repositoryVerifyCommand(),
 		a.repositoryRotateGenerationCommand(), a.repositoryReindexCommand())
 	return cmd
@@ -360,6 +360,54 @@ is why it is the backup.`,
 	}
 }
 
+func (a *app) repositoryCompactCommand() *cobra.Command {
+	var upTo int64
+	cmd := &cobra.Command{
+		Use:   "compact <repository>",
+		Short: "Replace each record's history up to a seq with one state entry",
+		Long: `Compact a repository's history: replace every record's entries up to a seq
+with one state entry, the record's whole state as of the newest entry it
+replaces, and a trigger's delivery entries with one ledger entry the same way.
+
+The records, versions and times a rebuild replays from the compacted history
+are the ones it replayed before. The history is smaller: an entry left with no
+effect is removed, and its seq is not used again, so the history has gaps. What
+a compaction cannot keep is the values a record held before its state: the
+activity view reads them as not kept, and a rebuild can no longer bring a
+state from before the compaction back. A copy taken before it still holds them.
+
+With no --up-to, every record is compacted up to its newest entry. The
+archive's next pass writes its pieces again from the lowest entry the
+compaction changed.
+
+STOP THE SERVER FIRST. Like a rebuild, the compaction opens the repository as
+its writer and refuses beside a running server.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := a.openEngineExclusive(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			report, err := svc.CompactRepository(cmd.Context(), args[0], upTo)
+			if err != nil {
+				return lockHint(err)
+			}
+			fmt.Fprintf(a.out, "repository %s compacted up to seq %d\n", report.Repository, report.UpTo)
+			fmt.Fprintf(a.out, "  states:    %d records, %d triggers\n", report.Records, report.Triggers)
+			fmt.Fprintf(a.out, "  replaced:  %d effects\n", report.Effects)
+			fmt.Fprintf(a.out, "  entries:   %d removed, %d rewritten\n", report.Removed, report.Rewritten)
+			if report.Damaged > 0 {
+				fmt.Fprintf(a.out, "  stopped:   seq %d does not verify, so it compacted below it alone and did not look above it; write the row back from a whole copy and compact again ('repository verify --recanonicalize' names every such seq)\n", report.Damaged)
+			}
+			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
+			return nil
+		},
+	}
+	cmd.Flags().Int64Var(&upTo, "up-to", 0, "the seq to compact up to (default: the head)")
+	return cmd
+}
+
 func (a *app) repositoryVerifyCommand() *cobra.Command {
 	var output string
 	var recanonicalize bool
@@ -368,9 +416,12 @@ func (a *app) repositoryVerifyCommand() *cobra.Command {
 		Short: "Walk a repository's changelog table and archive and check every checksum",
 		Long: `Walk a repository's changelog table and its archive and hold them to each other.
 
-The table is walked from seq 1 to the head in one read-only snapshot: the
-sequence must be gapless, every transaction whole and every entry stamped with
-a checksum. With --recanonicalize every entry's checksum is also recomputed
+The table is walked from seq 1 to the head in one read-only snapshot: every
+transaction must be whole, every entry stamped with a checksum, and every seq
+must hold a line, but at or below the highest line a compaction's state entry
+stands at: a seq absent there is one a compaction may have taken, and it is
+counted, not a finding. Above it, a gap is damage, as in a history never
+compacted. With --recanonicalize every entry's checksum is also recomputed
 from the stored row and must equal the stamped one; that reads and
 canonicalizes every payload the table holds, which on a long history takes
 hours, and it is the only check that finds a row edited in place with its
@@ -419,6 +470,10 @@ Exits nonzero when anything does not verify.`,
 			} else {
 				fmt.Fprintf(a.out, "repository %s\n", report.Repository)
 				fmt.Fprintf(a.out, "  table:    %d entries, head %d\n", report.Entries, report.Head)
+				if report.CompactedUpTo > 0 {
+					fmt.Fprintf(a.out, "  table:    compacted: %d seqs at or below seq %d hold no line, which a compaction may have taken\n",
+						report.Absent, report.CompactedUpTo)
+				}
 				if report.Recanonicalized {
 					fmt.Fprintln(a.out, "  table:    every checksum recomputed from its stored row")
 				}

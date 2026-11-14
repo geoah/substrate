@@ -111,6 +111,16 @@ type conversionStep struct {
 	// Line rewrites one history line in place. It is called once for every
 	// line, in seq order, in the step's own walk over the table, and must
 	// leave a line already in its dialect unchanged.
+	//
+	// A compacted history has gaps, and a line may carry state entries
+	// (compact.go): a `state` stands for its record's every earlier effect,
+	// and no line below it carries one of the record's (but a `former`, a
+	// `resync` or a purge); a `ledger` likewise for a trigger's delivery
+	// effects. A state entry is written by a binary at the state entries'
+	// dialect or above, so a step to that dialect or below never meets one,
+	// and a step above it converts the values a state carries (its row's
+	// properties, labels and states, its annotations and marks) as
+	// it converts a record effect's.
 	Line func(e *changelogfile.Entry) error
 	// ForRepository is called once for each repository the step converts,
 	// before its first line, and returns what the step does in that
@@ -194,6 +204,7 @@ var conversionSteps = []conversionStep{
 	{Dialect: 3, Name: "link_actors", Line: linkActorsLine},
 	{Dialect: 4, Name: "move_body_into_properties", Line: moveBodyIntoProperties},
 	{Dialect: 5, Name: "marks", Line: markLine},
+	conversionStateEntries,
 }
 
 // The conversion's steps, as the import's test seam names them
@@ -546,6 +557,24 @@ func declarationVersions(lines []changelogfile.Entry) ([]declarationVersion, err
 							delete(next, name)
 						}
 					}
+				}
+				props[key] = next
+				v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
+				v.Document, _, v.Unread = rowDocument(id, ref, next)
+				out = append(out, v)
+			case foldState:
+				// A state entry is the declaration whole as of its line: a
+				// version of its own, and none before it is kept (compact.go).
+				state, _ := eff["state"].(map[string]any)
+				row, _ := state["row"].(map[string]any)
+				if row == nil || row["deletedAt"] != nil {
+					delete(props, key)
+					out = append(out, declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Deleted: true})
+					continue
+				}
+				next, _ := row["props"].(map[string]any)
+				if next == nil {
+					next = map[string]any{}
 				}
 				props[key] = next
 				v := declarationVersion{Seq: e.Seq, Ref: ref, ID: id, Properties: next}
