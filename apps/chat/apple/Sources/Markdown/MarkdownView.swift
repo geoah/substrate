@@ -143,12 +143,14 @@ func inlinePieces(_ text: AttributedString) -> [InlinePiece] {
 func marked(_ text: AttributedString) -> Text {
     let pieces = inlinePieces(text)
     guard pieces.contains(where: { if case .text = $0 { false } else { true } }) else { return Text(text) }
-    return pieces.reduce(Text(verbatim: "")) { line, piece in
-        switch piece {
+    return pieces.enumerated().reduce(Text(verbatim: "")) { line, piece in
+        switch piece.element {
         case let .text(part): Text("\(line)\(part)")
         case .leaves: Text("\(line)\u{00A0}\(ExternalMark.text)")
         case let .record(reference, name):
-            Text("\(line)\(RecordPillText.text(reference, name: name, link: URL(string: "substrate://" + reference.path)))")
+            // Its place in the line tells it from the same record's pill
+            // beside it.
+            Text("\(line)\(RecordPillText.text(reference, name: name, link: URL(string: "substrate://" + reference.path), occurrence: piece.offset))")
         }
     }
 }

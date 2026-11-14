@@ -130,6 +130,7 @@ import FoundationNetworking
         #expect(!empty.isGone(mug))
         await empty.resolve(mug)
         #expect(empty.isGone(mug))
+        #expect(empty.gone == [mug.path])
         #expect(empty.title(for: mug) == nil)
         // One that is there is never gone, and neither is one never read.
         let held = RecordDirectory(reader: Fake(records: [mug.path: Record(id: "mug", kind: mug.kind, properties: ["title": "Mug"])], denied: []))
