@@ -40,6 +40,7 @@
   },
   "AgentEvent": {
     "args": false,
+    "at": false,
     "callable": false,
     "cause": false,
     "code": false,

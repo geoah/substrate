@@ -425,7 +425,7 @@ func (ds *dataset) startChatTurn(ctx context.Context, actor substrate.Actor, ag 
 	// A slot among the person's running chat turns, held until the turn
 	// settles: a detached turn outlives its client, so nothing else bounds
 	// how many a client can leave running.
-	person, limit := substrate.PersonOf(ctx, ds.scope.Repository), ds.svc.chatTurnsPerPerson
+	person, limit := ds.turnPerson(ctx), ds.svc.chatTurnsPerPerson
 	if !ds.chatTurns.take(person, limit) {
 		return nil, substrate.WithReason(fmt.Errorf("%w: %d chat turns are already running for this person: wait for one to finish, or stop one",
 			substrate.ErrConflict, limit), substrate.ReasonTurnCap)

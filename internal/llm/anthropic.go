@@ -1359,11 +1359,17 @@ func anthropicStop(reason string) string {
 		return ""
 	case "end_turn", "stop_sequence":
 		return StopEnd
-	case "max_tokens":
+	case "max_tokens", "model_context_window_exceeded":
+		// Both end the reply because no room was left for more of it: the
+		// request's output ceiling, or the model's window.
 		return StopLength
+	case "refusal":
+		return StopFilter
 	case "tool_use":
 		return StopToolCall
 	default:
+		// `pause_turn` among them: a server tool's loop the API paused,
+		// which is neither a finished reply nor a cut one.
 		return StopOther
 	}
 }

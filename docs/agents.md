@@ -730,6 +730,16 @@ next continuation picks the rows up. A thread that is mid-turn refuses the
 lease and picks the decision up on its next continuation, and a request no
 thread proposed (a human's, a function's) reports and resumes nothing.
 
+A chat thread's resumed run is a chat turn like one a message starts
+([decision 0317](decisions/0317-streamed-text-says-where-it-belongs-and-a-resumed-chat-run-streams.md)):
+it streams, so [an attach](#calling-an-agent) to the thread shows it and a
+stop stops it, and a stop or a shutdown settles it `stopped` with what it
+streamed kept. It holds one of its person's chat turns while it runs, the
+person the resolution is held to. When that person's turns are all running
+the resume claims nothing and runs nothing, and the sweep runs it once one
+is free. A thread of any other mode (a triggered run, a call) resumes as it
+did, with no stream.
+
 ### Background jobs
 
 A call that would hold the loop too long runs as a **background job**
@@ -1049,7 +1059,9 @@ billed. A `message` carries role (`user`, `assistant`,
 tool-call audit, the engine-stamped `changes` (and `subagentWrites` on a
 sub-agent call's row), the engine-stamped `mentions` on a run's final reply
 ([above](#the-engines-guidance)), and the required `thread` it belongs to. An
-`assistant` row whose model exposed its thinking also carries `reasoning`,
+`assistant` row whose reply the model did not finish says so in `cutBy`
+([below](#a-reply-that-was-cut-short)), and one whose model exposed its
+thinking also carries `reasoning`,
 the first 4000 runes of it, and `reasoningMillis`, the time from the first
 streamed piece of reasoning to the last; a completion that streamed nothing
 (a run with no client attached) keeps the text and no time. The reasoning is
@@ -1058,6 +1070,30 @@ never reads it. The provider's signed thinking blocks are another matter:
 within one run, the loop passes them back unchanged on the assistant turn
 that called tools, as Anthropic requires, and then drops them; no row keeps
 them, so a later run replays its earlier tool calls without them.
+
+### A reply that was cut short
+
+An `assistant` row carries `cutBy` when the model did not finish its reply
+([decision 0317](decisions/0317-streamed-text-says-where-it-belongs-and-a-resumed-chat-run-streams.md)),
+and no `cutBy` when it did:
+
+| `cutBy` | The reply stops because | The thread settles |
+| --- | --- | --- |
+| `length` | the model reached its output limit, or its context window | `ok`, as it did before the property |
+| `filter` | the provider withheld the rest: a content filter, or the model's own refusal to go on | `ok` |
+| `stop` | the run ended the call: a hand's stop, a shutdown, or the run's deadline | `stopped`, or `overbudget` for the deadline |
+| `failure` | the call failed after it had streamed text | `error` |
+
+Each wire maps its own stop reason: `max_tokens` and
+`model_context_window_exceeded` (Anthropic) and `length` (OpenAI) are
+`length`; `refusal` and `content_filter` are `filter`. A `stop` and a
+`failure` row hold what the call had streamed before it ended, written
+before the thread settles, so a provider that drops the connection after
+three paragraphs costs the fourth and not all of them. Only a call that
+streams keeps its text this way: a chat turn, or a chat thread's resumed
+run. A client offers to go on from a row that carries `cutBy`, with the
+thread's [continue](#continue), which takes up a thread that settled `ok` on
+a cut reply as it takes up one that did not finish.
 
 ### What ended a run
 
@@ -1895,10 +1931,13 @@ event instead, the same choice the
 
 Three other things end a stream with an `error` event, and none of them
 carries a `cause`, because none is the turn failing: the stream's token no
-longer stands (`code: "auth"`, sign in again); this reader fell behind the
-turn, or the person's roles changed (`code: "unavailable"`, attach again);
-and a fault of the server's own while it wrote the stream
-(`code: "internal"`, attach again to learn what the turn did). A continued thread replays its history (user and
+longer stands (`code: "auth"`, sign in again); the person's roles changed
+(`code: "unavailable"`, attach again); and a fault of the server's own while
+it wrote the stream (`code: "internal"`, attach again to learn what the turn
+did). A reader that fell behind the turn gets no `error` since revision 5 of
+the `agents` feature: its stream ends with a `lagged` event.
+
+A continued thread replays its history (user and
 assistant turns, each tool call with its stored result right after it, and a
 `summary` row standing in for the older turns it covers) and keeps one running
 tally on the thread row; one active turn per thread is enforced by a lease, so
@@ -1973,11 +2012,12 @@ write. What it means depends on how the last turn ended:
 | `error` | Tries again: the model is called on the rows as they stand, which end on the message or the tool results the failed call was answering. |
 | `stopped` | Takes the turn up where the stop left it. It is the person's word, so it is the one continuation a stopped thread accepts. |
 | `overbudget` | Goes on with a fresh set of budgets (turns, tool calls, the deadline); the daily spend cap still holds. |
-| `ok` | Refused, `409 conflict` with the reason `nothing_to_continue`: the turn finished, and the next message is what goes on. |
+| `ok`, and the last reply was [cut short](#a-reply-that-was-cut-short) | Goes on from where the reply stops: its row carries `cutBy`. |
+| `ok` otherwise | Refused, `409 conflict` with the reason `nothing_to_continue`: the turn finished, and the next message is what goes on. |
 | `running` | Refused, `409 conflict` with the reason `thread_busy`: attach to the turn, or stop it. A `running` thread whose lease has expired is taken over, as a message takes it over. |
 
-Where the stored rows end on the assistant's own text (a reply a stop cut
-short), the request to the model ends with one sentence from the engine
+Where the stored rows end on the assistant's own text (a reply a stop, a
+failure or the model's limit cut short), the request to the model ends with one sentence from the engine
 asking it to go on from where the reply stops. The sentence is never stored,
 like the deadline's last-turn message
 ([threads](#threads-messages-and-cost)): a provider refuses, or answers
@@ -2061,8 +2101,9 @@ thread, `503 unavailable` while the server shuts down) still answers with its
 own status before the stream opens. After that the turn runs to its own end
 whether or not the client stays: closing the connection loses the stream, not
 the turn, and the thread stays `running` under its lease until the turn
-settles. A stream idle for 30 seconds carries a `{}` heartbeat line, and a
-server drain ends the stream cleanly. Two verbs on the thread reach the turn
+settles. A stream idle for 10 seconds carries a `{}` heartbeat line, so a
+client that has read nothing for 25 seconds can say the stream went quiet
+and attach again, and a server drain ends the stream cleanly. Two verbs on the thread reach the turn
 again by its id:
 
 - `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` attaches to the
@@ -2072,7 +2113,9 @@ again by its id:
   `{"kind":"idle","thread":"<id>","status":"<the thread's status>"}`, and
   ends; `status: "running"` there means a run no client can stream (a
   triggered run, or a call) holds the thread, so read the records and try
-  later. An unknown thread is `404 not_found`.
+  later. A chat thread's run streams whatever started it: a message, a
+  continue, or the resume after an answer, a decision, an approval or a
+  background job. An unknown thread is `404 not_found`.
 - `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` stops the running
   chat turn and answers `200` with its settled result once the settle
   committed: `status: "stopped"`, a `reason` that says which type of
@@ -2111,20 +2154,55 @@ a row another writer puts on the thread while a turn runs (a resolution's
 the reply it is still streaming. A client that attaches after reading the
 rows drops a replayed event exactly when a stored row carries its `turn`,
 and keeps every other one. A highest-turn cutoff is wrong: the resolution
-row's later ordinal would hide the reply still streaming. An attach replays a turn's consecutive `delta` events as one event, and its
-consecutive `reasoning` events as one, and at most 4 MiB of event text, counted
-over `text`, `args`, `output` and `error`; past that it sends what it kept,
-one `{"kind":"truncated"}` line, then live events, and the dropped part is in
-the `message` rows once `done` arrives. A client that reads slower than the
-turn writes is dropped with an `error` event of code `unavailable` and no
-`cause`, saying to attach again. A server
+row's later ordinal would hide the reply still streaming.
+
+**Text says where it belongs**
+([decision 0317](decisions/0317-streamed-text-says-where-it-belongs-and-a-resumed-chat-run-streams.md)).
+A `delta` and a `reasoning` event carry `at`: how many Unicode code points
+of that `turn`'s text of that kind came before this piece.
+
+```json
+{"kind":"delta","turn":3,"at":0,"text":"The balcony plants "}
+{"kind":"delta","turn":3,"at":19,"text":"need water twice a week."}
+```
+
+- The count is per `turn` and per kind: a turn's reply and its reasoning
+  count apart, each from 0. A `turn` is one model call's assistant row, so
+  the count starts again at 0 after every round of tool calls, which is a
+  new `turn`. A compaction changes nothing: it is an event of its own, and
+  a call made again after one streams under a new `turn`, so a turn's text
+  never restarts.
+- The unit is the code point, which Go (`utf8.RuneCountInString`), Swift
+  (`unicodeScalars.count`) and JavaScript (`Array.from(text).length`) count
+  alike. It is not the UTF-16 unit of a JavaScript string's `length`, and
+  not a character a person sees: an emoji of several code points may be cut
+  between two pieces.
+- Writing every piece at its `at` reproduces the stored row's `content`
+  exactly. For reasoning it reproduces the whole thinking, of which the row
+  keeps the first 4000 code points.
+- So a replay is safe to apply twice. A client that shows 30 code points of
+  turn 3 and attaches again is sent the turn from `at: 0`; it writes each
+  piece over what it shows, which is the same text, and never empties
+  anything. No resume cursor exists or is needed.
+
+An attach replays a turn's consecutive `delta` events as one event, at the
+first piece's `at`, and its consecutive `reasoning` events as one, and at
+most 4 MiB of event text, counted over `text`, `args`, `output` and `error`;
+past that it sends what it kept, one `{"kind":"truncated"}` line, then live
+events, whose `at` may then start past the text the client holds, and the
+dropped part is in the `message` rows once `done` arrives. A client that
+reads slower than the turn writes is dropped: its stream ends with one
+`{"kind":"lagged","thread":"<id>"}` line, which is no failure of the turn,
+and it attaches again. A server
 shutdown stops every running chat turn: each settles `stopped` with reason
 `stopped: the server shut down during the turn`, within the shutdown's
 10 second drain; a settle that misses the drain is a `running` thread the next
 open settles as interrupted. A chat turn's own writes (its message rows, the
 partial reply, the settle) run past a stop or a shutdown, each within 30
 seconds; a partial reply that cannot be written is logged and the thread
-settles without it.
+settles without it. A crash still loses the text of the call in flight: the
+turns, their streams and their replay are in memory, and nothing stores an
+event.
 
 The turns and their streams live in the memory of the process serving the
 repository. A repository has one writer

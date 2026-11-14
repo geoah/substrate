@@ -2822,8 +2822,8 @@ or the same one with another role, may make it ([roles](auth.md#roles)).
 `thread_busy` and `nothing_to_continue` on `conflict`, since revision 6 of
 the `errors` feature, are about the thread a chat message or a continue
 addresses: a turn is running on it, so the client attaches to that turn or
-stops it, or its last turn finished, so there is nothing for a continue to
-take up and the next message is what goes on
+stops it, or its last turn finished with a whole reply, so there is nothing
+for a continue to take up and the next message is what goes on
 ([continue](agents.md#continue)).
 `message_id_taken` on `conflict`, at the same revision, is a chat message
 whose `messageId` names a record that is not this message: the same request

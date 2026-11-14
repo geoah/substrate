@@ -20,9 +20,9 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  # version 22: `heldTo`, whose rules hold the work a record stands for
-  # (decision record 0276).
-  version: 22
+  # version 23: `cutBy`, how an assistant turn's reply was cut short
+  # (decision record 0317).
+  version: 23
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -102,6 +102,20 @@ data:
       required: true
       min: 0
       description: the loop iteration this row belongs to, for ordering
+    # Stamped by the ENGINE on an assistant row whose reply the model did not
+    # finish (decision record 0317). A stop and a failed call write what the
+    # call had streamed as the turn's row, so this is what tells such a row
+    # from a whole reply: a client offers to continue from it.
+    cutBy:
+      type: enum
+      values:
+        - length
+        - filter
+        - stop
+        - failure
+      description: how the reply was cut short, absent when the model finished
+        it; the model's output limit, the provider withholding the rest, the
+        run being stopped or out of time, or the call failing
     # Stamped by the ENGINE on an assistant row when the model streamed or
     # returned its thinking: the first 4000 runes, kept for people reading
     # the transcript and never replayed to a model (decision record 0171).

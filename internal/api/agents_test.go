@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -117,6 +118,43 @@ func TestThreadEventsStreamsARunningTurn(t *testing.T) {
 	}
 }
 
+// A reader that fell behind the turn is told so by its own event, and the
+// stream ends there: no error event, since the turn did not fail, and the
+// position each piece of text carries is written, the first piece's 0
+// included (decision 0317).
+func TestALaggedAttachEndsWithoutAnErrorAndPositionsAreWritten(t *testing.T) {
+	zero, five := 0, 5
+	chat := &heldChat{attach: func(emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: "th1"})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: "Hello", Turn: 3, At: &zero})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventReasoning, Text: "hm", Turn: 3, At: &zero})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: " there", Turn: 3, At: &five})
+		emit(substrate.AgentEvent{Kind: substrate.AgentEventLagged, Thread: "th1"})
+		return nil, nil
+	}}
+	env := newStubEnv(t, chat)
+	rec := env.do(t, http.MethodGet, "/api/v1/substrate.reamde.dev/llm/thread/th1/events", stubToken, nil)
+	wantStatus(t, rec, http.StatusOK)
+	want := []string{
+		`{"kind":"thread","thread":"th1"}`,
+		`{"kind":"delta","text":"Hello","turn":3,"at":0}`,
+		`{"kind":"reasoning","text":"hm","turn":3,"at":0}`,
+		`{"kind":"delta","text":" there","turn":3,"at":5}`,
+		`{"kind":"lagged","thread":"th1"}`,
+	}
+	if got := strings.Split(strings.TrimSpace(rec.Body.String()), "\n"); !slices.Equal(got, want) {
+		t.Fatalf("a lagged attach streamed\n%s\nwant\n%s", rec.Body.String(), strings.Join(want, "\n"))
+	}
+}
+
+// A turn's stream beats every 10 seconds, so a client can say the stream
+// went quiet after 25; the changes feed keeps its half minute.
+func TestAnAgentStreamBeatsEveryTenSeconds(t *testing.T) {
+	if agentHeartbeatInterval != 10*time.Second || heartbeatInterval != 30*time.Second {
+		t.Fatalf("heartbeats: an agent stream every %v, the changes feed every %v", agentHeartbeatInterval, heartbeatInterval)
+	}
+}
+
 // A stop answers the settled result, whole. With nothing running the
 // engine's conflict is the answer (TestThreadStopWithNothingRunningIsAConflict).
 func TestThreadStopAnswersTheSettledResult(t *testing.T) {
@@ -137,11 +175,11 @@ func TestThreadStopAnswersTheSettledResult(t *testing.T) {
 
 // A chat stream held open past the heartbeat interval carries the idle `{}`
 // line, and a server drain ends it cleanly while the turn runs on. It shortens
-// the package's heartbeatInterval, so it cannot run beside another test.
+// the package's agentHeartbeatInterval, so it cannot run beside another test.
 func TestAChatStreamHeartbeatsAndEndsOnDrain(t *testing.T) {
-	prev := heartbeatInterval
-	heartbeatInterval = 20 * time.Millisecond
-	t.Cleanup(func() { heartbeatInterval = prev })
+	prev := agentHeartbeatInterval
+	agentHeartbeatInterval = 20 * time.Millisecond
+	t.Cleanup(func() { agentHeartbeatInterval = prev })
 
 	draining := make(chan struct{})
 	env := newStubEnv(t, &heldChat{}, func(c *Config) { c.Draining = draining })

@@ -20,6 +20,13 @@ const changeBatch = 500
 // them) alive. A variable only so a test can wait less than the interval.
 var heartbeatInterval = 30 * time.Second
 
+// agentHeartbeatInterval is the idle line's interval on an agent turn's
+// stream (decision 0317): short enough that a client says the stream went
+// quiet after two missed beats, where the changes feed's half minute would
+// leave a person looking at a reply that stopped arriving. A variable only
+// so a test can shorten it.
+var agentHeartbeatInterval = 10 * time.Second
+
 // streamWriteDeadline is how long one frame of a stream, or one write of the
 // export, may take to reach its client. The server sets no WriteTimeout,
 // which would cut every stream at a fixed age, so this is what frees a

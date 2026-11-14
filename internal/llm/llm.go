@@ -209,7 +209,11 @@ const (
 	StopLength = "length"
 	// StopToolCall is a turn that ended to call tools.
 	StopToolCall = "toolCall"
-	// StopOther is every other reason, a refusal or a filter among them.
+	// StopFilter is a reply the provider withheld, or cut off, because of
+	// what it said or was asked: a content filter, or the model's own
+	// refusal to go on. Its content, when there is any, is a prefix.
+	StopFilter = "filter"
+	// StopOther is every other reason.
 	StopOther = "other"
 )
 

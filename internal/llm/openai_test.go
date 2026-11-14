@@ -366,7 +366,7 @@ func TestOpenAIMapsFinishReasonAndPromptTokens(t *testing.T) {
 		"length":         StopLength,
 		"tool_calls":     StopToolCall,
 		"function_call":  StopToolCall,
-		"content_filter": StopOther,
+		"content_filter": StopFilter,
 	} {
 		t.Run(reason, func(t *testing.T) {
 			srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {

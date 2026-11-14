@@ -678,6 +678,8 @@ func openaiStop(reason openai.FinishReason) string {
 		return StopEnd
 	case openai.FinishReasonLength:
 		return StopLength
+	case openai.FinishReasonContentFilter:
+		return StopFilter
 	case openai.FinishReasonToolCalls, openai.FinishReasonFunctionCall:
 		return StopToolCall
 	default:
