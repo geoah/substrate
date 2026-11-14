@@ -17,8 +17,10 @@ struct ConversationView: View {
     @State private var newTitle = ""
 
     var body: some View {
-        if let screen = host.chats?.conversations[key] {
+        if let screen = host.conversation(key) {
             transcript(screen)
+        } else {
+            NoChatView(scene: scene)
         }
     }
 
@@ -55,7 +57,9 @@ struct ConversationView: View {
             ComposerBar(
                 key: key, screen: screen, dictation: dictation, atBottom: atBottom,
                 onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
-                onKey: { keySheet = host.chats?.keys[$0] })
+                onKey: { keySheet = host.chats?.keys[$0] }
+            )
+            .equatable()
         }
         .navigationTitle(screen.title)
         .navigationSubtitle(screen.subtitle)
@@ -109,8 +113,9 @@ struct ConversationView: View {
     }
 
     private func stopListening(_ screen: ConversationScreen) async {
-        let heard = await dictation.stop()
-        host.send(.draft(joined(screen.composer.draft, heard)), to: key)
+        // The field said what it holds when the app left the front: what
+        // was heard lands after it, in the conversation.
+        host.send(.heard(await dictation.stop()), to: key)
     }
 
     /// What moving means for following the bottom: a new turn, more text, a
@@ -142,7 +147,7 @@ struct TranscriptRows: View {
     var body: some View {
         if let hero = screen.hero {
             NewChatHeroView(
-                hero: hero, pick: { host.send(.draft($0), to: key) },
+                hero: hero, pick: { host.send(.fill($0), to: key) },
                 addKey: onKey)
         }
         if let older = screen.olderHidden {
@@ -177,14 +182,6 @@ struct TranscriptRows: View {
             .foregroundStyle(.quietText)
         }
     }
-}
-
-/// What dictation adds to a draft: after it, with a space.
-func joined(_ draft: String, _ heard: String) -> String {
-    let words = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !words.isEmpty else { return draft }
-    let head = draft.trimmingCharacters(in: .whitespaces)
-    return head.isEmpty ? words : (head.hasSuffix("\n") ? head + words : head + " " + words)
 }
 
 /// A new chat before its first message: who it is with, a provider's

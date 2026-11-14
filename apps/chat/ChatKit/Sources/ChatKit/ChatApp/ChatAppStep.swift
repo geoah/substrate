@@ -55,6 +55,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case newChat(agent: String?, listen: Bool, scene: String, key: ChildKey)
     case back(scene: String)
     case searched(scene: String, query: String)
+    case draftKept(key: ChildKey, thread: String?, text: String)
     case routed(ChatRoute)
     case routeClaimed(scene: String, key: ChildKey)
 

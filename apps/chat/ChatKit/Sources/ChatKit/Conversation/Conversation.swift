@@ -17,7 +17,20 @@ public struct Conversation: Controller, Equatable {
     public enum Command: Codable, Equatable, Sendable {
         /// A scene shows it: draw what is held, attach when the thread runs.
         case open
+        /// What the composer's field holds, told after a pause in the
+        /// typing, before a send and when the field stops editing
+        /// (`DraftReports`): kept for the send and for the disk, and not
+        /// carried by the tree, so typing draws nothing again.
         case draft(String)
+        /// The field left the screen holding this text: the tree carries it
+        /// from here, so the field that comes after starts from it whichever
+        /// of the two the conversation hears of first.
+        case draftLeft(String)
+        /// The draft written for the person: an opener they picked. The
+        /// field takes it.
+        case fill(String)
+        /// What dictation heard, landing after the draft. The field takes it.
+        case heard(String)
         case choose(agent: String)
         case send
         /// Sends `continueMessage` as the owner's own, for a last turn that
@@ -38,6 +51,9 @@ public struct Conversation: Controller, Equatable {
 
     enum Step: Codable, Equatable, Sendable {
         case drafted(String)
+        case rested(String)
+        case filled(String)
+        case heard(String)
         case chose(String)
         case listened
         case opened
@@ -133,7 +149,7 @@ public struct Conversation: Controller, Equatable {
     }
 
     public var initialState: State {
-        State(thread: seed.thread, agent: seed.agent, draft: seed.draft, listenOnOpen: seed.listen)
+        State(thread: seed.thread, agent: seed.agent, draft: seed.draft, carried: seed.draft, listenOnOpen: seed.listen)
     }
 
     /// Who the chat is with: a bound chat's thread names it; a new chat
@@ -165,6 +181,10 @@ public struct Conversation: Controller, Equatable {
         switch command {
         case .open: return [Event(.opened)]
         case let .draft(text): return text == state.draft ? [] : [Event(.drafted(text))]
+        case let .draftLeft(text): return text == state.draft && text == state.carried ? [] : [Event(.rested(text))]
+        case let .fill(text): return [Event(.filled(text))]
+        case let .heard(words):
+            return words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [Event(.heard(words))]
         case let .choose(agent): return [Event(.chose(agent))]
         case .listened: return state.listenOnOpen ? [Event(.listened)] : []
         case .stop: return [Event(.stopAsked)]

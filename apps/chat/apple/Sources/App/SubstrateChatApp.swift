@@ -107,7 +107,7 @@ struct ChatCommands: Commands {
         CommandMenu("Chat") {
             Button("Stop Answering") { if let conversation { host.send(.stop, to: conversation) } }
                 .keyboardShortcut(".")
-                .disabled(conversation.flatMap { host.chats?.conversations[$0] }?.streaming != true)
+                .disabled(conversation.map { host.chats?.streaming.contains($0) == true } != true)
             Button("Refresh") { host.send(.refresh) }
                 .keyboardShortcut("r")
                 .disabled(!signedIn)

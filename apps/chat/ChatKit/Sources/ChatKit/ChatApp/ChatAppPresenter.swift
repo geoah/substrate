@@ -6,61 +6,167 @@ import SubstrateScreens
 
 /// The presenter: the list, each window, each conversation drawn from its
 /// own presentation and the rows the list holds, the cards, and Settings.
+/// It is made of parts, each kept until what it reads changes (`kept`, and
+/// `ChatAppReads.swift` for what each reads): a streamed delta makes its
+/// own conversation's live turn again and nothing else, and a state that
+/// moved makes again only the parts that read what moved.
 extension ChatApp {
     public typealias Presentation = ChatPresentation
 
+    /// The chat list as made from the threads: its rows in order, under
+    /// their days, and how many are unread.
+    struct Listed: Equatable {
+        var rows: [ThreadRow]
+        var sections: [DaySection]
+        var unread: Int
+    }
+
+    /// The rest of the app's own part: who is offered, what is on screen,
+    /// which providers lack a key.
+    struct Framed: Equatable {
+        var offered: [AgentChoice]
+        var defaultAgent: AgentChoice?
+        var emptyList: EmptyList
+        var onScreen: [String]
+        var streaming: [ChildKey]
+        var keys: [String: KeySheet]
+    }
+
+    struct ListReads: Equatable, Sendable {
+        var state: State
+        var locale: Locale
+        var timeZone: TimeZone
+    }
+
+    struct SceneReads: Equatable, Sendable {
+        var scene: State.Scene
+        var thread: String?
+        /// What a search reads, while the window searches: the threads, the
+        /// list as made of them, and the rows held of every thread.
+        var listed: State?
+        var sections: [DaySection]?
+        var transcripts: [String: State.Held]?
+    }
+
+    struct ConversationReads: Equatable, Sendable {
+        var live: ConversationLive
+        var state: State
+    }
+
     public func present(_ input: PresenterInput<ChatApp>) -> ChatPresentation {
         let state = input.state
-        let calendar = input.calendar
-        let rows = state.threads.map { row(state, $0, input) }
-        let sections = Self.sections(rows, state.threads, now: input.now, calendar: calendar)
+        let listed = kept.part(
+            "list", reading: ListReads(state: state.listed, locale: input.locale, timeZone: input.timeZone), at: input.now
+        ) { self.listed(state, input) }
         var scenes: [String: ScenePresentation] = [:]
         for (id, scene) in state.scenes {
-            let query = scene.query.trimmingCharacters(in: .whitespaces)
-            var found: [DaySection]?
-            if !query.isEmpty {
-                let matches = state.threads.filter { thread in
+            let thread = scene.current.flatMap { state.conversations[$0]?.thread }
+            let searching = !scene.query.trimmingCharacters(in: .whitespaces).isEmpty
+            scenes[id] = kept.part(
+                "scene/\(id)",
+                reading: SceneReads(
+                    scene: scene, thread: thread, listed: searching ? state.listed : nil, sections: searching ? listed.sections : nil,
+                    transcripts: searching ? state.transcripts : nil)
+            ) { self.scene(state, scene, thread: thread, listed: listed) }
+        }
+        kept.keep(under: "scene/") { scenes[String($0.dropFirst("scene/".count))] != nil }
+        let framed = kept.part("frame", reading: state.framed) { self.framed(state) }
+        let list = ChatListPresentation(
+            title: "Chats", sections: listed.sections, offline: state.online ? nil : "Offline. Showing saved chats.",
+            problem: state.online ? state.refreshError.map { "Couldn't refresh: \($0)" } : nil, feedProblem: state.feedProblem,
+            empty: listed.rows.isEmpty && state.loaded ? framed.emptyList : nil, loading: listed.rows.isEmpty && !state.loaded,
+            showAutomated: state.preferences.showAutomated, searchPrompt: "Search chats")
+        var conversations: [ChildKey: ConversationScreen] = [:]
+        for (key, live) in input.children {
+            conversations[key] = kept.part(
+                "chat/\(key.rawValue)/screen", reading: ConversationReads(live: live, state: state.conversed(live.thread))
+            ) { conversation(state, key, live) }
+        }
+        kept.keep(under: "chat/") { name in conversations[ChildKey(String(name.dropFirst("chat/".count).prefix { $0 != "/" }))] != nil }
+        let settings = kept.part("settings", reading: state.settled) { self.settings(state) }
+        return ChatPresentation(
+            signedIn: state.session != nil, canChat: state.session?.canChat ?? true,
+            host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
+            routePending: state.route != nil, onScreen: framed.onScreen, streaming: framed.streaming, conversations: conversations,
+            offered: framed.offered, defaultAgent: framed.defaultAgent, settings: settings, unread: listed.unread,
+            renameProblem: state.renameProblem, keys: framed.keys, keySaved: state.keySaved, answered: state.answered)
+    }
+
+    /// The parts the app's tree goes out in: its own under no key, with no
+    /// conversation in it, and each conversation's screen under its key. A
+    /// delta then draws its conversation again and neither the list nor
+    /// another conversation.
+    public func parts(of presentation: ChatPresentation) -> [PresentationPart] {
+        var own = presentation
+        own.conversations = [:]
+        return [PresentationPart(own)]
+            + presentation.conversations.keys.sorted().map { PresentationPart(presentation.conversations[$0], at: [$0]) }
+    }
+
+    /// The list from the threads, and the instant it stops being true as
+    /// made: a row says "now" for a minute, a time until its day ends, a
+    /// weekday for six days, and the day headings move at midnight.
+    private func listed(_ state: State, _ input: PresenterInput<ChatApp>) -> (value: Listed, until: Date) {
+        let calendar = input.calendar
+        let threads = state.threads
+        let rows = threads.map { row(state, $0, input) }
+        let today = calendar.startOfDay(for: input.now)
+        var until = calendar.date(byAdding: .day, value: 1, to: today) ?? today.addingTimeInterval(86400)
+        for thread in threads {
+            for age: TimeInterval in [60, 6 * 86400] {
+                let edge = thread.activeAt.addingTimeInterval(age)
+                if edge > input.now, edge < until { until = edge }
+            }
+        }
+        return (
+            Listed(
+                rows: rows, sections: Self.sections(rows, threads, now: input.now, calendar: calendar),
+                unread: rows.count { $0.unread }),
+            until
+        )
+    }
+
+    /// One window: the chat it shows, and its search over the titles, the
+    /// previews and the rows held on this device.
+    private func scene(_ state: State, _ scene: State.Scene, thread: String?, listed: Listed) -> ScenePresentation {
+        let query = scene.query.trimmingCharacters(in: .whitespaces)
+        var found: [DaySection]?
+        if !query.isEmpty {
+            let matches = Set(
+                state.threads.filter { thread in
                     state.title(thread).localizedCaseInsensitiveContains(query)
                         || (thread.preview?.localizedCaseInsensitiveContains(query) ?? false)
                         || (state.transcripts[thread.id]?.records.contains {
                             $0["content"]?.string?.localizedCaseInsensitiveContains(query) ?? false
                         } ?? false)
-                }
-                found = Self.sections(matches.map { row(state, $0, input) }, matches, now: input.now, calendar: calendar)
+                }.map(\.id))
+            // The rows as the list made them, under the same days.
+            found = listed.sections.compactMap { section in
+                let rows = section.rows.filter { matches.contains($0.id) }
+                return rows.isEmpty ? nil : DaySection(title: section.title, rows: rows)
             }
-            scenes[id] = ScenePresentation(
-                current: scene.current, query: scene.query, found: found,
-                nothingFound: found?.isEmpty == true ? "No chat on this device matches “\(scene.query)”." : nil)
         }
+        return ScenePresentation(
+            current: scene.current, thread: thread, query: scene.query, found: found,
+            nothingFound: found?.isEmpty == true ? "No chat on this device matches “\(scene.query)”." : nil)
+    }
+
+    private func framed(_ state: State) -> Framed {
         let offered = state.offered
-        var empty: EmptyList?
-        if state.threads.isEmpty, state.loaded {
-            empty = EmptyList(
-                title: "No chats yet",
-                message: offered.isEmpty
-                    ? "There is no assistant to chat with yet. Install a package that ships one from the console's Providers page."
-                    : "Start one with \(state.defaultAgent?.name ?? "an assistant").",
-                action: offered.isEmpty ? nil : "New Chat")
-        }
-        let list = ChatListPresentation(
-            title: "Chats", sections: sections, offline: state.online ? nil : "Offline. Showing saved chats.",
-            problem: state.online ? state.refreshError.map { "Couldn't refresh: \($0)" } : nil, feedProblem: state.feedProblem,
-            empty: empty, loading: state.threads.isEmpty && !state.loaded, showAutomated: state.preferences.showAutomated,
-            searchPrompt: "Search chats")
-        var conversations: [ChildKey: ConversationScreen] = [:]
-        for (key, live) in input.children {
-            conversations[key] = conversation(state, key, live)
-        }
         var keys: [String: KeySheet] = [:]
         for (id, record) in state.providers where state.lacksKey(Provider(record: record)) {
             keys[id] = keySheet(state, Provider(record: record))
         }
-        return ChatPresentation(
-            signedIn: state.session != nil, canChat: state.session?.canChat ?? true,
-            host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
-            routePending: state.route != nil, onScreen: state.visibleThreads.sorted(), conversations: conversations, offered: offered.map(Self.choice),
-            defaultAgent: state.defaultAgent.map(Self.choice), settings: settings(state), unread: state.unreadCount,
-            renameProblem: state.renameProblem, keys: keys, keySaved: state.keySaved, answered: state.answered)
+        return Framed(
+            offered: offered.map(Self.choice), defaultAgent: state.defaultAgent.map(Self.choice),
+            emptyList: EmptyList(
+                title: "No chats yet",
+                message: offered.isEmpty
+                    ? "There is no assistant to chat with yet. Install a package that ships one from the console's Providers page."
+                    : "Start one with \(state.defaultAgent?.name ?? "an assistant").",
+                action: offered.isEmpty ? nil : "New Chat"),
+            onScreen: state.visibleThreads.sorted(),
+            streaming: state.conversations.filter(\.value.streaming).keys.sorted(), keys: keys)
     }
 
     static func choice(_ agent: Agent) -> AgentChoice { AgentChoice(id: agent.id, name: agent.name, description: agent.description) }
@@ -118,25 +224,40 @@ extension ChatApp {
         let held = live.thread.flatMap { state.transcripts[$0] }
         let agent = state.agent(live.agent)
         let stored = held?.turns ?? []
-        // The stored rows' turns, presented once per read; the live ones
-        // each time the stream moves.
-        let fingerprint = Self.fingerprint(held, agent: agent?.record)
-        let made = memo.turns(for: key.rawValue, fingerprint: fingerprint) {
+        // The stored rows' turns, presented once per read; a live turn each
+        // time it moves, and a tool's row once.
+        let scope = "chat/\(key.rawValue)"
+        let made = kept.part("\(scope)/stored", reading: StoredReads(turns: stored, agent: agent?.record)) {
             let titles = recordTitles(stored)
-            return (TurnPresenter.present(stored, agent: agent, liveKey: nil, titles: titles), titles)
+            let scan = CardScan(stored)
+            return Stored(
+                turns: TurnPresenter.present(stored, agent: agent, liveKey: nil, titles: titles), titles: titles,
+                decided: Set(scan.decisions.keys), scan: scan)
         }
-        var titles = made.titles
-        titles.merge(recordTitles(live.turns)) { held, _ in held }
-        let decided = Set(stored.compactMap { decisionNotice($0)?.requestID })
+        let tools = live.turns.map(\.tools)
+        let titles = kept.part("\(scope)/titles", reading: TitleReads(stored: made.titles, tools: tools)) {
+            made.titles.merging(recordTitles(live.turns)) { held, _ in held }
+        }
+        let decided = made.decided
         let turns =
             made.turns
-            + live.turns.map {
-                TurnPresenter.present($0, agent: agent, live: $0.id == live.liveKey, decided: decided, titles: titles)
+            + live.turns.map { turn in
+                let isLive = turn.id == live.liveKey
+                return kept.part(
+                    "\(scope)/turn/\(turn.id)",
+                    reading: TurnReads(turn: turn, live: isLive, agent: agent?.record, decided: decided, titles: titles)
+                ) {
+                    TurnPresenter.present(
+                        turn, agent: agent, live: isLive, decided: decided, titles: titles, kept: kept, scope: scope)
+                }
             }
-        let all = stored + live.turns
+        kept.keep(under: "\(scope)/turn/") { name in live.turns.contains { name == "\(scope)/turn/\($0.id)" } }
+        kept.keep(under: "\(scope)/tool/") { name in live.turns.contains { name.hasPrefix("\(scope)/tool/\($0.id)#") } }
+        var scan = made.scan
+        scan.merge(CardScan(live.turns))
         let working = live.phase == .streaming || live.phase == .background
         var hero: NewChatHero?
-        if live.thread == nil, all.isEmpty {
+        if live.thread == nil, stored.isEmpty, live.turns.isEmpty {
             if let agent {
                 hero = NewChatHero(title: agent.name, description: agent.description, prompts: agent.examplePrompts, empty: nil)
             } else {
@@ -196,7 +317,7 @@ extension ChatApp {
         if hero?.empty == nil { hero?.keyless = callout }
         let blocked = live.blocked
         let asked = live.thread.map(state.subagentApprovals) ?? []
-        var shown = cards(state, all, titles: titles)
+        var shown = cards(state, scan, titles: titles)
         for id in asked where shown[id] == nil {
             shown[id] = CardPresentation(
                 approval: CardPresenter.approval(id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: nil))
@@ -216,7 +337,8 @@ extension ChatApp {
             outcomes: live.outcomes.map(Self.outcome), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
-                draft: live.draft, draftRevision: live.draftRevision, placeholder: agent.map { "Message \($0.name)" } ?? "Message",
+                draft: live.draft, draftRevision: live.draftRevision, draftReplaced: live.draftReplaced, draftBefore: live.draftBefore,
+                placeholder: agent.map { "Message \($0.name)" } ?? "Message",
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
                 keyless: hero?.keyless == nil ? callout : nil,
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
@@ -225,13 +347,65 @@ extension ChatApp {
             error: live.error, expandThinking: state.preferences.expandThinking)
     }
 
-    private static func fingerprint(_ held: State.Held?, agent: Record?) -> Int {
-        var hasher = Hasher()
-        hasher.combine(held?.version)
-        hasher.combine(held?.records.count)
-        hasher.combine(held?.records.last?.id)
-        hasher.combine(agent)
-        return hasher.finalize()
+    /// The stored rows' part of a conversation: its turns as drawn, what
+    /// its tool results named each record, and the cards its turns land.
+    struct Stored: Equatable {
+        var turns: [TurnPresentation]
+        var titles: [String: String]
+        /// The suggestions a stored turn decided.
+        var decided: Set<String>
+        var scan: CardScan
+    }
+
+    struct StoredReads: Equatable, Sendable {
+        var turns: [Turn]
+        var agent: Record?
+    }
+
+    struct TitleReads: Equatable, Sendable {
+        var stored: [String: String]
+        var tools: [[ToolCall]]
+    }
+
+    struct TurnReads: Equatable, Sendable {
+        var turn: Turn
+        var live: Bool
+        var agent: Record?
+        var decided: Set<String>
+        var titles: [String: String]
+    }
+
+    /// The cards some turns land, by what their rows say alone: each
+    /// suggestion's call and decision, each approval asked and how it
+    /// ended, each set of questions.
+    struct CardScan: Equatable, Sendable {
+        var proposals: [String: ToolCall] = [:]
+        var decisions: [String: DecisionNotice] = [:]
+        var approvals: [String: ApprovalNotice] = [:]
+        var asked: [String] = []
+        var interactions: [String] = []
+
+        init(_ turns: [Turn]) {
+            proposals = CardPresenter.proposals(turns)
+            for turn in turns {
+                if let decision = decisionNotice(turn) { decisions[decision.requestID] = decision }
+                if let ended = approvalNotice(turn) { approvals[ended.approvalID] = ended }
+                for call in turn.tools {
+                    if let interaction = interactionID(of: call) { interactions.append(interaction) }
+                    if let approval = approvalID(of: call) { asked.append(approval) }
+                }
+            }
+        }
+
+        /// The turns after these: theirs replace what these said of the
+        /// same card.
+        mutating func merge(_ later: CardScan) {
+            proposals.merge(later.proposals) { _, new in new }
+            decisions.merge(later.decisions) { _, new in new }
+            approvals.merge(later.approvals) { _, new in new }
+            asked += later.asked
+            interactions += later.interactions
+        }
     }
 
     static func outcome(_ outcome: Outcome) -> OutcomePresentation {
@@ -254,32 +428,21 @@ extension ChatApp {
         }
     }
 
-    private func cards(_ state: State, _ turns: [Turn], titles: [String: String]) -> [String: CardPresentation] {
+    private func cards(_ state: State, _ scan: CardScan, titles: [String: String]) -> [String: CardPresentation] {
         var out: [String: CardPresentation] = [:]
-        let proposals = CardPresenter.proposals(turns)
-        var decisions: [String: DecisionNotice] = [:]
-        var approvals: [String: ApprovalNotice] = [:]
-        var asked: [String] = []
-        for turn in turns {
-            if let decision = decisionNotice(turn) { decisions[decision.requestID] = decision }
-            if let ended = approvalNotice(turn) { approvals[ended.approvalID] = ended }
-            for call in turn.tools {
-                if let interaction = interactionID(of: call) {
-                    out[interaction] = CardPresentation(question: CardPresenter.question(interaction, card: state.cards[interaction]))
-                }
-                if let approval = approvalID(of: call) { asked.append(approval) }
-            }
+        for interaction in scan.interactions {
+            out[interaction] = CardPresentation(question: CardPresenter.question(interaction, card: state.cards[interaction]))
         }
-        for id in asked {
+        for id in scan.asked {
             out[id] = CardPresentation(
                 approval: CardPresenter.approval(
-                    id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: approvals[id]))
+                    id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: scan.approvals[id]))
         }
-        for id in Set(proposals.keys).union(decisions.keys) {
+        for id in Set(scan.proposals.keys).union(scan.decisions.keys) {
             out[id] = CardPresentation(
                 suggestion: CardPresenter.suggestion(
-                    id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: proposals[id], outcome: decisions[id],
-                    session: state.session, titles: titles))
+                    id, card: state.cards[id], pending: state.requests.first { $0.id == id }, call: scan.proposals[id],
+                    outcome: scan.decisions[id], session: state.session, titles: titles))
         }
         return out
     }

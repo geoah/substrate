@@ -8,20 +8,24 @@ struct RootView: View {
 
     var body: some View {
         let link = host.link
+        // The link's own part and the app's: a reply being written is in
+        // neither, so it draws nothing here.
+        let signedIn = host.chats?.signedIn == true
+        let canChat = host.chats?.canChat == true
         Group {
             if let ended = link.ended {
                 AccessEndedScreen(ended) { host.signInAgain() }
-            } else if let chats = link.app, chats.signedIn, !chats.canChat {
+            } else if signedIn, !canChat {
                 NoChatAccessView()
-            } else if let chats = link.app, chats.signedIn {
+            } else if signedIn {
                 ChatSplitView()
                     .recordViewer(host.recordDirectory())
-                    .id(chats.host)
+                    .id(host.chats?.host)
             } else {
                 SignInView()
             }
         }
-        .animation(.default, value: link.app?.signedIn)
+        .animation(.default, value: signedIn)
         .alert("Couldn't sign out", isPresented: Binding(get: { link.signOutProblem != nil }, set: { _ in })) {
             if let fix = link.signOutProblem?.fix { Button(fix.title) { host.signOut() } }
             Button("OK", role: .cancel) {}
@@ -55,7 +59,7 @@ struct ChatSplitView: View {
             ChatListView(scene: scene, showSettings: $showSettings)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 320, max: 420)
         } detail: {
-            if let current, host.chats?.conversations[current] != nil {
+            if let current {
                 ConversationView(key: current, scene: scene)
                     .id(current)
             } else {
@@ -70,7 +74,7 @@ struct ChatSplitView: View {
         .onChange(of: host.chats?.routePending) { _, _ in take() }
         .onChange(of: current) { _, key in
             if key != nil { compactColumn = .detail }
-            restored = key.flatMap { host.chats?.conversations[$0]?.thread } ?? ""
+            restored = key == nil ? "" : host.chats?.scenes[scene]?.thread ?? ""
         }
         .onChange(of: compactColumn) { _, column in
             // Back to the list on an iPhone: nothing is selected, so the same

@@ -79,10 +79,26 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var thread: String?
     /// Who a new chat goes to; a bound chat's thread names its agent.
     var agent: String?
+    /// What the composer's field holds, as far as it has said: what a send
+    /// sends and the disk keeps. The field owns the text while it is typed.
     var draft: String
+    /// The draft as the tree carries it: what a field starts from. Typing
+    /// never moves it; the engine's own rewrites do, with the revision.
+    var carried = ""
     /// Moved when the engine itself rewrites the draft (a send clears it, a
-    /// refusal gives it back), so the field takes the new text.
+    /// refusal gives it back, dictation lands, an opener is picked, a chat
+    /// shown again takes up what was typed into it, a field left the
+    /// screen), so the field takes the new text.
     var draftRevision = 0
+    /// The text the rewrites since the field last spoke stand in place of:
+    /// what a field that had said everything held before them. A field
+    /// holding more than that typed it meanwhile, and keeps it.
+    var draftReplaced = ""
+    /// The same for the last rewrite alone: what it stands in place of, for
+    /// a field that took the one before it.
+    var draftBefore = ""
+    /// The engine rewrote the draft since the field last spoke.
+    var rewritten = false
     var phase = Phase.idle
     var overlay = LiveOverlay.empty
     var seq = 0
