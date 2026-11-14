@@ -376,6 +376,7 @@
     "digest": false,
     "documentUrl": true,
     "fromFile": false,
+    "movedTo": false,
     "name": false
   },
   "AuthorizationPackageStep": {
@@ -920,6 +921,26 @@
     "setAt": false,
     "setBy": false
   },
+  "PublishInput": {
+    "authority": true,
+    "confirm": false,
+    "package": true
+  },
+  "PublishPlan": {
+    "blockers": true,
+    "documentURL": true,
+    "kinds": true,
+    "name": true,
+    "package": true,
+    "packages": true,
+    "proven": true,
+    "published": true,
+    "reason": false,
+    "record": true,
+    "records": true,
+    "references": true,
+    "release": false
+  },
   "PutInput": {
     "annotations": false,
     "id": false,
@@ -983,6 +1004,19 @@
     "repository": false,
     "secret": true,
     "token": true
+  },
+  "Release": {
+    "dialect": false,
+    "package": true,
+    "releasedAt": true,
+    "sha256": true,
+    "version": true
+  },
+  "ReleaseInput": {
+    "package": true
+  },
+  "Releases": {
+    "items": true
   },
   "RepositoryChoice": {
     "id": true,

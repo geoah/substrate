@@ -301,13 +301,31 @@ func LocalizeDeclaration(kind string, v any, names ...string) (any, error) {
 	if len(names) == 0 || names[0] == "" || !ok {
 		return v, nil
 	}
-	return declarationWalker{homes: names}.object(root, v)
+	return localWalker(names...).object(root, v)
 }
 
-// declarationWalker folds one repository's names (its name first, then the
-// former names it still answers to) through a declaration by the dialect's
-// positions.
-type declarationWalker struct{ homes []string }
+// localWalker folds names into `~`: a name, a pattern or a record path under
+// one of them at a reference position (LocalizePath), and the declaring
+// authority when it is one of them.
+func localWalker(names ...string) declarationWalker {
+	return declarationWalker{
+		fold: func(s string) string { return LocalizePath(s, names...) },
+		authority: func(s string) string {
+			if slices.Contains(names, s) {
+				return Local
+			}
+			return LocalizePath(s, names...)
+		},
+	}
+}
+
+// declarationWalker rewrites the names in a declaration by the dialect's
+// positions: fold each name at a reference position and each package
+// `requiresAtLeast` keys, authority the declaring `authority`. Every other
+// value stays, whatever it looks like.
+type declarationWalker struct {
+	fold, authority func(string) string
+}
 
 // object walks v, an object of the key set keys or a list of them.
 func (w declarationWalker) object(keys string, v any) (any, error) {
@@ -336,8 +354,8 @@ func (w declarationWalker) object(keys string, v any) (any, error) {
 			case posRef:
 				out[k] = w.reference(x)
 			case posAuthority:
-				if s, ok := x.(string); ok && slices.Contains(w.homes, s) {
-					out[k] = Local
+				if s, ok := x.(string); ok {
+					out[k] = w.authority(s)
 				} else {
 					out[k] = w.reference(x)
 				}
@@ -360,13 +378,13 @@ func (w declarationWalker) object(keys string, v any) (any, error) {
 	}
 }
 
-// reference folds a value at a reference position: a name, a pattern or a
-// record path under home (LocalizePath), a reference value's `ref`, beside
-// link properties that stay, or a list of either.
+// reference rewrites a value at a reference position by fold: a name, a
+// pattern or a record path, a reference value's `ref`, beside link
+// properties that stay, or a list of either.
 func (w declarationWalker) reference(v any) any {
 	switch t := v.(type) {
 	case string:
-		return LocalizePath(t, w.homes...)
+		return w.fold(t)
 	case []any:
 		out := make([]any, len(t))
 		for i, x := range t {
@@ -382,7 +400,7 @@ func (w declarationWalker) reference(v any) any {
 		for k, x := range t {
 			out[k] = x
 		}
-		out[ReferenceValueKey] = LocalizePath(r, w.homes...)
+		out[ReferenceValueKey] = w.fold(r)
 		return out
 	}
 	return v
@@ -415,7 +433,7 @@ func (w declarationWalker) keys(v any) (any, error) {
 	out := make(map[string]any, len(m))
 	from := make(map[string]string, len(m))
 	for _, k := range sortedMapKeys(m) {
-		key := LocalizeRef(k, w.homes...)
+		key := w.fold(k)
 		if other, taken := from[key]; taken {
 			return nil, fmt.Errorf("requiresAtLeast names %s twice, as %q and as %q: give it one floor", key, other, k)
 		}

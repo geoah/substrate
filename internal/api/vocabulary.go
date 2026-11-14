@@ -110,7 +110,7 @@ func holdWaitingMappings(ctx context.Context, ds substrate.Dataset, docs []map[s
 	// The engine stores the repository's own kinds under `~` (decision
 	// record 0259), so the mappings held back are named the way it would
 	// have stored them.
-	if names := ds.Repository().Names(); len(names) > 0 {
+	if names := ds.Repository().LocalNames(); len(names) > 0 {
 		local, err := vocabulary.LocalizeOwnDocuments(docs, names...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)

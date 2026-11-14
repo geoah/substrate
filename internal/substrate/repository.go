@@ -19,6 +19,10 @@ type RepositoryInfo struct {
 	// reply names the repository by Authority, and RepositoryNames lists
 	// them.
 	FormerNames []string `json:"-"`
+	// Spellings are the names that spell `~` on an input: Names but one a
+	// package of the repository's own is published under (decision record
+	// 0289). Nil where the server did not say, and then Names stand.
+	Spellings []string `json:"-"`
 }
 
 // Names are the names the repository answers to: Authority, then its former
@@ -28,6 +32,15 @@ func (r RepositoryInfo) Names() []string {
 		return nil
 	}
 	return append([]string{r.Authority}, r.FormerNames...)
+}
+
+// LocalNames are the names an input may spell `~` with: Spellings where the
+// server set them, Names otherwise.
+func (r RepositoryInfo) LocalNames() []string {
+	if r.Spellings != nil {
+		return r.Spellings
+	}
+	return r.Names()
 }
 
 // RepositoryNames is what a rename answers (POST /repository/rename): the

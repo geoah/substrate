@@ -351,7 +351,7 @@ func checkedByAnApp(ctx context.Context) (bool, error) {
 // check plans a check's answer for the request's token.
 func (h *handler) check(ctx context.Context, requested []scope.Scope, details []substrate.AuthorizationDetail) (substrate.AuthorizationCheckResult, error) {
 	ds := DatasetFrom(ctx)
-	names := ds.Repository().Names()
+	names := ds.Repository().LocalNames()
 	// The plan reads the repository whole; what the token may learn of it is
 	// cut below, row by row.
 	owner, grant, full := ds, scope.Grant{}, true

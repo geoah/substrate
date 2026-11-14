@@ -302,14 +302,14 @@ func takeFormerName(ctx context.Context, tx dbx, name string) (string, error) {
 	return held, err
 }
 
-// names are the names this dataset's repository answers to now, asked of the
-// names cache by its id at the moment (namescache.go): its name, then the
+// answersTo are the names this dataset's repository answers to now, asked of
+// the names cache by its id at the moment (namescache.go): its name, then the
 // former names still in force, newest first. The dataset keeps none of them.
 // A read that fails answers none: a full-name spelling then folds to
 // nothing, and the request meets it as a name it does not know. A dataset
 // that is creating its repository answers the name being registered, which
 // no row holds yet and no rename can move.
-func (ds *dataset) names() []string {
+func (ds *dataset) answersTo() []string {
 	if ds.creating != "" {
 		return []string{ds.creating}
 	}
@@ -323,13 +323,23 @@ func (ds *dataset) names() []string {
 	return names
 }
 
-// name is the repository's name now (names), or "" for none.
+// name is the repository's name now (answersTo), or "" for none.
 func (ds *dataset) name() string {
-	if names := ds.names(); len(names) > 0 {
+	if names := ds.answersTo(); len(names) > 0 {
 		return names[0]
 	}
 	return ""
 }
+
+// names are the names that spell `~` on an input here: every name the
+// repository answers to but one a package of its own is published under
+// (decision record 0289), read against the live declarations.
+func (ds *dataset) names() []string { return ds.registry().Spellings(ds.answersTo()...) }
+
+// names is ds.names read against the declarations this transaction writes
+// under, so a publish that moves a package to one of the repository's names
+// stops folding that name inside its own transaction.
+func (t *txn) names() []string { return t.declarations().Spellings(t.ds.answersTo()...) }
 
 // namesReadTimeout bounds a read of a repository's names from its row.
 const namesReadTimeout = 10 * time.Second

@@ -1718,7 +1718,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// names cache by id when it needs one (namescache.go).
 		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
-	ds.reg.SetNames(ds.names)
+	ds.reg.SetNames(ds.answersTo)
 	// The lease before the directory: the open ladder appends (the dialect
 	// stamps, the shipped-vocabulary upgrade), so a process that is not this
 	// repository's writer must be refused before the first of them and not

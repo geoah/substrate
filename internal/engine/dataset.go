@@ -63,7 +63,7 @@ var systemKinds = map[string]bool{
 	kindKind: true, kindPackage: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
-	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true,
+	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true, kindRole: true, kindRelease: true,
 	// Declared, empty and written by nothing in a repository from before
 	// decision 0264 (repomigration_0008_purge_the_recovery_key.go).
 	kindRecoveryKey: true,
@@ -383,9 +383,10 @@ func (ds *dataset) Repository() substrate.RepositoryInfo {
 	ds.mu.RLock()
 	info := ds.info
 	ds.mu.RUnlock()
-	if names := ds.names(); len(names) > 0 {
+	if names := ds.answersTo(); len(names) > 0 {
 		info.Authority, info.FormerNames = names[0], names[1:]
 	}
+	info.Spellings = ds.names()
 	return info
 }
 

@@ -23,6 +23,18 @@ export function PublisherDetails({
           </a>
         )}
       </dd>
+      {publisher.movedTo ? (
+        <>
+          <dt className="text-muted-foreground">Says it moved to</dt>
+          <dd>
+            {publisher.movedTo}
+            <span className="block text-muted-foreground">
+              Packages from this publisher keep their names and keep upgrading
+              from this document; nothing moves to the new name.
+            </span>
+          </dd>
+        </>
+      ) : null}
     </dl>
   )
 }

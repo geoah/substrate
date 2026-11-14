@@ -79,6 +79,14 @@ var wireTypes = map[string]any{
 	// card shows, and the check it runs.
 	"DomainProof": DomainProof{},
 	"DomainCheck": DomainCheck{},
+	// Publishing one of the repository's own packages (publish.ts): the
+	// request, the plan the console states before the owner confirms and
+	// answers after, and the releases of what the repository publishes.
+	"PublishInput": PublishInput{},
+	"PublishPlan":  PublishPlan{},
+	"ReleaseInput": ReleaseInput{},
+	"Release":      Release{},
+	"Releases":     Releases{},
 	// The deployer's site, discovery's optional `site` object: the doors and
 	// the landing read their brand from it.
 	"SiteInfo": SiteInfo{},

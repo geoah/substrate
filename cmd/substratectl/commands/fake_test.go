@@ -94,6 +94,12 @@ type fakeSubstrate struct {
 	// domainRecordPublished makes the domain check pass; until then it
 	// fails with a reason (domain_test.go).
 	domainRecordPublished bool
+	// publishProven makes the publishing authority's record seen, and
+	// publishBlockers is what the plan says blocks a publish; releaseUnchanged
+	// refuses a release as nothing changed (publishown_test.go).
+	publishProven    bool
+	publishBlockers  []string
+	releaseUnchanged bool
 	// plan is POST /api/v1/vocabulary/plan's answer: the conversion plan the
 	// apply would run, which `apply --allow-data-loss` confirms by its hash.
 	plan substrate.VocabularyPlan
@@ -293,6 +299,9 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// Domain verification (domain_test.go).
 	mux.HandleFunc("POST /api/v1/repository/domain", f.handleDomain)
 	mux.HandleFunc("POST /api/v1/repository/domain/verify", f.handleDomainVerify)
+	// Publishing one of the repository's own packages (publishown_test.go).
+	mux.HandleFunc("POST "+pathPublish, f.handlePublish)
+	mux.HandleFunc("POST "+pathRelease, f.handleRelease)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)

@@ -376,6 +376,11 @@ func New(cfg Config) http.Handler {
 	// bearer header). A GET falls through to the SPA like /login does.
 	r.Post("/webhooks/{repository}/{trigger}", h.postWebhook)
 	r.Post("/webhooks/{repository}/{trigger}/{key}", h.postWebhook)
+	// What the repositories here publish (decision record 0291), bearer-less
+	// and outside /api for the same reason: another server reads it by the
+	// address the authority's `_substrate` record names.
+	r.Get(publishedPrefix+"/{repository}/{authority}", h.getPublishedDocument)
+	r.Get(publishedPrefix+"/{repository}/{authority}/{package}/{version}", h.getPublishedClosure)
 
 	r.Route("/api/"+APIVersion, h.mountResources)
 
@@ -626,6 +631,11 @@ func (h *handler) mountResources(r chi.Router) {
 			// and the check that stamps the repository record verified.
 			r.Post(domainRoute, h.postDomain)
 			r.Post(domainVerifyRoute, h.postDomainVerify)
+			// Publishing (decision record 0289): the owner moves a package
+			// out of `~` to an authority it proved, and releases it.
+			r.Post(publishRoute, h.postPublish)
+			r.Post(releaseRoute, h.postPackageRelease)
+			r.Get(releasesRoute, h.getReleases)
 
 			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level
 			// below the record ({name}/call, {id}/bind), where no id can sit, so
