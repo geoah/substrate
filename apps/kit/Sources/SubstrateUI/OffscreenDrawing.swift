@@ -35,8 +35,12 @@ public enum OffscreenDrawing {
     /// drawing does not take, and are drawn as an inactive window's.
     static let accent = Color(nsColor: .systemBlue)
 
-    /// The PNG of `view` at `size`, in light mode, once it has settled.
-    public static func png(_ view: some View, size: CGSize = phone, frame: Frame = .screen) async throws -> Data {
+    /// The PNG of `view` at `size`, in light mode unless `scheme` says dark,
+    /// once it has settled.
+    public static func png(
+        _ view: some View, size: CGSize = phone, frame: Frame = .screen, scheme: ColorScheme = .light
+    ) async throws -> Data {
+        let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         _ = NSApplication.shared
         let window: NSWindow
         let drawn: NSView
@@ -48,8 +52,11 @@ public enum OffscreenDrawing {
                     .frame(width: size.width, height: size.height)
                     .background(Color(nsColor: .windowBackgroundColor))
                     .tint(Self.accent)
-                    .environment(\.colorScheme, .light)
+                    .environment(\.colorScheme, scheme)
                     .environment(\.controlActiveState, .key))
+            // The background and every system colour resolve against the
+            // view's own appearance, which the window's is set after.
+            hosting.appearance = appearance
             hosting.frame = CGRect(origin: .zero, size: size)
             window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = hosting
@@ -57,7 +64,7 @@ public enum OffscreenDrawing {
         case .window:
             // A hosting controller, not a hosting view: it is what hands the
             // view's toolbar and titles to the window.
-            let controller = NSHostingController(rootView: view.tint(Self.accent).environment(\.colorScheme, .light))
+            let controller = NSHostingController(rootView: view.tint(Self.accent).environment(\.colorScheme, scheme))
             controller.sizingOptions = []
             window = NSWindow(
                 contentRect: CGRect(origin: .zero, size: size),
@@ -72,7 +79,7 @@ public enum OffscreenDrawing {
             window.orderFrontRegardless()
             drawn = window.contentView?.superview ?? controller.view
         }
-        window.appearance = NSAppearance(named: .aqua)
+        window.appearance = appearance
         window.isReleasedWhenClosed = false
         drawn.layoutSubtreeIfNeeded()
         try await Task.sleep(for: .milliseconds(400))

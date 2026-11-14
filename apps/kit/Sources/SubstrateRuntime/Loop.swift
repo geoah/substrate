@@ -116,8 +116,10 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     /// The tree presented and published as one value, then the effects its
     /// events asked for, in the order the events were applied.
     private func flush() {
-        root.present()
-        publish()
+        Meter.shared.time(.flush) {
+            root.present()
+            publish()
+        }
         runPending()
     }
 
@@ -141,6 +143,8 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     }
 
     private func publish() {
+        let span = Meter.shared.begin(.publish)
+        defer { Meter.shared.end(span) }
         guard let presentation = root.presentation, presentation != published else { return }
         published = presentation
         trace(.published)

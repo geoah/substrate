@@ -331,7 +331,7 @@ final class Host<C: Controller>: @unchecked Sendable {
             state: state, transient: transient, children: children.compactMapValues(\.presentation),
             now: environment.clock.now, locale: environment.locale, timeZone: environment.timeZone,
             link: loop.link, journalProblem: journalProblem, childJournalProblem: childProblem)
-        let next = controller.present(input)
+        let next = Meter.shared.time(.present, "\(C.self)") { controller.present(input) }
         let changed = next != presentation
         presentation = next
         if changed { loop.trace(.presented(path: path)) }

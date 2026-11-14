@@ -46,6 +46,8 @@ public final class PresentationModel<Root: Controller> {
         following = Task { [weak self, runtime] in
             for await next in await runtime.presentations() {
                 guard let self else { return }
+                let span = Meter.shared.begin(.republish)
+                defer { Meter.shared.end(span) }
                 guard next != presentation else { continue }
                 presentation = next
                 for handler in signalHandlers { handler(next) }
