@@ -64,6 +64,19 @@ type options struct {
 	archiveInterval   time.Duration
 	archivePieceBytes int64
 	archiveStepBytes  int64
+	// compactionInterval is how often a repository's compaction pass runs
+	// (WithCompactionInterval), compactionKept and compactionNow its test
+	// seams (compactpass.go).
+	compactionInterval time.Duration
+	compactionKept     func(kind string) historyKept
+	compactionNow      func() time.Time
+	deletionsKept      time.Duration
+	compactionFault    func(stage string) error
+	deletionsKeptSet   bool
+	// compactionBatches and compactionBatch are the pass's batch bounds and
+	// what it is told of each batch, in a test (WithTestCompactionBatches).
+	compactionBatches [2]int
+	compactionBatch   func(kind string, ids []string, upTo int64, lines int)
 	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
 	archiveFault func(stage string) error
 	// shippedRefusal is the shipped upgrade's test seam
@@ -440,6 +453,18 @@ func WithArchiveTimeouts(call, idle time.Duration) Option {
 // WithArchiveInterval sets how often a repository's archive pass runs.
 func WithArchiveInterval(d time.Duration) Option { return func(o *options) { o.archiveInterval = d } }
 
+// WithDeletionsKept sets how long the compaction pass remembers a deletion
+// before it forgets the record (compactpass.go); 0 keeps every deletion.
+func WithDeletionsKept(d time.Duration) Option {
+	return func(o *options) { o.deletionsKept, o.deletionsKeptSet = d, true }
+}
+
+// WithCompactionInterval sets how often a repository's compaction pass runs
+// (compactpass.go); a negative interval turns the pass off.
+func WithCompactionInterval(d time.Duration) Option {
+	return func(o *options) { o.compactionInterval = d }
+}
+
 // WithDirectoryReadOnly opens the service as a second process beside a running
 // server: the operator hat's `repository verify` and `reembed`. Open applies
 // no schema migration: it refuses a database missing one this binary carries
@@ -668,10 +693,20 @@ type service struct {
 	// (archive.go): written by a server's passes, read by its boot check and
 	// by an operator's verify. archiving is whether this process runs the
 	// passes: the server's, not an operator's or a read-only process's.
-	archive           archive.Store
-	archiving         bool
-	archiveInterval   time.Duration
-	archivePieceBytes int64
+	// compacting is whether this process runs the compaction passes, as
+	// archiving is for the archive's (compactpass.go).
+	compacting         bool
+	compactionInterval time.Duration
+	compactionKept     func(kind string) historyKept
+	compactionNow      func() time.Time
+	deletionsKept      time.Duration
+	compactionFault    func(stage string) error
+	compactionBatches  [2]int
+	compactionBatch    func(kind string, ids []string, upTo int64, lines int)
+	archive            archive.Store
+	archiving          bool
+	archiveInterval    time.Duration
+	archivePieceBytes  int64
 	// archiveStepBytes bounds the blob bytes one pass copies, and
 	// archiveProcess is this process's id in the record's rows: an object
 	// no manifest selects is reused only by the process that put it.
@@ -1003,6 +1038,12 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	if o.archiveInterval <= 0 {
 		o.archiveInterval = DefaultArchiveInterval
 	}
+	if o.compactionInterval == 0 {
+		o.compactionInterval = DefaultCompactionInterval
+	}
+	if !o.deletionsKeptSet {
+		o.deletionsKept = DefaultDeletionsKept
+	}
 	// The archive is on by default, under the data root, as the server's
 	// SUBSTRATE_ARCHIVE is; WithArchive(nil) turns it off.
 	if !o.archiveSet && o.dataRoot != "" {
@@ -1177,6 +1218,14 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		archive:               o.archive,
 		archiving:             o.archive != nil && !o.dirReadOnly && !o.operator,
 		archiveInterval:       o.archiveInterval,
+		compacting:            o.compactionInterval > 0 && !o.dirReadOnly && !o.operator,
+		compactionInterval:    o.compactionInterval,
+		compactionKept:        o.compactionKept,
+		compactionNow:         o.compactionNow,
+		deletionsKept:         o.deletionsKept,
+		compactionFault:       o.compactionFault,
+		compactionBatches:     o.compactionBatches,
+		compactionBatch:       o.compactionBatch,
 		archivePieceBytes:     o.archivePieceBytes,
 		archiveStepBytes:      o.archiveStepBytes,
 		archiveProcess:        process,
@@ -1869,6 +1918,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	ds.startSearchReindex()
 	ds.startIndexReprojection()
 	ds.startArchiver()
+	ds.startCompactor()
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.

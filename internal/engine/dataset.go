@@ -374,6 +374,9 @@ type dataset struct {
 	// a process that writes none (archive.go); archiveStop ends its passes.
 	archive     *archiveState
 	archiveStop func()
+	// compactionStop ends the repository's compaction passes
+	// (compactpass.go).
+	compactionStop func()
 }
 
 func (ds *dataset) close() {
@@ -382,6 +385,7 @@ func (ds *dataset) close() {
 	ds.stopSearchReindex(true)
 	ds.stopIndexReprojection(true)
 	ds.stopArchiver()
+	ds.stopCompactor()
 	ds.watch.close()
 	if ds.unregisterMetrics != nil {
 		ds.unregisterMetrics()
@@ -403,11 +407,16 @@ func (ds *dataset) Repository() substrate.RepositoryInfo {
 // Head is the changelog's highest committed seq and the history generation it
 // belongs to: the pair a change cursor is held to before it resumes.
 func (ds *dataset) Head(ctx context.Context) (substrate.ChangelogHead, error) {
-	seq, err := tableChangelogHead(ctx, ds.db)
+	head := substrate.ChangelogHead{Generation: ds.historyGeneration()}
+	// The horizon is where forgotten deletions end (compactpass.go): a
+	// resume below it would miss one.
+	err := ds.db.QueryRowContext(ctx, `
+		SELECT coalesce((SELECT max(seq) FROM changelog), 0), coalesce((SELECT horizon FROM compaction_state), 0)`).
+		Scan(&head.Seq, &head.Horizon)
 	if err != nil {
 		return substrate.ChangelogHead{}, err
 	}
-	return substrate.ChangelogHead{Seq: seq, Generation: ds.historyGeneration()}, nil
+	return head, nil
 }
 
 func (ds *dataset) registry() *vocabulary.Registry {
@@ -794,6 +803,16 @@ type txn struct {
 	// graph's revision: a compaction's capture reads it per effect it
 	// replays (compact.go).
 	unitMoves int
+	// forgetting marks a compaction that forgets deleted records whole
+	// rather than leaving their state (compactpass.go forgetDeletions).
+	forgetting bool
+	// forgetHeld is the line of the lowest deletion a forgetting left
+	// because an effect that stays holds it, 0 for none (forgetRecords).
+	forgetHeld int64
+	// held collects, while it is not nil, the records a compaction left
+	// part of because a hold that ends kept it: a line a parked failure or
+	// a drain names, the webhook spool (compactRecords).
+	held map[eref]bool
 	// metricValues and metricRecords are the observed values and the metrics
 	// the transaction folded, which its end holds
 	// to the metric rules (metricrules.go checkMetricValues).
@@ -916,6 +935,9 @@ func (ds *dataset) inTxOn(ctx context.Context, db *sql.DB, actor substrate.Actor
 	// transaction's late effects have merged into it, and the checksum covers
 	// the payload as stored.
 	if err := t.settleChecksums(); err != nil {
+		return err
+	}
+	if err := t.settleForeign(); err != nil {
 		return err
 	}
 	// The commit's own refusals, the writer's lease lost and the dataset

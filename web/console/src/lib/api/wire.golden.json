@@ -671,7 +671,8 @@
     "changes": true,
     "cursor": false,
     "generation": true,
-    "head": true
+    "head": true,
+    "horizon": false
   },
   "ChangeRow": {
     "actor": true,
