@@ -454,8 +454,9 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0305](0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md) | A permanent delete reaches what holds the record's values, and not what it owns | accepted |
 | [0306](0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md) | A record has a forget door that erases its history before its current state | accepted |
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
-| [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |
+| [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | superseded |
 | [0311](0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md) | A purge the engine writes for a hand is that hand's deletion of a shipped record | accepted |
 | [0314](0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md) | An owner overrides an agent's budgets, and the operator sets each repository's allowance | accepted |
 | [0316](0316-agent-spend-is-counted-in-us-dollars.md) | Agent spend is counted in US dollars | accepted |
+| [0319](0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md) | The hands that wrote a shipped record outlive its history | accepted |
 | [0321](0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md) | The repository migrations a repository ran travel with its archive | accepted |

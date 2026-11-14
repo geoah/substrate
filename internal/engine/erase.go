@@ -45,6 +45,25 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
+// reasonForget is the reason a forget's own line carries. The line holds
+// the forget's intent and writes nothing of the record, so it is no hand
+// that wrote the record: forgetting a record's history is not a write of
+// it. forgetLine and forgetLineSQL are the one test of it, read where the
+// hands are read (vocabularywrite.go recordHands) and where a compaction
+// collects them into a state (compact.go replayFamily).
+const reasonForget = "forget"
+
+// forgetLine is whether a line of op, carrying payload, is a forget's own.
+func forgetLine(op substrate.Op, payload map[string]any) bool {
+	reason, _ := payload["reason"].(string)
+	return op == substrate.OpPatch && reason == reasonForget
+}
+
+// forgetLineSQL is forgetLine over the changelog row c names.
+func forgetLineSQL(c string) string {
+	return `(` + c + `.op = '` + string(substrate.OpPatch) + `' AND coalesce(` + c + `.payload->>'reason', '') = '` + reasonForget + `')`
+}
+
 // erasureStallAfter is how long a trigger's cursor may stand still before
 // it no longer holds an erasure: a few dispatches, never the hours a stuck
 // trigger could hold one for.
@@ -825,36 +844,6 @@ func (t *txn) refuseHeldScope(ref eref, scope erasureScope) error {
 	return nil
 }
 
-// refuseForgettingTheHand refuses to forget the history of a record a
-// package ships (shippedAmong) unless its newest line is a hand's other than
-// the shipping ones (decision 0310). The seed's or the install's rule
-// (anotherHandWrote) reads the record's lines, and a live erasure leaves its
-// state on the newest one and takes every line under it, and the forget's
-// own line stays where it was the head and goes where it was not. Where the
-// newest line is already another hand's, the rule answers afterwards as it
-// did; where it is a shipping hand's, the owner's earlier lines would go, or
-// the forget's own would hold a record nobody else changed, and the next
-// open or upgrade would answer otherwise.
-func (t *txn) refuseForgettingTheHand(ref eref) error {
-	shipped, err := t.ds.shippedAmong(t.ctx, t.tx, []eref{ref})
-	if err != nil {
-		return err
-	}
-	shipper, ok := shipped[ref]
-	if !ok {
-		return nil
-	}
-	var newest string
-	if err := t.row(`SELECT actor FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq DESC LIMIT 1`, ref.Kind, ref.ID).Scan(&newest); err != nil {
-		return err
-	}
-	if !slices.Contains(shippedHands(shipper), newest) {
-		return nil
-	}
-	return fmt.Errorf("%w: %s %s ships with a package and its newest change is not yours: forgetting its history now would change whether the next open or upgrade writes it again; change the record, then forget its history",
-		substrate.ErrConflict, ref.Kind, ref.ID)
-}
-
 // purgeToErase purges a record and every record its erasureScope names,
 // settles the parked failures and drains on their lines, and writes the
 // intent to erase each, and every mapped copy, on the transaction's newest
@@ -1341,9 +1330,6 @@ func (ds *dataset) Forget(ctx context.Context, actor substrate.Actor, typ, id st
 			return nil
 		}
 		live = true
-		if err := t.refuseForgettingTheHand(ref); err != nil {
-			return err
-		}
 		// An erasure that could never finish is refused now, with its
 		// reason, and leaves no intent (issue #1401).
 		if why, err := t.unerasableLive(ref); err != nil {
@@ -1359,7 +1345,7 @@ func (ds *dataset) Forget(ctx context.Context, actor substrate.Actor, typ, id st
 		if err != nil {
 			return err
 		}
-		if err := t.appendChange(t.actor, substrate.OpPatch, id, typ, map[string]any{"reason": "forget"}); err != nil {
+		if err := t.appendChange(t.actor, substrate.OpPatch, id, typ, map[string]any{"reason": reasonForget}); err != nil {
 			return err
 		}
 		upTo := t.maxSeq

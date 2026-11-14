@@ -29,22 +29,22 @@ package engine
 // window's progress, its cutoff and the last record it finished, is kept with
 // each batch's commit, so a pass stopped part way, by its budget or a crash,
 // goes on at the next pass from where it stopped before it chooses another
-// window, and no record a batch finished is read again. A record a package
-// ships is passed by its key (shippedAmong) before anything reads its
-// history.
+// window, and no record a batch finished is read again.
 //
 // FIRST, THE INDEX. A history that came in without the write path's index
 // (the upgrade, a restore, an import) is indexed by the pass, in batches,
 // before it compacts anything (backfillForeign).
 //
-// A RECORD A PACKAGE SHIPS (shippedAmong) is left whole, for now (decision
-// 0310): the pass replaces none of its entries past its kind's retention
-// (compactOver) and never forgets its deletion (forgetDeletions), because a
-// seed or an install reads its history to tell whether its owner changed or
-// deleted it. A record the seeds' lists stop naming, and that no package's
-// hand created, is the pass's like any other from then on, for what the
-// pass has not gone past yet: a window, and the deletions it looked at, are
-// not read again.
+// A RECORD A PACKAGE SHIPS (shippedAmong) is compacted like any other
+// (decision 0319): a state keeps the hands of the lines it replaces, and the
+// rule that keeps the owner's edit or deletion from the next open or upgrade
+// reads those (recordHands). Its deletion is the one history that would
+// leave no line, so the pass never forgets that line: it takes what
+// forgetting the deletion takes, the record's own entries, and keeps the
+// deletion's line with the hands and no value (forgetDeletions). A bundle
+// record's deletion is kept the same way, since the operator's install list
+// asks whether the changelog ever held one (operatorinstall.go
+// packageEverHeld).
 
 import (
 	"context"
@@ -240,10 +240,20 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 // so no deletion past the lowest cursor is forgotten: a trigger behind it
 // holds the horizon back, and its status says so. A permanent delete
 // erases the record's history at once and keeps its deletion's line, so it
-// moves no horizon; the pass forgets that line after the deletion period. A
-// record a package ships is never forgotten (decision 0310): it leaves each
-// page before anything acts on it, so a page of nothing else starts no
-// trigger over.
+// moves no horizon; the pass forgets that line after the deletion period.
+//
+// A DELETION THAT IS KEPT. A record a package ships, and a bundle record,
+// are never forgotten whole (decision 0319): where the pass would forget
+// one, it takes what forgetting any deletion takes, the record's own
+// entries, and keeps the deletion's line, with a state that holds the hands
+// that wrote the record and no value, which moves no horizon (forgetBatch,
+// txn.keeping). It is not a permanent delete: it takes none of what an
+// erasure's scope also reaches (erase.go scopeOfErasure), a change request
+// on the record, a merge's or a split's own record, a copy a mapping made,
+// a saved position, and what holds a forgetting back (a resync, a line a
+// parked failure names) holds it back. Such a line is looked at once: a
+// record already in that form is passed over (keptForm), so a pass that
+// meets it again, after a restore or a lowered mark, writes nothing.
 //
 // A forgetting reads every line of what it forgets, so it is held to the
 // line bound as a compaction is: a page's records of one kind are forgotten
@@ -309,15 +319,23 @@ func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func
 			refs[i], purged[p.ref] = p.ref, p.seq
 		}
 		// A purged record has no row: whether a package shipped it is read
-		// from its lines, as the forgetting reads them.
-		shipped, err := ds.shippedAmong(ctx, ds.db, refs)
+		// from its lines, as the forgetting reads them. Its deletion, and a
+		// bundle record's, is kept; one already in its kept form is passed
+		// over.
+		keep, err := ds.keptDeletions(ctx, refs)
 		if err != nil {
 			return forgotten, err
 		}
-		if refs = slices.DeleteFunc(refs, func(r eref) bool { _, ok := shipped[r]; return ok }); len(refs) == 0 {
+		done, err := ds.keptForm(ctx, refs, keep)
+		if err != nil {
+			return forgotten, err
+		}
+		if refs = slices.DeleteFunc(refs, func(r eref) bool { return done[r] }); len(refs) == 0 {
 			continue
 		}
-		if !restarted {
+		// A trigger that is not enabled starts over where a deletion below
+		// its cursor is forgotten; a kept one forgets nothing.
+		if !restarted && slices.ContainsFunc(refs, func(r eref) bool { return !keep[r] }) {
 			if err := ds.startOverBelow(ctx, cutoff); err != nil {
 				return forgotten, err
 			}
@@ -342,7 +360,7 @@ func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func
 			}
 			stepped := map[string]bool{}
 			for len(ids) > 0 {
-				batch, total, last := ds.lineBatch(ids, lines, nil, "")
+				batch, total, last := ds.lineBatch(ids, lines)
 				ids = ids[slices.Index(ids, last)+1:]
 				if len(batch) == 1 && total > ds.batchLines() {
 					id := batch[0]
@@ -388,7 +406,7 @@ func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func
 					continue
 				}
 				batchStarted := time.Now()
-				report, err := ds.forgetBatch(ctx, kind, batch, cutoff)
+				report, err := ds.forgetBatch(ctx, kind, batch, func(id string) bool { return keep[eref{Kind: kind, ID: id}] }, cutoff)
 				if err != nil {
 					return forgotten, fmt.Errorf("substrate/engine: forget deletions up to seq %d: %w", cutoff, err)
 				}
@@ -418,14 +436,20 @@ func (ds *dataset) forgetDeletions(ctx context.Context, now time.Time, pace func
 
 // forgetBatch forgets the purged records ids of kind up to cutoff, or up
 // to the lowest live record trigger's cursor where it stands lower, in one
-// transaction. The report's UpTo is how far it looked.
-func (ds *dataset) forgetBatch(ctx context.Context, kind string, ids []string, cutoff int64) (CompactReport, error) {
+// transaction, and of each that keep says is kept, forgets all but its
+// deletion's line (forgetDeletions). The report's UpTo is how far it
+// looked, and its Records how many it forgot whole.
+func (ds *dataset) forgetBatch(ctx context.Context, kind string, ids []string, keep func(id string) bool, cutoff int64) (CompactReport, error) {
 	if err := ds.compactionFault(compactionToForget); err != nil {
 		return CompactReport{}, err
 	}
-	refs := make([]eref, len(ids))
-	for i, id := range ids {
-		refs[i] = eref{Kind: kind, ID: id}
+	var refs, kept []eref
+	for _, id := range ids {
+		if keep(id) {
+			kept = append(kept, eref{Kind: kind, ID: id})
+		} else {
+			refs = append(refs, eref{Kind: kind, ID: id})
+		}
 	}
 	var report CompactReport
 	if err := ds.withCompactionTx(ctx, true, func(t *txn) error {
@@ -443,11 +467,33 @@ func (ds *dataset) forgetBatch(ctx context.Context, kind string, ids []string, c
 		if floor.Valid {
 			upTo = min(upTo, floor.Int64)
 		}
-		var err error
-		if report, err = t.forgetRecords(upTo, refs); err != nil {
-			return err
+		report.UpTo = upTo
+		if len(refs) > 0 {
+			forgot, err := t.forgetRecords(upTo, refs)
+			if err != nil {
+				return err
+			}
+			report = forgot
+			report.UpTo = min(forgot.UpTo, upTo)
 		}
-		report.UpTo = min(report.UpTo, upTo)
+		if len(kept) > 0 {
+			// Forgotten as any deletion is, but for the deletion's line,
+			// which stays with the hands and no value and moves no horizon.
+			t.keeping = true
+			held, err := t.forgetRecords(upTo, kept)
+			t.keeping = false
+			if err != nil {
+				return err
+			}
+			report.UpTo = min(report.UpTo, held.UpTo)
+			if held.heldBack > 0 && (report.heldBack == 0 || held.heldBack < report.heldBack) {
+				report.heldBack = held.heldBack
+			}
+			report.read += held.read
+			report.Removed += held.Removed
+			report.touched = append(report.touched, held.touched...)
+			report.Damaged = max(report.Damaged, held.Damaged)
+		}
 		return ds.compactionFault(compactionInForget)
 	}); err != nil {
 		return report, err
@@ -651,6 +697,60 @@ type purgedRecord struct {
 	seq int64
 }
 
+// keptDeletions is which of the purged records refs keep their deletion
+// (forgetDeletions): each a package ships (shippedAmong, read from its
+// hands, since it has no row), and each bundle record, whose lines the
+// operator's install list asks after (packageEverHeld).
+func (ds *dataset) keptDeletions(ctx context.Context, refs []eref) (map[eref]bool, error) {
+	shipped, err := ds.shippedAmong(ctx, ds.db, refs)
+	if err != nil {
+		return nil, err
+	}
+	out := map[eref]bool{}
+	for _, r := range refs {
+		if _, ok := shipped[r]; ok || r.Kind == kindBundle {
+			out[r] = true
+		}
+	}
+	return out, nil
+}
+
+// keptForm is which of the refs keep names whose history is already what
+// keeping its deletion leaves: one line, carrying a state of the record
+// with no row. The pass passes those over, so meeting a kept deletion again
+// writes nothing.
+func (ds *dataset) keptForm(ctx context.Context, refs []eref, keep map[eref]bool) (map[eref]bool, error) {
+	var kinds, ids []string
+	for _, r := range refs {
+		if keep[r] {
+			kinds, ids = append(kinds, r.Kind), append(ids, r.ID)
+		}
+	}
+	out := map[eref]bool{}
+	if len(kinds) == 0 {
+		return out, nil
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT kind, record_id FROM (
+			SELECT c.kind, c.record_id, EXISTS (
+				SELECT 1 FROM jsonb_array_elements(c.payload->'fold') e
+				WHERE e->>'kind' = $3 AND e->>'ref' = c.kind AND e->>'id' = c.record_id AND NOT (e->'state' ? 'row')) AS kept
+			FROM changelog c WHERE (c.kind, c.record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))
+		) x GROUP BY kind, record_id HAVING count(*) = 1 AND bool_and(kept)`, kinds, ids, string(foldState))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var r eref
+		if err := rows.Scan(&r.Kind, &r.ID); err != nil {
+			return nil, err
+		}
+		out[r] = true
+	}
+	return out, rows.Err()
+}
+
 // purgedRecords is the next batch of records, after after, whose purge is
 // on a line in (from, to] and which have no row now.
 func (ds *dataset) purgedRecords(ctx context.Context, from, to int64, after eref) ([]purgedRecord, error) {
@@ -683,14 +783,15 @@ func (ds *dataset) purgedRecords(ctx context.Context, from, to int64, after eref
 //
 // The horizon moves only where a deletion's own line leaves the history,
 // since only then can a reader below it no longer learn of the deletion. An
-// erasure keeps that line, with a state that holds no value (erase.go), so
-// it moves nothing: a reader below reads on and meets the deletion.
+// erasure (erase.go) and a kept deletion (forgetBatch) keep that line, with
+// a state that holds no value, so they move nothing: a reader below reads
+// on and meets the deletion.
 func (t *txn) forgetRecords(upTo int64, refs []eref) (CompactReport, error) {
 	t.forgetting, t.forgetHeld = true, 0
 	defer func() { t.forgetting = false }()
 	report, err := t.compactRecords(upTo, refs)
 	report.heldBack = t.forgetHeld
-	if err != nil || len(report.touched) == 0 || t.erasing {
+	if err != nil || len(report.touched) == 0 || t.erasing || t.keeping {
 		return report, err
 	}
 	return report, t.raiseHorizon(report.touched[len(report.touched)-1])
@@ -855,18 +956,14 @@ const dropWindow = `
 	ON CONFLICT (repository, kind) DO UPDATE SET upto = EXCLUDED.upto,
 		window_upto = 0, window_after = '', updated_at = now()`
 
-// lineBatch is the next batch of ids, in order after the ones skip passes
-// by: as many as the line bound admits by their lines up to the batch's
-// seq, at least one. It answers the batch, its lines and the last id it
-// took or passed by.
-func (ds *dataset) lineBatch(ids []string, lines map[string]int, skip func(string) bool, last string) ([]string, int, string) {
+// lineBatch is the next batch of ids, in order: as many as the line bound
+// admits by their lines up to the batch's seq, at least one. It answers the
+// batch, its lines and the last id it took.
+func (ds *dataset) lineBatch(ids []string, lines map[string]int) ([]string, int, string) {
 	var batch []string
+	var last string
 	total := 0
 	for _, id := range ids {
-		if skip != nil && skip(id) {
-			last = id
-			continue
-		}
 		n := lines[id]
 		if len(batch) > 0 && total+n > ds.batchLines() {
 			break
@@ -882,9 +979,8 @@ func (ds *dataset) lineBatch(ids []string, lines map[string]int, skip func(strin
 // compactWindow compacts the records of kind with a line in (from, to] in
 // byte order after after, batch by batch, each batch's commit keeping how far
 // the window got. A batch is the next records the line bound admits
-// (lineBatch). A record a package ships is passed by its key (shippedAmong)
-// before anything reads its history, and one longer than the line bound alone
-// is compacted in steps (compactLong).
+// (lineBatch), and a record longer than the line bound alone is compacted in
+// steps (compactLong).
 func (ds *dataset) compactWindow(ctx context.Context, kind string, from, to int64, after string,
 	pace func(context.Context, time.Duration) error, tally func(CompactReport),
 ) error {
@@ -893,36 +989,13 @@ func (ds *dataset) compactWindow(ctx context.Context, kind string, from, to int6
 		if err != nil || len(ids) == 0 {
 			return err
 		}
-		refs := make([]eref, len(ids))
-		for i, id := range ids {
-			refs[i] = eref{Kind: kind, ID: id}
-		}
-		shipped, err := ds.shippedAmong(ctx, ds.db, refs)
+		lines, err := ds.recordLines(ctx, kind, ids, to)
 		if err != nil {
 			return err
 		}
-		ships := func(id string) bool {
-			_, ok := shipped[eref{Kind: kind, ID: id}]
-			return ok
-		}
-		var open []string
-		for _, id := range ids {
-			if !ships(id) {
-				open = append(open, id)
-			}
-		}
-		lines, err := ds.recordLines(ctx, kind, open, to)
-		if err != nil {
-			return err
-		}
-		batch, total, last := ds.lineBatch(ids, lines, ships, after)
+		batch, total, last := ds.lineBatch(ids, lines)
 		started := time.Now()
 		switch {
-		case len(batch) == 0:
-			// Every record of the page ships: the window moves past them.
-			if _, err := ds.db.ExecContext(ctx, windowProgress, kind, to, last, 0, 0); err != nil {
-				return err
-			}
 		case len(batch) == 1 && total > ds.batchLines():
 			id := batch[0]
 			if _, err := ds.compactLong(ctx, kind, id, to, func(t *txn, r CompactReport, done bool) error {
@@ -976,7 +1049,7 @@ func (ds *dataset) compactHeld(ctx context.Context, kind string, ids []string, c
 	if err != nil {
 		return "", err
 	}
-	batch, total, last := ds.lineBatch(ids, lines, nil, "")
+	batch, total, last := ds.lineBatch(ids, lines)
 	keep := func(t *txn) error {
 		if cutoff >= mark {
 			return nil

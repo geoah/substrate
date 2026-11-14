@@ -11,6 +11,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
@@ -150,6 +151,108 @@ func TestOperatorInstallRunsAtRegistrationAndAnUninstallSticks(t *testing.T) {
 	root2, _, _ := exportToRoot(t, ds)
 	svc2 := openInstalling(t, engine.MigratedDSN(t), root2, inst, operatorInstallPackage)
 	stillGone("after an export restored into an empty database", mustDataset(t, svc2, repo))
+}
+
+// uninstalledPastTheDeletionPeriod registers repo under a file that lists
+// the package, uninstalls it, sweeps, and runs the compaction pass past the
+// deletion period, which keeps the bundle record's deletion rather than
+// forgetting it (decision 0319), and closes the service. open opens it
+// again over the same database and root.
+func uninstalledPastTheDeletionPeriod(t *testing.T, repo string) (*countingInstaller, func() substrate.Service) {
+	t.Helper()
+	ctx := context.Background()
+	inst := newCountingInstaller(t)
+	dsn, root := engine.MigratedDSN(t), t.TempDir()
+	clock := time.Now().UTC()
+	open := func() substrate.Service {
+		t.Helper()
+		svc, err := engine.OpenForTest(t, ctx, dsn,
+			engine.WithDataRoot(root),
+			engine.WithOperatorDefaults(&operatordefaults.Config{Install: []string{operatorInstallPackage}}, "Example"),
+			engine.WithOperatorInstaller(inst.install),
+			engine.WithCompactionInterval(-1), engine.WithDeletionsKept(time.Hour),
+			engine.WithTestCompactionClock(func() time.Time { return clock }))
+		if err != nil {
+			t.Fatalf("open engine: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	registerUser(t, svc, repo)
+	ds := mustDataset(t, svc, repo)
+	if err := ds.UninstallBundle(ctx, operatorInstallPackage); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	// The pass never forgets a deletion from the head.
+	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: "substrate.reamde.dev/core/contact", Properties: map[string]any{"name": "after"}}); err != nil {
+		t.Fatal(err)
+	}
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	if _, err := ds.(passer).CompactionPass(ctx); err != nil {
+		t.Fatalf("pass: %v", err)
+	}
+	_ = svc.Close()
+	return inst, open
+}
+
+// An uninstall sticks past the deletion period too: the compaction pass
+// keeps a bundle record's deletion rather than forgetting it (decision
+// 0319), so the changelog still holds the package's bundle record and the
+// next open does not install it again.
+func TestAnUninstallSticksPastTheDeletionPeriod(t *testing.T) {
+	t.Parallel()
+	const repo = "ada.example.com"
+	inst, open := uninstalledPastTheDeletionPeriod(t, repo)
+	ds := mustDataset(t, open(), repo)
+	if n := inst.count(operatorInstallPackage); n != 1 {
+		t.Fatalf("%d installs after the deletion period and a pass, want the uninstall to stick", n)
+	}
+	if holdsBundle(t, ds, operatorInstallPackage) {
+		t.Fatal("the uninstalled package is back after the deletion period")
+	}
+}
+
+// The owner installs the package again by hand after the pass kept its
+// uninstall: the next open's install list does nothing, and the package
+// stands as the owner installed it.
+func TestAnOwnersReinstallPastTheDeletionPeriodStands(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	const repo = "ada.example.com"
+	inst, open := uninstalledPastTheDeletionPeriod(t, repo)
+	svc := open()
+	ds := mustDataset(t, svc, repo)
+	if holdsBundle(t, ds, operatorInstallPackage) {
+		t.Fatal("the uninstalled package is back after the deletion period: the test proves nothing")
+	}
+	if _, _, err := inst.cat.Install(ctx, substrate.ActorPerson, operatorInstallPackage, ds); err != nil {
+		t.Fatalf("the owner installs the package again: %v", err)
+	}
+	bundle := func(ds substrate.Dataset) *substrate.Record {
+		t.Helper()
+		rec, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", operatorInstallPackage)
+		if err != nil {
+			t.Fatalf("read the package's bundle record: %v", err)
+		}
+		return rec
+	}
+	installed := bundle(ds)
+	_ = svc.Close()
+	ds = mustDataset(t, open(), repo)
+	if n := inst.count(operatorInstallPackage); n != 1 {
+		t.Fatalf("the install list ran %d times, want the registration's once: the owner's install is theirs", n)
+	}
+	if !holdsBundle(t, ds, operatorInstallPackage) {
+		t.Fatal("the package the owner installed again is gone after the next open")
+	}
+	if after := bundle(ds); after.Version != installed.Version || !after.UpdatedAt.Equal(installed.UpdatedAt) {
+		t.Errorf("the next open wrote the package's bundle record again: version %d at %s, the owner's install left %d at %s",
+			after.Version, after.UpdatedAt, installed.Version, installed.UpdatedAt)
+	}
 }
 
 // A repository registered before the file listed the package receives it at

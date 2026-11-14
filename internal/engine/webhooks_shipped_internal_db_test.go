@@ -359,7 +359,7 @@ func TestAnOwnersOwnWebhookTriggerMayStayOpen(t *testing.T) {
 	}
 }
 
-// A compaction keeps who shipped a webhook trigger (decision 0310): the
+// A compaction keeps who shipped a webhook trigger (decision 0319): the
 // package's own lines are replaced, and the hands the state entry keeps name
 // it, so the owner's write that turns it on with no key is refused after the
 // compaction as before it. The package counts whether it created the
