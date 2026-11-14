@@ -32,6 +32,7 @@ struct SubstrateChatApp: App {
         _host = State(initialValue: ChatHost.shared)
         #if DEBUG
         Measure.start(ChatHost.shared)
+        Demo.start(ChatHost.shared)
         #endif
         ChatShortcuts.updateAppShortcutParameters()
     }

@@ -30,6 +30,26 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     private var pace: Pace
     /// The stream stops after this many characters and waits there.
     private var holdAfter: Int?
+    /// The runs written a line at a time, by thread.
+    private var scripts: [String: Script] = [:]
+
+    /// A run a test writes a line at a time (`step`), so every screen
+    /// between its first piece and its stored rows can be looked at: the
+    /// lines of its stream, which a send streams and an attach replays from
+    /// the start, and the rows the thread holds once so many are out.
+    struct Script {
+        var lines: [String]
+        /// The transcript's page once `after` lines are out, later ones
+        /// replacing earlier ones.
+        var rows: [(after: Int, page: String)]
+        var out = 0
+        /// The streams reading it end as a connection that dropped does,
+        /// and none opens until it is cleared.
+        var dropped = false
+
+        var done: Bool { out >= lines.count }
+        var page: String? { rows.last { $0.after <= out }?.page }
+    }
 
     init(reply: String = ChatFixtures.reply(bytes: 16 * 1024), pace: Pace = Pace()) {
         rows = [ChatFixtures.long: 200, ChatFixtures.full: 500]
@@ -59,6 +79,56 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         }
     }
 
+    /// The next turn in `thread` is written as `lines`, one at each `step`.
+    func script(_ thread: String, lines: [String], rows: [(after: Int, page: String)]) {
+        lock.withLock {
+            self.rows[thread] = 0
+            scripts[thread] = Script(lines: lines, rows: rows)
+        }
+    }
+
+    /// Lets the next `count` lines of the thread's run out, to every stream
+    /// reading it.
+    func step(_ thread: String, _ count: Int = 1) {
+        lock.withLock {
+            guard var script = scripts[thread] else { return }
+            script.out = min(script.lines.count, script.out + count)
+            if script.done { versions[thread] = (versions[thread] ?? 3) + 1 }
+            scripts[thread] = script
+        }
+    }
+
+    /// Drops every stream reading the thread's run, as a network that went
+    /// away does, and keeps the next from opening.
+    func drop(_ thread: String) {
+        lock.withLock { scripts[thread]?.dropped = true }
+    }
+
+    /// A scripted run's lines from its first, each as it is let out, to
+    /// its last.
+    private func scripted(_ thread: String) -> AsyncThrowingStream<String, any Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                var sent = 0
+                while !Task.isCancelled {
+                    guard let script = self.lock.withLock({ self.scripts[thread] }) else { break }
+                    if script.dropped {
+                        continuation.finish(throwing: URLError(.networkConnectionLost))
+                        return
+                    }
+                    while sent < script.out {
+                        continuation.yield(script.lines[sent])
+                        sent += 1
+                    }
+                    if sent >= script.lines.count { break }
+                    try? await Task.sleep(for: .milliseconds(2))
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let stream = try await lines(for: request)
         return (try await stream.body(limit: .max), stream.head)
@@ -77,6 +147,11 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         let missing = json(#"{"error":{"code":"not_found","message":"The fixture holds nothing there."}}"#, status: 404)
 
         if path.hasSuffix("/.well-known/substrate/server.json") { return json(Self.discovery) }
+        // A run whose stream was dropped: the thread and its stream are
+        // out of reach, the rest answers.
+        if path.contains("/llm/thread/"), lock.withLock({ scripts.values.contains(where: \.dropped) }) {
+            throw URLError(.networkConnectionLost)
+        }
         if path.hasSuffix("/api/v1/changes") {
             // The bookmark, then nothing: the feed stays open and quiet.
             let lines = AsyncThrowingStream<String, any Error> { continuation in
@@ -91,6 +166,9 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         }
         if method == "POST", path.hasSuffix("/chat") {
             let body = request.httpBody.flatMap { JSONValue.parse(String(decoding: $0, as: UTF8.self)) }
+            if let thread = body?["thread"]?.string, lock.withLock({ scripts[thread] != nil }) {
+                return LineStream(head: head(200, "application/x-ndjson"), lines: scripted(thread))
+            }
             return LineStream(
                 head: head(200, "application/x-ndjson"),
                 lines: turn(thread: body?["thread"]?.string ?? "", message: body?["message"]?.string ?? ""))
@@ -108,8 +186,20 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
         }
         if method == "GET", let range = path.range(of: "/llm/thread/") {
             let id = String(path[range.upperBound...])
+            if id.hasSuffix("/events") {
+                // An attach: the run from its start while one is being
+                // written, else the one line that says none is.
+                let thread = String(id.dropLast("/events".count))
+                let running = lock.withLock { scripts[thread].map { $0.out > 0 && !$0.done } ?? false }
+                let idle = AsyncThrowingStream<String, any Error> { continuation in
+                    continuation.yield(#"{"kind":"idle","thread":"\#(thread)","status":"ok"}"#)
+                    continuation.finish()
+                }
+                return LineStream(head: head(200, "application/x-ndjson"), lines: running ? scripted(thread) : idle)
+            }
             guard !id.contains("/") else { return missing }
-            return json(ChatFixtures.thread(id, version: lock.withLock { versions[id] ?? 3 }))
+            let (version, running) = lock.withLock { (versions[id] ?? 3, scripts[id].map { $0.out > 0 && !$0.done } ?? false) }
+            return json(ChatFixtures.thread(id, version: version, status: running ? "running" : "ok"))
         }
         return missing
     }
@@ -122,6 +212,7 @@ final class FixtureServer: HTTPTransport, @unchecked Sendable {
     }
 
     private func transcript(_ thread: String) -> String {
+        if let script = lock.withLock({ scripts[thread] }) { return script.page ?? ChatFixtures.page([]) }
         let (held, turns) = lock.withLock { (rows[thread] ?? 4, answered[thread] ?? []) }
         guard let last = turns.last else { return ChatFixtures.transcript(thread, rows: held) }
         // One answered turn is as far as a measurement goes in a chat.
