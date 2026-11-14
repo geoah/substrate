@@ -936,10 +936,13 @@ mise run apps:release prerelease chat   # both platforms, signed and published u
 ```
 
 **The chat is the console's.** The transcript is the `llm/message` rows folded
-the way `web/console/src/lib/api/transcript.ts` folds them, a reply streams as
-an overlay over them, and the overlay is dropped in the same update the rows
-land in once the turn settles, so nothing blinks. A chat that is running when
-it is opened is attached to (`…/llm/thread/{id}/events`), a dropped stream is
+the way `web/console/src/lib/api/transcript.ts` folds them, and a reply
+streams as provisional rows keyed as its stored rows will be, so each stored
+row takes its provisional row's place under the same identity and nothing
+blinks, neither when the turn settles nor when its stream is joined again
+([one turn, one fold](chat/DESIGN.md#streams-every-event-every-exit)). A chat
+that is running when it is opened is attached to
+(`…/llm/thread/{id}/events`), a dropped stream is
 attached again with backoff, Stop posts `…/stop`, and a send the server
 refused, or whose delivery is unknown, says so with the message back in the composer and
 is never sent again on its own. A chat whose last turn was stopped, ran out
@@ -1293,9 +1296,9 @@ console/apple/Support/              the console app's Info.plist per platform an
 console/apple/Assets.xcassets       the icon: light, dark and tinted for iOS, and the macOS sizes ([rules](../docs/app-icons.md))
 console/apple/Sources/App/          the app, its macOS menus, ServerStore, ConsoleSessions
 console/apple/Sources/Shell/        the scheme handler, the web view's controller, the connect screen and sign-in, the debug driver
-chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/, Fixtures/ (a repository's chats made up, for a measurement and a gallery); and its tests, the seven rules by number among them; portable
-chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/, Measure/ (a debug build's fixture server and the run `apple:measure:chat` times)
-chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader, and a conversation drawn from the fixture for the gallery
+chat/ChatKit/                       Substrate Chat below its views: ChatApp/ (the list under the link), Conversation/ (one chat's run), Model/ (the fold, the words, Markdown blocks), API/, Local/ (the cache folder), Presentation/, Fixtures/ (a repository's chats made up, and one run's stream and rows, for a measurement, a gallery and the tests); and its tests, the seven rules by number among them; portable
+chat/apple/Sources/                 Substrate Chat's app: App/ (ChatHost, the device services, App Intents), Views/, Markdown/, Voice/, Measure/ (a debug build's fixture server, the run `apple:measure:chat` times, and the states `SUBSTRATE_CHAT_DEMO` shows)
+chat/apple/Tests/                   what only the Apple app holds: the loopback receiver, the Keychain item, inline Markdown, a console link's words to a screen reader, a conversation drawn from the fixture for the gallery, and a reply's handover and the transcript's following held frame by frame
 sync/apple/Sources/                 Substrate Sync: App/, API/, Sync/ (the mappings, the readers, the engine), Views/, Debug/
 sync/apple/Share/                   its share extension
 sync/apple/Tests/                   its tests: ids, labels, dates, the Health goldens
