@@ -1106,6 +1106,20 @@ func TestTheKeptDirectorysImportStoppedAtEachStepIsFinishedByTheNextStart(t *tes
 	dir := filepath.Join(keptRoot, "v0.123.1")
 	var fixture keptFixture
 	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
+	var release keptRecords
+	readKept(t, filepath.Join(dir, "records.json"), &release)
+	// The history an uncut import of the same directory converts the kept
+	// lines to, seq and checksum: what a cut one must finish to, line for
+	// line. The served records alone would not show a line lost that no
+	// record still reflects; a line doubled cannot be stored, its seq being
+	// the table's key.
+	uncut := t.TempDir()
+	copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(uncut, changelogfile.RepositoriesDir))
+	uncutDSN := testdb.NewSchema(t)
+	want, lines := keptHistory(t, checkKeptDirectoryIn(t, dir, uncut, keptConversions, testenv.WithDSN(uncutDSN)), uncutDSN, release.Head)
+	if lines != release.Head {
+		t.Fatalf("the uncut import holds %d of the release's %d lines", lines, release.Head)
+	}
 	for _, stage := range []string{
 		engine.ImportAfterRow, engine.ImportAfterSealed, engine.ImportAfterBatch,
 		engine.ConversionBeforeCommit, engine.ConversionAfterCommit, engine.RefoldAfterFirstReplay, engine.RefoldBeforeCommit,
@@ -1117,33 +1131,221 @@ func TestTheKeptDirectorysImportStoppedAtEachStepIsFinishedByTheNextStart(t *tes
 			copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
 			dsn := testdb.NewSchema(t)
 			keptStartStoppedAt(t, dsn, root, fixture.CredentialKey, stage)
-			checkKeptDirectoryIn(t, dir, root, keptConversions, testenv.WithDSN(dsn))
+			k := checkKeptDirectoryIn(t, dir, root, keptConversions, testenv.WithDSN(dsn))
+			if got, n := keptHistory(t, k, dsn, release.Head); got != want {
+				t.Errorf("the finished import's history up to the release's head is not the uncut one's: %d lines, want %d, or a line's checksum differs", n, lines)
+			}
 		})
 	}
 }
 
+// keptHistory is the imported repository's changelog lines up to head, seq
+// and checksum, and how many there are. The database holds others beside it
+// (the comparison registers a fresh one), so it is read by the repository's
+// id.
+func keptHistory(t *testing.T, k keptImport, dsn string, head int64) (string, int64) {
+	t.Helper()
+	ds, err := k.e.Service.Dataset(context.Background(), k.fixture.Repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var lines string
+	var n int64
+	if err := db.QueryRow(`SELECT coalesce(string_agg(seq::text || ':' || encode(hash, 'hex'), ' ' ORDER BY seq), ''), count(*)
+		FROM changelog WHERE repository = $2 AND seq <= $1`, head, ds.Repository().ID).Scan(&lines, &n); err != nil {
+		t.Fatal(err)
+	}
+	return lines, n
+}
+
 // keptActorSpelling is a prefixed hand's retired spelling as a whole JSON
-// string; a label or annotation key keeps its `<actor>/<name>` namespace and
-// carries a slash, which this never matches. keptHandAsText is a key that
-// names a hand, holding a string: a stored attribution is a link, an object,
-// so a string under one of the three is the retired spelling.
+// string, anywhere in a line or a record: the free pattern for text that is
+// not at one of the engine's positions. A label or annotation key keeps its
+// `<actor>/<name>` namespace and carries a slash, which this never matches.
+// keptActorRef is a link to an actor record.
 var (
 	keptActorSpelling = regexp.MustCompile(`"(?:function|agent|bundle|app|mapping|policy|connector):[^"/]*"`)
-	keptHandAsText    = regexp.MustCompile(`"(declaredBy|createdBy|caller)":"([^"]*)"`)
-	keptHandOnALine   = regexp.MustCompile(`"(actor|triggeredBy)":"([^"]*)"`)
 	keptActorRef      = regexp.MustCompile(`"ref":"` + regexp.QuoteMeta(vocabulary.CoreKind(vocabulary.DocActor)) + `/([^"]+)"`)
 )
 
+// The places beside the engine's own position tables (engine.ActorPositions)
+// where a hand stands: a line's actor and the one it acted for, the retired
+// `principal` on a line and among a trigger run's properties, and a
+// package's retired `actors` list.
+const (
+	keptLineActor      = "line/actor"
+	keptLineOnBehalfOf = "line/onBehalfOf"
+	keptLinePrincipal  = "line/principal"
+	keptRunPrincipal   = "triggerrun/principal"
+	keptPackageActors  = "package/actors"
+)
+
+// keptNeverWrote are the positions the kept release never wrote a hand at,
+// each with why: the scan of the directory as kept must find a hand as text
+// at every other position, and finding one at a position listed here fails,
+// so the list says what the fixture does not exercise, and no more.
+var keptNeverWrote = map[string]string{
+	keptLineOnBehalfOf:             "v0.123.1 kept the hand behind an app's write as `principal`; onBehalfOf is conversion step 3's (link_actors)",
+	keptRunPrincipal:               "the kept history holds no trigger run",
+	"payload/triggeredBy":          "no line of the kept history is a write a trigger's fire made",
+	"payload/moved/marks/setBy":    "marks are conversion step 5's (decision 0284); v0.123.1 wrote manager rows",
+	"mark/setBy":                   "marks are conversion step 5's (decision 0284); v0.123.1 wrote manager rows",
+	"mark/onBehalfOf":              "marks are conversion step 5's (decision 0284); v0.123.1 wrote manager rows",
+	"resync/rows/marks/setBy":      "marks are conversion step 5's (decision 0284); v0.123.1's resyncs carried manager rows",
+	"resync/rows/marks/onBehalfOf": "marks are conversion step 5's (decision 0284); v0.123.1's resyncs carried manager rows",
+	vocabulary.CoreKind("recordmerge") + "/moved/marks/setBy": "marks are conversion step 5's (decision 0284); v0.123.1's merges moved manager rows",
+	vocabulary.CoreKind("triggerrun") + "/caller":             "the kept history holds no trigger run; `caller` appears only in the run kind's own declaration",
+}
+
+// keptLinked is whether the value at a position names a hand by its actor
+// record: a bare id, or a reference value at an actor record where the
+// engine writes one. keptAsText is whether it names one any other way. An
+// empty value names nobody, and is neither.
+func keptLinked(p engine.ActorPosition) bool {
+	if !p.Ref {
+		s, ok := p.Value.(string)
+		return ok && vocabulary.MintedID(s)
+	}
+	m, ok := p.Value.(map[string]any)
+	if !ok {
+		return false
+	}
+	ref, _ := m[vocabulary.ReferenceValueKey].(string)
+	id, ok := strings.CutPrefix(ref, vocabulary.CoreKind(vocabulary.DocActor)+"/")
+	return ok && vocabulary.MintedID(id)
+}
+
+func keptAsText(p engine.ActorPosition) bool {
+	if s, ok := p.Value.(string); ok && s == "" {
+		return false
+	}
+	return !keptLinked(p)
+}
+
+// keptTextual is whether a record of kind may spell a hand in its free text:
+// an actor record's own name and title, and a declaration's body. It never
+// exempts a position.
+func keptTextual(kind string) bool {
+	return kind == vocabulary.CoreKind(vocabulary.DocActor) || vocabulary.IsDeclarationRef(kind)
+}
+
+// keptSetsIn reports whether a payload sets property on a record of kind.
+// A declaration that declares a property of that name is not a record of
+// the kind, so the trigger run's own declaration of `principal` is no hit.
+func keptSetsIn(p map[string]any, kind, property string) bool {
+	effects, _ := p["fold"].([]any)
+	for _, raw := range effects {
+		ef, _ := raw.(map[string]any)
+		if ef == nil || ef["ref"] != kind {
+			continue
+		}
+		delta, _ := ef["delta"].(map[string]any)
+		set, _ := delta["set"].(map[string]any)
+		if _, ok := set[property]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // AN IMPORTED KEPT DIRECTORY HOLDS NO ACTOR AS TEXT (validation item 1 of the
-// 1.0 review). The kept release's repository, imported and converted under
-// the current code, is read where a client reads it: its history as the
-// export carries it, every change event the feed serves, and every record
-// with its marks. No line, event or value names a hand by its spelling, a
-// line's token is never `principal`, and every hand is named by an actor
-// record's id. That each id resolves to a record of its hand's type is the
-// actor fill's test (actorfill_db_test.go).
+// 1.0 review). The positions are the engine's own (engine.ActorPositions:
+// the tables the local namespace's conversion walks), with a line's actor
+// and the one it acted for, the retired `principal` and a package's retired
+// `actors` beside them; no kind is exempt from a position, and the free
+// spelling pattern alone spares an actor record's name and a declaration's
+// body.
+//
+// The scan is proven on the directory AS KEPT: over v0.123.1's own lines,
+// read through changelogfile.Decode before any import, it finds a hand as
+// text at every position but those keptNeverWrote names with why, and none
+// at those. Over the repository the current code imports from it (its
+// history as the export carries it, every change event the feed serves,
+// payload included, and every record a read serves) it finds none at any
+// position, and every hand it finds is an actor record's id. That each id
+// resolves to a record of its hand's type is the actor fill's test
+// (actorfill_db_test.go).
 func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
-	k := checkKeptDirectory(t, filepath.Join(keptRoot, "v0.123.1"), keptConversions)
+	dir := filepath.Join(keptRoot, "v0.123.1")
+	var fixture keptFixture
+	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
+
+	// The directory as kept.
+	asText := map[string]int{}
+	spelled := 0
+	segments, err := filepath.Glob(filepath.Join(dir, changelogfile.RepositoriesDir, fixture.Repository, changelogfile.ChangelogSubdir, "*.ndjson"))
+	if err != nil || len(segments) == 0 {
+		t.Fatalf("the kept directory's segments: %v (%d)", err, len(segments))
+	}
+	for _, name := range segments {
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range bytes.Split(bytes.TrimSpace(body), []byte("\n")) {
+			e, _, err := changelogfile.Decode(line)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if e.Actor != "" && !vocabulary.MintedID(e.Actor) {
+				asText[keptLineActor]++
+			}
+			if e.OnBehalfOf != "" && !vocabulary.MintedID(e.OnBehalfOf) {
+				asText[keptLineOnBehalfOf]++
+			}
+			if e.HasPrincipal {
+				asText[keptLinePrincipal]++
+			}
+			var p map[string]any
+			if err := json.Unmarshal(e.Payload, &p); err != nil {
+				t.Fatalf("line %d: %v", e.Seq, err)
+			}
+			for _, pos := range engine.ActorPositionsInPayload(p) {
+				if keptAsText(pos) {
+					asText[pos.Name]++
+				}
+			}
+			if keptSetsIn(p, vocabulary.CoreKind("triggerrun"), "principal") {
+				asText[keptRunPrincipal]++
+			}
+			if keptSetsIn(p, vocabulary.CoreKind("package"), "actors") {
+				asText[keptPackageActors]++
+			}
+			if !keptTextual(e.Kind) && keptActorSpelling.Match(e.Payload) {
+				spelled++
+			}
+		}
+	}
+	names := []string{keptLineActor, keptLineOnBehalfOf, keptLinePrincipal, keptRunPrincipal, keptPackageActors}
+	for _, p := range engine.ActorPositions() {
+		names = append(names, p.Name)
+	}
+	for _, name := range names {
+		why, never := keptNeverWrote[name]
+		switch {
+		case never && asText[name] > 0:
+			t.Errorf("the kept directory holds a hand as text at %s %d time(s), which keptNeverWrote says it never wrote (%s)", name, asText[name], why)
+		case !never && asText[name] == 0:
+			t.Errorf("the kept directory holds no hand as text at %s: the scan of it is not seen to fire on old data; name it in keptNeverWrote with why", name)
+		}
+	}
+	for name := range keptNeverWrote {
+		if !slices.Contains(names, name) {
+			t.Errorf("keptNeverWrote names %s, which is no position the scan walks", name)
+		}
+	}
+	if spelled == 0 {
+		t.Error("the kept directory spells no hand in free text: the free pattern is not seen to fire on old data")
+	}
+	t.Logf("the directory as kept: a hand as text by position %v, spelled in free text on %d lines", asText, spelled)
+
+	// The repository the current code imports from it.
+	k := checkKeptDirectory(t, dir, keptConversions)
 	linked := 0
 	link := func(where, id string) {
 		t.Helper()
@@ -1156,10 +1358,25 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 		}
 		linked++
 	}
-	textual := func(kind string) bool {
-		// A record of the actor kind holds its own name, and a declaration's
-		// text is its own.
-		return kind == vocabulary.CoreKind(vocabulary.DocActor) || vocabulary.IsDeclarationRef(kind)
+	positions := func(where string, ps []engine.ActorPosition) {
+		t.Helper()
+		for _, pos := range ps {
+			switch {
+			case keptAsText(pos):
+				t.Errorf("%s holds a hand as text at %s: %v", where, pos.Name, pos.Value)
+			case keptLinked(pos):
+				linked++
+			}
+		}
+	}
+	free := func(where, kind string, raw []byte) {
+		t.Helper()
+		if keptTextual(kind) {
+			return
+		}
+		if m := keptActorSpelling.Find(raw); m != nil {
+			t.Errorf("%s (%s) holds the spelling %s", where, kind, m)
+		}
 	}
 
 	// The history, as the export carries it.
@@ -1196,31 +1413,25 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 			if e.HasPrincipal {
 				t.Errorf("%s carries `principal`", where)
 			}
-			if textual(e.Kind) {
-				continue
+			var p map[string]any
+			if err := json.Unmarshal(e.Payload, &p); err != nil {
+				t.Fatalf("%s: %v", where, err)
 			}
-			if m := keptActorSpelling.Find(e.Payload); m != nil {
-				t.Errorf("%s (%s %s) holds the spelling %s", where, e.Op, e.Kind, m)
+			positions(where, engine.ActorPositionsInPayload(p))
+			if keptSetsIn(p, vocabulary.CoreKind("triggerrun"), "principal") {
+				t.Errorf("%s sets a trigger run's `principal`", where)
 			}
-			for _, m := range keptHandAsText.FindAllSubmatch(e.Payload, -1) {
-				t.Errorf("%s (%s %s) names a hand by %s %q, not a link", where, e.Op, e.Kind, m[1], m[2])
+			if keptSetsIn(p, vocabulary.CoreKind("package"), "actors") {
+				t.Errorf("%s sets a package's `actors`", where)
 			}
-			for _, m := range keptHandOnALine.FindAllSubmatch(e.Payload, -1) {
-				link(where+" "+string(m[1]), string(m[2]))
-			}
-			for _, m := range keptActorRef.FindAllSubmatch(e.Payload, -1) {
-				link(where+" link", string(m[1]))
-			}
-			if bytes.Contains(e.Payload, []byte(`"principal"`)) {
-				t.Errorf("%s carries principal in its payload", where)
-			}
+			free(where, e.Kind, e.Payload)
 		}
 	}
 	if lines == 0 {
 		t.Fatal("the export carried no history line")
 	}
 
-	// Every change event the feed serves.
+	// Every change event the feed serves, its payload included.
 	events := 0
 	q := url.Values{"first": {"500"}}
 	for {
@@ -1228,8 +1439,19 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 		k.e.MustJSON(http.MethodGet, "/api/v1/changes?"+q.Encode(), nil, &page)
 		for _, c := range page.Changes {
 			events++
-			link(fmt.Sprintf("change %d actor", c.Seq), c.Actor)
-			link(fmt.Sprintf("change %d onBehalfOf", c.Seq), c.OnBehalfOf)
+			where := fmt.Sprintf("change %d", c.Seq)
+			link(where+" actor", c.Actor)
+			link(where+" onBehalfOf", c.OnBehalfOf)
+			link(where+" token", c.Token)
+			positions(where, engine.ActorPositionsInPayload(c.Payload))
+			if keptSetsIn(c.Payload, vocabulary.CoreKind("triggerrun"), "principal") {
+				t.Errorf("%s sets a trigger run's `principal`", where)
+			}
+			body, err := json.Marshal(c.Payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			free(where, c.Kind, body)
 		}
 		if page.Cursor == 0 {
 			break
@@ -1252,21 +1474,16 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 		for _, m := range keptActorRef.FindAllSubmatch(body, -1) {
 			link(path, string(m[1]))
 		}
-		if textual(kind) {
-			continue
+		props, _ := rec.Read["properties"].(map[string]any)
+		positions(path, engine.ActorPositionsInRecord(kind, props))
+		if kind == vocabulary.CoreKind("triggerrun") && props["principal"] != nil {
+			t.Errorf("%s still holds `principal`: %v", path, props["principal"])
 		}
-		if m := keptActorSpelling.Find(body); m != nil {
-			t.Errorf("%s holds the spelling %s", path, m)
+		if kind == vocabulary.CoreKind("package") && props["actors"] != nil {
+			t.Errorf("%s still lists actors: %v", path, props["actors"])
 		}
-		for _, m := range keptHandAsText.FindAllSubmatch(body, -1) {
-			t.Errorf("%s names a hand by %s %q, not a link", path, m[1], m[2])
-		}
-		if kind == vocabulary.CoreKind("package") {
-			if props, _ := rec.Read["properties"].(map[string]any); props["actors"] != nil {
-				t.Errorf("%s still lists actors: %v", path, props["actors"])
-			}
-		}
+		free(path, kind, body)
 	}
 
-	t.Logf("%d history lines, %d change events and %d records, naming a hand by an id %d times", lines, events, len(k.got), linked)
+	t.Logf("imported: %d history lines, %d change events and %d records, naming a hand by an id %d times", lines, events, len(k.got), linked)
 }

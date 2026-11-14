@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -338,6 +339,78 @@ func WithTestCompactionRetention(kept func(kind string) (all bool, keep time.Dur
 	}
 }
 
+// ActorPosition is one place a line or a record holds a hand where the
+// engine writes one (localhands.go: actorIDPositions, actorRefPositions,
+// actorPayloads), with the value that stands there.
+type ActorPosition struct {
+	// Name is "<where>/<path>": where is "payload", an effect's kind or a
+	// record's kind, as the tables key them.
+	Name string
+	// Ref is whether the engine writes a reference value at an actor record
+	// there, not a bare id.
+	Ref   bool
+	Value any
+}
+
+// ActorPositions is every position the engine writes a hand at, without a
+// value, so a test can hold every one of them to having been seen. Tests
+// only.
+func ActorPositions() []ActorPosition {
+	var out []ActorPosition
+	for _, where := range sortedKeys(actorIDPositions) {
+		for _, path := range actorIDPositions[where] {
+			out = append(out, ActorPosition{Name: where + "/" + path})
+		}
+	}
+	for _, kind := range sortedKeys(actorRefPositions) {
+		for _, prop := range actorRefPositions[kind] {
+			out = append(out, ActorPosition{Name: kind + "/" + prop, Ref: true})
+		}
+	}
+	return out
+}
+
+// ActorPositionsInPayload is every value a line's payload holds at a
+// position the engine writes a hand at, walked as the local namespace's
+// conversion walks it (actorMover.payload): the payload's own positions,
+// each effect's by its kind, what each record effect sets by the record's
+// kind, and a payload a record keeps of its own. Tests only.
+func ActorPositionsInPayload(p map[string]any) []ActorPosition {
+	var out []ActorPosition
+	actorPositionsInPayload(p, &out)
+	return out
+}
+
+// ActorPositionsInRecord is every value a record of kind holds, in its
+// properties, at a position the engine writes a hand at. Tests only.
+func ActorPositionsInRecord(kind string, props map[string]any) []ActorPosition {
+	var out []ActorPosition
+	actorPositionsInRecord(kind, props, &out)
+	return out
+}
+
+func actorPositionsInPayload(p map[string]any, out *[]ActorPosition) {
+	for _, path := range actorIDPositions["payload"] {
+		actorValuesAt(p, path, func(v any) { *out = append(*out, ActorPosition{Name: "payload/" + path, Value: v}) })
+	}
+	effects, _ := p[foldPayloadKey].([]any)
+	for _, raw := range effects {
+		ef, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		kind, _ := ef["kind"].(string)
+		for _, path := range actorIDPositions[kind] {
+			actorValuesAt(ef, path, func(v any) { *out = append(*out, ActorPosition{Name: kind + "/" + path, Value: v}) })
+		}
+		ref, _ := ef["ref"].(string)
+		delta, _ := ef["delta"].(map[string]any)
+		if set, ok := delta["set"].(map[string]any); ok {
+			actorPositionsInRecord(ref, set, out)
+		}
+	}
+}
+
 // WithTestCompactionClock is the compaction pass's clock: entries are past
 // their retention by it. Tests only.
 func WithTestCompactionClock(now func() time.Time) Option {
@@ -384,4 +457,49 @@ func WithTestCompactionFault(fn func(stage string) error) Option {
 // only.
 func WithTestCompactionBatches(records, lines int, seen func(kind string, ids []string, upTo int64, lines int)) Option {
 	return func(o *options) { o.compactionBatches, o.compactionBatch = [2]int{records, lines}, seen }
+}
+
+func actorPositionsInRecord(kind string, set map[string]any, out *[]ActorPosition) {
+	for _, path := range actorIDPositions[kind] {
+		actorValuesAt(set, path, func(v any) { *out = append(*out, ActorPosition{Name: kind + "/" + path, Value: v}) })
+	}
+	for _, prop := range actorRefPositions[kind] {
+		actorValuesAt(set, prop, func(v any) { *out = append(*out, ActorPosition{Name: kind + "/" + prop, Ref: true, Value: v}) })
+	}
+	if field, ok := actorPayloads[kind]; ok {
+		if inner, ok := set[field].(map[string]any); ok {
+			actorPositionsInPayload(inner, out)
+		}
+	}
+}
+
+// actorValuesAt hands emit every value at path in v, walked as actorMover.at
+// walks it: into objects by key, through lists, and "*" into every value of
+// an object.
+func actorValuesAt(v any, path string, emit func(any)) {
+	switch x := v.(type) {
+	case []any:
+		for _, y := range x {
+			actorValuesAt(y, path, emit)
+		}
+	case map[string]any:
+		if path == "" {
+			emit(x)
+			return
+		}
+		key, rest, _ := strings.Cut(path, "/")
+		if key == "*" {
+			for _, y := range x {
+				actorValuesAt(y, rest, emit)
+			}
+			return
+		}
+		if y, ok := x[key]; ok {
+			actorValuesAt(y, rest, emit)
+		}
+	default:
+		if path == "" && v != nil {
+			emit(v)
+		}
+	}
 }
