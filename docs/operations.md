@@ -355,7 +355,25 @@ failing, and `substrate: the archive is written again` with `failedPasses`
 when one finishes. How far behind is too far is not decided, and nothing
 stops the server for it
 ([#1314](https://github.com/geoah/substrate/issues/1314)); alert on the delay
-yourself. With `SUBSTRATE_METRICS` on, each open repository reports seven
+yourself.
+
+**A row that does not verify stops the pass at its piece.** A pass holds
+every line it copies to the checksum the `changelog` table stores beside it,
+so a row whose columns are not what that checksum was stamped over fails it
+with `two histories of the repository disagree: seq N: the table's checksum
+is not the checksum of the row it holds`. The archive stays at its last
+manifest and every pass fails at the same seq, as when the store fails, and
+a compaction stops below the row rather than stamp it again, so one such
+row holds back the compaction of everything written after it ([`repository
+compact`](#operator-recovery)). The repair is the row: write its columns in
+the `changelog` table back from a whole copy of its line, which is the
+archive's piece that holds the seq where a pass copied it before the damage
+(the piece's name carries its first and last seq; the line is one JSON line
+with its `sum`), or restore the database from a copy taken before the
+damage, then check the table with `substratectl --dsn … repository verify
+--recanonicalize`. The next pass goes on from the mark.
+
+With `SUBSTRATE_METRICS` on, each open repository reports seven
 gauges, labeled `repository` with its name:
 
 | Series | What it says |
@@ -2392,13 +2410,14 @@ commands that open the engine also read `SUBSTRATE_DATA_ROOT`, and the
 `SUBSTRATE_ARCHIVE` settings the server runs with, so they read the archive
 the server writes; none of them runs an archive pass.
 
-**Five of them run beside a live server; three need it stopped.** `repository list` and `repository inspect` read the tables
+**Five of them run beside a live server; four need it stopped.** `repository list` and `repository inspect` read the tables
 directly; `repository verify`, `repository reembed` and `user reset` open
 the engine read-only, so they apply no migration, run no boot check and
 append nothing: `verify` reports what it finds instead of repairing it,
 `reembed` writes queue rows, which are not changelog entries, and `user
 reset` writes a person's sign-in, which no repository holds. `repository
-rebuild`, `repository reindex` and `repository rotate-generation` open the
+rebuild`, `repository compact`, `repository reindex` and `repository
+rotate-generation` open the
 repository as its writer, and a running server holds its
 [writer lease](#one-writer-per-repository-and-a-second-is-refused): the
 command refuses, naming the lease, until the server is stopped. Opening as
@@ -2412,6 +2431,7 @@ DATABASE_URL=… substratectl repository list
 DATABASE_URL=… substratectl repository inspect ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.example.com
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository compact ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
@@ -2456,9 +2476,15 @@ the exec path needs nothing open at all.
   tombstoned record counts, and the declaration versions per package. It is
   the first thing to run when something looks wrong.
 - **`repository verify <repository>`** walks the `changelog` table from seq 1
-  to the head in one read-only snapshot: the sequence must be gapless, every
-  row must name a transaction that fits the rows around it, and every row
-  must carry its stamped checksum. With an archive it then holds the archive
+  to the head in one read-only snapshot: every row must name a transaction
+  that fits the rows around it and carry its stamped checksum, and every seq
+  must hold a line, but where a compaction may have taken it. A compaction
+  removes a line only below a [state entry](stored-format.md#state-entries)
+  that stands for it, so a seq with no line at or below the highest line a
+  state stands at is counted (`absent`, beside `compactedUpTo`) and is no
+  finding, and one above it is a gap, as in a history never compacted. A
+  state does not name the lines it replaced, so verify cannot tell a line a
+  compaction took from one that went missing below it. With an archive it then holds the archive
   to the table: its manifest's head may not be past the table's, and every
   line of the chain of pieces to it must carry the checksum the table stamped
   for its seq. An archive behind the table is not a finding, because it is
@@ -2527,6 +2553,24 @@ the exec path needs nothing open at all.
   holds the lease. Run it with the binary the server runs: it opens the
   repository the way the server does, so a newer `substratectl` stamps it
   with its own dialects and the older server then refuses the repository.
+- **`repository compact <repository> [--up-to <seq>]`** replaces each
+  record's entries up to the seq (the head when it is left out) with one
+  [state entry](stored-format.md#state-entries), the record's whole state as
+  of the newest entry it replaces, and a trigger's delivery entries with one
+  ledger entry the same way. A rebuild of the compacted history gives the
+  records, versions and times a rebuild gave before, and the history is
+  smaller: an entry left with no effect is removed and its seq is not used
+  again. The values a record held before its state are not kept: the
+  activity view reads them as unknown, and no rebuild brings a state from
+  before the compaction back; an archive or a backup taken before it still
+  holds them. The archive's next pass writes its pieces again from the lowest
+  entry the compaction changed, and until it has, `verify` says the lines
+  from there were not held to the table, which is no finding. It stops below the first
+  row that does not verify: it reads nothing of that row but its seq,
+  compacts only what lies below it, does not look above it, and prints the
+  seq under `stopped`. Write the row back as for [a row that stops the
+  archive pass](#the-archive), and the next compaction goes past it. Nothing runs it by itself yet. Stop the server first, as
+  for a rebuild.
 - **`repository reindex <repository> --observed`** queues every record of
   every kind that binds the `observed` trait for the background pass that
   derives the [observed index](observations.md#the-observed-index) again:

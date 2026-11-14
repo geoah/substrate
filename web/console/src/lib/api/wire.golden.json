@@ -35,6 +35,7 @@
     "id": true,
     "kind": true,
     "properties": false,
+    "state": false,
     "version": false
   },
   "AgentEvent": {

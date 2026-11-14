@@ -34,6 +34,8 @@ var (
 		"record", "tombstone", "purge",
 		"annotation", "mark", "unmark", "former", "resync",
 		"cursor", "schedule", "park", "unpark", "page", "unpage", "forget",
+		// Dialect 6: the state entries (compact.go).
+		"state", "ledger",
 	}
 )
 

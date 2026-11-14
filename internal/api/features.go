@@ -141,8 +141,9 @@ var featureTable = []feature{
 	// change links the actor record that wrote it, the one it acted for
 	// (`onBehalfOf`) and the token behind it (`token`), a run its token
 	// (`token`, `tokenName`), and `actors=` takes actor record ids (decision
-	// 0270).
-	{name: "changefeed", stability: substrate.StabilityStable, revision: 2, surfaces: []string{surfaceREST}, routes: []string{
+	// 0270). Revision 3: `affected[].state`, a compaction's state entry
+	// (decision 0296).
+	{name: "changefeed", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /api/v1/changes",
 	}},
 	{name: "blobs", stability: substrate.StabilityStable, revision: 1, surfaces: []string{surfaceREST}, routes: []string{

@@ -370,6 +370,10 @@ export interface AffectedRecord {
   id: string
   version?: number
   deleted?: boolean
+  /** The record's state entry: the entry stands for the record's earlier
+   * entries, which a compaction replaced, and their values are not kept
+   * (decision 0296). Since the changefeed's revision 2. */
+  state?: boolean
   /** What the entry did to each property, before and after, in name order.
    * Only on a read that asked (`values=1`, decision 0135) from a server that
    * knows it; absent otherwise, so its absence is never "nothing changed". */

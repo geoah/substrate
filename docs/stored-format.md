@@ -97,7 +97,7 @@ not a recovery point.
 | `vocabularyDialect` | The [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) of the stored declaration records. |
 | `dek` | The repository's data key, wrapped under the host's credential key and bound to the id, base64. |
 | `dekKeyId` | 16 hex digits that name the credential key, never the key. |
-| `head` | The **mark**: every line from seq 1 to it is in the pieces, and every blob and sealed value the records at it hold is in the archive but those `missingBlobs` and `pendingBlobs` name. `0` is an empty history. |
+| `head` | The **mark**: every line the history holds from seq 1 to it is in the pieces, and every blob and sealed value the records at it hold is in the archive but those `missingBlobs` and `pendingBlobs` name. `0` is an empty history. |
 | `headSum` | `sha256:` and the lowercase hex of the line at `head`, the checksum the table stamped for it. Absent when `head` is 0. |
 | `pieces` | The history from seq 1 to `head`, in order: each piece's `name` under the archive, the `sum` of its bytes (`sha256:` and hex) and their `size`. Absent when `head` is 0. |
 | `sealed` | The version of each sealed value: its ref to the name of its object under the archive. Absent when there is none. |
@@ -135,9 +135,14 @@ newest archive a mark covers comes back only by an explicit import
 ### Pieces
 
 A **piece** is a run of [lines](#the-line), one per entry and each ending in a
-newline: whole transactions and consecutive seqs, written once and never
-changed, named by the first and the last seq it holds (15 digits each), the
-pass that put it and the first 16 hex digits of its bytes' SHA-256. A pass
+newline: whole transactions, seqs in order, written once and never changed,
+named by the first and the last seq it covers (15 digits each), the pass
+that put it and the first 16 hex digits of its bytes' SHA-256. The pieces
+cover every seq from 1 to the head, each starting after the one before it
+ends, and a piece holds every line the history holds among the seqs it
+covers: a [compacted](#state-entries) history has gaps, so its first line may
+come after its first seq and a line more than one after the line before it.
+Its last line is its last seq. A pass
 cuts a piece at the first transaction boundary at or past 64 MiB, so a
 transaction never crosses two. A last piece under 1 MiB is written again with
 the next pass's lines, under a name of that pass, and the manifest that
@@ -183,7 +188,9 @@ it has put or is deleting, written before the request is sent. One pass:
 3. reads the webhook spool and holds every blob against collection, takes
    one repeatable-read snapshot, and puts what the manifest it started from
    does not select: blobs (1 GiB at most), spooled requests, sealed values
-   that changed, and the pieces from the mark to the snapshot's head;
+   that changed, and the pieces from the mark to the snapshot's head, or,
+   where a [compaction](#state-entries) rewrote lines below the mark, from
+   the piece holding the lowest of them;
 4. records the new manifest's bytes as about to be published, puts them, and
    records the publication, with every object it no longer selects marked
    dropped, in one transaction;
@@ -336,21 +343,76 @@ the marks it left.
 | `page` | Writes a paged drain's resume row | `page`: `chain`, `cursor` or `cursorSha256` with `cursorBytes`, `version`, `pages`, `effects`, `bytes`, `startedAt`, `kind`, `identity` |
 | `unpage` | Drops a paged drain's resume row | `page`: `chain` |
 | `forget` | Drops every delivery row a deleted trigger owned | |
+| `state` | A [state entry](#state-entries): writes the record's row whole, its version and times included, states its annotations and its marks again (a mark only beside a value the row holds), and moves the unit graph's revision by `moves`; with no `row`, does what `purge` does | `version`; `state`: `row` (`title`, `states`, `at`, `endsAt`, `dueAt`, `props`, `labels`, `finalizers`, `kindVersion`, `version`, `createdAt`, `updatedAt`, `deletedAt`), `annotations` (`key`, `value`, `updatedAt`), `marks` (`property`, `pinned`, `setBy`, `onBehalfOf`, `derivedFrom`, `setAt`), `created`, `creator` (`actor`, `onBehalfOf`, `token`), `moves` |
+| `ledger` | A [state entry](#state-entries) of a trigger's delivery rows: drops them and writes the ones it carries | `ledger`: `cursor` (`seq`, `updatedAt`), `schedule` (`firedAt`, `updatedAt`), `failures` (as `park`'s `failure`), `pages` (as `page`'s `page`, and `updatedAt`) |
 
 Times inside an effect are RFC 3339. A number reads from any JSON spelling of
 it, because a piece holds the canonical one and Postgres prints its own.
+
+## State entries
+
+A **compaction** replaces a record's entries up to a seq with one **state
+entry**: the record's whole state as of the newest entry it replaces
+([decision 0296](decisions/0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
+The seqs it keeps are where they were, and nothing is renumbered, so a
+compacted history has gaps (decision 0017).
+
+A state entry is an effect, because a line carries the effects of every
+record its transaction wrote. There are two, one per family of rows a record
+holds: `state` stands for its records row, annotations and property marks,
+and replaces its `record`, `tombstone`, `annotation`, `mark`, `unmark` and
+`state` effects; `ledger` stands for a trigger's delivery rows and replaces its
+`cursor`, `schedule`, `park`, `unpark`, `page`, `unpage`, `forget` and
+`ledger` effects. Each goes in the place of the family's last effect on the
+newest line, at or below the seq, that is addressed to the record (its
+`kind` and `recordId` are the record's), never a `state` on a `delivery`
+line. The family's effects on the lines below it go, and so do its effects on
+that line before it; its effects on other records' lines above it stay.
+
+What a compaction never replaces: `former` and `resync`, which merge and
+split write and which re-state rows another record holds; a `purge` that is
+not the record's last effect on its state's line (the last one becomes a
+`state` with no `row`); every effect on a line a parked failure or a paged
+drain names; a trigger's delivery effects while the webhook spool holds a
+request; every effect of a record's family below one of those that stays,
+which replays against the rows the effects under it left; a line with no
+effect; and every line at or above the first that does not verify, its
+columns not what its `sum` was stamped over. A compaction reads nothing of
+such a line but its seq and stops below it, so it never gives a line a
+`sum` it had no right to: every line below verified, a transaction that ends
+below it lies wholly below it, and one that holds it is never re-framed. It
+names the line, and once the row is written back from a whole copy the next
+compaction goes past it. A line left with no effect is removed. A
+removed line that ended its transaction moves the transaction's `txn` to the
+newest line of it that is kept, and every line a compaction changes takes a
+new `sum`. The head is never removed. A line is removed only below a state
+entry that stands for it, so a reader holds a history's seqs to the highest
+line a state entry stands at: a seq with no line above it is damage, as in a
+history never compacted.
+
+A replay of a `state` gives the row the effects it replaced gave: the
+version, the kind version and the times are the ones it carries, where every
+other effect's are counted and stamped by the replay. A history with no
+state entry replays as before. An archive pass that starts after the
+compaction committed writes its pieces again from the one holding the lowest
+seq the compaction changed, so its manifest holds none of what was replaced.
+A pass already running when the compaction committed publishes the cut its
+snapshot read, from before the compaction, first. An archive taken before the
+compaction still holds it, and a restore of it is the history before the
+compaction.
 
 ## Dialects
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 5 today: dialect 5 is the line above, whose effects
-mark a property; dialect 4 is the line before it, which held a manager row
-and a tier for one and carries a record's `body` among its properties;
-dialect 3 is the line before that, whose actor, `onBehalfOf` and `token`
-link records; and dialects 1 and 2 are the lines before that, which named
-its actor by a spelling and its token as `principal`. A change to what a
-line may hold raises it, and
+manifest, and it is 6 today: dialect 6 added the [state entries](#state-entries),
+which a server of an earlier dialect cannot replay; dialect 5 is the line
+above, whose effects mark a property; dialect 4 is the line before it, which
+held a manager row and a tier for one and carries a record's `body` among its
+properties; dialect 3 is the line before that, whose actor, `onBehalfOf` and
+`token` link records; and dialects 1 and 2 are the lines before that, which
+named its actor by a spelling and its token as `principal`. A change to what
+a line may hold raises it, and
 a change to a shape history already holds also ships a
 [conversion step](#conversions) to the new number, so a server reads one
 dialect, its own. The line format (`LineFormat`) is 1 and the manifest's
@@ -370,6 +432,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | 3 | `link_actors` | Every line: its actor's spelling becomes the id of that hand's actor record, `principal` becomes `token`, an app's line gains `onBehalfOf`, and each spelling the engine stored in a value is linked or reworded, as the paragraph below says ([0270](decisions/0270-every-hand-that-writes-is-an-actor-record.md)). |
 | 4 | `move_body_into_properties` | Each `record` effect whose `delta` carries `body`: a value moves into `set` and a `""` into `del`, and the rest of the line stays, the payload's `properties` included, which named `body` already. A `delta.body` that is not a string (`null` included, which no release wrote), a `set` that is not an object, a `del` that is not a list, and a delta that also carries `body` in `set` or `del` stop the conversion, naming the line's seq ([0273](decisions/0273-body-is-an-ordinary-property-and-no-property-name-is-stored-apart.md)). |
 | 5 | `marks` | Every line's marks: a `manager` effect becomes a `mark`, or an `unmark` where it named no actor; a resync's manager rows and a merge's moved managers become marks; a recompute's payload `managers` goes; and a manager row on a property an earlier step took out of the line becomes no mark, as the paragraph below says ([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)). |
+| 6 | `state_entries` | No line: it raises the stamp to the dialect that may hold [state entries](#state-entries), which a history written before it does not. |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A
@@ -450,6 +513,12 @@ then rebuilt from the table, which clears the mark. A server stopped before
 that transaction commits leaves the history and every carried row as they
 were, and the next boot converts them again; one stopped after it leaves the
 mark, and the next boot rebuilds the records before anything is served.
+
+A step is handed a compacted history's lines as it is handed any: a `state`
+or a `ledger` stands for every earlier effect of its family on its record,
+and no line below it carries one. A step to dialect 6 or below never meets
+one, and a step above it converts the values a state entry carries as it
+converts a record effect's.
 
 A history from an archive or a 0.x directory is converted the same way,
 between its lines going into the table and their fold. The archive follows on

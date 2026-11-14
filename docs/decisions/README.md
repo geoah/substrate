@@ -436,3 +436,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0283](0283-trigger-run-records-keep-a-week-of-history-and-positions-stay-in-the-log.md) | Trigger run records keep a week of history, and positions stay in the log | accepted |
 | [0284](0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md) | A property's mark stores whether sync may replace it apart from where its value came from | accepted |
 | [0290](0290-a-propertys-writer-names-types-of-actor.md) | A property's writer names types of actor | accepted |
+| [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |

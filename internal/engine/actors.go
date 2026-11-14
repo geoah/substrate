@@ -288,9 +288,18 @@ func (c *actorCache) publish(ids map[string]bool, since uint64) {
 // hand wrote it, or no one: unattended work, history from before the
 // conversion, and a record whose creating line is gone act for no one. A
 // failed read is an error, so no work goes on as no one's for want of it.
+//
+// A compaction replaces the creating line with the record's state entry
+// (compact.go), which carries that line's links as its `creator`: where the
+// record's first line holds its state, those are the links read.
 func (ds *dataset) actingFor(ctx context.Context, kind, id string) (context.Context, error) {
 	return ds.actingForLine(ctx, kind, id, `
-		SELECT actor, on_behalf_of FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`)
+		SELECT CASE WHEN s.e IS NULL THEN c.actor ELSE coalesce(s.e #>> '{state,creator,actor}', '') END,
+		       CASE WHEN s.e IS NULL THEN c.on_behalf_of ELSE coalesce(s.e #>> '{state,creator,onBehalfOf}', '') END
+		FROM (SELECT actor, on_behalf_of, payload FROM changelog
+		      WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1) c
+		LEFT JOIN LATERAL (SELECT e FROM jsonb_array_elements(c.payload -> 'fold') e
+		      WHERE e ->> 'kind' = 'state' AND e ->> 'ref' = $1 AND e ->> 'id' = $2 LIMIT 1) s ON true`)
 }
 
 // actingForRun is ctx bound to whom the run holding a thread acts for: the
@@ -298,11 +307,23 @@ func (ds *dataset) actingFor(ctx context.Context, kind, id string) (context.Cont
 // claim that started its turn (a lease the run extends is written by the
 // run too, with the same links). A thread's settlement after its run is gone
 // is that run's work.
+//
+// A compaction may replace that line with the thread's state entry
+// (compact.go), which carries the mark on `leaseUntil`: where the newest
+// such line is a state, the mark's hand and whom it acted for are read.
 func (ds *dataset) actingForRun(ctx context.Context, threadID string) (context.Context, error) {
 	return ds.actingForLine(ctx, typeThread, threadID, `
-		SELECT actor, on_behalf_of FROM changelog
-		WHERE kind = $1 AND record_id = $2 AND jsonb_path_exists(payload, '$.fold[*].delta.set.leaseUntil')
-		ORDER BY seq DESC LIMIT 1`)
+		SELECT CASE WHEN s.e IS NULL THEN c.actor ELSE coalesce(m.m ->> 'setBy', '') END,
+		       CASE WHEN s.e IS NULL THEN c.on_behalf_of ELSE coalesce(m.m ->> 'onBehalfOf', '') END
+		FROM (SELECT actor, on_behalf_of, payload FROM changelog
+		      WHERE kind = $1 AND record_id = $2
+		        AND (jsonb_path_exists(payload, '$.fold[*].delta.set.leaseUntil')
+		             OR jsonb_path_exists(payload, '$.fold[*] ? (@.kind == "state" && @.id == $id)', jsonb_build_object('id', $2::text)))
+		      ORDER BY seq DESC LIMIT 1) c
+		LEFT JOIN LATERAL (SELECT e FROM jsonb_array_elements(c.payload -> 'fold') e
+		      WHERE e ->> 'kind' = 'state' AND e ->> 'ref' = $1 AND e ->> 'id' = $2 LIMIT 1) s ON true
+		LEFT JOIN LATERAL (SELECT x AS m FROM jsonb_array_elements(s.e #> '{state,marks}') x
+		      WHERE x ->> 'property' = 'leaseUntil' LIMIT 1) m ON true`)
 }
 
 func (ds *dataset) actingForLine(ctx context.Context, kind, id, query string) (context.Context, error) {

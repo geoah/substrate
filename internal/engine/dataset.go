@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/semaphore"
+
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -268,6 +270,14 @@ type dataset struct {
 	// failedSettleTimeout is set only by tests: the budget of the settle
 	// after a failed write (zero is agentFailedSettleTimeout).
 	failedSettleTimeout time.Duration
+	// spoolCopy pairs a copy of the webhook spool with the snapshot read
+	// after it: the archive pass and an export share it from before they
+	// read the spool until their snapshot is taken, and a compaction holds
+	// it alone until it commits. A compaction committed between the two
+	// could take the delivery entries naming a request the copy holds and
+	// the drain recorded since, and a server restored from the copy would
+	// fire that request again (webhookRecordedSQL).
+	spoolCopy spoolCut
 	// exporting is the repository's one export slot (export.go): set by
 	// Export when it pins a point, cleared when WriteTo returns, so a second
 	// export is refused while one streams.
@@ -721,6 +731,10 @@ type txn struct {
 	unitTouched bool
 	unitBefore  *unitGraphAt
 	unitLocal   *unitGraphAt
+	// unitMoves counts how far this transaction's folds moved the unit
+	// graph's revision: a compaction's capture reads it per effect it
+	// replays (compact.go).
+	unitMoves int
 	// metricValues and metricRecords are the observed values and the metrics
 	// the transaction folded, which its end holds
 	// to the metric rules (metricrules.go checkMetricValues).
@@ -1472,4 +1486,39 @@ func (ds *dataset) inRawTx(ctx context.Context, fn func(*txn) error) error {
 		return errors.New("substrate/engine: a raw transaction folded or appended; it may not")
 	}
 	return ds.commit(tx, t)
+}
+
+// spoolCut is dataset.spoolCopy. Its zero value is ready, and each side
+// waits for it on its own context, so a compaction or a copy whose request
+// or pass ends stops waiting.
+type spoolCut struct {
+	once sync.Once
+	sem  *semaphore.Weighted
+}
+
+// spoolCutShares is more copies at once than a repository runs: its archive
+// pass and its one export.
+const spoolCutShares = 1 << 10
+
+func (c *spoolCut) weighted() *semaphore.Weighted {
+	c.once.Do(func() { c.sem = semaphore.NewWeighted(spoolCutShares) })
+	return c.sem
+}
+
+// share is a copy's hold, and its release may be called more than once.
+func (c *spoolCut) share(ctx context.Context) (func(), error) {
+	return c.acquire(ctx, 1)
+}
+
+// hold is a compaction's: no copy is between its spool and its snapshot.
+func (c *spoolCut) hold(ctx context.Context) (func(), error) {
+	return c.acquire(ctx, spoolCutShares)
+}
+
+func (c *spoolCut) acquire(ctx context.Context, n int64) (func(), error) {
+	sem := c.weighted()
+	if err := sem.Acquire(ctx, n); err != nil {
+		return nil, err
+	}
+	return sync.OnceFunc(func() { sem.Release(n) }), nil
 }

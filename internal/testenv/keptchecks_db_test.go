@@ -76,6 +76,10 @@ var keptConversions = map[int]keptConversion{
 			"a split's kept result holds marks where it held manager rows, and a package's actors, which link_actors took out, keeps no mark",
 		record: keptMarks,
 	},
+	// conversion_0006_state_entries: it raises the stamp to the dialect
+	// that may hold state entries and rewrites no line, since no history
+	// written before it holds one, so every record reads as it did.
+	6: {why: "state_entries rewrites no line: a history written before it holds no state entry"},
 }
 
 // keptDialect is the changelog dialect the kept directory's history is in.

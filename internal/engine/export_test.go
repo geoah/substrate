@@ -1248,3 +1248,11 @@ func ArchiveCovered(ctx context.Context, store archive.Store, id string) (bool, 
 func WithTestPeopleFault(fn func(repository string) error) Option {
 	return func(o *options) { o.peopleFault = fn }
 }
+
+// SetArchivePageRows reads the history n rows at a time in archive passes
+// and exports for one test, which must not run in parallel.
+func SetArchivePageRows(t *testing.T, n int) {
+	prev := archivePageRows
+	archivePageRows = n
+	t.Cleanup(func() { archivePageRows = prev })
+}

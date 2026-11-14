@@ -9,9 +9,13 @@ import (
 )
 
 // A PIECE is a run of changelog lines the archive holds as one object: whole
-// transactions, consecutive seqs, written once and never changed (decision
+// transactions, seqs in order, written once and never changed (decision
 // 0262). Its name (PieceObjectName) says what it covers and which pass put
 // it, and the manifest lists the pieces it selects in order (Manifest.Chain).
+// It covers the seqs from its first to its last and holds every line the
+// history holds among them: a compacted history has gaps (decision 0296), so
+// its first line may come after its first seq and a line may come more than
+// one after the one before it. Its last line is its last seq.
 
 // pieceDigits is how many digits each seq of a piece's name has: the same
 // fifteen a segment's name has.
@@ -24,7 +28,7 @@ type Piece struct {
 }
 
 // EncodePiece renders lines as one piece: each line and its newline. The
-// lines must be consecutive and end a transaction, which is what lets a
+// lines must be in seq order and end a transaction, which is what lets a
 // reader hold the piece to its name.
 func EncodePiece(lines []Line) ([]byte, error) {
 	if len(lines) == 0 {
@@ -33,7 +37,7 @@ func EncodePiece(lines []Line) ([]byte, error) {
 	var buf bytes.Buffer
 	var frame txnFrame
 	for i, l := range lines {
-		if i > 0 && l.Seq != lines[i-1].Seq+1 {
+		if i > 0 && l.Seq <= lines[i-1].Seq {
 			return nil, fmt.Errorf("changelogfile: seq %d follows %d in a piece", l.Seq, lines[i-1].Seq)
 		}
 		if _, err := frame.next(l.Seq, l.Txn); err != nil {
@@ -49,8 +53,9 @@ func EncodePiece(lines []Line) ([]byte, error) {
 }
 
 // ErrPieceDamaged is returned by ReadPiece for a piece that is not the run of
-// lines its name says: a line that does not verify, a seq out of place, a
-// transaction left open, or fewer or more lines than the name covers.
+// lines its name says: a line that does not verify, a seq out of order or
+// outside the name's, a transaction left open, or a last line that is not
+// the name's last.
 var ErrPieceDamaged = errors.New("changelogfile: the piece is not the lines its name covers")
 
 // ReadPiece reads the piece covering first to last, verifying every line's
@@ -60,7 +65,7 @@ var ErrPieceDamaged = errors.New("changelogfile: the piece is not the lines its 
 func ReadPiece(r io.Reader, first, last int64, fn func(e Entry, line []byte, sum [32]byte) error) error {
 	br := bufio.NewReaderSize(r, 1<<20)
 	var frame txnFrame
-	next := first
+	prev := first - 1
 	for {
 		line, err := readLine(br)
 		if errors.Is(err, io.EOF) {
@@ -71,10 +76,10 @@ func ReadPiece(r io.Reader, first, last int64, fn func(e Entry, line []byte, sum
 		}
 		e, sum, err := Decode(line)
 		if err != nil {
-			return fmt.Errorf("%w: seq %d: %w", ErrPieceDamaged, next, err)
+			return fmt.Errorf("%w: the line after seq %d: %w", ErrPieceDamaged, prev, err)
 		}
-		if e.Seq != next || e.Seq > last {
-			return fmt.Errorf("%w: seq %d where %d belongs", ErrPieceDamaged, e.Seq, next)
+		if e.Seq <= prev || e.Seq > last {
+			return fmt.Errorf("%w: seq %d after %d, in a piece of %d to %d", ErrPieceDamaged, e.Seq, prev, first, last)
 		}
 		if _, err := frame.next(e.Seq, e.Txn); err != nil {
 			return fmt.Errorf("%w: %w", ErrPieceDamaged, err)
@@ -82,10 +87,10 @@ func ReadPiece(r io.Reader, first, last int64, fn func(e Entry, line []byte, sum
 		if err := fn(e, line, sum); err != nil {
 			return err
 		}
-		next++
+		prev = e.Seq
 	}
-	if next != last+1 || frame.open != 0 {
-		return fmt.Errorf("%w: it ends at seq %d, its name says %d", ErrPieceDamaged, next-1, last)
+	if prev != last || frame.open != 0 {
+		return fmt.Errorf("%w: it ends at seq %d, its name says %d", ErrPieceDamaged, prev, last)
 	}
 	return nil
 }
