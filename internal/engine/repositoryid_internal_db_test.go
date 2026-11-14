@@ -950,6 +950,9 @@ func TestARowWhosePreIDDirectoryCannotBeProvenIsSetAsideWithIt(t *testing.T) {
 	if _, err := s.Dataset(ctx, k.name); !errors.Is(err, substrate.ErrSetAside) {
 		t.Fatalf("the row beside its unproven directory opens: %v", err)
 	}
+	if r := s.setAsideOf(repo.ID, ""); r == nil || r.stage != setAsideAtID {
+		t.Fatalf("the row is set aside as %+v, want at the id", r)
+	}
 	if _, err := os.Stat(filepath.Join(k.root, changelogfile.RepositoriesDir, repo.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the boot check wrote the row a directory under its id: %v", err)
 	}

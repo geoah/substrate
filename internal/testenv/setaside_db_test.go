@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -513,6 +514,48 @@ var asideCases = []asideCase{{
 	signIn: true,
 }}
 
+// asideLog keeps the stage of each repository a start sets aside, as the
+// start logs it, and passes every line on.
+type asideLog struct {
+	slog.Handler
+	mu     *sync.Mutex
+	stages *[]string
+}
+
+func newAsideLog() asideLog {
+	return asideLog{Handler: slog.Default().Handler(), mu: &sync.Mutex{}, stages: &[]string{}}
+}
+
+func (l asideLog) Handle(ctx context.Context, rec slog.Record) error {
+	if strings.HasPrefix(rec.Message, "substrate: repository set aside at start-up") {
+		rec.Attrs(func(a slog.Attr) bool {
+			if a.Key == "stage" {
+				l.mu.Lock()
+				*l.stages = append(*l.stages, a.Value.String())
+				l.mu.Unlock()
+			}
+			return true
+		})
+	}
+	return l.Handler.Handle(ctx, rec)
+}
+
+func (l asideLog) WithAttrs(attrs []slog.Attr) slog.Handler {
+	l.Handler = l.Handler.WithAttrs(attrs)
+	return l
+}
+
+func (l asideLog) WithGroup(name string) slog.Handler {
+	l.Handler = l.Handler.WithGroup(name)
+	return l
+}
+
+func (l asideLog) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), *l.stages...)
+}
+
 func TestADamagedRepositoryIsSetAsideAndTheOthersServe(t *testing.T) {
 	for _, tc := range asideCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -521,7 +564,13 @@ func TestADamagedRepositoryIsSetAsideAndTheOthersServe(t *testing.T) {
 			backup := filepath.Join(t.TempDir(), "backup")
 			tc.damage(t, w, backup)
 
-			e := w.start(t)
+			log := newAsideLog()
+			e := w.start(t, engine.WithLogger(slog.New(log)))
+			// The stage the start names is the operator's first lead on what
+			// to repair (setaside.go).
+			if got := log.list(); len(got) != 1 || got[0] != tc.stage {
+				t.Errorf("the start set aside at %v, want the damaged repository alone at %q", got, tc.stage)
+			}
 			for _, name := range asideNames[:2] {
 				w.serves(t, e, name, true)
 				if st := w.listed(t, name); st.State != engine.StateServing {

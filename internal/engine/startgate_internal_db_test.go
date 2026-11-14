@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/geoah/substrate/internal/archive"
@@ -342,5 +345,245 @@ func TestADeletionOfARepositorySetAsideWaits(t *testing.T) {
 	}
 	if _, err := again.Dataset(ctx, w.b.Authority); err != nil {
 		t.Fatalf("the neighbor: %v", err)
+	}
+}
+
+// eraseRowsOf removes every row of repository id, as a database restored
+// without it holds none.
+func eraseRowsOf(t *testing.T, dsn, id string) {
+	t.Helper()
+	db := rawDBOf(t, dsn)
+	for _, table := range repositoryScopedTables {
+		if _, err := db.Exec(`DELETE FROM `+table+` WHERE repository = $1`, id); err != nil {
+			t.Fatalf("erase %s's rows of %s: %v", id, table, err)
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM repositories WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A 0.X DIRECTORY WITH NO ROW WHOSE HISTORY DOES NOT VERIFY. A's repository
+// comes back as the directory a release before the archive kept, into a
+// database that holds none of it, and one of its lines is not the line its
+// checksum names (a flipped byte on the disk). The import refuses it, and the
+// start sets it aside at the import and serves B; its name stays taken. The
+// line put back is the repair: the next start imports A.
+func TestA0xDirectoryWhoseLineDoesNotVerifyIsSetAsideAtTheImport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	op := w.start(t)
+	d, err := op.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.(*dataset).ArchivePass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_ = op.Close()
+	archiveRoot := filepath.Join(t.TempDir(), "archive")
+	if err := os.Rename(filepath.Join(w.root, "archive"), archiveRoot); err != nil {
+		t.Fatal(err)
+	}
+	eraseRowsOf(t, w.dsn, w.a.ID)
+	if err := os.RemoveAll(filepath.Join(w.root, changelogfile.RepositoriesDir, w.a.ID)); err != nil {
+		t.Fatal(err)
+	}
+	dir := legacyDirFromArchive(t, archiveRoot, w.root, w.a.ID, w.a.ID)
+	segments, err := filepath.Glob(filepath.Join(changelogfile.ChangelogDir(dir), "*.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var damaged string
+	var whole []byte
+	for _, path := range segments {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i := bytes.Index(raw, []byte(`"Ada"`)); i >= 0 {
+			damaged, whole = path, raw
+			flipped := bytes.Clone(raw)
+			flipped[i+3] = 'b'
+			if err := os.WriteFile(path, flipped, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if damaged == "" {
+		t.Fatal("no line of the directory holds the contact's name")
+	}
+
+	s := w.start(t)
+	r := s.setAsideOf(w.a.ID, "")
+	if r == nil || r.stage != setAsideAtImport {
+		t.Fatalf("the directory is set aside as %+v, want at the import", r)
+	}
+	b, err := s.Dataset(ctx, w.b.Authority)
+	if err != nil {
+		t.Fatalf("the healthy neighbor: %v", err)
+	}
+	if _, err := b.Get(ctx, "substrate.reamde.dev/core/contact", fid("ada")); err != nil {
+		t.Fatalf("the neighbor's record: %v", err)
+	}
+	if _, err := s.Register(ctx, substrate.RegisterInput{Repository: w.a.Authority, Password: "correct-horse-battery-staple", SkipTOTP: true}); !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("a registration of the set-aside directory's name = %v, want refused as taken", err)
+	}
+	_ = s.Close()
+
+	if err := os.WriteFile(damaged, whole, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s = w.start(t)
+	if r := s.setAsideOf(w.a.ID, ""); r != nil {
+		t.Fatalf("the repaired directory is still set aside: %+v", r)
+	}
+	a, err := s.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatalf("the repaired directory, imported: %v", err)
+	}
+	if rec, err := a.Get(ctx, "substrate.reamde.dev/core/contact", fid("ada")); err != nil || rec.Properties["name"] != "Ada" {
+		t.Fatalf("the imported contact = %+v, %v", rec, err)
+	}
+}
+
+// A TAKE WHOSE ERASE THE DATABASE REFUSES. A's operator chose to take its
+// archive, and the start that carries the take out removes A's directory and
+// then cannot remove its rows: the database refuses the erase. The trigger
+// on `records` stands for any refusal of the database's own (a lock, a
+// constraint, a grant an operator changed). The start sets A aside at the
+// take and serves B; with the refusal gone, the next start finishes the take
+// and restores A from the archive it chose.
+func TestATakeWhoseEraseTheDatabaseRefusesIsSetAsideAtTheTake(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	op := w.start(t)
+	if res, err := op.ResolveArchive(ctx, w.a.Authority, false); err != nil || res.Take == "" {
+		t.Fatalf("the take = %+v, %v, want recorded", res, err)
+	}
+	_ = op.Close()
+	db := rawDBOf(t, w.dsn)
+	if _, err := db.Exec(`
+		CREATE FUNCTION refuse_the_take() RETURNS trigger LANGUAGE plpgsql AS $fn$
+		BEGIN
+			IF OLD.repository = '` + w.a.ID + `' THEN
+				RAISE EXCEPTION 'the database refuses to erase this repository';
+			END IF;
+			RETURN OLD;
+		END $fn$;
+		CREATE TRIGGER refuse_the_take BEFORE DELETE ON records FOR EACH ROW EXECUTE FUNCTION refuse_the_take();`); err != nil {
+		t.Fatal(err)
+	}
+
+	s := w.start(t)
+	r := s.setAsideOf(w.a.ID, "")
+	if r == nil || r.stage != setAsideAtTake {
+		t.Fatalf("the repository is set aside as %+v, want at the take", r)
+	}
+	w.wantAsideAndNeighborServing(t, s)
+	_ = s.Close()
+
+	if _, err := db.Exec(`DROP TRIGGER refuse_the_take ON records; DROP FUNCTION refuse_the_take()`); err != nil {
+		t.Fatal(err)
+	}
+	s = w.start(t)
+	if r := s.setAsideOf(w.a.ID, ""); r != nil {
+		t.Fatalf("the repository is still set aside after the refusal went: %+v", r)
+	}
+	a, err := s.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatalf("the repository, restored from the archive it took: %v", err)
+	}
+	if _, err := a.Get(ctx, "substrate.reamde.dev/core/contact", fid("ada")); err != nil {
+		t.Fatalf("the restored contact: %v", err)
+	}
+}
+
+// stopsAfterPieces is the data root's archive store, which stops answering
+// once it has handed out after pieces of history: a store gone down in the
+// middle of a restore. It keeps the store's name, since it is the same
+// archive.
+type stopsAfterPieces struct {
+	archive.Store
+	mu            sync.Mutex
+	pieces, after int
+}
+
+func (s *stopsAfterPieces) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if strings.Contains(key, "/"+changelogfile.ChangelogSubdir+"/") {
+		s.mu.Lock()
+		s.pieces++
+		n := s.pieces
+		s.mu.Unlock()
+		if n > s.after {
+			return nil, errStoreDown
+		}
+	}
+	return s.Store.Get(ctx, key)
+}
+
+// A RESTORE WHOSE STORE STOPS ANSWERING PART-WAY. A's rows are gone (a
+// database restored without it) and its archive holds its history in several
+// pieces; the store answers the first and then not, once the restore has
+// written some of A. The start sets A aside at the archive store's stage,
+// which names the store and tells the operator nothing of A is damaged, and
+// serves B; with the store answering, the next start restores A.
+func TestARestoreWhoseStoreStopsAnsweringIsSetAsideAtTheArchiveStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newGateWorld(t)
+	op := w.start(t, WithArchivePieceBytes(1))
+	d, err := op.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := d.(*dataset)
+	for _, name := range []string{"Grace", "Edsger", "Barbara"} {
+		mustPutInternal(t, ds, substrate.PutInput{Kind: "substrate.reamde.dev/core/contact", ID: fid(name), Properties: map[string]any{"name": name}})
+	}
+	if err := ds.ArchivePass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_ = op.Close()
+	eraseRowsOf(t, w.dsn, w.a.ID)
+	dir, err := archive.NewDir(filepath.Join(w.root, "archive"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pieces, err := dir.List(ctx, changelogfile.RepositoryPrefix(w.a.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, o := range pieces {
+		if strings.Contains(o.Key, "/"+changelogfile.ChangelogSubdir+"/") {
+			n++
+		}
+	}
+	if n < 3 {
+		t.Fatalf("the archive holds %d pieces of A's history, want several", n)
+	}
+
+	store := &stopsAfterPieces{Store: dir, after: 1}
+	s := w.start(t, WithArchive(store))
+	r := s.setAsideOf(w.a.ID, "")
+	if r == nil || r.stage != setAsideAtStore {
+		t.Fatalf("the repository is set aside as %+v after %d pieces, want at the archive store", r, store.pieces)
+	}
+	if _, err := s.Dataset(ctx, w.b.Authority); err != nil {
+		t.Fatalf("the healthy neighbor: %v", err)
+	}
+	_ = s.Close()
+
+	s = w.start(t)
+	a, err := s.Dataset(ctx, w.a.Authority)
+	if err != nil {
+		t.Fatalf("the repository, restored with the store answering: %v", err)
+	}
+	if _, err := a.Get(ctx, "substrate.reamde.dev/core/contact", fid("Barbara")); err != nil {
+		t.Fatalf("the restored contact: %v", err)
 	}
 }
