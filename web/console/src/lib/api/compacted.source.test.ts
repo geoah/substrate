@@ -725,6 +725,8 @@ describe("every place that sends a continuation", () => {
     expect(strays).toEqual([])
   })
 
+  // It walks every node of every source file twice: over a second alone,
+  // and past the default 5 s on a runner busy with the rest of the suite.
   it("writes a continuation's parameter only inside a sender", () => {
     const writes = parameterWrites(files)
     expect(writes.length).toBeGreaterThan(0)
@@ -733,7 +735,7 @@ describe("every place that sends a continuation", () => {
     expect(
       Object.keys(OTHER_PARAMETERS).filter((key) => !other.has(key))
     ).toEqual([])
-  })
+  }, 30_000)
 
   it("reaches every sender by a name it can read", () => {
     expect(unreadable(files)).toEqual([])
