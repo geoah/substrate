@@ -2056,6 +2056,13 @@ restored changelog already holds is deleted and delivers nothing twice. A
 request answered after the last pass is in the data root alone until the
 next one.
 
+**A restore from before a publish takes the publish away.** The package is
+back in `~`, its releases are gone, and the server stops serving its
+document, while the domain's record still names it. A release served once
+must never come back under the same version with other bytes, so a person
+who publishes again starts above every version released before
+([publishing](publishing.md#afterwards)).
+
 **An owner downloads the archive from a running server.**
 `GET /api/v1/export` streams the repository's archive as one tar, as of one
 committed point

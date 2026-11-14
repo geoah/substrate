@@ -99,6 +99,14 @@ type Service interface {
 	// ErrNotFound for none. It is how a door that takes a name turns it into
 	// an id once; past it, nothing is compared by name.
 	RepositoryIDOf(ctx context.Context, nameOrID string) (string, error)
+	// PublishedReleases lists the releases a repository publishes under an
+	// authority, and PublishedClosure is one release's closure, byte for
+	// byte (decision record 0291). Both read the repository by its id
+	// without opening it, so a public read of a repository that publishes
+	// nothing opens nothing, and both answer ErrNotFound for a repository
+	// that is not served.
+	PublishedReleases(ctx context.Context, repository, authority string) ([]Release, error)
+	PublishedClosure(ctx context.Context, repository, pkg string, version int64) ([]byte, error)
 	// ReceiveWebhook is public webhook ingress. The request carries no
 	// bearer: the path names the repository, which the door has resolved to
 	// its id (RepositoryIDOf), and the trigger, and the trigger's own key,

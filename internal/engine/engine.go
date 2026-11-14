@@ -69,6 +69,9 @@ type options struct {
 	// shippedRefusal is the shipped upgrade's test seam
 	// (WithTestShippedUpgradeRefusal).
 	shippedRefusal func(repository string) []string
+	// endOfTxCheck is a test's refusal among a transaction's end-of-transaction
+	// checks (WithTestEndOfTransactionCheck).
+	endOfTxCheck func(declares func(pkg string) bool) error
 	// peopleFault is the start's people pass's test seam (identityboot.go).
 	peopleFault func(repository string) error
 	// rulesFault is the readers of the rules' test seam (ruleFault).
@@ -670,6 +673,9 @@ type service struct {
 	testArchiveFault func(stage string) error
 	// testShippedRefusal is the options' shipped upgrade seam (seed.go).
 	testShippedRefusal func(repository string) []string
+	// testEndOfTxCheck is the options' end-of-transaction seam (dataset.go
+	// inTxOn).
+	testEndOfTxCheck func(declares func(pkg string) bool) error
 	// testPeopleFault is the options' people pass seam (identityboot.go):
 	// an error fails that repository's pass.
 	testPeopleFault func(repository string) error
@@ -1153,6 +1159,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		archiveProcess:        process,
 		testArchiveFault:      o.archiveFault,
 		testShippedRefusal:    o.shippedRefusal,
+		testEndOfTxCheck:      o.endOfTxCheck,
 		testPeopleFault:       o.peopleFault,
 		testRulesFault:        o.rulesFault,
 		conversion:            conversionSteps,

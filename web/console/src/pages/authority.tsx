@@ -14,6 +14,7 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { FileCode2Icon, MessageSquareIcon } from "lucide-react"
 
 import { AgentCard } from "@/components/agent/agent-ref"
+import { PackagePublishActions } from "@/components/packages/publish-package"
 import { PublisherDetails } from "@/components/packages/publisher"
 import { PublishedPackageSection } from "@/components/packages/published-package"
 import { StandardPackageSection } from "@/components/packages/standard-package"
@@ -334,6 +335,7 @@ export function AuthorityPage() {
  * (decision 0047); an agent's package is what a person asked it to build. */
 export function PackagePage() {
   const { authority, pkg } = packageRoute.useParams()
+  const navigate = useNavigate()
   const [technical] = useTechnicalDetails()
   const registry = useQuery(kindsQueryOptions)
   const packages = useQuery(packagesQueryOptions)
@@ -387,6 +389,21 @@ export function PackagePage() {
               packageTitle(authority, pkg)
             )}
           </span>
+        }
+        actions={
+          <PackagePublishActions
+            authority={authority}
+            pkg={pkg}
+            onPublished={(published) => {
+              // The package left `~`: its page is under the new name now.
+              const [to, name] = published.split("/")
+              void navigate({
+                to: "/data/$authority/$pkg",
+                params: { authority: to, pkg: name },
+                replace: true,
+              })
+            }}
+          />
         }
         meta={
           <>

@@ -9,8 +9,10 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { ConsolePreferencesContext } from "@/hooks/use-console-preferences"
 import { bundleStatusesQueryOptions } from "@/lib/api/bundles"
 import { catalogQueryOptions } from "@/lib/api/catalog"
+import { discoveryQueryOptions } from "@/lib/api/discovery"
 import { functionsQueryOptions } from "@/lib/api/functions"
 import { kindsQueryOptions } from "@/lib/api/kinds"
+import { releasesQueryOptions } from "@/lib/api/publish"
 import { repositoryQueryOptions } from "@/lib/api/repository"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { DEFAULT_SETTINGS } from "@/lib/console-preferences"
@@ -52,11 +54,13 @@ const PACKAGES = [
 function renderPage(
   technical: boolean,
   records?: SubstrateRecord[],
-  functions: SubstrateRecord[] = []
+  functions: SubstrateRecord[] = [],
+  seed?: (client: QueryClient) => void
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   })
+  seed?.(client)
   client.setQueryData(kindsQueryOptions.queryKey, [])
   client.setQueryData(functionsQueryOptions.queryKey, functions)
   client.setQueryData(catalogQueryOptions.queryKey, [])
@@ -201,5 +205,51 @@ describe("PackagePage and code from outside publishers", () => {
       ]
     )
     expect(codeFact()).toBeUndefined()
+  })
+})
+
+/** The head's publishing action: Publish… on a package of the repository's
+ * own, New release… on one it publishes, nothing elsewhere. */
+describe("PackagePage and publishing", () => {
+  afterEach(() => {
+    cleanup()
+    params = { authority: "substrate.reamde.dev", pkg: "core" }
+  })
+
+  function publishing(client: QueryClient) {
+    client.setQueryData(discoveryQueryOptions.queryKey, {
+      features: [
+        { name: "publishing", stability: "experimental", revision: 1 },
+      ],
+    })
+    client.setQueryData(releasesQueryOptions.queryKey, [
+      {
+        package: "ada.example.com/recipes",
+        version: 1,
+        sha256: "a".repeat(64),
+        releasedAt: "2026-11-14T12:00:00Z",
+      },
+    ])
+  }
+
+  it("offers Publish… on a package in ~", () => {
+    params = { authority: "~", pkg: "recipes" }
+    renderPage(false, PACKAGES, [], publishing)
+    expect(screen.getByRole("button", { name: "Publish…" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "New release…" })).toBeNull()
+  })
+
+  it("offers New release… on a package the repository publishes", () => {
+    params = { authority: "ada.example.com", pkg: "recipes" }
+    renderPage(false, PACKAGES, [], publishing)
+    expect(screen.getByRole("button", { name: "New release…" })).toBeTruthy()
+    expect(screen.queryByRole("button", { name: "Publish…" })).toBeNull()
+  })
+
+  it("offers neither on a package another publisher keeps", () => {
+    renderPage(false, PACKAGES, [], publishing)
+    expect(
+      screen.queryByRole("button", { name: /Publish…|New release…/ })
+    ).toBeNull()
   })
 })

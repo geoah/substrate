@@ -216,6 +216,16 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		defer r.heal()
 		return errRefused(r.ds.requestMayWrite(r.adaCtx(), substrate.ActorPerson, ty))
 	},
+	// The admin's check a publish, a release and their previews take.
+	"publish.go:mayPublish": func(t *testing.T, r *runsRepository) (bool, string) {
+		r.fail("roles")
+		defer r.heal()
+		if refused, saw := errRefused(r.ds.mayPublish(r.adaCtx(), substrate.ActorPerson)); !refused {
+			return false, "the check: " + saw
+		}
+		_, err := r.ds.PlanPublish(r.adaCtx(), substrate.ActorPerson, substrate.PublishInput{Package: "~/nothing", Authority: "pub.example.com"})
+		return errRefused(err)
+	},
 	// The admin's check a delete and a rename both take.
 	"auth.go:requireAdmin": func(t *testing.T, r *runsRepository) (bool, string) {
 		repo, err := r.r.s.repositoryByKey(context.Background(), r.ada)

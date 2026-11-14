@@ -152,6 +152,16 @@ func (t *txn) ensureActor(key substrate.Actor) error {
 	if person && row != nil {
 		return fmt.Errorf("%w: the person this acts for was taken out of the repository, and nothing acts for them again", substrate.ErrForbidden)
 	}
+	// A hand whose record was disabled because its code went (uninstalled,
+	// or published under another name) comes back only with its code: a run
+	// that started under it and writes after is refused, rather than
+	// bringing back the record of a hand nothing runs. A re-install declares
+	// the code again first, in the batch whose declarations this reads, so
+	// its hand comes back. The open's fill writes and disables such records
+	// itself (actorfill.go).
+	if row != nil && !t.fillingActors && !handCodeDeclared(t.declarations(), key) {
+		return fmt.Errorf("%w: %w: %w: %s", substrate.ErrForbidden, substrate.ErrNotPermitted, errHandGone, handWords(key))
+	}
 	props := vocabulary.ActorProperties(key, t.ds.Repository().Authority)
 	if row != nil {
 		props["disabled"] = nil
@@ -167,6 +177,34 @@ func (t *txn) ensureActor(key substrate.Actor) error {
 	}
 	t.standing(id)
 	return nil
+}
+
+// errHandGone refuses a write by a hand whose code is no longer declared.
+var errHandGone = errors.New("the code this hand runs is no longer declared here (uninstalled, or published under another name), so it writes nothing")
+
+// handCodeDeclared reports whether reg declares the code a hand runs: a
+// function's or an agent's declaration, a package's own. Every other hand
+// runs no declared code, and answers true.
+func handCodeDeclared(reg *vocabulary.Registry, key substrate.Actor) bool {
+	parts := strings.Split(string(substrate.CanonicalActor(key)), ":")
+	switch substrate.ActorTypeOf(key) {
+	case substrate.ActorTypeFunction:
+		if len(parts) == 4 {
+			_, err := reg.ResolveFunction(parts[1] + "/" + parts[2] + "/" + parts[3])
+			return err == nil
+		}
+	case substrate.ActorTypeAgent:
+		if len(parts) == 4 {
+			_, err := reg.ResolveAgent(parts[1] + "/" + parts[2] + "/" + parts[3])
+			return err == nil
+		}
+	case substrate.ActorTypePackage:
+		if len(parts) == 3 && parts[0]+":" == substrate.BundleActorPrefix {
+			_, ok := reg.PackageByName(parts[1] + "/" + parts[2])
+			return ok
+		}
+	}
+	return true
 }
 
 // standing notes an actor record the transaction found or wrote live, for

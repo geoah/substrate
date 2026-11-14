@@ -348,6 +348,16 @@ var featureTable = []feature{
 		routes: []string{"GET /api/v1/operator/defaults"},
 		listed: func(h *handler) bool { return h.operatorDefaults },
 	},
+	// Publishing a package of the repository's own under an authority it
+	// proved, its releases, and the document and closures another server
+	// installs from (decision records 0289 and 0291).
+	{name: "publishing", stability: substrate.StabilityExperimental, revision: 1, surfaces: []string{surfaceREST}, routes: []string{
+		"POST /api/v1/packages/publish",
+		"POST /api/v1/packages/release",
+		"GET /api/v1/packages/releases",
+		"GET /published/{repository}/{authority}",
+		"GET /published/{repository}/{authority}/{package}/{version}",
+	}},
 }
 
 // features is the feature list this server announces: the table's entries,

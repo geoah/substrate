@@ -78,6 +78,7 @@ func (ds *dataset) fillActorRecords(ctx context.Context) error {
 		if !t.actorKindDeclared() {
 			return nil
 		}
+		t.fillingActors = true
 		// Said before the read, which takes as long as the history is long
 		// and holds the open meanwhile: a server that looks hung here is
 		// reading, and a restart rolls the read back and begins it again.

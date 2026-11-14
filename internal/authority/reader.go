@@ -53,11 +53,15 @@ const maxAuthorityDocument = 64 << 10
 // AuthorityDocument is what an authority publishes about itself at the URL
 // its `_substrate` record names: its apps, by client id, and its packages.
 type AuthorityDocument struct {
-	Authority   string             `json:"authority"`
-	Name        string             `json:"name,omitempty"`
-	Description string             `json:"description,omitempty"`
-	Packages    []AuthorityPackage `json:"packages,omitempty"`
-	Apps        []AuthorityApp     `json:"apps,omitempty"`
+	Authority   string `json:"authority"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	// MovedTo is the authority this publisher says it moved to (decision
+	// record 0293). A server shows it beside the publisher's packages and
+	// never follows it: nothing installs from it and nothing moves.
+	MovedTo  string             `json:"movedTo,omitempty"`
+	Packages []AuthorityPackage `json:"packages,omitempty"`
+	Apps     []AuthorityApp     `json:"apps,omitempty"`
 }
 
 // AuthorityPackage is one package an authority publishes, with its
@@ -112,6 +116,11 @@ func ParseAuthorityDocument(body []byte, authority string) (AuthorityDocument, e
 		return AuthorityDocument{}, refuse("the authority document the record of %s names is %q's, not %s's", authority, truncate(doc.Authority, 200), authority)
 	}
 	doc.Name = truncate(strings.TrimSpace(doc.Name), maxNameLen)
+	// A pointer that names no other authority is not one: it is left out,
+	// and the document is read, as a key this server does not read would be.
+	if doc.MovedTo != "" && (!vocabulary.ValidKindAuthority(doc.MovedTo) || doc.MovedTo == vocabulary.Local || doc.MovedTo == authority) {
+		doc.MovedTo = ""
+	}
 	for i, a := range doc.Apps {
 		if _, err := parseClientID(a.ClientID); err != nil {
 			return AuthorityDocument{}, refuse("the authority document of %s lists an app whose client_id this server refuses: %v", authority, err)

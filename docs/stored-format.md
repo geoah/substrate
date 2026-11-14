@@ -291,7 +291,13 @@ checksum proves and what it does not.
 
 The keys beside `fold` are what [the change feed](changelog.md) serves:
 `created`, `restored`, `properties`, `states`, `finalizers`, `winner`,
-`loser`, `moved`, `renamed`, `remapped` and a `gc` entry's `reason`. Where
+`loser`, `moved`, `renamed`, `remapped` and a `gc` entry's `reason`. A kind
+move's lines say what they are: the put of a record it carries names the
+kind it came from (`movedFrom`), the old row's tombstone or purge the kind it
+went to (`movedTo`), and a write that only moves the names a record holds to
+where they now point names the move (`repointed`, old to new). No trigger
+delivers any of them
+([decision 0298](decisions/0298-a-kind-move-sets-off-no-trigger-and-carries-a-records-merge-trail-and-vectors.md)). Where
 the payload names a hand, it names the id of the hand's actor record: a
 recompute's entry carries `triggeredBy`, the id of the actor whose write set
 the recompute off, and `mechanism: mapping`; a merge moves no mark, and only

@@ -146,7 +146,28 @@ type vocabularyBatch struct {
 	// changes, when set, receives the batch's committed changelog entries:
 	// the agent vocabulary tool stamps them on its tool row, as `write` does.
 	changes *[]changeEntry
+	// publish is a PUBLISH's move (publish.go, decision record 0289): each
+	// kind of the package in `~` to the kind of the same name under the
+	// authority it is published as. The batch carries their rows (move.go)
+	// where every other door refuses a move, and publishTo, the package it
+	// creates under that authority, is the one new package outside `~` a
+	// repository's hand writes. onMoves hears the planned move.
+	publish   map[string]string
+	publishTo string
+	onMoves   func(movesPlanned)
+	// rollback runs the batch whole, the work before its transaction and
+	// the transaction to where it would commit, its end-of-transaction
+	// checks and settling included (dataset.go inTxOn, txn.dryRun), and rolls
+	// the transaction back there: a preview answered by the apply itself, so
+	// the two cannot differ (publish.go). Nothing it does outlives it but an
+	// index built and a body prepared, which the apply leaves the same way
+	// when a guard refuses it.
+	rollback bool
 }
+
+// errBatchRolledBack ends a dry run's transaction where it would commit
+// (vocabularyBatch.rollback, txn.dryRun).
+var errBatchRolledBack = errors.New("substrate/engine: the batch ran as a preview and was rolled back")
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
 
@@ -353,6 +374,26 @@ func claimedOrigin(origin string, docs []vocabulary.Document) (string, int64, er
 	return origin, version, nil
 }
 
+// admitPublishedDocuments is what a published package's declarations are
+// held to beyond any closure's: a published agent spends the owner's
+// provider, so it names the provider input it takes and the models it runs
+// on, and ships its own daily cap (decision 0217), whether the binary or a
+// document brought it. A repository that publishes holds each release to it
+// (publish.go admitRelease).
+func admitPublishedDocuments(docs []vocabulary.Document) error {
+	for _, doc := range docs {
+		if doc.Kind == vocabulary.DocAgent {
+			if input, _ := doc.Data["providerInput"].(string); strings.TrimSpace(input) == "" || doc.Data["provider"] != nil || doc.Data["model"] != nil {
+				return fmt.Errorf("%w: published agent %s must use providerInput and models, not provider and model", substrate.ErrValidation, doc.ID)
+			}
+		}
+	}
+	if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
+		return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return nil
+}
+
 // InstallBundleClosure admits a bundle's schema closure AND its shipped data
 // documents (the delivery wiring — triggers) as ONE repository transaction: the
 // declaration rows project, then every data document PUTs against the candidate
@@ -385,18 +426,9 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 			return nil, err
 		}
 	}
-	// A published agent spends the owner's provider, so it ships its own
-	// daily cap (decision 0217), whether the binary or a document brought it.
 	if opts.Published {
-		for _, doc := range docs {
-			if doc.Kind == vocabulary.DocAgent {
-				if input, _ := doc.Data["providerInput"].(string); strings.TrimSpace(input) == "" || doc.Data["provider"] != nil || doc.Data["model"] != nil {
-					return nil, fmt.Errorf("%w: published agent %s must use providerInput and models, not provider and model", substrate.ErrValidation, doc.ID)
-				}
-			}
-		}
-		if err := vocabulary.PublishedAgentBudgets(docs); err != nil {
-			return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		if err := admitPublishedDocuments(docs); err != nil {
+			return nil, err
 		}
 	}
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
@@ -700,6 +732,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 	}()
 	err = ds.inTx(ctx, actor, true, func(t *txn) error {
 		t.changeSink = b.changes
+		t.dryRun = b.rollback
 		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
 		// #11): trigger admission holds the shared side from callable
 		// validation to commit, so the dropped-reference query below can
@@ -747,6 +780,26 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		// holds, so the hash a preview handed out is recomputed over the same
 		// records or refused: the work ceiling, then the confirmation a lossy
 		// plan needs (convert.go, decision 0067).
+		// A publish's move, planned under the locks this transaction holds:
+		// the rows it carries, in the order they are written, and what the
+		// store refuses it for (move.go).
+		if len(st.moves) > 0 {
+			planned, lines, err := planMoves(t, candidate, st.moves)
+			if err != nil {
+				return err
+			}
+			if lines = append(lines, moveGuards(current, carrying(planned.moves))...); len(lines) > 0 {
+				return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(lines, "; "))
+			}
+			grants, err := countGrants(t, movedTargets(st.moves))
+			if err != nil {
+				return err
+			}
+			st.conversions.moves, st.conversions.grantPatches = planned, grants
+			if b.onMoves != nil {
+				b.onMoves(planned)
+			}
+		}
 		plan, err := st.conversions.wire(t, ds.svc.conversionCeiling, true)
 		if err != nil {
 			return err
@@ -895,7 +948,7 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		if err := t.recomputeMappingTargets(ds.registry(), candidate); err != nil {
 			return err
 		}
-		final, err := droppedTypeGuards(t, st.droppedTypes)
+		final, err := droppedTypeGuards(t, append(append([]string(nil), st.droppedTypes...), st.carried...))
 		if err != nil {
 			return err
 		}
@@ -912,6 +965,9 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 		t.publishReg = candidate
 		return nil
 	})
+	if b.rollback && errors.Is(err, errBatchRolledBack) {
+		return written, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -920,6 +976,40 @@ func (ds *dataset) applyVocabularyBatchLocked(ctx context.Context, actor substra
 	// references anymore.
 	ds.reconcileRunner(ctx)
 	return written, nil
+}
+
+// compileCandidate is current without the touched packages and with docs,
+// their declarations, compiled whole (CEL guards, templates) before any
+// transaction opens, one BuildPackages per package with every problem in
+// every document at once, in the order `substratectl validate` prints them
+// offline (vocabulary.BuildEachPackage). Its declared defaults are refused
+// on the terms the write path refuses them on, and an index the engine
+// cannot build is refused here, where the upgrade preview looks too, so the
+// preview never admits a closure the install then refuses (indices.go). A
+// release is compiled by it into what a fresh repository holds
+// (publish.go admitRelease).
+func (ds *dataset) compileCandidate(current *vocabulary.Registry, docs []vocabulary.Document, touched map[string]bool, sourceOf func(string) string) (*vocabulary.Registry, error) {
+	candidate := current.Clone()
+	for g := range touched {
+		candidate.Remove(g)
+	}
+	rebuilt, err := vocabulary.BuildEachPackage(docs, sourceOf)
+	if err != nil {
+		return nil, err
+	}
+	if err := candidate.InstallAll(rebuilt); err != nil {
+		return nil, err
+	}
+	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
+		return nil, &substrate.ValidationError{Problems: defaults}
+	}
+	if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
+		return nil, err
+	}
+	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return candidate, nil
 }
 
 // touchedKinds lists the kinds the candidate declares in the packages a batch
@@ -951,6 +1041,10 @@ type vocabularyStage struct {
 	// (fold.go parkedSet.without), never nil.
 	parked       *parkedSet
 	droppedTypes []string
+	// carried are the kinds a publish removes and carries the rows of, and
+	// moves the move that carries them (publish.go).
+	carried []string
+	moves   []kindMove
 	// strandedMappings names the mappings another package declares FROM a kind
 	// this batch removes (record 49): uninstalling Linear while the
 	// repository's own mapping reads `linear/issue` is refused until the
@@ -1080,7 +1174,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 					}
 				}
 			}
-			if !ds.svc.foreignPackages {
+			if !ds.svc.foreignPackages && g != b.publishTo {
 				if err := authorizeNewPackage(*actor, stored, ds.name(), g); err != nil {
 					return nil, err
 				}
@@ -1117,20 +1211,11 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		delete(merged, docKey(d))
 	}
 
-	// The candidate: current registry minus the touched packages, plus their
-	// rebuilt replacements — compiled whole (CEL guards, templates) before the
-	// transaction opens. Every problem in every document reports at once.
-	candidate := current.Clone()
-	for g := range touched {
-		candidate.Remove(g)
-	}
 	mergedDocs := make([]vocabulary.Document, 0, len(merged))
 	for _, d := range merged {
 		mergedDocs = append(mergedDocs, d)
 	}
-	// One BuildPackages per package, the problems collected in the order
-	// `substratectl validate` prints them offline (vocabulary.BuildEachPackage).
-	rebuilt, err := vocabulary.BuildEachPackage(mergedDocs, func(aname string) string {
+	candidate, err := ds.compileCandidate(current, mergedDocs, touched, func(aname string) string {
 		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
 		// storedPackages builds it at open. Two things read the origin — the row
 		// the projection writes back, and the one loader rule keyed on it
@@ -1170,14 +1255,6 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err != nil {
 		return nil, err
 	}
-	if err := candidate.InstallAll(rebuilt); err != nil {
-		return nil, err
-	}
-	// A declared default is stored by the write path, so it is refused here on
-	// the terms the write path would refuse it on.
-	if defaults := checkDeclaredDefaults(ds.coercer(), candidate, touched); len(defaults) > 0 {
-		return nil, &substrate.ValidationError{Problems: defaults}
-	}
 
 	// Types the candidate no longer declares: refuse while instances exist,
 	// counted transactionally below. Functions carry no delivery state of
@@ -1197,15 +1274,28 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		}
 	}
 	sort.Strings(droppedTypes)
-
-	// An index the engine cannot build is refused here, where the upgrade
-	// preview looks too, so the preview never admits a closure the install
-	// then refuses (indices.go).
-	if err := quantityIndexRefusal(touchedKinds(candidate, touched)); err != nil {
-		return nil, err
-	}
-	if _, err := indexStatements(touchedKinds(candidate, touched)); err != nil {
-		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	// A publish carries the rows of the kinds it removes, so they are counted
+	// after the move, by the dropped-kind count that decides
+	// (applyVocabularyBatchLocked), and not before it.
+	var carried []string
+	var moves []kindMove
+	if len(b.publish) > 0 {
+		var kept []string
+		for _, k := range droppedTypes {
+			if b.publish[k] != "" {
+				carried = append(carried, k)
+			} else {
+				kept = append(kept, k)
+			}
+		}
+		droppedTypes = kept
+		for _, from := range sortedKeys(b.publish) {
+			to, ok := candidate.ByIdentity(b.publish[from])
+			if !ok {
+				return nil, fmt.Errorf("substrate/engine: publish: %s does not declare %s", b.publishTo, b.publish[from])
+			}
+			moves = append(moves, kindMove{from: from, to: to})
+		}
 	}
 
 	conversions := classifyConversions(current, candidate, touched, nil)
@@ -1235,7 +1325,9 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// the looser contract stands — the dispatcher skips an unresolvable
 		// callable loudly.
 		droppedTypes:     droppedTypes,
-		strandedMappings: strandedMappingGuards(candidate, droppedTypes),
+		carried:          carried,
+		moves:            moves,
+		strandedMappings: strandedMappingGuards(candidate, append(append([]string(nil), droppedTypes...), carried...)),
 		retirements:      retirementGuards(current, candidate, touched, nil),
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
 		reprojections:    reprojections,
@@ -1244,7 +1336,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// removed, required added — is classified here against the currently
 		// stored definitions and refused while live rows would be stranded,
 		// with the count. Additive changes pass through untouched (schemadiff.go).
-		narrowings:   classifyNarrowings(current, candidate, touched, nil),
+		narrowings:   classifyNarrowings(current, candidate, touched, b.publish),
 		moveRefusals: moveRefusals,
 		// A rename, a backfill, a remap and a null are neither: the
 		// transaction rewrites the live records (convert.go), and what refuses

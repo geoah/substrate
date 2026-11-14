@@ -90,6 +90,7 @@ var foldWriteSites = map[string]string{
 	"repositoryid.go:keyRow":             "moves a repository's rows from its name to its id, the scope a rebuild writes them under",
 	"embedprovider.go:pruneUnembeddable": "its tables are embeddings and embed_queue, neither a fold table",
 	"localnamespace.go:carryAddresses":   "its tables are embeddings, embed_queue and oauth_flows, none a fold table",
+	"move.go:carryVectors":               "its tables are embeddings and embed_queue, neither a fold table",
 }
 
 // foldPrimitives are the functions that apply an effect to the fold tables,

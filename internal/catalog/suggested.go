@@ -113,6 +113,22 @@ func (b *Bundle) admitted(ctx context.Context, ds substrate.Dataset, view sugges
 	return vocabulary.WithoutMappings(b.vocabularyDocs, drop), report, nil
 }
 
+// AdmitSuggested is docs as an install applies them to a repository that
+// holds the kinds held answers for and no mapping declaration yet: every
+// suggested mapping whose source kind it lacks (waiting) or does not fit
+// (blocked) dropped, by admitted's rule. A target kind is the closure's own
+// and not held yet, so it is not read, as resolveOne reads none it lacks.
+func AdmitSuggested(docs []map[string]any, held func(ref string) (substrate.KindInfo, bool)) []map[string]any {
+	drop := map[string]bool{}
+	for _, sm := range vocabulary.SuggestedMappings(docs) {
+		from, ok := held(sm.From)
+		if !ok || len(fitProblems(sm, from, nil, []string{sm.To})) > 0 {
+			drop[sm.ID] = true
+		}
+	}
+	return vocabulary.WithoutMappings(docs, drop)
+}
+
 // resolveSuggested answers every suggested mapping this closure ships.
 func (b *Bundle) resolveSuggested(ctx context.Context, ds substrate.Dataset, view suggestedView) ([]suggestedResolution, error) {
 	if len(b.suggested) == 0 {

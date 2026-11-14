@@ -80,6 +80,12 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 	if a == "providers.substrate.reamde.dev" || a == "samples.substrate.reamde.dev" || c.seeded[id] {
 		return nil, fmt.Errorf("%w: %s must be shipped by this server", ErrNotPublished, id)
 	}
+	// The project's own name is permanent (decision record 0292), and a
+	// package under it that the binary ships returned above, from the binary,
+	// whatever the name's DNS says.
+	if a == vocabulary.AuthorityPublisher && !projectPackageFromDocument(id) {
+		return nil, fmt.Errorf("%w: %s is under the project's name, and this server does not ship it", ErrNotPublished, id)
+	}
 	if c.reader == nil {
 		return nil, fmt.Errorf("%w: %s is not in this server's catalog", ErrNotPublished, id)
 	}
@@ -89,6 +95,15 @@ func (c *Catalog) Resolve(ctx context.Context, id string, atLeast int64) (*Bundl
 	}
 	return c.resolveSource(ctx, id, atLeast, source)
 }
+
+// projectPackageFromDocument says whether a package under the project's name
+// that this binary does NOT ship is read from the project's authority
+// document, as any publisher's is. Today it is: the project publishes the
+// Workouts app's packages that way. Whether the project's name publishes only
+// what the binary ships is not decided; that answer goes here, and
+// TestAProjectPackageTheBinaryDoesNotShipIsReadFromTheProjectDocument states
+// today's.
+func projectPackageFromDocument(string) bool { return true }
 
 // ships reports whether this server answers for id itself: a closure it
 // carries, a package it seeds, or an id under the provider or sample
@@ -173,7 +188,7 @@ func (c *Catalog) readClosure(ctx context.Context, id string, source authority.S
 		}
 	}
 	b.AddonFor = c.documentAddonFor(b)
-	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256}
+	b.Publisher = &substrate.AuthorizationPackagePublisher{Authority: b.origin.Authority, Name: b.origin.Name, DocumentURL: b.origin.DocumentURL, FromFile: b.origin.FromFile, Digest: b.origin.SHA256, MovedTo: source.Document.MovedTo}
 	return b, nil
 }
 
@@ -215,6 +230,11 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	}
 	if count != 1 {
 		return nil, fmt.Errorf("a closure needs exactly one bundle for %s", id)
+	}
+	// `~` is the installing repository's own namespace, so a published name
+	// that spells it would name whatever that repository holds there.
+	if local := vocabulary.LocalNamesIn(declarations); len(local) > 0 {
+		return nil, fmt.Errorf("the closure names %s, in the local namespace of whoever installs it: a published closure names no package in ~", strings.Join(local, ", "))
 	}
 	// The dialect before the declarations: a header written for a newer one
 	// is that, and not whatever key of it this loader would refuse further
@@ -260,6 +280,27 @@ func ParseClosure(raw []byte, id string, version int64) (*Bundle, error) {
 	b.Provider = slices.Contains(b.Brings, substrate.BringsAccount)
 	return b, nil
 }
+
+// AdmitClosure is what an installing server admits of a closure a
+// publisher's document serves before the repository's own admission:
+// ParseClosure's boundary, and a kind it renames (decision 0269). A
+// repository that publishes runs it on every release it writes, on the bytes
+// it will serve (decision 0291). It answers the declarations and the shipped
+// records.
+func AdmitClosure(raw []byte, id string, version int64) (vocabularyDocs, dataDocs []map[string]any, err error) {
+	b, err := ParseClosure(raw, id, version)
+	if err != nil {
+		return nil, nil, err
+	}
+	if refusals := b.RenameRefusals(); len(refusals) > 0 {
+		return nil, nil, errors.New(strings.Join(refusals, "; "))
+	}
+	return b.vocabularyDocs, b.dataDocs, nil
+}
+
+// Declarations are the closure's declaration documents, as an install
+// applies them.
+func (b *Bundle) Declarations() []map[string]any { return b.vocabularyDocs }
 
 // Shared machinery belongs to a package by its id. Authentication records
 // and arbitrary records of another package never belong to this closure.

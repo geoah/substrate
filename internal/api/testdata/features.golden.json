@@ -269,5 +269,17 @@
     "routes": [
       "GET /api/v1/operator/defaults"
     ]
+  },
+  {
+    "name": "publishing",
+    "stability": "experimental",
+    "revision": 1,
+    "routes": [
+      "GET /api/v1/packages/releases",
+      "GET /published/{repository}/{authority}",
+      "GET /published/{repository}/{authority}/{package}/{version}",
+      "POST /api/v1/packages/publish",
+      "POST /api/v1/packages/release"
+    ]
   }
 ]
