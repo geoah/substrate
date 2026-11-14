@@ -44,25 +44,25 @@ private struct SeedPlan {
 
 @Suite("A server that misbehaves by a seed", .timeLimit(.minutes(240)))
 struct SeededChat {
-    @Test func everySeedKeepsEveryRule() async {
+    @Test func everySeedKeepsEveryRule() async throws {
         let plan = SeedPlan()
         var broken: [SeededRun.Violation] = []
         var noted: [SeededRun.Rule: [SeededRun.Violation]] = [:]
         var steps = 0
         var tally: [String: Int] = [:]
-        await withTaskGroup(of: SeededRun.self) { group in
+        try await withThrowingTaskGroup(of: SeededRun.self) { group in
             var waiting = plan.seeds[...]
             var running = 0
             while !waiting.isEmpty || running > 0 {
                 while running < plan.width, let seed = waiting.popFirst() {
                     running += 1
                     group.addTask {
-                        let run = await SeededRun.ran(seed: seed, steps: plan.steps)
+                        let run = try await SeededRun.ran(seed: seed, steps: plan.steps)
                         if plan.verbose { print(run.summary) }
                         return run
                     }
                 }
-                guard let run = await group.next() else { break }
+                guard let run = try await group.next() else { break }
                 running -= 1
                 steps += run.steps.count
                 tally.merge(run.tally) { $0 + $1 }
@@ -95,7 +95,7 @@ struct SeededChat {
         // there, so a change to the draws still finds one.
         var first: SeededRun?
         for seed in UInt64(17) ... 217 where caught == nil {
-            let run = await SeededRun.ran(seed: seed, revision: 2, careless: true, steps: 80)
+            let run = try await SeededRun.ran(seed: seed, revision: 2, careless: true, steps: 80)
             if let violation = run.broken, violation.rule == SeededRun.Rule.doubled.rawValue { (caught, first) = (violation, run) }
         }
         let violation = try #require(caught, "no careless run in 200 seeds sent a message twice")
@@ -104,21 +104,21 @@ struct SeededChat {
         #expect(printed.contains("replay: CHATKIT_SEED=\(violation.seed) CHATKIT_STEPS=\(violation.steps.count) swift test --filter SeededChat"))
         #expect(violation.steps.contains { $0.hasPrefix("sends ") })
         // The same seed again is the same run, to the last request.
-        let again = await SeededRun.ran(seed: violation.seed, revision: 2, careless: true, steps: 80)
+        let again = try await SeededRun.ran(seed: violation.seed, revision: 2, careless: true, steps: 80)
         #expect(again.broken?.rule == violation.rule && again.steps == violation.steps && again.fingerprint == first?.fingerprint)
     }
 
     /// A seed is one run, whatever else the host is doing: alone, and
     /// beside other runs that take the processor from it, it takes the same
     /// steps, asks the server the same things and leaves the same rows.
-    @Test func aSeedRunsTheSameWayWhateverRunsBesideIt() async {
+    @Test func aSeedRunsTheSameWayWhateverRunsBesideIt() async throws {
         let seeds: [UInt64] = [3, 8, 21, 34]
         var alone: [UInt64: SeededRun] = [:]
-        for seed in seeds { alone[seed] = await SeededRun.ran(seed: seed, steps: 60) }
-        let crowded = await withTaskGroup(of: SeededRun.self) { group in
-            for seed in seeds + (40 ..< 52) { group.addTask { await SeededRun.ran(seed: seed, steps: 60) } }
+        for seed in seeds { alone[seed] = try await SeededRun.ran(seed: seed, steps: 60) }
+        let crowded = try await withThrowingTaskGroup(of: SeededRun.self) { group in
+            for seed in seeds + (40 ..< 52) { group.addTask { try await SeededRun.ran(seed: seed, steps: 60) } }
             var out: [UInt64: SeededRun] = [:]
-            for await run in group { out[run.seed] = run }
+            for try await run in group { out[run.seed] = run }
             return out
         }
         for seed in seeds {
@@ -188,8 +188,8 @@ struct SeededServerTruth {
     }
 
     @Test func theSameSeedDrawsTheSameFaults() async throws {
-        func statuses(_ seed: UInt64) async -> [String] {
-            await SeededThread.run {
+        func statuses(_ seed: UInt64) async throws -> [String] {
+            try await SeededThread.run {
                 let thread = SeededThread.current!
                 let clock = TestClock()
                 let server = SeededServer(seed: seed, clock: clock)
@@ -213,11 +213,70 @@ struct SeededServerTruth {
                 return out
             }
         }
-        let first = await statuses(11)
-        #expect(await statuses(11) == first)
-        #expect(await statuses(12) != first)
+        let first = try await statuses(11)
+        #expect(try await statuses(11) == first)
+        #expect(try await statuses(12) != first)
         // The thread is not there (404), and the draws are of many kinds:
         // a gateway's page, a rate limit, a timeout among them.
         #expect(Set(first).isSuperset(of: ["404", "502", "429", "200", "\(URLError.Code.timedOut.rawValue)"]) && Set(first).count >= 7)
+    }
+}
+
+/// What a seeded run stands on: the runtime hands a seeded thread every job
+/// enqueued from it. Where a toolchain stops doing that, this says so
+/// first, and every seeded test fails with `SeededThread.Unordered`'s
+/// sentence: none of them passes on the pool instead.
+@Suite("A seeded run's thread", .timeLimit(.minutes(10)))
+struct SeededThreads {
+    private actor Counted {
+        private(set) var order: [Int] = []
+        private(set) var strays = 0
+        func add(_ number: Int, on thread: SeededThread) {
+            order.append(number)
+            if SeededThread.current !== thread { strays += 1 }
+        }
+    }
+
+    /// Unstructured tasks, a detached one, a group's children, hops to an
+    /// actor, yields and a continuation resumed by another task.
+    private func work() async throws -> (order: [Int], strays: Int, idleAt: Int) {
+        try await SeededThread.run {
+            let thread = SeededThread.current!
+            let counted = Counted()
+            for number in 0 ..< 20 {
+                Task {
+                    for _ in 0 ..< number % 4 { await Task.yield() }
+                    await counted.add(number, on: thread)
+                }
+            }
+            Task.detached { await counted.add(100, on: thread) }
+            await withTaskGroup(of: Void.self) { group in
+                for number in 200 ..< 206 { group.addTask { await counted.add(number, on: thread) } }
+            }
+            let parked = AsyncStream<Int>.makeStream()
+            Task {
+                for await number in parked.stream { await counted.add(number, on: thread) }
+                await counted.add(399, on: thread)
+            }
+            parked.continuation.yield(300)
+            parked.continuation.finish()
+            // Idle is exact: everything started above has run to its end.
+            await thread.idle()
+            let idleAt = await counted.order.count
+            return (await counted.order, await counted.strays, idleAt)
+        }
+    }
+
+    @Test func everyJobStartedOnItRunsOnItInTheOrderItWasEnqueued() async throws {
+        let first = try await work()
+        #expect(first.strays == 0 && first.idleAt == 29 && SeededThread.current == nil)
+        // The same order every time, alone and beside others.
+        let beside = try await withThrowingTaskGroup(of: [Int].self) { group in
+            for _ in 0 ..< 8 { group.addTask { try await work().order } }
+            var out: Set<[Int]> = []
+            for try await order in group { out.insert(order) }
+            return out
+        }
+        #expect(beside == [first.order])
     }
 }

@@ -161,8 +161,8 @@ struct SeededRun {
     /// One seed's run, made and run on a thread of its own: `count` steps,
     /// and then everything is let settle. The first rule broken ends it,
     /// and is kept in `broken`.
-    static func ran(seed: UInt64, revision: Int? = nil, careless: Bool = false, steps count: Int) async -> SeededRun {
-        await SeededThread.run {
+    static func ran(seed: UInt64, revision: Int? = nil, careless: Bool = false, steps count: Int) async throws -> SeededRun {
+        try await SeededThread.run {
             // Made here and not before: the rig's first tasks are the
             // thread's too.
             var run = SeededRun(seed: seed, revision: revision, careless: careless, on: SeededThread.current!)
