@@ -2,7 +2,7 @@
   {
     "name": "discovery",
     "stability": "stable",
-    "revision": 3,
+    "revision": 4,
     "routes": [
       "GET /.well-known/substrate/server.json",
       "GET /healthz"
@@ -91,7 +91,7 @@
   {
     "name": "auth",
     "stability": "beta",
-    "revision": 4,
+    "revision": 5,
     "routes": [
       "DELETE /tokens/{id}",
       "GET /identity",
@@ -101,6 +101,7 @@
       "POST /register",
       "POST /register/enroll",
       "POST /repository/delete",
+      "POST /repository/rename",
       "POST /signout/everywhere",
       "POST /tokens",
       "POST /totp",

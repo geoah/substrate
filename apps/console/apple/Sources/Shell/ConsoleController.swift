@@ -27,6 +27,9 @@ final class ConsoleController: NSObject, ObservableObject {
     /// The page said the app's sign-in holding this token id ended; the
     /// window hands it to the app's sessions.
     var signedOut: ((String?) -> Void)?
+    /// The page renamed the repository the sign-in holding this token id
+    /// opens; the window hands the new name to the app's sessions.
+    var renamed: ((String?, String) -> Void)?
 
     private let schemeHandler: ConsoleSchemeHandler
     private var observations: [NSKeyValueObservation] = []
@@ -153,8 +156,22 @@ final class ConsoleController: NSObject, ObservableObject {
         case "changeServer": picking = true
         case "checkForUpdates": checkForUpdates?()
         case "signedOut": signedOut?(body["tokenId"] as? String)
+        case "renamed":
+            if let repository = body["repository"] as? String { renamed?(body["tokenId"] as? String, repository) }
         default: break
         }
+    }
+
+    /// The sign-in the page reads at its next load, after the app changed it
+    /// in place, as a rename does: the script that runs before the page's
+    /// own carries it. The page in front keeps what it already read.
+    func updateSession(_ session: Session) {
+        let content = webView.configuration.userContentController
+        content.removeAllUserScripts()
+        content.addUserScript(
+            WKUserScript(
+                source: Self.shellScript(server: server, session: session), injectionTime: .atDocumentStart,
+                forMainFrameOnly: true))
     }
 
     fileprivate static func belongsInside(_ url: URL) -> Bool {

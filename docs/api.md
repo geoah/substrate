@@ -1030,7 +1030,7 @@ stability, its revision and the `surfaces` that serve it:
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp",
                "authorize": "/oauth/authorize", "token": "/oauth/token"},
- "registration": {"inviteRequired": true, "totpRequired": true}}
+ "registration": {"inviteRequired": true, "totpRequired": true, "nameHost": "substrate.example.com"}}
 ```
 
 The example's feature list is abridged; [the features](#the-features) below
@@ -1057,7 +1057,11 @@ none; `registration.totpRequired` is `false` only where the second factor is
 [switched off](auth.md#the-second-factor-can-be-switched-off-locally). Both
 describe a local substrate, and a client reads them before it asks a person
 for either code. Neither field is a verdict — the service refuses on its own
-terms either way.
+terms either way. `registration.nameHost` is the host a short name is
+completed under at a registration and a rename, the host of
+`SUBSTRATE_PUBLIC_URL`, empty where none is configured, and then a name is
+typed whole ([the default name](auth.md#the-default-name)); a client previews
+the name with it.
 
 ### The features
 
@@ -1085,7 +1089,7 @@ them:
 | `triggers` | `stable` | A trigger's status, `run`, `wake` and `replay`, its parked deliveries, and the [webhook](#webhooks) door. |
 | `functions` | `stable` | The function call ([functions](functions.md)). |
 | `bundles` | `stable` | Bundle status and `bind`, and the catalog with its one `add` ([bundles](bundles.md)). |
-| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). Since revision 4 every token is held to its person's roles, a person who is not an admin reaches `/tokens` and `/identity` for their own, and `GET /identity` lists the roles held in each repository ([roles](auth.md#roles)). |
+| `auth` | `beta` | `/register`, `/login`, `/password`, `/totp`, `/tokens`, `/identity`, `/repository/delete`, `/repository/rename` and `/signout/everywhere` ([users and tokens](auth.md)). Since revision 3 a sign-in names a person, `identity`, and may name the repository it opens ([decision 0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)). Since revision 4 every token is held to its person's roles, a person who is not an admin reaches `/tokens` and `/identity` for their own, and `GET /identity` lists the roles held in each repository ([roles](auth.md#roles)). Since revision 5 an admin renames the repository at `/repository/rename`, its former name resolving for 90 days ([renaming a repository](auth.md#renaming-a-repository)). |
 | `apps` | `beta` | App authorization: `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and their two metadata documents, the owner's `/api/v1/authorizations`, and `POST /api/v1/vocabulary/takeover` ([authorizing apps](apps.md)). |
 | `vocabulary` | `beta` | `/api/v1/vocabulary/apply`, `/plan` and `/upgrade`, and a trait's implementors ([vocabulary](vocabulary.md)). Since revision 3 a kind's description says its `control` class ([roles](auth.md#roles)). |
 | `retention` | `experimental` | `GET /api/v1/retention`: how long each kind's history is kept, as declared, overridden and in effect ([retention](#retention)). |

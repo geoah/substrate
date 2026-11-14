@@ -18,9 +18,10 @@ import type {
   IdentityInfo,
   MintedToken,
   OperationalList,
-  TokenInfo,
-  TOTPEnrollment,
+  RepositoryNames,
   SessionCredential,
+  TOTPEnrollment,
+  TokenInfo,
 } from "./types"
 
 /** How many digits a TOTP code has; the substrate accepts nothing else. */
@@ -77,10 +78,11 @@ export function registerEnroll(
 export interface RegisterInput {
   inviteCode: string
   /** The name the person will sign in with: `ada.example.com`, or a bare
-   * label the substrate completes under its own host. */
+   * label the substrate completes under its public host
+   * (`registration.nameHost`). */
   identity: string
-  /** The repository to create, which BECOMES its authority: absent takes
-   * the person's name. Permanent. */
+  /** The repository to create, and its name: absent takes the person's.
+   * It can be renamed later (`renameRepository`, decision 0287). */
   repository?: string
   password: string
   totpSecret: string
@@ -246,6 +248,25 @@ export async function deleteRepository(
     doorNamesAPerson()
       ? { identity, repository, password, totpCode }
       : { repository, password, totpCode },
+    { anonymous: true }
+  )
+}
+
+/** Give the repository a new name (decision 0287). The person and their
+ * current factors travel in the body, like the delete, and only an admin of
+ * the repository renames it. The old name keeps resolving for 90 days, and
+ * the answer says until when. */
+export function renameRepository(
+  identity: string,
+  repository: string,
+  password: string,
+  totpCode: string,
+  name: string
+): Promise<RepositoryNames> {
+  return request<RepositoryNames>(
+    "POST",
+    "/repository/rename",
+    { identity, repository, password, totpCode, name },
     { anonymous: true }
   )
 }

@@ -368,7 +368,7 @@ func (ds *dataset) webhookSignatureRefusal(ctx context.Context, tr *trigger, req
 	var why signingKeyUnresolved
 	if errors.As(err, &why) {
 		if due, unlogged := ds.webhookSecretWarnings.due(tr.ID, ds.svc.webhookNow()); due {
-			logUnresolvedSigningKey(ds.svc.log, ds.Repository().ID, tr.ID, why, unlogged)
+			logUnresolvedSigningKey(ds.svc.log, ds.info.ID, tr.ID, why, unlogged)
 		}
 		return p, signatureRefusedSecret, nil
 	}

@@ -38,7 +38,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
-	id = vocabulary.LocalizeID(ty.Identity, id, ds.info.Authority)
+	id = vocabulary.LocalizeID(ty.Identity, id, ds.names()...)
 	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: ty.Identity, ID: id})
 	if err != nil {
 		return nil, err
@@ -1401,7 +1401,7 @@ func (ds *dataset) referenceFilterIDs(ctx context.Context, x dbx, path string) (
 // it is refused rather than answered by a scan of every kind that might hold
 // the id, which containment on a flat string cannot express anyway. A path
 // under the repository's name, home, is the `~` one (decision record 0259).
-func referenceFilterPath(name string, p *vocabulary.Property, v any, home string) (string, error) {
+func referenceFilterPath(name string, p *vocabulary.Property, v any, names ...string) (string, error) {
 	s, ok := v.(string)
 	if !ok {
 		return "", fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
@@ -1410,7 +1410,7 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any, home string
 		return "", fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
 	}
 	if _, _, isPath := vocabulary.SplitRecordPath(s); isPath {
-		return vocabulary.LocalizePath(s, home), nil
+		return vocabulary.LocalizePath(s, names...), nil
 	}
 	if p.To == "" || p.To == vocabulary.ToAny {
 		return "", fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
@@ -1508,7 +1508,7 @@ func (ds *dataset) condReference(ctx context.Context, x dbx, b *builder, types [
 		var listShape *vocabulary.Property
 		for _, v := range values {
 			for _, p := range shapes {
-				path, err := referenceFilterPath(name, p, v, ds.info.Authority)
+				path, err := referenceFilterPath(name, p, v, ds.names()...)
 				if err != nil {
 					return "", err
 				}

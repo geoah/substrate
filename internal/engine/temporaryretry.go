@@ -113,7 +113,7 @@ func (ds *dataset) runDueRetries(ctx context.Context) {
 	waiting, err := ds.waitingRetries(ctx)
 	if err != nil {
 		ds.svc.log.Error("substrate: deliveries waiting for a retry could not be read",
-			"repository", ds.Repository().ID, "error", err)
+			"repository", ds.info.ID, "error", err)
 		return
 	}
 	now := ds.svc.retryNow().UTC()
@@ -168,7 +168,7 @@ func (ds *dataset) retryWaiting(ctx context.Context, tr *trigger, id int64) {
 	}
 	if err != nil && !errors.Is(err, substrate.ErrParked) {
 		ds.svc.log.Warn("substrate: the automatic retry of a temporary failure did not run",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "failure", id, "error", err)
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "failure", id, "error", err)
 	}
 }
 
@@ -198,7 +198,7 @@ func (ds *dataset) setAsideWaiting(ctx context.Context, tr *trigger, f foldFailu
 	})
 	if err != nil {
 		ds.svc.log.Warn("substrate: a temporary failure whose callable may now run an agent could not be set aside",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "failure", int64(f.ID), "error", err)
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "failure", int64(f.ID), "error", err)
 	}
 }
 

@@ -104,8 +104,9 @@ var featureTable = []feature{
 	// Revision 2: `vocabulary.dialect`, the declaration format the server
 	// reads (decision 0268). Revision 3: `grammar.actorTypes`, the types of
 	// actor record a write links, in place of the actor spellings (decision
-	// 0270).
-	{name: "discovery", stability: substrate.StabilityStable, revision: 3, surfaces: []string{surfaceREST}, routes: []string{
+	// 0270). Revision 4: `registration.nameHost`, the host a short name is
+	// completed under (decision 0288).
+	{name: "discovery", stability: substrate.StabilityStable, revision: 4, surfaces: []string{surfaceREST}, routes: []string{
 		"GET /.well-known/substrate/server.json",
 		"GET /healthz",
 	}},
@@ -191,11 +192,14 @@ var featureTable = []feature{
 		"POST /api/v1/catalog/{id}/import",
 		"POST /api/v1/catalog/{id}/install",
 	}},
-	// The sign-in door: registering, signing in, the credential changes and
-	// the tokens. Revision 4: `GET /identity` names the roles the person
-	// holds in each repository they may open (decision 0275).
+	// The sign-in door: registering, signing in, the credential changes,
+	// renaming and deleting the repository, and the tokens. Revision 4:
+	// `GET /identity` names the roles the person holds in each repository
+	// they may open (decision 0275). Revision 5: `POST /repository/rename`
+	// gives the repository a new name, its former one resolving for 90 days
+	// (decision 0287).
 	{
-		name: "auth", stability: substrate.StabilityBeta, revision: 4, surfaces: []string{surfaceREST},
+		name: "auth", stability: substrate.StabilityBeta, revision: 5, surfaces: []string{surfaceREST},
 		routes: []string{
 			"POST /register/enroll",
 			"POST /register",
@@ -204,6 +208,7 @@ var featureTable = []feature{
 			"POST /totp/enroll",
 			"POST /totp",
 			"POST /repository/delete",
+			"POST /repository/rename",
 			"POST /signout/everywhere",
 			"POST /tokens",
 			"GET /tokens",

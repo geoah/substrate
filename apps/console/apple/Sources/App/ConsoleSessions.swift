@@ -117,6 +117,26 @@ final class ConsoleSessions: ObservableObject {
         await revokePending(on: [server])
     }
 
+    /// The page renamed the repository the app's sign-in to `server` opens
+    /// (decision 0287): the sign-in keeps its token and takes the new name,
+    /// which the page reads at its next load and every credential change
+    /// sends. A message about another token, such as a late one from a page
+    /// the app has since replaced, changes nothing. Answers the sign-in as it
+    /// stands after, nil where nothing changed or the Keychain kept the old.
+    func renamed(on server: URL, tokenID: String?, repository: String) async -> Session? {
+        guard var session = session(for: server), tokenID == nil || session.tokenID == tokenID,
+            session.repository != repository
+        else { return nil }
+        session.repository = repository
+        do {
+            try await store(for: server).save(session)
+        } catch {
+            return nil
+        }
+        changed(server)
+        return session
+    }
+
     /// Signs out of `server` and forgets it: the sign-in revoked, the page's
     /// own sign-in door and the server's console state dropped.
     func forget(_ server: URL) async {

@@ -102,6 +102,20 @@ var repositoryMigrations = []repositoryMigration{
 // not know what that code changed.
 var ErrRepositoryMigrationsNewer = errors.New("substrate/engine: the repository recorded migrations this binary does not carry")
 
+// runLandedRepositoryMigrations is runRepositoryMigrations for an open. Its
+// one exception to the rule that a dataset holds no name (namescache.go):
+// migration 6, landed and frozen, finds the repository's record under the
+// name it was written with by reading `ds.info.Authority`, so the field holds
+// the name the open read from the row while the migrations run, and nothing
+// after them. The dataset is not published yet, so nothing else reads it.
+func (ds *dataset) runLandedRepositoryMigrations(name string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		ds.info.Authority = name
+		defer func() { ds.info.Authority = "" }()
+		return ds.runRepositoryMigrations(ctx)
+	}
+}
+
 // runRepositoryMigrations runs the pending migrations for this repository, in
 // order, and refuses a ledger that diverges from what the binary carries.
 func (ds *dataset) runRepositoryMigrations(ctx context.Context) error {

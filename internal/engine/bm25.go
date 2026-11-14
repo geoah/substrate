@@ -133,7 +133,7 @@ func (ds *dataset) searchStats(ctx context.Context) (searchStats, error) {
 	spawn := func(fn func(context.Context)) bool { return ds.spawn("search statistics", fn) }
 	warn := func(err error) {
 		ds.svc.log.Warn("substrate: search statistics read failed; searches rank with the statistics held, or none",
-			"repository", ds.Repository().ID, "error", err)
+			"repository", ds.info.ID, "error", err)
 	}
 	return ds.statsCache.get(ctx, ds.readSearchStats, spawn, warn), nil
 }

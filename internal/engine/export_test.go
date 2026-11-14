@@ -102,7 +102,7 @@ func MakeMigrationPending(t *testing.T, dsn, repository string, version int) {
 func SharedScopedDB(svc substrate.Service, repository string) (*sql.DB, error) {
 	s := svc.(*service)
 	if !vocabulary.ValidRepositoryID(repository) {
-		repo, err := s.repositoryByAuthority(context.Background(), repository)
+		repo, err := s.repositoryByName(context.Background(), repository)
 		switch {
 		case err == nil:
 			repository = repo.ID

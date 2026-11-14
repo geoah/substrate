@@ -257,7 +257,7 @@ func TestADeleteHeldAfterItsProofErasesNothing(t *testing.T) {
 		return h.s.DeleteRepository(ctx, in)
 	}, h.signOutWithANewPassword(t))
 	wantFactorsChanged(t, "a repository's delete", err)
-	if _, err := h.s.repositoryByAuthority(ctx, h.name); err != nil {
+	if _, err := h.s.repositoryByName(ctx, h.name); err != nil {
 		t.Fatalf("the repository is gone after a refused delete: %v", err)
 	}
 	if _, err := h.s.Dataset(ctx, h.name); err != nil {
@@ -291,7 +291,7 @@ func TestARegistrationHeldAfterItsProofCreatesNothingOnceItsNameIsTaken(t *testi
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a registration held while another took its name: %v, want the name refused as taken", err)
 	}
-	if _, err := h.s.repositoryByAuthority(ctx, first); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := h.s.repositoryByName(ctx, first); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused registration's repository: %v, want none", err)
 	}
 	person, err := h.s.identityByName(ctx, h.s.maint, name)
@@ -510,7 +510,7 @@ func TestTwoResetsOfARestoredRepositoryGiveItOnePerson(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	h := openHeldDoor(t, "reset")
-	repo, err := h.s.repositoryByAuthority(ctx, h.name)
+	repo, err := h.s.repositoryByName(ctx, h.name)
 	if err != nil {
 		t.Fatal(err)
 	}

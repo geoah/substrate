@@ -425,7 +425,7 @@ func (t *txn) checkTriggerCallableRow(tr *trigger) error {
 // "<authority>/<package>") or by its
 // owned authority — the two spellings a caller reasonably has in hand.
 func (ds *dataset) bundleByID(id string) (*vocabulary.Bundle, error) {
-	id = vocabulary.LocalizeRef(id, ds.info.Authority)
+	id = vocabulary.LocalizeRef(id, ds.names()...)
 	if b, ok := ds.registry().BundleOf(id); ok {
 		return b, nil
 	}
@@ -497,7 +497,7 @@ func (ds *dataset) BundlePackage(ctx context.Context, id string) (string, error)
 // QUARANTINED bundle (issue 010: its package is absent from the live registry)
 // still uninstallable.
 func (ds *dataset) bundlePackageOf(ctx context.Context, id string) (string, error) {
-	id = vocabulary.LocalizeRef(id, ds.info.Authority)
+	id = vocabulary.LocalizeRef(id, ds.names()...)
 	if b, err := ds.bundleByID(id); err == nil {
 		return b.Package, nil
 	}

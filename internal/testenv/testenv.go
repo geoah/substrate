@@ -220,15 +220,6 @@ func Start(t testing.TB, opts ...Option) *Env {
 		_ = svc.Close()
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
-	handler := api.New(api.Config{
-		Service:    svc,
-		Catalog:    cat,
-		InviteCode: InviteCode,
-		// The auth rate limiter reads the same clock as the TOTP verifier, so
-		// a test spaces two logins by advancing it rather than sleeping.
-		Now: o.now,
-	})
-
 	// A real listener on a kernel-assigned port: two tests in one binary must
 	// not race for a number, and a test that reads e.URL gets something it
 	// could paste into curl.
@@ -237,6 +228,21 @@ func Start(t testing.TB, opts ...Option) *Env {
 		_ = svc.Close()
 		t.Fatalf("testenv: listen: %v", err)
 	}
+	url := "http://" + ln.Addr().String()
+	handler := api.New(api.Config{
+		Service:    svc,
+		Catalog:    cat,
+		InviteCode: InviteCode,
+		// The server's public URL is the address the tests reach it at, a
+		// loopback one, as `mise run dev` sets: a short name is completed
+		// under it, and a name under it is admitted, as in development
+		// (decision record 0288).
+		PublicURL: url,
+		// The auth rate limiter reads the same clock as the TOTP verifier, so
+		// a test spaces two logins by advancing it rather than sleeping.
+		Now: o.now,
+	})
+
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	var once sync.Once
@@ -252,7 +258,7 @@ func Start(t testing.TB, opts ...Option) *Env {
 
 	env := &Env{
 		Session: &Session{Repository: o.repository},
-		URL:     "http://" + ln.Addr().String(),
+		URL:     url,
 		DSN:     dsn, Service: svc, t: t, now: o.now, stop: stop,
 		client: &http.Client{Timeout: 120 * time.Second},
 	}

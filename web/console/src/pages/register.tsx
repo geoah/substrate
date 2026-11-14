@@ -148,11 +148,12 @@ function validDomain(name: string): boolean {
   return labels.length > 1 && labels.every((l) => LABEL.test(l))
 }
 
-/** The authority a repository name resolves to, mirroring the server's rule
- * (`vocabulary.RepositoryAuthority`) so the form shows the name the
- * repository will actually get. On this server's address the reader types one
- * label and it sits under the substrate's host, which never changes with what
- * they type: a domain of their own is the advanced option's alone, so nobody
+/** The name a repository name resolves to, mirroring the server's rule
+ * (`vocabulary.NameRule.New`) so the form shows the name the repository will
+ * actually get. The reader types one label and it sits under the host the
+ * server names in discovery (`registration.nameHost`, its public URL's host),
+ * which never changes with what they type or the address they reached this
+ * page at: a domain of their own is the advanced option's alone, so nobody
  * claims one by accident. */
 function repositoryAuthority(
   name: string,
@@ -167,7 +168,7 @@ function repositoryAuthority(
 }
 
 /** What choosing their own domain means, said before the reader commits to a
- * name nothing lets them change: it must be theirs, and it is proved after
+ * name others will reach them at: it must be theirs, and it is proved after
  * registration with one TXT record (decision 0208). */
 function OwnDomainGuide({ domain }: { domain: string }) {
   const name = domain || "home.example.org"
@@ -221,9 +222,15 @@ function OwnDomainGuide({ domain }: { domain: string }) {
  * where the owner goes. */
 export function RegisterPage() {
   useDocumentTitle("Create your Substrate")
-  const { inviteRequired, totpRequired } = useAuthPolicy()
+  const { inviteRequired, totpRequired, nameHost } = useAuthPolicy()
   const site = useSite()
-  const host = substrateHostname().replace(/\.$/, "").toLowerCase()
+  // Until discovery answers, the page's own host stands in for the preview,
+  // and the bare label is what is sent: the server completes it under its
+  // own. Once it answers with no host, there is none to complete under, and
+  // the name is typed whole.
+  const host = (nameHost ?? substrateHostname())
+    .replace(/\.$/, "")
+    .toLowerCase()
   const navigate = useNavigate()
   // A deployment whose operator supplies keys greets a new repository on
   // Providers, with a welcome that says what works now.
@@ -234,14 +241,16 @@ export function RegisterPage() {
   const [inviteCode, setInviteCode] = useState("")
   const [repository, setRepository] = useState("")
   // With no host to complete a label under (a native shell whose server
-  // address does not parse), the reader's own domain is the only name there
-  // is.
+  // address does not parse, a server with no public URL), the reader's own
+  // domain is the only name there is.
   const [ownDomainChosen, setOwnDomain] = useState(false)
   const ownDomain = ownDomainChosen || !host
   // The name the repository will actually get. Sending the resolved value
   // rather than leaving the completion to the server keeps what the form
   // shows and what the repository gets one string.
   const authority = repositoryAuthority(repository, host, ownDomain)
+  const sent =
+    nameHost || ownDomain || !authority ? authority : cleanName(repository)
   const typed = cleanName(repository)
   // A domain is wrong until its last label is typed, so its error waits for
   // the reader to leave the field; a label is wrong the moment it is.
@@ -329,7 +338,7 @@ export function RegisterPage() {
     setError(null)
     setBusy(true)
     try {
-      setEnrolled(await registerEnroll(inviteCode.trim(), authority))
+      setEnrolled(await registerEnroll(inviteCode.trim(), sent))
     } catch (err) {
       fail(err)
     } finally {
@@ -352,7 +361,7 @@ export function RegisterPage() {
     try {
       const minted = await register({
         inviteCode: inviteCode.trim(),
-        identity: authority,
+        identity: sent,
         password,
         totpSecret: skip ? "" : (enrollment?.totpSecret ?? ""),
         totpCode: normalized,
@@ -564,10 +573,10 @@ export function RegisterPage() {
                   <span className="font-medium [overflow-wrap:anywhere] text-foreground">
                     {authority}
                   </span>
-                  . It can&rsquo;t be changed later.
+                  . You can rename it later in Settings.
                 </>
               ) : (
-                "Your Substrate’s address and sign-in name. It can’t be changed later."
+                "Your Substrate’s address and sign-in name. You can rename it later in Settings."
               )}
             </p>
             {host && (

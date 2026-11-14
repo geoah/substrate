@@ -436,7 +436,7 @@ func (c *idempotentCall) downstreamKey(callable string) string {
 	if c == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s/%s/call/key/%s", c.ds.Repository().ID, callable, c.key)
+	return fmt.Sprintf("%s/%s/call/key/%s", c.ds.info.ID, callable, c.key)
 }
 
 // lost is the refusal every conditional write answers with when the row is
@@ -557,7 +557,7 @@ func (c *idempotentCall) release(ctx context.Context) {
 		 WHERE operation = $1 AND key = $2 AND owner = $3 AND settled_at IS NULL AND thread IS NULL`,
 		string(c.op), c.key, c.owner); err != nil {
 		c.ds.svc.log.Warn("substrate: releasing an idempotency key after a failed attempt",
-			"repository", c.ds.Repository().ID, "operation", string(c.op), "error", err)
+			"repository", c.ds.info.ID, "operation", string(c.op), "error", err)
 	}
 }
 

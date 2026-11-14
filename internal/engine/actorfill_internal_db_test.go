@@ -22,7 +22,7 @@ func TestTheActorFillWritesAGoneHandDisabledAndNothingForAnIDNoHandDerives(t *te
 	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
-	authority := ds.info.Authority
+	authority := ds.Repository().Authority
 	contact := mustPutInternal(t, ds, substrate.PutInput{Kind: "substrate.reamde.dev/core/contact", ID: fid("ada"), Properties: map[string]any{"name": "Ada"}})
 	gone := vocabulary.ActorID(substrate.FunctionActor(authority, "gone", "fn"))
 	nobody := vocabulary.DerivedMintedID("actorfill", "nobody")

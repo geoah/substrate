@@ -251,16 +251,16 @@ func (s Scope) HomeRelative() bool {
 	return p == Home+"/*" || strings.HasPrefix(p, Home+"/")
 }
 
-// Localize folds the repository's full name, authority, into `~`:
-// `read:ada.example.com/tasks/*` is `read:~/tasks/*` in the repository named
-// ada.example.com, the one spelling a token stores. A scope naming another
-// authority comes back unchanged.
-func (s Scope) Localize(authority string) Scope {
+// Localize folds the repository's names (its name, then the former names it
+// still answers to) into `~`: `read:ada.example.com/tasks/*` is
+// `read:~/tasks/*` in the repository named ada.example.com, the one spelling
+// a token stores. A scope naming another authority comes back unchanged.
+func (s Scope) Localize(names ...string) Scope {
 	if trait, ok := s.Trait(); ok {
-		s.Pattern = TraitPattern(vocabulary.LocalizeRef(trait, authority))
+		s.Pattern = TraitPattern(vocabulary.LocalizeRef(trait, names...))
 		return s
 	}
-	s.Pattern = vocabulary.LocalizeRef(s.Pattern, authority)
+	s.Pattern = vocabulary.LocalizeRef(s.Pattern, names...)
 	return s
 }
 

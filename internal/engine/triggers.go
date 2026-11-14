@@ -701,7 +701,7 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	// a crafted id cannot forge log lines and no secret-shaped value — the
 	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
-		"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+		"repository", logSafeID(ds.info.ID), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
 }
 
 // refuseOpenShippedWebhook refuses a write that leaves a webhook trigger a
@@ -793,12 +793,12 @@ func (ds *dataset) reportOpenShippedWebhooks(ctx context.Context) error {
 	open, err := ds.openShippedWebhooks(ctx)
 	if err != nil {
 		ds.svc.log.Warn("substrate: could not look for open webhook triggers a package shipped",
-			"repository", logSafeID(ds.Repository().ID), "error", err)
+			"repository", logSafeID(ds.info.ID), "error", err)
 		return nil
 	}
 	for _, id := range slices.Sorted(maps.Keys(open)) {
 		ds.svc.log.Warn("substrate: a webhook trigger a package shipped is enabled with no key and no signature, so it runs for anyone who reaches the server; set its source.webhook.key or turn it off (decision 0248)",
-			"repository", logSafeID(ds.Repository().ID), "trigger", logSafeID(id), "package", logSafeID(open[id]))
+			"repository", logSafeID(ds.info.ID), "trigger", logSafeID(id), "package", logSafeID(open[id]))
 	}
 	return nil
 }

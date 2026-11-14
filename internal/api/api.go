@@ -32,6 +32,7 @@ import (
 	"github.com/geoah/substrate/internal/metrics"
 	"github.com/geoah/substrate/internal/site"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // APIVersion is the ONE served API version; it versions the
@@ -191,6 +192,9 @@ type handler struct {
 	verifier  appPublishers
 	parkRate  *rateLimiter
 	publicURL string
+	// names turns what a person types into a repository's name (decision
+	// record 0288): under the public URL's host, never the request's.
+	names vocabulary.NameRule
 	// resolver and instances are domain verification's two reads of the
 	// outside world (domain.go).
 	resolver  domains.Resolver
@@ -241,6 +245,7 @@ func New(cfg Config) http.Handler {
 		verifier:     cfg.Publishers,
 		parkRate:     newRateLimiter(interval, now),
 		publicURL:    strings.TrimRight(cfg.PublicURL, "/"),
+		names:        vocabulary.NameRuleFor(cfg.PublicURL),
 		packages:     cfg.Packages,
 		refresher:    cfg.PackageRefresher,
 		setUpEnded:   cfg.setUpEnded,
@@ -349,6 +354,7 @@ func New(cfg Config) http.Handler {
 		r.Post("/totp/enroll", h.postTOTPBegin)
 		r.Post("/totp", h.postTOTP)
 		r.Post("/repository/delete", h.postDeleteRepository)
+		r.Post("/repository/rename", h.postRenameRepository)
 		// Signing out everywhere ends every token, so a token is no evidence
 		// for it either.
 		r.Post("/signout/everywhere", h.postSignOutEverywhere)

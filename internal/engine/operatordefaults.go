@@ -158,7 +158,7 @@ func (ds *dataset) llmDefault(ctx context.Context, row *erow, failing string) su
 		item.Source, item.Readiness = substrate.SourceOwn, substrate.ReadinessReady
 		if _, err := ds.resolveProvider(ctx, row.ID); err != nil {
 			item.Readiness, item.Message = substrate.ReadinessNotSetUp, refusalText(err)
-		} else if status := ds.keyStatus(ownKeyID(ds.Repository().ID, row.ID, storedKey)); status != 0 {
+		} else if status := ds.keyStatus(ownKeyID(ds.info.ID, row.ID, storedKey)); status != 0 {
 			failing = keyRefusedText(vendorName(propString(row, "label"), row.ID), status)
 		}
 	default:

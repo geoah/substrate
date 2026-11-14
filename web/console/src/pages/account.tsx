@@ -41,6 +41,7 @@ import {
   deleteRepository,
   identityQueryOptions,
   normalizeCode,
+  renameRepository,
   signOutEverywhere,
   totpChange,
   totpEnroll,
@@ -53,7 +54,12 @@ import {
   useAuthPolicy,
 } from "@/lib/api/discovery"
 import { recordQueryOptions } from "@/lib/api/records"
-import { clearSession, getIdentityName, getRepository } from "@/lib/api/session"
+import {
+  clearSession,
+  getIdentityName,
+  getRepository,
+  setRepository,
+} from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
 const MIN_PASSWORD = 8
@@ -61,6 +67,16 @@ const MIN_PASSWORD = 8
 /** The `auth` revision that added signing out everywhere: the route, and the
  * password change's option. */
 const SIGN_OUT_EVERYWHERE_REVISION = 2
+
+/** The `auth` revision that added renaming the repository (decision 0287). */
+const RENAME_REVISION = 5
+
+/** Whether the server can rename the repository. A console bundled in an app
+ * may talk to an older one. */
+function useRenameOffered(): boolean {
+  const discovery = useQuery(discoveryQueryOptions)
+  return hasFeature(discovery.data, "auth", RENAME_REVISION)
+}
 
 /** Whether the server can sign the person out everywhere. A console bundled
  * in an app may talk to an older one. */
@@ -162,13 +178,14 @@ async function copy(value: string) {
  * Verify domain there, beside the mark it clears), the name the person signs
  * in with, the password and the second factor. */
 export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
-  const repository = getRepository() ?? ""
+  const [repository, setName] = useState(getRepository() ?? "")
   const identity = useIdentityName()
   const { totpRequired } = useAuthPolicy()
   const codeOwed = useCodeOwed()
+  const renameOffered = useRenameOffered()
   const [technical] = useTechnicalDetails()
-  const [open, setOpen] = useState<"password" | "totp" | null>(null)
-  const toggle = (which: "password" | "totp") =>
+  const [open, setOpen] = useState<"password" | "totp" | "rename" | null>(null)
+  const toggle = (which: "password" | "totp" | "rename") =>
     setOpen((o) => (o === which ? null : which))
 
   return (
@@ -182,13 +199,44 @@ export function AccountRows({ afterName }: { afterName?: ReactNode } = {}) {
             <UnverifiedMark />
           </span>
         }
-        description="Your Substrate’s address: the home of your data and of the kinds you declare."
+        description={
+          renameOffered
+            ? "Your Substrate’s address: the home of your data and of the kinds you declare. Renaming keeps the old name working for 90 days."
+            : "Your Substrate’s address: the home of your data and of the kinds you declare."
+        }
         control={
           repository ? (
-            <CopyButton value={repository} label="Copy your repository name" />
+            <span className="inline-flex items-center gap-2">
+              <CopyButton
+                value={repository}
+                label="Copy your repository name"
+              />
+              {renameOffered && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-expanded={open === "rename"}
+                  onClick={() => toggle("rename")}
+                >
+                  {open === "rename" ? "Cancel" : "Rename…"}
+                </Button>
+              )}
+            </span>
           ) : undefined
         }
-      />
+      >
+        {open === "rename" && (
+          <RenameRepositoryForm
+            identity={identity}
+            repository={repository}
+            codeOwed={codeOwed}
+            onDone={(name) => {
+              setName(name)
+              setOpen(null)
+            }}
+          />
+        )}
+      </SettingRow>
       {afterName}
       <SettingRow
         title={
@@ -421,6 +469,152 @@ function SignOutEverywhereForm({
           <Button type="submit" disabled={!canSubmit || isBusy}>
             {isBusy && <Spinner />}
             Sign out everywhere
+          </Button>
+        </Field>
+      </FieldGroup>
+    </form>
+  )
+}
+
+/** The rename: the new name, completed under the server's name host as at
+ * registration, and the person's current factors; only an admin of the
+ * repository renames it, which the server says to anyone else. The old name
+ * keeps resolving for 90 days, which the toast says, and this browser's token
+ * and session stay: a rename moves neither the token nor the data, only the
+ * name. */
+function RenameRepositoryForm({
+  identity,
+  repository,
+  codeOwed,
+  onDone,
+}: {
+  identity: string
+  repository: string
+  codeOwed: boolean
+  onDone: (name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { nameHost } = useAuthPolicy()
+  const [name, setName] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [isBusy, setBusy] = useState(false)
+
+  const typed = name.trim().toLowerCase().replace(/\.$/, "")
+  const preview =
+    typed && !typed.includes(".") && nameHost ? `${typed}.${nameHost}` : typed
+  const canSubmit =
+    identity !== "" &&
+    typed.length > 0 &&
+    preview !== repository &&
+    password.length > 0 &&
+    (!codeOwed || normalizeCode(code) !== null)
+
+  async function submit() {
+    const normalized = codeOwed ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
+    setError(null)
+    setBusy(true)
+    let renamed
+    try {
+      renamed = await renameRepository(
+        identity,
+        repository,
+        password,
+        normalized,
+        typed
+      )
+    } catch (err) {
+      setError(describe(err))
+      setCode("")
+      setBusy(false)
+      return
+    }
+    setRepository(renamed.name)
+    await queryClient.invalidateQueries()
+    const held = renamed.formerNames.find((f) => f.name === repository)
+    toast.add({
+      type: "success",
+      title: `Renamed to ${renamed.name}.`,
+      description: held
+        ? `${repository} keeps working until ${new Date(held.until).toLocaleDateString()}.`
+        : undefined,
+    })
+    setBusy(false)
+    onDone(renamed.name)
+  }
+
+  return (
+    <form
+      aria-label="Rename your Substrate"
+      className="max-w-sm"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <FieldGroup>
+        {error && (
+          <p role="alert" className="text-sm font-normal text-destructive">
+            {error}
+          </p>
+        )}
+        <Field>
+          <FieldLabel htmlFor="rename-name">New name</FieldLabel>
+          <Input
+            id="rename-name"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={nameHost ? `you.${nameHost}` : "you.example.com"}
+            className="font-mono"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <FieldDescription>
+            {preview && preview !== typed ? (
+              <>
+                Your name becomes{" "}
+                <span className="font-mono [overflow-wrap:anywhere] text-foreground">
+                  {preview}
+                </span>
+                .{" "}
+              </>
+            ) : null}
+            {repository} keeps working for 90 days, then anyone may register it.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="rename-password">Current password</FieldLabel>
+          <Input
+            id="rename-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        {codeOwed && (
+          <Field>
+            <FieldLabel htmlFor="rename-code">Current code</FieldLabel>
+            <Input
+              id="rename-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={CODE_DIGITS + 2}
+              placeholder="123456"
+              className="font-mono tracking-[0.25em]"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </Field>
+        )}
+        <Field>
+          <Button type="submit" disabled={!canSubmit || isBusy}>
+            {isBusy && <Spinner />}
+            Rename
           </Button>
         </Field>
       </FieldGroup>

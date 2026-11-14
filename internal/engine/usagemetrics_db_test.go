@@ -17,9 +17,9 @@ import (
 func TestUsageMetricsCountAWriteAndReadTheInventory(t *testing.T) {
 	t.Parallel()
 	ds := newRaceDataset(t)
-	// A series names its repository by its name, as the kinds it labels do.
-	name := ds.Repository().Authority
-	changes := metrics.Changes.WithLabelValues(metrics.Repository(name), metrics.Name(name, raceWidget), "put", "person")
+	// A series names its repository by its id, which a rename does not move.
+	id := ds.info.ID
+	changes := metrics.Changes.WithLabelValues(metrics.Repository(id), metrics.Name(id, raceWidget), "put", "person")
 	before := counterValue(t, changes)
 
 	racePut(t, ds, map[string]any{"name": "one"})

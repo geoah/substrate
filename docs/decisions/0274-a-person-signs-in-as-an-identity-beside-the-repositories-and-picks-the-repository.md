@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-13
 decision-makers: George Antoniadis
+amended-by: 0288
 ---
 
 # 0274. A person signs in as an identity beside the repositories, and picks the repository

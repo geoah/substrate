@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/geoah/substrate/internal/vocabulary"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Scope is the repository every repository-scoped query runs under. It is the
@@ -296,15 +298,14 @@ func repositoryIDOf(dsn, name string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = db.Close() }()
-	var id string
-	err = db.QueryRowContext(context.Background(), `SELECT id FROM repositories WHERE authority = $1`, name).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	repo, err := lookupRepositoryByName(context.Background(), db, name, time.Now().UTC())
+	if errors.Is(err, substrate.ErrNotFound) {
 		return name, nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("substrate/engine: find repository %s: %w", name, err)
 	}
-	return id, nil
+	return repo.ID, nil
 }
 
 // openMaint opens the BYPASSRLS pool: no repository setting, so an accidental

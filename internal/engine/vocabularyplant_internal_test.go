@@ -28,8 +28,8 @@ import (
 func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string, props map[string]any) error {
 	// A declaration of the repository's own is stored under `~`, so the
 	// row a test names by the full name is that one (decision record 0259).
-	kindIdent = vocabulary.LocalizeRef(kindIdent, ds.info.Authority)
-	id = vocabulary.LocalizeID(kindIdent, id, ds.info.Authority)
+	kindIdent = vocabulary.LocalizeRef(kindIdent, ds.name())
+	id = vocabulary.LocalizeID(kindIdent, id, ds.name())
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		row, err := t.loadRow(eref{Kind: kindIdent, ID: id}, true)
 		if err != nil {
@@ -118,7 +118,7 @@ func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substra
 // closure, as the import that landed the closure would have: a fixture that
 // plants the rows an older binary imported reads as that unedited copy.
 func (ds *dataset) StampOriginDigest(ctx context.Context, pkg string) error {
-	pkg = vocabulary.LocalizeRef(pkg, ds.info.Authority)
+	pkg = vocabulary.LocalizeRef(pkg, ds.name())
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		digest, err := ds.packageClosureDigest(ctx, t.tx, pkg)
 		if err != nil {

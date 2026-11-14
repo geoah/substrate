@@ -82,7 +82,7 @@ func authRegisterAtTheDoor(t *testing.T, env *dbEnv, repository string) *httptes
 
 func TestRegisterThenLogin(t *testing.T) {
 	t.Parallel()
-	env := newDBEnv(t, withoutRepository())
+	env := newDBEnv(t, withoutRepository(), withNameHost("example.com"))
 	label := testdb.RepositoryLabel(t)
 
 	// Step one issues the enrollment and writes nothing.
@@ -139,7 +139,7 @@ func TestRegisterThenLogin(t *testing.T) {
 // with a factor answers a codeless login totp_required.
 func TestRegistrationMaySkipTheSecondFactor(t *testing.T) {
 	t.Parallel()
-	env := newDBEnv(t, withoutRepository())
+	env := newDBEnv(t, withoutRepository(), withNameHost("example.com"))
 	label := testdb.RepositoryLabel(t)
 	rec := env.do(t, http.MethodPost, registerPath, "", map[string]any{
 		"inviteCode": testInviteCode, "identity": label,
@@ -216,7 +216,7 @@ func TestRegistrationKeepsADottedRepositoryName(t *testing.T) {
 // checked against the seed the enrollment handed out.
 func TestRegistrationAdmitsWithoutACodeWhenNoneIsConfigured(t *testing.T) {
 	t.Parallel()
-	env := newDBEnv(t, withoutRepository(), withConfig(func(c *Config) { c.InviteCode = "" }))
+	env := newDBEnv(t, withoutRepository(), withNameHost("example.com"), withConfig(func(c *Config) { c.InviteCode = "" }))
 	label := testdb.RepositoryLabel(t)
 	rec := env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
 		"inviteCode": "", "identity": label,

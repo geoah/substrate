@@ -65,7 +65,7 @@ final class ConsoleSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated static func isSubstratePath(_ path: String, accept: String?) -> Bool {
         for prefix in ["/api/", "/.well-known/", "/site/"] where path.hasPrefix(prefix) { return true }
         if path == "/healthz" { return true }
-        let door = ["/login", "/register", "/password", "/totp", "/tokens", "/identity", "/signout/everywhere", "/repository/delete"]
+        let door = ["/login", "/register", "/password", "/totp", "/tokens", "/identity", "/signout/everywhere", "/repository/delete", "/repository/rename"]
         if door.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) {
             return !(accept ?? "").contains("text/html")
         }

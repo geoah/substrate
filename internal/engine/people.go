@@ -178,7 +178,7 @@ func (ds *dataset) settlePeople(ctx context.Context) error {
 			// The person from before roles could do everything, and keeps
 			// it as `admin`.
 			if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-				if err := t.namePersonActor(substrate.ActorPerson, person, ds.info.Authority); err != nil {
+				if err := t.namePersonActor(substrate.ActorPerson, person, ds.name()); err != nil {
 					return err
 				}
 				return t.givePersonRoles(substrate.ActorPerson, scope.RoleAdmin)

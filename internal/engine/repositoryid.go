@@ -329,7 +329,7 @@ var errIDUnproven = errors.New("substrate/engine: the directory's manifest names
 // An id no row holds is the one a keying cut short gave a directory being
 // restored, and is the directory's.
 func (s *service) claimedID(ctx context.Context, dir string, m changelogfile.Manifest) error {
-	if repo, err := s.repositoryByAuthority(ctx, m.Authority); err == nil && repo.ID != m.ID {
+	if repo, err := s.repositoryByName(ctx, m.Authority); err == nil && repo.ID != m.ID {
 		return fmt.Errorf("%w: the directory %s names id %s, and this database's repository %s is %s; move the directory out of the data root",
 			errIDUnproven, dir, m.ID, m.Authority, repo.ID)
 	} else if err != nil && !errors.Is(err, substrate.ErrNotFound) {
@@ -443,7 +443,7 @@ func (s *service) directoryKey(ctx context.Context, dir string, m changelogfile.
 		// A directory being restored (no row holds the name) may leave its
 		// secrets behind if the operator listed it (lostsecrets.go); one a
 		// row holds cannot be proven that row's without its data key.
-		if _, rerr := s.repositoryByAuthority(ctx, m.Authority); !errors.Is(rerr, substrate.ErrNotFound) {
+		if _, rerr := s.repositoryByName(ctx, m.Authority); !errors.Is(rerr, substrate.ErrNotFound) {
 			if rerr != nil {
 				return "", nil, rerr
 			}
@@ -465,7 +465,7 @@ func (s *service) directoryKey(ctx context.Context, dir string, m changelogfile.
 		}
 		return id, dek, nil
 	}
-	repo, err := s.repositoryByAuthority(ctx, m.Authority)
+	repo, err := s.repositoryByName(ctx, m.Authority)
 	switch {
 	case errors.Is(err, substrate.ErrNotFound):
 		id, err := vocabulary.NewRepositoryID()

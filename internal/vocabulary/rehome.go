@@ -2,6 +2,7 @@ package vocabulary
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -101,12 +102,32 @@ func LocalizeAuthority(docs []map[string]any, from, home string) ([]map[string]a
 	return out, nil
 }
 
-// localizeOwnDocument is one of the repository's own documents with its name,
-// home, folded into `~` where it names something: a declaration's id and its
-// name keys (LocalizeDeclaration), another record's id where its kind is
-// named by a reference.
-func localizeOwnDocument(d map[string]any, home string) (map[string]any, error) {
+// LocalizeOwnDocuments is the repository's own documents with its names (its
+// name, then the former names it still answers to, decision record 0287)
+// folded into `~` where they name something, as LocalizeAuthority admits them
+// under one name. An authority document of any of those names stays as
+// written: it describes a publisher, and `~` has none.
+func LocalizeOwnDocuments(docs []map[string]any, names ...string) ([]map[string]any, error) {
+	out := make([]map[string]any, 0, len(docs))
+	for _, d := range docs {
+		own, err := localizeOwnDocument(d, names...)
+		if err != nil {
+			return nil, fmt.Errorf("admitting %s: %w", mapPathString(d, "metadata", "id"), err)
+		}
+		out = append(out, own)
+	}
+	return out, nil
+}
+
+// localizeOwnDocument is one of the repository's own documents with its names
+// folded into `~` where they name something: a declaration's id and its name
+// keys (LocalizeDeclaration), another record's id where its kind is named by
+// a reference. An authority document stays as written.
+func localizeOwnDocument(d map[string]any, names ...string) (map[string]any, error) {
 	kind, _ := d["kind"].(string)
+	if kind == CoreKind(DocAuthority) {
+		return d, nil
+	}
 	out := make(map[string]any, len(d))
 	for k, v := range d {
 		out[k] = v
@@ -117,13 +138,13 @@ func localizeOwnDocument(d map[string]any, home string) (map[string]any, error) 
 			for k, v := range meta {
 				m[k] = v
 			}
-			m["id"] = LocalizeID(kind, id, home)
+			m["id"] = LocalizeID(kind, id, names...)
 			out["metadata"] = m
 		}
 	}
 	if _, declaration := declarationKinds[kind]; declaration {
 		if data, ok := d["data"]; ok {
-			localized, err := LocalizeDeclaration(kind, data, home)
+			localized, err := LocalizeDeclaration(kind, data, names...)
 			if err != nil {
 				return nil, err
 			}
@@ -264,26 +285,29 @@ func lowerWord(s string) int {
 }
 
 // LocalizeDeclaration is the data of a declaration of kind (a declaration
-// record kind, CoreKind(DocKind) and the rest) with the repository's name,
-// home, folded into `~` where the dialect says a key names something
+// record kind, CoreKind(DocKind) and the rest) with the repository's names,
+// its name first, then the former names it still answers to, folded into `~`
+// where the dialect says a key names something
 // (declarationPositions): a reference position, in every form the loader
 // accepts there (a name, a pattern, a glob, a record path, a reference
-// value's object, a list of any of them), `authority` when it is the name,
+// value's object, a list of any of them), `authority` when it is one of the
+// names,
 // and the packages `requiresAtLeast` keys. Every other value stays as
 // written, whatever it looks like. The data of a kind no declaration has
 // stays whole. Two `requiresAtLeast` entries that become one package are
 // refused: the floors they set cannot both hold.
-func LocalizeDeclaration(kind string, v any, home string) (any, error) {
+func LocalizeDeclaration(kind string, v any, names ...string) (any, error) {
 	root, ok := declarationRoots[kind]
-	if home == "" || !ok {
+	if len(names) == 0 || names[0] == "" || !ok {
 		return v, nil
 	}
-	return declarationWalker{home: home}.object(root, v)
+	return declarationWalker{homes: names}.object(root, v)
 }
 
-// declarationWalker folds one repository's name through a declaration by
-// the dialect's positions.
-type declarationWalker struct{ home string }
+// declarationWalker folds one repository's names (its name first, then the
+// former names it still answers to) through a declaration by the dialect's
+// positions.
+type declarationWalker struct{ homes []string }
 
 // object walks v, an object of the key set keys or a list of them.
 func (w declarationWalker) object(keys string, v any) (any, error) {
@@ -312,7 +336,7 @@ func (w declarationWalker) object(keys string, v any) (any, error) {
 			case posRef:
 				out[k] = w.reference(x)
 			case posAuthority:
-				if s, ok := x.(string); ok && s == w.home {
+				if s, ok := x.(string); ok && slices.Contains(w.homes, s) {
 					out[k] = Local
 				} else {
 					out[k] = w.reference(x)
@@ -342,7 +366,7 @@ func (w declarationWalker) object(keys string, v any) (any, error) {
 func (w declarationWalker) reference(v any) any {
 	switch t := v.(type) {
 	case string:
-		return LocalizePath(t, w.home)
+		return LocalizePath(t, w.homes...)
 	case []any:
 		out := make([]any, len(t))
 		for i, x := range t {
@@ -358,7 +382,7 @@ func (w declarationWalker) reference(v any) any {
 		for k, x := range t {
 			out[k] = x
 		}
-		out[ReferenceValueKey] = LocalizePath(r, w.home)
+		out[ReferenceValueKey] = LocalizePath(r, w.homes...)
 		return out
 	}
 	return v
@@ -391,7 +415,7 @@ func (w declarationWalker) keys(v any) (any, error) {
 	out := make(map[string]any, len(m))
 	from := make(map[string]string, len(m))
 	for _, k := range sortedMapKeys(m) {
-		key := LocalizeRef(k, w.home)
+		key := LocalizeRef(k, w.homes...)
 		if other, taken := from[key]; taken {
 			return nil, fmt.Errorf("requiresAtLeast names %s twice, as %q and as %q: give it one floor", key, other, k)
 		}

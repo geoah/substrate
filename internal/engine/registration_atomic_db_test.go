@@ -91,7 +91,7 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 	if _, err := s.CreateRepository(ctx, "alice.example.com"); err != nil {
 		t.Fatalf("retry with the same name: %v", err)
 	}
-	if _, err := s.repositoryByAuthority(ctx, "alice.example.com"); err != nil {
+	if _, err := s.repositoryByName(ctx, "alice.example.com"); err != nil {
 		t.Fatalf("alice is not registered after the retry: %v", err)
 	}
 	if n := orphanRowCount(t, s); n != 0 {
@@ -121,7 +121,7 @@ func TestAFailedRegistrationLeavesNoPersonEvenIfItsCleanupIsCutShort(t *testing.
 		}()
 		_, _ = s.Register(ctx, substrate.RegisterInput{Identity: name, Password: "a-password-that-registers", SkipTOTP: true})
 	}()
-	if _, err := s.repositoryByAuthority(ctx, name); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := s.repositoryByName(ctx, name); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the failed registration's repository: %v, want none", err)
 	}
 	if _, err := s.identityByName(ctx, s.maint, name); !errors.Is(err, substrate.ErrNotFound) {
@@ -167,7 +167,7 @@ func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
 	if _, err := s.CreateRepository(ctx, "legit.example.com"); err != nil {
 		t.Fatalf("create legit repository: %v", err)
 	}
-	legit, err := s.repositoryByAuthority(ctx, "legit.example.com")
+	legit, err := s.repositoryByName(ctx, "legit.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}

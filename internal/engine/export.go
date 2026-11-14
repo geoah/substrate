@@ -149,7 +149,7 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	}
 	ds.holdExportBlobs(held, false)
 	e.point = substrate.ExportPoint{
-		ID: ds.scope.Repository, Authority: ds.info.Authority, Head: head, TakenAt: nowUTC(),
+		ID: ds.scope.Repository, Authority: ds.name(), Head: head, TakenAt: nowUTC(),
 		SealedFiles: len(e.sealed), Blobs: len(e.blobs),
 	}
 	if head > 0 {

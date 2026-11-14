@@ -199,31 +199,103 @@ func ValidRepositoryAuthority(s string) bool {
 	return true
 }
 
-// RepositoryAuthority resolves the repository name a caller typed into the
-// authority that name means. A name carrying a dot IS the authority
-// (`ada.example.com`); a bare label is completed under the host the request
-// reached (`ada` -> `ada.example.com`), the way a handle sits under its
-// server. host is the request's Host header, so a port and a trailing dot are
-// stripped and the case folded. The result is NOT validated here: a host that
-// is no DNS name (an IPv6 literal) yields a string the caller refuses with
-// the same message as any other bad authority, and a bare label under no host
-// yields "".
-func RepositoryAuthority(name, host string) string {
-	name = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".")
-	if name == "" {
-		return ""
+// NameRule turns the name a person types into a repository's name (decision
+// record 0288). A name carrying a dot is the name (`ada.example.com`). A bare
+// label is completed under the server's configured public host, the host of
+// SUBSTRATE_PUBLIC_URL (`ada` -> `ada.substrate.example.com`), never under
+// whatever address a request arrived at, which a caller chooses. A name under
+// `localhost` or an IP address is refused for a new repository outside
+// development, which is a server whose public host is itself one of those.
+type NameRule struct {
+	// Host is the configured public host, lower case, no port; "" when the
+	// server has no public URL.
+	Host string
+	// Development says the public host is `localhost` or a loopback address,
+	// where names under it are the only ones that work.
+	Development bool
+}
+
+// NameRuleFor is the rule of a server whose public URL is publicURL ("" for
+// none).
+func NameRuleFor(publicURL string) NameRule {
+	if publicURL == "" {
+		return NameRule{}
 	}
-	if strings.Contains(name, ".") {
-		return name
+	host := publicURL
+	if i := strings.Index(host, "://"); i >= 0 {
+		host = host[i+3:]
 	}
+	host, _, _ = strings.Cut(host, "/")
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
-	if host == "" {
+	host = strings.TrimSuffix(strings.ToLower(strings.Trim(host, "[]")), ".")
+	ip := net.ParseIP(host)
+	return NameRule{Host: host, Development: host == "localhost" || strings.HasSuffix(host, ".localhost") || (ip != nil && ip.IsLoopback())}
+}
+
+// normalizeTyped is a typed name trimmed, lower-cased and without a trailing
+// dot.
+func normalizeTyped(typed string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(typed)), ".")
+}
+
+// New is the name a new repository typed as typed takes, at a registration
+// or as a rename's new name, or why it takes none. The result is not held to
+// the authority grammar here; the engine refuses a bad one in its own words.
+func (r NameRule) New(typed string) (string, error) {
+	name := normalizeTyped(typed)
+	if name == "" {
+		return "", nil
+	}
+	if !strings.Contains(name, ".") {
+		if r.Host == "" {
+			return "", fmt.Errorf("%q is a short name, and this server has no public URL to complete it under: type the whole name, such as %s.example.com (or the operator sets SUBSTRATE_PUBLIC_URL)", name, name)
+		}
+		name += "." + r.Host
+	}
+	if !r.Development && LocalName(name) {
+		return "", fmt.Errorf("%s is under localhost or an IP address, which names no repository outside development: choose a name under a domain, such as %s.example.com", name, strings.Split(name, ".")[0])
+	}
+	return name, nil
+}
+
+// Lookup is the name an existing repository typed as typed has, for a door
+// that finds one (a sign-in, a delete, a rename's current name, an app's
+// sign-in hint): a short name is completed under the configured public host,
+// or under the host the request reached, host, where none is configured, as
+// it was named before 0288. A name is never refused here: a repository named
+// under `localhost` before the rule is still found, and can be renamed.
+func (r NameRule) Lookup(typed, host string) string {
+	name := normalizeTyped(typed)
+	if name == "" || strings.Contains(name, ".") {
+		return name
+	}
+	under := r.Host
+	if under == "" {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		under = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	}
+	if under == "" {
 		return ""
 	}
-	return name + "." + host
+	return name + "." + under
+}
+
+// LocalName reports whether name sits under `localhost` or is, or ends in, an
+// IP address: a name only one machine's resolver gives meaning to.
+func LocalName(name string) bool {
+	name = normalizeTyped(name)
+	if name == "localhost" || strings.HasSuffix(name, ".localhost") || net.ParseIP(name) != nil {
+		return true
+	}
+	labels := strings.Split(name, ".")
+	if len(labels) >= 4 && net.ParseIP(strings.Join(labels[len(labels)-4:], ".")).To4() != nil {
+		return true
+	}
+	return false
 }
 
 // MetaKeyProblem says why key is NOT a legal label/annotation key, naming the

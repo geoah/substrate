@@ -67,6 +67,8 @@ vi.mock("@/router", () => ({
 const policy = vi.hoisted(() => ({
   inviteRequired: true,
   totpRequired: true,
+  /** The host the server completes a short name under: jsdom's own. */
+  nameHost: "localhost",
   live: false,
   /** The features server.json lists. */
   features: [] as string[],
@@ -169,6 +171,7 @@ describe("RegisterPage", () => {
     navigate.mockClear()
     policy.inviteRequired = true
     policy.totpRequired = true
+    policy.nameHost = "localhost"
     policy.live = false
     policy.features = []
     door.site = null
@@ -222,6 +225,19 @@ describe("RegisterPage", () => {
         "Use letters, numbers and hyphens, starting and ending with a letter or number."
       )
     ).toBeTruthy()
+  })
+
+  it("asks for the whole name where the server completes no short one", async () => {
+    // Discovery answered, naming no host: there is nothing to complete a
+    // label under, so the page never offers one.
+    policy.nameHost = ""
+    render(<RegisterPage />)
+    fireEvent.change(await screen.findByLabelText("Your domain"), {
+      target: { value: "ada.example.org" },
+    })
+    expect(screen.queryByLabelText("Choose your address")).toBeNull()
+    expect(screen.queryByText(".localhost")).toBeNull()
+    expect(screen.getByText("ada.example.org")).toBeTruthy()
   })
 
   it("takes the reader's own domain only through the advanced option, and says what owning it means", async () => {
@@ -914,7 +930,7 @@ describe("RegisterPage and the door's own answer", () => {
       if (url === "/.well-known/substrate/server.json") {
         await discovered
         return jsonResponse(200, {
-          registration: { totpRequired: false },
+          registration: { totpRequired: false, nameHost: "localhost" },
           features: [AUTH],
         })
       }
@@ -972,7 +988,7 @@ describe("RegisterPage and the door's own answer", () => {
       const url = String(input)
       if (url === "/.well-known/substrate/server.json")
         return jsonResponse(200, {
-          registration: { totpRequired: false },
+          registration: { totpRequired: false, nameHost: "localhost" },
           features: [
             AUTH,
             {
@@ -1011,8 +1027,10 @@ describe("RegisterPage and the door's own answer", () => {
     const call = fetchMock.mock.calls.find(
       ([url]) => String(url) === "/register"
     )!
+    // A server that states no name host completes the bare label itself,
+    // under the host it was reached at, as it always did.
     const body = JSON.parse((call[1] as RequestInit).body as string)
-    expect(body.repository).toBe("geoah.localhost")
+    expect(body.repository).toBe("geoah")
     expect(body.identity).toBeUndefined()
   })
 

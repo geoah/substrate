@@ -40,6 +40,13 @@ func WithTestHealthClock(now func() time.Time) Option {
 	return func(o *options) { o.healthNow = now }
 }
 
+// WithTestNamesClock is the clock a repository's former name lapses on
+// (repositorynames.go), and nothing else. A test advances it past the hold
+// instead of waiting 90 days.
+func WithTestNamesClock(now func() time.Time) Option {
+	return func(o *options) { o.namesNow = now }
+}
+
 // WithTestRetryClock is the clock the walk of temporary failures reads a
 // retry's due time on (temporaryretry.go), and nothing else: the parked row's
 // time and every record timestamp stay on the wall clock. A test advances it

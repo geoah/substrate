@@ -11,7 +11,11 @@
  * password-factor endpoints need it in their body) and the id of the token
  * record this browser holds (what logging out revokes). */
 
-import { shellSession as givenSession, signedOut } from "@/lib/shell"
+import {
+  shellSession as givenSession,
+  renamed as shellRenamed,
+  signedOut,
+} from "@/lib/shell"
 
 // The `substrate.*` keys are the component's name; the tests pin them.
 const TOKEN_KEY = "substrate.token"
@@ -26,10 +30,19 @@ let unauthorizedHandler: (() => void) | null = null
 // login route would read it as still signed in and send the page back.
 let endedSecret: string | null = null
 
-/** The app's sign-in, until the page ends it. */
+// The name the page renamed the app's sign-in's repository to, for the
+// sign-in it renamed: the session the app gave is frozen for the page's
+// life, and the app gives the new name at the next load.
+let renamedTo: { secret: string; repository: string } | null = null
+
+/** The app's sign-in, until the page ends it, under the name the page last
+ * renamed its repository to. */
 function shellSession() {
   const given = givenSession()
-  return given && given.secret !== endedSecret ? given : undefined
+  if (!given || given.secret === endedSecret) return undefined
+  return renamedTo?.secret === given.secret
+    ? { ...given, repository: renamedTo.repository }
+    : given
 }
 
 /** Whether the app holds the page's sign-in, now or until the page ended it:
@@ -137,6 +150,21 @@ export function saveSession(
   localStorage.setItem(TOKEN_ID_KEY, tokenId)
   if (identity) localStorage.setItem(IDENTITY_KEY, identity)
   else localStorage.removeItem(IDENTITY_KEY)
+  sessionChanged()
+}
+
+/** The repository's name after a rename: the token and its id stay, since
+ * a rename moves neither. In the Apple app the app holds the sign-in, so it
+ * is told, keeps the name with it, and gives it to the page at its next
+ * load; the page reads the new name at once. */
+export function setRepository(repository: string): void {
+  const shell = shellSession()
+  if (shell) {
+    renamedTo = { secret: shell.secret, repository }
+    shellRenamed(shell.tokenId, repository)
+  } else {
+    localStorage.setItem(REPOSITORY_KEY, repository)
+  }
   sessionChanged()
 }
 

@@ -48,10 +48,11 @@ name is the one you sign in with, and the repository registration creates
 takes it too
 ([0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
 The repository's name IS its **authority**: any name you control
-(`ada.example.com`), or a bare label the substrate completes under its own
-host. The kinds you declare and the samples you add live in the repository's
-**local namespace**, written `~` (`~/tasks/task`), so the commands below never
-spell the name
+(`ada.example.com`), or a bare label the substrate completes under its public
+host, and you can rename it later
+([renaming a repository](auth.md#renaming-a-repository)). The kinds you
+declare and the samples you add live in the repository's **local namespace**,
+written `~` (`~/tasks/task`), so the commands below never spell the name
 ([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Quote `~` in a
 shell, which expands an unquoted `~/` at the start of a word to your home
 directory.

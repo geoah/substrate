@@ -18,6 +18,7 @@ import (
 	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -323,11 +324,21 @@ func repositorySignIns(ctx context.Context, db *sql.DB) (map[string][]string, er
 	return out, rows.Err()
 }
 
-// repositoryRowByID finds a repository by its name or its id, which never
-// look alike: an id holds no dot (decision 0261).
+// repositoryRowByID finds a repository by its id or by a name it answers to,
+// current or former (engine.RepositoryIDByName), which never look alike: an
+// id holds no dot (decision 0261).
 func repositoryRowByID(ctx context.Context, db *sql.DB, repository string) (repositoryRow, error) {
+	id := repository
+	if !vocabulary.ValidRepositoryID(repository) {
+		var err error
+		if id, err = engine.RepositoryIDByName(ctx, db, repository); errors.Is(err, substrate.ErrNotFound) {
+			return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
+		} else if err != nil {
+			return repositoryRow{}, controlPlaneError(err)
+		}
+	}
 	r, err := scanRepositoryRow(db.QueryRowContext(ctx,
-		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1 OR authority = $1`, repository).Scan)
+		`SELECT `+repositoryRowColumns+` FROM repositories WHERE id = $1`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repositoryRow{}, fmt.Errorf("no repository %q on this substrate", repository)
 	}

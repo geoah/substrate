@@ -83,7 +83,7 @@ func (ds *dataset) fillActorRecords(ctx context.Context) error {
 		// reading, and a restart rolls the read back and begins it again.
 		began = time.Now()
 		ds.svc.log.Info("substrate: reading the repository's history once for the actor records it links; the open waits for it, and a restart starts it over",
-			"repository", logSafeID(ds.info.Authority))
+			"repository", ds.info.ID)
 		linked, err := t.linkedActorIDs()
 		if err != nil {
 			return err
@@ -138,7 +138,7 @@ func (ds *dataset) fillActorRecords(ctx context.Context) error {
 		level = slog.LevelWarn
 	}
 	ds.svc.log.Log(ctx, level, "substrate: wrote the actor records the repository links and held none of",
-		"repository", logSafeID(ds.info.Authority), "written", written, "disabled", disabled,
+		"repository", ds.info.ID, "written", written, "disabled", disabled,
 		"unnamed", len(unnamed), "unnamedIDs", unnamed, "personWithoutRecord", person,
 		"took", time.Since(began).Round(time.Millisecond))
 	return nil

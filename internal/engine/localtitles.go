@@ -8,7 +8,7 @@ package engine
 // the engine's own renderer (deriveTitle), once, at the open after the
 // stored vocabulary loads: a repository migration runs before it loads and
 // could not render a kind of the repository's own. It reads only the rows
-// whose title spells the repository's name, renders a row only where its
+// whose title spells one of the repository's names, renders a row only where its
 // kind renders titles from a template, writes only where the title moves,
 // as ordinary record writes by the system, and goes round again while a
 // title moved, since one title may render another record's (a trigger's
@@ -46,13 +46,17 @@ func (ds *dataset) renderLocalTitles(ctx context.Context) error {
 	if done {
 		return nil
 	}
-	name := ds.info.Authority
+	names := ds.names()
 	rendered := 0
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		for range localTitlePasses {
-			moved, err := t.renderTitlesSpelling(name)
-			if err != nil {
-				return err
+			moved := 0
+			for _, name := range names {
+				n, err := t.renderTitlesSpelling(name)
+				if err != nil {
+					return err
+				}
+				moved += n
 			}
 			rendered += moved
 			if moved == 0 {

@@ -112,22 +112,24 @@ func ClientIDFrom(ctx context.Context) string {
 // authenticated the bearer as an app's token that opens the repository the
 // path names and holds `webhook:` for the trigger the path names; the
 // engine's door then skips the key comparison for that trigger alone, and
-// every other check, a declared signature included, still runs.
+// every other check, a declared signature included, still runs. It names
+// the repository by its id, never a name: a name may change hands
+// (decision record 0287).
 type webhookGrantKey struct{}
 
-type webhookGrant struct{ authority, trigger string }
+type webhookGrant struct{ repository, trigger string }
 
-// WithWebhookGrant marks ctx as delivering to trigger in the repository whose
-// authority is authority, under a token that holds `webhook:` for it.
-func WithWebhookGrant(ctx context.Context, authority, trigger string) context.Context {
-	return context.WithValue(ctx, webhookGrantKey{}, webhookGrant{authority: authority, trigger: trigger})
+// WithWebhookGrant marks ctx as delivering to trigger in the repository with
+// id repository, under a token that holds `webhook:` for it.
+func WithWebhookGrant(ctx context.Context, repository, trigger string) context.Context {
+	return context.WithValue(ctx, webhookGrantKey{}, webhookGrant{repository: repository, trigger: trigger})
 }
 
 // WebhookGranted reports whether ctx carries the webhook grant for exactly
-// this authority and trigger.
-func WebhookGranted(ctx context.Context, authority, trigger string) bool {
+// the repository with id repository and this trigger.
+func WebhookGranted(ctx context.Context, repository, trigger string) bool {
 	g, ok := ctx.Value(webhookGrantKey{}).(webhookGrant)
-	return ok && authority != "" && trigger != "" && g == webhookGrant{authority: authority, trigger: trigger}
+	return ok && repository != "" && trigger != "" && g == webhookGrant{repository: repository, trigger: trigger}
 }
 
 // TokenSecretPrefix begins every token's bearer secret. The webhook door
@@ -289,6 +291,19 @@ func (e *RepositoryRequiredError) Error() string {
 }
 
 func (e *RepositoryRequiredError) Unwrap() error { return ErrConflict }
+
+// RenameRepositoryRequest is a rename as the HTTP door decodes it
+// (POST /repository/rename): the person by their identity, both current
+// factors, the repository by its name or its id, and the name it takes,
+// which a short label is completed into as a registration's is (decision
+// record 0288).
+type RenameRepositoryRequest struct {
+	Identity   string `json:"identity"`
+	Repository string `json:"repository"`
+	Password   string `json:"password"`
+	TOTPCode   string `json:"totpCode"`
+	Name       string `json:"name"`
+}
 
 // RegisterRequest is the registration commit as the HTTP door decodes it:
 // the invite code, the repository to create, the password, and the enrollment

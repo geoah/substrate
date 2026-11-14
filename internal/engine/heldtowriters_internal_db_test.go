@@ -81,7 +81,7 @@ var heldWriteDoors = map[string]func(t *testing.T, r *runsRepository, kind, id s
 		return err
 	},
 	"a function's effect": func(t *testing.T, r *runsRepository, kind, id string, v any) error {
-		return r.ds.inTx(r.adaCtx(), substrate.FunctionActor(r.ds.info.Authority, "runs", "reader"), false, func(tx *txn) error {
+		return r.ds.inTx(r.adaCtx(), substrate.FunctionActor(r.ds.Repository().Authority, "runs", "reader"), false, func(tx *txn) error {
 			emit := []string{kind}
 			tx.setEffectEmit(emit)
 			return tx.applyEffects(emit, []effect{{Action: effectPatch, Type: kind, ID: id, Properties: map[string]any{propHeldTo: v}}})
@@ -207,7 +207,7 @@ func TestNoWriteOfALeaseAMergeOrAReplayChangesWhoseRulesHoldARun(t *testing.T) {
 	}
 	unchanged("the declaration door, a merge and a change request", before)
 
-	pkg := r.ds.info.Authority + "/feeds"
+	pkg := r.ds.Repository().Authority + "/feeds"
 	_, err := r.ds.ApplyVocabularyDocuments(r.adaCtx(), substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "feed"}, map[string]any{"properties": map[string]any{

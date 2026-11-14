@@ -47,6 +47,12 @@ func (s *stubService) Authenticate(_ context.Context, secret string) (substrate.
 
 func (s *stubService) InstanceID() string { return stubInstanceID }
 
+// RepositoryIDOf answers a name as its own id: the stub's repository is
+// stubRepository by both.
+func (s *stubService) RepositoryIDOf(_ context.Context, nameOrID string) (string, error) {
+	return nameOrID, nil
+}
+
 // stubDataset is a repository that answers who it is and nothing else.
 type stubDataset struct{ substrate.Dataset }
 

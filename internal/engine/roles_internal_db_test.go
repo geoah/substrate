@@ -581,7 +581,7 @@ func TestTheArchitectAnEditorStartsDeclaresNothing(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	plant := ds.info.Authority + "/garden/plant"
+	plant := ds.Repository().Authority + "/garden/plant"
 	for _, run := range []struct {
 		who    substrate.Actor
 		person string
@@ -591,7 +591,7 @@ func TestTheArchitectAnEditorStartsDeclaresNothing(t *testing.T) {
 		{substrate.ActorPerson, rr.adaID, true},
 	} {
 		fake.script(mossModel,
-			fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": gardenDocs(ds.info.Authority)})}}},
+			fakeTurn{calls: []fakeCall{{"vocabulary", toolArgs(t, map[string]any{"documents": gardenDocs(ds.Repository().Authority)})}}},
 			fakeTurn{content: "done."},
 		)
 		started := substrate.WithOnBehalfOf(substrate.WithIdentity(ctx, run.person), run.who)
@@ -681,7 +681,7 @@ func TestARoleRecordChangedOrGoneHoldsFromTheNextRequest(t *testing.T) {
 	ctx := context.Background()
 	rr := newRolesRepository(t)
 	ds := rr.ds
-	pkg := ds.info.Authority + "/notes"
+	pkg := ds.Repository().Authority + "/notes"
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
 		vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "note"}, map[string]any{

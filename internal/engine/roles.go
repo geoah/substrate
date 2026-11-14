@@ -202,7 +202,7 @@ func (ds *dataset) rolesIn(ctx context.Context, q dbx, person substrate.Actor) (
 	if err := ds.svc.ruleFault("roles"); err != nil {
 		return scope.Roles{}, fmt.Errorf("read the roles of %s: %w", handWords(person), err)
 	}
-	authority := ds.info.Authority
+	authority := ds.name()
 	ty, err := ds.resolveType(kindActor)
 	if roles, before, err := preActorRoles(ty, err, authority); err != nil || before {
 		return roles, err

@@ -85,6 +85,10 @@ type dbOptions struct {
 	service      []func(substrate.Service) substrate.Service
 	samples      []string
 	noRepository bool
+	// password registers the repository and its person, named after it,
+	// with this password and no second factor where CreateRepository would
+	// make neither, for a test of a door that proves the factors.
+	password string
 }
 
 // withConfig edits the handler's Config after newDBEnv fills it.
@@ -110,6 +114,19 @@ func withService(fn func(substrate.Service) substrate.Service) dbOption {
 // vocabulary apply of its own.
 func withSamples(names ...string) dbOption {
 	return func(o *dbOptions) { o.samples = append(o.samples, names...) }
+}
+
+// withPassword registers the repository with this password and no second
+// factor, so a door that proves the factors (a delete, a rename) can be
+// driven through HTTP.
+func withPassword(password string) dbOption {
+	return func(o *dbOptions) { o.password = password }
+}
+
+// withNameHost configures the public URL a registration's short name is
+// completed under (decision record 0288): https:// and host.
+func withNameHost(host string) dbOption {
+	return withConfig(func(c *Config) { c.PublicURL = "https://" + host })
 }
 
 // withoutRepository starts the engine with no repository, for a test of the
@@ -170,7 +187,11 @@ func newDBEnv(t *testing.T, opts ...dbOption) *dbEnv {
 	// function runner keys body processes on it, so two parallel tests under
 	// one name would retire each other's.
 	env.repository = testdb.Repository(t)
-	if _, err := svc.CreateRepository(ctx, env.repository); err != nil {
+	if o.password != "" {
+		if _, err := svc.Register(ctx, substrate.RegisterInput{Identity: env.repository, Repository: env.repository, Password: o.password, SkipTOTP: true}); err != nil {
+			t.Fatalf("register repository: %v", err)
+		}
+	} else if _, err := svc.CreateRepository(ctx, env.repository); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	if env.ds, err = svc.Dataset(ctx, env.repository); err != nil {

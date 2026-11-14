@@ -96,29 +96,43 @@ type deleteRequest struct {
 
 // --- the shared gate ---
 
-// repositoryOf resolves the repository name a caller sent into the authority
-// it means: the name itself when it carries a dot, else that label under the
-// host the request reached (`ada` -> `ada.example.com`). The HTTP layer is the
-// one place that knows the host, so every door resolves here and the engine
-// sees a concrete authority or refuses. An empty name stays empty, so the
-// engine's own refusal is what the caller reads.
-func repositoryOf(r *http.Request, name string) string {
-	return vocabulary.RepositoryAuthority(strings.TrimSpace(name), r.Host)
+// repositoryOf resolves the name a caller sent for an existing repository
+// (vocabulary.NameRule.Lookup): the name itself when it carries a dot, else
+// that label under the public URL's host, or the request's where none is
+// configured. The HTTP layer is the one place that knows either, so every
+// door resolves here and the engine sees a whole name or refuses. An empty
+// name stays empty, so the engine's own refusal is what the caller reads.
+func (h *handler) repositoryOf(r *http.Request, name string) string {
+	return h.names.Lookup(name, r.Host)
+}
+
+// newRepositoryName is the name a new repository typed as typed takes
+// (vocabulary.NameRule.New), for a registration and a rename's new name, and
+// the name a registering person takes by the same rule. A refusal has
+// already been written.
+func (h *handler) newRepositoryName(w http.ResponseWriter, typed string) (string, bool) {
+	name, err := h.names.New(typed)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeValidation, err.Error())
+		return "", false
+	}
+	return name, true
 }
 
 // identityOf resolves the sign-in name a caller sent the way repositoryOf
-// resolves a repository's: a sign-in name has the same DNS-style form.
-func identityOf(r *http.Request, name string) string {
-	return vocabulary.RepositoryAuthority(strings.TrimSpace(name), r.Host)
+// resolves a repository's: a sign-in name has the same DNS-style form, and a
+// short one is completed under the same host (decision record 0288).
+func (h *handler) identityOf(r *http.Request, name string) string {
+	return h.names.Lookup(name, r.Host)
 }
 
 // repositoryKeyOf resolves a repository a caller names by its name or its
 // id: an id is taken as it is, a name as repositoryOf takes it.
-func repositoryKeyOf(r *http.Request, name string) string {
+func (h *handler) repositoryKeyOf(r *http.Request, name string) string {
 	if name = strings.TrimSpace(name); vocabulary.ValidRepositoryID(name) {
 		return name
 	}
-	return repositoryOf(r, name)
+	return h.repositoryOf(r, name)
 }
 
 // namesAPerson refuses a request that names no identity: a sign-in and every
@@ -201,15 +215,20 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
-	if !namesAPerson(w, identity, "registration") {
+	// The pace and the invite come first, keyed by the name as a lookup
+	// reads it; the name the person takes is completed after them.
+	if !namesAPerson(w, h.identityOf(r, req.Identity), "registration") {
 		return
 	}
-	ok := h.authGate(w, r, identity, costPaired)
+	ok := h.authGate(w, r, h.identityOf(r, req.Identity), costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
+		return
+	}
+	identity, named := h.newRepositoryName(w, req.Identity)
+	if !named {
 		return
 	}
 	enrollment, err := h.svc.BeginRegistration(r.Context(), identity)
@@ -230,20 +249,27 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
-	if !namesAPerson(w, identity, "registration") {
+	// The pace and the invite come first, keyed by the name as a lookup
+	// reads it; the name the person takes is completed after them.
+	if !namesAPerson(w, h.identityOf(r, req.Identity), "registration") {
 		return
 	}
-	repository := repositoryOf(r, req.Repository)
-	if repository == "" {
-		repository = identity
-	}
-	ok := h.authGate(w, r, identity, costPaired)
+	ok := h.authGate(w, r, h.identityOf(r, req.Identity), costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
 		return
+	}
+	identity, named := h.newRepositoryName(w, req.Identity)
+	if !named {
+		return
+	}
+	repository := identity
+	if strings.TrimSpace(req.Repository) != "" {
+		if repository, named = h.newRepositoryName(w, req.Repository); !named {
+			return
+		}
 	}
 	res, err := h.svc.Register(r.Context(), substrate.RegisterInput{
 		Identity:   identity,
@@ -276,7 +302,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "a sign-in") {
 		return
 	}
@@ -285,7 +311,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	minted, err := h.svc.Login(r.Context(), substrate.LoginInput{
-		Identity: identity, Repository: repositoryKeyOf(r, req.Repository),
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository),
 		Password: req.Password, TOTPCode: req.TOTPCode, Label: req.Label,
 	})
 	if err != nil {
@@ -306,7 +332,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "a password change") {
 		return
 	}
@@ -370,7 +396,7 @@ func (h *handler) postSignOutEverywhere(w http.ResponseWriter, r *http.Request) 
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "a sign out everywhere") {
 		return
 	}
@@ -399,7 +425,7 @@ func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "deleting a repository") {
 		return
 	}
@@ -411,13 +437,48 @@ func (h *handler) postDeleteRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := h.svc.DeleteRepository(r.Context(), substrate.LoginInput{
-		Identity: identity, Repository: repositoryKeyOf(r, req.Repository), Password: req.Password, TOTPCode: req.TOTPCode,
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository), Password: req.Password, TOTPCode: req.TOTPCode,
 	})
 	if err != nil {
 		writeAuthFailure(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// postRenameRepository gives the repository a new name (decision record
+// 0287). Like the delete, the person's identity and both current factors
+// travel in the body, so a leaked token cannot do it, and only an admin of
+// the repository renames it. The answer names the repository's id, its new
+// name and every former name it still answers to, until when.
+func (h *handler) postRenameRepository(w http.ResponseWriter, r *http.Request) {
+	var req substrate.RenameRepositoryRequest
+	if !readJSON(w, r, &req, jsonBody) {
+		return
+	}
+	identity := h.identityOf(r, req.Identity)
+	if !namesAPerson(w, identity, "a rename") {
+		return
+	}
+	ok := h.authGate(w, r, identity, costRequest)
+	if !ok {
+		return
+	}
+	if !h.factorsPresented(w, req.Password) {
+		return
+	}
+	name, named := h.newRepositoryName(w, req.Name)
+	if !named {
+		return
+	}
+	names, err := h.svc.RenameRepository(r.Context(), substrate.LoginInput{
+		Identity: identity, Repository: h.repositoryKeyOf(r, req.Repository), Password: req.Password, TOTPCode: req.TOTPCode,
+	}, name)
+	if err != nil {
+		writeAuthFailure(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, names)
 }
 
 // postTOTPBegin verifies the current factors and issues a candidate seed,
@@ -427,7 +488,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "a second factor's enrollment") {
 		return
 	}
@@ -455,7 +516,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req, jsonBody) {
 		return
 	}
-	identity := identityOf(r, req.Identity)
+	identity := h.identityOf(r, req.Identity)
 	if !namesAPerson(w, identity, "a second factor's enrollment") {
 		return
 	}

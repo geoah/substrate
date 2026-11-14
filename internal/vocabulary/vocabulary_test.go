@@ -3424,27 +3424,74 @@ func TestRepositoryAuthorityGrammar(t *testing.T) {
 			t.Errorf("vocabulary.ValidRepositoryAuthority(%q) = true", bad)
 		}
 	}
-	for host, want := range map[string]string{
-		"substrate.example":      "ada.substrate.example",
-		"substrate.example:8080": "ada.substrate.example",
-		"Substrate.Example.":     "ada.substrate.example",
-		"127.0.0.1:5173":         "ada.127.0.0.1",
-		"[::1]:8080":             "ada.::1",
-		"":                       "",
+}
+
+// The default name (decision record 0288), the table of the 1.0 review's F2
+// row for row: what a person types, the address their browser reached, and
+// the name they get. The address never counts: a short name is completed under
+// the server's configured public host, and a name under `localhost` or an IP
+// address is refused outside development, where the public host is itself
+// one of those.
+func TestTheDefaultNameIsCompletedUnderThePublicHost(t *testing.T) {
+	public := vocabulary.NameRuleFor("https://substrate.example.com")
+	for _, row := range []struct{ typed, reached, want string }{
+		{"ada", "https://substrate.example.com", "ada.substrate.example.com"},
+		{"ada", "http://localhost:8080", "ada.substrate.example.com"},
+		{"ada", "http://127.0.0.1:5173", "ada.substrate.example.com"},
+		{"ada.example.com", "http://localhost:8080", "ada.example.com"},
+		{"Ada.Example.COM. ", "anywhere", "ada.example.com"},
 	} {
-		if got := vocabulary.RepositoryAuthority("ada", host); got != want {
-			t.Errorf("vocabulary.RepositoryAuthority(ada, %q) = %q, want %q", host, got, want)
+		got, err := public.New(row.typed)
+		if err != nil || got != row.want {
+			t.Errorf("typed %q, reached at %s: %q, %v; want %q", row.typed, row.reached, got, err, row.want)
 		}
 	}
-	// A name that already carries a dot IS the authority: the host is not
-	// appended to it, whatever the host is.
-	for _, host := range []string{"substrate.example", "substrate.example:8080", ""} {
-		if got := vocabulary.RepositoryAuthority("Ada.Example.COM ", host); got != "ada.example.com" {
-			t.Errorf("vocabulary.RepositoryAuthority(ada.example.com, %q) = %q", host, got)
+	for _, local := range []string{"ada.localhost", "ada.127.0.0.1", "ada.10.0.0.7"} {
+		if got, err := public.New(local); err == nil {
+			t.Errorf("%q is a new name %q outside development, want it refused", local, got)
 		}
 	}
-	if vocabulary.ValidRepositoryAuthority(vocabulary.RepositoryAuthority("ada", "[::1]:8080")) {
-		t.Error("an IPv6 literal host produced a default that passes the grammar")
+
+	// Development: a server whose public host is localhost or loopback.
+	for _, url := range []string{"http://localhost:8080", "http://127.0.0.1:5173", "http://[::1]:8080"} {
+		dev := vocabulary.NameRuleFor(url)
+		if !dev.Development {
+			t.Errorf("%s is no development server", url)
+		}
+		if _, err := dev.New("ada.127.0.0.1"); err != nil {
+			t.Errorf("under %s, ada.127.0.0.1: %v, want it admitted in development", url, err)
+		}
+	}
+	if got, err := vocabulary.NameRuleFor("http://localhost:8080").New("ada"); err != nil || got != "ada.localhost" {
+		t.Errorf("ada in development = %q, %v; want ada.localhost", got, err)
+	}
+
+	// No public URL: a short new name has nothing to be completed under.
+	none := vocabulary.NameRuleFor("")
+	if got, err := none.New("ada"); err == nil {
+		t.Errorf("a short name with no public URL = %q, want it refused", got)
+	}
+	if got, err := none.New("ada.example.com"); err != nil || got != "ada.example.com" {
+		t.Errorf("a whole name with no public URL = %q, %v", got, err)
+	}
+
+	// Finding an existing repository is never refused: one named under
+	// localhost before the rule is still found, and a short name is
+	// completed under the public host, or the address reached where none is
+	// configured.
+	for _, row := range []struct {
+		rule        vocabulary.NameRule
+		typed, host string
+		want        string
+	}{
+		{public, "ada", "localhost:8080", "ada.substrate.example.com"},
+		{public, "ada.localhost", "substrate.example.com", "ada.localhost"},
+		{none, "ada", "substrate.example:8080", "ada.substrate.example"},
+		{none, "ada", "", ""},
+	} {
+		if got := row.rule.Lookup(row.typed, row.host); got != row.want {
+			t.Errorf("Lookup(%q, %q) = %q, want %q", row.typed, row.host, got, row.want)
+		}
 	}
 }
 
