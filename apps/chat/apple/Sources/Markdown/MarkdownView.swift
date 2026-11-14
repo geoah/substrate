@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 enum MarkdownCache {
     private static var blocks: [String: [MarkdownBlock]] = [:]
-    static var inlines: [String: Text] = [:]
+    static var inlines: [String: InlineLine] = [:]
     private static var order: [String] = []
 
     static func parse(_ text: String) -> [MarkdownBlock] {
@@ -54,8 +54,6 @@ struct MarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // A record a line links is the kit's pill, drawn behind its words.
-        .recordPillText()
         .environment(\.missingRecords, missing)
     }
 }
@@ -112,13 +110,34 @@ func consolePath(_ url: URL) -> String? {
 /// console paths and record links, each that leaves the app marked; memoized, since every
 /// visible paragraph asks again on each redraw.
 @MainActor
-func inline(_ text: String, missing: Set<String> = []) -> Text {
+func inline(_ text: String, missing: Set<String> = []) -> InlineLine {
     let key = missing.isEmpty ? text : text + "\u{0}" + missing.sorted().joined(separator: "\u{0}")
     if let hit = MarkdownCache.inlines[key] { return hit }
-    let out = Meter.shared.time(.inline) { marked(parseInline(text, missing: missing)) }
+    let out = Meter.shared.time(.inline) {
+        let pieces = inlinePieces(parseInline(text, missing: missing))
+        return InlineLine(text: marked(pieces), pills: pieces.contains { if case .record = $0 { true } else { false } })
+    }
     MarkdownCache.inlines[key] = out
     if MarkdownCache.inlines.count > 2000 { MarkdownCache.inlines.removeAll(keepingCapacity: true) }
     return out
+}
+
+/// A line of inline Markdown as it is drawn. A record a line links is the
+/// kit's pill, drawn behind its words by a renderer of the text's own
+/// (`recordPillText()`), and only a line that holds one is drawn through
+/// it: a text with a renderer is laid out and drawn by the slower way, and
+/// most lines of most replies link no record.
+struct InlineLine: View {
+    let text: Text
+    let pills: Bool
+
+    var body: some View {
+        if pills {
+            text.recordPillText()
+        } else {
+            text
+        }
+    }
 }
 
 /// A line of inline text, cut where a link that leaves the app ends (its
@@ -173,9 +192,11 @@ func inlinePieces(_ text: AttributedString) -> [InlinePiece] {
 
 /// The line as one text: each mark kept beside its link by a no-break
 /// space, each record as its pill.
-func marked(_ text: AttributedString) -> Text {
-    let pieces = inlinePieces(text)
-    guard pieces.contains(where: { if case .text = $0 { false } else { true } }) else { return Text(text) }
+func marked(_ text: AttributedString) -> Text { marked(inlinePieces(text)) }
+
+func marked(_ pieces: [InlinePiece]) -> Text {
+    if pieces.count == 1, case let .text(only) = pieces[0] { return Text(only) }
+    guard !pieces.isEmpty else { return Text(verbatim: "") }
     return pieces.enumerated().reduce(Text(verbatim: "")) { line, piece in
         switch piece.element {
         case let .text(part): Text("\(line)\(part)")
