@@ -42,6 +42,7 @@ struct ChatSplitView: View {
     @EnvironmentObject private var updates: Updater
     @Environment(\.scenePhase) private var phase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if os(macOS)
     @Environment(\.controlActiveState) private var keyState
     #endif
@@ -82,6 +83,10 @@ struct ChatSplitView: View {
             if column == .sidebar, sizeClass == .compact { host.send(.back(scene: scene)) }
         }
         .onChange(of: phase, initial: true) { _, phase in host.send(.sceneActive(scene: scene, active: phase == .active)) }
+        // A reply is revealed at a steady rate unless the device asks for
+        // less motion. Said again at each sign-in, which starts the chats
+        // over.
+        .task(id: [reduceMotion, host.chats?.signedIn == true]) { host.send(.pace(!reduceMotion)) }
         #if os(iOS)
         .sheet(isPresented: $showSettings) {
             SettingsView()

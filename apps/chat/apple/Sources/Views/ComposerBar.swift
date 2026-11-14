@@ -5,7 +5,10 @@ import SwiftUI
 /// Where you write to the agent: a floating glass bar over the transcript,
 /// in one container with Jump to Latest so the two merge rather than stack.
 /// The trailing button is the microphone while the field is empty, Send once
-/// it is not, and Stop while a turn runs; it morphs between them. The text
+/// it is not, and Stop while a turn runs; it morphs between them. While a
+/// reply is on its way a line over the field says what is happening
+/// (`ComposerStatus`), Stop is there the whole time, and the field can be
+/// typed in throughout. The text
 /// is the field's own while it is typed: the conversation is told after a
 /// pause, before a send and when the field stops editing (`DraftReports`),
 /// so a key draws nothing but the field. The field takes what the
@@ -18,6 +21,8 @@ struct ComposerBar: View {
     let screen: ConversationScreen
     let dictation: Dictation
     let atBottom: Bool
+    /// What Jump to Latest says: how many messages are below.
+    let jump: JumpToLatest
     let onJump: () -> Void
     let onKey: (String) -> Void
     @Environment(\.draftField) private var draftField
@@ -37,7 +42,12 @@ struct ComposerBar: View {
             if let keyless = composer.keyless {
                 KeylessCalloutView(callout: keyless) { onKey(keyless.provider) }
             }
-            if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
+            if let status = composer.status {
+                ComposerStatusLine(status: status)
+                    .transition(.opacity)
+            } else if let reason = composer.blocked, !empty || composer.blockedWhenEmpty {
+                // While a reply is on its way the line above says so: "wait
+                // for the answer" would say it twice.
                 Text(reason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -56,14 +66,24 @@ struct ComposerBar: View {
                 VStack(alignment: .trailing, spacing: 10) {
                     if !atBottom {
                         Button(action: onJump) {
-                            Image(systemName: "arrow.down")
-                                .font(.body.weight(.semibold))
-                                .frame(width: 40, height: 40)
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.down")
+                                    .font(.body.weight(.semibold))
+                                if let count = jump.count {
+                                    Text(count)
+                                        .font(.subheadline.weight(.semibold))
+                                        .monospacedDigit()
+                                        .contentTransition(.numericText())
+                                }
+                            }
+                            .padding(.horizontal, jump.count == nil ? 0 : 13)
+                            .frame(minWidth: 40, minHeight: 40)
+                            .contentShape(.capsule)
                         }
                         .buttonStyle(.plain)
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .glassEffect(.regular.interactive(), in: .capsule)
                         .glassEffectID("jump", in: glass)
-                        .accessibilityLabel("Jump to Latest")
+                        .accessibilityLabel(jump.label)
                         .transition(.scale.combined(with: .opacity))
                     }
                     HStack(alignment: .bottom, spacing: 10) {
@@ -75,10 +95,12 @@ struct ComposerBar: View {
                 }
             }
             .animation(.snappy, value: atBottom)
+            .animation(.snappy, value: jump)
             .animation(.snappy, value: empty)
             .animation(.snappy, value: screen.streaming)
             .animation(.snappy, value: dictation.active)
         }
+        .animation(.snappy, value: composer.status?.kind)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .frame(maxWidth: 820)
@@ -332,7 +354,47 @@ extension ComposerBar: @MainActor Equatable {
     static func == (lhs: ComposerBar, rhs: ComposerBar) -> Bool {
         lhs.key == rhs.key && lhs.screen.composer == rhs.screen.composer && lhs.screen.streaming == rhs.screen.streaming
             && lhs.screen.stopping == rhs.screen.stopping && lhs.screen.agent == rhs.screen.agent
-            && lhs.screen.thread == rhs.screen.thread && lhs.atBottom == rhs.atBottom && lhs.dictation === rhs.dictation
+            && lhs.screen.thread == rhs.screen.thread && lhs.atBottom == rhs.atBottom && lhs.jump == rhs.jump
+            && lhs.dictation === rhs.dictation
+    }
+}
+
+/// What is happening while a reply is on its way, in one line over the
+/// field: the words, with a mark that moves while something is. A screen
+/// reader hears it as one thing that updates, and is not told of each
+/// change.
+struct ComposerStatusLine: View {
+    let status: ComposerStatus
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol)
+                .imageScale(.small)
+                .symbolEffect(.pulse, isActive: status.kind != .stopping)
+                .frame(width: 16)
+            Text(status.words)
+                .lineLimit(1)
+                .shimmer()
+                .contentTransition(.opacity)
+        }
+        .font(.caption.weight(.medium))
+        .foregroundStyle(.quietText)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(status.words)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    private var symbol: String {
+        switch status.kind {
+        case .connecting: "antenna.radiowaves.left.and.right"
+        case .reconnecting: "arrow.triangle.2.circlepath"
+        case .thinking: "brain"
+        case .writing: "pencil.line"
+        case .tool: "wrench.and.screwdriver"
+        case .stopping: "stop.circle"
+        }
     }
 }
 

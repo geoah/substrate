@@ -12,12 +12,10 @@ struct ConversationView: View {
     let scene: String
     @State private var dictation = Dictation()
     @State private var draftField = DraftField()
-    @State private var position = ScrollPosition(edge: .bottom)
-    @State private var atBottom = true
-    /// The chat was put at its "New" line, which happens once, on opening,
-    /// and only once the transcript has a size to scroll in.
-    @State private var placedAtNew = false
-    @State private var laidOut = false
+    /// The transcript follows its end and the end is on screen, as its
+    /// scroll view says: what the read mark goes by, with whether anybody
+    /// is looking.
+    @State private var atBottom = false
     #if os(macOS)
     /// The window is the key one of the app in front.
     @Environment(\.appearsActive) private var front
@@ -33,18 +31,19 @@ struct ConversationView: View {
 
     var body: some View {
         if let screen = host.conversation(key) {
-            ScrollViewReader { reader in transcript(screen, reader) }
+            transcript(screen)
         } else {
             NoChatView(scene: scene)
         }
     }
 
-    private func transcript(_ screen: ConversationScreen, _ reader: ScrollViewProxy) -> some View {
+    private func transcript(_ screen: ConversationScreen) -> some View {
         let _ = Meter.shared.count(.body, "Transcript")
-        return ScrollView {
+        return TranscriptScroll(opens: screen.opens, anchor: opening(screen), sends: screen.sends, looked: { atBottom = $0 }) {
             LazyVStack(alignment: .leading, spacing: 22) {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
             }
+            .scrollTargetLayout()
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 16)
@@ -54,49 +53,7 @@ struct ConversationView: View {
             .replyLinks()
             .frame(maxWidth: 780)
             .frame(maxWidth: .infinity)
-        }
-        .scrollPosition($position)
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        // The visible rect is in the content's coordinates, so it reaches
-        // past the content's end exactly when the reader is at the bottom,
-        // whatever the composer's and the keyboard's insets are.
-        .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.visibleRect.maxY >= geo.contentSize.height - 60
-        } action: { _, bottom in
-            atBottom = bottom
-        }
-        .onChange(of: follow(screen)) { _, _ in
-            // Not while the chat has a "New" line it was not put at yet:
-            // rows that arrive after it was opened bring the line with
-            // them, and following the end would take the chat past it.
-            if atBottom, screen.newLine == nil || placedAtNew { position.scrollTo(edge: .bottom) }
-        }
-        // A chat with more than the person had read opens at the first of
-        // it: where what is new fits on one screen the scroll stops at the
-        // end, as a chat with nothing new opens. The rows may be drawn
-        // before the line is known (they come from the disk) or after.
-        .onScrollGeometryChange(for: Bool.self) { geo in
-            geo.contentSize.height > 0
-        } action: { _, laid in
-            laidOut = laid
-            placeAtNew(screen, reader)
-        }
-        .onChange(of: screen.newLine?.turn, initial: true) { _, _ in placeAtNew(screen, reader) }
-        // The end of the chat is read once somebody looking at it has had
-        // it on screen for a second (ChatKit counts): the list is told
-        // whenever that starts or stops being so. Never from onDisappear:
-        // a split view takes a detail away and puts the same one back, and
-        // this would not run again; a chat no window shows is no longer
-        // the window's current one, which the list knows by itself.
-        .onChange(of: atBottom && front && !covered && phase == .active, initial: true) { _, looking in
-            host.send(.end(scene: scene, key: key, shown: looking))
-        }
-        #if os(iOS)
-        .background { CoverProbe(covered: $covered) }
-        #endif
-        .scrollDismissesKeyboard(.interactively)
-        .scrollEdgeEffectStyle(.soft, for: .bottom)
-        .safeAreaBar(edge: .bottom) {
+        } bar: { atEnd, seen, jump in
             VStack(spacing: 8) {
                 // A failure of the chat as a whole: one strip, directly
                 // above the composer.
@@ -114,13 +71,29 @@ struct ConversationView: View {
                         .transition(.opacity)
                 }
                 ComposerBar(
-                    key: key, screen: screen, dictation: dictation, atBottom: atBottom,
-                    onJump: { withAnimation(.snappy) { position.scrollTo(edge: .bottom) } },
+                    key: key, screen: screen, dictation: dictation, atBottom: atEnd,
+                    jump: JumpToLatest(below: atEnd ? 0 : screen.messages(below: TranscriptPiece.lastTurn(among: seen, of: screen.turns))),
+                    onJump: jump,
                     onKey: { keySheet = host.chats?.keys[$0] }
                 )
                 .equatable()
             }
         }
+        // The end of the chat is read once somebody looking at it has had
+        // it on screen for a second (ChatKit counts): the list is told
+        // whenever that starts or stops being so. The end is on screen
+        // where the transcript follows it and the scroll view shows it;
+        // somebody is looking where the window is in front and nothing
+        // stands over the chat. Never from onDisappear: a split view takes
+        // a detail away and puts the same one back, and this would not run
+        // again; a chat no window shows is no longer the window's current
+        // one, which the list knows by itself.
+        .onChange(of: atBottom && front && !covered && phase == .active, initial: true) { _, looking in
+            host.send(.end(scene: scene, key: key, shown: looking))
+        }
+        #if os(iOS)
+        .background { CoverProbe(covered: $covered) }
+        #endif
         .environment(\.draftField, draftField)
         .navigationTitle(screen.title)
         .navigationSubtitle(screen.subtitle)
@@ -177,16 +150,12 @@ struct ConversationView: View {
         }
     }
 
-    private func placeAtNew(_ screen: ConversationScreen, _ reader: ScrollViewProxy) {
-        guard laidOut, !placedAtNew, let line = screen.newLine,
-            let row = TranscriptPiece.pieces(of: screen.turns).first(where: { $0.turn.id == line.turn })
-        else { return }
-        placedAtNew = true
-        // By the id of the turn's first row, which the lazy stack knows
-        // however far up it is; the line is drawn above that row. After
-        // this update, since the rows may have arrived in it and the stack
-        // has not laid them out yet.
-        DispatchQueue.main.async { reader.scrollTo(row.id, anchor: .top) }
+    /// The row a chat that opens at a turn is put at: the turn's first,
+    /// which the "New" line is drawn above. Nil for a chat that opens at
+    /// its end, and until the rows hold the turn.
+    private func opening(_ screen: ConversationScreen) -> String? {
+        guard case let .turn(id) = screen.opens else { return nil }
+        return TranscriptPiece.pieces(of: screen.turns).first { $0.turn.id == id }?.id
     }
 
     private var act: (FailureAction) -> Void {
@@ -201,19 +170,359 @@ struct ConversationView: View {
         // was heard lands after it, in the conversation.
         host.send(.heard(await dictation.stop()), to: key)
     }
+}
 
-    /// What moving means for following the bottom: a new turn, more text, a
-    /// tool settling.
-    private func follow(_ screen: ConversationScreen) -> Int {
-        var h = Hasher()
-        h.combine(screen.turns.count)
-        h.combine(screen.turns.last)
-        h.combine(screen.approvals)
-        h.combine(screen.failures.turns)
-        h.combine(screen.failures.strip?.id)
-        h.combine(screen.typing)
-        return h.finalize()
+/// The scroll view a transcript lies in, which follows its end while its
+/// reader lets it (`TranscriptFollow`, ChatKit's rule).
+///
+/// Following is kept as the reader's intent and never worked out from where
+/// the scroll view stands after its content moved: a reply that grew by a
+/// screen while the app was away would read as "not at the end", and the
+/// chat would stay behind it. While it follows, every change of the
+/// content's height and of the room for it (a piece of a reply, rows
+/// landing, the keyboard, a turn of the device, a window resized, another
+/// text size) takes it to its end. It reacts to that height, which the
+/// scroll view reports, and not to a digest of the screen, so nothing that
+/// grows is missed.
+///
+/// What moves at each of those is this view's own state, and the
+/// transcript's rows are handed to it made: the conversation's view, which
+/// makes them, is not drawn again for a move, so its body runs once for a
+/// flush.
+struct TranscriptScroll<Rows: View, Bar: View>: View {
+    @Environment(\.scenePhase) private var phase
+    #if os(macOS)
+    @Environment(\.controlActiveState) private var keyState
+    #endif
+    let opens: TranscriptOpening
+    /// The row a chat that opens at a turn is put at, once the rows hold
+    /// it: they may be drawn before the turn is known, or after.
+    let anchor: String?
+    /// Moved by every send from the chat.
+    let sends: Int
+    /// Told whether the transcript follows its end with the end on screen:
+    /// the reader's intent and what the scroll view shows, both. A chat
+    /// opened further up, or scrolled up, is not at its end whatever
+    /// arrives below.
+    let looked: (Bool) -> Void
+    let rows: Rows
+    /// What floats over the transcript's end: handed whether the end is
+    /// near, the ids of the rows on screen, and what Jump to Latest does.
+    let bar: (_ atEnd: Bool, _ seen: [String], _ jump: @escaping () -> Void) -> Bar
+    @State private var position = ScrollPosition(idType: String.self)
+    @State private var follow: TranscriptFollow
+    /// The chat was put at the row it opens at, which happens once, and
+    /// only once the transcript has a size to scroll in.
+    @State private var placed = false
+    @State private var laidOut = false
+    @State private var atEnd = true
+    /// The rows on screen: what Jump to Latest counts from.
+    @State private var seen: [String] = []
+    @State private var reach = TranscriptReach()
+
+    init(
+        opens: TranscriptOpening, anchor: String? = nil, sends: Int, looked: @escaping (Bool) -> Void = { _ in },
+        @ViewBuilder rows: () -> Rows,
+        @ViewBuilder bar: @escaping (_ atEnd: Bool, _ seen: [String], _ jump: @escaping () -> Void) -> Bar
+    ) {
+        self.opens = opens
+        self.anchor = anchor
+        self.sends = sends
+        self.looked = looked
+        self.rows = rows()
+        self.bar = bar
+        _follow = State(initialValue: TranscriptFollow(opening: opens))
     }
+
+    var body: some View {
+        ScrollViewReader { reader in
+            scroll
+                // A chat with more than its reader had seen opens at the
+                // first of it, and does not follow its end until they come
+                // down to it. Where what is new fits on one screen the
+                // scroll stops at the end, and the chat follows from there
+                // as one with nothing new does.
+                .onChange(of: opens) { _, opens in
+                    // Known only now, with rows that arrived after the chat
+                    // was shown: following the end would take the chat past
+                    // where it is about to be put.
+                    if !placed, opens != .end { follow = TranscriptFollow(opening: opens) }
+                }
+                .onChange(of: anchor, initial: true) { _, _ in place(reader) }
+                .onChange(of: laidOut) { _, _ in place(reader) }
+                .onChange(of: atEnd && follow.following, initial: true) { _, at in looked(at) }
+        }
+    }
+
+    /// Puts a chat that opens at a row at it, once.
+    private func place(_ reader: ScrollViewProxy) {
+        guard laidOut, !placed, let anchor else { return }
+        placed = true
+        follow = TranscriptFollow(opening: opens)
+        position = ScrollPosition(idType: String.self)
+        // By the row's id, which the lazy stack knows however far up it
+        // is. After this update, since the rows may have arrived in it and
+        // the stack has not laid them out yet.
+        DispatchQueue.main.async { reader.scrollTo(anchor, anchor: .top) }
+    }
+
+    private var scroll: some View {
+        ScrollView { rows }
+            .scrollPosition($position)
+            // A chat opens at its end, and a short one lies from the top: it
+            // has nothing to follow until it outgrows the screen.
+            .defaultScrollAnchor(opens == .end ? .bottom : .top, for: .initialOffset)
+            .defaultScrollAnchor(.top, for: .alignment)
+            .onScrollPhaseChange { _, phase in
+                switch phase {
+                case .tracking, .interacting:
+                    // A finger on it: the reader's.
+                    reach.touched = true
+                    if follow.following { leave() }
+                case .idle:
+                    // Come to rest: where a finger left it, that is the
+                    // reader's word on following; where the app moved it,
+                    // it is held to where it was sent.
+                    let touched = reach.touched
+                    (reach.touched, reach.moving) = (false, nil)
+                    if touched { move(follow.rested(distance: reach.measure.distance)) } else { hold() }
+                default:
+                    break
+                }
+            }
+            // Where the scroll view stands, at every move of it. Kept beside
+            // the view, not in its state: it moves with every point
+            // scrolled and draws nothing.
+            .onScrollGeometryChange(for: TranscriptReach.Measure.self) { geo in
+                TranscriptReach.Measure(geo)
+            } action: { old, new in
+                reach.measure = new
+                if !laidOut, new.content > 0 { laidOut = true }
+                // Whether the end is near, for Jump to Latest: state, and
+                // so moved only when it changes.
+                let near = new.distance <= TranscriptFollow.near
+                if near != atEnd { atEnd = near }
+                if follow.following, !reach.touched, !reach.inMotion, new.content == old.content, new.room == old.room, new.top < old.top - 1,
+                    new.distance > TranscriptFollow.near
+                {
+                    // A scroll bar or a key moved the transcript with no
+                    // finger on it: up, away from the end, with the content
+                    // and the room as they were. Content that grew is never
+                    // read as the reader leaving.
+                    leave()
+                } else if near, !follow.following, !reach.touched {
+                    // Brought back to the end with no finger on it, which
+                    // never comes to rest as a touch does.
+                    move(follow.rested(distance: new.distance))
+                } else {
+                    // The content's height or the room for it changed, or
+                    // the scroll view moved for a reason of its own: a
+                    // transcript that follows its end is held to it.
+                    hold()
+                }
+            }
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { rows in
+                // Kept at every change, a row coming or going and never a
+                // piece of text: whether the end is near is said apart
+                // from it, in either order.
+                if rows != seen { seen = rows }
+            }
+            .onChange(of: sends) { _, _ in move(follow.sent()) }
+            .onChange(of: front) { _, front in
+                // Back in front: a chat that was at its end is at its end,
+                // whatever arrived meanwhile.
+                if front { move(follow.returned()) }
+            }
+            #if os(macOS)
+        // A wheel turned up over the transcript is the reader leaving
+        // its end, said before the scroll view has moved: by the time it
+        // has, rows coming into view have changed the content's height
+        // in the same breath, and a change of height alone takes a
+        // transcript that follows back to its end.
+        .background {
+            WheelWatcher { if follow.following { leave() } }
+        }
+            #endif
+            .scrollDismissesKeyboard(.interactively)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .safeAreaBar(edge: .bottom) {
+                bar(atEnd, seen) { move(follow.jumped()) }
+            }
+    }
+
+    /// The app is in front, and on a Mac this window is the one typed in.
+    private var front: Bool {
+        #if os(macOS)
+        phase == .active && keyState == .key
+        #else
+        phase == .active
+        #endif
+    }
+
+    /// The reader took the transcript away from its end. The position is
+    /// let go of with it: one still bound to a place would be put back
+    /// there at the next change.
+    private func leave() {
+        follow.touched()
+        position = ScrollPosition(idType: String.self)
+    }
+
+    /// Does what the rule answered.
+    private func move(_ move: TranscriptFollow.Move) {
+        switch move {
+        case .stay:
+            break
+        case .end(animated: true):
+            guard let end = reach.measure.away else { return }
+            // Held to its end once the move has come to rest, and not
+            // before: a correction would cut the move short. Not every
+            // scroll view says when a move of the app's own ends, so it is
+            // also given no longer than the motion takes.
+            reach.moving = Date().addingTimeInterval(0.45)
+            withAnimation(.snappy) { go(to: end) }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(500))
+                hold()
+            }
+        case .end(animated: false):
+            hold()
+        }
+    }
+
+    /// Holds a transcript that follows its end to it, wherever the scroll
+    /// view stands: short of it after the content grew, or past it after
+    /// the room for it did or the content shrank. Whether it is there is
+    /// worked out from what the scroll view last said of itself, and the
+    /// end is asked for again a moment later where it did not get there,
+    /// so a move lost to a change under way is made good: a few times for
+    /// one reason, never in a loop.
+    /// Sends the scroll view to its content's end: `end` is the point of
+    /// the content that then stands at the top of what shows.
+    ///
+    /// On an iPhone and an iPad it is asked for as that place. Asked for as
+    /// an edge while what is inset over the end changes (the keyboard, the
+    /// composer gaining or losing a line), the scroll view there goes past
+    /// its end by the inset, and the transcript is a blank screen. A Mac's
+    /// scroll view takes a place by another measure and its edge exactly.
+    private func go(to end: Double) {
+        #if os(macOS)
+        position.scrollTo(edge: .bottom)
+        #else
+        position.scrollTo(y: end)
+        #endif
+    }
+
+    private func hold() {
+        guard follow.following, !reach.touched, !reach.inMotion, let end = reach.measure.away else {
+            reach.asked = 0
+            return
+        }
+        // Counted while the content and the room are as they were when it
+        // was last asked for: a change of either is a new reason to go.
+        if reach.askedOf != reach.measure.extent { (reach.askedOf, reach.asked) = (reach.measure.extent, 0) }
+        guard reach.asked < 4 else { return }
+        reach.asked += 1
+        go(to: end)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            hold()
+        }
+    }
+}
+
+#if os(macOS)
+/// Tells of a wheel, or two fingers on a trackpad, turned up over the view
+/// it stands behind: the scroll view over it takes the event itself, so it
+/// is watched for on its way there and passed on as it came.
+struct WheelWatcher: NSViewRepresentable {
+    let up: () -> Void
+
+    func makeNSView(context: Context) -> Watching {
+        let view = Watching()
+        view.up = up
+        return view
+    }
+
+    func updateNSView(_ view: Watching, context: Context) {
+        view.up = up
+    }
+
+    final class Watching: NSView {
+        var up: () -> Void = {}
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                if let self, event.window === self.window { self.turned(by: event.scrollingDeltaY, at: event.locationInWindow) }
+                return event
+            }
+        }
+
+        /// A wheel turned by `delta` (up is more than none) at a point of
+        /// the window.
+        func turned(by delta: CGFloat, at point: CGPoint) {
+            if delta > 0, convert(bounds, to: nil).contains(point) { up() }
+        }
+
+        isolated deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+}
+#endif
+
+/// Where a transcript's scroll view stands, as it last said: read when a
+/// rule needs it. A reference the view holds, so a point scrolled writes it
+/// and draws nothing.
+@MainActor
+final class TranscriptReach {
+    /// What the scroll view says of itself at each move, in its content's
+    /// own coordinates.
+    struct Measure: Equatable {
+        /// The content's height.
+        var content = 0.0
+        /// How much of the scroll view shows its content: what is left of
+        /// it between what is inset over its top (a navigation bar) and
+        /// over its end (the composer, the keyboard).
+        var room = 0.0
+        /// The point of the content at the top of that room.
+        var top = 0.0
+
+        init() {}
+
+        init(_ geo: ScrollGeometry) {
+            content = geo.contentSize.height
+            // The visible rect reaches under what is inset over it.
+            room = geo.visibleRect.height - geo.contentInsets.top - geo.contentInsets.bottom
+            top = geo.contentOffset.y + geo.contentInsets.top
+        }
+
+        /// The point that stands at the top of the room when the content's
+        /// end stands at the end of it; the content's start where it fits.
+        var end: Double { max(0, content - room) }
+        /// How much of the content lies below what shows of it.
+        var distance: Double { max(0, end - top) }
+        /// The end, where the scroll view is not at it.
+        var away: Double? { abs(top - end) > 0.5 ? end : nil }
+        /// The content's height and the room for it.
+        var extent: [Double] { [content, room] }
+    }
+
+    var measure = Measure()
+    /// A finger is on the transcript, or was when it last moved.
+    var touched = false
+    /// The app is moving the transcript to its end, with motion, until
+    /// then at the latest.
+    var moving: Date?
+    var inMotion: Bool { moving.map { $0 > Date() } ?? false }
+    /// How many times in a row the end was asked for and not reached, with
+    /// the content and the room as they are in `askedOf`.
+    var asked = 0
+    var askedOf: [Double] = []
 }
 
 /// The transcript's rows, in order: a new chat's opening, the turns, what a

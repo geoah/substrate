@@ -114,6 +114,18 @@ struct ReplyPageView: View, Equatable {
     let reply: AssistantTurn
     let page: Int
     let expandThinking: Bool
+    /// The Thinking section as its reader left it: open, shut, or as the
+    /// setting says.
+    @State private var thinkingOpen: Bool?
+    /// The row's height while the model's thinking showed in its window:
+    /// kept for the answer that follows.
+    @State private var held: CGFloat = 0
+
+    /// The window on the model's thinking shows: it is thinking, in the
+    /// first row of its reply, and its reader has not opened the whole.
+    private var windowed: Bool {
+        page == 0 && reply.reasoning?.thinking == true && !(thinkingOpen ?? expandThinking)
+    }
 
     private var rows: ArraySlice<MarkdownRow> {
         let all = reply.blocks.rows
@@ -133,13 +145,14 @@ struct ReplyPageView: View, Equatable {
         guard lhs.page == 0 else { return true }
         return lhs.reply.reasoning == rhs.reply.reasoning && lhs.reply.typing == rhs.reply.typing
             && (lhs.reply.text == nil) == (rhs.reply.text == nil) && lhs.expandThinking == rhs.expandThinking
+            && lhs.reply.tools.isEmpty == rhs.reply.tools.isEmpty
     }
 
     var body: some View {
         let _ = Meter.shared.count(.body, "ReplyPage")
         VStack(alignment: .leading, spacing: 10) {
             if page == 0, let reasoning = reply.reasoning {
-                ReasoningView(reasoning: reasoning, expandByDefault: expandThinking)
+                ReasoningView(reasoning: reasoning, expandByDefault: expandThinking, open: $thinkingOpen)
             }
             if reply.text != nil {
                 MarkdownView(rows: rows, missing: Set(reply.missing))
@@ -153,7 +166,23 @@ struct ReplyPageView: View, Equatable {
                 TypingDots()
             }
         }
+        // The window gives its height to the answer: while the answer is
+        // the last thing written the row stays as tall as it was with the
+        // window in it, so the answer starts in the window's place and the
+        // page does not jump. Let go of when something stands under it (a
+        // tool's row, which then takes that place) or the reply ends.
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.height
+        } action: { height in
+            if windowed, height != held { held = height }
+        }
+        .frame(minHeight: holds ? held : nil, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The row keeps the height it had with the thinking's window in it.
+    private var holds: Bool {
+        reply.live && !windowed && page == 0 && reply.tools.isEmpty && reply.sources == nil
     }
 
     /// The reply's text as it stands now: this row may have been drawn
@@ -269,6 +298,15 @@ struct TranscriptPiece: Identifiable {
     }
 }
 
+extension TranscriptPiece {
+    /// The turn of the last of `rows` (the ids of the rows on screen) in
+    /// the transcript's order: the last turn a reader can see.
+    static func lastTurn(among rows: [String], of turns: [TurnPresentation]) -> String? {
+        let onScreen = Set(rows)
+        return pieces(of: turns).last { onScreen.contains($0.id) }?.turn.id
+    }
+}
+
 /// A piece as its view.
 struct TranscriptPieceView: View {
     let piece: TranscriptPiece
@@ -297,11 +335,16 @@ extension EnvironmentValues {
     @Entry var conversationKey: ChildKey?
 }
 
-/// "Thinking…" while the model reasons, then "Thought for 6 s", folded.
+/// "Thinking…" while the model reasons, over a window of fixed height that
+/// shows the newest of its thinking; then "Thought for 6 s", folded. Opened,
+/// it is the whole text, while it thinks and after.
 struct ReasoningView: View {
     let reasoning: ReasoningPresentation
     let expandByDefault: Bool
-    @State private var open: Bool?
+    /// Kept by the row, which outlives a change of what stands in it.
+    @Binding var open: Bool?
+    /// About three lines of the thinking, at the text's size.
+    @ScaledMetric(relativeTo: .footnote) private var window = 58.0
 
     var body: some View {
         let expanded = open ?? expandByDefault
@@ -326,6 +369,7 @@ struct ReasoningView: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .accessibilityValue(expanded ? "Shown" : "Hidden")
             if expanded {
                 Text(reasoning.text)
                     .font(.subheadline)
@@ -335,6 +379,26 @@ struct ReasoningView: View {
                     .overlay(alignment: .leading) {
                         Rectangle().fill(.quaternary).frame(width: 2)
                     }
+            } else if reasoning.thinking {
+                // The newest lines, the older ones fading out at the top:
+                // where the thinking has got to, in a height that holds.
+                Text(reasoning.tail)
+                    .font(.footnote)
+                    .foregroundStyle(.quietText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: window, alignment: .bottom)
+                    .clipped()
+                    .mask {
+                        LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.45)], startPoint: .top, endPoint: .bottom)
+                    }
+                    .padding(.leading, 12)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(.quaternary).frame(width: 2)
+                    }
+                    // The label says it is thinking; its words are read
+                    // when the section is opened.
+                    .accessibilityHidden(true)
             }
         }
     }
