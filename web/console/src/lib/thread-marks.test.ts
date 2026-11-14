@@ -64,6 +64,16 @@ describe("threadUnread", () => {
     expect(threadUnread(thread("m3", "running"), mark("m2", true))).toBe(false)
   })
 
+  it("stays read with a message of the person's own waiting past the reply they read", () => {
+    // A message sent while a turn ran, which the turn never read (decision
+    // 0318): the server never names it as `lastMessage`, and the dot reads
+    // that property alone, never the rows. So the stopped chat names the
+    // reply the mark reads through, and writes nothing more.
+    const stopped = thread("m2", "stopped")
+    expect(threadUnread(stopped, mark("m2"))).toBe(false)
+    expect(readThroughToWrite(stopped, mark("m2"))).toBeUndefined()
+  })
+
   it("is read when the thread names no newest message, as before marks", () => {
     expect(threadUnread(thread(), undefined)).toBe(false)
     expect(threadUnread(thread(), mark(undefined, true))).toBe(true)

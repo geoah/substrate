@@ -158,6 +158,10 @@ type dataset struct {
 	// loop returns (agentloop.go runAgent). A `running` thread outside it
 	// whose lease expired has no loop left to settle it (settleLostThreads).
 	runningThreads sync.Map
+	// unansweredSwept is set once this process has looked for the chat
+	// threads a restart left with a message no turn answered
+	// (agentqueue.go startUnansweredTurns).
+	unansweredSwept atomic.Bool
 	// lostRuns, under lostMu, maps a thread id to the reason its loop failed
 	// with when even the settle after that failure failed, for
 	// settleLostThreads (agents.go noteLostRun).
@@ -289,6 +293,10 @@ type dataset struct {
 	// through before it is written, so a test can hold one.
 	agentWriteTimeout time.Duration
 	agentRowWrite     func(ctx context.Context, props map[string]any) error
+	// queuedRowRead is set only by tests: it stands in for the read of a
+	// queued message's row after its write was left in doubt
+	// (agentqueue.go readQueuedRow).
+	queuedRowRead func(ctx context.Context, id string) (*erow, error)
 	// failedSettleTimeout is set only by tests: the budget of the settle
 	// after a failed write (zero is agentFailedSettleTimeout).
 	failedSettleTimeout time.Duration

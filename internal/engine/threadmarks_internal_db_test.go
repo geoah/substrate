@@ -392,7 +392,10 @@ func TestAThreadSettlesNamingItsNewestMessageAndCountsWhatWaits(t *testing.T) {
 		return props[propThreadLastReply] == "noted."
 	})
 
-	// A call that fails before any reply: the newest row is the message sent.
+	// A call that fails before any reply: the newest row is the message
+	// sent, which no reply came after. It is its sender's own word, so the
+	// thread keeps naming the reply before it (decision 0318).
+	replied := lastMessageOf(t, r.ds, plain)
 	r.fake.script("lead", fakeTurn{status: 400})
 	if _, err := r.ds.ChatAgent(ada, substrate.ActorPerson, r.pkg+"/lead", substrate.ChatInput{Message: "again", Thread: plain}, nil); err == nil {
 		t.Fatal("a failed model call answered no error")
@@ -400,8 +403,18 @@ func TestAThreadSettlesNamingItsNewestMessageAndCountsWhatWaits(t *testing.T) {
 	if status, _ := threadStatusOf(t, r.ds, plain); status != threadError {
 		t.Fatalf("the failed turn settled %s", status)
 	}
-	if got := lastMessageOf(t, r.ds, plain); got != newest(plain) || roleOf(got) != "user" {
-		t.Fatalf("after a failed call lastMessage is %s (%s), want the message sent %s", got, roleOf(got), newest(plain))
+	if got := lastMessageOf(t, r.ds, plain); got != replied || roleOf(newest(plain)) != "user" {
+		t.Fatalf("after a failed call lastMessage is %s (%s), want still the reply %s before the message sent", got, roleOf(got), replied)
+	}
+	// In a chat that holds nothing else, the message sent is what it names.
+	r.fake.script("lead", fakeTurn{status: 400})
+	if _, err := r.ds.ChatAgent(ada, substrate.ActorPerson, r.pkg+"/lead", substrate.ChatInput{Message: "a first message", MessageID: "first-and-failed"}, nil); err == nil {
+		t.Fatal("a failed model call answered no error")
+	}
+	if row, err := r.ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: "first-and-failed"}); err != nil || row == nil {
+		t.Fatalf("the failed chat's message: %v", err)
+	} else if got := lastMessageOf(t, r.ds, referenceID(row.Props[msgRelThread])); got != "first-and-failed" {
+		t.Fatalf("a chat whose first call failed names %q, want the message sent", got)
 	}
 
 	// A summary row above every other is not the newest message.

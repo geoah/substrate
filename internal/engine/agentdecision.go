@@ -563,11 +563,14 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		// A failed settle must not hold back the resumes below.
 		ds.svc.log.Error("substrate: settling lost agent threads failed", "error", err)
 	}
+	// Once per open: a chat thread a restart left with a message no turn
+	// answered gets the turn the message asked for (agentqueue.go).
+	started := ds.startUnansweredTurns(ctx)
 	threads, err := ds.unconsumedResolutions(ctx)
 	if err != nil {
-		return 0, err
+		return started, err
 	}
-	resumed := 0
+	resumed := started
 	for _, id := range threads {
 		if !ds.admitResume(ctx, id, "") {
 			continue

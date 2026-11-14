@@ -165,7 +165,7 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 		// only the row says which way it went. A row the loop were not told
 		// of would be read by nobody, and start no turn.
 		rctx, done := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		row, rerr := ds.loadRowDB(rctx, eref{Kind: typeMessage, ID: m.id})
+		row, rerr := ds.readQueuedRow(rctx, m.id)
 		done()
 		committed, doubted = rerr == nil && m.landedAs(row, in.Thread), rerr != nil
 	}
@@ -331,7 +331,7 @@ func (l *agentLoop) takeQueued(ctx context.Context) ([]*queuedMessage, error) {
 	var taken []*queuedMessage
 	for _, m := range waiting {
 		landed, err := l.resolveQueued(ctx, m, func() (*erow, error) {
-			return l.ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: m.id})
+			return l.ds.readQueuedRow(ctx, m.id)
 		})
 		if ctx.Err() != nil {
 			// The stop is what ends the call: nothing more is read.
@@ -406,6 +406,108 @@ func (ds *dataset) startQueuedTurn(threadID, message string) <-chan struct{} {
 		signal()
 	}
 	return opened
+}
+
+// unansweredTurnWindow is how long before a sweep a chat thread may have
+// settled for the sweep to start the turn its unanswered message asked for.
+// The turn is lost only between a settle and the start that follows it at
+// once, so the window covers a restart; past it the message waits for its
+// person, and a client offers Continue.
+const unansweredTurnWindow = time.Hour
+
+// startUnansweredTurns starts the turn of each chat thread that settled
+// `ok` inside unansweredTurnWindow and holds a person's message no reply
+// came after: a message sent while the last turn ran, whose own turn the
+// process ended before starting (the start is kept in memory: agentloop.go
+// run).
+// It answers how many it started, and does its work once per open: after
+// that, every such turn is started by the settle that leaves the message.
+//
+// Only `ok` is read. A thread that settled `ok` wrote a reply after the
+// message that started its run, so a message past every reply was never
+// read; on an `overbudget` or a failed thread the same rows may be the
+// message the run itself could not answer, and starting it again would run
+// the same failure at every boot.
+func (ds *dataset) startUnansweredTurns(ctx context.Context) int {
+	if ds.unansweredSwept.Load() {
+		return 0
+	}
+	threads, ok, err := ds.unansweredThreads(ctx)
+	if err != nil {
+		ds.svc.log.Warn("substrate: the chat threads with an unanswered message were not read", "error", err)
+		return 0
+	}
+	if !ok {
+		// The index it reads is being derived: the next sweep looks again.
+		return 0
+	}
+	ds.unansweredSwept.Store(true)
+	started := 0
+	for _, id := range threads {
+		rows, err := ds.threadRows(ctx, id)
+		if err != nil {
+			ds.svc.log.Warn("substrate: a chat thread's unanswered message was not read", "thread", id, "error", err)
+			continue
+		}
+		waiting := unansweredRows(rows)
+		if len(waiting) == 0 {
+			continue
+		}
+		ds.startQueuedTurn(id, waiting[0].id)
+		started++
+	}
+	return started
+}
+
+// unansweredThreads lists, in id order, the chat threads that settled `ok`
+// inside unansweredTurnWindow and hold a user message whose ordinal is past
+// every assistant message's. ok is false while the messages' `thread` refs
+// rows are owed: the read goes through them, as unconsumedResolutions does
+// and for its reasons, and is put off rather than made over every message.
+func (ds *dataset) unansweredThreads(ctx context.Context) (threads []string, ok bool, err error) {
+	pending, err := refsPending(ctx, ds.db, []string{typeMessage}, msgRelThread)
+	if err != nil || pending {
+		return nil, false, err
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		WITH settled AS MATERIALIZED (
+		  SELECT id, (props->>'finishedAt')::timestamptz AS finished_at
+		  FROM records
+		  WHERE kind = $1 AND deleted_at IS NULL AND props->>'status' = $3 AND props->>'mode' = $4
+		), recent AS MATERIALIZED (
+		  SELECT id FROM settled WHERE finished_at > $5
+		)
+		SELECT s.id FROM recent s
+		WHERE (
+		  SELECT coalesce(max((m.props->>'turn')::bigint) FILTER (WHERE m.props->>'role' = 'user'), -1)
+		       > coalesce(max((m.props->>'turn')::bigint) FILTER (WHERE m.props->>'role' = 'assistant'), -1)
+		  FROM refs r JOIN records m ON m.kind = $2 AND m.id = r.src AND m.deleted_at IS NULL
+		  WHERE r.dst_kind = $1 AND r.dst = s.id AND r.src_kind = $2
+		    AND r.property = $6 AND r.path = '' AND r.ord = 0
+		)
+		ORDER BY s.id`,
+		typeThread, typeMessage, threadOK, agentModeChat, nowUTC().Add(-unansweredTurnWindow), msgRelThread)
+	if err != nil {
+		return nil, false, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, false, err
+		}
+		threads = append(threads, id)
+	}
+	return threads, true, rows.Err()
+}
+
+// readQueuedRow reads the row of a queued message whose write was left in
+// doubt.
+func (ds *dataset) readQueuedRow(ctx context.Context, id string) (*erow, error) {
+	if read := ds.queuedRowRead; read != nil {
+		return read(ctx, id)
+	}
+	return ds.loadRowDB(ctx, eref{Kind: typeMessage, ID: id})
 }
 
 // heldToUnanswered is ctx with the senders of the thread's unanswered
