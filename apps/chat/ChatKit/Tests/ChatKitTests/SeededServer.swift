@@ -163,15 +163,18 @@ final class SeededServer: @unchecked Sendable {
     private var port = 0
     private var open: [String: Int] = [:]
     private var seen = 0
-    private var lines = 0
     private var refused401 = false
     private var faults = 0
-    private var closed = 0
     private var counted: [String: Int] = [:]
     private var inside: [Int: String] = [:]
     private var sleeping: [Int: Date] = [:]
     /// Every chat request that reached the server, by its message's text.
     private var chats: [String: Int] = [:]
+    /// The seeded thread the server was made on, nil when on none, and how
+    /// many requests reached it from anywhere else: work of a seeded run
+    /// that left the run's thread, which the seed no longer orders.
+    fileprivate let home = SeededThread.current
+    fileprivate var strays = 0
 
     init(seed: UInt64, clock: TestClock, revision: Int = 3, agent: String = helper) {
         self.seed = seed
@@ -234,10 +237,6 @@ final class SeededServer: @unchecked Sendable {
         lock.withLock { open.filter { $0.value != 0 }.map { "\($0.key)×\($0.value)" }.sorted() + inside.values.sorted() }
     }
 
-    /// Moves whenever a request arrives or a line goes out: a test waits
-    /// for it to stand still.
-    var activity: Int { lock.withLock { seen + lines + closed } }
-
     /// What the server did, by name: how far a run reached.
     var tally: [String: Int] { lock.withLock { counted } }
 
@@ -246,6 +245,7 @@ final class SeededServer: @unchecked Sendable {
     /// How many requests came, and how many of them drew a fault.
     var requests: Int { lock.withLock { seen } }
     var faulted: Int { lock.withLock { faults } }
+    var strayed: Int { lock.withLock { strays } }
 
     /// How often a chat request with this text reached the server.
     func chatRequests(saying text: String) -> Int { lock.withLock { chats[text, default: 0] } }
@@ -387,7 +387,6 @@ final class SeededServer: @unchecked Sendable {
             return false
         }
         reader.continuation.yield(text)
-        lines += 1
         if reader.fault.duplicate == reader.delivered { reader.continuation.yield(text) }
         reader.delivered += 1
         return true
@@ -406,7 +405,8 @@ final class SeededServer: @unchecked Sendable {
         }
 
         func lines(for request: URLRequest) async throws -> LineStream {
-            try await server.answer(request, port: number)
+            if SeededThread.current !== server.home { server.lock.withLock { server.strays += 1 } }
+            return try await server.answer(request, port: number)
         }
     }
 
@@ -644,7 +644,6 @@ final class SeededServer: @unchecked Sendable {
                     lock.withLock {
                         if let reader { threads[thread]?.turn?.readers.removeAll { $0.id == reader } }
                         if let tag { open[tag, default: 0] -= 1 }
-                        closed += 1
                     }
                 }
             }

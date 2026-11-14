@@ -57,8 +57,7 @@ struct SeededChat {
                 while running < plan.width, let seed = waiting.popFirst() {
                     running += 1
                     group.addTask {
-                        var run = SeededRun(seed: seed)
-                        await run.run(steps: plan.steps)
+                        let run = await SeededRun.ran(seed: seed, steps: plan.steps)
                         if plan.verbose { print(run.summary) }
                         return run
                     }
@@ -94,20 +93,38 @@ struct SeededChat {
         var caught: SeededRun.Violation?
         // From the first seed that shows it today; the search goes on from
         // there, so a change to the draws still finds one.
+        var first: SeededRun?
         for seed in UInt64(17) ... 217 where caught == nil {
-            var run = SeededRun(seed: seed, revision: 2, careless: true)
-            await run.run(steps: 80)
-            if let violation = run.broken, violation.rule == SeededRun.Rule.doubled.rawValue { caught = violation }
+            let run = await SeededRun.ran(seed: seed, revision: 2, careless: true, steps: 80)
+            if let violation = run.broken, violation.rule == SeededRun.Rule.doubled.rawValue { (caught, first) = (violation, run) }
         }
         let violation = try #require(caught, "no careless run in 200 seeds sent a message twice")
         let printed = "\(violation)"
         #expect(printed.contains("seed \(violation.seed) broke a rule at step \(violation.steps.count): no message is written twice"))
         #expect(printed.contains("replay: CHATKIT_SEED=\(violation.seed) CHATKIT_STEPS=\(violation.steps.count) swift test --filter SeededChat"))
         #expect(violation.steps.contains { $0.hasPrefix("sends ") })
-        // The same seed again breaks the same rule.
-        var again = SeededRun(seed: violation.seed, revision: 2, careless: true)
-        await again.run(steps: 80)
-        #expect(again.broken?.rule == violation.rule)
+        // The same seed again is the same run, to the last request.
+        let again = await SeededRun.ran(seed: violation.seed, revision: 2, careless: true, steps: 80)
+        #expect(again.broken?.rule == violation.rule && again.steps == violation.steps && again.fingerprint == first?.fingerprint)
+    }
+
+    /// A seed is one run, whatever else the host is doing: alone, and
+    /// beside other runs that take the processor from it, it takes the same
+    /// steps, asks the server the same things and leaves the same rows.
+    @Test func aSeedRunsTheSameWayWhateverRunsBesideIt() async {
+        let seeds: [UInt64] = [3, 8, 21, 34]
+        var alone: [UInt64: SeededRun] = [:]
+        for seed in seeds { alone[seed] = await SeededRun.ran(seed: seed, steps: 60) }
+        let crowded = await withTaskGroup(of: SeededRun.self) { group in
+            for seed in seeds + (40 ..< 52) { group.addTask { await SeededRun.ran(seed: seed, steps: 60) } }
+            var out: [UInt64: SeededRun] = [:]
+            for await run in group { out[run.seed] = run }
+            return out
+        }
+        for seed in seeds {
+            #expect(crowded[seed]?.steps == alone[seed]?.steps, "seed \(seed) took other steps beside other runs")
+            #expect(crowded[seed]?.fingerprint == alone[seed]?.fingerprint, "seed \(seed) came to another end beside other runs")
+        }
     }
 }
 
@@ -172,27 +189,29 @@ struct SeededServerTruth {
 
     @Test func theSameSeedDrawsTheSameFaults() async throws {
         func statuses(_ seed: UInt64) async -> [String] {
-            let clock = TestClock()
-            let server = SeededServer(seed: seed, clock: clock)
-            let port = server.connect()
-            server.misbehave(0.6)
-            var out: [String] = []
-            for index in 0 ..< 40 {
-                var request = URLRequest(url: origin.appendingPathComponent("api/v1/substrate.reamde.dev/llm/thread/t\(index % 3)"))
-                request.timeoutInterval = 30
-                let answered = Answered()
-                let reading = Task { () -> String in
-                    defer { answered.set() }
-                    do { return String(try await port.data(for: request).1.statusCode) } catch { return "\((error as? URLError)?.code.rawValue ?? 0)" }
+            await SeededThread.run {
+                let thread = SeededThread.current!
+                let clock = TestClock()
+                let server = SeededServer(seed: seed, clock: clock)
+                let port = server.connect()
+                server.misbehave(0.6)
+                var out: [String] = []
+                for index in 0 ..< 40 {
+                    var request = URLRequest(url: origin.appendingPathComponent("api/v1/substrate.reamde.dev/llm/thread/t\(index % 3)"))
+                    request.timeoutInterval = 30
+                    let reading = Task { () -> String in
+                        do { return String(try await port.data(for: request).1.statusCode) } catch { return "\((error as? URLError)?.code.rawValue ?? 0)" }
+                    }
+                    // A hang and a delay wait on the clock.
+                    await thread.idle()
+                    while clock.sleeping > 0 {
+                        clock.advance(by: 40)
+                        await thread.idle()
+                    }
+                    out.append(await reading.value)
                 }
-                // A hang and a delay wait on the clock.
-                while !answered.isSet {
-                    await Task.yield()
-                    if clock.sleeping > 0 { clock.advance(by: 40) }
-                }
-                out.append(await reading.value)
+                return out
             }
-            return out
         }
         let first = await statuses(11)
         #expect(await statuses(11) == first)
@@ -201,13 +220,4 @@ struct SeededServerTruth {
         // a gateway's page, a rate limit, a timeout among them.
         #expect(Set(first).isSuperset(of: ["404", "502", "429", "200", "\(URLError.Code.timedOut.rawValue)"]) && Set(first).count >= 7)
     }
-}
-
-/// Whether a request has been answered yet.
-private final class Answered: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
-
-    func set() { lock.withLock { done = true } }
-    var isSet: Bool { lock.withLock { done } }
 }
