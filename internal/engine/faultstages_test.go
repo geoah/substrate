@@ -63,6 +63,23 @@ func TestEveryFaultSeamStageIsNamedByATest(t *testing.T) {
 // re-exports the stages and the other reads them.
 func namesUsedInCode(t *testing.T, dir string) map[string]bool {
 	t.Helper()
+	inBodies, tables := testCodeNames(t, dir)
+	used := maps.Clone(inBodies)
+	for table, values := range tables {
+		if inBodies[table] {
+			for _, n := range values {
+				used[n] = true
+			}
+		}
+	}
+	return used
+}
+
+// testCodeNames is every identifier the test files of dir use inside a
+// function's body, and each package-level value's identifiers by the name
+// it is declared with.
+func testCodeNames(t *testing.T, dir string) (map[string]bool, map[string][]string) {
+	t.Helper()
 	files, err := filepath.Glob(filepath.Join(dir, "*_test.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -112,15 +129,7 @@ func namesUsedInCode(t *testing.T, dir string) map[string]bool {
 			}
 		}
 	}
-	used := maps.Clone(inBodies)
-	for table, values := range tables {
-		if inBodies[table] {
-			for _, n := range values {
-				used[n] = true
-			}
-		}
-	}
-	return used
+	return inBodies, tables
 }
 
 // parsedFiles parses dir's Go files, the tests among them or not.
@@ -344,5 +353,9 @@ func TestX(t *testing.T) {
 	}
 	if !usesStage(f, "absent", "a string that mentions stopInString") {
 		t.Error("usesStage does not count a stage's value as a whole string literal")
+	}
+	// The set-aside guard's table: listed, it must be one a test's body uses.
+	if reachedByATest(t, filepath.Join(dir, "x_test.go"), "unusedTable") || !reachedByATest(t, filepath.Join(dir, "x_test.go"), "table") {
+		t.Error("reachedByATest takes a table no test's body uses, or misses one a body uses")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -75,6 +76,8 @@ func TestEverySetAsideStageIsReachedByARealFailure(t *testing.T) {
 				t.Errorf("setAsideStageCases lists %s for %q, which is not declared there", c, value)
 			case !usesStage(node, name, value):
 				t.Errorf("%s is listed for %q and its code uses neither %s nor %q", c, value, name, value)
+			case !reachedByATest(t, file, decl):
+				t.Errorf("%s is listed for %q and is a table no test's body uses", c, value)
 			}
 		}
 	}
@@ -174,4 +177,22 @@ func mapValues(m map[string]string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+// reachedByATest reports whether decl, declared in file, is a function or a
+// table a test's body uses: a function is the test or a helper it names;
+// a package-level value counts only where a function's body in its
+// directory's tests names it, as the fault seams' guard asks of a table
+// (namesUsedInCode).
+func reachedByATest(t *testing.T, file, decl string) bool {
+	t.Helper()
+	node, ok := declarationNode(t, file, decl)
+	if !ok {
+		return false
+	}
+	if _, table := node.(*ast.ValueSpec); !table {
+		return true
+	}
+	inBodies, _ := testCodeNames(t, filepath.Dir(file))
+	return inBodies[decl]
 }
