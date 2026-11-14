@@ -1,7 +1,7 @@
 {
   "name": "@substrate/vite",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "A Substrate web app's build: where it is served, its client metadata document and its web manifest.",
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@substrate/react",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "React for a Substrate web app: the signed-in shell, the record and write hooks, Settings' sections and the grouped screen pieces.",
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@substrate/auth",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "An app's sign-in to a Substrate: OAuth 2.1 with PKCE and package details, the session, its status and its revocation. No framework.",
   "repository": {
     "type": "git",

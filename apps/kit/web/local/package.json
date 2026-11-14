@@ -1,7 +1,7 @@
 {
   "name": "@substrate/local",
   "private": true,
-  "version": "0.123.1",
+  "version": "0.124.0",
   "description": "What a Substrate web app keeps in the browser: the outbox, the record cache and the linked records. No framework.",
   "repository": {
     "type": "git",
