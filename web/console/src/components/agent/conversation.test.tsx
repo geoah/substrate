@@ -69,7 +69,7 @@ vi.mock("@/lib/api/agents", async (importOriginal) => {
 })
 
 // The revision of the `agents` feature the server under test says it has.
-let agentsRevision = 3
+let agentsRevision = 5
 vi.mock("@/lib/api/discovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/api/discovery")>()
   const doc = () => ({
@@ -113,7 +113,7 @@ afterEach(() => {
   calls.length = 0
   attaches.length = 0
   continues.length = 0
-  agentsRevision = 3
+  agentsRevision = 5
   stops.length = 0
   stopAnswer = () => new Promise(() => {})
   vi.unstubAllGlobals()
@@ -1472,6 +1472,271 @@ const settled = {
   costUSD: 0,
 }
 
+describe("a stream joined twice", () => {
+  it("keeps what it shows across an attach, and writes the replay over it", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-20", { threadRecord: runningThread("t-20") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-20" })
+      attaches[0].onEvent({
+        kind: "delta",
+        text: "Tomatoes 🍅 ",
+        turn: 1,
+        at: 0,
+      })
+      attaches[0].onEvent({
+        kind: "delta",
+        text: "like a deep ",
+        turn: 1,
+        at: 11,
+      })
+    })
+    const reply = screen.getByText("Tomatoes 🍅 like a deep")
+    // The stream drops. The page attaches again, and what it shows stays
+    // while the rows are read and the replay is on its way.
+    act(() => attaches[0].onDone?.())
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    expect(screen.getByText("Tomatoes 🍅 like a deep")).toBe(reply)
+    // The replay comes back as one piece from 0, then the turn goes on.
+    act(() => {
+      attaches[1].onEvent({ kind: "thread", thread: "t-20" })
+      attaches[1].onEvent({
+        kind: "delta",
+        text: "Tomatoes 🍅 like a deep watering ",
+        turn: 1,
+        at: 0,
+      })
+    })
+    expect(screen.getByText("Tomatoes 🍅 like a deep watering")).toBe(reply)
+    act(() =>
+      attaches[1].onEvent({
+        kind: "delta",
+        text: "twice a week.",
+        turn: 1,
+        at: 32,
+      })
+    )
+    // One reply, never two, and the same element throughout.
+    expect(
+      screen.getAllByText(/Tomatoes 🍅 like a deep watering twice a week\./)
+    ).toEqual([reply])
+  })
+
+  it("leaves a turn the rows now hold to the rows, and keeps the one still streaming", async () => {
+    let rows = [message("m0", 0, "user", "question")]
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: rows }), { status: 200 })
+      )
+    )
+    mount("t-21", { threadRecord: runningThread("t-21") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-21" })
+      attaches[0].onEvent({ kind: "delta", text: "Looking.", turn: 1, at: 0 })
+      attaches[0].onEvent({
+        kind: "toolStarted",
+        id: "c1",
+        tool: "query",
+        args: "{}",
+        turn: 2,
+      })
+      attaches[0].onEvent({
+        kind: "toolFinished",
+        id: "c1",
+        tool: "query",
+        output: "[]",
+        ok: true,
+        turn: 2,
+      })
+      attaches[0].onEvent({ kind: "delta", text: "Found ", turn: 3, at: 0 })
+    })
+    // The first turn and its call are stored by the time the page attaches
+    // again; the reply is still only live.
+    rows = [
+      message("m2", 2, "tool", "[]"),
+      message("m1", 1, "assistant", "Looking."),
+      message("m0", 0, "user", "question"),
+    ]
+    act(() => attaches[0].onDone?.())
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    act(() => {
+      attaches[1].onEvent({ kind: "thread", thread: "t-21" })
+      // The replay sends the stored turn again: it is dropped.
+      attaches[1].onEvent({ kind: "delta", text: "Looking.", turn: 1, at: 0 })
+      attaches[1].onEvent({
+        kind: "delta",
+        text: "Found none.",
+        turn: 3,
+        at: 0,
+      })
+    })
+    expect(screen.getAllByText("Looking.")).toHaveLength(1)
+    expect(screen.getAllByText("Found none.")).toHaveLength(1)
+  })
+
+  it("attaches again at once when it fell behind the turn", async () => {
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-22", { threadRecord: runningThread("t-22") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-22" })
+      attaches[0].onEvent({ kind: "delta", text: "so far", turn: 1, at: 0 })
+      attaches[0].onEvent({ kind: "lagged", thread: "t-22" })
+      attaches[0].onDone?.()
+    })
+    // No backoff: the turn is running and only this reader was slow.
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 400 })
+    expect(screen.getByText("so far")).toBeTruthy()
+    expect(screen.queryByText(/couldn’t answer/)).toBeNull()
+  })
+
+  it("streams the run an answer resumed, once the thread says it is running", async () => {
+    stubRows([
+      message("m1", 1, "assistant", "asked."),
+      message("m0", 0, "user", "pick a color"),
+    ])
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = (threadRecord: SubstrateRecord) => (
+      <QueryClientProvider client={client}>
+        <Harness initialThread="t-23" threadRecord={threadRecord} />
+      </QueryClientProvider>
+    )
+    const settled = runningThread("t-23")
+    settled.properties = { status: "ok" }
+    const { rerender } = render(view(settled))
+    await waitFor(() => expect(screen.getByText("asked.")).toBeTruthy())
+    expect(attaches).toHaveLength(0)
+    // The answer resumes the thread: its record says running again.
+    rerender(view(runningThread("t-23")))
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-23" })
+      attaches[0].onEvent({ kind: "delta", text: "noted: red", turn: 3, at: 0 })
+    })
+    // It streams, with Stop, and is not said to be working in the background.
+    expect(screen.getByText("noted: red")).toBeTruthy()
+    expect(screen.getAllByRole("button", { name: "Stop" })).not.toHaveLength(0)
+    expect(screen.queryByText(/in the background/)).toBeNull()
+  })
+
+  it("streams a resumed run after a turn this page sent itself", async () => {
+    let rows = [message("m0", 0, "user", "question")]
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ records: rows }), { status: 200 })
+      )
+    )
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const view = (threadRecord: SubstrateRecord) => (
+      <QueryClientProvider client={client}>
+        <Harness initialThread="t-27" threadRecord={threadRecord} />
+      </QueryClientProvider>
+    )
+    const idle = runningThread("t-27")
+    idle.properties = { status: "ok" }
+    const { rerender } = render(view(idle))
+    await waitFor(() => expect(screen.getByText("question")).toBeTruthy())
+    // The page's own turn: it asks, and settles.
+    type("pick a color")
+    fireEvent.click(screen.getByRole("button", { name: "Send" }))
+    rows = [
+      message("m2", 2, "assistant", "I asked."),
+      message("m1", 1, "user", "pick a color"),
+      ...rows,
+    ]
+    act(() => {
+      calls[0].onEvent({ kind: "thread", thread: "t-27" })
+      calls[0].onEvent({ kind: "delta", text: "I asked.", turn: 2, at: 0 })
+      calls[0].onEvent({
+        kind: "done",
+        result: { ...settled, thread: "t-27" },
+      })
+      calls[0].onDone?.()
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Send" })
+      ).toBeTruthy()
+    )
+    // An answer resumes the thread, and the page attaches to the run.
+    rerender(view(runningThread("t-27")))
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-27" })
+      attaches[0].onEvent({
+        kind: "delta",
+        text: "Noted: red.",
+        turn: 4,
+        at: 0,
+      })
+    })
+    // The resumed reply shows, under the turn the rows already hold, once.
+    expect(screen.getByText("Noted: red.")).toBeTruthy()
+    expect(screen.getAllByText("I asked.")).toHaveLength(1)
+  })
+
+  it("offers Continue on a reply the model's limit cut, and continues the thread", async () => {
+    stubRows([
+      message("m1", 1, "assistant", "It stops mid-sen", { cutBy: "length" }),
+      message("m0", 0, "user", "question"),
+    ])
+    const done = runningThread("t-24")
+    done.properties = { status: "ok", provider: "anthropic" }
+    mount("t-24", { threadRecord: done })
+    await waitFor(() =>
+      expect(screen.getByText("It stops mid-sen")).toBeTruthy()
+    )
+    expect(
+      screen.getByText("The reply stopped at the model’s limit.")
+    ).toBeTruthy()
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(continues.map((c) => c.thread)).toEqual(["t-24"])
+    expect(calls).toHaveLength(0)
+  })
+
+  it("says nothing under a reply the model finished", async () => {
+    stubRows([
+      message("m1", 1, "assistant", "All of it."),
+      message("m0", 0, "user", "question"),
+    ])
+    const done = runningThread("t-25")
+    done.properties = { status: "ok" }
+    mount("t-25", { threadRecord: done })
+    await waitFor(() => expect(screen.getByText("All of it.")).toBeTruthy())
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull()
+  })
+
+  it("starts its overlay over on a server that sends no positions", async () => {
+    agentsRevision = 4
+    stubRows([message("m0", 0, "user", "question")])
+    mount("t-26", { threadRecord: runningThread("t-26") })
+    await waitFor(() => expect(attaches).toHaveLength(1))
+    act(() => {
+      attaches[0].onEvent({ kind: "thread", thread: "t-26" })
+      attaches[0].onEvent({ kind: "delta", text: "half a ", turn: 1 })
+      attaches[0].onDone?.()
+    })
+    await waitFor(() => expect(attaches).toHaveLength(2), { timeout: 3000 })
+    act(() => {
+      attaches[1].onEvent({ kind: "thread", thread: "t-26" })
+      attaches[1].onEvent({ kind: "delta", text: "half a reply", turn: 1 })
+    })
+    // Appended to an overlay that was emptied first, it reads once.
+    expect(screen.getAllByText("half a reply")).toHaveLength(1)
+    expect(screen.queryByText("half a half a reply")).toBeNull()
+  })
+})
+
 describe("a server from before a message could name its id", () => {
   beforeEach(() => {
     agentsRevision = 2
@@ -1535,11 +1800,17 @@ function type(text: string) {
   fireEvent.change(screen.getByRole("textbox"), { target: { value: text } })
 }
 
-function message(id: string, turn: number, role: string, content: string) {
+function message(
+  id: string,
+  turn: number,
+  role: string,
+  content: string,
+  more: { cutBy?: string } = {}
+) {
   return {
     id,
     kind: "substrate.reamde.dev/llm/message",
-    properties: { turn, role, content },
+    properties: { turn, role, content, ...more },
     labels: {},
     version: 1,
     createdAt: "2026-10-17T10:00:00Z",

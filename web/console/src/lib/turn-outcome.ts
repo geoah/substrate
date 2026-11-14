@@ -244,6 +244,40 @@ function byStatus({
   }
 }
 
+/** How a reply the model did not finish reads, when the run itself settled
+ * fine: the row's `cutBy` is `length` (the model's output limit) or `filter`
+ * (the provider withheld the rest). A reply a stop or a failure cut is said
+ * by its thread's own outcome. The stored rows are in loop order; the
+ * engine's own rows (a summary, a resolution) are not turns of the
+ * conversation and are passed over. */
+export function cutReplyOutcome(
+  rows: { properties: Record<string, unknown> }[],
+  provider?: string
+): TurnOutcome | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const { role, cutBy } = rows[i].properties
+    if (role === "system" || role === "summary") continue
+    if (role !== "assistant") return undefined
+    if (cutBy === "length") {
+      return {
+        tone: "warn",
+        title: "The reply stopped at the model’s limit.",
+        action: CONTINUE,
+      }
+    }
+    if (cutBy === "filter") {
+      const vendor = provider ? providerName(provider) : "The provider"
+      return {
+        tone: "warn",
+        title: `${vendor} withheld the rest of this reply.`,
+        action: CONTINUE,
+      }
+    }
+    return undefined
+  }
+  return undefined
+}
+
 function isCause(cause: string | undefined): cause is TurnCause {
   return cause !== undefined && Object.hasOwn(BY_CAUSE, cause)
 }
@@ -270,6 +304,8 @@ export function turnOutcome(
     ? BY_CAUSE[run.cause](words)
     : byStatus(words)
   if (!outcome) return undefined
-  const said = run.reason?.trim()
+  // A stop's and a budget's reason is the engine's own stock phrase, which
+  // the sentence already says; only a failure's words add anything.
+  const said = run.status === "error" ? run.reason?.trim() : undefined
   return { ...outcome, ...(said ? { said } : {}) }
 }

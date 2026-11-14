@@ -74,6 +74,9 @@ export interface ToolCallView {
    * `completed`, `failed` or `canceled`. The row's `job.state`, or the live
    * event's `job`; absent on a call that held the loop. */
   job?: string
+  /** On a live card: the `turn` ordinal its tool row carries or will carry,
+   * so the card is dropped once the stored rows hold that row. */
+  turn?: number
 }
 
 /** What a compaction folded, as far as its `summary` row or its live
@@ -132,6 +135,26 @@ export interface TurnView {
   /** On a run's final assistant turn: the records the reply links, as the
    * engine read them when the run settled. Absent when it links none. */
   mentions?: AgentMention[]
+  /** On an assistant turn whose reply the model did not finish: how it was
+   * cut short, the row's `cutBy` (`length`, `filter`, `stop`, `failure`). */
+  cutBy?: string
+  /** On a live assistant turn: which stored row its text will be, and how
+   * much of that row's text and reasoning the stream has placed so far. */
+  live?: LivePlace
+  /** On a live user turn: the id the message was sent under, which is its
+   * stored row's id. */
+  sentId?: string
+}
+
+/** Where a live assistant turn's text belongs: the `turn` ordinal its
+ * events carry, and the Unicode code points of text and of reasoning the
+ * stream has placed for that ordinal. A piece's `at` is counted the same
+ * way, from 0 with each `turn`, so a piece is written where it belongs and a
+ * replay written over what is shown changes nothing. */
+export interface LivePlace {
+  turn: number
+  text: number
+  reasoning: number
 }
 
 /** One record a user turn is about. */
@@ -426,11 +449,13 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
           : undefined
       const mentions = role === "assistant" ? mentionsOf(record) : undefined
       const about = role === "user" ? contextRecordsOf(record) : undefined
+      const cutBy = role === "assistant" ? str(record.properties.cutBy) : ""
       turns.push({
         key: record.id,
         role,
         content: str(record.properties.content),
         tools,
+        ...(cutBy ? { cutBy } : {}),
         ...(about ? { contextRecords: about } : {}),
         ...(reasoning ? { reasoning } : {}),
         ...(reasoning && reasoningMillis !== undefined
@@ -779,77 +804,168 @@ function doneThinking(turn: TurnView): TurnView {
   return turn.thinking ? { ...turn, thinking: false } : turn
 }
 
-/** Appends a piece of the model's thinking to the completion in flight. A
- * completion may interleave thinking with its text, so only a closed round
- * (its tools settled, or a compaction) or no assistant turn at all opens a
- * new turn. The time spent runs from the first piece to the latest, the
- * span the row's `reasoningMillis` measures. */
+/** Where a streamed piece belongs: the `turn` and `at` its event carries.
+ * Absent from a server that does not send positions, where a piece is
+ * appended to the turn in flight. */
+export interface Placement {
+  turn?: number
+  at?: number
+}
+
+/** How many Unicode code points a string holds: what `at` counts. A
+ * string's `length` counts UTF-16 units, two for most emoji. */
+function codePoints(text: string): number {
+  // A string iterates by code point, so its spread counts them.
+  return Array.from(text).length
+}
+
+/** Writes `piece` into `existing` at code point `at`, where `held` code
+ * points of this text have been placed so far. A piece at the end is
+ * appended. One that starts inside what is held is written over it, which
+ * is what makes a replay safe to apply twice: the text it writes is the
+ * text that is there. One that starts past the end (the replay was
+ * truncated, so a span is missing until the rows are read) is appended,
+ * and the count follows the server's so later pieces still line up. */
+function place(
+  existing: string,
+  held: number,
+  at: number | undefined,
+  piece: string
+): { text: string; held: number } {
+  const n = codePoints(piece)
+  if (at === undefined) return { text: existing + piece, held: held + n }
+  if (at >= held) return { text: existing + piece, held: at + n }
+  const points = Array.from(existing)
+  return {
+    text: points.slice(0, at).join("") + piece + points.slice(at + n).join(""),
+    held: Math.max(held, at + n),
+  }
+}
+
+/** The live turn holding the text of `turn`, or -1. */
+function placedTurn(turns: TurnView[], turn: number | undefined): number {
+  if (turn === undefined) return -1
+  return turns.findIndex((t) => t.live?.turn === turn)
+}
+
+/** Whether a piece of `turn` that no live turn holds yet opens a turn of its
+ * own: after a closed round, after anything that is not the assistant, and
+ * after another row's text. A live turn holds the text of one stored row,
+ * which is what lets the rows take it over one row at a time. */
+function opensTurn(live: LiveOverlay, turn: number | undefined): boolean {
+  const last = live.turns[live.turns.length - 1]
+  if (!last || last.role !== "assistant" || live.closed) return true
+  return (
+    turn !== undefined && last.live !== undefined && last.live.turn !== turn
+  )
+}
+
+/** The place a new live turn starts counting from. */
+function placeOf(turn: number | undefined): { live?: LivePlace } {
+  return turn === undefined ? {} : { live: { turn, text: 0, reasoning: 0 } }
+}
+
+/** Writes a piece of the model's thinking into the completion in flight, at
+ * its position when it carries one. A completion may interleave thinking
+ * with its text, so only a closed round (its tools settled, or a
+ * compaction) or no assistant turn at all opens a new turn. The time spent
+ * runs from the first piece to the latest, the span the row's
+ * `reasoningMillis` measures. */
 export function pushReasoning(
   live: LiveOverlay,
   text: string,
   seq: number,
-  now: number = Date.now()
+  now: number = Date.now(),
+  where: Placement = {}
 ): LiveOverlay {
   const turns = [...live.turns]
-  const last = turns[turns.length - 1]
-  if (!last || last.role !== "assistant" || live.closed) {
+  let at = placedTurn(turns, where.turn)
+  if (at < 0 && opensTurn(live, where.turn)) {
     turns.push({
       key: `live-a${seq}`,
       role: "assistant",
       content: "",
       tools: [],
-      reasoning: text,
-      reasoningStartedAt: now,
-      reasoningLastAt: now,
-      reasoningMillis: 0,
-      thinking: true,
+      ...placeOf(where.turn),
     })
-    return { turns, closed: false }
   }
-  const startedAt = last.reasoningStartedAt ?? now
-  turns[turns.length - 1] = {
-    ...last,
-    reasoning: (last.reasoning ?? "") + text,
-    reasoningStartedAt: startedAt,
-    reasoningLastAt: now,
-    reasoningMillis: Math.max(0, now - startedAt),
-    thinking: true,
+  if (at < 0) at = turns.length - 1
+  const turn = turns[at]
+  const placed = place(
+    turn.reasoning ?? "",
+    turn.live?.reasoning ?? 0,
+    turn.live?.turn === where.turn ? where.at : undefined,
+    text
+  )
+  // A replayed piece is thinking the reader already saw: it adds nothing,
+  // so neither the clock nor "still thinking" moves for it.
+  const fresh = !turn.live || placed.held > turn.live.reasoning
+  const startedAt = turn.reasoningStartedAt ?? now
+  turns[at] = {
+    ...turn,
+    reasoning: placed.text,
+    ...(fresh
+      ? {
+          reasoningStartedAt: startedAt,
+          reasoningLastAt: now,
+          reasoningMillis: Math.max(0, now - startedAt),
+          thinking: true,
+        }
+      : {}),
+    ...(turn.live ? { live: { ...turn.live, reasoning: placed.held } } : {}),
   }
-  return { turns, closed: false }
+  return { turns, closed: at === turns.length - 1 ? false : live.closed }
 }
 
-/** Appends a delta, starting a new assistant turn when the previous one has
- * already dispatched and settled its tools. */
+/** Writes a delta into its turn, at its position when it carries one,
+ * starting a new assistant turn when the previous one has already
+ * dispatched and settled its tools. */
 export function pushDelta(
   live: LiveOverlay,
   text: string,
-  seq: number
+  seq: number,
+  where: Placement = {}
 ): LiveOverlay {
   const turns = [...live.turns]
-  const last = turns[turns.length - 1]
-  if (!last || last.role !== "assistant" || live.closed) {
+  let at = placedTurn(turns, where.turn)
+  if (at < 0 && opensTurn(live, where.turn)) {
     turns.push({
       key: `live-a${seq}`,
       role: "assistant",
-      content: text,
+      content: "",
       tools: [],
+      ...placeOf(where.turn),
     })
-    return { turns, closed: false }
   }
-  turns[turns.length - 1] = {
-    ...doneThinking(last),
-    content: last.content + text,
+  if (at < 0) at = turns.length - 1
+  const turn = turns[at]
+  const placed = place(
+    turn.content,
+    turn.live?.text ?? 0,
+    turn.live?.turn === where.turn ? where.at : undefined,
+    text
+  )
+  // A replayed piece changes nothing a reader sees, the thinking line
+  // included: the model may be thinking again after that text.
+  const fresh = !turn.live || placed.held > turn.live.text
+  turns[at] = {
+    ...(fresh ? doneThinking(turn) : turn),
+    content: placed.text,
+    ...(turn.live ? { live: { ...turn.live, text: placed.held } } : {}),
   }
-  return { turns, closed: false }
+  return { turns, closed: at === turns.length - 1 ? false : live.closed }
 }
 
 /** Attaches a started call to the assistant turn in flight, opening one when
- * the turn dispatched before it said anything. */
+ * the turn dispatched before it said anything. A call the overlay already
+ * shows (a replay) is left as it is. */
 export function pushToolStart(
   live: LiveOverlay,
   call: ToolCallView,
   seq: number
 ): LiveOverlay {
+  if (call.id && live.turns.some((t) => t.tools.some((c) => c.id === call.id)))
+    return live
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
   if (!last || last.role !== "assistant") {
@@ -866,6 +982,58 @@ export function pushToolStart(
     tools: [...last.tools, call],
   }
   return { ...live, turns }
+}
+
+/** The live turns the stored rows do not show yet. The rows are the truth
+ * for whatever they hold, so a live user message whose row is stored, the
+ * text of a turn whose row is stored, a tool card whose row is stored and a
+ * compaction whose summary row is stored are left to them. Everything else
+ * stays as it is, under the keys it had: an attach that reads the rows again
+ * never empties what is still only live. */
+export function liveBeyond(
+  live: LiveOverlay,
+  rows: SubstrateRecord[]
+): TurnView[] {
+  if (!live.turns.length) return live.turns
+  const ids = new Set(rows.map((r) => r.id))
+  const held = new Set<number>()
+  const compactions = new Set<number>()
+  for (const r of rows) {
+    const turn = r.properties.turn
+    if (typeof turn === "number") held.add(turn)
+    if (r.properties.role === "summary") {
+      const before = num(r.properties.tokensBefore)
+      if (before !== undefined) compactions.add(before)
+    }
+  }
+  return live.turns.flatMap((turn) => {
+    if (turn.role === "user") {
+      return turn.sentId && ids.has(turn.sentId) ? [] : [turn]
+    }
+    if (turn.role === "summary") {
+      const before = turn.compaction?.tokensBefore
+      return before !== undefined && compactions.has(before) ? [] : [turn]
+    }
+    const tools = turn.tools.filter(
+      (c) => c.turn === undefined || !held.has(c.turn)
+    )
+    if (turn.live && held.has(turn.live.turn)) {
+      // Its text is a row now; calls of its that are still only live go on
+      // as their own turn, as a replay would draw them.
+      if (!tools.length) return []
+      return [
+        {
+          key: turn.key,
+          role: turn.role,
+          content: "",
+          tools,
+        },
+      ]
+    }
+    if (tools.length === turn.tools.length) return [turn]
+    if (!tools.length && !turn.content && !turn.reasoning) return []
+    return [{ ...turn, tools }]
+  })
 }
 
 /** Puts the done event's mentions on the reply in flight, so a live reply
@@ -889,6 +1057,18 @@ export function pushCompacted(
   compaction: Pick<CompactionView, "tokensBefore" | "covered">,
   seq: number
 ): LiveOverlay {
+  // A compaction the overlay already marks (a replay) is left as it is.
+  if (
+    compaction.tokensBefore !== undefined &&
+    live.turns.some(
+      (t) =>
+        t.role === "summary" &&
+        t.compaction?.tokensBefore === compaction.tokensBefore &&
+        t.compaction?.covered === compaction.covered
+    )
+  ) {
+    return live
+  }
   return {
     turns: [
       ...live.turns,

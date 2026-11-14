@@ -481,6 +481,7 @@ export interface AgentEvent {
     | "idle"
     | "done"
     | "error"
+    | "lagged"
   /** Rides the first event: the thread id, minted or continued. */
   thread?: string
   /** A streamed content delta, or on a `reasoning` event a piece of the
@@ -520,6 +521,12 @@ export interface AgentEvent {
    * matching `llm/message` row carries or will carry. An attach after reading
    * the rows drops every replayed event at or below the highest turn held. */
   turn?: number
+  /** Rides delta and reasoning (decision 0317): how many Unicode code points
+   * of this turn's text of that kind came before this piece. Text and
+   * reasoning count apart, each from 0 with its `turn`, so a piece is
+   * written where it belongs and a replay is safe to apply over what is
+   * shown. Code points, not UTF-16 units: `Array.from(text).length`. */
+  at?: number
   /** Rides the idle event: the thread row's status. */
   status?: string
   /** Rides a toolFinished event of a background call: `working` on the one
@@ -543,7 +550,7 @@ export function parseAgentEvent(line: string): AgentEvent | null {
   if (typeof obj.kind !== "string") return null
   // The counts are read as numbers or not at all: a line that spells one
   // some other way must not reach a sentence that formats it.
-  for (const key of ["tokensBefore", "covered", "turn", "retryAfter"]) {
+  for (const key of ["tokensBefore", "covered", "turn", "retryAfter", "at"]) {
     if (key in obj && typeof obj[key] !== "number") delete obj[key]
   }
   return obj as unknown as AgentEvent
@@ -749,6 +756,12 @@ export function browserTimezone(): string | undefined {
  * bundled in an app meets older servers, which refuse the field as unknown
  * and answer the route 404. */
 export const OWN_MESSAGE_ID_REVISION = 3
+
+/** The revision of the server's `agents` feature whose streams say where
+ * each piece of text belongs (`at`) and whose resumed chat runs stream
+ * (decision 0317). Below it a piece is appended, so an attach starts its
+ * overlay over. */
+export const STREAM_POSITIONS_REVISION = 5
 
 /** An id for a message this client is about to send: a UUID, which is a
  * legal record id. The fallback is for a page served without a secure

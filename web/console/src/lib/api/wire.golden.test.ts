@@ -1161,6 +1161,7 @@ const agentEvent: Shape<AgentEvent> = {
   cause: false,
   retryAfter: false,
   turn: false,
+  at: false,
   status: false,
   job: false,
 }
@@ -1811,6 +1812,8 @@ const notOnTheWire: Record<string, string> = {
   ApprovalView: "a view the console folds from an llm/approval record",
   ApprovalArgument: "one argument of an llm/approval, folded for the card",
   LiveOverlay: "the chat stream's events folded client-side, never serialized",
+  LivePlace: "where a live turn's streamed text belongs, kept client-side",
+  Placement: "the position a stream event carries, read off AgentEvent",
   // actors.ts
   // bundles.ts
   TraitRecords: "a bounded read's result the console derives from a Page",
