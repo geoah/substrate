@@ -324,9 +324,23 @@ func (c *actorCache) publish(ids map[string]bool, since uint64) {
 // the conversion, and a record whose creating line is gone act for no one. A
 // failed read is an error, so no work goes on as no one's for want of it.
 func (ds *dataset) actingFor(ctx context.Context, kind, id string) (context.Context, error) {
-	return ds.actingForLine(ctx, kind, id, `
-		SELECT actor, on_behalf_of, principal, seq FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`)
+	return ds.actingForLine(ctx, kind, id, creatingLinks)
 }
+
+// creatingLinks reads the three links of the line that created the record
+// of kind $1 and id $2 (its actor, whom it acted for, its token) and that
+// line's seq. A compaction replaces the creating line with the record's
+// state entry (compact.go), which carries those links as its `creator`:
+// where the record's first line holds its state, they are read from it.
+const creatingLinks = `
+		SELECT CASE WHEN s.e IS NULL THEN c.actor ELSE coalesce(s.e #>> '{state,creator,actor}', '') END,
+		       CASE WHEN s.e IS NULL THEN coalesce(c.on_behalf_of, '') ELSE coalesce(s.e #>> '{state,creator,onBehalfOf}', '') END,
+		       CASE WHEN s.e IS NULL THEN coalesce(c.principal, '') ELSE coalesce(s.e #>> '{state,creator,token}', '') END,
+		       c.seq
+		FROM (SELECT actor, on_behalf_of, principal, seq, payload FROM changelog
+		      WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1) c
+		LEFT JOIN LATERAL (SELECT e FROM jsonb_array_elements(c.payload -> 'fold') e
+		      WHERE e ->> 'kind' = 'state' AND e ->> 'ref' = $1 AND e ->> 'id' = $2 LIMIT 1) s ON true`
 
 // actingForLine binds ctx to whom the line query reads acts for, and to the
 // token that line carries, whose grant holds the work where it is an app's

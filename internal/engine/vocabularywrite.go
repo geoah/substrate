@@ -514,30 +514,91 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 }
 
 // anotherHandWrote reports whether a hand other than the shipping ones ever
-// wrote or deleted the record at ref: whether its changelog, the purged
-// record's included, holds an entry under any actor shippedHands(shipper)
-// does not name. An install, import, upgrade or seed writes a shipped data
-// record only where none did, so an edit, a removed property and a deletion
-// survive it whoever made them (the owner at any door they name, an agent, a
-// function, another bundle), and a record only the shipping hands wrote takes
-// the newer shipped one (records 0166 and 0191). Delivery wiring (a trigger)
-// is exempt at the caller: it names the callables the same closure ships, so
-// it moves with them. The check runs under the record's advisory lock, so a
-// concurrent writer of the same id serializes behind it.
+// wrote or deleted the record at ref (anotherHandIn). An install, import,
+// upgrade or seed writes a shipped data record only where none did, so an
+// edit, a removed property and a deletion survive it whoever made them (the
+// owner at any door they name, an agent, a function, another bundle), and a
+// record only the shipping hands wrote takes the newer shipped one (records
+// 0166 and 0191). Delivery wiring (a trigger) is exempt at the caller: it
+// names the callables the same closure ships, so it moves with them. The
+// check runs under the record's advisory lock, so a concurrent writer of the
+// same id serializes behind it.
 func (t *txn) anotherHandWrote(ref eref, shipper substrate.Actor) (bool, error) {
 	at, err := t.lockCanonical(ref)
 	if err != nil {
 		return false, err
 	}
-	var wrote bool
-	err = t.row(anotherHandWroteSQL, at.ID, at.Kind, shippedHands(shipper)).Scan(&wrote)
-	return wrote, err
+	return anotherHandIn(t.ctx, t.tx, at, shipper)
 }
 
-// anotherHandWroteSQL is anotherHandWrote's question, which a seed's open
-// catch-up also asks outside any transaction: did any actor but the shipping
-// hands ($3) ever write the record?
-const anotherHandWroteSQL = `SELECT EXISTS (SELECT 1 FROM changelog WHERE record_id = $1 AND kind = $2 AND actor <> ALL($3))`
+// anotherHandIn is anotherHandWrote's question over any handle, which a
+// seed's open catch-up asks outside a transaction: did any hand that ever
+// wrote the record, the purged record's included (recordHands), write as an
+// actor shippedHands(shipper) does not name?
+func anotherHandIn(ctx context.Context, q dbx, ref eref, shipper substrate.Actor) (bool, error) {
+	hands, err := recordHandsOf(ctx, q, []eref{ref})
+	if err != nil {
+		return false, err
+	}
+	shipping := shippedHands(shipper)
+	return slices.ContainsFunc(hands[ref], func(h recordHand) bool { return h.another(shipping) }), nil
+}
+
+// THE HANDS THAT WROTE A RECORD. A line names the actor record that wrote it
+// and the one it acted for, and a state entry keeps those of every line it
+// replaced, with the line's operation (compact.go stateHand), so the hands that ever wrote a record are
+// the lines addressed to it that remain and the writers their state entries
+// keep: the same before and after a compaction. Every rule that asks who
+// wrote a record asks here (shippedBy, anotherHandWrote and the seeds, the
+// unit seed, shippedAmong).
+
+// recordHand is one hand that wrote a record: an actor record id, the one
+// its line acted for, and the line's operation.
+type recordHand struct{ actor, onBehalfOf, op string }
+
+// another reports whether h writes as a hand other than shipping names: its
+// actor is none of them. Whom the line acted for does not enter it: every
+// line the engine writes while it serves a request acts for the request's
+// person, an install's purge among them.
+func (h recordHand) another(shipping []string) bool {
+	return !slices.Contains(shipping, h.actor)
+}
+
+// recordHandsOf is the hands that wrote each record of refs.
+func recordHandsOf(ctx context.Context, q dbx, refs []eref) (map[eref][]recordHand, error) {
+	kinds, ids := make([]string, len(refs)), make([]string, len(refs))
+	for i, r := range refs {
+		kinds[i], ids[i] = r.Kind, r.ID
+	}
+	return recordHands(ctx, q, `(c.kind, c.record_id) IN (SELECT * FROM unnest($1::text[], $2::text[]))`, kinds, ids)
+}
+
+// recordHands is the hands that wrote each record of the lines the clause
+// over `c`, the changelog, admits: those lines' own, and the writers their
+// state entries keep.
+func recordHands(ctx context.Context, q dbx, where string, args ...any) (map[eref][]recordHand, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT c.kind, c.record_id, c.actor, coalesce(c.on_behalf_of, ''), c.op FROM changelog c WHERE `+where+`
+		UNION
+		SELECT c.kind, c.record_id, w ->> 'actor', coalesce(w ->> 'onBehalfOf', ''), coalesce(w ->> 'op', '') FROM changelog c
+		CROSS JOIN LATERAL jsonb_array_elements(c.payload -> 'fold') e
+		CROSS JOIN LATERAL jsonb_array_elements(coalesce(e #> '{state,writers}', '[]'::jsonb)) w
+		WHERE `+where+` AND e ->> 'kind' = 'state' AND e ->> 'ref' = c.kind AND e ->> 'id' = c.record_id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read who wrote the records: %w", err)
+	}
+	out := map[eref][]recordHand{}
+	for rows.Next() {
+		var r eref
+		var h recordHand
+		if err := rows.Scan(&r.Kind, &r.ID, &h.actor, &h.onBehalfOf, &h.op); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		out[r] = append(out[r], h)
+	}
+	return out, errors.Join(rows.Err(), rows.Close())
+}
 
 // refuseTakenTrigger refuses a shipped trigger whose id a live trigger
 // already holds for ANOTHER package's callable (record 0192). Trigger ids are

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -820,9 +821,19 @@ func matchChanges(tr *trigger, self map[string]bool, changes []substrate.Change)
 // tombstone under the kind it leaves (`movedTo`), and a line that only moves
 // the names a record holds to where they now point (`repointed`). Each is
 // the same record saying the same thing, so none is a creation, an update
-// or a deletion to anything that reacts to one.
+// or a deletion to anything that reacts to one. A repoint's line that holds
+// its record's state entry (compact.go) stands for the record's history,
+// creation included where the state says so, and is delivered as the state.
 func movedLine(ch substrate.Change) bool {
-	return ch.Payload["movedFrom"] != nil || ch.Payload["movedTo"] != nil || ch.Payload["repointed"] != nil
+	if ch.Payload["movedFrom"] != nil || ch.Payload["movedTo"] != nil {
+		return true
+	}
+	if ch.Payload["repointed"] == nil {
+		return false
+	}
+	return !slices.ContainsFunc(ch.Affected, func(a substrate.AffectedRecord) bool {
+		return a.State && a.Kind == ch.Kind && a.ID == ch.RecordID
+	})
 }
 
 // coalesceChanges keeps the LAST pending change per record, in seq order:
@@ -4182,8 +4193,22 @@ func (ds *dataset) oneChange(ctx context.Context, query, missing string, args ..
 	return ch, rows.Err()
 }
 
-// changeColumns are a changelog row as scanChange reads it.
-const changeColumns = `seq, ts, actor, on_behalf_of, principal, op, record_id, kind, payload, hash`
+// changeColumns are a changelog row as scanChange reads it, its operation
+// the one every reader is told (changeOp).
+const changeColumns = `seq, ts, actor, on_behalf_of, principal, ` + changeOp + ` AS op, record_id, kind, payload, hash`
+
+// changeOp is a line's operation as every reader of changes is told it, the
+// one place it is decided: the stored op, but `put` for a put or a patch
+// holding the state entry that stands for its addressed record's creation,
+// live, and not a kind move's carry (compact.go), which a reader takes as
+// the creation. Every read selects
+// it (changeColumns) and the change filter compares it (buildChangeFilter),
+// so a read filtered by operation, of the table or of the tail's window,
+// answers what an unfiltered read presents.
+const changeOp = `CASE WHEN op IN ('put', 'patch') AND jsonb_path_exists(payload,
+	'$.fold[*] ? (@.kind == "state" && @.ref == $kind && @.id == $id && @.state.created == true
+	  && exists(@.state.row) && !(exists(@.state.row.deletedAt)) && !(exists(@.state.movedFrom)))',
+	jsonb_build_object('kind', kind, 'id', record_id)) THEN 'put' ELSE op END`
 
 // scanChange reads one changelog row from a query over changeColumns.
 func scanChange(rows *sql.Rows) (substrate.Change, error) {

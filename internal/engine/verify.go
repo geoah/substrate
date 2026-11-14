@@ -47,6 +47,16 @@ type VerifyReport struct {
 	Head    int64 `json:"head"`
 	// HeadHash is the head entry's checksum, hex.
 	HeadHash string `json:"headHash,omitempty"`
+	// CompactedUpTo is the highest seq a line holding a state entry stands
+	// at (compact.go), 0 where nothing was ever compacted, and Absent how
+	// many seqs at or below it the table holds no line of. A compaction
+	// removes a line only below a state that stands for it, so a seq absent
+	// at or below CompactedUpTo is one a compaction may have taken and no
+	// finding; one absent above it is damage, as it always was. A state does
+	// not name the lines it replaced, so verify cannot tell a line a
+	// compaction took from one that went missing at or below it.
+	CompactedUpTo int64 `json:"compactedUpTo,omitempty"`
+	Absent        int64 `json:"absent,omitempty"`
 	// Archive names the store the archive was read from, empty when the
 	// process has none; ArchiveHead is its manifest's head, and
 	// ArchivePieces the pieces of the chain to it, every line held to the
@@ -185,8 +195,14 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 		}
 	}
 
-	// The table, row by row: the seq sequence, the transaction frame, and
-	// under Recanonicalize each row's checksum recomputed from its columns.
+	// The table, row by row: the sequence, the transaction frame, and under
+	// Recanonicalize each row's checksum recomputed from its columns. A
+	// history never compacted holds every seq to its head.
+	if err := tx.QueryRowContext(ctx, `
+		SELECT coalesce(max(seq), 0) FROM changelog
+		WHERE jsonb_path_exists(payload, '$.fold[*] ? (@.kind == "state" || @.kind == "ledger")')`).Scan(&report.CompactedUpTo); err != nil {
+		return report, err
+	}
 	expected := int64(1)
 	prog := s.progress("verifying the changelog table", "repository", repo.ID)
 	var openTxn int64
@@ -204,11 +220,16 @@ func (s *service) VerifyRepositoryWith(ctx context.Context, repository string, o
 			break
 		}
 		for _, row := range page {
-			if row.entry.Seq != expected {
-				found(fmt.Sprintf("seq %d follows %d: the sequence has a gap", row.entry.Seq, expected-1))
-				expected = row.entry.Seq
+			if seq := row.entry.Seq; seq != expected {
+				compacted := min(seq-1, report.CompactedUpTo)
+				if compacted >= expected {
+					report.Absent += compacted - expected + 1
+				}
+				if seq-1 > report.CompactedUpTo {
+					found(fmt.Sprintf("seq %d follows %d: the sequence has a gap", seq, expected-1))
+				}
 			}
-			expected++
+			expected = row.entry.Seq + 1
 			switch txn := row.entry.Txn; {
 			case txn == 0:
 				found(fmt.Sprintf("seq %d carries no txn", row.entry.Seq))
@@ -411,9 +432,29 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			src.Dialect(), max(dialect, 1), max(dialect, 1)), true)
 		return nil
 	}
+	// A compaction rewrote the table's lines from rewriteFrom on (compact.go),
+	// and the archive's next pass writes the pieces that hold them again:
+	// until then they are the history as it was, held to the table nowhere
+	// and, like an archive behind the table, no finding. They are still the
+	// pieces a restore reads, so each is read and held to its manifest and
+	// its lines to their sums.
+	var rewriteFrom sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT rewrite_from FROM archive_records`).Scan(&rewriteFrom); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	prog := s.progress("verifying the archive against the table", "repository", repo.ID)
 	var stamps []checksumRow
+	// tableRead is the highest seq of the table read so far: the next page
+	// starts after it, so a table line no piece holds is met, not stepped
+	// over.
+	var tableRead int64
+	rewritten := false
 	for _, p := range src.chain {
+		if !rewritten && rewriteFrom.Valid && p.Last >= rewriteFrom.Int64 {
+			rewritten = true
+			unverified(fmt.Sprintf("a compaction rewrote the history from seq %d, and the next archive pass writes its pieces from there again; the lines from seq %d on were not held to the table",
+				rewriteFrom.Int64, p.First), false)
+		}
 		body, err := read(p.Key)
 		if err != nil {
 			found(fmt.Sprintf("archive: %s: %v", p.Key, err))
@@ -426,19 +467,24 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			return nil
 		}
 		err = changelogfile.ReadPiece(bytes.NewReader(body), p.First, p.Last, func(e changelogfile.Entry, _ []byte, sum [32]byte) error {
+			if rewritten {
+				return nil
+			}
 			for len(stamps) == 0 || stamps[0].entry.Seq < e.Seq {
 				if len(stamps) > 0 {
-					stamps = stamps[1:]
-					continue
+					// The pieces cover the history whole: a line the table
+					// holds below this one is a line a piece must hold,
+					// gaps or not.
+					return fmt.Errorf("seq %d is in the table and not in the archive", stamps[0].entry.Seq)
 				}
-				page, err := scanStampPage(ctx, tx, e.Seq-1, verifyTableBatch)
+				page, err := scanStampPage(ctx, tx, tableRead, verifyTableBatch)
 				if err != nil {
 					return err
 				}
 				if len(page) == 0 {
 					return fmt.Errorf("seq %d is in the archive and not in the table", e.Seq)
 				}
-				stamps = page
+				stamps, tableRead = page, page[len(page)-1].entry.Seq
 			}
 			if stamps[0].entry.Seq != e.Seq {
 				return fmt.Errorf("seq %d is in the archive and not in the table", e.Seq)
@@ -446,6 +492,7 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			if !bytes.Equal(stamps[0].hash, sum[:]) {
 				return fmt.Errorf("seq %d: the archive's line is not the table's", e.Seq)
 			}
+			stamps = stamps[1:]
 			return nil
 		})
 		if err != nil {

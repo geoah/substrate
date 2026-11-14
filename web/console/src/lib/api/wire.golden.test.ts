@@ -506,6 +506,7 @@ const affectedRecord: Shape<AffectedRecord> = {
   id: true,
   version: false,
   deleted: false,
+  state: false,
   properties: false,
 }
 

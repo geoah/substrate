@@ -301,16 +301,22 @@ func (t *txn) beforeUnitFold(kind string) error {
 
 // afterUnitFold runs once a fold changed a unit or conversion row: the
 // revision moves and the transaction's own graph is stale.
-func (t *txn) afterUnitFold(kind string) error {
-	if !isUnitGraphKind(kind) {
+func (t *txn) afterUnitFold(kind string) error { return t.afterUnitFoldBy(kind, 1) }
+
+// afterUnitFoldBy is afterUnitFold for a fold that stands for n of them: a
+// state entry moves the revision as far as the effects it replaced moved it
+// (compact.go). A capture counts the moves it replays (txn.unitMoves).
+func (t *txn) afterUnitFoldBy(kind string, n int) error {
+	if !isUnitGraphKind(kind) || n == 0 {
 		return nil
 	}
 	t.unitTouched = true
 	t.unitLocal = nil
-	if t.queueRevision() {
+	t.unitMoves += n
+	if n == 1 && t.queueRevision() {
 		return nil
 	}
-	return t.moveUnitRevision(1)
+	return t.moveUnitRevision(n)
 }
 
 // moveUnitRevision moves the unit graph's revision by n.

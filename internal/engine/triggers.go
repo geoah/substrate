@@ -735,30 +735,22 @@ func (t *txn) refuseOpenShippedWebhook(tr *trigger) error {
 // shippedBy is the package that shipped trigger id while the repository does
 // not own it: the first builtin or published package whose hand
 // (`bundle:<authority>:<package>`) wrote the trigger, at its install or an
-// upgrade. "" when none did. The changelog keeps every hand that ever wrote
-// the id, so deleting the shipped trigger and writing it again by hand does
-// not make it the owner's: the next upgrade would write the shipped one over
-// it anyway.
+// upgrade. "" when none did. The history keeps every hand that ever wrote
+// the id, a compaction's state entries included (recordHands), so deleting
+// the shipped trigger and writing it again by hand does not make it the
+// owner's: the next upgrade would write the shipped one over it anyway.
 func shippedBy(ctx context.Context, q dbx, reg *vocabulary.Registry, id string) (string, error) {
-	rows, err := q.QueryContext(ctx,
-		`SELECT DISTINCT actor FROM changelog WHERE record_id = $1 AND kind = $2 ORDER BY actor`, id, typeTrigger)
+	ref := eref{Kind: typeTrigger, ID: id}
+	hands, err := recordHandsOf(ctx, q, []eref{ref})
 	if err != nil {
 		return "", err
 	}
-	var hands []string
-	for rows.Next() {
-		var hand string
-		if err := rows.Scan(&hand); err != nil {
-			_ = rows.Close()
-			return "", err
-		}
-		hands = append(hands, hand)
+	actors := make([]string, 0, len(hands[ref]))
+	for _, h := range hands[ref] {
+		actors = append(actors, h.actor)
 	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	for _, hand := range hands {
+	slices.Sort(actors)
+	for _, hand := range slices.Compact(actors) {
 		if pkg := publisherOf(reg, actorKeyIn(ctx, q, hand)); pkg != "" {
 			return pkg, nil
 		}

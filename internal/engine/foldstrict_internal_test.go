@@ -63,13 +63,26 @@ func TestEveryEffectFieldReadsBack(t *testing.T) {
 		         "pages":2E0,"effects":2E0,"bytes":1E2,"startedAt":"2026-08-11T09:00:00Z",
 		         "kind":"a.example.com/tasks/task","identity":"t1"}},
 		{"kind":"unpage","ref":"substrate.reamde.dev/core/trigger","id":"on-task","page":{"chain":"c1"}},
-		{"kind":"forget","ref":"substrate.reamde.dev/core/trigger","id":"on-task"}
+		{"kind":"forget","ref":"substrate.reamde.dev/core/trigger","id":"on-task"},
+		{"kind":"state","ref":"a.example.com/tasks/task","id":"t1","version":2E0,
+		 "state":{"row":{"title":"x","states":{"status":"open"},"at":"2026-08-11T09:00:00Z","endsAt":"2026-08-11T10:00:00Z",
+		                 "dueAt":"2026-08-13T09:00:00Z","props":{"name":"x"},"labels":{},"finalizers":["substrate.merge"],
+		                 "kindVersion":3E0,"version":2E0,"createdAt":"2026-08-11T09:00:00Z","updatedAt":"2026-08-11T09:00:00Z",
+		                 "deletedAt":"2026-08-12T09:00:00Z"},
+		          "annotations":[{"key":"owner/note","value":false,"updatedAt":"2026-08-11T09:00:00Z"}],
+		          "marks":[{"property":"name","pinned":true,"setBy":"6nk6ekkczdgh399nt2pqpccjz0","onBehalfOf":"6nk6ekkczdgh399nt2pqpccjz1",
+		                    "derivedFrom":["a.example.com/people/person/p1"],"setAt":"2026-08-11T09:00:00Z"}],
+		          "created":true,
+		          "movedFrom":"a.example.com/tasks/old",
+		          "creator":{"actor":"6nk6ekkczdgh399nt2pqpccjz0","onBehalfOf":"6nk6ekkczdgh399nt2pqpccjz1","token":"t0"},
+		          "writers":[{"actor":"6nk6ekkczdgh399nt2pqpccjz0","onBehalfOf":"6nk6ekkczdgh399nt2pqpccjz1","op":"patch"}],
+		          "moves":1E0}}
 	]`)
 	if err != nil {
 		t.Fatalf("an entry spelling every effect field the structs carry was refused: %v", err)
 	}
-	if len(ops) != 15 {
-		t.Fatalf("read %d effects, want 15", len(ops))
+	if len(ops) != 16 {
+		t.Fatalf("read %d effects, want 16", len(ops))
 	}
 }
 

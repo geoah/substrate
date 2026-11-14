@@ -173,6 +173,20 @@ var foldKeyedStatements = []struct {
 		keys:  []string{"src_kind", "src"},
 		args:  func(w planWorld) []any { return []any{w.note, w.sample} },
 	},
+	// A state entry's replay states its record's annotations and marks
+	// again (compact.go restateSideRows).
+	{
+		sql:   `DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
+		table: "annotations",
+		keys:  []string{"record_kind", "record_id"},
+		args:  func(w planWorld) []any { return []any{w.note, w.sample} },
+	},
+	{
+		sql:   `DELETE FROM property_marks WHERE record_kind = $1 AND record_id = $2`,
+		table: "property_marks",
+		keys:  []string{"record_kind", "record_id"},
+		args:  func(w planWorld) []any { return []any{w.note, w.sample} },
+	},
 }
 
 // foldOncePerLine is how many times a replay of the plan world runs a
@@ -716,3 +730,62 @@ func TestTwoRefoldsInOneStartResetAtMostOnce(t *testing.T) {
 }
 
 func refsLine(line string) bool { return strings.Contains(line, "table=refs") }
+
+// A replay of a compacted history (compact.go): every note compacted into
+// its state entry, archived, and rebuilt, the statements a state's replay
+// runs once a record held as a line's are. The rebuild's pace per line is
+// logged beside the same world's before the compaction.
+func TestAReplayOfACompactedHistoryKeepsItsPlans(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	w := newPlanWorld(t)
+	db := rawDBOf(t, w.dsn)
+	lines := func() int64 {
+		t.Helper()
+		var n int64
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE repository = $1`, w.id).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	pace := func(svc substrate.Service) (int64, time.Duration) {
+		t.Helper()
+		n, began := lines(), time.Now()
+		if _, err := svc.(*service).RebuildRepository(ctx, w.repo); err != nil {
+			t.Fatalf("rebuild: %v", err)
+		}
+		return n, time.Since(began)
+	}
+	svc, err := OpenForTest(t, ctx, w.dsn, WithDataRoot(w.root), w.archive(t), WithArchiveInterval(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	whole, wholeTook := pace(svc)
+	report, err := svc.(*service).CompactRepository(ctx, w.repo, 0)
+	if err != nil || report.Records < planNotes {
+		t.Fatalf("the compaction wrote %d states (%v), want one for every note", report.Records, err)
+	}
+	d, err := svc.Dataset(ctx, w.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.(*dataset).ArchivePass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	watch := newReplayWatch(t, w)
+	svc, err = OpenForTest(t, ctx, w.dsn, append([]Option{WithDataRoot(w.root), w.archive(t), WithArchiveInterval(time.Hour)},
+		watch.options()...)...)
+	if err != nil {
+		t.Fatalf("the start: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	compacted, compactedTook := pace(svc)
+	t.Logf("a rebuild of %d lines took %s (%.0f lines a second); of the %d left after the compaction, %s (%.0f lines a second)",
+		whole, wholeTook.Round(time.Millisecond), float64(whole)/wholeTook.Seconds(),
+		compacted, compactedTook.Round(time.Millisecond), float64(compacted)/compactedTook.Seconds())
+	watch.hold(t, 1)
+}

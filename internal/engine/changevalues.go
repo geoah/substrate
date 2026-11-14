@@ -3,8 +3,10 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -64,6 +66,10 @@ type recordChange struct {
 	touched bool
 	created bool
 	purged  bool
+	// state marks a state entry (compact.go): it stands for every earlier
+	// entry of the record, whose values a compaction did not keep, and it
+	// holds the record whole, so a property it does not hold was absent.
+	state bool
 	// moved maps each public property name the entry changed to what it left.
 	moved map[string]valueAt
 	// first and last are the versions the record reached at the entry's first
@@ -89,7 +95,7 @@ func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, nulled []string, ref
 			continue
 		}
 		switch op.Kind {
-		case foldRecord, foldTombstone, foldPurge:
+		case foldRecord, foldTombstone, foldPurge, foldState:
 		default:
 			continue
 		}
@@ -103,6 +109,13 @@ func composeRecordChange(ty *vocabulary.Kind, ops []foldOp, nulled []string, ref
 		switch op.Kind {
 		case foldPurge:
 			rc.purged = true
+		case foldState:
+			rc.state = true
+			if op.State == nil || op.State.Row == nil {
+				rc.purged = true
+				continue
+			}
+			states = stateMoved(ty, op.State.Row, rc.moved)
 		case foldRecord:
 			if op.Delta == nil {
 				continue
@@ -182,6 +195,38 @@ func movedBy(ty *vocabulary.Kind, d *rowDelta, into map[string]valueAt) {
 			into[name] = valueAt{value: state, present: true, column: true, state: true}
 		}
 	}
+}
+
+// stateMoved records what a state entry's row holds under its public names,
+// as movedBy records a delta's, and returns its states column.
+func stateMoved(ty *vocabulary.Kind, r *stateRow, into map[string]valueAt) *map[string]string {
+	if props, err := decodeNumberPreserving(r.Props); err == nil {
+		for name, v := range props {
+			into[name] = valueAt{value: v, present: true}
+		}
+	}
+	text := func(v string) *string {
+		if v == "" {
+			return nil
+		}
+		return &v
+	}
+	instant := func(v *time.Time) *string {
+		if v == nil {
+			return nil
+		}
+		return ptrTo(timeString(v))
+	}
+	states := map[string]string{}
+	if len(r.States) > 0 {
+		_ = json.Unmarshal(r.States, &states)
+	}
+	movedBy(ty, &rowDelta{
+		Title: text(r.Title),
+		At:    instant(r.At), EndsAt: instant(r.EndsAt), DueAt: instant(r.DueAt),
+		States: &states,
+	}, into)
+	return &states
 }
 
 // render renders one value as a record read does (redactProps): a sensitive
@@ -370,6 +415,13 @@ func (ds *dataset) deriveValues(ctx context.Context, changes []substrate.Change,
 			a.Properties = props
 			if rc.created {
 				// Nothing precedes a creation: every before is absent.
+				continue
+			}
+			if rc.state {
+				// What preceded a state entry is not kept.
+				for k := range a.Properties {
+					a.Properties[k].BeforeUnknown = true
+				}
 				continue
 			}
 			if states != nil {
@@ -741,10 +793,11 @@ func (w *recordWalk) visit(e earlierEntry) {
 			}
 			delete(w.pending, name)
 		}
-		if rc.created || rc.purged {
+		if rc.created || rc.purged || rc.state {
 			// Nothing of this record precedes a creation, and a purge ends the
 			// lifetime a later creation starts over: what is still owed was
-			// absent.
+			// absent. A state holds the record whole, so a value it does not
+			// hold was absent too, and nothing before it is kept.
 			w.pending = map[string][]*substrate.PropertyChange{}
 		}
 		w.expect = 0
@@ -758,8 +811,9 @@ func (w *recordWalk) visit(e earlierEntry) {
 		}
 		w.next++
 	}
-	if rc.created || rc.purged {
-		// Anything the walk still owes lies in a lifetime that already ended.
+	if rc.created || rc.purged || rc.state {
+		// Anything the walk still owes lies in a lifetime that already
+		// ended, or behind a state, where nothing is kept.
 		w.giveUp()
 		return
 	}

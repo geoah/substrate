@@ -358,3 +358,74 @@ func TestAnOwnersOwnWebhookTriggerMayStayOpen(t *testing.T) {
 		}
 	}
 }
+
+// A compaction keeps who shipped a webhook trigger (decision 0310): the
+// package's own lines are replaced, and the hands the state entry keeps name
+// it, so the owner's write that turns it on with no key is refused after the
+// compaction as before it. The package counts whether it created the
+// trigger or wrote it later, over one the owner made and deleted.
+func TestACompactionKeepsWhoShippedAWebhookTrigger(t *testing.T) {
+	t.Parallel()
+	packageHand := actorID(substrate.BundleActor("providers.substrate.reamde.dev", "applehealth"))
+	for _, c := range []struct {
+		name  string
+		setUp func(t *testing.T) *dataset
+	}{
+		{"the package created it", appleHealthDataset},
+		{"the package wrote it after the owner made it", func(t *testing.T) *dataset {
+			ctx := context.Background()
+			ds := openCoreDataset(t)
+			const pkg = "hooks.example.com/hooks"
+			if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+				vocabulary.PackageManifest(pkg, 0),
+				vocabulary.FunctionManifest(pkg, "relay", map[string]any{
+					"description": "the owner's own webhook body",
+					"runtime":     vocabulary.RuntimePython,
+					"source":      "def main(input, host):\n    return {}\n",
+				}),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: typeTrigger, ID: appleHealthHook, Properties: map[string]any{
+				"enabled":  false,
+				"source":   map[string]any{"webhook": map[string]any{}},
+				"callable": map[string]any{"ref": vocabulary.RecordPath(kindFunction, pkg+"/relay")},
+			}}); err != nil {
+				t.Fatalf("the owner's trigger: %v", err)
+			}
+			if _, err := ds.Delete(ctx, substrate.ActorPerson, typeTrigger, appleHealthHook, substrate.DeleteInput{}); err != nil {
+				t.Fatal(err)
+			}
+			installAppleHealth(t, ds)
+			var first string
+			if err := ds.db.QueryRowContext(ctx, `SELECT actor FROM changelog WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`,
+				typeTrigger, appleHealthHook).Scan(&first); err != nil || first == packageHand {
+				t.Fatalf("the trigger's first line is by %s (%v), want the owner's", first, err)
+			}
+			return ds
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			ds := c.setUp(t)
+			_, _, keyless := hookState(t, ds)
+			if err := putHook(ctx, ds, true, withHook(keyless, "key", ownersHookKey)); err != nil {
+				t.Fatalf("the owner keys the trigger and turns it on: %v", err)
+			}
+			requireOpenRefused(t, "turning it on with no key, before the compaction", putHook(ctx, ds, true, keyless), appleHealthHook, appleHealthPackage)
+			if _, err := ds.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil {
+				t.Fatalf("compact: %v", err)
+			}
+			var packageLines int
+			if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2 AND actor = $3`,
+				typeTrigger, appleHealthHook, packageHand).Scan(&packageLines); err != nil {
+				t.Fatal(err)
+			}
+			if packageLines != 0 {
+				t.Fatalf("the compaction kept %d of the package's lines of the trigger: the test proves nothing", packageLines)
+			}
+			requireOpenRefused(t, "turning it on with no key, after the compaction", putHook(ctx, ds, true, keyless), appleHealthHook, appleHealthPackage)
+		})
+	}
+}

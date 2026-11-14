@@ -265,8 +265,9 @@ type Inventory struct {
 	Records map[string]int64
 	// Packages is every package the repository declares.
 	Packages []PackageInventory
-	// Since is when the repository's first change was written, zero when
-	// the reading has none.
+	// Since is when the repository was created, or its first change was
+	// written where its row holds no creation time; zero when the reading
+	// has neither.
 	Since time.Time
 }
 
