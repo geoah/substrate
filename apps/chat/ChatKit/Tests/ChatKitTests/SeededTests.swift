@@ -15,7 +15,11 @@ import FoundationNetworking
 /// The seeds a run takes, from the environment: `CHATKIT_SEED` replays
 /// one; `CHATKIT_SEEDS` runs that many from `CHATKIT_FIRST_SEED` on, each
 /// of `CHATKIT_STEPS` steps, `CHATKIT_WIDTH` at a time. With none set it is
-/// the bounded run every `swift test` makes.
+/// the bounded run every `swift test` makes. For a seed that broke a rule:
+/// `CHATKIT_VERBOSE` adds every conversation's state and the last step's
+/// trace to what it prints, `CHATKIT_TRACE` keeps the trace of the whole
+/// run, and `CHATKIT_WATCH=<text>` prints where that text is after each
+/// step.
 private struct SeedPlan {
     var seeds: [UInt64]
     var steps: Int
@@ -88,7 +92,9 @@ struct SeededChat {
     /// says so with the seed and the steps that replay it.
     @Test func aMessageSentTwiceIsCaughtWithItsSeedAndItsSteps() async throws {
         var caught: SeededRun.Violation?
-        for seed in UInt64(1) ... 200 where caught == nil {
+        // From the first seed that shows it today; the search goes on from
+        // there, so a change to the draws still finds one.
+        for seed in UInt64(17) ... 217 where caught == nil {
             var run = SeededRun(seed: seed, revision: 2, careless: true)
             await run.run(steps: 80)
             if let violation = run.broken, violation.rule == SeededRun.Rule.doubled.rawValue { caught = violation }

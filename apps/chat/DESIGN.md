@@ -1105,6 +1105,41 @@ button and Details stack where the text size leaves no room side by side.
   strip, tried again on the list's waits and unsaid once one lands or the
   server has the message; an id taken is read from the server's reason,
   and from its words only where it names none.
+- A server that misbehaves by a seed (`SeededServer.swift`,
+  `SeededRun.swift`, `SeededTests.swift`). `SeededServer` keeps the truth,
+  the threads and rows a correct server would hold (a message under its
+  id written once, a repeat answered as an attach is, a continue that
+  writes nothing), runs its turns only when the test moves them, and
+  draws each request's fault from the seed: a 500, a 503 and a 429 with
+  and without `Retry-After`, a gateway's 502 page, a 401, a hang past the
+  timeout, a request that never arrives, a dropped connection, a page of
+  HTML with a 200, a stream that closes before its `thread` event or is
+  cut at any event, an event sent twice, a delay; a write is taken or not
+  before its answer is lost. `SeededRun` is a person by the same seed:
+  sends, Stop, Try Again and Continue, Send Again and Edit Message,
+  opening and closing chats, leaving and returning to the front, kills
+  and relaunches over the same folder, with the server's turns and the
+  rig's clock moved between. After every step it holds the app to: the
+  transcript drawn equals the fold of the server's rows wherever the app
+  holds the thread at the server's version; no conversation waits with no
+  request at the server and no wait on the clock; no message is written
+  twice; no row is drawn twice; nothing the person sent is lost (it is in
+  a stored row, in a composer or on a message with its card); no failure
+  is drawn in two places; a pending message has its send or its card;
+  without an id nothing is sent again on the app's own; the list holds
+  each chat once. At the end the server behaves, time passes, and every
+  conversation must have settled on the server's rows. A broken rule
+  prints the seed and the steps, and
+  `CHATKIT_SEED=<seed> CHATKIT_STEPS=<n> swift test --filter SeededChat`
+  replays it. Every `swift test` runs 24 seeds of 60 steps;
+  `CHATKIT_SEEDS`, `CHATKIT_FIRST_SEED`, `CHATKIT_STEPS` and
+  `CHATKIT_WIDTH` run more, and `CHATKIT_VERBOSE` says what each seed
+  reached. The seed fixes the steps, the faults and the clock; the order
+  the runtime's concurrent effects run in within a step is the
+  scheduler's, so a run waits for the app to stand still between steps
+  and believes a broken rule only once it is still broken after real time.
+  Rules the app is known to break in code another group is rebuilding are
+  listed in `SeededRun.known`: noted, not failed.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

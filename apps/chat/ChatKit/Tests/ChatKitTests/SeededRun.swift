@@ -648,6 +648,8 @@ struct SeededRun {
         for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where server.userRows(saying: text) > meant {
             return broke(.doubled, "the server holds \"\(text)\" \(server.userRows(saying: text)) times, and the person sent it \(meant)")
         }
+        // No two rows share an id, a `messageId` least of all.
+        if !server.sharedRowIDs.isEmpty { return broke(.doubled, "the server holds two rows under \(server.sharedRowIDs)") }
         // Without an id the app sends what the person pressed and no more.
         for (text, record) in sent.sorted(by: { $0.key < $1.key }) where !record.ids {
             let requests = server.chatRequests(saying: text) - record.before
