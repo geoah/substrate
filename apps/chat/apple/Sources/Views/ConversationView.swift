@@ -14,19 +14,32 @@ struct ConversationView: View {
     @State private var draftField = DraftField()
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var atBottom = true
+    /// The chat was put at its "New" line, which happens once, on opening,
+    /// and only once the transcript has a size to scroll in.
+    @State private var placedAtNew = false
+    @State private var laidOut = false
+    #if os(macOS)
+    /// The window is the key one of the app in front.
+    @Environment(\.appearsActive) private var front
+    private let covered = false
+    #else
+    private let front = true
+    /// A sheet or an alert stands over the chat.
+    @State private var covered = false
+    #endif
     @State private var keySheet: KeySheet?
     @State private var renaming = false
     @State private var newTitle = ""
 
     var body: some View {
         if let screen = host.conversation(key) {
-            transcript(screen)
+            ScrollViewReader { reader in transcript(screen, reader) }
         } else {
             NoChatView(scene: scene)
         }
     }
 
-    private func transcript(_ screen: ConversationScreen) -> some View {
+    private func transcript(_ screen: ConversationScreen, _ reader: ScrollViewProxy) -> some View {
         let _ = Meter.shared.count(.body, "Transcript")
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 22) {
@@ -55,6 +68,29 @@ struct ConversationView: View {
         .onChange(of: follow(screen)) { _, _ in
             if atBottom { position.scrollTo(edge: .bottom) }
         }
+        // A chat with more than the person had read opens at the first of
+        // it: where what is new fits on one screen the scroll stops at the
+        // end, as a chat with nothing new opens. The rows may be drawn
+        // before the line is known (they come from the disk) or after.
+        .onScrollGeometryChange(for: Bool.self) { geo in
+            geo.contentSize.height > 0
+        } action: { _, laid in
+            laidOut = laid
+            placeAtNew(screen, reader)
+        }
+        .onChange(of: screen.newLine?.turn, initial: true) { _, _ in placeAtNew(screen, reader) }
+        // The end of the chat is read once somebody looking at it has had
+        // it on screen for a second (ChatKit counts): the list is told
+        // whenever that starts or stops being so. Never from onDisappear:
+        // a split view takes a detail away and puts the same one back, and
+        // this would not run again; a chat no window shows is no longer
+        // the window's current one, which the list knows by itself.
+        .onChange(of: atBottom && front && !covered && phase == .active, initial: true) { _, looking in
+            host.send(.end(scene: scene, key: key, shown: looking))
+        }
+        #if os(iOS)
+        .background { CoverProbe(covered: $covered) }
+        #endif
         .scrollDismissesKeyboard(.interactively)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
         .safeAreaBar(edge: .bottom) {
@@ -63,6 +99,13 @@ struct ConversationView: View {
                 // above the composer.
                 if let strip = screen.failures.strip {
                     FailureView(failure: strip, act: act)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: 820)
+                        .transition(.opacity)
+                }
+                // Asked once a first reply settled, in the app's own words.
+                if let offer = host.chats?.notificationOffer {
+                    NotificationOfferView(offer: offer)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: 820)
                         .transition(.opacity)
@@ -131,6 +174,16 @@ struct ConversationView: View {
         }
     }
 
+    private func placeAtNew(_ screen: ConversationScreen, _ reader: ScrollViewProxy) {
+        guard laidOut, !placedAtNew, let line = screen.newLine,
+            let row = TranscriptPiece.pieces(of: screen.turns).first(where: { $0.turn.id == line.turn })
+        else { return }
+        placedAtNew = true
+        // By the id of the turn's first row, which the lazy stack knows
+        // however far up it is; the line is drawn above that row.
+        reader.scrollTo(row.id, anchor: .top)
+    }
+
     private var act: (FailureAction) -> Void {
         let actions = FailureActions(host: host, scene: scene, key: key, openURL: openURL, draftField: draftField) {
             keySheet = host.chats?.keys[$0]
@@ -186,7 +239,11 @@ struct TranscriptRows: View {
         let pieces = TranscriptPiece.pieces(of: screen.turns)
         // The last row of each turn, by the turn's id.
         let ends = Dictionary(pieces.map { ($0.turn.id, $0.id) }, uniquingKeysWith: { _, last in last })
+        // The first row of the turn the person had not read, where the
+        // chat was opened with more than they had.
+        let new = screen.newLine.flatMap { line in pieces.first { $0.turn.id == line.turn }?.id }
         ForEach(pieces) { piece in
+            if piece.id == new, let line = screen.newLine { NewLineView(line: line).padding(.top, 8) }
             TranscriptPieceView(piece: piece, cards: screen.cards, expandThinking: screen.expandThinking)
             // A turn's failure is a card at that turn, under its last row.
             if ends[piece.turn.id] == piece.id, let failure = screen.failures.turns[piece.turn.id] {

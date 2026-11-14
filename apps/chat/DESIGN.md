@@ -116,7 +116,8 @@ again, and nothing else; a key typed makes nothing.
 | A draft | the composer's field while it is typed; the conversation after a pause, before a send and when the field stops editing (`DraftReports`), and from there `drafts.json`; the tree only as the engine wrote it |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
-| Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled (at once), cancelled and badged as effects; the kit's delegate, installed at launch, hands a tap to `responses()`, which the list follows and turns into a route; the engine never notifies a chat on screen |
+| Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled (a reply five seconds ahead where the server keeps marks, at once otherwise), cancelled and badged as effects; the kit's delegate, installed at launch, hands a tap to `responses()`, which the list follows and turns into a route; the engine never notifies a chat on screen |
+| Read state | the person's `llm/threadmark` records where the server keeps them (`ChatAppMarks.swift`, [Read state](#read-state)); the device's own `seen` map on a server that does not |
 | Background | the kit's `BackgroundWork` device service: the refresh job's runs, scheduled with the repository and the link generation and checked against both, stopped when the system takes a run back or its budget runs out; and continued processing for a streaming turn |
 | The owner's choices | `ChatPreferences`, kept in UserDefaults under the keys every build used |
 
@@ -144,14 +145,17 @@ one segment, encoded exactly once: an agent's id
 | Titles without a subject | `{"kinds":["…/llm/message"],"properties":{"role":{"eq":"user"},"thread":{"in":[ids]}}}`, `turn:asc,createdAt:asc`, first 500 |
 | One thread | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}` (404 or `deletedAt`: deleted) |
 | A transcript | `{"kinds":["…/llm/message"],"properties":{"thread":{"eq":id}}}`, `turn:desc,createdAt:desc`, first 500, reversed |
-| Pending questions | `{"kinds":["…/llm/interaction"],"properties":{"state":{"eq":"pending"}}}`, first 100 |
+| My marks | `{"kinds":["…/llm/threadmark"],"properties":{"thread":{"in":[ids]},"readBy":{"eq":"me"}}}`, first 100, a hundred threads a request, with every list of threads; only where `records` is at revision 8 or more. `me` is the person the token acts for, so the app never learns its actor |
+| Read a chat | `POST /api/v1/records` `{kind: …/llm/threadmark, properties: {thread, readThrough}}`, with no id: the server builds it from the thread and the person. `201` or `200` with the mark as it stands. Never `readAt`, which is the server's |
+| Mark as Unread | the same `POST` with `{thread, markedUnread: true}` and no `readThrough`: the position never moves |
+| Pending questions | `{"kinds":["…/llm/interaction"],"properties":{"state":{"eq":"pending"}}}`, first 100. Where the server keeps marks it also counts what waits on each thread's row (`waitingOnPerson`), and this read and the two below name only the threads that say something waits (`"thread":{"in":[ids]}`), so with none waiting none of the three is made |
 | Pending suggestions | `{"kinds":["substrate.reamde.dev/core/recordpatchrequest"],"properties":{"decision":{"eq":"proposed"}}}`, first 100 |
 | Pending approvals | `{"kinds":["…/llm/approval"],"properties":{"state":{"eq":"pending"}}}`, first 100; a refusal (a server older than the kind) reads as none, and the watch names the kind only once this read was answered |
 | Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message, messageId}` → ndjson. `messageId` is a lowercase UUID the app mints when Send is pressed, the id of the message's own record, sent only where `agents` is at revision 3 or more: an older server refuses a body field it does not know (`400`). The same body again writes nothing and runs nothing: its stream opens with the same `thread` event, then is the turn's, or one `idle` line |
 | A message kept from a launch before | `GET /api/v1/substrate.reamde.dev/llm/message/{messageId}` (404: no copy was written) |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
-| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision`. 3 or more takes a `messageId` and has the continue route |
+| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision` (3 or more takes a `messageId` and has the continue route) and the `records` feature's (8 or more has the person's marks) |
 | Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message, called only where `agents` is at revision 3 or more; below it, or before the document is read, the app sends "Continue where you left off." through Send, as it did before the route. The route is never probed. `409` `thread_busy` or `nothing_to_continue`: the thread is read for what it holds |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
@@ -399,7 +403,7 @@ be read again.
 
 | File | Holds |
 | ---- | ----- |
-| `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, read marks, the notified set; a build before ChatKit kept the feed cursor here too |
+| `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, the person's marks as the server last said them and the ones this device moved and has not had answered, the device's own `seen` map (what is unread on a server without marks), the notified set; a build before ChatKit kept the feed cursor here too |
 | `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
 | `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit moves into it at the first open, which removes it from `state.json`, so it is read once |
 | `drafts.json` | each chat's unsent draft |
@@ -423,7 +427,9 @@ be read again.
   transcripts against the budget, and clears them (the kit's Storage rows:
   "Saved copies", "Clear Saved Copies").
 - **The live feed** runs while a scene is active (and while the Mac app
-  runs): kinds thread, message, agent, provider, interaction and request. It
+  runs): kinds thread, message, agent, provider, interaction and request,
+  and the thread mark once a read of the marks was answered (a watch naming
+  a kind the server does not declare is refused whole). It
   resumes from the list read's `head` and `generation` (taken before the
   reads, so nothing between them is missed), reads the opening `bookmark`,
   advances its cursor after applying each row, and persists it. A `410` or a
@@ -438,7 +444,8 @@ be read again.
   `compacted` is read again from its first page once. Another terminal frame
   stops it with a status line.
   A thread row re-reads the list (debounced 300 ms) and that thread's rows
-  where the rules allow; a message row re-reads any background-running chat
+  where the rules allow; a mark's row re-reads the list and the marks
+  together; a message row re-reads any background-running chat
   that is open; an agent or provider row re-reads those; an interaction or a
   request row re-reads the pending cards.
 - **On return to the foreground**: the watch reopens, every streaming
@@ -454,7 +461,12 @@ The server has no push channel, so the app promises what it can observe:
   name, the chat's title and the start of the reply, grouped by thread.
   Tapping opens the chat. Keyed by thread and `finishedAt`, so a rename never
   notifies. A reply that failed says the sentence its card in the chat says,
-  never the server's own text.
+  never the server's own text. Where the server keeps marks, a reply a mark
+  says was read (on any device) is not notified at all, and the rest wait
+  five seconds for a mark: scheduled that far ahead, and taken back if the
+  mark arrives first, so a reply read live on the Mac does not sound on the
+  phone beside it. The refresh job reads the marks with the list, so it
+  never posts for a reply read elsewhere.
 - **Attention**: a new pending interaction ("Assistant has 2 questions"),
   a proposed request ("Assistant suggested a change") or a pending approval
   ("Secretary wants your approval to run gmail_send") notifies once per
@@ -475,13 +487,21 @@ The server has no push channel, so the app promises what it can observe:
 - **On macOS** the stream and the feed run while the app is open, so replies
   and cards notify when they happen (unless the Mac sleeps).
 - **Opening a chat** takes back its notifications, delivered and still
-  pending (each one's id starts with the thread's).
-- **Permission** (alerts, sound and the badge) is asked after the first
-  message is sent. Settings has a switch for replies and one for questions
-  and suggestions; automated runs never notify unless they ask something.
-- **Unread**: a chat whose `finishedAt` is newer than when it was last seen
-  settled shows a dot; the iOS badge counts them. At the first sign-in every
-  chat is marked seen, so history is not unread.
+  pending (each one's id starts with the thread's). So does a mark that
+  says the chat was read, wherever it was read: from the feed, a refresh or
+  the refresh job.
+- **Permission** (alerts, sound and the badge) is asked once the first
+  reply has settled, never while it streams, and in the app's words first:
+  a card above the composer says what would be notified ("Substrate Chat
+  can notify you when an assistant finishes a reply or needs an answer from
+  you while you are in another chat or another app."), Turn On
+  Notifications brings the system's prompt, and Not Now asks nothing. A
+  device the system already asked is not offered. Settings has a switch for
+  replies and one for questions and suggestions, and Turn On Notifications
+  while the system was never asked; automated runs never notify unless they
+  ask something.
+- **Unread**: [Read state](#read-state). The badge is the number of unread
+  chats by the same rule as the dots.
 
 ### Voice typing
 
@@ -603,7 +623,9 @@ bubble is a tinted fill. The transcript softens under the composer with
 - A row: the title (`subject`, else the opening line, else "New chat") and
   when, then the agent's name in its colour running into the start of the
   last reply ("Working…" while it runs), and a state: a dot when unread, a
-  question mark when a card waits on the owner, and the console's mark in
+  question mark when a card waits on the person (the thread's
+  `waitingOnPerson` where the server counts it, else counted from the
+  pending cards), and the console's mark in
   words for a last turn that didn't finish: "Didn’t finish" (orange) for a
   restart or a limit, "Stopped" (grey) for a stop, "Failed" (red) for an
   error. No avatar and no agent pill: each took a column and said no more
@@ -620,7 +642,8 @@ bubble is a tinted fill. The transcript softens under the composer with
   default), with a glyph for what started each.
 - Search filters titles, previews and cached transcripts, and says it is
   searching what is on this device.
-- Swipe and context menu: Rename, Mark as Read or Unread, Copy Thread ID.
+- Swipe and context menu: Rename, Mark as Read or Unread
+  ([Read state](#read-state)), Copy Thread ID.
 - Pull to refresh; an offline banner ("Offline. Showing saved chats.").
 - Toolbar: New Chat (⌘N); Settings (⌘, on the Mac). On a phone the search
   field sits in the bottom bar with New Chat to its right.
@@ -725,6 +748,11 @@ bubble is a tinted fill. The transcript softens under the composer with
 - The view follows the bottom while turns arrive (`defaultScrollAnchor(.bottom)`),
   stops when the reader scrolls up, and offers Jump to Latest;
   `scrollDismissesKeyboard(.interactively)`.
+- **Where it opens**: a chat with more than the person had read opens at
+  the first turn they had not, under a "New" line; where all of that fits
+  on one screen the scroll stops at the end, as a chat with nothing new
+  opens. The line stays while the chat is open and is gone the next time
+  ([Read state](#read-state)).
 
 ### New chat
 
@@ -888,6 +916,123 @@ may do and for how long; the app never sees the password.
   block quote, the composer's notes and its key callout, the navigation
   bar's subtitle (the secondary label), and a prominent button in the
   kit's screens (white on the accent's text tone).
+
+## Read state
+
+How far a person has read a chat is the server's record of it, one
+`substrate.reamde.dev/llm/threadmark` per thread and person (decision 0313),
+so a chat read on the phone is read on the Mac. The app reads the person's
+marks with every list of threads, keeps them in `state.json` so the list
+draws its dots before it asks anything, and follows the kind on the change
+feed. Everything below is `ChatApp/ChatAppMarks.swift`, and
+`MarkTests.swift` holds it.
+
+**Which server.** The `records` feature at revision 8 or more has marks.
+Below that, or where the server answers that it does not know the kind, the
+app behaves as it did before marks: the device's own `seen` map (each
+chat's `finishedAt` when a window last showed it settled) says what is
+unread, opening a chat reads it at once, Mark as Unread and Mark as Read
+change that map alone, a reply notifies at once, and the three pending
+lists are read whole. Nothing names the mark kind: no read, no write, no
+watch.
+
+**What is unread.** A settled chat is unread when its mark says
+`markedUnread`, or when the thread's `lastMessage` is not the mark's
+`readThrough`. A thread with no `lastMessage` is unread only when marked
+so. A thread the person has no mark of was never opened, and is unread. A
+chat that is running is working, not unread. A chat whose mark the server
+has not said yet is not called unread, and its reply is not notified, until
+it has: a list read whose marks failed shows no dot it would have to take
+back, and a server whose marks were never read (the first read failed)
+notifies nothing by the device's own map, which knows nothing of the
+other devices. A reply that waited is judged against the thread's row
+that came with its mark, never an older one, and is notified by the
+device's map after all if the server turns out to keep no marks. A thread this device just started has no mark, which the
+app knows without asking.
+
+The marks are read after the threads they are compared with. A mark whose
+position was taken after its thread's row settled, of a message that is
+not the row's newest, may read through a reply that settled between the
+two reads, and would look unread against the older row: the threads are
+then read once more. This matters to the refresh job, which has no feed
+to put it right a moment later.
+
+**Reading.** A chat is read once the newest message it settled with has
+been on screen for a second, in a window that is in front and active (the
+key window of the app in front, on a Mac) with nothing presented over it:
+a chat behind a sheet or an alert is in front of nobody, which on iPhone
+and iPad the view learns from UIKit dimming its tint (`CoverProbe`), the
+one sign a view behind a presentation is given. A menu dims nothing and
+covers little, and does not count. The view says whether
+the end of the transcript is on screen; the list counts the second, from the
+moment the rows drawn hold that message, and stops counting when the chat
+scrolls away from its end, runs again, or leaves the front. So a reply
+that settles while the person is looking at the end is read without a
+scroll, a reply that arrives below a chat scrolled up is not, and a
+resumed run that settles a second reply is read like the first. The mark
+moves to the thread's `lastMessage`.
+
+The chat reads so on this device at once: what the device moved is laid
+over the server's mark until the server answers. A read this device made
+of a message that is no longer the thread's newest is not laid over: the
+thread has moved on, another device may have read further or marked the
+chat unread since, and what the server holds is believed (the write still
+goes, and the server, which never moves a position back, drops it). The
+write waits two
+seconds, so a run of replies is one write, and goes out at once when no
+window in front shows the chat any more, when the app goes inactive and
+when it goes to the background. One thread's writes go out one at a time,
+in the order they were made. A write that fails is nothing the person can
+act on and is never shown: it waits, across a launch too, for the next
+time the server answers a refresh or the app comes to the front. One the
+server refuses for good (the thread is gone, the message is no longer one
+of its) is dropped, and the chat reads as the server says.
+
+**Forward only.** A mark held under a later version than the one a read
+brought is kept, so an answer that left the server before this device's
+write, or before a newer read, never brings a dot back. Mark as Unread on
+another device does: it is a newer version of the mark.
+
+**Marks from elsewhere.** A mark's row on the feed re-reads the list and
+the marks together (a mark that reads through a reply this device has not
+heard of would otherwise look unread). When a mark says a chat was read,
+the dot goes, the chat's delivered and pending notifications are taken
+back, and the badge is counted again, as when the chat is opened here.
+
+**Mark as Unread and Mark as Read**, on a row's swipe and its context
+menu, and Mark as Unread in a chat's menu. Mark as Unread writes
+`markedUnread` and never moves the position. A chat marked unread while a
+window shows it stays unread until it is left and opened again, or says
+more. Mark as Read reads through the thread's `lastMessage`, which clears
+the flag with it; on a thread that names none it clears the flag alone.
+
+**The "New" line.** When a chat is opened with messages after the one the
+person had read through, the line stands above the first turn after it,
+in the rows the device holds, and the chat opens there. Where this device
+saw further than the server has heard (a read not written yet), or the
+server holds further than this device saw, it is the later of the two. A chat the person
+never opened is new from its first turn held, and opens there. A chat
+only marked unread has nothing new in it and no line. It is decided once,
+on opening, so it stays while the chat is open, read or not, and is gone
+the next time.
+
+**What waits on the person.** A server that keeps marks counts each
+thread's pending questions, suggestions and approvals on its row
+(`waitingOnPerson`). The row's mark reads that, and the pending cards are
+read only under the threads that say something waits, which is none of
+the three reads in the usual case. A card in a chat still reads its own
+record when it is drawn, and a sub-agent's approvals are found under the
+thread they wait on.
+
+**The device's own marks are not uploaded.** The server's migration marked
+every chat from before as read, for every person, so the `seen` map a
+build before this one kept is sent nowhere. On the first launch against a
+server with marks the list draws from the disk as it was left, and the
+moment the marks land they replace the map in one step: a dot only this
+device knew of goes, a dot the server knows of shows, and no list in
+between shows every chat as unread. The map is kept for servers without
+marks, and a server that stops keeping them (a rollback) leaves each dot
+where it was.
 
 ## Failures
 
@@ -1169,6 +1314,20 @@ button and Details stack where the text size leaves no room side by side.
   breaks one is still held to every rule the leftover does not touch. A
   kill may take a draft typed inside its save's pause and a send without
   an id still on its way, and nothing else.
+- Read state (`MarkTests.swift`, over `MarkServer`, a server that keeps
+  marks by the real one's rules for any number of devices at once): the
+  unread rule case by case; the mark moves after a second with the end on
+  screen, and not when scrolled away or in a window that is not in front;
+  a read that could not be written against one made elsewhere since; a
+  mark that outran the list it was read with;
+  the two seconds before the write and what sends it early; two devices
+  where a read on one clears the other's dot, takes back its notification
+  and lowers its badge; the five seconds a reply's notification waits; an
+  older mark arriving late; Mark as Unread and Mark as Read; a write that
+  fails and one refused for good; the waiting mark from the thread; the
+  "New" line; a server without marks, one that does not know the kind and
+  one that stops keeping them; the first launch after the server gained
+  marks; the offer to notify.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

@@ -12,9 +12,9 @@ import SubstrateRuntime
 extension ChatAppState {
     /// Without what no part reads: the engine's own bookkeeping, the
     /// drafts and the unsent messages, which the tree carries from a
-    /// conversation and never from here, and the list's own failure and its
-    /// feed's reconnecting, which the tree's top reads at every
-    /// presentation and no kept part does.
+    /// conversation and never from here, and the list's own failure, its
+    /// feed's reconnecting and the offer to notify, which the tree's top
+    /// reads at every presentation and no kept part does.
     private var presented: ChatAppState {
         var state = self
         state.asks = []
@@ -44,6 +44,23 @@ extension ChatAppState {
         state.unsent = [:]
         state.keptUnsent = []
         state.unsaved = nil
+        state.recordsRevision = nil
+        state.marksUnserved = false
+        state.marksKnown = false
+        state.marksDue = nil
+        state.sights = [:]
+        state.notificationOffer = nil
+        return state
+    }
+
+    /// Without the person's marks, which the list alone reads: what is
+    /// unread is a row's, and a conversation's "New" line is decided when
+    /// it is opened and kept on its entry.
+    private var unmarked: ChatAppState {
+        var state = presented
+        state.marks = nil
+        state.marking = [:]
+        state.markSending = [:]
         return state
     }
 
@@ -82,7 +99,7 @@ extension ChatAppState {
     /// Of the transcripts, its own alone, and of the failures, a rename of
     /// its thread and a read of its rows.
     func conversed(_ thread: String?) -> ChatAppState {
-        var state = presented
+        var state = unmarked
         state.transcripts = thread.flatMap { id in transcripts[id].map { [id: $0] } } ?? [:]
         state.renameFailure = renameFailure.flatMap { $0.thread == thread ? $0 : nil }
         state.rowsFailed = thread.flatMap { id in rowsFailed[id].map { [id: $0] } } ?? [:]
@@ -99,7 +116,7 @@ extension ChatAppState {
     /// choices, their memories and instructions, the storage and the
     /// permission.
     var settled: ChatAppState {
-        var state = presented
+        var state = unmarked
         state.transcripts = [:]
         state.conversations = [:]
         state.scenes = [:]
@@ -119,7 +136,7 @@ extension ChatAppState {
     /// what is on screen, the agents offered and the providers without a
     /// key.
     var framed: ChatAppState {
-        var state = presented
+        var state = unmarked
         state.transcripts = [:]
         state.renameFailure = nil
         state.rowsFailed = [:]

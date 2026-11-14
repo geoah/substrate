@@ -51,6 +51,8 @@ extension ChatApp {
     struct ConversationReads: Equatable, Sendable {
         var live: ConversationLive
         var state: State
+        /// Where the chat's "New" line stands, which its entry holds.
+        var newFrom: State.NewFrom?
     }
 
     public func present(_ input: PresenterInput<ChatApp>) -> ChatPresentation {
@@ -82,7 +84,9 @@ extension ChatApp {
             // Kept until what it reads changes, or until the instant a
             // reply's rows, left as they were, may be parsed again.
             let screen = kept.timed(
-                "chat/\(key.rawValue)/screen", reading: ConversationReads(live: live, state: state.conversed(live.thread)), at: input.now
+                "chat/\(key.rawValue)/screen",
+                reading: ConversationReads(live: live, state: state.conversed(live.thread), newFrom: state.conversations[key]?.newFrom),
+                at: input.now
             ) {
                 let pace = TurnPresenter.Pace(now: input.now)
                 let screen = conversation(state, key, live, pace: pace)
@@ -98,6 +102,7 @@ extension ChatApp {
             host: state.session.map { ServerAddress.display($0.server) } ?? "", list: list, scenes: scenes,
             routePending: state.route != nil, onScreen: framed.onScreen, streaming: framed.streaming, conversations: conversations,
             offered: framed.offered, defaultAgent: framed.defaultAgent, settings: settings, unread: listed.unread,
+            notificationOffer: state.notificationOffer == .offered ? Self.notificationOffer(platform) : nil,
             keys: framed.keys, keySaved: state.keySaved, answered: state.answered,
             redrawAt: redrawAt)
     }
@@ -182,6 +187,36 @@ extension ChatApp {
                 action: offered.isEmpty ? nil : "New Chat"),
             onScreen: state.visibleThreads.sorted(),
             streaming: state.conversations.filter(\.value.streaming).keys.sorted(), keys: keys)
+    }
+
+    /// What the app notifies, in a sentence, before the system's own
+    /// prompt, which says only that it would like to.
+    static func notificationOffer(_ platform: ChatPlatform) -> NotificationOfferPresentation {
+        NotificationOfferPresentation(
+            title: "Hear when a reply is ready?",
+            message: platform == .ios
+                ? "Substrate Chat can notify you when an assistant finishes a reply or needs an answer from you while you are in another chat or another app."
+                : "Substrate Chat can notify you when an assistant finishes a reply or needs an answer from you while you are in another chat or another window.",
+            allow: "Turn On Notifications", decline: "Not Now")
+    }
+
+    /// The line above the first turn the person had not read when the chat
+    /// was opened, in the rows held: the first turn after the message they
+    /// had read through, or the first turn held where they never opened
+    /// the chat. None where no such message is among the rows, or nothing
+    /// that starts a turn follows it.
+    static func newLine(_ held: State.Held?, from: State.NewFrom?) -> NewLine? {
+        guard let held, let from else { return nil }
+        let first: String?
+        switch from {
+        case .start:
+            first = held.turns.first?.id
+        case let .after(messages):
+            guard let at = held.records.lastIndex(where: { messages.contains($0.id) }) else { return nil }
+            let turns = Set(held.turns.map(\.id))
+            first = held.records[(at + 1)...].first { turns.contains($0.id) }?.id
+        }
+        return first.map { NewLine(turn: $0, label: "New", spoken: "New messages") }
     }
 
     static func choice(_ agent: Agent) -> AgentChoice { AgentChoice(id: agent.id, name: agent.name, description: agent.description) }
@@ -334,7 +369,8 @@ extension ChatApp {
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
             olderHidden: (held?.records.count ?? 0) >= 500 ? "Older messages aren't shown here." : nil,
-            turns: turns, typing: live.awaitingFirstEvent, status: status,
+            turns: turns, newLine: Self.newLine(held, from: state.conversations[key]?.newFrom), typing: live.awaitingFirstEvent,
+            status: status,
             failures: failures(state, live: live, row: row, stored: stored, turns: turns), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(

@@ -28,6 +28,13 @@ struct ChatThread: Hashable, Sendable, Identifiable {
     /// The row's last write, which every settle makes.
     var activeAt: Date { record.updatedDate }
     var automated: Bool { mode != "chat" }
+    /// The newest message the thread held when it last settled, which a
+    /// person's mark is compared with; nil from a server older than marks,
+    /// and on a thread that holds none.
+    var lastMessage: String? { record["lastMessage"]?.referenceID }
+    /// How many of its questions, suggestions and calls to approve wait on
+    /// a person, as a server that keeps marks counts them on the row.
+    var waiting: Int { max(0, record["waitingOnPerson"]?.int ?? 0) }
 
     func title(opening: String?) -> String { threadTitle(subject: subject, opening: opening) }
 

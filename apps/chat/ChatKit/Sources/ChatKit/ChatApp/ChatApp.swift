@@ -33,6 +33,13 @@ public struct ChatApp: LinkedApp {
         case refresh
         case markRead(String)
         case markUnread(String)
+        /// A window's view says whether somebody looking at it sees the end
+        /// of the conversation it shows: the window is in front and
+        /// active, and the newest message is on screen.
+        case end(scene: String, key: ChildKey, shown: Bool)
+        /// The answer to the app's own offer to notify: the system's
+        /// prompt follows a yes.
+        case notifications(allow: Bool)
         case rename(thread: String, subject: String)
         /// The rename that failed was read.
         case dismissRename
@@ -125,6 +132,11 @@ public struct ChatApp: LinkedApp {
         case .refresh: return [Event(.refreshAsked)]
         case let .markRead(thread): return [Event(.markedRead(thread))]
         case let .markUnread(thread): return [Event(.markedUnread(thread))]
+        case let .end(scene, key, shown):
+            // Said again with nothing changed, it is no event.
+            if (state.scenes[scene]?.atEnd == key) == shown { return [] }
+            return [Event(.endShown(scene: scene, key: key, shown: shown))]
+        case let .notifications(allow): return [Event(.notificationsAnswered(allow: allow))]
         case let .rename(thread, subject):
             let text = subject.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? [] : [Event(.renameAsked(thread: thread, subject: text))]
@@ -219,6 +231,7 @@ public struct ChatApp: LinkedApp {
             let .cardWriteFailed(_, failure), let .renameFailed(_, _, failure):
             failure.report
         case let .watchEnded(_, failure?): failure.report
+        case .markWriteFailed(_, _, .signedOut): .accessEnded
         case let .feedApplied(feed): feed.failure?.report
         case let .guidance(.readFailed(failure)), let .guidance(.writeFailed(_, failure, _)): failure.report
         default: nil
@@ -240,7 +253,8 @@ public struct ChatApp: LinkedApp {
     /// moved: the folder's files and the choices written when what they
     /// keep changed (never at an open, which read them), the badge when the
     /// unread count moved, and a chat that came on screen takes back its
-    /// notifications.
+    /// notifications, as does one a mark says was read, here or on another
+    /// device.
     public func effects(of event: Event, on state: State, from previous: State, presented presentation: Presentation) -> [Effect] {
         var asks = state.asks
         if let disk = state.disk, disk == previous.disk {
@@ -261,7 +275,13 @@ public struct ChatApp: LinkedApp {
             if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
         }
         if state.unreadCount != previous.unreadCount { asks.append(.badge(state.unreadCount)) }
-        for thread in state.visibleThreads.subtracting(previous.visibleThreads).sorted() { asks.append(.cancelGroup(thread)) }
+        var taken = state.visibleThreads.subtracting(previous.visibleThreads)
+        // Read, not merely running again: a chat at work is not unread,
+        // and what it notified before is still to be read.
+        if state.marks != nil, previous.marks != nil, state.readState != previous.readState {
+            taken.formUnion(previous.unreadThreads.subtracting(state.unreadThreads).filter { state.thread($0)?.running == false })
+        }
+        for thread in taken.sorted() { asks.append(.cancelGroup(thread)) }
         return asks.map(Effect.init)
     }
 
@@ -270,6 +290,9 @@ public struct ChatApp: LinkedApp {
         case .openDisk: "disk"
         case .refresh: "refresh"
         case .readFeatures: "features"
+        case .readMarks: "marks"
+        case let .sight(thread, _): "sight:\(thread)"
+        case .marksWait: "marksWait"
         case .cards: "cards"
         case .openings: "openings"
         case let .read(thread, _, _, _): "read:\(thread)"
@@ -298,7 +321,7 @@ public struct ChatApp: LinkedApp {
         case .readUsage: "usage"
         case .readPermission: "permission"
         case let .cancel(key): key
-        case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .cancelGroup, .cancelAllNotifications, .badge,
+        case .closeDisk, .prune, .clearTranscripts, .markRefreshed, .notify, .notifyHeld, .writeMark, .cancelGroup, .cancelAllNotifications, .badge,
             .askPermission, .finishRun, .scheduleRefresh, .endContinued:
             nil
         }

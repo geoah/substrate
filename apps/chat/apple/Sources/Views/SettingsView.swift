@@ -81,6 +81,7 @@ struct SettingsView: View {
             if let url = updates.build.privacyPolicy.flatMap(URL.init(string:)) { openURL(url) }
         case let .perform(.status(.action(action))): perform(action)
         case .perform(.app("allowNotifications")): openNotificationSettings()
+        case .perform(.app("askNotifications")): host.send(.notifications(allow: true))
         default: host.send(.settings(command))
         }
     }

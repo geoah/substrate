@@ -17,7 +17,18 @@ extension ChatApp {
         case let .unsentSaved(ids, failed): unsentSaved(&next, ids, failed)
         case .unsentRetryDue:
             if next.unsaved != nil, let disk = next.disk { next.asks.append(.saveUnsent(disk, next.unsent, drafts: next.drafts)) }
-        case let .permissionRead(permission): next.permission = permission
+        case let .permissionRead(permission):
+            next.permission = permission
+            // Offered in the app's words only where the system was never
+            // asked: its prompt shows once.
+            if next.notificationOffer == .checking {
+                next.notificationOffer = permission == .notAsked ? .offered : nil
+                if permission != .notAsked { next.preferences.askedNotifications = true }
+            }
+        case let .notificationsAnswered(allow):
+            next.notificationOffer = nil
+            next.preferences.askedNotifications = true
+            if allow { next.asks.append(.askPermission) }
         case let .usageRead(usage): next.usage = usage
         case .transcriptsCleared:
             if let disk = next.disk { next.asks.append(.readUsage(disk)) }
@@ -46,10 +57,18 @@ extension ChatApp {
         case let .refreshFailed(failure):
             next.refreshing = false
             next.listFailure = failure.report == nil ? failure : nil
-        case let .featuresRead(agents):
-            next.agentsRevision = agents
-            next.continueUnserved = false
-            next.idsUnserved = false
+        case let .featuresRead(agents, records): featuresRead(&next, agents: agents, records: records)
+        case let .marksRead(marks): announceLearned(&next, apply(&next, marks: marks))
+        case let .endShown(scene, key, shown):
+            if shown {
+                next.scenes[scene]?.atEnd = key
+            } else if next.scenes[scene]?.atEnd == key {
+                next.scenes[scene]?.atEnd = nil
+            }
+        case let .sighted(thread, message, at): sighted(&next, thread: thread, message: message, at: at)
+        case let .marksDue(at): marksDue(&next, at: at)
+        case let .markWritten(thread, sent, record): markWritten(&next, thread: thread, sent: sent, record)
+        case let .markWriteFailed(thread, sent, refusal): markWriteFailed(&next, thread: thread, sent: sent, refusal)
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -95,6 +114,7 @@ extension ChatApp {
             publish(&next, thread, rows, version: version, full: rows.count >= 100)
         case let .threadFetched(record):
             upsert(&next, record)
+            if next.readsMarks, next.marks?[record.id] == nil { next.asks.append(.readMarks([record.id])) }
 
         case let .watchOpened(fresh):
             next.feedReconnecting = false
@@ -172,9 +192,9 @@ extension ChatApp {
             release(&next)
 
         case let .markedRead(thread):
-            markSeen(&next, thread)
+            if next.marks != nil { markRead(&next, thread) } else { markSeen(&next, thread) }
         case let .markedUnread(thread):
-            next.seen[thread] = nil
+            if next.marks != nil { markUnread(&next, thread) } else { next.seen[thread] = nil }
         case let .renameAsked(thread, subject):
             // Optimistic: the list shows it at once, and goes back if the
             // server refuses.
@@ -263,10 +283,10 @@ extension ChatApp {
             next.cards[id]?.busy = nil
             // The resolution wrote into the thread and resumed the agent.
             next.asks += [
-                .cards(next.plan, threads: next.threadIDs),
+                .cards(next.plan, threads: next.cardThreads),
                 .applyFeed(
                     next.plan, [.init(kind: Kinds.thread, id: "")],
-                    threads: next.threadIDs),
+                    threads: next.cardThreads),
             ]
             // An approved call runs after the decision, under the engine:
             // the card follows it to its end.
@@ -299,8 +319,12 @@ extension ChatApp {
                 next.route = .thread(thread)
             }
         }
-        // What came on screen is read.
-        for thread in next.visibleThreads.subtracting(state.visibleThreads) { markSeen(&next, thread) }
+        // What came on screen is read: at once where the device keeps what
+        // is unread, and once its end was looked at where the server does.
+        if next.marks == nil {
+            for thread in next.visibleThreads.subtracting(state.visibleThreads) { markSeen(&next, thread) }
+        }
+        settleMarks(&next)
         return next
     }
 
@@ -382,6 +406,16 @@ extension ChatApp {
             state.interactions = cached.interactions
             state.requests = cached.requests
             state.seen = cached.seen
+            state.marks = cached.marks
+            // What was moved and not answered before the app stopped waits
+            // for the first read the server answers.
+            if cached.marks != nil {
+                state.marking = (cached.marking ?? [:]).mapValues {
+                    var change = $0
+                    (change.due, change.held) = (nil, true)
+                    return change
+                }
+            }
             state.notified = cached.notified
             state.baselined = cached.baselined
             state.lastAgent = cached.lastAgent
@@ -428,7 +462,7 @@ extension ChatApp {
         // The refresh under way is cancelled by this one's key.
         if let earlier = state.backgroundRun { state.asks.append(.finishRun(earlier, success: false)) }
         state.backgroundRun = run
-        state.asks.append(.backgroundRefresh(run, disk, state.plan, threads: state.threadIDs))
+        state.asks.append(.backgroundRefresh(run, disk, state.plan, threads: state.cardThreads))
     }
 
     private func phase(_ state: inout State, _ phase: AppPhase) {
@@ -437,10 +471,14 @@ extension ChatApp {
             state.appActive = true
             state.leaving = false
             guard state.session != nil else { break }
+            retryMarks(&state)
             refresh(&state)
             for key in state.conversations.keys { state.conversations[key]?.resumeNudge += 1 }
         case .inactive:
             state.leaving = true
+            // What was read and not yet written goes out while the app
+            // may still send it.
+            flushMarks(&state)
             // Asked for while the app is still in front, as iOS requires of
             // a continued processing task: inactive comes before background.
             for (key, entry) in state.conversations where entry.streaming && entry.continuing == nil {
@@ -451,6 +489,7 @@ extension ChatApp {
         case .background:
             state.appActive = false
             state.leaving = true
+            flushMarks(&state)
             if let disk = state.disk { state.asks.append(.scheduleRefresh(disk)) }
             state.asks.append(.badge(state.unreadCount))
             if pausesWhenAway {
@@ -465,7 +504,7 @@ extension ChatApp {
     private func refresh(_ state: inout State) {
         guard state.session != nil, state.opened, !state.accessEnded, state.online else { return }
         state.refreshing = true
-        state.asks += [.refresh(state.plan), .readFeatures]
+        state.asks += [.refresh(state.plan, held: state.readsMarks ? state.cardThreads : []), .readFeatures]
     }
 
     private func refreshed(_ state: inout State, _ refresh: ChatAppStep.Refresh) {
@@ -482,13 +521,18 @@ extension ChatApp {
         state.baselined = true
         state.loaded = true
         if !state.watching { watch(&state, head: refresh.head) }
+        // The server answered: the marks no list read brought are asked
+        // for, and the writes that failed are tried again.
+        if refresh.threads.marks == nil { askMarks(&state) }
+        retryMarks(&state)
         afterList(&state)
     }
 
-    private func watch(_ state: inout State, head: WatchCursor? = nil) {
+    func watch(_ state: inout State, head: WatchCursor? = nil) {
         guard let disk = state.disk, state.online, state.appActive || !pausesWhenAway else { return }
         state.watching = true
-        state.asks.append(.watch(disk, head: head, kinds: ChatApp.watched(state.plan, approvals: state.approvalsKnown)))
+        state.asks.append(
+            .watch(disk, head: head, kinds: ChatApp.watched(state.plan, approvals: state.approvalsKnown, marks: state.marksKnown)))
     }
 
     /// After a list: the opening lines it lacks, then the chats to read
@@ -519,6 +563,9 @@ extension ChatApp {
     /// A new list: an older row never replaces a newer one, what settled
     /// since notifies, and on the first sign-in all of it is history.
     func apply(_ state: inout State, threads: ChatAppStep.Threads) {
+        // The marks read with the list land first, so what the list moved
+        // is told read from unread by them.
+        let learned = threads.marks.map { apply(&state, marks: $0) } ?? []
         let before = Dictionary((state.chats + state.automated).map { ($0.id, $0) }) { a, _ in a }
         let newer = { (record: Record) -> Record in
             if let held = before[record.id], held.version > record.version { return held }
@@ -529,7 +576,7 @@ extension ChatApp {
         if !state.baselined {
             for record in state.chats + state.automated {
                 if let finished = record["finishedAt"]?.string {
-                    state.seen[record.id] = finished
+                    if state.marks == nil { state.seen[record.id] = finished }
                     state.notified.insert("reply|\(record.id)|\(finished)")
                 }
             }
@@ -537,6 +584,7 @@ extension ChatApp {
         for record in state.chats + state.automated where before[record.id]?.version != record.version {
             threadMoved(&state, record)
         }
+        announceLearned(&state, learned)
     }
 
     /// One thread row, read on its own: a handover, a poll, a rename.
@@ -576,25 +624,35 @@ extension ChatApp {
     /// value the list hands it.
     private func threadMoved(_ state: inout State, _ record: Record) {
         let thread = ChatThread(record: record)
-        if !thread.running, let finished = record["finishedAt"]?.string {
-            if state.visibleThreads.contains(thread.id) { markSeen(&state, thread.id) }
-            let key = "reply|\(thread.id)|\(finished)"
-            if !state.notified.contains(key) {
-                state.notified.insert(key)
-                // A stop is the owner's own act; an error says so rather
-                // than offering the turn before it as the answer.
-                if state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
-                    thread.status != "stopped", thread.status == "error" || record["lastReply"]?.text != nil
-                {
-                    state.asks.append(
-                        .notify(
-                            ChatNotifications.reply(
-                                thread: thread, agent: agentName(thread.agentID ?? ""),
-                                title: state.title(thread), failed: notificationWords(state, thread: thread))))
-                }
-            }
+        if state.marks == nil, !thread.running, record["finishedAt"] != nil, state.visibleThreads.contains(thread.id) {
+            markSeen(&state, thread.id)
         }
+        announce(&state, thread)
         if !thread.running, state.key(of: thread.id) != nil { load(&state, thread.id) }
+    }
+
+    /// A reply that settled where nobody sees it notifies, once. Where the
+    /// server keeps marks, one a mark says was read, on any device, is no
+    /// news; one whose mark the server has not said yet waits for it, the
+    /// first read of the marks included (`apply(_:marks:)` comes back
+    /// here); and the rest wait five seconds for a mark, so a reply read on
+    /// a device beside this one stays quiet.
+    func announce(_ state: inout State, _ thread: ChatThread) {
+        guard !thread.running, let finished = thread.record["finishedAt"]?.string else { return }
+        let key = "reply|\(thread.id)|\(finished)"
+        guard !state.notified.contains(key) else { return }
+        if state.readsMarks, !state.marked(thread.id) { return }
+        state.notified.insert(key)
+        // A stop is the owner's own act; an error says so rather than
+        // offering the turn before it as the answer.
+        guard state.baselined, state.preferences.notifyReplies, !thread.automated, !state.visibleThreads.contains(thread.id),
+            thread.status != "stopped", thread.status == "error" || thread.record["lastReply"]?.text != nil,
+            state.marks == nil || state.unread(thread)
+        else { return }
+        let request = ChatNotifications.reply(
+            thread: thread, agent: agentName(thread.agentID ?? ""),
+            title: state.title(thread), failed: notificationWords(state, thread: thread))
+        state.asks.append(state.marks == nil ? .notify(request) : .notifyHeld(request, seconds: Self.notifyHold))
     }
 
     func apply(_ state: inout State, cards: ChatAppStep.Cards) {
@@ -683,7 +741,7 @@ extension ChatApp {
         if batch.contains(where: { $0.kind == Kinds.message }) {
             for key in state.conversations.keys { state.conversations[key]?.pollNudge += 1 }
         }
-        state.asks.append(.applyFeed(state.plan, batch, threads: state.threadIDs))
+        state.asks.append(.applyFeed(state.plan, batch, threads: state.cardThreads))
     }
 
     private func fed(_ state: inout State, _ feed: ChatAppStep.Feed) {
@@ -714,7 +772,7 @@ extension ChatApp {
             let unsent = state.unsent[thread]
             state.conversations[key] = State.Entry(
                 seed: Conversation.Seed(thread: thread, agent: row?.agentID, draft: state.drafts[thread] ?? "", listen: false, unsent: unsent),
-                thread: thread, agent: row?.agentID, unsent: unsent?.id)
+                thread: thread, agent: row?.agentID, unsent: unsent?.id, newFrom: state.newFrom(thread))
         }
         state.scenes[scene, default: State.Scene()].current = key
         guard state.session != nil else { return }
@@ -791,7 +849,7 @@ extension ChatApp {
         state.asks.append(.retryUnsent(after: Self.unsavedDelays[min(failures, Self.unsavedDelays.count) - 1]))
     }
 
-    private func markSeen(_ state: inout State, _ id: String) {
+    func markSeen(_ state: inout State, _ id: String) {
         guard let thread = state.thread(id), !thread.running, let finished = thread.record["finishedAt"]?.string,
             state.seen[id] != finished
         else { return }
@@ -832,6 +890,10 @@ extension ChatApp {
                 for scene in state.scenes.keys where state.scenes[scene]?.current == other { state.scenes[scene]?.current = key }
             }
             entry.thread = named
+            // A thread this send just made has no mark yet: said so now,
+            // so its reply is unread, and notified, without waiting for a
+            // read of the marks. One the server holds replaces it.
+            if state.marks != nil, state.marks?[named] == nil { state.marks?[named] = ThreadMark.none }
             if let agent = report.agent ?? entry.agent { state.lastAgent = agent }
             bump(&state, named)
             // What the new chat's composer still holds (typed while its
@@ -874,7 +936,15 @@ extension ChatApp {
             if let unsent = report.unsent { state.unsent[name] = unsent }
             entry.unsent = report.unsent?.id
         }
-        if report.settles > entry.settles { state.answered.raise(ChatAnswer(thread: entry.thread, words: "\(report.name) answered")) }
+        if report.settles > entry.settles {
+            state.answered.raise(ChatAnswer(thread: entry.thread, words: "\(report.name) answered"))
+            // The first reply settled: now, and not while it streamed, the
+            // app asks whether it may notify, in its own words first.
+            if !state.preferences.askedNotifications, state.notificationOffer == nil {
+                state.notificationOffer = .checking
+                state.asks.append(.readPermission)
+            }
+        }
         entry.settles = report.settles
         if !report.active, entry.continuing != nil {
             state.asks.append(.endContinued(key))
@@ -918,10 +988,6 @@ extension ChatApp {
         // A message put back into the composer is written as promptly: it
         // was sent, and is in no other place.
         if report.sent || report.gaveBack, let disk = state.disk { state.asks.append(.saveUnsent(disk, state.unsent, drafts: state.drafts)) }
-        if report.sent, !state.preferences.askedNotifications {
-            state.preferences.askedNotifications = true
-            state.asks.append(.askPermission)
-        }
         if !shownOrBusy(state, key) { release(&state) }
     }
 

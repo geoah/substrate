@@ -28,8 +28,11 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case refreshAsked
     case refreshed(Refresh)
     case refreshFailed(Failure)
-    /// The `agents` feature's revision, as the discovery document says it.
-    case featuresRead(agents: Int)
+    /// The `agents` and the `records` features' revisions, as the
+    /// discovery document says them.
+    case featuresRead(agents: Int, records: Int)
+    /// The person's marks of some threads, read on their own.
+    case marksRead(Marks)
     case threadsRead(Threads)
     case agentsRead(agents: [Record], providers: [Record]?, models: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)
@@ -66,6 +69,19 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case draftKept(key: ChildKey, thread: String?, text: String)
     case routed(ChatRoute)
     case routeClaimed(scene: String, key: ChildKey)
+
+    // Reading a chat
+    /// A window's view said whether somebody looking at it sees the end of
+    /// the conversation it shows.
+    case endShown(scene: String, key: ChildKey, shown: Bool)
+    /// The end of a chat has been on screen for a second.
+    case sighted(thread: String, message: String, at: Date)
+    /// The wait before a mark's write ended.
+    case marksDue(at: Date)
+    case markWritten(thread: String, sent: MarkChange, Record)
+    case markWriteFailed(thread: String, sent: MarkChange, MarkRefusal)
+    /// The offer to notify was answered.
+    case notificationsAnswered(allow: Bool)
 
     // What the owner does
     case markedRead(String)
@@ -124,6 +140,19 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     struct Threads: Codable, Equatable, Sendable {
         var chats: [Record]
         var automated: [Record]
+        /// The person's marks of these threads, read with them; nil where
+        /// the server keeps none, and where their read failed, which keeps
+        /// what is held.
+        var marks: Marks?
+    }
+
+    /// An answered read of the person's marks.
+    struct Marks: Codable, Equatable, Sendable {
+        /// The threads asked about: one with no record here has no mark.
+        var threads: [String]
+        var records: [Record]
+        /// The server answered that it does not know the kind.
+        var unserved = false
     }
 
     struct Cards: Codable, Equatable, Sendable {

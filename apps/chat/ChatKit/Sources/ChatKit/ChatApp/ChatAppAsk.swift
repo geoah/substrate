@@ -34,7 +34,8 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     /// thread's epoch.
     case loadCached(Lease, thread: String, epoch: Int)
 
-    case refresh(Plan)
+    /// `held`: the threads beside the list whose cards are read with it.
+    case refresh(Plan, held: [String])
     /// The server's discovery document, for the revision of what the chat
     /// may call.
     case readFeatures
@@ -59,7 +60,19 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case writeGuidance(RecordReference, properties: [String: JSONValue], before: Record)
     case deleteGuidance(RecordReference, before: Record)
 
+    /// The person's marks of these threads.
+    case readMarks([String])
+    /// Wakes the engine once the end of a chat has been on screen a second.
+    case sight(thread: String, message: String)
+    /// Wakes the engine when the next mark's write is due.
+    case marksWait(until: Date)
+    case writeMark(thread: String, MarkChange)
+
     case notify(NotificationRequest)
+    /// A reply's notification, shown once `seconds` passed: a mark that
+    /// arrives first takes it back, so a reply read on a device beside this
+    /// one does not sound here.
+    case notifyHeld(NotificationRequest, seconds: Double)
     case cancelGroup(String)
     case cancelAllNotifications
     case badge(Int)
@@ -91,6 +104,11 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
         var readsOperator: Bool
         /// An app's token lists the cards only under the threads it names.
         var namesThreads: Bool
+        /// The server keeps marks: the person's are read with every list of
+        /// threads, and each thread row counts what waits on a person, so
+        /// the cards are read only under the threads that say something
+        /// does.
+        var readsMarks = false
     }
 
     /// A chat to read ahead, from the disk first.
