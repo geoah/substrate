@@ -424,7 +424,9 @@ func TestCompactionOverflowRetriesOnTheLastTurn(t *testing.T) {
 // both attempts' prompts added up, which is no measure of the context the
 // thread holds: the settle-time check estimates it instead, so a thread well
 // under its window is not compacted because one of its calls was retried.
-// The retry happens on a one-shot completion, which a resumed thread makes.
+// The retry happens on a one-shot completion, which the resumed run of a
+// thread that is no chat makes: a chat thread's resumed run streams (decision
+// 0317), and a stream that breaks is not made again.
 func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -495,9 +497,14 @@ func TestARetriedCompletionsSummedPromptDoesNotCompactTheThread(t *testing.T) {
 	res, _ := chat(t, ds, "", "q1"+hundred)
 	chat(t, ds, res.Thread, "q2"+hundred)
 	// A resume starts from the resolution row that reports into the thread,
-	// and is held to whom that row names (heldto.go): here, nobody.
+	// and is held to whom that row names (heldto.go): here, nobody. The
+	// thread is made a call's first, so its resumed run does not stream and
+	// the history is still the two runs'.
 	var resolution string
 	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		if _, err := tx.patch(eref{Kind: typeThread, ID: res.Thread}, substrate.PatchInput{Properties: map[string]any{"mode": "call"}}); err != nil {
+			return err
+		}
 		var err error
 		resolution, err = tx.putThreadSystemRowID(res.Thread, map[string]any{"event": "recordResolved"}, nil, map[string]any{})
 		return err
