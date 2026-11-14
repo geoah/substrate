@@ -1,11 +1,12 @@
 package changelogfile
 
-// The line format's test vectors (docs/stored-format.md, "The line"). They
-// are the format, written down: each entry, the exact line it encodes to and
-// that line's checksum, and the canonical spelling of a set of numbers. A
-// vector never changes once it is in testdata/vectors.json, because a
-// directory written under it must read the same forever; a later format adds
-// vectors beside them and raises LineFormat.
+// The stored format's test vectors (docs/stored-format.md). They are the
+// format, written down: each entry, the exact line it encodes to and that
+// line's checksum, the canonical spelling of a set of numbers, and an
+// archive's manifest as the server writes it. A vector never changes once it
+// is in testdata/vectors.json, because an archive written under it must read
+// the same forever; a later format adds vectors beside them and raises its
+// number.
 
 import (
 	"bytes"
@@ -41,6 +42,13 @@ type lineVectors struct {
 		Sum  string `json:"sum"`
 	} `json:"lines"`
 	Numbers map[string]string `json:"numbers"`
+	// Manifests is each manifest's exact bytes, which decode as the
+	// repository id names them and encode back to the same bytes.
+	Manifests []struct {
+		Name     string `json:"name"`
+		ID       string `json:"id"`
+		Manifest string `json:"manifest"`
+	} `json:"manifests"`
 }
 
 func readVectors(t *testing.T) lineVectors {
@@ -53,7 +61,7 @@ func readVectors(t *testing.T) lineVectors {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		t.Fatal(err)
 	}
-	if len(v.Lines) == 0 || len(v.Numbers) == 0 {
+	if len(v.Lines) == 0 || len(v.Numbers) == 0 || len(v.Manifests) == 0 {
 		t.Fatal("testdata/vectors.json holds no vectors")
 	}
 	return v
@@ -126,5 +134,24 @@ func TestAVectorLineChangedIsRefused(t *testing.T) {
 	edited := strings.Replace(line, `"Ship the fold"`, `"Ship the folds"`, 1)
 	if _, _, err := Decode([]byte(edited)); !errors.Is(err, ErrBadSum) {
 		t.Fatalf("a line edited under its checksum: %v, want ErrBadSum", err)
+	}
+}
+
+func TestTheManifestVectors(t *testing.T) {
+	t.Parallel()
+	for _, v := range readVectors(t).Manifests {
+		t.Run(v.Name, func(t *testing.T) {
+			m, err := DecodeArchiveManifest([]byte(v.Manifest), v.ID)
+			if err != nil {
+				t.Fatalf("decode the vector's manifest: %v", err)
+			}
+			data, err := EncodeArchiveManifest(m)
+			if err != nil {
+				t.Fatalf("encode it again: %v", err)
+			}
+			if string(data) != v.Manifest {
+				t.Fatalf("the manifest encodes to\n%s\nand the format says\n%s", data, v.Manifest)
+			}
+		})
 	}
 }

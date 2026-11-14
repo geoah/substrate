@@ -507,7 +507,8 @@ before the request is sent.
    its hash and every line against its own, the sealed values, the spooled
    requests and the blobs, by the code the restore reads them with, and with
    them the restore's own checks of the manifest (its name, its dialects,
-   its data key under this host's `SUBSTRATE_CREDENTIAL_KEY` or the
+   its [ledger of repository migrations](#upgrading-the-binary), its data
+   key under this host's `SUBSTRATE_CREDENTIAL_KEY` or the
    operator's listing in `SUBSTRATE_IMPORT_WITHOUT_SECRETS` on a host that
    has a key, its sealed values under that key:
    [restore without the credential key](#restore-without-the-credential-key)).
@@ -2155,15 +2156,31 @@ a migration rewrites whose kind the binary's registry does not yet hold keeps
 its refs rows and observed points as they stand, and its kind is queued in
 `index_reprojections`, so the background pass after the open re-derives the
 refs rows, search bands and observed points of every row of it under the
-loaded vocabulary. A
-migration is written to find nothing to do the second time, because an
-archive restored into a fresh database carries its changelog and not the
-database's ledger, so every migration runs once more there. That is also how
-an archive from an older installation, or from one that never opened it
-under the newer binary, is brought up to date: the
+loaded vocabulary.
+
+**The ledger travels with the archive**
+([0321](decisions/0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md)).
+Every manifest names the migrations the repository had run as of its `head`,
+each with the time it first ran (`repositoryMigrations`), and a restore, an
+import and a take record them before the repository's first open, so the
+open runs only the ones the repository had not: a restore runs nothing the
+repository had run, and what the repository wrote after a migration ran is
+left as it was. A manifest naming a migration this binary does not carry is
+a newer binary's: its restore and its import are refused before any row,
+naming it, and a take of it is refused while the repository is whole and
+served. An archive written before the manifest named the ledger, and a 0.x
+directory, which never does, restore as before: every migration runs once
+more at the first open, so a migration is written to find nothing to do the
+second time, and such a restore can still change what the repository wrote
+after a migration first ran there (the relay rows migration 5 removes, a
+bare word migration 2 can resolve now). The next pass of a server of this
+release writes a manifest that names the ledger, so archive each repository
+once under it before relying on an older copy. That is also how an archive
+from an older installation, or from one that never opened it under the
+newer binary, is brought up to date: the
 [boot check](#what-happens-at-boot) folds it from its lines, the migrations
-run at its first open, the rewrite lands in this installation's changelog for
-the repository, and the ledger row in this database. A process
+it lacks run at its first open, the rewrite lands in this installation's
+changelog for the repository, and the ledger rows in this database. A process
 that opened the data root read-only cannot run one, and refuses a repository
 with a pending migration by name. The first
 migration, `0001_qualify_bare_declaration_names`, writes the full identity
@@ -2252,6 +2269,12 @@ fails is retaken. A cron running this is enough for the default directory:
 ```
 rsync -a --delete "$SUBSTRATE_DATA_ROOT"/archive/ backup-host:/srv/substrate-backup/archive/
 ```
+
+**The repository migrations ride with the archive.** Each manifest names
+the [repository migrations](#upgrading-the-binary) the repository had run,
+and a restore records them, so it runs none of them again. One written
+before the manifest named them restores as it always did, every migration
+running once more.
 
 **The webhook spool rides with the archive.** `spool/` holds the webhook
 requests the door answered `202` and the drain has not recorded in the

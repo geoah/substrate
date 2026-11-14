@@ -46,6 +46,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -708,9 +709,9 @@ func (s *service) restoreRow(ctx context.Context, m changelogfile.Manifest, head
 // changelog nobody had claimed, stamps nothing, as the writer had not), and
 // the import marker at head, and the record (rule 8): the new archive the
 // repository's passes write, and the manifest a restore reads from, so an
-// import a boot finishes reads that one snapshot, and the people the manifest
-// carries (archiveidentities.go), so no crash leaves the repository without
-// them. The scoped rows take their repository from the transaction's own
+// import a boot finishes reads that one snapshot, the repository migrations
+// the manifest names, and the people it carries (archiveidentities.go), so no
+// crash leaves the repository without them. The scoped rows take their repository from the transaction's own
 // setting, as a scoped connection's do.
 func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m changelogfile.Manifest, head int64, rec archiveRecord, adm restoreAdmission) error {
 	tx, err := s.maint.BeginTx(ctx, nil)
@@ -758,6 +759,15 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO archive_records (archive, source) VALUES ($1, nullif($2, ''))`, rec.archive, rec.source); err != nil {
 		return fmt.Errorf("record the repository's new archive: %w", err)
+	}
+	// The migrations the repository had run, as the manifest's ledger names
+	// them and when they ran, so its first open runs only those it had not
+	// (admitManifest refused a ledger this binary cannot continue).
+	for _, rm := range m.RepositoryMigrations {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO repository_migrations (version, name, applied_at) VALUES ($1, $2, $3)`,
+			rm.Version, rm.Name, rm.AppliedAt); err != nil {
+			return fmt.Errorf("record repository migration %d (%s), which the repository had run: %w", rm.Version, rm.Name, err)
+		}
 	}
 	remember, err := s.restoreIdentities(ctx, tx, m, adm.leftOut)
 	if err != nil {
@@ -953,12 +963,32 @@ func archivedName(ctx context.Context, store archive.Store, id string) string {
 	return src.manifest.Authority
 }
 
-// admitManifest refuses a manifest naming a dialect above this binary's.
+// admitManifest is a manifest's one admission of what it says a binary must
+// carry: a changelog or vocabulary dialect above this binary's, and a ledger
+// of repository migrations this binary cannot continue, are refused here. A
+// restore (admitRestore), an import, the staging of a take and the boot that
+// carries a recorded take out each admit through it, the last again before
+// anything of the repository goes, so a check here holds on every door.
+//
+// The ledger is what a restore records as run (insertRestoredRow): one naming
+// a migration this binary does not carry is a newer binary's
+// (ErrRepositoryMigrationsNewer), and one naming a migration under another
+// name, or skipping one below its highest, no longer says what ran. A ledger
+// in a changelog dialect below ledgerDialect is in no manifest a binary
+// wrote, and is refused as malformed. A manifest that names no ledger
+// admits, and its restore runs every migration.
 func (s *service) admitManifest(m changelogfile.Manifest) error {
 	if err := admitChangelogDialect(m.Authority, m.ChangelogDialect, s.maxDialect); err != nil {
 		return err
 	}
-	return admitVocabularyDialect(m.Authority, m.VocabularyDialect)
+	if err := admitVocabularyDialect(m.Authority, m.VocabularyDialect); err != nil {
+		return err
+	}
+	if len(m.RepositoryMigrations) > 0 && m.ChangelogDialect < ledgerDialect {
+		return fmt.Errorf("%w: the manifest of repository %s names the repository migrations it ran in changelog dialect %d, and no archive below dialect %d names them",
+			changelogfile.ErrManifestFormat, cmp.Or(m.ID, m.Authority), m.ChangelogDialect, ledgerDialect)
+	}
+	return checkRepositoryMigrations(cmp.Or(m.ID, m.Authority), s.repoMigrations, ledgerOf(m.RepositoryMigrations))
 }
 
 // archivedRepositories is every repository the store holds manifests or
@@ -1330,12 +1360,60 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 	if err != nil {
 		return changelogfile.Manifest{}, err
 	}
+	var migrations []changelogfile.RepositoryMigration
+	if changelog >= ledgerDialect {
+		if migrations, err = readRepositoryMigrationLedger(ctx, q); err != nil {
+			return changelogfile.Manifest{}, err
+		}
+	}
 	return changelogfile.Manifest{
 		Format: changelogfile.ManifestFormatArchive, ID: repo.ID,
 		Authority: name, CreatedAt: repo.CreatedAt,
 		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
-		DEKKeyID: repo.DEKKeyID,
+		DEKKeyID: repo.DEKKeyID, RepositoryMigrations: migrations,
 	}, nil
+}
+
+// ledgerDialect is the changelog dialect of the first history whose
+// archive could name the ledger of repository migrations: the one this
+// binary writes, which the manifest gained it at. An archive in a dialect
+// below it was written before the manifest carried the ledger and names
+// none, so a manifest that names one there says something no binary wrote,
+// and is refused (admitManifest); only a test's shorter chain writes a
+// history below it, and its manifest names none either.
+const ledgerDialect = 8
+
+// readRepositoryMigrationLedger is the repository's ledger of repository
+// migrations in version order, read through q: in the snapshot a manifest's
+// head is read in, so it names exactly the migrations whose writes the
+// history up to that head holds, since a migration's writes and its ledger
+// row commit together (repomigrate.go).
+func readRepositoryMigrationLedger(ctx context.Context, q dbx) ([]changelogfile.RepositoryMigration, error) {
+	rows, err := q.QueryContext(ctx, `SELECT version, name, applied_at FROM repository_migrations ORDER BY version`)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read the repository migrations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []changelogfile.RepositoryMigration
+	for rows.Next() {
+		var m changelogfile.RepositoryMigration
+		if err := rows.Scan(&m.Version, &m.Name, &m.AppliedAt); err != nil {
+			return nil, err
+		}
+		m.AppliedAt = m.AppliedAt.UTC()
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// ledgerOf is a manifest's ledger of repository migrations as the runner
+// reads one: version to name.
+func ledgerOf(rows []changelogfile.RepositoryMigration) map[int]string {
+	out := make(map[int]string, len(rows))
+	for _, r := range rows {
+		out[r.Version] = r.Name
+	}
+	return out
 }
 
 // sealedRecordOf renders one row's columns as its file record.

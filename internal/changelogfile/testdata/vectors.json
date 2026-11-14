@@ -345,5 +345,12 @@
     "123456789012345678901234567890": "1.2345678901234567890123456789E29",
     "15e-1": "1.5E0",
     "18": "1.8E1"
-  }
+  },
+  "manifests": [
+    {
+      "name": "an archive's manifest naming the repository migrations its repository had run",
+      "id": "rnd-01jbx9m2qz7k4c5v8n3w6t1hrd",
+      "manifest": "{\n  \"format\": 3,\n  \"id\": \"rnd-01jbx9m2qz7k4c5v8n3w6t1hrd\",\n  \"authority\": \"ada.example.com\",\n  \"createdAt\": \"2026-11-13T09:00:00.000000Z\",\n  \"changelogDialect\": 8,\n  \"vocabularyDialect\": 6,\n  \"dek\": \"d3JhcHBlZA==\",\n  \"dekKeyId\": \"0123456789abcdef\",\n  \"archive\": \"a18e7b6f2c41d9a003b2c7e91\",\n  \"pass\": \"0123456789abcdef\",\n  \"head\": 3,\n  \"headSum\": \"sha256:a954943d74f553b90c9e54ea740108290be9cd176792857b9e63b3d40c99a1cc\",\n  \"pieces\": [\n    {\n      \"name\": \"changelog/8/000000000000001-000000000000003-0123456789abcdef-a954943d74f553b9.ndjson\",\n      \"sum\": \"sha256:a954943d74f553b90c9e54ea740108290be9cd176792857b9e63b3d40c99a1cc\",\n      \"size\": 412\n    }\n  ],\n  \"epoch\": 2,\n  \"repositoryMigrations\": [\n    {\n      \"version\": 1,\n      \"name\": \"qualify_bare_declaration_names\",\n      \"appliedAt\": \"2026-11-13T09:00:01.123456Z\"\n    },\n    {\n      \"version\": 2,\n      \"name\": \"qualify_bare_selector_kinds\",\n      \"appliedAt\": \"2026-11-13T09:00:01.234567Z\"\n    }\n  ]\n}\n"
+    }
+  ]
 }

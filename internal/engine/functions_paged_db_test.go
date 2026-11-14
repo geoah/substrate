@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/geoah/substrate/internal/changelogfile"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
@@ -1265,8 +1268,12 @@ def main(input, host):
 // repository, finds the order the saved continuations are of. A creation
 // leaves the mark, so the first open has nothing to do; a run that finds it
 // writes nothing and keeps a parked drain where it stands; a rebuild replays
-// it; and a directory without it, as one written before the mark existed,
-// starts the drain over at its import and gains the mark there.
+// it. An archive without the mark whose ledger names migration 7, as one a
+// binary whose migration left no mark wrote after the ledger went with
+// the archive, does not run it again at its import, so the parked drain
+// stays where it stood. One without the mark that names no ledger, as one
+// written before either existed, starts the drain over at its import and
+// gains the mark there.
 func TestMigrationSevenLeavesItsMarkAndAnImportWithoutItStartsTheDrainOver(t *testing.T) {
 	ds, triggerID := openPagedDataset(t, "pagedmark.test.dev/pagedmark", keyedPagedBody)
 	ctx := context.Background()
@@ -1319,7 +1326,18 @@ func TestMigrationSevenLeavesItsMarkAndAnImportWithoutItStartsTheDrainOver(t *te
 	}
 
 	forgetContinuationOrder(t, ds)
-	imported := importIntoEmptyDatabase(t, ds)
+	id := ds.Repository().ID
+	root := archiveCopyOf(t, ds)
+	older := t.TempDir()
+	if err := os.CopyFS(filepath.Join(older, "archive"), os.DirFS(filepath.Join(root, "archive"))); err != nil {
+		t.Fatal(err)
+	}
+	kept := importArchiveRoot(t, root)
+	if got, ok := pagedRowOf(t, kept, chain); !ok || got != parked {
+		t.Fatalf("an archive whose ledger names migration 7 imported the drain as %+v (%v), want it where it stood, %+v", got, ok, parked)
+	}
+	publishManifest(t, older, id, func(m *changelogfile.Manifest) { m.RepositoryMigrations = nil })
+	imported := importArchiveRoot(t, older)
 	if got, ok := pagedRowOf(t, imported, chain); !ok || got.cursor != "null" || got.version != parked.version+1 {
 		t.Fatalf("a directory without the mark imported the drain as %+v (%v), want it started over at version %d", got, ok, parked.version+1)
 	}

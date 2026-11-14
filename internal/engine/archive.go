@@ -442,7 +442,15 @@ func (ds *dataset) ArchivePass(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	manifestPrint := fmt.Sprintf("%s|%s|%s|%x|%d|%d|%s|%s", m.ID, m.Authority, m.DEKKeyID, m.DEK, m.ChangelogDialect, m.VocabularyDialect, m.CreatedAt.Format(time.RFC3339Nano), people)
+	// The ledger of repository migrations is in the print: a migration that
+	// found nothing to do moves no line, and the restore of a manifest that
+	// does not name it would run it again.
+	var ran strings.Builder
+	for _, rm := range m.RepositoryMigrations {
+		fmt.Fprintf(&ran, "%d:%s,", rm.Version, rm.Name)
+	}
+	manifestPrint := fmt.Sprintf("%s|%s|%s|%x|%d|%d|%s|%s|%s", m.ID, m.Authority, m.DEKKeyID, m.DEK, m.ChangelogDialect, m.VocabularyDialect,
+		m.CreatedAt.Format(time.RFC3339Nano), people, ran.String())
 	if !a.known {
 		if err := ds.loadArchiveRecord(ctx); err != nil {
 			return err
