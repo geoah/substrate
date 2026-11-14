@@ -159,7 +159,7 @@
   "substrate.reamde.dev/core/setting": "all",
   "substrate.reamde.dev/core/token": "all",
   "substrate.reamde.dev/core/trait": "all",
-  "substrate.reamde.dev/core/trigger": "all",
+  "substrate.reamde.dev/core/trigger": "P7D",
   "substrate.reamde.dev/core/triggerrun": "P7D",
   "substrate.reamde.dev/core/unit": "all",
   "substrate.reamde.dev/health/sleep": "all",

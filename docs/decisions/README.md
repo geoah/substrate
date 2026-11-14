@@ -459,4 +459,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0314](0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md) | An owner overrides an agent's budgets, and the operator sets each repository's allowance | accepted |
 | [0316](0316-agent-spend-is-counted-in-us-dollars.md) | Agent spend is counted in US dollars | accepted |
 | [0319](0319-the-hands-that-wrote-a-shipped-record-outlive-its-history.md) | The hands that wrote a shipped record outlive its history | accepted |
+| [0320](0320-a-triggers-own-history-is-bookkeeping-and-keeps-seven-days.md) | A trigger's own history is bookkeeping and keeps seven days | accepted |
 | [0321](0321-the-repository-migrations-a-repository-ran-travel-with-its-archive.md) | The repository migrations a repository ran travel with its archive | accepted |

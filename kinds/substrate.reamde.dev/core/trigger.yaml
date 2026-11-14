@@ -58,8 +58,15 @@ data:
   # signed timestamp, required beside a `timestampHeader`.
   # version 26: `source.schedule.missed`, what a pass does with occurrences
   # the trigger missed, `latest` or `all` (decision record 0267).
-  version: 26
+  # version 27: `retention: P7D` (decision record 0320).
+  version: 27
   purpose: internal
+  # Bookkeeping, as a triggerrun: the trigger's latest state and its
+  # delivery state (cursor, fire state, parked failures, the resume row of
+  # an unfinished paged drain) are always kept, the delivery state in the
+  # compaction's ledger entry; its delivery lines and the edits to it a week
+  # (decision record 0320, amending 0283).
+  retention: P7D
   names:
     singular: trigger
   # A row reads as its label, and a row without one as the callable it

@@ -10,6 +10,8 @@ package engine_test
 
 import (
 	"context"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -55,13 +57,15 @@ func oldPolicyTree(t *testing.T) string {
 		return pinVersion(t, strings.Replace(doc, opsEnumBlock, opsStringBlock, 1), "9")
 	})
 	// `trigger` pins a version of its own now too (the webhook key, 0045);
-	// back then it took the authority's, so the fixture drops the pin and it
-	// rides the authority's 9 with everything else.
+	// back then it took the authority's, so the fixture drops the pin,
+	// whichever version it ships, and it rides the authority's 9 with
+	// everything else.
 	patchShipped(t, coreKind(tree, "trigger.yaml"), func(doc string) string {
-		if !strings.Contains(doc, "\n  version: 26\n") {
-			t.Fatal("trigger no longer pins version 26; retune this fixture")
+		pin := reDeclaredVersion.FindString(doc)
+		if pin == "" {
+			t.Fatal("trigger no longer pins a version of its own; retune this fixture")
 		}
-		return strings.Replace(doc, "\n  version: 26\n", "\n", 1)
+		return strings.Replace(doc, pin, "\n", 1)
 	})
 	bumpPackageVersion(t, tree, corePackage, "9")
 	return tree
@@ -143,8 +147,8 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core rode the same upgrade: `trigger` was unpinned in the
 	// old tree (oldPolicyTree), and the shipped tree lands it at its own pin.
-	if v := kindVersion(t, ds, corePackage+"/trigger"); v != 26 {
-		t.Fatalf("trigger is at version %d, want 26", v)
+	if v, want := kindVersion(t, ds, corePackage+"/trigger"), shippedPin(t, "trigger.yaml"); v != want {
+		t.Fatalf("trigger is at version %d, want its shipped pin %d", v, want)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {
@@ -207,6 +211,22 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 }
 
 // kindVersion reads one live declaration's stored version.
+// shippedPin is the version the shipped tree's core declaration in file
+// pins.
+func shippedPin(t *testing.T, file string) int64 {
+	t.Helper()
+	raw, err := os.ReadFile(coreKind(shippedTree(t), file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(reDeclaredVersion.FindString(string(raw))), "version:"))
+	v, err := strconv.ParseInt(pin, 10, 64)
+	if err != nil {
+		t.Fatalf("%s pins no version of its own: %q", file, pin)
+	}
+	return v
+}
+
 func kindVersion(t *testing.T, ds substrate.Dataset, ref string) int64 {
 	t.Helper()
 	ty, err := ds.KindByRef(context.Background(), ref)
