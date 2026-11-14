@@ -318,6 +318,40 @@ union property's deduplication; and the changelog line encoding. None needs a
 database, and nothing gates on the numbers, which are the machine's. Run it
 before and after a change to one of those paths.
 
+### The scale harness
+
+```bash
+SUBSTRATE_SCALE_BYTES=1e9 SUBSTRATE_TEST_PG_TMPFS_SIZE=10g \
+  go test -count=1 -run '^TestScaleTimings$' -timeout 150m ./internal/testenv/
+```
+
+`TestScaleTimings` (`internal/testenv/scale_db_test.go`) is the measuring
+half of validation item 10 of the 1.0 plan, and it runs only when
+`SUBSTRATE_SCALE_BYTES` names the bytes of history to generate.
+- **What it generates:** one repository's history, through the write path: notes
+  created, rewritten and now and then deleted, each following another, by
+  several writers at once, with blobs beside them if
+  `SUBSTRATE_SCALE_BLOB_BYTES` asks.
+- **What it opens:** `SUBSTRATE_SCALE_WATCHERS` watching connections (100).
+- **What it times:** an archive pass, an export, a rebuild, the compaction
+  pass where the binary has one, the conversion at a start (the stamp one
+  dialect below, so the boot walks the last step over every line and rewrites
+  none: a lower bound), and the import of the archive into a database that
+  holds none of it.
+- **What it records for each:** the wall time, the database's WAL and temp
+  bytes, the process's peak heap, and, while the server is up, a write every
+  100ms beside it.
+- **Where the numbers go:** to the log, and to the file
+  `SUBSTRATE_SCALE_REPORT` names, one JSON object a line.
+
+It is a measurement, not a check. It fails only when an operation does, and
+nothing gates on its numbers. Against the shared test container the cluster
+is on tmpfs with durability off, which proves the harness and times nothing a
+deployment would see, and the tmpfs must hold about four times the history
+for each of its two databases. `SUBSTRATE_TEST_DATABASE_URL` points it at a
+real server instead. Where the full-size run happens, and what counts as
+passing, are not the harness's to say.
+
 ## The race detector
 
 ```bash
