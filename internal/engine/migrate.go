@@ -8,11 +8,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed migrations/*.sql
@@ -63,9 +65,10 @@ var ErrDatabaseNewer = errors.New("substrate/engine: the database applied migrat
 var ErrDatabaseOlder = errors.New("substrate/engine: the database has not applied migrations this binary carries")
 
 // migrate applies every pending migration to the schema the DSN's
-// search_path pins, atomically per migration. Idempotent.
-func migrate(ctx context.Context, db *sql.DB) error {
-	return migrateThrough(ctx, db, math.MaxInt)
+// search_path pins, atomically per migration, and logs each on log, or that
+// none was pending. Idempotent.
+func migrate(ctx context.Context, db *sql.DB, log *slog.Logger) error {
+	return migrateWith(ctx, db, math.MaxInt, readVectorVersion, log)
 }
 
 // migrateThrough is migrate stopped after the migration numbered through, so
@@ -77,12 +80,18 @@ func migrate(ctx context.Context, db *sql.DB) error {
 // The advisory lock is held on one pinned connection: releasing it from a
 // different pooled connection is a silent no-op.
 func migrateThrough(ctx context.Context, db *sql.DB, through int) error {
-	return migrateWith(ctx, db, through, readVectorVersion)
+	return migrateWith(ctx, db, through, readVectorVersion, slog.New(slog.DiscardHandler))
 }
 
-// migrateWith is migrateThrough with the pgvector version reader passed in,
-// so a test can stand in a version older than the test image carries.
-func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion func(context.Context, *sql.Conn) (string, error)) error {
+// migrateWith is migrateThrough with the pgvector version reader and the
+// logger passed in, so a test can stand in a version older than the test
+// image carries, and read what the runner logged.
+//
+// It logs one line for each migration it applies, in the words of the
+// repository migration's line (repomigrate.go), and one when none is
+// pending: the release runbook has the operator read what a start applied,
+// and the schema step is the one that closes a rollback.
+func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion func(context.Context, *sql.Conn) (string, error), log *slog.Logger) error {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: migration conn: %w", err)
@@ -133,6 +142,7 @@ func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion fun
 			return err
 		}
 	}
+	ran := 0
 	for _, m := range migrations {
 		if m.Version > through {
 			break
@@ -140,9 +150,20 @@ func migrateWith(ctx context.Context, db *sql.DB, through int, vectorVersion fun
 		if _, ok := applied[m.Version]; ok {
 			continue
 		}
+		began := time.Now()
 		if err := applyMigration(ctx, conn, m); err != nil {
 			return fmt.Errorf("substrate/engine: apply migration %d (%s): %w", m.Version, m.Name, err)
 		}
+		log.Info("substrate: ran a SQL migration",
+			"version", m.Version, "name", m.Name, "took", time.Since(began).Round(time.Millisecond))
+		ran++
+	}
+	if ran == 0 {
+		newest := 0
+		for v := range applied {
+			newest = max(newest, v)
+		}
+		log.Info("substrate: ran no SQL migration: none is pending", "version", newest)
 	}
 	return nil
 }
