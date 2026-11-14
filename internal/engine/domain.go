@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -89,6 +91,65 @@ func (ds *dataset) MarkDomainVerified(ctx context.Context, proof string) (time.T
 		return err
 	})
 	return at, err
+}
+
+// reconcileRepositoryName holds the two records that record the
+// repository's name to the name its control-plane row has. A repository
+// imported under another name than its archive gave (ImportArchive) carries
+// them as the old one wrote them: the repository record's `name` and
+// `authority` move, and its domain proof and verification, which were for
+// the old name, are cleared; and the `name` of its first person's actor, which
+// reads as the repository's name (core/actor), moves. A sign-in is the
+// identity's, held beside the repositories, and records no repository's name.
+// A record already holding the name is left alone, and a read-only process
+// writes nothing: an open whose records hold the name opens no transaction,
+// as every open step that finds nothing to do.
+func (ds *dataset) reconcileRepositoryName(ctx context.Context) error {
+	if ds.svc.readOnly {
+		return nil
+	}
+	name := ds.info.Authority
+	records := []struct {
+		ref   eref
+		key   string
+		props map[string]any
+	}{
+		{eref{Kind: kindRepository, ID: ds.info.ID}, "authority", map[string]any{
+			"name": name, "authority": name, propDomainProof: nil, propDomainVerifiedAt: nil,
+		}},
+		{eref{Kind: kindActor, ID: actorID(substrate.ActorPerson)}, "name", map[string]any{"name": name}},
+	}
+	behind := false
+	for _, r := range records {
+		var held sql.NullString
+		err := ds.db.QueryRowContext(ctx, `SELECT props->>$3 FROM records WHERE kind = $1 AND id = $2 AND deleted_at IS NULL`,
+			r.ref.Kind, r.ref.ID, r.key).Scan(&held)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		behind = behind || held.String != name
+	}
+	if !behind {
+		return nil
+	}
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		for _, r := range records {
+			row, err := t.loadRow(r.ref, true)
+			if err != nil {
+				return err
+			}
+			if row == nil || row.DeletedAt != nil || row.Props[r.key] == name {
+				continue
+			}
+			if _, err := t.put(substrate.PutInput{Kind: r.ref.Kind, ID: r.ref.ID, Properties: r.props}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // repositoryRow locks the repository record for the domain writes, so two

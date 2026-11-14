@@ -105,9 +105,10 @@ func (e *authorizeEnv) putAs(bearer, kind, id, body string) *httptest.ResponseRe
 	return e.do(http.MethodPut, "/api/v1/"+kind+"/"+id, bearer, []byte(body), "application/json")
 }
 
-// inboxKinds declares, under the repository's own authority, a message that
-// names its author (a person), and answers its reference. With feed set the
-// package also declares a feed entry, which a mapping carries onto the
+// inboxKinds declares, under the repository's full name, a message that
+// names its author (a person), and answers its reference as the repository
+// holds it, in its own namespace, `~` (decision record 0259). With feed set
+// the package also declares a feed entry, which a mapping carries onto the
 // message whose key it shares; a message's id is then the server's.
 func (e *authorizeEnv) inboxKinds(feed bool) (message, entry string) {
 	e.t.Helper()
@@ -181,6 +182,10 @@ data:
 `
 	}
 	e.db.declare(e.t, docs)
+	message = "~/inbox/message"
+	if feed {
+		entry = "~/inbox/feed"
+	}
 	return message, entry
 }
 
@@ -200,7 +205,7 @@ func TestAnAppGetsATokenHeldToTheScopesTheOwnerApproved(t *testing.T) {
 	if got.Repository != repo || got.DefaultLifetimeDays != 30 {
 		t.Fatalf("repository %q default %d", got.Repository, got.DefaultLifetimeDays)
 	}
-	if len(got.Scopes) != 3 || got.Scopes[2].Scope != "read:"+repo+"/notes/*" ||
+	if len(got.Scopes) != 3 || got.Scopes[2].Scope != "read:~/notes/*" ||
 		got.Scopes[2].Requested != "read:~/notes/*" || !got.Scopes[2].Glob {
 		t.Fatalf("scopes = %+v", got.Scopes)
 	}

@@ -33,23 +33,23 @@ Prefer doing the work yourself with `query`, `write` and `apply`: a chat turn co
 - `substrate.reamde.dev/assistant` is a `builtin` package: a write to its declarations is refused.
 - A standing direction is a `substrate.reamde.dev/llm/instruction`: `agent` (the agent's record path), `text` (one or two sentences, the owner's words), `active` (default true), `source` (`owner`, `agent`, `import`), read at the start of every thread. `write {op: "put", kind: "substrate.reamde.dev/llm/instruction", properties: {agent: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss", text: "Answer in British English.", source: "owner"}}`.
 - A lasting fact about the owner is a `substrate.reamde.dev/llm/memory` (`text`, `active`, `source`), pinned by every agent that pins the kind; an instruction reaches one agent.
-- A different prompt is a fork: read Moss's record, set `authority`, `package` and the id to the owner's, `apply`. The copy upgrades with nothing.
+- A different prompt is a fork: read Moss's record, set `authority` to `~` and `package` and the id to the owner's, `apply`. The copy upgrades with nothing.
 
 ## Declaring the owner's own agent
 
-`apply` documents of `{kind, metadata: {id}, data}` under the owner's authority, in one of the owner's packages (a new one needs its `substrate.reamde.dev/core/package` document; guide topic `packages`). The row IS the declaration: no `data.properties` wrapper.
+`apply` documents of `{kind, metadata: {id}, data}` under `~`, in one of the owner's packages (a new one needs its `substrate.reamde.dev/core/package` document; guide topic `packages`). The row IS the declaration: no `data.properties` wrapper.
 
 ```json
 {"kind": "substrate.reamde.dev/core/agent",
- "metadata": {"id": "ada.example.com/garden/waterer"},
+ "metadata": {"id": "~/garden/waterer"},
  "data": {
-  "authority": "ada.example.com", "package": "garden", "purpose": "supporting",
+  "authority": "~", "package": "garden", "purpose": "supporting",
   "description": "Proposes watering records for plants due today.",
   "prompt": "Propose one watering record per plant due today; never write directly.",
   "provider": "anthropic", "model": "claude-sonnet-5-5",
   "params": {"reasoningEffort": "low", "maxTokens": 4000},
   "tools": [{"function": "substrate.reamde.dev/core/query"}, {"function": "substrate.reamde.dev/core/propose"}],
-  "permissions": {"reads": {"kinds": ["ada.example.com/garden/*"]}, "writes": ["substrate.reamde.dev/core/recordpatchrequest"]},
+  "permissions": {"reads": {"kinds": ["~/garden/*"]}, "writes": ["substrate.reamde.dev/core/recordpatchrequest"]},
   "budgets": {"maxTurns": 6, "maxToolCalls": 12, "deadlineSeconds": 120}}}
 ```
 

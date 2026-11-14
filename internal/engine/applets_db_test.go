@@ -131,7 +131,7 @@ func TestAPreviewHoldsExpandedRecordsToTheAgentsReads(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	reads := agentReads{ds: ds, allows: func(kind string) bool { return kind == link }}
+	reads := agentReads{ds: ds, allows: func(kind string) bool { return kind == vocabulary.LocalizeRef(link, repo) }}
 	page, err := reads.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{link}}, Expand: []string{"pad"}})
 	if err != nil {
 		t.Fatal(err)

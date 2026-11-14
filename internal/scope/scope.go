@@ -6,9 +6,11 @@
 // A scope is `read:<pattern>` or `write:<pattern>` over kinds, and write
 // includes read of the same pattern. The pattern is the kind grant grammar of
 // decision 0080 (`*`, `<authority>/*`, `<authority>/<package>/*` or one kind
-// reference) with one addition: `~` in the authority position stands for the
-// repository's own authority, which an app cannot know before the owner signs
-// in. The token stores the resolved form, never `~`.
+// reference) in which `~`, in the authority position, is the repository's
+// local namespace, where its own kinds live (decision record 0259): an app
+// asks for `read:~/tasks/*` without knowing whose repository it will be, and
+// the token stores it as asked. The repository's full name is another
+// spelling of `~`, which Localize folds.
 //
 // A read or write pattern may instead name a trait (decision 0225):
 // `read:implements(<trait>)` covers what `read:*` would among the kinds whose
@@ -239,8 +241,8 @@ func (s Scope) Trait() (string, bool) {
 	return traitOf(s.Pattern)
 }
 
-// HomeRelative reports whether the pattern still names `~` as its authority,
-// a trait scope's trait included.
+// HomeRelative reports whether the pattern names `~` as its authority, a trait
+// scope's trait included.
 func (s Scope) HomeRelative() bool {
 	p := s.Pattern
 	if trait, ok := s.Trait(); ok {
@@ -249,17 +251,16 @@ func (s Scope) HomeRelative() bool {
 	return p == Home+"/*" || strings.HasPrefix(p, Home+"/")
 }
 
-// Resolve completes `~` with the repository's authority. A scope that names
-// no `~` comes back unchanged.
-func (s Scope) Resolve(authority string) Scope {
-	if !s.HomeRelative() {
-		return s
-	}
+// Localize folds the repository's full name, authority, into `~`:
+// `read:ada.example.com/tasks/*` is `read:~/tasks/*` in the repository named
+// ada.example.com, the one spelling a token stores. A scope naming another
+// authority comes back unchanged.
+func (s Scope) Localize(authority string) Scope {
 	if trait, ok := s.Trait(); ok {
-		s.Pattern = TraitPattern(authority + trait[len(Home):])
+		s.Pattern = TraitPattern(vocabulary.LocalizeRef(trait, authority))
 		return s
 	}
-	s.Pattern = authority + s.Pattern[len(Home):]
+	s.Pattern = vocabulary.LocalizeRef(s.Pattern, authority)
 	return s
 }
 
@@ -512,9 +513,9 @@ func ParseRequest(param string) ([]Scope, error) {
 }
 
 // CheckStored holds the scopes a token stores: nil is a full-access token and
-// passes; otherwise the list is non-empty, every entry parses in its
-// canonical spelling, and none still carries `~`. An empty list is refused
-// because it would read back as absent, which is full access.
+// passes; otherwise the list is non-empty and every entry parses in its
+// canonical spelling. An empty list is refused because it would read back as
+// absent, which is full access.
 func CheckStored(scopes []string) error {
 	if scopes != nil && len(scopes) == 0 {
 		return errors.New("a scoped token names at least one scope")
@@ -529,9 +530,6 @@ func CheckStored(scopes []string) error {
 		s, err := Parse(raw)
 		if err != nil {
 			return err
-		}
-		if s.HomeRelative() {
-			return fmt.Errorf("scope %q still names `~`: a stored scope names the repository's authority", raw)
 		}
 		if s.String() != raw {
 			return fmt.Errorf("scope %q is not in its canonical spelling", raw)

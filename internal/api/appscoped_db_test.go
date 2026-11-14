@@ -384,10 +384,12 @@ type appScopedCallEnv struct {
 func newAppScopedCallEnv(t *testing.T, opts ...dbOption) *appScopedCallEnv {
 	t.Helper()
 	env := newDBEnv(t, append([]dbOption{withSamples("tasks"), withAppFlow()}, opts...)...)
+	// Declared under the repository's full name, answered under `~`
+	// (decision record 0259).
 	pkg := env.repository + "/tasks"
 	e := &appScopedCallEnv{
-		dbEnv: env, summarize: pkg + "/summarize", report: pkg + "/report", chain: pkg + "/chain", runner: pkg + "/runner",
-		talked: env.repository + "/chat/assistant",
+		dbEnv: env, summarize: "~/tasks/summarize", report: "~/tasks/report", chain: "~/tasks/chain", runner: "~/tasks/runner",
+		talked: "~/chat/assistant",
 	}
 	fn := func(name, description string, perms map[string]any, source string) map[string]any {
 		return vocabulary.FunctionManifest(pkg, name, map[string]any{
@@ -576,7 +578,7 @@ func TestAnAppReadsTheRowOfAPackageItsScopesName(t *testing.T) {
 	tok := appScopedToken(t, env, "write:"+training+"/*")
 	rec := appScopedDo(t, env, http.MethodGet, "/api/v1/"+kindPackageRow+"/"+url.PathEscape(training), tok, nil, "")
 	wantStatus(t, rec, http.StatusOK)
-	if got := decodeJSON[substrate.Record](t, rec); got.ID != training || got.Properties["version"] != float64(5) {
+	if got := decodeJSON[substrate.Record](t, rec); got.ID != "~/training" || got.Properties["version"] != float64(5) {
 		t.Fatalf("the package row answered %s %+v", got.ID, got.Properties)
 	}
 	wantStatus(t, appScopedDo(t, env, http.MethodGet, "/api/v1/"+kindPackageRow+"/"+url.PathEscape(clinical), tok, nil, ""), http.StatusNotFound)

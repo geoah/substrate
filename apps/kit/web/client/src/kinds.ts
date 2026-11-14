@@ -28,13 +28,14 @@ export interface KindName {
 }
 
 /** A kind reference's parts, or undefined for anything that is not one
- * named in full: `<authority>/<package>/<name>`. */
+ * named in full: `<authority>/<package>/<name>`. The authority is a DNS
+ * name, or `~` for the repository's own packages (decision record 0259). */
 export function parseKind(reference: string): KindName | undefined {
   const parts = reference.split("/")
   if (parts.length !== 3) return undefined
   const [authority, pkg, name] = parts
-  if (!authority.includes(".") || !/^[a-z][a-z0-9]*$/.test(pkg))
-    return undefined
+  if (authority !== "~" && !authority.includes(".")) return undefined
+  if (!/^[a-z][a-z0-9]*$/.test(pkg)) return undefined
   if (!/^[a-z][a-z0-9]*$/.test(name)) return undefined
   return { authority, package: pkg, name }
 }

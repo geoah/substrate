@@ -37,6 +37,9 @@ type fakeBackend struct {
 	// aliases stands in for the registry: a kind's bare reference against the
 	// identity it resolves to.
 	aliases map[string]string
+	// home stands in for the registry's repository name: ResolveCallable
+	// folds it into `~`.
+	home string
 	// orderBys is every list's sort, in call order.
 	orderBys [][]substrate.Order
 	// aggregates is every aggregate read served, in call order; aggregateRows
@@ -140,6 +143,10 @@ func (f *fakeBackend) Units(context.Context) (*vocabulary.UnitGraph, error) {
 		return nil, fmt.Errorf("the shipped seed: %v", problems)
 	}
 	return g, nil
+}
+
+func (f *fakeBackend) ResolveCallable(name string) string {
+	return vocabulary.LocalizeRef(name, f.home)
 }
 
 func (f *fakeBackend) ResolveKind(name string) string {
@@ -1105,6 +1112,25 @@ def main(input, host):
 	if len(backend.calls) != 1 || backend.calls[0] != "callee.g.test" {
 		t.Fatalf("backend calls: %v", backend.calls)
 	}
+
+	// The allowlist is written in the identity the registry keys, `~` for the
+	// repository's own (decision record 0259): a body naming its granted
+	// callable by the repository's full name reaches it, under `~`.
+	local := spec
+	local.Function = "local.g.test"
+	local.CallTargets = []string{"~/notes/stamp"}
+	local.Source = `
+def main(input, host):
+    return {"output": host.call("ada.example.com/notes/stamp", {"n": 3})}
+`
+	backend.home = "ada.example.com"
+	if _, err := r.Invoke(context.Background(), local, testInput(), backend); err != nil {
+		t.Fatalf("a granted callable named by the full name: %v", err)
+	}
+	if len(backend.calls) != 2 || backend.calls[1] != "~/notes/stamp" {
+		t.Fatalf("backend calls: %v, want the second under ~", backend.calls)
+	}
+	backend.calls = backend.calls[:1]
 
 	// Ungranted: the trip decides the delivery even when the body swallows it.
 	ungranted := spec

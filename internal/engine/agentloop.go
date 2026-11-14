@@ -1939,10 +1939,10 @@ func (l *agentLoop) buildTools(ctx context.Context) error {
 		if fn.Input != nil {
 			params = fn.Input
 		}
-		// The authority a new package must live under is the repository's,
-		// and nothing else the model sees names it.
+		// A new package lives under the repository's local namespace, and
+		// nothing else the model sees says so.
 		if t.Builtin == vocabulary.AgentToolVocabulary {
-			description += " The owner's authority is " + l.ds.info.Authority + "."
+			description += " The owner's own packages live under `~`, this repository's namespace: declare `~/<package>` and kinds `~/<package>/<name>`."
 		}
 		if t.Builtin == vocabulary.AgentToolQuery {
 			description += " " + l.queryLimits(ctx)

@@ -139,14 +139,15 @@ accepted as shorthand and stored as the object. Against a declaration pinned
 to a kind, a bare id is accepted as the authored short form, because ids are
 unique per kind; under a `trait:` pin or no pin, the value carries the kind or
 it is refused. A declaration names its pin in full
-(`kind: ada.example.com/tasks/project`), the kind of the declaring package
+(`kind: ~/tasks/project`), the kind of the declaring package
 included: there is no bare-name shorthand, and `kind: project` is refused
 naming every full spelling the repository declares under that word
 ([0098](decisions/0098-a-declaration-names-a-kind-or-trait-in-full.md)). The
 shipped samples spell their pins at `people` as
-`kind: samples.substrate.reamde.dev/people/person`, which adding the sample rehomes
-with the rest, so an added sample points at the copy added beside it
-even when the repository also holds the shipped copy verbatim.
+`kind: samples.substrate.reamde.dev/people/person`, which adding the sample
+moves into `~` with the rest, so an added sample points at the copy added
+beside it, `~/people/person`, even when the repository also holds the shipped
+copy verbatim.
 [References](#property-types) below has the rest.
 
 The envelope is the one canonical representation. The flat JSON that the
@@ -200,8 +201,16 @@ A **kind** is what a record is, and it is named `<authority>/<package>/<name>`:
 **package** inside it
 ([decision 0047](decisions/0047-a-kind-lives-in-a-package.md)).
 
-An authority is a DNS name, and it says who publishes. A package is one word
-under it, and it is the unit that matters day to day: a declaration takes its
+An authority is a DNS name, and it says who publishes, or `~`, the
+repository's **local namespace**, which holds the packages the repository
+declares itself and the samples it adds
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). `~/tasks/task`
+is this repository's tasks kind whatever the repository is called, so the
+repository's name never enters its data, and `~` is the one authority without
+a dot and the one short form a kind reference has. Every input also accepts
+the repository's full name in its place (`ada.example.com/tasks/task`) and
+folds it into `~`; every reply says `~`. A package is one word
+under an authority, and it is the unit that matters day to day: a declaration takes its
 version from its package, a broken closure quarantines its package, and the
 package's `source` says who may change the declarations in it — shipped
 vocabulary is the substrate's to write, and an installed bundle's kinds belong
@@ -231,10 +240,9 @@ repository is seeded with; and the well-known catalogues
 `substrate.reamde.dev/health`, `labs` and `environment`, which a repository
 **adds** when it wants them
 ([0192](decisions/0192-observations-is-seeded-and-the-well-known-catalogues-are-first-party-packages.md)).
-Adding a sample lands the closure under your repository's own
-authority, so `samples.substrate.reamde.dev/tasks/task` becomes
-`ada.example.com/tasks/task` in a repository whose authority is
-`ada.example.com`. Registration also copies the `llm` sample and writes three
+Adding a sample lands the closure in your repository's local namespace, so
+`samples.substrate.reamde.dev/tasks/task` becomes `~/tasks/task`, the same
+in every repository. Registration also writes three
 keyless `llm/provider` rows (`openai`, `anthropic`, `gemini`), the `llm/model`
 records of the models they offer, the
 [shipped units](units.md#the-shipped-units) and the console package's shipped
@@ -243,7 +251,7 @@ reference crosses packages as easily as it stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever package it declares into. Your repository was
-seeded with those four packages and the `llm` sample when it was created, and
+seeded with those four packages when it was created, and
 everything else (the vocabulary above included) arrived as a catalog add or an
 apply you asked for; either way the declarations are rows in your repository, not a file
 the server reads at query time. [Vocabulary as records](vocabulary.md) is that whole story.

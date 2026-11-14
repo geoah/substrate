@@ -69,7 +69,9 @@ func TestCallAndChatGlobsRespectInternalKinds(t *testing.T) {
 			t.Parallel()
 			env := newDBEnv(t, withEngine(engine.WithInsecureForeignPackages(true)))
 			tasks, chat := env.repository+"/tasks", env.repository+"/chat"
-			summarize, talked := tasks+"/summarize", chat+"/assistant"
+			// Declared under the full name, and named under `~`, which is how
+			// a token's grant holds them (decision record 0259).
+			summarize, talked := "~/tasks/summarize", "~/chat/assistant"
 			appAgentsApply(t, env,
 				vocabulary.PackageManifest("other.example.com/tools", 1),
 				vocabulary.KindManifest("other.example.com/tools", map[string]any{"singular": "hidden"}, map[string]any{

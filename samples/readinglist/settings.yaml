@@ -1,7 +1,7 @@
 # The bundle's one knob, as an ORDINARY RECORD decision record 0076 makes it:
 # a core `setting` whose id sits under the bundle's own id, which is what
-# makes it this bundle's. The import rehomes it with the rest of the closure,
-# so what lands is `<your authority>/readinglist/denyDomains`.
+# makes it this bundle's. Adding the sample copies it with the rest of the
+# closure, so what lands is `~/readinglist/denyDomains`.
 #
 # findurls reads it as `config.settings.denyDomains`. It ships EMPTY and is
 # not required: an empty deny list harvests everything, which is a working

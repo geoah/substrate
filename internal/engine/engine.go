@@ -206,6 +206,9 @@ type options struct {
 	// run with the door's name once a request has proved the factors and
 	// before it acts. Tests only.
 	afterProof func(door string)
+	// afterTitleRounds is the title pass's test seam (localtitles.go): a
+	// hook run between its rounds and its writes. Tests only.
+	afterTitleRounds func()
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
@@ -829,6 +832,9 @@ type service struct {
 	testTokenProofAttempt time.Duration
 	// testAfterProof is the options' factor-door seam (auth.go). Tests only.
 	testAfterProof func(door string)
+	// testAfterTitleRounds is the options' title pass seam (localtitles.go).
+	// Tests only.
+	testAfterTitleRounds func()
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
@@ -1123,6 +1129,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		maxDialect:            maxChangelogDialect,
 		testCommitFault:       o.commitFault,
 		testAfterProof:        o.afterProof,
+		testAfterTitleRounds:  o.afterTitleRounds,
 		testCommitTx:          o.commitTx,
 		testTokenProof:        o.tokenProof,
 		testTokenProofAttempt: o.tokenProofAttempt,
@@ -1676,7 +1683,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// creation, and has no standing here afterwards. Nothing re-projects
 		// or prunes the tree at open — the only shipped write left is the
 		// version-keyed upgrade below, which APPENDS.
-		reg:   vocabulary.NewRegistry(),
+		reg:   repo.registry(vocabulary.NewRegistry()),
 		watch: newBroadcaster(),
 		info:  repo.info(),
 	}
@@ -1752,6 +1759,14 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.settlePeople,
 		// After the people pass, which writes the person's own (actorfill.go).
 		ds.fillActorRecords,
+		// The repository's own record and its first person's actor after an
+		// import under another name, once the people pass wrote the person's
+		// actor (domain.go).
+		ds.reconcileRepositoryName,
+		// The titles a template rendered from a name the local namespace's
+		// conversion moved, once the stored vocabulary is loaded and the
+		// name is final (localtitles.go).
+		ds.renderLocalTitles,
 		ds.ensureTriggerCursors,
 		ds.reportOpenShippedWebhooks,
 		ds.settleInterruptedSyncs,
@@ -1969,7 +1984,7 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
 		svc: s, db: db, dek: dek, scope: repo.scope(),
-		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
+		reg: repo.registry(s.base.Clone()), watch: newBroadcaster(), info: repo.info(),
 	}
 	// inserted flips once the control-plane row is this creation's, and
 	// decides what a failure may erase (eraseFailedCreation).
@@ -2055,6 +2070,10 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 			// Born holding the record of every hand it links, which each
 			// write ensures: the actor fill finds the mark and reads nothing.
 			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annActorRecordsFilled, 1); err != nil {
+				return err
+			}
+			// Born under `~`: no title it renders spells its name.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annTitlesRenderedLocal, 1); err != nil {
 				return err
 			}
 			_, err := t.put(substrate.PutInput{

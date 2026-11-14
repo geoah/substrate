@@ -611,9 +611,9 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			})
 			continue
 		}
-		resolved := s.Resolve(authority)
+		resolved := s.Localize(authority)
 		// `read:~/tasks/*` and `read:<authority>/tasks/*` are one scope once
-		// resolved, and the page lists it once.
+		// localized, and the page lists it once.
 		if seen[resolved.String()] {
 			continue
 		}
@@ -655,11 +655,12 @@ func shownApp(req authorize.Request) (authorize.Document, error) {
 	return *req.Document, nil
 }
 
-// resolvedScopes is every scope of a request with `~` completed.
+// resolvedScopes is every scope of a request with the repository's name
+// folded into `~`.
 func resolvedScopes(scopes []scope.Scope, authority string) []scope.Scope {
 	out := make([]scope.Scope, len(scopes))
 	for i, s := range scopes {
-		out[i] = s.Resolve(authority)
+		out[i] = s.Localize(authority)
 	}
 	return out
 }
@@ -991,7 +992,7 @@ func pageApproval(req authorize.Request, authority string, q url.Values) (scope.
 	if !present {
 		checked = nil
 		for _, s := range req.Scopes {
-			if resolved := s.Resolve(authority).String(); !slices.Contains(checked, resolved) {
+			if resolved := s.Localize(authority).String(); !slices.Contains(checked, resolved) {
 				checked = append(checked, resolved)
 			}
 		}
@@ -1010,13 +1011,18 @@ func approvedScopes(req authorize.Request, authority string, approved []string) 
 	if len(approved) == 0 {
 		return nil, validation("an approval names at least one scope: to grant nothing, deny")
 	}
+	// An approval may spell a scope with the repository's full name, which
+	// is another spelling of the `~` the request's scopes are held in.
 	want := map[string]bool{}
-	for _, s := range approved {
-		want[s] = true
+	for _, raw := range approved {
+		if s, err := scope.Parse(raw); err == nil {
+			raw = s.Localize(authority).String()
+		}
+		want[raw] = true
 	}
 	var out []string
 	for _, s := range req.Scopes {
-		resolved := s.Resolve(authority).String()
+		resolved := s.Localize(authority).String()
 		if want[resolved] {
 			out = append(out, resolved)
 			delete(want, resolved)

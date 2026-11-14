@@ -64,6 +64,7 @@ func (s *scopedDataset) rowGated(ctx context.Context, kind string) (bool, error)
 // reaches reports whether the grant reaches any record of kind, whole or row
 // by row: the kinds the kind reads (KindByRef, Kinds) answer for.
 func (s *scopedDataset) reaches(ctx context.Context, kind string) (bool, error) {
+	kind = s.local(kind)
 	if ok, err := s.reads(ctx, kind); err != nil || ok {
 		return ok, err
 	}
@@ -516,6 +517,7 @@ func (s *scopedDataset) changeFilter(ctx context.Context, f substrate.ChangeFilt
 		reaches = s.reads
 	}
 	if len(f.Kinds) > 0 {
+		kinds := make([]string, 0, len(f.Kinds))
 		for _, k := range f.Kinds {
 			ok, err := reaches(ctx, k)
 			if err != nil {
@@ -524,7 +526,9 @@ func (s *scopedDataset) changeFilter(ctx context.Context, f substrate.ChangeFilt
 			if !ok {
 				return f, false, errUnknownKind(k)
 			}
+			kinds = append(kinds, s.local(k))
 		}
+		f.Kinds = kinds
 		return f, true, nil
 	}
 	reg, err := s.kinds(ctx)
@@ -688,6 +692,7 @@ func (s *scopedDataset) recordVisible(ctx context.Context, kind, id string) (boo
 // could not read itself. An agent the repository does not hold is reached by
 // nothing.
 func (s *scopedDataset) talksTo(ctx context.Context, agent string) (bool, error) {
+	agent = s.local(agent)
 	if !s.grant.TalksTo(agent) {
 		return false, nil
 	}

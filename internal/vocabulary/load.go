@@ -37,7 +37,7 @@ const (
 // column remap (`substrate.reamde.dev/core/temporal(point: dueAt)`). The
 // first group still admits a bare word so the refusal can name it
 // (bareNameProblem) rather than call the whole entry unparseable.
-var reCapBinding = regexp.MustCompile(`^((?:[a-z0-9][a-z0-9.-]*/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
+var reCapBinding = regexp.MustCompile(`^((?:(?:~|[a-z0-9][a-z0-9.-]*)/[a-z][a-z0-9]*/)?[a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
 // LoadFS parses every declaration under fsys into one registry. The unit is
 // the document, not the file: manifests are grouped by the PACKAGE they
@@ -165,8 +165,8 @@ func BuildPackages(docs []Document, source string) ([]*Package, error) {
 		if d.Kind == DocAuthority || d.Kind == DocPackage {
 			where = "metadata.id"
 		}
-		if !ValidAuthority(authority) {
-			l.errf("%s %s: %s %q must be a DNS name", d.Kind, d.ID, where, authority)
+		if d.Kind == DocAuthority && !ValidAuthority(authority) || !ValidKindAuthority(authority) {
+			l.errf("%s %s: %s %q must be a DNS name, or %q for the repository's own", d.Kind, d.ID, where, authority, Local)
 			continue
 		}
 		if d.Kind != DocAuthority && !ValidPackage(name) {

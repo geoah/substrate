@@ -14,7 +14,7 @@ import (
 )
 
 // vocabularyWidgets is the batch declaring <repository>/shop/widget with the
-// given properties.
+// given properties, which lands in the local namespace as ~/shop/widget.
 func vocabularyWidgets(env *dbEnv, props map[string]any) []map[string]any {
 	pkg := env.repository + "/shop"
 	return []map[string]any{
@@ -72,7 +72,7 @@ func TestSchemaPlanEndpoint(t *testing.T) {
 	rec := vocabularyPost(t, env, "plan", map[string]any{"documents": docs})
 	wantStatus(t, rec, http.StatusOK)
 	out := decodeJSON[substrate.VocabularyPlan](t, rec)
-	widget := env.repository + "/shop/widget"
+	widget := "~/shop/widget"
 	if !out.Lossy || out.Work != 3 || out.PlanHash == "" || out.ChangelogSeq != head.Seq || len(out.Steps) != 1 || len(out.Blockers) == 0 {
 		t.Fatalf("plan response = %+v (head %d)", out, head.Seq)
 	}
@@ -205,8 +205,8 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 	for _, r := range out.Records {
 		ids = append(ids, r.Kind+" "+r.ID)
 	}
-	widget := env.repository + "/shop/widget"
-	want := []string{corePackage + "/package " + env.repository + "/shop", corePackage + "/kind " + widget}
+	widget := "~/shop/widget"
+	want := []string{corePackage + "/package ~/shop", corePackage + "/kind " + widget}
 	if !slices.Equal(ids, want) {
 		t.Fatalf("apply answered %v, want %v", ids, want)
 	}
@@ -228,7 +228,9 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	t.Parallel()
 	env := newDBEnv(t, withSamples("tasks"))
-	owner := env.repository + "/crm"
+	// The batch spells the package under the repository's full name, and
+	// every answer names it as the repository holds it, under `~`.
+	owner, own := env.repository+"/crm", "~/crm"
 	const slackUser = "providers.substrate.reamde.dev/slack/user"
 	mapping := func(name, from string) map[string]any {
 		return vocabulary.MappingManifest(owner, name, map[string]any{
@@ -262,7 +264,7 @@ func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 	out := decodeJSON[vocabularyApplyResponse](t, rec)
 	want := substrate.SuggestedMapping{
-		ID: owner + "/slackcontact", From: slackUser, To: owner + "/contact",
+		ID: own + "/slackcontact", From: slackUser, To: own + "/contact",
 		Package: "providers.substrate.reamde.dev/slack", State: substrate.SuggestedMappingWaiting,
 	}
 	if len(out.HeldMappings) != 1 || out.HeldMappings[0].ID != want.ID || out.HeldMappings[0].Package != want.Package ||
@@ -273,11 +275,11 @@ func TestSchemaApplyHoldsWaitingMappings(t *testing.T) {
 	for _, r := range out.Records {
 		ids = append(ids, r.ID)
 	}
-	if fmt.Sprint(ids) != fmt.Sprint([]string{owner, owner, owner + "/contact", owner + "/taskcontact"}) {
+	if fmt.Sprint(ids) != fmt.Sprint([]string{own, own, own + "/contact", own + "/taskcontact"}) {
 		t.Fatalf("the engine admitted %v", ids)
 	}
 	bundle := env.get(t, corePackage+"/bundle", owner)
-	if bundle == nil || fmt.Sprint(bundle.Properties["installs"]) != fmt.Sprint([]any{owner + "/contact", owner + "/taskcontact"}) {
+	if bundle == nil || fmt.Sprint(bundle.Properties["installs"]) != fmt.Sprint([]any{own + "/contact", own + "/taskcontact"}) {
 		t.Fatalf("the bundle's installs were not pruned: %+v", bundle)
 	}
 	if got := env.get(t, corePackage+"/recordmapping", owner+"/slackcontact"); got != nil {
@@ -365,7 +367,7 @@ func TestTheOwnerTakesOverAnAppsPackage(t *testing.T) {
 	rec := takeover(map[string]any{"package": pkg, "confirm": pkg}, env.token)
 	wantStatus(t, rec, http.StatusOK)
 	got := decodeJSON[substrate.Record](t, rec)
-	if got.ID != pkg || !linksActorRecord(got.Properties["declaredBy"], substrate.ActorPerson) ||
+	if got.ID != "~/training" || !linksActorRecord(got.Properties["declaredBy"], substrate.ActorPerson) ||
 		got.Properties["takenOverFrom"] != strings.TrimPrefix(string(app), substrate.AppActorPrefix) {
 		t.Fatalf("takeover answered %+v", got)
 	}

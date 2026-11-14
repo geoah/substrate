@@ -53,9 +53,9 @@ A package states its label in its header, under `stability`:
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: ada.example.com/garden
+  id: ~/garden
 data:
-  authority: ada.example.com
+  authority: "~"
   package: garden
   stability: beta
   version: 3

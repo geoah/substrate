@@ -376,7 +376,7 @@ func (h *handler) check(ctx context.Context, requested []scope.Scope, details []
 	}
 	missing := []string{}
 	for _, s := range requested {
-		resolved := s.Resolve(authority)
+		resolved := s.Localize(authority)
 		if !full && !grant.Covers(resolved, scopeInternal(resolved, registry)) && !slices.Contains(missing, resolved.String()) {
 			missing = append(missing, resolved.String())
 		}

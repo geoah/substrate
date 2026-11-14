@@ -1,0 +1,234 @@
+{
+  "01zafyxrexhkebb5p7sjshcv9d": {
+    "name": "substrate.reamde.dev/assistant",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/assistant"
+    }
+  },
+  "0323cjqrqnh1vv6tgdej17h7pc": {
+    "name": "substrate.reamde.dev/observations",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/observations"
+    }
+  },
+  "0vmtr15vtyg7wrerfq4y98szzg": {
+    "name": "substrate.reamde.dev/assistant/secretary",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/secretary"
+    }
+  },
+  "14jyp2r752hphrz17dvhdw93zp": {
+    "name": "substrate.reamde.dev/assistant/architect",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/architect"
+    }
+  },
+  "1d8vcwc5arhgnba05cv7pbtpb8": {
+    "name": "kept.example.com/lab/gone",
+    "type": "function",
+    "disabled": true,
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/kept.example.com/lab/gone"
+    }
+  },
+  "1fgtd0yvy1hasrgrjwj23sb202": {
+    "name": "substrate.reamde.dev/core/query",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/query"
+    }
+  },
+  "1m8807gjwhg5pb78sfwev79x3z": {
+    "name": "kept.example.com/lab",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/kept.example.com/lab"
+    }
+  },
+  "2a7rn64km2hq6ack5t2fhv18gp": {
+    "name": "substrate.reamde.dev/core/propose",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/propose"
+    }
+  },
+  "2etjpc7xn5h0cbyt0kbvbjfsw3": {
+    "name": "substrate.reamde.dev/applets",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/applets"
+    }
+  },
+  "2rgzgvj7hahd1b9g8a0eam33hf": {
+    "name": "substrate.reamde.dev/core/ask",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/ask"
+    }
+  },
+  "2v83207ettg2asg7t4hh27gqrf": {
+    "name": "substrate.reamde.dev/core/write",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/write"
+    }
+  },
+  "33ysakewf4gxsvhxdfgk2fw091": {
+    "name": "kept.example.com/memos",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/kept.example.com/memos"
+    }
+  },
+  "36zgs2dwpah56art4hshnzqsqp": {
+    "name": "substrate.reamde.dev/core/wait",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/wait"
+    }
+  },
+  "3b2x1b35nzgsr9gd3qmysw4ct3": {
+    "name": "kept.example.com/tasks",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/kept.example.com/tasks"
+    }
+  },
+  "46gkq6z4qegxqvy0mgnxrh0wrc": {
+    "name": "kept.example.com/scheduling",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/kept.example.com/scheduling"
+    }
+  },
+  "4dfswkdgcvg2qvpq4gpk63s3k9": {
+    "name": "substrate.reamde.dev/assistant/moss",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss"
+    }
+  },
+  "4drfnb8304hpgtvb7z1p4es7ze": {
+    "name": "substrate",
+    "type": "system"
+  },
+  "4kyctq1p6jgqh8pram8z1ph8b1": {
+    "name": "substrate.reamde.dev/console",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/console"
+    }
+  },
+  "4syrv77abyhzbanycz6kn00ffh": {
+    "name": "substrate.reamde.dev/core/vocabulary",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/vocabulary"
+    }
+  },
+  "4zf2rj227bg079qz8gsd110ans": {
+    "name": "substrate.reamde.dev/core",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/core"
+    }
+  },
+  "52se4jgga3hmhb83sdbcpp84nw": {
+    "name": "substrate.reamde.dev/llm",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/llm"
+    }
+  },
+  "5hd4r1na32gk1rsv6xp97ts9am": {
+    "name": "substrate.reamde.dev/core/edit",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/core/edit"
+    }
+  },
+  "5jdc29f6ajh52se3xfze9jxrmr": {
+    "name": "kept.example.com/people",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/kept.example.com/people"
+    }
+  },
+  "5v55zdgwqyg4396dma94rn5t8q": {
+    "name": "kept.example.com/auto/hook",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/kept.example.com/auto/hook"
+    }
+  },
+  "6bav5ymxe0g438dtkafj9ghzbc": {
+    "name": "substrate.reamde.dev/applets/preview",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/substrate.reamde.dev/applets/preview"
+    }
+  },
+  "6dkzyxan4eh72sasp2d2qq5tnc": {
+    "name": "kept.example.com/auto/page",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/kept.example.com/auto/page"
+    }
+  },
+  "6hk4j1krw4gs39enmjs114f9jj": {
+    "name": "substrate.reamde.dev/assistant/designer",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/designer"
+    }
+  },
+  "6nk6ekkczdgh399nt2pqpccjz0": {
+    "name": "kept.example.com",
+    "type": "person",
+    "roles": [
+      {
+        "ref": "substrate.reamde.dev/core/role/admin"
+      }
+    ],
+    "identity": "idn-2zmecb4fk2wpfm3cpyyfbk3s1g"
+  },
+  "70mm95bk0ghb1953xnrjryhp5j": {
+    "name": "substrate.reamde.dev/environment",
+    "type": "package",
+    "package": {
+      "ref": "substrate.reamde.dev/core/package/substrate.reamde.dev/environment"
+    }
+  },
+  "7ec0wp9apzhbjaw7v2jz96rxa4": {
+    "name": "kept.example.com/lab/stamp",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/kept.example.com/lab/stamp"
+    }
+  },
+  "7r122q8b1ch848f9pjg8zxe0da": {
+    "name": "substrate.reamde.dev/assistant/librarian",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/librarian"
+    }
+  },
+  "7tx9trcqw6h9gawq22k99mdknn": {
+    "name": "kept.example.com/lab/helper",
+    "type": "agent",
+    "agent": {
+      "ref": "substrate.reamde.dev/core/agent/kept.example.com/lab/helper"
+    }
+  },
+  "7xjhkytmfqh2harca9ztd2xq0p": {
+    "name": "kept.example.com/auto/mirror",
+    "type": "function",
+    "function": {
+      "ref": "substrate.reamde.dev/core/function/kept.example.com/auto/mirror"
+    }
+  }
+}

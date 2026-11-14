@@ -104,8 +104,9 @@ an account without one by accident.
 `identity` is the name the person signs in with, and the repository
 registration creates takes the same name unless the request names another in
 `repository`. The repository's name BECOMES its authority, any DNS name its
-user controls (`ada.example.com`, `geoah.me`), which is the home of every
-package its user declares kinds in. Both names keep that DNS-style form, so
+user controls (`ada.example.com`, `geoah.me`). The packages its user declares
+kinds in live in the repository's local namespace, `~`, not under the name
+([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Both names keep that DNS-style form, so
 another server could one day vouch for a person's. A name carrying a dot is
 taken as it is; a bare label is completed under the host the request reached
 (`ada` reaching `substrate.example` is `ada.substrate.example`), and the

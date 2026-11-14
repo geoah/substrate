@@ -20,27 +20,27 @@ import {
 
 describe("scopeWords", () => {
   it("names what each verb does over its pattern", () => {
-    expect(scopeWords("read:ada.example.com/tasks/*")).toEqual({
+    expect(scopeWords("read:~/tasks/*")).toEqual({
       verb: "read",
       action: "Read records of",
-      pattern: "ada.example.com/tasks/*",
+      pattern: "~/tasks/*",
     })
-    expect(scopeWords("write:ada.example.com/tasks/task").action).toBe(
+    expect(scopeWords("write:~/tasks/task").action).toBe(
       "Read and write records of"
     )
-    expect(scopeWords("agents:ada.example.com/llm/*")).toEqual({
+    expect(scopeWords("agents:~/llm/*")).toEqual({
       verb: "agents",
       action: "Talk to, and read the chats of, the agents matching",
-      pattern: "ada.example.com/llm/*",
+      pattern: "~/llm/*",
     })
     expect(scopeWords("decide:*").pattern).toBe("*")
   })
 
   it("names the functions a call scope runs", () => {
-    expect(scopeWords("call:ada.example.com/tasks/*")).toEqual({
+    expect(scopeWords("call:~/tasks/*")).toEqual({
       verb: "call",
       action: "Run the functions matching",
-      pattern: "ada.example.com/tasks/*",
+      pattern: "~/tasks/*",
     })
   })
 
@@ -192,11 +192,9 @@ describe("scopeSentence", () => {
   })
 
   it("says a read sees, and a write may also add, change and delete", () => {
-    const tasks = [kind("ada.example.com/tasks/task", "Tasks")]
+    const tasks = [kind("~/tasks/task", "Tasks")]
     expect(
-      scopeSentence(
-        scope({ pattern: "ada.example.com/tasks/task", kinds: tasks })
-      )
+      scopeSentence(scope({ pattern: "~/tasks/task", kinds: tasks }))
     ).toBe(
       "See your tasks, and search them by meaning, which spends your embedding budget"
     )
@@ -204,7 +202,7 @@ describe("scopeSentence", () => {
       scopeSentence(
         scope({
           verb: "write",
-          pattern: "ada.example.com/tasks/task",
+          pattern: "~/tasks/task",
           kinds: tasks,
         })
       )
@@ -217,27 +215,20 @@ describe("scopeSentence", () => {
     expect(
       scopeSentence(
         scope({
-          pattern: "ada.example.com/tasks/*",
+          pattern: "~/tasks/*",
           glob: true,
-          kinds: [
-            kind("ada.example.com/tasks/task", "Tasks"),
-            kind("ada.example.com/tasks/project"),
-          ],
+          kinds: [kind("~/tasks/task", "Tasks"), kind("~/tasks/project")],
         })
       )
     ).toBe(
       "See your tasks and projects, including kinds added later, and search them by meaning, which spends your embedding budget"
     )
     expect(
-      scopeSentence(
-        scope({ verb: "write", pattern: "ada.example.com/notes/note" })
-      )
+      scopeSentence(scope({ verb: "write", pattern: "~/notes/note" }))
     ).toBe(
       "See, add, change and delete your notes, and search them by meaning, which spends your embedding budget"
     )
-    expect(
-      scopeSentence(scope({ pattern: "ada.example.com/notes/*", glob: true }))
-    ).toBe(
+    expect(scopeSentence(scope({ pattern: "~/notes/*", glob: true }))).toBe(
       "See your Notes records, including kinds added later, and search them by meaning, which spends your embedding budget"
     )
     expect(
@@ -259,12 +250,12 @@ describe("scopeSentence", () => {
     expect(
       scopeSentence(
         scope({
-          pattern: "ada.example.com/*",
+          pattern: "~/*",
           glob: true,
           kinds: [
-            kind("ada.example.com/people/person", "People"),
-            kind("ada.example.com/tasks/project", "Projects"),
-            kind("ada.example.com/tasks/task", "Tasks"),
+            kind("~/people/person", "People"),
+            kind("~/tasks/project", "Projects"),
+            kind("~/tasks/task", "Tasks"),
           ],
         })
       )
@@ -289,8 +280,8 @@ describe("scopeSentence", () => {
       scopeSentence(
         scope({
           verb: "agents",
-          pattern: "ada.example.com/llm/substrateEditor",
-          agents: [agent("ada.example.com/llm/substrateEditor")],
+          pattern: "~/llm/substrateEditor",
+          agents: [agent("~/llm/substrateEditor")],
         })
       )
     ).toBe(
@@ -303,8 +294,8 @@ describe("scopeSentence", () => {
       scopeSentence(
         scope({
           verb: "decide",
-          pattern: "ada.example.com/llm/substrateEditor",
-          agents: [agent("ada.example.com/llm/substrateEditor")],
+          pattern: "~/llm/substrateEditor",
+          agents: [agent("~/llm/substrateEditor")],
         })
       )
     ).toBe(
@@ -331,9 +322,7 @@ describe("scopeSentence", () => {
       "Run any of your functions, including functions added later; each runs only where the app may already see and change what it reads and writes"
     )
     expect(
-      scopeSentence(
-        scope({ verb: "call", pattern: "ada.example.com/tasks/*", glob: true })
-      )
+      scopeSentence(scope({ verb: "call", pattern: "~/tasks/*", glob: true }))
     ).toBe(
       "Run the functions in Tasks, including functions added later; each runs only where the app may already see and change what it reads and writes"
     )
@@ -341,17 +330,17 @@ describe("scopeSentence", () => {
       scopeSentence(
         scope({
           verb: "call",
-          pattern: "ada.example.com/tasks/*",
+          pattern: "~/tasks/*",
           glob: true,
           functions: [
             {
-              identity: "ada.example.com/tasks/summarize",
+              identity: "~/tasks/summarize",
               reads: [],
               writes: [],
               covered: true,
             },
             {
-              identity: "ada.example.com/tasks/report",
+              identity: "~/tasks/report",
               reads: [],
               writes: [],
               covered: false,
@@ -363,9 +352,7 @@ describe("scopeSentence", () => {
       "Run Summarize and Report, including functions added later; each runs only where the app may already see and change what it reads and writes"
     )
     expect(
-      scopeSentence(
-        scope({ verb: "call", pattern: "ada.example.com/tasks/summarize" })
-      )
+      scopeSentence(scope({ verb: "call", pattern: "~/tasks/summarize" }))
     ).toBe(
       "Run Summarize; it runs only where the app may already see and change what it reads and writes"
     )
@@ -391,12 +378,8 @@ describe("scopeSentence", () => {
       "epsilon",
       "zeta",
       "eta",
-    ].map((n) =>
-      kind(`ada.example.com/greek/${n}`, n[0].toUpperCase() + n.slice(1) + "s")
-    )
-    expect(
-      scopeSentence(scope({ pattern: "ada.example.com/greek/*", kinds }))
-    ).toBe(
+    ].map((n) => kind(`~/greek/${n}`, n[0].toUpperCase() + n.slice(1) + "s"))
+    expect(scopeSentence(scope({ pattern: "~/greek/*", kinds }))).toBe(
       "See your Greek alphas, betas, gammas, deltas, epsilons and zetas, and 1 more kind, and search them by meaning, which spends your embedding budget"
     )
   })
@@ -436,14 +419,16 @@ function labelled(
 const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   { scope: "read:*", kinds: [] },
   {
-    scope: "read:ada.example.com/*",
+    scope: "read:~/*",
     kinds: [
-      labelled("ada.example.com/people/person", "Person", "People"),
-      labelled("ada.example.com/tasks/project", "Project", "Projects"),
-      { identity: "ada.example.com/tasks/task" },
+      labelled("~/people/person", "Person", "People"),
+      labelled("~/tasks/project", "Project", "Projects"),
+      { identity: "~/tasks/task" },
     ],
   },
-  { scope: "read:ada.example.com/notes/*", kinds: [] },
+  { scope: "read:~/notes/*", kinds: [] },
+  { scope: "read:~/*", kinds: [] },
+  { scope: "read:b.example.com/*", kinds: [] },
   {
     scope: `read:${APPLEHEALTH}/account`,
     kinds: [
@@ -452,11 +437,11 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   },
   { scope: "read:substrate.reamde.dev/llm/provider", kinds: [] },
   {
-    scope: "read:ada.example.com/greek/*",
+    scope: "read:~/greek/*",
     kinds: ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"].map(
       (n) => {
         const word = n[0].toUpperCase() + n.slice(1)
-        return labelled(`ada.example.com/greek/${n}`, word, `${word}s`)
+        return labelled(`~/greek/${n}`, word, `${word}s`)
       }
     ),
   },
@@ -476,7 +461,7 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
       labelled(`${APPLE}/visit`, "Visit", "Visits"),
     ],
   },
-  { scope: "write:ada.example.com/notes/note", kinds: [] },
+  { scope: "write:~/notes/note", kinds: [] },
   {
     scope: `write:${APPLEHEALTH}/account`,
     kinds: [
@@ -490,13 +475,13 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   },
   {
     scope: `read:implements(${LIFECYCLE})`,
-    kinds: [{ identity: "ada.example.com/tasks/task" }],
+    kinds: [{ identity: "~/tasks/task" }],
   },
   {
     scope: `write:implements(${LIFECYCLE})`,
     kinds: [
-      { identity: "ada.example.com/tasks/task" },
-      labelled("ada.example.com/tasks/project", "Project", "Projects"),
+      { identity: "~/tasks/task" },
+      labelled("~/tasks/project", "Project", "Projects"),
       labelled(
         "providers.substrate.reamde.dev/linear/issue",
         "Issue",
@@ -508,20 +493,22 @@ const SENTENCE_CASES: Omit<SentenceCase, "sentence">[] = [
   { scope: `read:implements(${LIFECYCLE})`, kinds: [] },
   { scope: `write:implements(${LIFECYCLE})`, kinds: [] },
   {
-    scope: "read:implements(ada.example.com/scheduling/dueDate)",
+    scope: "read:implements(~/scheduling/dueDate)",
     kinds: [],
   },
   { scope: "agents:*", kinds: [] },
   { scope: "agents:b.example.com/*", kinds: [] },
-  { scope: "agents:ada.example.com/llm/*", kinds: [] },
-  { scope: "agents:ada.example.com/llm/substrateEditor", kinds: [] },
+  { scope: "agents:~/*", kinds: [] },
+  { scope: "agents:~/llm/*", kinds: [] },
+  { scope: "agents:~/llm/substrateEditor", kinds: [] },
   { scope: "decide:*", kinds: [] },
   { scope: "decide:b.example.com/x/*", kinds: [] },
-  { scope: "decide:ada.example.com/llm/substrateEditor", kinds: [] },
+  { scope: "decide:~/llm/substrateEditor", kinds: [] },
   { scope: "call:*", kinds: [] },
   { scope: "call:b.example.com/*", kinds: [] },
-  { scope: "call:ada.example.com/tasks/*", kinds: [] },
-  { scope: "call:ada.example.com/tasks/summarize", kinds: [] },
+  { scope: "call:~/*", kinds: [] },
+  { scope: "call:~/tasks/*", kinds: [] },
+  { scope: "call:~/tasks/summarize", kinds: [] },
   { scope: "webhook:applehealth-webhook", kinds: [], package: APPLEHEALTH },
   { scope: "webhook:applehealth-webhook", kinds: [] },
 ]
@@ -577,7 +564,7 @@ describe("a trait scope", () => {
   // Decision 0225: what `*` would reach among the kinds that bind the trait.
   it("is read off its pattern, and a kind pattern names no trait", () => {
     expect(scopeTrait(`implements(${LIFECYCLE})`)).toBe(LIFECYCLE)
-    expect(scopeTrait("ada.example.com/tasks/*")).toBeUndefined()
+    expect(scopeTrait("~/tasks/*")).toBeUndefined()
     expect(scopeTrait("implements()")).toBeUndefined()
   })
 
@@ -593,7 +580,7 @@ describe("a trait scope", () => {
       })
     expect(
       sentence("write", [
-        { identity: "ada.example.com/tasks/task" },
+        { identity: "~/tasks/task" },
         {
           identity: "providers.substrate.reamde.dev/linear/issue",
           label: { singular: "Issue", plural: "Issues" },
@@ -611,7 +598,7 @@ describe("a trait scope", () => {
     expect(
       scopeSentence({
         verb: "read",
-        pattern: "implements(ada.example.com/scheduling/dueDate)",
+        pattern: "implements(~/scheduling/dueDate)",
         glob: true,
         kinds: [],
         agents: [],

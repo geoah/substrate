@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/geoah/substrate/internal/applet"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The guide is what an assistant reads when it needs it rather than up
@@ -139,8 +140,8 @@ func overviewTool() Tool {
 	return Tool{
 		Name:  "overview",
 		Title: "Start here",
-		Description: "Start here: one read of the owner's substrate. It answers the owner's authority (the home of every package " +
-			"they declare), each package with its source (builtin and published ones are read-only, installed ones are the owner's) and " +
+		Description: "Start here: one read of the owner's substrate. It answers the repository's name and its own namespace, ~ " +
+			"(the home of every package the owner declares), each package with its source (builtin and published ones are read-only, installed ones are the owner's) and " +
 			"how many kinds it holds, the agents (Moss, substrate.reamde.dev/assistant/moss, is the owner's assistant), the applets, the " +
 			"LLM providers and whether each has its key, how many functions and triggers there are, what waits on the owner, and the " +
 			"guide's topics.",
@@ -184,6 +185,9 @@ func overview(ctx context.Context, api API) map[string]any {
 		}
 		out["authority"] = authority
 	}
+	// The owner's own packages live under `~`, whatever the repository is
+	// called (decision record 0259).
+	out["ownNamespace"] = vocabulary.Local
 
 	kinds, err := allKinds(ctx, api)
 	if err != nil {
@@ -249,7 +253,7 @@ func overview(ctx context.Context, api API) map[string]any {
 		"questions":      count("questions", kindQuestion, map[string]any{"properties": map[string]any{"state": map[string]any{"eq": "pending"}}}),
 	}
 	out["guide"] = topicIndex()
-	out["next"] = "Declare new packages under the authority. Read a guide topic before your first work in its area, " +
+	out["next"] = "Declare new packages under ~, the owner's own namespace. Read a guide topic before your first work in its area, " +
 		"kinds for a package's kinds, describe_kind before writing one, and query for records."
 	if len(unread) > 0 {
 		out["unread"] = unread

@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/geoah/substrate/internal/archive"
@@ -419,7 +420,20 @@ func (s *service) RemoveArchive(ctx context.Context, repository, archiveID strin
 // repository from the newest manifest of one archive the operator names:
 // the explicit import a deletion mark leaves as the one way back (rule 7).
 // It starts a new archive past every archive and mark the store lists.
-func (s *service) ImportArchive(ctx context.Context, repository, archiveID string) (Repository, error) {
+//
+// name, when set, is the name the repository takes in place of the one its
+// manifest gives (decision 0259): a repository's own kinds are under `~`, so
+// its name is in no record, and only the manifest says it. It is the repair
+// of an archive the start set aside because another repository here holds
+// its name (setaside.go). That set-aside is the start's, in this process's
+// memory, and keeps nothing from an operator's action: the import reads the
+// archive again and the override goes in before restoreRow, so admitRestore
+// makes every refusal it makes at the start, under the new name. An archive
+// that does not read, a data key that does not open (unless the new name or
+// the id is listed in SUBSTRATE_IMPORT_WITHOUT_SECRETS) and a database that
+// holds the id stay refusals. Nor may it take a name another repository the
+// start set aside claims, which no registration may take either.
+func (s *service) ImportArchive(ctx context.Context, repository, archiveID, name string) (Repository, error) {
 	store, err := s.archiveStore()
 	if err != nil {
 		return Repository{}, err
@@ -444,6 +458,13 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID strin
 	if err != nil {
 		return Repository{}, err
 	}
+	m := src.manifest
+	if name != "" && name != m.Authority {
+		if err := s.admitImportName(src, name); err != nil {
+			return Repository{}, err
+		}
+		m.Authority = name
+	}
 	sealed, err := src.Sealed(ctx)
 	if err != nil {
 		return Repository{}, err
@@ -452,7 +473,11 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID strin
 	if err != nil {
 		return Repository{}, err
 	}
-	repo, release, err := s.restoreRow(ctx, src.manifest, src.Head(), sealed, src.String(), archiveRecord{archive: next, source: archiveID + "/" + src.name})
+	repo, release, err := s.restoreRow(ctx, m, src.Head(), sealed, src.String(), archiveRecord{archive: next, source: archiveID + "/" + src.name})
+	var held *nameHeldError
+	if errors.As(err, &held) {
+		return repo, fmt.Errorf("%w; or import it under another name with --name", err)
+	}
 	if err != nil {
 		return repo, err
 	}
@@ -467,6 +492,30 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID strin
 		return repo, err
 	}
 	return repo, nil
+}
+
+// admitImportName is what an import under another name refuses beyond
+// what admitRestore does. A history from before the local namespace spells
+// its name in its lines, and its conversion moves that name to `~` by the
+// row's (conversion step 6), so it is imported under its own name, and its
+// next archive, in the current dialect, under another. And a name another
+// repository the start set aside claims is not taken, as no registration
+// takes it (setaside.go).
+func (s *service) admitImportName(src *archiveSource, name string) error {
+	if err := validRepositoryName(name); err != nil {
+		return fmt.Errorf("%w: --name: %w", substrate.ErrValidation, err)
+	}
+	if src.Dialect() < localNamespaceDialect {
+		return fmt.Errorf("%w: archive %s/%s was written in changelog dialect %d, whose lines spell the repository's name %s, so it is imported under that name only: import it without --name where that name is free, and import the archive the server writes next under another",
+			substrate.ErrConflict, src.manifest.ID, src.name, src.Dialect(), src.manifest.Authority)
+	}
+	for _, r := range s.aside.all() {
+		if r.authority == name && !slices.Contains(r.keys, src.manifest.ID) {
+			return fmt.Errorf("%w: %s is the name of a repository the start set aside (%s); repair or remove it first, or choose another name",
+				substrate.ErrConflict, name, r.keys[0])
+		}
+	}
+	return nil
 }
 
 // finishDeletionsAndTakes is the boot's first look at every row: a

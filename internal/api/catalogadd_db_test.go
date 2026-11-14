@@ -11,9 +11,9 @@ import (
 
 // One route adds every catalog package, and who keeps the package decides
 // where it lands (decision record 0258): a published one under the authority
-// that publishes it, as the publisher's; a sample copied under this
-// repository's own authority, as the repository's. The answer is the status
-// of the bundle as it landed.
+// that publishes it, as the publisher's; a sample copied into this
+// repository's own namespace, `~` (decision record 0259), as the
+// repository's. The answer is the status of the bundle as it landed.
 func TestCatalogAddLandsEachPackageWhereItsKeeperSays(t *testing.T) {
 	t.Parallel()
 	env := catalogEnv(t, catalogShipped(t))
@@ -31,7 +31,7 @@ func TestCatalogAddLandsEachPackageWhereItsKeeperSays(t *testing.T) {
 		t.Fatalf("the published package landed as %+v, want it the publisher's", row)
 	}
 
-	landed := env.repository + "/people"
+	landed := "~/people"
 	if got := add(peopleBundleID); got.ID != landed || !got.Installed {
 		t.Fatalf("adding %s answered %+v, want the copy at %s, installed", peopleBundleID, got, landed)
 	}

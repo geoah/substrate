@@ -480,7 +480,8 @@ internal kinds by name, `write:substrate.reamde.dev/health/sleep`,
 
 The page plans against the scopes left checked: its read takes them as
 `?scope=` query parameters (`GET /api/v1/authorizations/{id}?scope=…`,
-one per scope, in the resolved spelling the page shows; absent, every
+one per scope, in the spelling the page shows, `~` for the repository's
+own; absent, every
 requested scope is checked, and `scope=` alone is none), the approval
 plans against the scopes it names, and the token's check against the
 token's own. A package row carries `reach`, one entry per kind or glob and
@@ -555,7 +556,7 @@ grant_type=authorization_code&code=…&client_id=…&redirect_uri=…&code_verif
 {
   "access_token": "substrate_tok_…",
   "token_type": "Bearer",
-  "scope": "read:ada.example.com/tasks/* write:ada.example.com/tasks/task",
+  "scope": "read:~/tasks/* write:~/tasks/task",
   "expires_in": 2592000,
   "repository": "ada.example.com",
   "token_id": "2mjnmydr2be6"
@@ -604,7 +605,7 @@ approved:
 
 ```json
 {
-  "scopes": {"missing": ["read:ada.example.com/notes/*"]},
+  "scopes": {"missing": ["read:~/notes/*"]},
   "setup": [
     {"type": "package", "action": "upgrade",
      "package": {"id": "providers.substrate.reamde.dev/applehealth", "required": 6, "held": 5, "shipped": 6}},
@@ -617,8 +618,8 @@ approved:
 }
 ```
 
-- `scopes.missing`: the requested scopes, resolved, that the token does not
-  cover. Coverage is by reach, not spelling: a `write` covers the `read` of
+- `scopes.missing`: the requested scopes, with the repository's name folded
+  into `~`, that the token does not cover. Coverage is by reach, not spelling: a `write` covers the `read` of
   the same pattern, and a wider pattern a narrower one (`read:*` covers
   `read:~/notes/*`), except that a kind that is `internal`, or that the
   repository does not hold yet, is covered by its exact scope alone;
@@ -831,7 +832,7 @@ write it refuses goes back to the person
 A `call:<pattern>` scope names functions by their ids
 (`<authority>/<package>/<name>`), with the kind pattern grammar: `*`, an
 authority's, a package's or one function; `~` is the repository's
-authority. A function of `substrate.reamde.dev/core` or
+local namespace. A function of `substrate.reamde.dev/core` or
 `substrate.reamde.dev/llm` is never an app's to call: naming one outright,
 or either package's own glob, is refused, and a wider glob
 (`substrate.reamde.dev/*`, `*`) skips them. Under it,
@@ -937,11 +938,15 @@ named in full, and `~` may stand for its authority. How a kind binds it,
 `temporal(point: dueAt)` say, does not matter, only that it does.
 
 An agent's id is its authority, package and name,
-`ada.example.com/notes/notekeeper`.
-`~` in place of the authority is the repository's own authority, the one an
-added sample lives under: `read:~/tasks/*` becomes
-`read:ada.example.com/tasks/*` on the approval page and in the token, and
-`agents:~/notes/*` the agents added with the notes sample. Some things no
+`~/notes/notekeeper` for the one the notes sample adds.
+`~` in place of the authority is the repository's local namespace, where its
+own packages and the samples it added live
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), and a scope keeps
+it as written: `read:~/tasks/*` is `read:~/tasks/*` on the approval page and
+in the token, the same for every repository the app is approved in, and
+`agents:~/notes/*` reaches the agents added with the notes sample. An app
+that spells the repository's full name (`read:ada.example.com/tasks/*`) is
+asking for the same thing, and the token stores it as `~`. Some things no
 scope reaches:
 
 - the auth kinds (`substrate.reamde.dev/core/token`, `…/credential`,
@@ -1044,8 +1049,8 @@ A closure is multi-document YAML: one package header, one bundle
 declaration for that package, and its declarations and records. The header's
 version matches the listed version. Every declaration belongs to the
 package; records of shared machinery kinds use ids beneath the package id.
-The binary wins for packages it already ships. A repository's own authority
-is declared locally rather than installed from its document. A webhook
+The binary wins for packages it already ships. A repository's own packages
+live in `~` and are declared locally, never installed from a document. A webhook
 trigger the closure ships is disabled and keyless unless it declares a
 `signature`: an install of one enabled with neither is refused, and the
 app's `webhook` detail is what keys it and turns it on

@@ -216,8 +216,11 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	ctx := context.Background()
 	dsn, root := engine.MigratedDSN(t), t.TempDir()
 	repo := testdb.Repository(t)
-	observation := repo + "/observations/observation"
-	metric := repo + "/observations/metric"
+	// The samples' copies live in the repository's own namespace (decision
+	// record 0259), which is what binary N's rows read as once converted.
+	own := "~"
+	observation := own + "/observations/observation"
+	metric := own + "/observations/metric"
 
 	// Binary N: core before the unit graph, the samples as main imported
 	// them. This binary writes no value in a unit no unit record answers, so
@@ -244,14 +247,14 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 		}
 	}
 	for _, d := range data {
-		if err := planter(t, ds).PlantRecord(ctx, rehome(repo, d.kind), d.id, rehomeValue(repo, d.props).(map[string]any)); err != nil {
+		if err := planter(t, ds).PlantRecord(ctx, rehome(own, d.kind), d.id, rehomeValue(own, d.props).(map[string]any)); err != nil {
 			t.Fatalf("plant %s %s: %v", d.kind, d.id, err)
 		}
 	}
 	// The kinds back as main stored them, `measures` and all, and each copy
 	// stamped as the unedited import it was.
 	for id, props := range measures {
-		kind := rehome(repo, id)
+		kind := rehome(own, id)
 		row := mustGet(t, ds, rmKind, kind).Properties
 		declared := row["properties"].(map[string]any)
 		for name, m := range props {
@@ -261,7 +264,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 			t.Fatalf("plant %s: %v", kind, err)
 		}
 	}
-	for _, pkg := range []string{repo + "/observations", repo + "/health"} {
+	for _, pkg := range []string{own + "/observations", own + "/health"} {
 		if err := ds.(interface {
 			StampOriginDigest(context.Context, string) error
 		}).StampOriginDigest(ctx, pkg); err != nil {
@@ -319,7 +322,7 @@ func TestRepositoryMigrationMovesPreGraphImportsOntoUnitRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, pkg := range []string{repo + "/observations", repo + "/health"} {
+	for _, pkg := range []string{own + "/observations", own + "/health"} {
 		var found bool
 		for _, st := range statuses {
 			if st.ID != pkg {

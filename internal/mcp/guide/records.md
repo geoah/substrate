@@ -5,7 +5,7 @@ How to write one record right: put, patch and delete, references, states, versio
 ## Before the first write
 
 - `describe_kind` the kind. A record holds only the properties its kind declares, by those names, under `properties`.
-- Name every kind in full, `<authority>/<package>/<name>`, and carry it beside every id. Ids come from results; never compose or guess one.
+- Name every kind in full, `<authority>/<package>/<name>` (`~/<package>/<name>` for the owner's own), and carry it beside every id. Ids come from results; never compose or guess one.
 - The heading: write the property the kind's `displayTemplate` names (`name`, `summary`, `subject`, `text`), never `title`. The title is derived.
 - `at`, `endsAt` and `dueAt` exist only where a trait binding gives them (see guide `traits`); a write naming one the kind does not bind is refused.
 
@@ -21,19 +21,19 @@ How to write one record right: put, patch and delete, references, states, versio
 - `delete`: a tombstone, never implied by an omitted property. It reads gone everywhere; `query` with `filter.deleted: true` lists tombstones.
 
 ```json
-{"op": "put", "kind": "ada.example.com/tasks/task",
+{"op": "put", "kind": "~/tasks/task",
  "properties": {"name": "File the report", "dueAt": "2026-11-12T09:00:00Z"},
  "idempotencyKey": "file-report-2026-11-08"}
 ```
 
 ```json
-{"op": "patch", "kind": "ada.example.com/tasks/task", "id": "<id from a result>",
+{"op": "patch", "kind": "~/tasks/task", "id": "<id from a result>",
  "ifVersion": 3, "properties": {"status": "done", "description": null}}
 ```
 
 ## Values
 
-- A reference is the string `"<kind>/<id>"`: `"project": "ada.example.com/tasks/project/<id>"`. Reads serve it back as `{"ref": "<kind>/<id>"}`; either form writes. A repeated reference is a list of them.
+- A reference is the string `"<kind>/<id>"`: `"project": "~/tasks/project/<id>"`. Reads serve it back as `{"ref": "<kind>/<id>"}`; either form writes. A repeated reference is a list of them.
 - A reference that declares link properties takes them beside `ref`: `{"ref": "<kind>/<id>", "role": "staff engineer"}`.
 - `mustExist: true` refuses a target that does not exist (`422`, not `404`).
 - `decimal` is a string (`"19.99"`); `money` is `{"amount": 1999, "currency": "EUR"}`; `quantity` is `{"value": "72.5", "unit": "kg"}` (see guide `observations` for units); `duration` is ISO 8601 (`PT45M`); `datetime` is RFC 3339.
@@ -79,7 +79,7 @@ A refusal reads `the substrate answered <status>: {"error": {"code", "message", 
 
 ```json
 {"op": "put", "kind": "substrate.reamde.dev/core/recordpatchrequest",
- "properties": {"target": "ada.example.com/tasks/task/<id>",
+ "properties": {"target": "~/tasks/task/<id>",
                 "diff": {"properties": {"status": "done"}},
                 "rationale": "The report was filed on Friday."},
  "idempotencyKey": "propose-done-<id>"}

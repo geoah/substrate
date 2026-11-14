@@ -21,12 +21,82 @@ import (
 // addressed. The helpers below still render and split the bare form because
 // that shorthand relies on them; nothing stores it.
 //
+// A repository's own packages sit under the authority `~` (Local) rather than
+// a DNS name: `~/tasks/task`. It is the one authority without a dot, and the
+// one a reference may spell another way, by the repository's full name.
+//
 // A RECORD PATH is the qualified kind reference plus the id:
 // "<authority>/<package>/<kind>/<id>". It is what a `reference` property
 // points with, and it sits under ReferenceValueKey inside the object that IS
 // the stored value (decision 0044). A bare path string is accepted at the
 // write as shorthand and normalized to that object; nothing stores it and
 // nothing serves it.
+
+// Local is the authority of the repository's own packages: `~/tasks/task` is
+// this repository's tasks kind, whatever the repository is called (decision
+// record 0259). A sample is copied into it, and what the repository declares
+// itself lands in it, so its name never enters the data and two repositories'
+// copies of one sample are one kind. On every input its full name is another
+// spelling of `~` (LocalizeRef); a reply says `~`.
+const Local = "~"
+
+// LocalizeRef is ref with the repository's own name, home, folded into
+// Local: a kind reference, a package reference, a record path or a glob whose
+// authority is home now names `~`. Anything else comes back unchanged, so it
+// is safe on every reference a caller reads, and an empty home folds nothing.
+func LocalizeRef(ref, home string) string {
+	if home == "" || !strings.HasPrefix(ref, home) {
+		return ref
+	}
+	rest := ref[len(home):]
+	if rest == "" || rest[0] != '/' {
+		return ref
+	}
+	return Local + rest
+}
+
+// IsLocal reports whether a kind, package or record path reference names one
+// of the repository's own packages, under Local.
+func IsLocal(ref string) bool { return strings.HasPrefix(ref, Local+"/") }
+
+// namedKinds are the kinds whose records are named by a reference: a
+// declaration's id is its identity (`~/tasks/task`), and a setting's or a
+// secret's sits under its package's (`~/readinglist/denyDomains`). An
+// authority row is not one: its id is a publisher's name, and it stays.
+var namedKinds = map[string]bool{
+	CoreKind(DocPackage): true, CoreKind(DocKind): true, CoreKind(DocTrait): true,
+	CoreKind(DocPropertyType): true, CoreKind(DocRecordMapping): true,
+	CoreKind(DocFunction): true, CoreKind(DocAgent): true, CoreKind(DocActor): true,
+	CoreKind(DocBundle): true, CoreKind("setting"): true, CoreKind("secret"): true,
+}
+
+// NamedID reports whether a record of kind is named by a reference, so that
+// the repository's full name in its id is another spelling of `~`. Every
+// other record's id is its writer's, whatever it looks like.
+func NamedID(kind string) bool { return namedKinds[kind] }
+
+// LocalizePath is a record path with the repository's name, home, folded into
+// `~` in its kind, and in its id where the kind's records are named by a
+// reference (`substrate.reamde.dev/core/agent/~/chat/assistant`). A string
+// that is no record path is LocalizeRef's.
+func LocalizePath(path, home string) string {
+	kind, id, ok := SplitRecordPath(path)
+	if !ok {
+		return LocalizeRef(path, home)
+	}
+	kind = LocalizeRef(kind, home)
+	return RecordPath(kind, LocalizeID(kind, id, home))
+}
+
+// LocalizeID is id with the repository's name, home, folded into `~` where a
+// record of kind is named by a reference (NamedID), and id unchanged
+// otherwise.
+func LocalizeID(kind, id, home string) string {
+	if !NamedID(kind) {
+		return id
+	}
+	return LocalizeRef(id, home)
+}
 
 // ReferenceValueKey is the one reserved key of a reference value: `ref` holds
 // the referent's record path and every other key is a declared link property.
@@ -167,7 +237,7 @@ func SplitRecordPath(path string) (kind, id string, ok bool) {
 	if !split || authority == "" || rest == "" {
 		return "", "", false
 	}
-	if !strings.Contains(authority, ".") {
+	if authority != Local && !strings.Contains(authority, ".") {
 		return "", "", false
 	}
 	pkg, rest, split := strings.Cut(rest, "/")
@@ -235,10 +305,11 @@ func LLMKind(name string) string { return PackageLLM + "/" + name }
 
 // PackageActor is the writing hand a PACKAGE's own installed code carries:
 // `bundle:<authority>:<package>`, the same hand an install writes its
-// declarations under. A package declares it as an actor document so its tier
-// and its mapping precedence are legible, but the string is derived here and
-// never authored: two closures sharing an actor would share their attribution
-// and their trigger self-exclusion (record 0025, amended by 0047).
+// declarations under. The string is derived here and never authored: two
+// closures sharing an actor would share their attribution and their trigger
+// self-exclusion (record 0025, amended by 0047). A package in `~` carries
+// `~` as it spells it (`bundle:~:tasks`), so the actor record of its hand has
+// one id whatever the repository is called (decision record 0259).
 func PackageActor(pkg string) string {
 	authority, name := SplitPackageRef(pkg)
 	return string(substrate.BundleActor(authority, name))

@@ -538,7 +538,7 @@ data:
 		},
 		"an installed package of your own": {
 			details: `[{"type":"package","package":"` + own + `","version":1},{"type":"webhook","trigger":"stripe-webhook"}]`,
-			action:  substrate.SetupNone, reason: substrate.BlockNotPublished, problem: own + " is not in this server's catalog",
+			action:  substrate.SetupNone, reason: substrate.BlockNotPublished, problem: "~/stripe is not in this server's catalog",
 		},
 		"an account of a package not requested": {
 			details: `[{"type":"package","package":"` + applePkg + `","version":3},
@@ -1032,7 +1032,6 @@ func TestAnAccountAlreadyThereIsLeftAlone(t *testing.T) {
 func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	t.Parallel()
 	e := newAppSetupEnv(t, withSamples("people"))
-	repo := e.db.repository
 	id := e.park(setupRequest(syncScopes, syncDetails))
 	v := e.view(id)
 	wantStatus(t, e.approveWith(id, resolvedSyncScopes(), v.PlanHash), http.StatusAccepted)
@@ -1066,14 +1065,14 @@ func TestAnAppAsksWhetherItIsStillSetUp(t *testing.T) {
 	newer := strings.Replace(syncDetails, `"version": 5`, `"version": 99`, 1)
 	got = e.check(app, checkRequest(syncScopes+" read:~/notes/*", newer))
 	blocked := got.Setup[1]
-	if strings.Join(got.Scopes.Missing, ",") != "read:"+repo+"/notes/*" || blocked.Action != substrate.SetupUpgrade ||
+	if strings.Join(got.Scopes.Missing, ",") != "read:~/notes/*" || blocked.Action != substrate.SetupUpgrade ||
 		blocked.Blocked == nil || blocked.Blocked.Reason != substrate.BlockServerUpdate || blocked.Blocked.Problem == "" {
 		t.Fatalf("check = missing %v row %+v %+v", got.Scopes.Missing, blocked, blocked.Blocked)
 	}
 	// A scope the token covers under another spelling is not missing: write
 	// covers read, and a package glob covers a kind in it.
 	got = e.check(app, checkRequest("read:"+applePkg+"/contact read:~/notes/*", "[]"))
-	if strings.Join(got.Scopes.Missing, ",") != "read:"+repo+"/notes/*" || len(got.Setup) != 0 {
+	if strings.Join(got.Scopes.Missing, ",") != "read:~/notes/*" || len(got.Setup) != 0 {
 		t.Fatalf("a covered scope = missing %v, rows %+v", got.Scopes.Missing, got.Setup)
 	}
 	// A check that names no details plans none.

@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-08-15
 decision-makers: George Antoniadis (via the issue-109 agent session)
+amended-by: 0259
 ---
 
 # 0014. Authorities may widen only with characters the id alphabet excludes

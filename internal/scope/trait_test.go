@@ -46,7 +46,7 @@ func TestATraitScopeNamesOneTraitInFull(t *testing.T) {
 	}
 }
 
-func TestATraitScopeCompletesTheHomeAuthorityInsideItsTrait(t *testing.T) {
+func TestATraitScopeFoldsTheRepositorysNameInsideItsTrait(t *testing.T) {
 	s, err := Parse("read:implements(~/tasks/done)")
 	if err != nil {
 		t.Fatal(err)
@@ -54,17 +54,17 @@ func TestATraitScopeCompletesTheHomeAuthorityInsideItsTrait(t *testing.T) {
 	if !s.HomeRelative() {
 		t.Fatal("a trait scope naming ~ is not home-relative")
 	}
-	if CheckStored([]string{s.String()}) == nil {
-		t.Fatal("a stored trait scope still naming ~ was admitted")
+	if err := CheckStored([]string{s.String()}); err != nil {
+		t.Fatalf("a stored trait scope over the repository's own trait refused: %v", err)
 	}
-	resolved := s.Resolve("ada.example.com")
-	if resolved.String() != "read:implements(ada.example.com/tasks/done)" {
-		t.Fatalf("Resolve = %q", resolved)
+	full, err := Parse("read:implements(ada.example.com/tasks/done)")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := CheckStored([]string{resolved.String()}); err != nil {
-		t.Fatalf("the resolved trait scope was refused as stored: %v", err)
+	if localized := full.Localize("ada.example.com"); localized.String() != s.String() {
+		t.Fatalf("Localize = %q, want %q", localized, s)
 	}
-	if trait, ok := resolved.Trait(); !ok || trait != "ada.example.com/tasks/done" {
+	if trait, ok := s.Trait(); !ok || trait != "~/tasks/done" {
 		t.Fatalf("Trait() = %q, %v", trait, ok)
 	}
 	if _, ok := (Scope{Verb: Agents, Pattern: TraitPattern(completable)}).Trait(); ok {

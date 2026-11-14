@@ -487,7 +487,7 @@ func (l *loader) parseBundleRequires(where, own string, data map[string]any) []s
 		pkg := strings.TrimSpace(fmt.Sprint(rv))
 		authority, name := SplitPackageRef(pkg)
 		switch {
-		case !ValidAuthority(authority) || !ValidPackage(name):
+		case !ValidKindAuthority(authority) || !ValidPackage(name):
 			l.errf("%s: data.requires[%d]: %q must be a package identity — an authority and a package, not a kind reference", where, i, pkg)
 		case pkg == own:
 			l.errf("%s: data.requires[%d]: %q is the bundle's own package", where, i, pkg)

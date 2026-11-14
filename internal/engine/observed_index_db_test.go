@@ -135,6 +135,7 @@ type pointRow struct {
 
 func (r obsIndex) points(t *testing.T, kind, id string) []pointRow {
 	t.Helper()
+	kind = vocabulary.LocalizeRef(kind, r.ds.Repository().Authority)
 	var out []pointRow
 	for _, p := range derivedPoints(t, r.ds) {
 		if p.Kind != kind || p.RecordID != id {
@@ -1791,7 +1792,7 @@ func TestObservedPurgeAfterTheBindingGoesLeavesNoPoints(t *testing.T) {
 	held := make(chan struct{}, 1)
 	var pkg string
 	r := openObservedIndex(t, engine.WithTestReprojectionHook(func(ctx context.Context, kind string) error {
-		if !armed.Load() || kind != pkg+"/reading" {
+		if !armed.Load() || kind != "~/meters/reading" {
 			return nil
 		}
 		select {

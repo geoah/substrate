@@ -10,6 +10,8 @@ describe("kindPointer", () => {
       "*",
       "providers.substrate.reamde.dev/*",
       "samples.substrate.reamde.dev/tasks/*",
+      "~/*",
+      "~/tasks/*",
     ]) {
       expect(kindPointer(`${KIND}/${pattern}`)).toEqual({
         shape: "pattern",
@@ -24,6 +26,11 @@ describe("kindPointer", () => {
     ).toEqual({
       shape: "kind",
       kind: "samples.substrate.reamde.dev/tasks/task",
+    })
+    // The repository's own kinds sit under `~` (decision record 0259).
+    expect(kindPointer(`${KIND}/~/tasks/task`)).toEqual({
+      shape: "kind",
+      kind: "~/tasks/task",
     })
   })
 
@@ -52,6 +59,13 @@ describe("kindPatternGrant", () => {
       "Every kind in the package substrate.reamde.dev/llm"
     )
   })
+
+  it("names the repository's own kinds as its own, under ~", () => {
+    expect(kindPatternGrant("~/*")).toBe("Every kind of your own, under ~")
+    expect(kindPatternGrant("~/tasks/*")).toBe(
+      "Every kind in the package ~/tasks"
+    )
+  })
 })
 
 describe("isRecordId", () => {
@@ -60,5 +74,12 @@ describe("isRecordId", () => {
     expect(isRecordId("samples.substrate.reamde.dev/tasks/task")).toBe(true)
     expect(isRecordId("*")).toBe(false)
     expect(isRecordId("providers.substrate.reamde.dev/*")).toBe(false)
+  })
+
+  it("lets an id open with ~/, and only that way", () => {
+    expect(isRecordId("~/tasks/task")).toBe(true)
+    expect(isRecordId("~tasks")).toBe(false)
+    expect(isRecordId("~")).toBe(false)
+    expect(isRecordId("a~b")).toBe(true)
   })
 })

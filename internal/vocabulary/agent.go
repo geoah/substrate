@@ -1032,6 +1032,7 @@ func (r *Registry) Agents() []*Agent {
 // 0101), on the call and chat routes, on a trigger and in a `subagents` list
 // alike.
 func (r *Registry) ResolveAgent(nameOrIdentity string) (*Agent, error) {
+	nameOrIdentity = r.Localize(nameOrIdentity)
 	var names []string
 	for _, a := range r.Agents() {
 		if a.Identity() == nameOrIdentity {

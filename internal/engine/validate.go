@@ -928,6 +928,9 @@ type titleResolver struct {
 	t   *txn
 	ty  *vocabulary.Kind
 	row *erow
+	// titles is the title a record reads with in place of its stored one,
+	// for a pass that renders before it writes (localtitles.go).
+	titles map[eref]string
 }
 
 // quantity is a quantity value as a title prints it: the symbol the
@@ -1034,6 +1037,9 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 		return ""
 	}
 	if prop == "" {
+		if title, ok := r.titles[eref{Kind: row.Kind, ID: row.ID}]; ok {
+			return title
+		}
 		return row.Title
 	}
 	// The loader cannot check the referent's property across kinds (load.go

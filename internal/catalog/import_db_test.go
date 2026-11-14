@@ -1,8 +1,8 @@
 package catalog_test
 
 // The SAMPLE door against a REAL engine (decision record 0048): importing
-// `samples/tasks` into a fresh repository lands its kinds under the
-// repository's OWN authority as the repository's own vocabulary, the
+// `samples/tasks` into a fresh repository lands its kinds in the repository's
+// OWN namespace, `~` (record 0259), as the repository's own vocabulary, the
 // placeholder never reaches the changelog, a second import is an ordinary
 // re-apply, and the provider door is untouched.
 
@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	// The authority newDataset registers its repository with. Every imported
-	// sample lands under it.
+	// The name newDataset registers its repository with. Every imported
+	// sample lands in the local namespace, `~`, not under it.
 	homeAuthority    = "geoah.example.com"
 	samplesPlacehldr = "samples.substrate.reamde.dev"
 	tasksSampleID    = samplesPlacehldr + "/tasks"
@@ -47,30 +47,30 @@ func importSamples(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids .
 	}
 }
 
-func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
+func TestImportLandsASampleInTheLocalNamespace(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
 
 	// `requires:` is rehomed with everything else, so a sample that declares
 	// against another is refused until THAT one is imported, and the refusal
-	// names it under this repository's authority, which is where it will land.
+	// names it in the local namespace, which is where it will land.
 	_, _, err := c.Import(ctx, substrate.ActorPerson, tasksSampleID, ds)
 	if err == nil {
 		t.Fatal("imported a sample whose required vocabulary is absent")
 	}
-	if !strings.Contains(err.Error(), homeAuthority+"/people") {
+	if !strings.Contains(err.Error(), "~/people") {
 		t.Errorf("the refusal does not name what to import first: %v", err)
 	}
 
 	importSamples(t, c, ds, peopleSampleID, schedulingSample, tasksSampleID)
 
-	// What landed is the repository's own kind, at the repository's own
-	// authority, with the sample's package (record 0047), and it is
+	// What landed is the repository's own kind, in the local namespace, with
+	// the sample's package (record 0047), and it is
 	// `installed`, so the repository's token may add a property to it
 	// tomorrow.
 	for _, name := range []string{"project", "task", "tasklog"} {
-		ref := homeAuthority + "/tasks/" + name
+		ref := "~/tasks/" + name
 		info, err := ds.KindByRef(ctx, ref)
 		if err != nil {
 			t.Fatalf("kind %s absent after import: %v", ref, err)
@@ -86,7 +86,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 
 	// The bundle record is the landed package, not the shipped id.
 	b, _ := c.ByID(tasksSampleID)
-	st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
 	}
@@ -95,13 +95,13 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	}
 	// The import stamps the shipped id and the shipped version on the landed
 	// package row, and a copy nobody has edited reads unmodified. Without the
-	// stamp `geoah.example.com/tasks` would be indistinguishable from a
+	// stamp `~/tasks` would be indistinguishable from a
 	// package the user declared by hand.
 	if b.Version == 0 {
 		t.Fatal("the tasks sample ships no package version, so the stamp cannot be checked")
 	}
 	wantOrigin(t, st, tasksSampleID, b.Version, false)
-	pkg, err := ds.Get(ctx, kindPackageRef, homeAuthority+"/tasks")
+	pkg, err := ds.Get(ctx, kindPackageRef, "~/tasks")
 	if err != nil {
 		t.Fatalf("read the landed package row: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// no error, and nothing new.
 	before := len(changes)
 	importSamples(t, c, ds, tasksSampleID)
-	st2, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	st2, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 	if err != nil {
 		t.Fatalf("bundle status after re-import: %v", err)
 	}
@@ -166,8 +166,8 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// The package's version does not move for a kind edit (the kind's own
 	// does), so this is what the digest is for. The provenance itself stays:
 	// the edit re-projects the package row and the stamp is the engine's.
-	editKind(t, ds, homeAuthority+"/tasks/task", "mine")
-	st3, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	editKind(t, ds, "~/tasks/task", "mine")
+	st3, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 	if err != nil {
 		t.Fatalf("bundle status after the edit: %v", err)
 	}
@@ -177,12 +177,12 @@ func TestImportLandsASampleUnderTheRepositoryAuthority(t *testing.T) {
 	// and re-stamps it: the copy is the shipped closure again and reads so,
 	// even though its versions now sit above the shipped ones.
 	reimportConfirmed(t, c, ds, tasksSampleID)
-	st4, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	st4, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 	if err != nil {
 		t.Fatalf("bundle status after the second re-import: %v", err)
 	}
 	wantOrigin(t, st4, tasksSampleID, b.Version, false)
-	if _, still := declaredProperties(t, ds, homeAuthority+"/tasks/task")["mine"]; still {
+	if _, still := declaredProperties(t, ds, "~/tasks/task")["mine"]; still {
 		t.Error("the re-import kept the local edit, so the copy is not the shipped closure")
 	}
 }
@@ -197,7 +197,7 @@ func reimportConfirmed(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, i
 	if !ok {
 		t.Fatalf("no shipped bundle %s", id)
 	}
-	held, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+	held, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 	if err != nil {
 		t.Fatalf("bundle status %s: %v", id, err)
 	}
@@ -271,7 +271,7 @@ func TestEveryImportedSampleReadsUnmodified(t *testing.T) {
 		if b.KeptBy != substrate.KeptByRepository {
 			continue
 		}
-		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID(homeAuthority))
+		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.LandedID())
 		if err != nil {
 			t.Fatalf("bundle status %s: %v", b.ID, err)
 		}
@@ -429,7 +429,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 	if _, _, err := c.Install(ctx, substrate.ActorPerson, peopleSampleID, ds); err != nil {
 		t.Fatalf("install %s verbatim beside the imported copy: %v", peopleSampleID, err)
 	}
-	for _, ref := range []string{homeAuthority + "/people/person", peopleSampleID + "/person"} {
+	for _, ref := range []string{"~/people/person", peopleSampleID + "/person"} {
 		if _, err := ds.KindByRef(ctx, ref); err != nil {
 			t.Fatalf("%s is not here, so the fixture holds one spelling and proves nothing: %v", ref, err)
 		}
@@ -438,14 +438,14 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 	if _, _, err := c.Import(ctx, substrate.ActorPerson, calendarSample, ds); err != nil {
 		t.Fatalf("import %s beside both spellings of person: %v", calendarSample, err)
 	}
-	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")
+	event, err := ds.KindByRef(ctx, "~/calendar/calendarevent")
 	if err != nil {
 		t.Fatalf("calendarevent absent after the import: %v", err)
 	}
 	props, _ := event.Definition["properties"].(map[string]any)
 	attendees, _ := props["attendees"].(map[string]any)
-	if got := attendees["kind"]; got != homeAuthority+"/people/person" {
-		t.Errorf("attendees pin = %v, want the copy under this repository's authority", got)
+	if got := attendees["kind"]; got != "~/people/person" {
+		t.Errorf("attendees pin = %v, want the copy in the local namespace", got)
 	}
 
 	// The verbatim door on calendar names the shipped `scheduling`, which
@@ -456,7 +456,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 	}
 	for _, want := range []string{
 		schedulingSample + ", which this repository does not have",
-		homeAuthority + "/scheduling is the same package under another authority",
+		"~/scheduling is the same package under another authority",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not say %q: %v", want, err)
@@ -467,7 +467,7 @@ func TestImportResolvesBesideAVerbatimCopyOfWhatItPins(t *testing.T) {
 // STAVROS'S REPOSITORY, START TO FINISH (issue 614, decision record 0100).
 // The owner declared a `people` package of their own at version 1, holds the
 // shipped people verbatim beside it, imported scheduling as a copy, and
-// imports calendar. Calendar's rehomed floor names `<home>/people` at 4 or
+// imports calendar. Calendar's rehomed floor names `~/people` at 4 or
 // later, and the owner's people is at 1: the floor binds a copy, not the
 // owner's own package, so the import lands with its pins on the owner's
 // person, the landed bundle keeps the floor on the scheduling copy and drops
@@ -477,7 +477,7 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	own := homeAuthority + "/people"
+	own := "~/people"
 	docs := []map[string]any{
 		vocabulary.PackageManifest(own, 1),
 		vocabulary.KindManifest(own, map[string]any{"singular": "person"}, map[string]any{
@@ -499,7 +499,7 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 	// The verbatim door still names the shipped scheduling, held here only
 	// as a copy, and says so.
 	_, _, err := c.Install(ctx, substrate.ActorPerson, calendarSample, ds)
-	if err == nil || !strings.Contains(err.Error(), homeAuthority+"/scheduling is the same package under another authority") {
+	if err == nil || !strings.Contains(err.Error(), "~/scheduling is the same package under another authority") {
 		t.Fatalf("the verbatim door: %v, want the refusal naming the copy", err)
 	}
 
@@ -507,7 +507,7 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 	if _, _, err := c.Import(ctx, substrate.ActorPerson, calendarSample, ds); err != nil {
 		t.Fatalf("import calendar over a hand-declared people at version 1: %v", err)
 	}
-	event, err := ds.KindByRef(ctx, homeAuthority+"/calendar/calendarevent")
+	event, err := ds.KindByRef(ctx, "~/calendar/calendarevent")
 	if err != nil {
 		t.Fatalf("calendarevent absent after the import: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 			t.Errorf("%s pin = %v, want the owner's %s/person", name, got, own)
 		}
 	}
-	bundle, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", homeAuthority+"/calendar")
+	bundle, err := ds.Get(ctx, "substrate.reamde.dev/core/bundle", "~/calendar")
 	if err != nil {
 		t.Fatalf("read the landed bundle: %v", err)
 	}
@@ -525,12 +525,12 @@ func TestImportLandsOnAHandDeclaredRequirementWhateverItsVersion(t *testing.T) {
 	if _, has := floors[own]; has {
 		t.Errorf("the landed bundle keeps a floor on the owner's own people: %v", floors)
 	}
-	if v, _ := vocabulary.VersionValue(floors[homeAuthority+"/scheduling"]); v != 2 {
+	if v, _ := vocabulary.VersionValue(floors["~/scheduling"]); v != 2 {
 		t.Errorf("the landed bundle lost the floor on the scheduling copy: %v", floors)
 	}
 	// Pristine: the stamp's digest is over the rows as they landed, floor
 	// dropped, so the preview offers nothing and reports no edit.
-	held := heldStatus(t, ds, homeAuthority+"/calendar")
+	held := heldStatus(t, ds, "~/calendar")
 	if held.Origin != calendarSample || held.Modified {
 		t.Fatalf("the landed calendar reads %+v, want origin %s and unmodified", held, calendarSample)
 	}

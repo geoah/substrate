@@ -1104,6 +1104,18 @@ func (t *txn) mintToken(in substrate.MintTokenInput) (substrate.TokenInfo, strin
 	if in.Scopes != nil && len(in.Scopes) == 0 {
 		return zero, "", fmt.Errorf("%w: a scoped token needs at least one scope", substrate.ErrValidation)
 	}
+	// A scope over the repository's own kinds is stored under `~`, whichever
+	// spelling it came in (decision record 0259).
+	if in.Scopes != nil {
+		local := make([]string, len(in.Scopes))
+		for i, raw := range in.Scopes {
+			local[i] = raw
+			if s, err := scope.Parse(raw); err == nil {
+				local[i] = s.Localize(t.ds.info.Authority).String()
+			}
+		}
+		in.Scopes = local
+	}
 	if err := scope.CheckStored(in.Scopes); err != nil {
 		return zero, "", fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}

@@ -32,7 +32,8 @@ export const STREAM_VIEWS = "observations/streams"
 export const DEFAULT_STREAM_SORT = "when:desc"
 
 /** The About value for a stream about the owner, which names no record. An
- * id never starts with `~`, so this can never be one. */
+ * id or a record path starts with `~` only as `~/` (decision record 0259),
+ * so this can never be one. */
 export const OWNER = "~you"
 
 /** One table row: the stream and the words its marks read as. A row that

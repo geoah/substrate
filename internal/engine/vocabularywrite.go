@@ -165,12 +165,32 @@ func (ds *dataset) ApplyVocabularyDocumentsWith(ctx context.Context, actor subst
 	return ds.applyVocabularyDocuments(ctx, actor, raw, opts, nil)
 }
 
+// localizeDocuments folds the repository's own name into `~` in declarations
+// a hand wrote (decision record 0259): a kind, a package or a record path
+// under the name is the repository's own, which is stored under its local
+// namespace whatever it was spelled as. Actor texts and prose keep the name.
+func (ds *dataset) localizeDocuments(raw []map[string]any) ([]map[string]any, error) {
+	home := ds.info.Authority
+	if home == "" {
+		return raw, nil
+	}
+	out, err := vocabulary.LocalizeAuthority(raw, home, home)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	return out, nil
+}
+
 // applyVocabularyDocuments is ApplyVocabularyDocumentsWith handing the
 // batch's committed changelog entries to changes, when set: the agent
 // vocabulary tool stamps them on its tool row.
 func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any, opts substrate.VocabularyApply, changes *[]changeEntry) ([]*substrate.Record, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
+	}
+	raw, err := ds.localizeDocuments(raw)
+	if err != nil {
+		return nil, err
 	}
 	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
@@ -180,7 +200,9 @@ func (ds *dataset) applyVocabularyDocuments(ctx context.Context, actor substrate
 		return nil, err
 	}
 	b := vocabularyBatch{docs: docs, confirm: opts.Confirm, changes: changes}
-	if b.origin, b.originVersion, err = claimedOrigin(opts.Origin, docs); err != nil {
+	// The documents were folded into `~`, so the origin they are held to is
+	// too: a copy claiming its own package by the full name is refused.
+	if b.origin, b.originVersion, err = claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.info.Authority), docs); err != nil {
 		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, b)
@@ -218,6 +240,10 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if len(raw) == 0 {
 		return plan, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
+	raw, err := ds.localizeDocuments(raw)
+	if err != nil {
+		return plan, err
+	}
 	docs, err := vocabulary.ParseDocuments(raw)
 	if err != nil {
 		return plan, err
@@ -225,7 +251,7 @@ func (ds *dataset) PlanVocabularyApplyWith(ctx context.Context, actor substrate.
 	if docs, err = ds.relaxFloorsOnOwnPackages(ctx, docs); err != nil {
 		return plan, err
 	}
-	origin, _, err := claimedOrigin(opts.Origin, docs)
+	origin, _, err := claimedOrigin(vocabulary.LocalizeRef(opts.Origin, ds.info.Authority), docs)
 	if err != nil {
 		return plan, err
 	}
@@ -305,6 +331,10 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
+	vocabularyDocs, err := ds.localizeDocuments(vocabularyDocs)
+	if err != nil {
+		return nil, err
+	}
 	docs, err := vocabulary.ParseDocuments(vocabularyDocs)
 	if err != nil {
 		return nil, err
@@ -351,7 +381,14 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 					return err
 				}
 			}
+			copiedFrom, _ := vocabulary.SplitPackageRef(opts.Origin)
 			for _, in := range dataDocs {
+				if copiedFrom != "" && copiedFrom != t.ds.info.Authority {
+					var err error
+					if in, err = t.localizeCopied(in, copiedFrom); err != nil {
+						return fmt.Errorf("shipped record %s: %w", in.ID, err)
+					}
+				}
 				// A trigger's callable is validated against the candidate here
 				// because the internal put below skips the callable check, so
 				// an unresolvable trigger would otherwise slip in.
@@ -2977,7 +3014,14 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
 		return nil, err
 	}
-	doc, err := documentFromProps(short, in.ID, in.Properties)
+	// The properties are the declaration's data: its name keys are where the
+	// repository's full name is another spelling of `~` (decision record 0259).
+	declared, err := vocabulary.LocalizeDeclaration(vocabulary.CoreKind(short), in.Properties, ds.info.Authority)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	localized, _ := declared.(map[string]any)
+	doc, err := documentFromProps(short, vocabulary.LocalizeRef(in.ID, ds.info.Authority), localized)
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,8 @@
+{
+  "tag": "v0.123.1",
+  "repository": "kept.example.com",
+  "password": "kept-directory-fixture-password",
+  "token": "substrate_tok_c69b7d03168bb29ff7d292990bce402b162ab020",
+  "credentialKey": "Cnrb3vPfPNENu+Cmw3WkdnziyzoCKOMIzVWU5ZpLbRY=",
+  "note": "test material, made for this fixture by .mise/keptdir.sh; it opens nothing else"
+}

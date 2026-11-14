@@ -80,6 +80,13 @@ func (r Repository) info() substrate.RepositoryInfo {
 	return substrate.RepositoryInfo{ID: r.ID, Authority: r.Authority, State: "active"}
 }
 
+// registry names reg as this repository's, so its lookups take the
+// repository's name as another spelling of `~` (decision record 0259).
+func (r Repository) registry(reg *vocabulary.Registry) *vocabulary.Registry {
+	reg.SetHome(r.Authority)
+	return reg
+}
+
 // ensureRoles creates the two Postgres roles the isolation rests on. It is
 // idempotent and race-safe: parallel test binaries share one cluster, so a
 // duplicate_object is somebody else winning, not a failure.

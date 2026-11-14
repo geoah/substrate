@@ -47,10 +47,14 @@ the minted token as a context in `~/.config/substratectl/config.yaml`. The
 name is the one you sign in with, and the repository registration creates
 takes it too
 ([0274](decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
-The repository's name IS its **authority**, the hostname every package you declare
-kinds in lives under: any name you control (`ada.example.com`), or a bare
-label the substrate completes under its own host. The commands below spell it
-`$AUTHORITY`, so set it once: `export AUTHORITY=ada.example.com`.
+The repository's name IS its **authority**: any name you control
+(`ada.example.com`), or a bare label the substrate completes under its own
+host. The kinds you declare and the samples you add live in the repository's
+**local namespace**, written `~` (`~/tasks/task`), so the commands below never
+spell the name
+([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Quote `~` in a
+shell, which expands an unquoted `~/` at the start of a word to your home
+directory.
 
 Unattended, bring your own seed and skip the prompts:
 
@@ -108,16 +112,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/catalog/samples.substrate.reamde.dev%2Ftasks/add
 
-substratectl get $AUTHORITY/tasks/task    # empty, but the kind is there
+substratectl get '~/tasks/task'    # empty, but the kind is there
 ```
 
-Adding a sample rewrites the closure onto the authority THIS repository owns, so
-what lands is `<your authority>/tasks/task` and it is yours to change
-([0048](decisions/0048-providers-are-published-samples-are-copied.md)). The
+Adding a sample copies the closure into THIS repository's local namespace, so
+what lands is `~/tasks/task` and it is yours to change
+([0048](decisions/0048-providers-are-published-samples-are-copied.md)).
+`ada.example.com/tasks/task` is accepted as another spelling of it, and every
+answer says `~`. The
 console does the same thing from **All data → Add a collection → Start from
 a sample** ([web console](console.md#add-a-collection)),
 `substratectl add samples.substrate.reamde.dev/tasks` does it from a
-terminal, and `substratectl apply -f bundle.yaml --as <your authority>` applies
+terminal, and `substratectl apply -f bundle.yaml --as-mine` applies
 a closure you hold as files. All four run the same admission, which
 [vocabulary.md](vocabulary.md#admission) describes.
 
@@ -126,10 +132,10 @@ Add a task. The body names the kind, and the server assigns the id:
 ```http
 POST /api/v1/records
 Authorization: Bearer substrate_tok_…
-{"kind": "ada.example.com/tasks/task",
+{"kind": "~/tasks/task",
  "properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "ada.example.com/tasks/task",
+→ 201 {"id": "01jbx9m2qz7k4c5v8n3w6t1hrd", "kind": "~/tasks/task",
        "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
@@ -142,7 +148,7 @@ The server assigned the id, the `status` state started at its declared
 `substratectl apply` takes:
 
 ```yaml
-kind: ada.example.com/tasks/task
+kind: ~/tasks/task
 data:
   properties:
     name: Buy milk
@@ -153,8 +159,8 @@ Read it back, then complete it. A state change is a `patch`, and the
 declaration stamps `completedAt` for you:
 
 ```bash
-substratectl get $AUTHORITY/tasks/task 01jbx9m2qz7k4c5v8n3w6t1hrd -o yaml
-substratectl patch $AUTHORITY/tasks/task 01jbx9m2qz7k4c5v8n3w6t1hrd --state status=done
+substratectl get '~/tasks/task' 01jbx9m2qz7k4c5v8n3w6t1hrd -o yaml
+substratectl patch '~/tasks/task' 01jbx9m2qz7k4c5v8n3w6t1hrd --state status=done
 ```
 
 ## Watch the change stream
@@ -173,7 +179,7 @@ GET /api/v1/changes?watch=1
 {"bookmark": 412, "generation": "7f3a0c2e9b1d4e6f"}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "6nk6ekkczdgh399nt2pqpccjz0",
  "token": "01jbx9k0token000000000000a", "op": "put",
- "kind": "ada.example.com/tasks/task", "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
+ "kind": "~/tasks/task", "recordId": "01jbx9m2qz7k4c5v8n3w6t1hrd",
  "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
 

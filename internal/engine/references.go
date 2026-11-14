@@ -258,7 +258,9 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("referent kind %q is unknown", kind)
 	}
-	target := eref{Kind: rt.Identity, ID: id}
+	// A declaration's id is its identity, so a pointer at one under the
+	// repository's name points at the `~` one (decision record 0259).
+	target := eref{Kind: rt.Identity, ID: vocabulary.LocalizeID(rt.Identity, id, t.ds.info.Authority)}
 	if !referenceAdmits(t.declarations(), p, rt) {
 		hopped, err := t.subjectHop(p, target, rt)
 		if err != nil {

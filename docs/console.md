@@ -305,8 +305,9 @@ another page can link straight to it:
   [purpose](decisions/0133-a-kind-declares-its-purpose.md) is read from the
   catalog's closure until the repository holds the kind, so a sample whose
   kinds are all supporting or internal is not offered as a collection. Adding
-  one copies it under the repository's own authority
-  ([0048](decisions/0048-providers-are-published-samples-are-copied.md)),
+  one copies it into the repository's local namespace, `~`
+  ([0048](decisions/0048-providers-are-published-samples-are-copied.md),
+  [0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)),
   taking first any package it requires that the repository does not hold, and
   says so beforehand. A sample already taken reads **Added**; its package
   page offers the update when the binary ships it at a newer version than the
@@ -834,7 +835,7 @@ in `appliesTo`
 (`substrate.reamde.dev/core/kind/substrate.reamde.dev/health/sleep`). The
 `health` and `labs` catalogues ship five between them and the WHOOP provider
 two ([the well-known catalogues](observations.md#the-well-known-catalogues)).
-Adding a sample rehomes `appliesTo` with the kind; a view on a provider's
+Adding a sample moves `appliesTo` into `~` with the kind; a view on a provider's
 or a catalogue's kind keeps it, because only `samples.substrate.reamde.dev`
 is rewritten.
 
@@ -842,8 +843,8 @@ is rewritten.
 closure has written. A view you wrote, edited, trimmed or deleted through the
 API, the console or `substratectl` stays as you left it on every add
 and upgrade. To take a newer shipped view over yours, apply the shipped file
-with `substratectl apply -f`, a sample's with its authority rewritten to your
-repository's ([adding a package](bundles.md#adding-a-package) gives the commands),
+with `substratectl apply -f`, a sample's with its authority rewritten to `~`
+([adding a package](bundles.md#adding-a-package) gives the commands),
 purging the view first where you added a property the shipped view does not
 set.
 

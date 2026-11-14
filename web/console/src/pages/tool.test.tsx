@@ -49,7 +49,7 @@ import { ToolPage } from "./tool"
 const KIND = "substrate.reamde.dev/core/kind"
 const FN = "substrate.reamde.dev/core/function"
 const GCAL = "providers.substrate.reamde.dev/google/synccalendar"
-const SAVE = "ada.example.com/notes/savenote"
+const SAVE = "~/notes/savenote"
 const INGEST = "providers.substrate.reamde.dev/applehealth/applehealthingest"
 
 function rec(
@@ -89,7 +89,7 @@ const FUNCTIONS = [
   rec(FN, SAVE, {
     runtime: "python",
     description: "Save a note with its title and its counts.",
-    permissions: { writes: [{ ref: `${KIND}/ada.example.com/notes/note` }] },
+    permissions: { writes: [{ ref: `${KIND}/~/notes/note` }] },
     arguments: [
       {
         name: "text",
@@ -108,7 +108,7 @@ const FUNCTIONS = [
 ]
 
 const AGENTS = [
-  rec("substrate.reamde.dev/core/agent", "ada.example.com/notes/notekeeper", {
+  rec("substrate.reamde.dev/core/agent", "~/notes/notekeeper", {
     tools: [{ function: { ref: `${FN}/${SAVE}` } }],
   }),
 ]
@@ -230,7 +230,7 @@ describe("ToolPage", () => {
                   "t1",
                   {
                     agent: {
-                      ref: "substrate.reamde.dev/core/agent/ada.example.com/notes/notekeeper",
+                      ref: "substrate.reamde.dev/core/agent/~/notes/notekeeper",
                     },
                   }
                 ),
@@ -453,7 +453,7 @@ describe("ToolPage", () => {
 
     const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/call"))
     expect(String(call?.[0])).toBe(
-      "/api/v1/substrate.reamde.dev/core/function/ada.example.com%2Fnotes%2Fsavenote/call"
+      "/api/v1/substrate.reamde.dev/core/function/~%2Fnotes%2Fsavenote/call"
     )
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       input: { text: "hello there", words: 2 },
@@ -501,7 +501,7 @@ describe("ToolPage", () => {
   })
 
   it("says so when no tool has that reference", async () => {
-    renderAt("ada.example.com/notes/missing")
+    renderAt("~/notes/missing")
     expect(
       await screen.findByRole("heading", { name: "No such tool" })
     ).toBeTruthy()

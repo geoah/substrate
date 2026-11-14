@@ -6,11 +6,12 @@ packages a repository is seeded with, `substrate.reamde.dev/core`,
 `substrate.reamde.dev/observations` and `substrate.reamde.dev/assistant`
 (agents, no kinds), the four well-known catalogues it can
 add (`health`, `labs`, `environment` and `clinical`, under the same
-authority), the
-LLM sample copied onto the repository's own authority at registration, and
-the other sample packages it can add. A kind is named `<authority>/<package>/<name>`;
+authority), and the sample packages it can add, the LLM sample among them,
+each copied into the repository's local namespace, `~`, when it is added. A
+kind is named `<authority>/<package>/<name>`;
 the tables give the name, and each heading gives the package as the tree
-spells it, a sample's under the placeholder authority adding it rewrites. Where a
+spells it, a sample's under the placeholder authority adding it rewrites to
+`~`. Where a
 package lands, what adding a sample rewrites and how an upgrade is offered are in
 [bundles](bundles.md#adding-a-package); the provider packages, and the four
 samples this page does not table (notes, llm, readinglist and pebble, whose

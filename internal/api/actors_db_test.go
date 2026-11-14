@@ -250,7 +250,7 @@ func TestEachWriteRecordsItsActorOnBehalfOfAndToken(t *testing.T) {
 	_, source, profile, _ := actorsSyncPackage(w.dbEnv)
 	pkg := strings.TrimSuffix(source, "/entry")
 	check("a sync on a schedule", w.changesOf(t, source, w.synced)[0],
-		want{typ: substrate.ActorTypeFunction, link: vocabulary.RecordPath(corePackage+"/function", pkg+"/pull")})
+		want{typ: substrate.ActorTypeFunction, link: vocabulary.RecordPath(corePackage+"/function", vocabulary.LocalizeRef(pkg+"/pull", w.repository))})
 	// The engine merging what the sync offered: the system, on behalf of no
 	// one, behind no token.
 	var merged *substrate.Change

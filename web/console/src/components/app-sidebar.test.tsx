@@ -66,16 +66,13 @@ function kind(identity: string, purpose?: string): KindInfo {
   }
 }
 
-const [people, tasks, google] = collectionGroups(
-  [
-    kind("ada.example.com/tasks/task"),
-    kind("ada.example.com/tasks/project"),
-    kind("ada.example.com/tasks/tasklog", "supporting"),
-    kind("ada.example.com/people/person"),
-    kind("providers.substrate.reamde.dev/google/contact"),
-  ],
-  "ada.example.com"
-)
+const [people, tasks, google] = collectionGroups([
+  kind("~/tasks/task"),
+  kind("~/tasks/project"),
+  kind("~/tasks/tasklog", "supporting"),
+  kind("~/people/person"),
+  kind("providers.substrate.reamde.dev/google/contact"),
+])
 
 let storedPreferences: Record<string, unknown> = {}
 
@@ -197,18 +194,18 @@ afterEach(() => {
 describe("everyday groups", () => {
   it("heads each package's primary collections with the package", async () => {
     renderGroups()
-    expect(await href("Tasks")).toBe("/data/ada.example.com/tasks/task")
+    expect(await href("Tasks")).toBe("/data/~/tasks/task")
     expect(
       [...document.querySelectorAll("[data-slot=collection-group]")].map((g) =>
         g.getAttribute("data-group")
       )
     ).toEqual([
-      "group:package:ada.example.com/people",
-      "group:package:ada.example.com/tasks",
+      "group:package:~/people",
+      "group:package:~/tasks",
       "group:provider:google",
     ])
     expect(screen.getByRole("button", { name: "Tasks" })).toBeTruthy()
-    expect(await href("People")).toBe("/data/ada.example.com/people/person")
+    expect(await href("People")).toBe("/data/~/people/person")
     expect(screen.queryByRole("link", { name: "Task logs" })).toBeNull()
   })
 
@@ -229,8 +226,8 @@ describe("everyday groups", () => {
 
   it("restores a folded group and reordered favorites in a new session", async () => {
     const first = renderGroups()
-    const task = "ada.example.com/tasks/task"
-    const person = "ada.example.com/people/person"
+    const task = "~/tasks/task"
+    const person = "~/people/person"
     await press("Star Tasks")
     await waitFor(() => expect(storedPreferences.favorites).toEqual([task]))
     await press("Star People")
@@ -243,9 +240,7 @@ describe("everyday groups", () => {
     )
     await press(/^Tasks/)
     await waitFor(() =>
-      expect(storedPreferences.collapsed).toEqual([
-        "group:package:ada.example.com/tasks",
-      ])
+      expect(storedPreferences.collapsed).toEqual(["group:package:~/tasks"])
     )
     first.unmount()
     renderGroups()
@@ -258,13 +253,13 @@ describe("everyday groups", () => {
     )
     // The folded group lists nothing; the favorite still reaches its kind.
     expect(screen.queryByRole("link", { name: "Projects" })).toBeNull()
-    expect(await href("Tasks")).toBe("/data/ada.example.com/tasks/task")
+    expect(await href("Tasks")).toBe("/data/~/tasks/task")
   })
 
   it("never shows a raw reference as a row's name or tooltip", async () => {
     renderGroups()
     const tasks = await screen.findByRole("link", { name: "Tasks" })
-    expect(tasks.getAttribute("title") ?? "").not.toContain("ada.example.com")
+    expect(tasks.getAttribute("title") ?? "").not.toContain("~/")
   })
 })
 
@@ -277,14 +272,14 @@ describe("technical groups", () => {
     renderGroups()
     // Each package's group names its authority again: a group is one package.
     const authorities = await screen.findAllByRole("link", {
-      name: "ada.example.com",
+      name: "~",
     })
     expect(authorities.map((a) => a.getAttribute("href"))).toEqual([
-      "/data/ada.example.com",
-      "/data/ada.example.com",
+      "/data/~",
+      "/data/~",
     ])
-    expect(await href("tasks")).toBe("/data/ada.example.com/tasks")
-    expect(await href("Tasks task")).toBe("/data/ada.example.com/tasks/task")
+    expect(await href("tasks")).toBe("/data/~/tasks")
+    expect(await href("Tasks task")).toBe("/data/~/tasks/task")
   })
 
   it("names a kind by its label first, its own name beside it", async () => {

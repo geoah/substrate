@@ -38,7 +38,7 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	const live = 40
 	for range live {
 		if _, err := base.Put(ctx, substrate.ActorPerson, substrate.PutInput{
-			Kind: homeAuthority + "/people/person",
+			Kind: "~/people/person",
 		}); err != nil {
 			t.Fatalf("put a person: %v", err)
 		}
@@ -57,7 +57,7 @@ func TestTheCatalogPreviewsCountNoLiveRecords(t *testing.T) {
 	}
 	var people int64
 	for i := range counted {
-		if counted[i].ID == homeAuthority+"/people" {
+		if counted[i].ID == "~/people" {
 			people = counted[i].LiveRecords
 		}
 		if uncounted[i].LiveRecords != 0 || uncounted[i].Accounts != 0 {

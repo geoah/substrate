@@ -1,17 +1,23 @@
 package api
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/geoah/substrate/internal/scope"
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// refPinDeclare declares, under the repository's own authority, a holder kind
+// refPinDeclare declares, under the repository's full name, a holder kind
 // implementing a trait, a mirror kind whose record mapping leads onto the
 // holder, and two kinds whose `holder` reference the engine resolves through
 // that mapping: one pinned to the holder kind, one to the trait. It writes the
-// mirror m1, whose mapping mints its holder. It answers the package.
+// mirror m1, whose mapping mints its holder. It answers the package as the
+// repository holds it, in its own namespace, `~` (decision record 0259).
 func refPinDeclare(t *testing.T, env *dbEnv) string {
 	t.Helper()
 	pkg := env.repository + "/refpin"
@@ -107,7 +113,7 @@ data:
       trait: `+pkg+`/named
 `)
 	env.put(t, pkg+"/mirror", "m1", map[string]any{"name": "Ada"})
-	return pkg
+	return "~/refpin"
 }
 
 // The engine resolves a path of a kind the pin does not admit through a
@@ -169,5 +175,34 @@ func TestScopedRefPinTraitNeedsEveryImplementerReadable(t *testing.T) {
 	stored := env.get(t, badge, mintedID("b3"))
 	if kind, _, _ := vocabulary.SplitRecordPath(appScopedRefPath(stored.Properties["holder"])); kind != holder {
 		t.Fatalf("the badge's holder = %v, want the mirror's mapped holder", stored.Properties["holder"])
+	}
+}
+
+// The scoped dataset holds a write to the grant whichever spelling of an own
+// kind it is handed (decision record 0259): under the full name, a reference
+// whose pin the grant cannot read is refused exactly as under `~`, rather
+// than reaching the engine unchecked.
+func TestScopedRefPinHoldsTheFullNameSpellingToo(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	env := newDBEnv(t)
+	pkg := refPinDeclare(t, env)
+	full := env.repository + "/refpin"
+	grant, err := scope.NewGrant([]string{"write:" + pkg + "/note", "read:" + pkg + "/mirror"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := newScopedDataset(env.ds, grant, substrate.ActorPerson)
+	for i, kind := range []string{pkg + "/note", full + "/note"} {
+		for j, value := range []string{pkg + "/mirror/m1", full + "/mirror/m1"} {
+			id := mintedID(fmt.Sprintf("s%d%d", i, j))
+			_, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kind, ID: id, Properties: map[string]any{"holder": value}})
+			if !errors.Is(err, substrate.ErrForbidden) {
+				t.Errorf("a %s whose holder is %s, under a grant that cannot read the pin: err = %v, want forbidden", kind, value, err)
+			}
+			if env.get(t, pkg+"/note", id) != nil {
+				t.Errorf("the refused write of %s stored the note", kind)
+			}
+		}
 	}
 }

@@ -756,7 +756,7 @@ func (ds *dataset) streamRef(kinds []string, name, path string, v any) (string, 
 		return "", refuse(path, "%q is a bare id, and the selected kinds' %s references pin %s; name the full path, <kind>/<id>",
 			s, name, andList(pins))
 	}
-	return referenceFilterPath(path, &vocabulary.Property{To: pins[0]}, s)
+	return referenceFilterPath(path, &vocabulary.Property{To: pins[0]}, s, ds.info.Authority)
 }
 
 // windows are the spans a metric read takes points from: the range with the

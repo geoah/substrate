@@ -38,7 +38,23 @@ them differently is a load error, never a silent rename. A `propertytype`,
 `<authority>/<package>/<name>` form. A `package`'s id is
 `<authority>/<package>`, and a `bundle`'s id is the package it owns
 (`providers.substrate.reamde.dev/google`). An `authority` document's id is the
-DNS name itself. So the closure header, a package, is seven lines:
+DNS name itself.
+
+An authority is a DNS name, or `~`, the repository's **local namespace**
+([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). The packages a
+repository declares itself and the samples it adds live there, so a kind it
+declares is `~/garden/plant`, its package `~/garden` and its
+`data.authority` `~`, whatever the repository is called. `~` is the one
+authority without a dot and the one short form a kind reference has. A
+document may spell it with the repository's full name instead
+(`ada.example.com/garden/plant`), and admission folds that into `~`; every
+read says `~`. Its hands carry `~` as their package does
+(`bundle:~:garden`), so their actor records are the same whatever the
+repository is called. In YAML, quote a bare `~`
+(`authority: "~"`), which unquoted is null; `~/garden/plant` needs no
+quotes.
+
+The closure header, a package, is seven lines:
 
 ```yaml
 kind: substrate.reamde.dev/core/package
@@ -155,9 +171,9 @@ POST /api/v1/vocabulary/apply
 
 → 200 {"records": […],
        "heldMappings": [
-         {"id": "ada.example.com/people/slackuserperson",
+         {"id": "~/people/slackuserperson",
           "from": "providers.substrate.reamde.dev/slack/user",
-          "to": "ada.example.com/people/person",
+          "to": "~/people/person",
           "package": "providers.substrate.reamde.dev/slack",
           "state": "waiting"}]}
 ```
@@ -191,10 +207,12 @@ lifecycle verb on its bundle
 Everything else, the kinds the repository declares itself and the sample
 packages it added, is the user's to write.
 
-**A token creates a new package only under the repository's own authority**
-([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md)). Every other authority reaches a repository from
+**A token creates a new package only in `~`**
+([decision 0210](decisions/0210-a-token-declares-new-packages-only-under-its-repositorys-authority.md),
+[decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)), the repository's
+full name folded into it first. Every other authority reaches a repository from
 the binary: the seed, the boot upgrade, or a catalog add,
-which rehomes a sample's closure onto the repository's authority anyway. A `POST
+which copies a sample's closure into `~` anyway. A `POST
 …/vocabulary/apply` (or `substratectl apply -f`) that would create a package
 under any other authority is `403`, whoever writes it: the owner's doors, an
 app, an agent or a function. The refusal names `substratectl add
@@ -416,9 +434,9 @@ The number is read in three places:
   ```yaml
   kind: substrate.reamde.dev/core/package
   metadata:
-    id: ada.example.com/garden
+    id: ~/garden
   data:
-    authority: ada.example.com
+    authority: "~"
     package: garden
     dialect: 3
     version: 4
@@ -838,7 +856,7 @@ With `status` declared as above and a record deleted while it held `active`:
 
 ```bash
 substratectl apply -f widget.yaml   # a put onto the tombstone, without `status`
-substratectl get <authority>/shop/widget w1 -o yaml   # status: working
+substratectl get '~/shop/widget' w1 -o yaml   # status: working
 ```
 
 The restoring entry names each step under the keys a conversion uses
@@ -859,18 +877,18 @@ enum values by property and states by property:
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: geoah.example.com/shop
+  id: ~/shop
 data:
-  authority: geoah.example.com
+  authority: "~"
   package: shop
   retired:
     kinds: [gadget]
 ---
 kind: substrate.reamde.dev/core/kind
 metadata:
-  id: geoah.example.com/shop/widget
+  id: ~/shop/widget
 data:
-  authority: geoah.example.com
+  authority: "~"
   package: shop
   names:
     singular: widget
@@ -893,9 +911,9 @@ stored entry into every later document of the same package or kind, so a
 document that omits the list does not lift it and the list never shrinks
 while the row stands; and a declaration of a retired name is refused on every
 path with the same sentence, `a retired name is never declared again`: the
-apply verb, a bundle install or adding a sample (a rehomed sample that
-declares a name the repository retired under the same package is refused
-too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
+apply verb, a bundle install or adding a sample (a sample copied into `~`
+that declares a name the repository retired under the same package is
+refused too), the boot upgrade of the shipped tree, and `mise run kinds:check` for the
 tree itself. A retired name is not a `deprecated:` one: `deprecated:` keeps
 the name usable and asks clients to stop offering it.
 
@@ -1042,9 +1060,9 @@ It sits on the package header and takes one of three values, `stable`,
 ```yaml
 kind: substrate.reamde.dev/core/package
 metadata:
-  id: ada.example.com/garden
+  id: ~/garden
 data:
-  authority: ada.example.com
+  authority: "~"
   package: garden
   stability: beta
   version: 3
