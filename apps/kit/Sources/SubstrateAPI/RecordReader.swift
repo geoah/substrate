@@ -93,6 +93,11 @@ public final class RecordDirectory {
         records[reference.path]?.title
     }
 
+    /// Whether a read found no such record: deleted, or never written.
+    public func isGone(_ reference: RecordReference) -> Bool {
+        missing.contains(reference.path)
+    }
+
     /// Reads the record once, for its name; quietly does nothing more.
     public func resolve(_ reference: RecordReference) async {
         _ = try? await record(reference)

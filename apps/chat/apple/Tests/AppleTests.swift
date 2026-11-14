@@ -82,14 +82,41 @@ private struct LegacySession: Codable {
 
     @Test func aLinkThatLeavesTheAppIsMarkedOnceAfterItsTextAndARecordLinkIsNot() {
         let line = "[F1](https://www.formula1.com)[BBC](https://www.bbc.co.uk) and [Q4](ref:\(kind)/q4) and [**bold** one](mailto:a@example.com)."
-        let words = inlinePieces(parseInline(line)).map { piece -> String in
+        #expect(Self.words(line) == ["F1", "↗", "BBC", "↗", " and ", "{Q4}", " and bold one", "↗", "."])
+        #expect(!inlinePieces(parseInline("Only [Q4](substrate://\(kind)/q4).")).contains(.leaves))
+    }
+
+    /// A line's pieces as words: a mark as ↗, a record's pill in braces.
+    static func words(_ line: String, missing: Set<String> = []) -> [String] {
+        inlinePieces(parseInline(line, missing: missing)).map { piece in
             switch piece {
             case let .text(part): String(part.characters)
             case .leaves: "↗"
+            case let .record(_, name): "{\(String(name.characters))}"
             }
         }
-        #expect(words == ["F1", "↗", "BBC", "↗", " and Q4 and bold one", "↗", "."])
-        #expect(!inlinePieces(parseInline("Only [Q4](substrate://\(kind)/q4).")).contains(.leaves))
+    }
+
+    @Test func aRecordLinkIsItsPillWhereverItStandsInTheLine() {
+        let q4 = "[Q4](substrate://\(kind)/q4)"
+        // At the start, in the middle, against punctuation, at the end.
+        #expect(Self.words("\(q4) is due") == ["{Q4}", " is due"])
+        #expect(Self.words("See \(q4), then (\(q4)).") == ["See ", "{Q4}", ", then (", "{Q4}", ")."])
+        #expect(Self.words("Only \(q4)") == ["Only ", "{Q4}"])
+        // Two records side by side are two pills, and the same one twice is two.
+        #expect(Self.words("\(q4)[Q5](ref:\(kind)/q5)\(q4)") == ["{Q4}", "{Q5}", "{Q4}"])
+        // Formatting inside the link's words stays one pill.
+        #expect(Self.words("[the **Q4** budget](substrate://\(kind)/q4)") == ["{the Q4 budget}"])
+        // Beside a link that leaves the app, each keeps its own form.
+        #expect(Self.words("\(q4)[F1](https://www.formula1.com)\(q4)") == ["{Q4}", "F1", "↗", "{Q4}"])
+    }
+
+    @Test func aPillNamesTheRecordTheLinkDoesAndAMissingOneIsNoPill() {
+        let pieces = inlinePieces(parseInline("[Q4](ref:\(kind)/q4) and [Ghost](substrate://\(kind)/ghost)", missing: ["\(kind)/ghost"]))
+        #expect(pieces.first == .record(RecordReference(kind: kind, id: "q4"), AttributedString("Q4")))
+        #expect(Self.words("[Ghost](substrate://\(kind)/ghost)", missing: ["\(kind)/ghost"]) == ["Ghost"])
+        // Half a link, as a reply streams it, is its text until it closes.
+        #expect(Self.words("See [Q4](substrate://\(kind)/q") == ["See [Q4](substrate://\(kind)/q"])
     }
 
     @Test func aConsolePathStaysALinkThatLeavesTheAppAndAHostlessOneIsText() {
@@ -137,6 +164,29 @@ private struct LegacySession: Codable {
         hosting.layoutSubtreeIfNeeded()
         let button = try #require(LeavingTheApp.elements(under: hosting).first { $0.accessibilityRole?() == .button })
         return button.accessibilityHelp?()
+    }
+}
+
+/// What a screen reader is told of a record's pill, read the same way: its
+/// kind and its name, as a link where it opens the record, the same as the
+/// pill inside a line of a reply, which is a link in the text.
+@MainActor @Suite struct RecordPillAccessibility {
+    let task = RecordReference(kind: "ada.example.com/tasks/task", id: "q4")
+
+    private static func host(_ view: some View) -> NSHostingView<AnyView> {
+        let hosting = NSHostingView(rootView: AnyView(view))
+        hosting.frame = CGRect(x: 0, y: 0, width: 320, height: 60)
+        hosting.layoutSubtreeIfNeeded()
+        return hosting
+    }
+
+    @Test func thePillIsALinkThatSaysItsKindAndItsName() throws {
+        let hosting = Self.host(RecordPill(task, title: "Q4 budget").environment(\.openRecord, OpenRecordAction { _ in }))
+        let all = LeavingTheApp.elements(under: hosting)
+        let link = try #require(all.first { $0.accessibilityRole?() == .link })
+        #expect(link.accessibilityLabel?() == "Task: Q4 budget")
+        #expect(link.accessibilityHelp?() == RecordPillStyle.hint)
+        #expect(!all.contains { $0.accessibilityRole?() == .button })
     }
 }
 #endif
