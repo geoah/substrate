@@ -1368,9 +1368,15 @@ The rules the server holds on every write of a mark:
 **The thread says what a mark is compared with.** Every settle stamps
 `lastMessage` on the thread: the newest message it held then, by `turn` and
 then by when it was written, and never a `summary` row. After a reply it is
-the reply. After a run that ended on tool calls it is the last tool row.
-After a call that failed before any reply it is the message that was sent,
-and after a resumed run it is that run's last row. A row written into a
+the reply. After a run that ended on tool calls it is the last tool row,
+and after a resumed run it is that run's last row. A person's message that
+no reply came after is passed over while the thread holds anything else: it
+is its sender's own word, and nothing has answered it. So after a call that
+failed before any reply, and after a turn that left a
+[message sent meanwhile](#a-message-while-a-turn-runs) unread, the thread
+still names what it named, or what the turn wrote before it ended; in a chat
+that holds no other message it names the message that was sent. The rows
+alone decide, so the settle after a crash names the same message. A row written into a
 settled thread between runs (a decision's report, a finished background
 job's) does not move it until the run it starts settles.
 
@@ -2038,6 +2044,14 @@ event, what the turn emitted so far, then its live events to its `done` or
 - A run that was stopped, or that failed, starts nothing. The message stays
   in the thread, and the person's next message or [continue](#continue)
   reads it with the rest.
+- The turn a message starts is started from the memory of the process that
+  settled the run. A process that ends between the two leaves an `ok`
+  thread with an unanswered message; the next one finds it at its first
+  resolution sweep, where the thread settled within the hour, and starts
+  the turn then. Past the hour, and where that turn is refused (a spend
+  cap, a provider key that is gone), the message waits: the thread is `ok`,
+  its newest turn is a `user` row no `assistant` row follows, and a client
+  shows it as unanswered and offers [continue](#continue).
 
 `messageTaken` is the signal. A client that missed it (an attach whose
 replay was cut) may read the same from ordinals, with care: a `delta`, a
@@ -2063,7 +2077,10 @@ thread that is not a chat turn's (a sub-agent's, a call's, a triggered
 run's). A thread that waits on the person (a question, an approval) is not
 running, so a message to it is an ordinary send: it starts a turn, and it
 neither answers nor dismisses what is waiting. A message cannot be withdrawn
-once it is sent.
+once it is sent. A queued message moves neither of the two facts a chat list
+reads off the thread: it is never the thread's `lastMessage`
+([threads](#threads-messages-and-cost)), so it does not make the chat unread
+for anyone, and it is none of the things `waitingOnPerson` counts.
 
 The rows keep the order things happened in. A message's `turn` is past the
 reply that was streaming when it was sent and below the first reply that

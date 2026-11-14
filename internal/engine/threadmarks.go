@@ -288,6 +288,15 @@ func threadRecordsWhere(ctx context.Context, x dbx, b *builder, alias string, ki
 // newestMessage is the id of the newest live message of a thread, by `turn`
 // and then by when its row was written, "" for a thread that holds none. A
 // `summary` row is the engine's note on older rows and is never the one.
+//
+// A person's message that no reply came after (a `user` row whose ordinal is
+// past every `assistant` row's) is passed over while the thread holds
+// anything else: one sent while a turn ran, which that turn never read
+// (decision 0318), or one whose own call failed. It is its sender's own
+// word and nothing has answered it, so it is not what a chat is unread for.
+// The rows alone decide, so the loop's settle, a stop's and the recovery's
+// after a crash name the same message. A thread that holds nothing but such
+// messages (a new chat whose first call failed) names the newest of them.
 func (t *txn) newestMessage(threadID string) (string, error) {
 	b := &builder{}
 	kind := b.arg(typeMessage)
@@ -295,11 +304,19 @@ func (t *txn) newestMessage(threadID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	replies, err := threadMessagesWhere(t.ctx, t.tx, b, "a", threadID)
+	if err != nil {
+		return "", err
+	}
 	rows, err := t.query(`
 		SELECT e.id FROM records e
 		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
 		  AND coalesce(e.props->>'role', '') <> `+b.arg(msgRoleSummary)+`
-		ORDER BY (e.props->>'turn')::bigint DESC NULLS LAST, e.created_at DESC, e.id DESC LIMIT 1`,
+		ORDER BY (e.props->>'role' = 'user' AND (e.props->>'turn')::bigint > (
+		           SELECT coalesce(max((a.props->>'turn')::bigint), -1) FROM records a
+		           WHERE a.kind = `+kind+` AND a.deleted_at IS NULL AND `+replies+`
+		             AND a.props->>'role' = 'assistant')) NULLS FIRST,
+		         (e.props->>'turn')::bigint DESC NULLS LAST, e.created_at DESC, e.id DESC LIMIT 1`,
 		b.args...)
 	if err != nil {
 		return "", err

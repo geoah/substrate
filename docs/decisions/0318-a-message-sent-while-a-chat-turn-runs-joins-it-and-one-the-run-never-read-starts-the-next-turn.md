@@ -66,6 +66,25 @@ a thread that settled `ok` with a message unanswered. A message is not
 withdrawn once it is sent: a route that takes one back would race the call
 that reads it.
 
+**After a restart.** That turn is started from memory. The next process
+finds an `ok` chat thread that settled within the hour and holds a message
+no reply came after, at its first resolution sweep, and starts the turn
+then. Only `ok`: there the run wrote a reply after its own message, so a
+message past every reply was never read, where on an `overbudget` or a
+failed thread the same rows may be the message the run could not answer.
+
+**`lastMessage`**
+([0313](0313-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md))
+passes over a person's message that no reply came after, while the thread
+holds anything else, so a queued message never makes a chat unread. A run
+that ends with one unread names what it wrote last (its reply, a reply cut
+short, a tool row), or what the thread named before where it wrote nothing;
+the turn the message starts then names its own reply. The rule reads the
+rows alone, so the settle after a crash names the same. It moves 0313's
+case of a call that failed before any reply: the thread keeps naming the
+reply before the message, and names the message only in a chat that holds
+nothing else. `waitingOnPerson` counts no message.
+
 **A turn that waits on the person** (a question, an approval) has settled,
 so a typed message is an ordinary send. It answers and dismisses nothing.
 
@@ -97,10 +116,14 @@ same shape. A client that sends no id sees no change.
   is in the repository's history from the moment it is sent.
 - Good, because a queued message cannot run twice or be lost: it is a row
   under an id its sender chose, in a thread whose status says what happened.
-- Bad, because the next turn is started from memory. A restart between a
-  run's settle and that turn leaves an `ok` thread with an unanswered
-  message until the person continues it. So does a refusal of that turn (a
-  spend cap, a key removed), which is logged and not written to the thread.
+- Bad, because the next turn is started from memory, and the sweep that
+  finds one a restart lost reads back one hour and only once per open. Past
+  that, and where that turn is refused (a spend cap, a key removed), an
+  `ok` thread holds an unanswered message until its person continues it;
+  the refusal is logged and not written to the thread.
+- Bad, because a chat whose last send failed no longer reads as unread to
+  another device of its sender: the failure shows by the thread's status
+  alone.
 - Bad, because a client that follows a queued message past the run's `done`
   must attach again: the next turn is another stream.
 - Bad, because a message sent in the moments a run is settling waits for
@@ -126,7 +149,13 @@ same shape. A client that sends no id sees no change.
 `TestATurnIsHeldToWhoeverItReadAMessageFrom`,
 `TestTheNextTurnIsHeldToEverySenderItStartsFrom`,
 `TestTheLastTurnUnderADeadlineReadsAQueuedMessage`,
-`TestAQueuedMessageWhoseCommitAnswerWasLostIsStillRead`;
+`TestAQueuedMessageWhoseCommitAnswerWasLostIsStillRead`,
+`TestAMessageInDoubtIsSettledByTheNextCall`,
+`TestARunEndsRatherThanReplyPastAMessageItCannotRead`,
+`TestTheNextTurnReadsItsPinnedContextUnderEverySender`,
+`TestAQueuedMessageIsNotTheThreadsLastMessage`,
+`TestTheNextTurnMovesLastMessageToItsReply`,
+`TestAnUnansweredMessageGetsItsTurnAfterARestart`;
 `TestReplayReadsAQueuedMessageWhereTheModelDid` in
 `internal/engine/agentqueue_test.go`;
 `TestASteeredConversationIsOneEachWireAccepts` in
