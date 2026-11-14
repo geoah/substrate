@@ -83,25 +83,16 @@ struct ChatRig {
 
     /// - Parameter base: the folder the device keeps its repositories in; a
     ///   rig over another's is the app launched again.
+    /// - Parameter transport: a server of the test's own in place of the
+    ///   scripted routes, such as one several rigs share (`MarkServer`).
+    /// - Parameter clock: the clock, and `ids` the ids, of a world a launch
+    ///   after a kill goes on in: it mints no id a launch before it did.
     init(
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
-        base: URL = temporaryFolder("chat")
+        base: URL = temporaryFolder("chat"), transport: (any HTTPTransport)? = nil, clock: TestClock = TestClock(),
+        ids: any IDSource = SequentialIDs()
     ) {
-        self.init(server: ChatServer(routes), transport: nil, scopes: scopes, platform: platform, base: base, clock: TestClock(), ids: SequentialIDs())
-    }
-
-    /// The app launched over another server than the scripted one, on a
-    /// clock and with ids the caller keeps: a launch after a kill goes on
-    /// in the same world, and mints no id a launch before it did.
-    init(transport: any HTTPTransport, clock: TestClock, ids: any IDSource, base: URL, platform: ChatPlatform = .ios) {
-        self.init(server: ChatServer(), transport: transport, scopes: nil, platform: platform, base: base, clock: clock, ids: ids)
-    }
-
-    private init(
-        server: ChatServer, transport: (any HTTPTransport)?, scopes: [String]?, platform: ChatPlatform, base: URL, clock: TestClock,
-        ids: any IDSource
-    ) {
-        self.server = server
+        server = ChatServer(routes)
         self.clock = clock
         self.scopes = scopes
         self.base = base

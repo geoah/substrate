@@ -138,7 +138,7 @@ struct SeededRun {
         self.ids = ids
         self.base = base
         self.server = server
-        rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
+        rig = ChatRig(platform: .ios, base: base, transport: server.connect(), clock: clock, ids: ids)
         self.numbers = numbers
     }
 
@@ -339,7 +339,9 @@ struct SeededRun {
     /// person looks first, as its strip asks, and clears the box when the
     /// chat holds it.
     private mutating func send(_ key: ChildKey, _ screen: ConversationScreen) async {
-        var text = screen.composer.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The run plays the composer's field, which owns its text: what it
+        // holds is what the conversation was last told, not the tree's copy.
+        var text = (await rig.live(key)?.draft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty {
             text = word()
             await tell(.draft(text), key)
@@ -479,7 +481,7 @@ struct SeededRun {
         scanned = 0
         stuck = [:]
         composed = []
-        rig = ChatRig(transport: server.connect(), clock: clock, ids: ids, base: base)
+        rig = ChatRig(platform: .ios, base: base, transport: server.connect(), clock: clock, ids: ids)
         inFront = true
         signedOut = false
         await rig.runtime.linkChanged(link)
@@ -667,8 +669,8 @@ struct SeededRun {
             }
             let said = Self.said(screen)
             let name = live.thread ?? "a new chat"
-            home(screen.composer.draft)
-            for text in sent.keys where screen.composer.draft.contains(text) { inComposer.insert(text) }
+            home(live.draft)
+            for text in sent.keys where live.draft.contains(text) { inComposer.insert(text) }
             said.filter { $0.role == "user" }.forEach { home($0.text) }
             if let pending = live.pending { home(pending.message) }
             if let lost = live.lost { home(lost.message) }
@@ -718,7 +720,7 @@ struct SeededRun {
                     return broke(.places, "\(name) says \"\(twin.sentence)\" at a turn and above the composer")
                 }
             }
-            let draft = screen.composer.draft
+            let draft = live.draft
             for text in sent.keys where draft.contains(text) {
                 // The app's own words for "it may be in both": only then.
                 let unsure = live.chatFailure?.unconfirmed == true || suspect.contains(text)
