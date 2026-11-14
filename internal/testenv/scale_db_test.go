@@ -25,6 +25,7 @@ package testenv_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -309,10 +310,9 @@ func TestScaleTimings(t *testing.T) {
 					case <-tick.C:
 					}
 					at := time.Now()
-					status, body := e.Do(http.MethodPut, "/api/v1/"+kind+"/"+vocabulary.DerivedMintedID("scale", "beside", phase, strconv.Itoa(n)),
-						map[string]any{"properties": map[string]any{"name": "beside"}})
-					if status/100 != 2 {
-						t.Errorf("a write beside %s: %d %s", phase, status, body)
+					status, body, err := besideWrite(e, "/api/v1/"+kind+"/"+vocabulary.DerivedMintedID("scale", "beside", phase, strconv.Itoa(n)))
+					if err != nil || status/100 != 2 {
+						t.Errorf("a write beside %s: %d %s %v", phase, status, body, err)
 						return
 					}
 					mu.Lock()
@@ -412,11 +412,20 @@ func TestScaleTimings(t *testing.T) {
 	e.Stop()
 
 	// The conversion at a start: the stamp one dialect below this binary's,
-	// so the boot walks the chain's last step over every line. The lines are
-	// in this binary's shape already and none is rewritten: a lower bound on
-	// a conversion that rewrites them.
-	if _, err := db.ExecContext(ctx, `UPDATE changelog_dialect SET dialect = dialect - 1 WHERE repository = $1`, id); err != nil {
-		t.Fatal(err)
+	// so the boot walks the chain's last step over every line, and the
+	// import-progress marker set, so the fold is rebuilt from the history as
+	// a conversion that rewrote lines rebuilds it, in two replays. The lines
+	// are in this binary's shape already and none is rewritten, and a step
+	// that rewrites none rebuilds nothing on its own (decision 0309): the
+	// marker is what makes the phase time the replays, which are what grows
+	// with the history.
+	for _, q := range []string{
+		`UPDATE changelog_dialect SET dialect = dialect - 1 WHERE repository = $1`,
+		`INSERT INTO import_progress (repository, file_head) SELECT $1, max(seq) FROM changelog WHERE repository = $1`,
+	} {
+		if _, err := db.ExecContext(ctx, q, id); err != nil {
+			t.Fatal(err)
+		}
 	}
 	measure("conversion", false, func() (int64, error) {
 		e = start(testenv.WithoutRegistration(), testenv.WithRepository(scaleAuthority))
@@ -455,4 +464,28 @@ func TestScaleTimings(t *testing.T) {
 			}
 		}
 	}
+}
+
+// besideWrite is one write of a note beside a timed operation. It has no
+// timeout of its own: a repository rebuild holds the changelog's lock for
+// its whole length and every write to the repository waits for it, and how
+// long a write waited there is what the phase reports.
+func besideWrite(e *testenv.Env, path string) (int, []byte, error) {
+	raw, err := json.Marshal(map[string]any{"properties": map[string]any{"name": "beside"}})
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPut, e.URL+path, bytes.NewReader(raw))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+e.Token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, body, err
 }
