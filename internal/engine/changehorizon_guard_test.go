@@ -36,6 +36,8 @@ var changeReads = map[string]string{
 	"compact.go:transactionDamage":       "maintenance: the compaction's check of the transactions it would cut",
 	"compactindex.go:backfillForeign":    "maintenance: the index of foreign lines, backfilled from its own mark",
 	"compactpass.go:forgetBatch":         "maintenance: the forgetting reads the trigger cursors that hold it back",
+	"erase.go:checkpointLines":           "maintenance: an erasure's own read of the drains' checkpoints of the record it erases, under the changelog lock",
+	"erase.go:erasureWaits":              "maintenance: the trigger cursors an erasure waits on, read against the line it erases up to",
 	"compactpass.go:horizonHeldBy":       "maintenance: the trigger cursor that holds the horizon back",
 	"compactpass.go:lineAt":              "maintenance: the line a long record's next step compacts it up to, inside the window the pass compacts",
 	"compactpass.go:purgedRecords":       "maintenance: the forgetting's purged records, between its own marks",

@@ -450,5 +450,9 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
 | [0298](0298-a-kind-move-sets-off-no-trigger-and-carries-a-records-merge-trail-and-vectors.md) | A kind move sets off no trigger, and carries a record's merge trail and vectors | accepted |
 | [0300](0300-a-paced-pass-compacts-what-is-past-each-kinds-retention-and-forgets-old-deletions.md) | A paced pass compacts what is past each kind's retention, and forgets old deletions | accepted |
+| [0304](0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md) | A permanent delete erases the record's history, and what remains to erase is in the history | accepted |
+| [0305](0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md) | A permanent delete reaches what holds the record's values, and not what it owns | accepted |
+| [0306](0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md) | A record has a forget door that erases its history before its current state | accepted |
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
 | [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |
+| [0311](0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md) | A purge the engine writes for a hand is that hand's deletion of a shipped record | accepted |

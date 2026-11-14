@@ -708,24 +708,85 @@ a compaction that meets the purge compacts nothing under it
 ([#1401](https://github.com/geoah/substrate/issues/1401)).
 
 **While a line of the history is known not to verify, nothing is compacted
-at or above it, and the repair comes first.** A line is known once a reader
-that writes anyway meets it: `repository compact`, the pass's own reads,
-the pass's first derivation of its index, and the archive pass where it
-refuses the row (`repository verify` reads and writes nothing,
+or erased at or above it, and the repair comes first.** A line is known once
+a reader that writes anyway meets it: `repository compact`, the pass's own
+reads, the pass's first derivation of its index, an erasure, and the archive
+pass where it refuses the row (`repository verify` reads and writes nothing,
 and notes nothing). The note outlives the failure that found it. So one such
 line holds back the compaction of everything written after it, for every
-record. `repository history` names every noted seq, and each
+record, and a permanent delete made meanwhile deletes the record and holds
+its history's erasure, intent kept, with the reply naming the seq.
+`repository history` names every noted seq, and each
 pass held by one logs `substrate: a line of the history does not verify`
 once, with the seqs. Each pass reads each noted row once, and the first pass
 after the row is [written back](#the-archive) from a whole copy drops the
-note and goes on by itself.
+note and goes on by itself, the held erasures included.
 
 What stays open is damage no reader has met: a batch of the pass finds a
 record's lines by their `kind` and `record_id` columns and by the index of
 the effects a line carries for other records, so a line whose damage
 changed those is not among the lines of the record it was written for.
 Until some reader meets such a line, a batch can place a state above it
-without the effect it was written with. `repository verify --recanonicalize` reads every line and names it.
+without the effect it was written with, and an erasure can leave a value in
+it. `repository verify --recanonicalize` reads every line and names it.
+
+**A permanent delete erases the record's history** (a forget, the history
+before a live record's current state), in a transaction that follows the
+delete's own ([api](api.md#the-records-route),
+[decision 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)).
+What remains to erase is written into the history, so a crash, a rebuild or
+a restore between the two leaves it there, and each pass finishes what
+waits: a crash's leftover, a trigger that has delivered the deletion, a
+line written back. `repository history` names each waiting erasure and
+since when. After an upgrade, an import or a restore, whose history came in
+without the write path's index of it, an erasure also waits until the pass
+has derived that index: one pass on a small history and many on a long one,
+a pass an hour by default (`SUBSTRATE_COMPACTION_INTERVAL` shortens it). The
+reply and `repository history` say that it waits, and finishing does not
+pass it. A forget erases across a merge or a split the record took part in,
+and across an earlier permanent deletion of it a release before this one
+kept, but is refused, saying so and leaving nothing, where that deletion took
+a former id a merge had given the record
+([#1401](https://github.com/geoah/substrate/issues/1401)); what the record's
+merge's and split's own records copied of it stays with them, and the reply
+names each ([#1408](https://github.com/geoah/substrate/issues/1408)). The
+table holds no value of the record once it is done, and the
+archive once its next pass has published; a store whose versioning or
+retention lock keeps replaced objects keeps them, by its own policy. A
+restore starts an archive life of its own, and the life it read keeps what
+it held, as an export or a database backup taken before the delete does.
+An erased value also stays in Postgres's dead tuples and WAL, on the
+primary and on any replica, until Postgres reclaims them, as a secret's old
+ciphertext does ([a deleted secret](#a-rotated-or-deleted-secret-stays-in-older-backups)): the substrate does not control when.
+What the record owns is tombstoned for the sweep, as a purge always did, and
+its own history stays until the pass forgets old deletions past
+`SUBSTRATE_DELETIONS_KEPT`, or until it is permanently deleted itself
+([decision 0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)).
+A copy made under a mapping since removed is out of its reach too: forget
+the history of the record that holds it.
+
+A trigger's function that stops partway through a delivery saves where it
+was, and that saved position can hold values of whatever the function was
+listing. The erasure strips the saved positions of the deliveries that were
+about the erased record, including one that already finished, as long as
+that record's line is still in the history. It does not find a saved
+position once the record's own line has been compacted, nor one saved by a
+delivery about another record whose function happened to be listing the
+erased one. Such a position sits on the trigger's delivery lines, which keep
+all their history by default (`core/trigger` is kept `all`). It goes when
+the repository shortens that with a retention override for `core/trigger`,
+when the trigger is deleted and its deletion forgotten, or when the trigger
+is permanently deleted.
+
+A record a package ships is erased too, and its `gc` line, which names who
+deleted it, is never forgotten, so neither the next open nor an upgrade
+writes it again; its forget is refused unless its newest change is the
+owner's ([decision
+0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+A shipped record the delete takes with the record, merged into it or owned
+by it, stays deleted the same way: the engine's purge of it acts for the
+person who deleted, and counts as theirs ([decision
+0311](decisions/0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md)).
 
 The first archive pass that starts after a compaction writes again only the
 pieces holding a line it changed; one already running publishes the cut it
@@ -2860,10 +2921,17 @@ And today:
   repository, no sharing between two, and no query across two. What else
   reads a repository does so on its owner's token or approval: an app, an
   assistant, the owner's own functions and agents.
-- **No erasure at once.** A permanent delete leaves the values it removed in
-  history until the [compaction pass](#the-compaction-pass) reaches them:
-  past the kind's retention, or when it forgets the deletion after
-  `SUBSTRATE_DELETIONS_KEPT`. It never reaches a record a package ships.
+- **No erasure beyond the record.** A permanent delete erases the record's
+  history and what holds its values by a typed link, and the archive's copy
+  once its next pass has published; not what the record owns, which keeps
+  its own history until old deletions are forgotten, nor an export, a
+  database backup or an archive version a bucket keeps, a request already in
+  the webhook spool, or text another record quotes
+  ([decision 0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)).
+  Nor a copy made under a mapping that has since been removed: the delete
+  finds copies through the current mappings and marks, and forgetting the
+  history of the record that holds the copy removes it
+  ([#1395](https://github.com/geoah/substrate/issues/1395)).
 - **No bound on the archive's delay.** The server reports how far each
   archive is behind and goes on serving however far that is
   ([the archive](#the-archive)).

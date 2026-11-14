@@ -20,7 +20,10 @@ import (
 func TestAWindowFilledAfterAForgettingRefusesAStreamBelowIt(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	d := openInternalDataset(t, WithCompactionInterval(-1))
+	// The forgetting needs a purged record's history, kept as a release
+	// before the erasure kept it: a permanent delete's erasure is itself a
+	// compaction, whose reset of the window this test leaves out.
+	d := openInternalDataset(t, WithCompactionInterval(-1), WithTestPurgeKeepsHistory())
 	tail := substrate.WithTailRead(ctx)
 	const task = "samples.substrate.reamde.dev/tasks/task"
 	put := func(name string) *substrate.Record {

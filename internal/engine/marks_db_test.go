@@ -37,13 +37,14 @@ const (
 // newTierDataset provisions a repository with one source type mapped onto one
 // profile type and hands back the INTERNAL dataset, so tests can drive
 // txn-level paths (applyEffect, decodeEffect) directly.
-func newTierDataset(t *testing.T) *dataset {
+func newTierDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := MigratedDSN(t)
-	svc, err := OpenForTest(t, ctx, dsn,
+	svc, err := OpenForTest(t, ctx, dsn, append([]Option{
 		WithDataRoot(t.TempDir()),
-		WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds))
+		WithCredentialKey(TestCredentialKey), WithKindsFS(SeedKinds),
+	}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

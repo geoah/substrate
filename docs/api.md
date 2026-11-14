@@ -413,7 +413,8 @@ recreate at will.
 `DELETE ?purge=true` runs that purge in the delete itself, so a writer can
 start a record over: the tombstone lands if the record was live, what it owns
 through `onDelete: cascade` is tombstoned for the sweep, the row is
-hard-deleted, and the changelog records a `gc` entry with reason `purged`.
+hard-deleted, and the changelog keeps a `gc` entry with reason `purged` and
+no value, by the caller, where the record's history was.
 The next `put` at the id creates a fresh record, and a mapping source
 resolves its subject again through the probes when that `put` leaves the
 subject slot out, which is how one identity is re-resolved after a mapping's
@@ -431,6 +432,65 @@ conflict` naming the canonical id, because the former id resolves to the
 winner. A declaration record answers `422 validation`: it leaves through
 admission
 ([decision record 0122](decisions/0122-a-delete-may-purge-so-a-put-starts-the-record-over.md)).
+
+A purge also erases the record's history
+([decision record 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)):
+no value of it is left in the changelog, the records or the key store, and
+the archive holds none once its next pass has published. It reaches what
+holds the record's values by a typed link: the change requests that target
+it, the records merged into it, the merge's and split's own records, and each
+mapped target's copy of a value it derived
+([0305](decisions/0305-a-permanent-delete-reaches-what-holds-the-records-values-and-not-what-it-owns.md)),
+all in the delete's one transaction, which a finalizer on any record it
+would take (the merge's own hold on its loser aside) refuses whole, `409
+conflict` naming that record, and leaves the `gc` line with no value. What the record owns is not
+erased with it: it is tombstoned for the sweep, as above, and its own history
+stays until the compaction pass forgets old deletions
+(`SUBSTRATE_DELETIONS_KEPT`) or until it is permanently deleted itself. The
+reply carries `erasure`: `purged` names, by record path, every other record
+the delete purged and erased with it; `tombstoned`, where the record owned
+any, counts the records its cascade tombstoned, which keep their history as
+said; `kept` names each record whose copy of a value the erasure leaves,
+by record path, and why; `pending` is false once the history is erased,
+and while it is not, `waits` names each
+enabled trigger it waits for (one that has not been delivered the deletion
+and is delivering), `held` says what else holds it, and `damaged` names the
+line known not to verify it waits on until its row is written back. The
+compaction pass finishes what waits. A stored `Idempotency-Key` outcome of the
+record goes with it, and a retry under that key is told so. Out of reach: text
+another record quotes, a request already in the webhook spool, a provider's
+sync, and every copy taken before. A copy a mapping made that has since been
+removed is not found either, because the delete reads the current mappings and
+marks: forget the history of the record that holds the copy
+([#1395](https://github.com/geoah/substrate/issues/1395)). A mapped target
+whose own history no erasure can cross (below) keeps its copy, and the
+reply's `kept` names it; the delete itself goes ahead.
+
+`POST <record path>/forget` is the owner's: on a live record it erases the
+history before its current state, the same way
+([0306](decisions/0306-a-record-has-a-forget-door-that-erases-its-history-before-its-current-state.md)),
+and waits for a parked failure or a drain on one of its lines; on a record
+whose erasure waits, it finishes it. `{"finish": true}` passes every trigger
+the erasure waits for. It answers the `erasure`. It erases across a merge or
+a split the record took part in, and across an earlier permanent deletion of
+the record a release before this one kept, but a forget whose record such a
+deletion took a former id from is refused, `409 conflict`, saying so, and
+leaves nothing ([#1401](https://github.com/geoah/substrate/issues/1401)).
+What the record's merge's and split's own records copied of it (what a merge
+overwrote, what a split moved back) stays with them, because a later split
+needs the merge's record; the reply's `kept` names each, and a permanent
+delete erases them ([#1408](https://github.com/geoah/substrate/issues/1408)). A record a package ships (a
+seeded one, or one an installed package's install created) keeps its owner's
+changes from the next open or upgrade by its history, so its forget is
+refused, `409 conflict`, unless its newest change is the owner's: change it,
+then forget it. Its permanent delete stands, and the `gc` line it leaves names
+who deleted it and is never forgotten
+([0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+So does what a permanent delete takes with the record it names: a shipped
+record merged into it, or one it owned that its cascade deletes, is the
+deleter's deletion too, and neither the next open nor an upgrade writes it
+again
+([0311](decisions/0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md)).
 Purging an account runs its whole `onDelete: cascade` inside the request,
 under the repository's write lock, and the mirrors it owns are only
 tombstoned: a sync within the sweep window restores them with their old
@@ -1083,7 +1143,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`). |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 7 adds it, and the record's `erasure`, `kept` among its fields, on a permanent delete's reply). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |

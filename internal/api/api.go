@@ -582,6 +582,9 @@ func (h *handler) mountResources(r chi.Router) {
 			r.With(noStore).Get("/authorizations/{request}", h.getAuthorization)
 			r.With(noStore).Post("/authorizations/{request}", h.postAuthorization)
 			r.With(noStore).Delete("/authorizations/{request}", h.deleteAuthorization)
+			// Forgetting a record's history is an admin's (decision 0306).
+			// Five segments, so the record path never shadows it.
+			r.Post("/{a1}/{a2}/{a3}/{a4}/forget", h.postForget)
 
 			// NON-RECORD ENDPOINTS, at the version root. Each is repository-wide
 			// and names no kind, so it leaves the kind namespace entirely: a

@@ -49,6 +49,8 @@ var oneCheckSkips = map[string]string{
 	"dataset.go:inRawTx":                            "internal: the engine's raw transaction, for its own bookkeeping",
 	"dataset.go:inTx":                               "internal as its caller says: the flag passed on to inTxOn, each caller that passes anything but false listed",
 	"dataset.go:inTxOn":                             "internal as its caller says: the transaction takes the flag its caller passed",
+	"erase.go:Forget":                               "internal: the forget door's intent line and its erasure, an admin's door (mayForget holds it, as the route does)",
+	"erase.go:asEngine":                             "internal: the purges of what a permanent delete takes with the record (its change requests, the merge's and split's own records, its losers), the engine's doing acting for the caller's person; the caller is held to the one check on the record's kind",
 	"functions.go:putSystemRun":                     "exempt (a trigger run's own record) and internal: a delivery's run record, which the managed properties and a system kind need the engine's hand for",
 	"inputs.go:writeBindings":                       "internal: a bundle's input bindings",
 	"interactions.go:dispatchAsk":                   "exempt (ask): the ask's question",

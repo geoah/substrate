@@ -354,6 +354,12 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		row := approvalRow(t, r.ds, id)
 		return row.States[propApprovalState] == approvalApproved && row.Props["reportedAt"] == nil, fmt.Sprint(row.States, row.Props["reportedAt"])
 	},
+	"erase.go:mayForget": func(t *testing.T, r *runsRepository) (bool, string) {
+		r.fail("roles")
+		defer r.heal()
+		_, err := r.ds.Forget(r.adaCtx(), substrate.ActorPerson, r.note, fid("n1"), substrate.ForgetInput{})
+		return errRefused(err)
+	},
 	"approvals.go:settleInterruptedApprovals": func(t *testing.T, r *runsRepository) (bool, string) {
 		r.approvalIn(t, approvalRunning)
 		r.fail("holders")

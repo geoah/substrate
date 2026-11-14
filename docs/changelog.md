@@ -344,7 +344,8 @@ mint a token, fails as an internal error.
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
 rebuild`, the day the changelog had to be replayable. The changelog dialect is
-7 today, the ops, fold effects and entry frame this release writes: every
+8 today, the ops, fold effects and entry frame this release writes: the
+intent to erase a record's history, which is what dialect 8 added, every
 property's mark held as its own `mark` and `unmark` effects
 ([decision 0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)),
 which is what dialect 5 added, the repository's own kinds spelled `~/…`
@@ -371,6 +372,8 @@ delta field of its own
 Dialect 7 adds the two state entries a compaction writes, `state` and
 `ledger`
 ([decision 0296](decisions/0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md)).
+Dialect 8 adds the `erase` effect, an erasure's intent
+([decision 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)).
 The next number is spent when a writer learns a spelling an older binary's
 fold would refuse or misread, and a change to a shape the history already
 holds ships a [conversion step](stored-format.md#conversions) to it, which

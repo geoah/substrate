@@ -67,7 +67,9 @@ package engine
 //     of a record the owner deleted, would take the owner's line with it,
 //     and the next open or upgrade would write the record again.
 //     A forgetting is left to its caller: the pass never forgets such a
-//     record's deletion (compactpass.go forgetDeletions).
+//     record's deletion (compactpass.go forgetDeletions). An erasure, the
+//     owner's own act, takes it (erase.go), where the rule still reads the
+//     owner's hand afterwards.
 //   - a line that carries no effect, and every line above the seq.
 //   - every line at or above the first that does not verify (below).
 //
@@ -128,8 +130,10 @@ package engine
 // admits up to upTo, and leaves every table `repository rebuild` fills as a
 // replay of the history gave it before: rows, versions and times. It moves
 // no seq and never the head, appends nothing, and changes no fold table,
-// since the fold already holds what the states say. It marks the archive to
-// write its pieces again from the lowest seq it changed.
+// since the fold already holds what the states say, but for an erasure's
+// own intent, whose row in compaction_erasures goes with its effect
+// (erase.go), so the history it leaves replays into the table it leaves. It
+// marks the archive to write its pieces again from the lowest seq it changed.
 
 import (
 	"bytes"
@@ -518,6 +522,9 @@ type CompactReport struct {
 	// its seq: not everything its transaction read, which adds the other
 	// lines of a transaction it re-frames and the barriers.
 	read int
+	// unindexed is an erasure held because the foreign-effects index does
+	// not cover its history yet (compactindex.go).
+	unindexed bool
 }
 
 // compactFamily names which of a record's rows an effect writes.
@@ -579,6 +586,9 @@ type compactLine struct {
 type compactEdit struct {
 	remove  map[int]bool
 	replace map[int]foldOp
+	// drop is the payload's keys beside the fold an erasure takes off: the
+	// copies a merge or a split line carries of the pair's values (erase.go).
+	drop []string
 }
 
 // compactHistory replaces, for every record scope admits, each family of its
@@ -660,6 +670,11 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 	if cut, err := t.damageCut(); err != nil {
 		return report, err
 	} else if cut > 0 && cut <= upTo {
+		// An erasure is whole or held on the line (erase.go), never cut.
+		if t.erasing {
+			report.Damaged = cut
+			return report, nil
+		}
 		upTo, report.Damaged, report.UpTo = cut-1, cut, cut-1
 	}
 	// A batch finds its records' lines by the foreign-effects index
@@ -676,6 +691,11 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 			return report, err
 		}
 		if !whole && indexed < upTo {
+			// An erasure is whole or held: the pass derives the index first.
+			if t.erasing {
+				report.unindexed = true
+				return report, nil
+			}
 			upTo, report.UpTo = indexed, indexed
 		}
 	}
@@ -715,18 +735,23 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 			return report, err
 		}
 		// A forgetting's caller has already chosen what it forgets
-		// (forgetDeletions).
-		if !t.forgetting {
+		// (forgetDeletions), and an erasure is the owner's own act on the
+		// record (erase.go), which takes a shipped record's values all the
+		// same.
+		if !t.forgetting && !t.erasing {
 			if err := t.leaveShipped(plans); err != nil {
 				return report, err
 			}
 		}
 		lines = read
 		if damaged > 0 {
-			if err := t.noteDamage(damaged, "compaction"); err != nil {
+			if err := t.noteDamage(damaged, t.damageNoter()); err != nil {
 				return report, err
 			}
 			report.Damaged, report.UpTo = damaged, damaged-1
+			if t.erasing {
+				return report, nil
+			}
 		}
 		// A record a hold that ends keeps a line of (a parked failure's, a
 		// drain's) is noted for the pass to come back to, before a plan with no
@@ -779,9 +804,22 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 				continue
 			}
 			for _, o := range replaced {
-				if o == at && state.Kind != "" {
+				switch {
+				case o == at && state.Kind != "":
 					edit(o.seq).replace[o.idx] = state
-				} else {
+				case o.kind == foldResync && t.erasing && !t.forgetting:
+					// A live record's erasure takes it out of a merge's or a
+					// split's resync, which goes on restating its partner.
+					partner, err := t.resyncWithout(o, k.ref)
+					if err != nil {
+						return report, err
+					}
+					if len(partner.Scope) == 0 {
+						edit(o.seq).remove[o.idx] = true
+					} else {
+						edit(o.seq).replace[o.idx] = partner
+					}
+				default:
 					edit(o.seq).remove[o.idx] = true
 				}
 			}
@@ -802,11 +840,14 @@ func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (Comp
 		if reframed == 0 {
 			break
 		}
-		if err := t.noteDamage(reframed, "compaction"); err != nil {
+		if err := t.noteDamage(reframed, t.damageNoter()); err != nil {
 			return report, err
 		}
 		t.held, t.forgetHeld = held, forgetHeld
 		upTo, report.Damaged, report.UpTo = reframed-1, reframed, reframed-1
+		if t.erasing {
+			return report, nil
+		}
 		if upTo <= 0 {
 			return report, nil
 		}
@@ -1077,11 +1118,33 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 	// record forgotten keeps no purge.
 	from := 0
 	for i, o := range p.occ[:last] {
-		if o.kind == foldResync || barrier[o.seq] || (o.kind == foldPurge && !t.forgetting) {
+		// An erasure replaces a merge's or a split's resync too: a purged
+		// record's partners are erased with it, and a live record's leaves
+		// the resync, which then restates its partner alone (compactOver).
+		resyncStays := o.kind == foldResync && !t.erasing
+		// A live record's erasure crosses an earlier purge where nothing it
+		// removed can come back at a replay: no former id named the record
+		// below it (formerBelow). Where one did, the door refuses the
+		// erasure (erase.go unerasableLive), and it never gets here.
+		purgeStays := o.kind == foldPurge && !t.forgetting
+		if purgeStays && t.erasing {
+			named, err := t.formerBelow(k.ref, o.seq)
+			if err != nil {
+				return foldOp{}, compactOcc{}, nil, err
+			}
+			purgeStays = named
+		}
+		if resyncStays || barrier[o.seq] || purgeStays {
 			from = i + 1
 		}
 	}
 	replaced := p.occ[from : last+1]
+	// An erasure is whole or held: a live record's that would leave values
+	// under an effect that stays waits for it instead (erase.go).
+	if t.erasing && !t.forgetting && from > 0 && t.held != nil {
+		t.held[k.ref] = true
+		return foldOp{}, compactOcc{}, nil, nil
+	}
 	if t.forgetting {
 		if k.family != familyRecord {
 			return foldOp{}, compactOcc{}, nil, nil
@@ -1127,10 +1190,19 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 		switch {
 		case state.State == nil || state.State.Row != nil:
 			return foldOp{}, compactOcc{}, nil, nil
-		case state.State.Moves == 0:
+		case state.State.Moves == 0 && !t.erasing:
 			return foldOp{}, at, replaced, nil
 		}
-		state.State = &recordState{Moves: state.State.Moves}
+		kept := &recordState{Moves: state.State.Moves}
+		// An erasure keeps who wrote the record (writers) and nothing of
+		// what it held: whether a package shipped it, and whether a hand
+		// other than the shipping ones wrote it, are read from its hands
+		// (recordHands), so the pass never forgets the deletion of one a
+		// package shipped and no open or upgrade writes it again.
+		if t.erasing {
+			kept.Writers = state.State.Writers
+		}
+		state.State = kept
 	}
 	return state, at, replaced, nil
 }
@@ -1463,10 +1535,12 @@ func (t *txn) applyCompactEdits(edits map[int64]*compactEdit, lines map[int64]co
 				kept = append(kept, e)
 			}
 		}
-		if len(kept) == 0 {
-			if seq == head {
-				return fmt.Errorf("substrate/engine: compaction would remove the head, seq %d", seq)
-			}
+		if len(kept) == 0 && seq == head {
+			// The head stays, with no effect: the next write takes the seq
+			// after it, and a seq is never used twice. A forget's line is
+			// one, once its intent is taken off it (erase.go).
+			kept = []any{}
+		} else if len(kept) == 0 {
 			if _, err := t.exec(`DELETE FROM changelog WHERE seq = $1`, seq); err != nil {
 				return err
 			}
@@ -1478,6 +1552,9 @@ func (t *txn) applyCompactEdits(edits map[int64]*compactEdit, lines map[int64]co
 			continue
 		}
 		payload[foldPayloadKey] = kept
+		for _, key := range ed.drop {
+			delete(payload, key)
+		}
 		raw, err := json.Marshal(payload)
 		if err != nil {
 			return err

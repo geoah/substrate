@@ -36,6 +36,8 @@ var (
 		"cursor", "schedule", "park", "unpark", "page", "unpage", "forget",
 		// Dialect 7: the state entries (compact.go).
 		"state", "ledger",
+		// Dialect 8: an erasure's intent (erase.go).
+		"erase",
 	}
 )
 

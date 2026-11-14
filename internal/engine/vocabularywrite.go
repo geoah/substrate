@@ -557,11 +557,18 @@ func anotherHandIn(ctx context.Context, q dbx, ref eref, shipper substrate.Actor
 type recordHand struct{ actor, onBehalfOf, op string }
 
 // another reports whether h writes as a hand other than shipping names: its
-// actor is none of them. Whom the line acted for does not enter it: every
-// line the engine writes while it serves a request acts for the request's
-// person, an install's purge among them.
+// actor is none of them, or it is a purge (`gc`) the engine wrote acting
+// for a hand that is none of them, which is that hand's deletion (decision
+// 0311): what a permanent delete purges with the record (erase.go asEngine)
+// and its cascade (gc.go cascadeOwned). Whom any other line acted for does
+// not enter it: every line the engine writes while it serves a request acts
+// for the request's person, a package's purge among them.
 func (h recordHand) another(shipping []string) bool {
-	return !slices.Contains(shipping, h.actor)
+	if !slices.Contains(shipping, h.actor) {
+		return true
+	}
+	return h.op == string(substrate.OpGC) && h.actor == actorID(substrate.ActorSystem) &&
+		h.onBehalfOf != "" && !slices.Contains(shipping, h.onBehalfOf)
 }
 
 // recordHandsOf is the hands that wrote each record of refs.
