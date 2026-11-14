@@ -102,6 +102,11 @@ type reconcileOutcome struct {
 
 // repositoryDir is the repository's directory under the data root.
 func (s *service) repositoryDir(id string) (string, error) {
+	// A read-only process makes no directory under the data root: the
+	// writer's is the one it reads (issue #828).
+	if s.readOnly {
+		return changelogfile.RepoDir(s.dataRoot, id)
+	}
 	return changelogfile.EnsureRepoDir(s.dataRoot, id)
 }
 
