@@ -1,4 +1,6 @@
 import Foundation
+import SubstrateRuntime
+import SubstrateTesting
 
 #if canImport(Glibc)
 import Glibc
@@ -24,8 +26,12 @@ import Musl
 /// It holds only for work woken from this thread. A real sleep, a callback
 /// on a dispatch queue or a hop to the main actor is woken from another
 /// thread and runs on the pool again, so nothing in a seeded run may wait
-/// on one: `SeededServer` counts a request that reaches it off the thread
-/// (`strayed`), and a run that strayed says so.
+/// on one. A run says where it is at every place it can look
+/// (`SeededServer.watch`: a request reaching the server and its answer
+/// going back, a wait on the clock beginning and ending, an id minted, a
+/// stream's cleanup, each step of the driver), and one met off its thread
+/// there has strayed and says so. A job that left the thread and passed
+/// none of those places is not seen: the check is a net, not a proof.
 ///
 /// The jobs are taken through the runtime's `swift_task_enqueueGlobal_hook`,
 /// which the test process sets once and which passes every job enqueued
@@ -203,5 +209,32 @@ final class SeededThread: SerialExecutor, @unchecked Sendable {
         thread.stackSize = 8 << 20
         thread.name = "seeded run"
         thread.start()
+    }
+}
+
+/// The rig's clock as the app is handed it in a seeded run: every wait is
+/// said as it begins and as it ends, so one that wakes off the run's thread
+/// is seen where it wakes.
+struct WatchedClock: RuntimeClock {
+    let clock: TestClock
+    let watch: @Sendable (String) -> Void
+
+    var now: Date { clock.now }
+
+    func sleep(until deadline: Date) async throws {
+        watch("a wait beginning")
+        defer { watch("a wait ending") }
+        try await clock.sleep(until: deadline)
+    }
+}
+
+/// The ids of a seeded run, each said as it is minted.
+struct WatchedIDs: IDSource {
+    let ids: any IDSource
+    let watch: @Sendable (String) -> Void
+
+    func next() -> UUID {
+        watch("an id being minted")
+        return ids.next()
     }
 }

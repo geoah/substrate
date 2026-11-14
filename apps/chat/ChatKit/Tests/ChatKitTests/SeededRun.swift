@@ -56,8 +56,10 @@ struct SeededRun {
         case list = "the list holds each chat once"
         case settles = "every conversation settles once the server behaves"
         /// The run's own: work that left its thread is ordered by the
-        /// scheduler again, and the seed no longer says what happens.
-        case strayed = "every job of the run stays on the run's thread"
+        /// scheduler again, and the seed no longer says what happens. Held
+        /// where the run can look (`SeededServer.watch`): a job that left
+        /// the thread and passed none of those places is not seen.
+        case strayed = "the run is on its own thread wherever it is met"
         /// Broken today, in code another group is rebuilding (`known`).
         case overlay = "no run's overlay is left drawn once the run is over"
         /// Broken today, in the same code.
@@ -148,7 +150,9 @@ struct SeededRun {
         self.ids = ids
         self.base = base
         self.server = server
-        rig = ChatRig(platform: .ios, base: base, transport: server.connect(), clock: clock, ids: ids)
+        rig = ChatRig(
+            platform: .ios, base: base, transport: server.connect(), clock: clock, ids: WatchedIDs(ids: ids, watch: server.watch),
+            watch: server.watch)
         self.numbers = numbers
     }
 
@@ -477,7 +481,9 @@ struct SeededRun {
         scanned = 0
         stuck = [:]
         composed = []
-        rig = ChatRig(platform: .ios, base: base, transport: server.connect(), clock: clock, ids: ids)
+        rig = ChatRig(
+            platform: .ios, base: base, transport: server.connect(), clock: clock, ids: WatchedIDs(ids: ids, watch: server.watch),
+            watch: server.watch)
         inFront = true
         signedOut = false
         await rig.runtime.linkChanged(link)
@@ -641,11 +647,12 @@ struct SeededRun {
     /// Every rule, on what the app holds and draws now. `settled` adds
     /// what must be so once the server has behaved for long enough.
     private mutating func check(settled: Bool) async -> Violation? {
-        if SeededThread.current !== thread || server.strayed > 0 {
+        server.watch("a step of the run")
+        if let first = server.strayed.first {
             return broke(
                 .strayed,
-                "\(server.strayed) requests reached the server from another thread: something in the run waits on real time, a dispatch queue or the main actor"
-            )
+                "\(server.strayed.count) times the run was met off its thread, first at \(first): something in it waits on real time, a "
+                    + "dispatch queue or the main actor, or the runtime did not hand the thread a job enqueued from it")
         }
         let state = await rig.harness.state
         let presentation = await rig.harness.presentation
@@ -708,22 +715,23 @@ struct SeededRun {
             // person's as a bubble and a stored row both.
             let turnIDs = screen.turns.map(\.id)
             if !leftover, Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
-            for (text, meant) in ever where !leftover && said.filter({ $0.role == "user" && $0.text == text }).count > meant {
+            for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where !leftover && said.filter({ $0.role == "user" && $0.text == text }).count > meant {
                 return broke(.drawnTwice, "\(name) draws \"\(text)\" twice: \(said.map(\.text))")
             }
 
             // No failure is drawn in two places.
             let cards = screen.failures.turns
-            for turn in cards.keys where !turnIDs.contains(turn) {
+            for turn in cards.keys.sorted() where !turnIDs.contains(turn) {
                 return broke(.places, "\(name) draws a card under a turn that is not there: \(turn)")
             }
             if let strip = screen.failures.strip, !strip.working {
-                if let twin = cards.values.first(where: { $0.id == strip.id || ($0.sentence == strip.sentence && $0.note == strip.note) }) {
+                let twins = cards.sorted { $0.key < $1.key }.map(\.value)
+                if let twin = twins.first(where: { $0.id == strip.id || ($0.sentence == strip.sentence && $0.note == strip.note) }) {
                     return broke(.places, "\(name) says \"\(twin.sentence)\" at a turn and above the composer")
                 }
             }
             let draft = live.draft
-            for text in sent.keys where draft.contains(text) {
+            for text in sent.keys.sorted() where draft.contains(text) {
                 // The app's own words for "it may be in both": only then.
                 let unsure = live.chatFailure?.unconfirmed == true || suspect.contains(text)
                 if said.contains(where: { $0.role == "user" && $0.text == text }), !unsure, sent[text]?.ids == true {
@@ -798,8 +806,10 @@ struct SeededRun {
         if let watched = ProcessInfo.processInfo.environment["CHATKIT_WATCH"] {
             var places: [String] = []
             if server.userRows(saying: watched) > 0 { places.append("server") }
-            for (name, draft) in state.drafts where draft.contains(watched) { places.append("drafts[\(name)]") }
-            for (name, message) in state.unsent where message.message.contains(watched) { places.append("unsent[\(name)]") }
+            for (name, draft) in state.drafts.sorted(by: { $0.key < $1.key }) where draft.contains(watched) { places.append("drafts[\(name)]") }
+            for (name, message) in state.unsent.sorted(by: { $0.key < $1.key }) where message.message.contains(watched) {
+                places.append("unsent[\(name)]")
+            }
             for key in state.conversations.keys.sorted() {
                 guard let live = await rig.live(key) else { continue }
                 if live.draft.contains(watched) { places.append("composer of \(key.rawValue.suffix(2))/\(live.thread ?? "new")") }

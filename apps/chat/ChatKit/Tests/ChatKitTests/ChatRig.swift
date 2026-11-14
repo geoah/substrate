@@ -87,10 +87,12 @@ struct ChatRig {
     ///   scripted routes, such as one several rigs share (`MarkServer`).
     /// - Parameter clock: the clock, and `ids` the ids, of a world a launch
     ///   after a kill goes on in: it mints no id a launch before it did.
+    /// - Parameter watch: told at every wait the app makes on the clock, as
+    ///   it begins and as it ends (`WatchedClock`).
     init(
         _ routes: [ChatServer.Route] = baseRoutes(), scopes: [String]? = nil, platform: ChatPlatform = .macos,
         base: URL = temporaryFolder("chat"), transport: (any HTTPTransport)? = nil, clock: TestClock = TestClock(),
-        ids: any IDSource = SequentialIDs()
+        ids: any IDSource = SequentialIDs(), watch: (@Sendable (String) -> Void)? = nil
     ) {
         server = ChatServer(routes)
         self.clock = clock
@@ -101,9 +103,11 @@ struct ChatRig {
         var client = SubstrateClient(server: origin, token: "secret", transport: transport)
         // The client waits out a busy server's 429 or 503 before it asks
         // again: on the rig's clock, like every other wait.
-        client.pause = { seconds in try await clock.sleep(until: clock.now.addingTimeInterval(seconds)) }
+        // A seeded run watches every wait the app makes on it.
+        let waits: any RuntimeClock = watch.map { WatchedClock(clock: clock, watch: $0) } ?? clock
+        client.pause = { seconds in try await waits.sleep(until: waits.now.addingTimeInterval(seconds)) }
         let environment = AppEnvironment(
-            clock: clock, ids: ids, locale: Locale(identifier: "en_US"),
+            clock: waits, ids: ids, locale: Locale(identifier: "en_US"),
             timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
             devices: DeviceServices(transport: transport, notifications: notifications, background: background))
         harness = ControllerHarness(

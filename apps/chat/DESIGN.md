@@ -1148,16 +1148,22 @@ button and Details stack where the text size leaves no room side by side.
   Mac and on Linux, alone and on a starved host, and
   `aSeedRunsTheSameWayWhateverRunsBesideIt` holds it. It holds for work
   woken from the run's thread, so nothing in a seeded run may wait on real
-  time, a dispatch queue or the main actor: a request that reaches the
-  server from another thread breaks a rule of its own. The suite leans on
-  that hook, `swift_task_enqueueGlobal_hook`, which is the Swift
+  time, a dispatch queue or the main actor. A run says where it is at
+  every place it can look (a request reaching the server and its answer
+  going back, a wait on the clock beginning and ending, an id minted, a
+  stream's cleanup, each step of the driver), and one met off its thread
+  there breaks a rule of its own. That is a net and no proof: a job that
+  left the thread and passed none of those places is not seen. The suite
+  leans on that hook, `swift_task_enqueueGlobal_hook`, which is the Swift
   runtime's own and no public API. It was run on Swift 6.4.2, Apple's on
   macOS 27 and swift.org's on Linux (the `swift:6.4` image
   `apps:test:linux` pins). On a toolchain that has dropped the symbol, or
   kept it and stopped calling it, every seeded test fails with a sentence
   that says so (`SeededThread.Unordered`): none skips, and none runs on
   the pool instead. `everyJobStartedOnItRunsOnItInTheOrderItWasEnqueued`
-  holds the hook to what the suite needs of it.
+  holds the hook to what the suite needs of it, for the kinds of work it
+  starts; a runtime that honoured the hook for some enqueues and not for
+  others could pass it, and would be caught only where the run is met.
   Rules the app is known to break in code another group is rebuilding are
   listed in `SeededRun.known`: noted, not failed, and a conversation that
   breaks one is still held to every rule the leftover does not touch. A
