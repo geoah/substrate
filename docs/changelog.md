@@ -537,15 +537,28 @@ or with no generation beside a `from` above 0. The problem object carries the
 current `head` and `generation`, so a consumer that has fallen too far behind,
 or resumes after a restore, is told plainly instead of silently missing rows,
 and its handler is one it **must** have: re-list, then resume the watch from
-the head and generation the response names. The horizon is reported in
-[API discovery](api.md#discovery), and it is
-**0 today**. A compaction replaces a record's entries with its state entry
-and leaves the horizon where it was: several changes arriving as one is
-harmless, because a client fetches the record either way, so a consumer
-resumed from any seq, zero included, still meets every record that changed
-after it. What moves the horizon is forgetting a deletion, which no release
-does yet. Retention is a deployment **policy**, not a wire guarantee: the
-wire promises a resume that misses no record from any seq at or above the
+the head and generation the response names.
+
+The horizon is **each repository's own**, because what moves it is: the
+[compaction pass](operations.md#the-compaction-pass) forgets a record purged
+longer ago than `SUBSTRATE_DELETIONS_KEPT` (30 days by default), every entry
+of it, and a consumer that resumed from below the line the deletion was on
+would never hear of it. So the horizon moves to that line, a `from=` below it
+is answered `410 compacted` ("seq N is below the repository's horizon H: a
+deletion before it was forgotten"), and a history page names it as `horizon`
+(revision 4 of the `changefeed` feature), absent while it is 0. A compaction
+that replaces a record's entries with its state entry leaves the horizon
+where it was: several changes arriving as one is harmless, because a client
+fetches the record either way. No deletion past an enabled record trigger's
+cursor is forgotten. A record trigger that is not enabled holds nothing
+back: before the pass forgets a deletion past its cursor it starts the
+trigger over from the beginning, once, so it meets each live record once in
+its latest state and a forgotten one not at all, and a replay into the
+stretch below the horizon starts from the beginning too. [API discovery](api.md#discovery) reports `changelog.horizon` for the
+server as a whole, the floor below which no repository resumes, and it is 0:
+a repository's horizon is read where it is used, on its own change pages and
+in the refusal. Retention is a deployment **policy**, not a wire guarantee:
+the wire promises a resume that misses no record from any seq at or above the
 horizon, and the horizon is where policy lives.
 
 ## Who consumes it

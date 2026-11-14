@@ -23,6 +23,11 @@ type Operator interface {
 	// RebuildRepository replays a repository's changelog into its fold
 	// (rebuild.go).
 	RebuildRepository(ctx context.Context, repository string) (RebuildReport, error)
+	// CompactionStatus is where a repository's compaction stands
+	// (compactpass.go).
+	CompactionStatus(ctx context.Context, repository string) (CompactionStatus, error)
+	// HistoryByKind measures a repository's history by kind (compactpass.go).
+	HistoryByKind(ctx context.Context, repository string) ([]HistoryKind, error)
 	// CompactRepository replaces each record's history up to a seq with one
 	// state entry (compact.go).
 	CompactRepository(ctx context.Context, repository string, upTo int64) (CompactReport, error)

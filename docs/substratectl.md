@@ -30,8 +30,8 @@ and it can run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
-verify`, `repository rebuild`, `repository compact`, `repository
-rotate-generation`, `repository reembed`, `repository reindex`, and `archive report`, `archive resolve`,
+verify`, `repository rebuild`, `repository compact`, `repository history`,
+`repository rotate-generation`, `repository reembed`, `repository reindex`, and `archive report`, `archive resolve`,
 `archive remove` and `archive import`, which settle an archive that is not
 as the database left it
 ([the archive's contract](operations.md#the-archives-contract)). Every one of

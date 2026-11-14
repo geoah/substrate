@@ -365,8 +365,8 @@ func resumeCursor(w http.ResponseWriter, r *http.Request, ds substrate.Dataset) 
 		return resume{}, false
 	}
 	switch {
-	case hasFrom && from < retentionHorizon():
-		return refuse(fmt.Sprintf("seq %d is below the retention horizon %d", from, retentionHorizon()))
+	case hasFrom && from < max(retentionHorizon(), head.Horizon):
+		return refuse(fmt.Sprintf("seq %d is below the repository's horizon %d: a deletion before it was forgotten", from, max(retentionHorizon(), head.Horizon)))
 	case generation != "" && generation != head.Generation:
 		return refuse(fmt.Sprintf("generation %q is not this changelog's %q: the history was replaced since the cursor was saved", generation, head.Generation))
 	case hasFrom && from > 0 && generation == "":

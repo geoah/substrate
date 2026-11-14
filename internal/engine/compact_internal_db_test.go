@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -792,6 +793,331 @@ func TestWorkWhoseLinesACompactionReplacedActsForWhomTheyNamed(t *testing.T) {
 			t.Errorf("after the compaction, %s acts for %q (%v), want the person", name, substrate.OnBehalfOfFrom(got), err)
 		}
 	}
+}
+
+// The horizon and record triggers: an enabled trigger whose cursor stands
+// below an old deletion holds it back, and the status names it; a disabled
+// one holds nothing, and the pass starts it over from the beginning before it
+// forgets, once: enabled again, it meets each live record once and the
+// forgotten one not at all, and no later pass or walk sends it back. A
+// replay into the stretch below the horizon starts from the beginning too.
+func TestADisabledTriggerHoldsNoDeletionAndStartsOverBelowTheHorizon(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := openInternalDataset(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return time.Now().Add(2 * time.Hour) }))
+	installSeenConnector(t, d)
+	const widget = "seen.test.dev/seen/widget"
+	put := func(name string) string {
+		w, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, Properties: map[string]any{"name": name}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.ID
+	}
+	live, gone := put("live"), put("gone")
+	if _, err := d.Delete(ctx, substrate.ActorPerson, widget, gone, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	put("after")
+	var deletion int64
+	if err := d.db.QueryRowContext(ctx, `SELECT max(seq) FROM changelog WHERE record_id = $1`, gone).Scan(&deletion); err != nil {
+		t.Fatal(err)
+	}
+	if got := cursorSeq(t, d, "on-again"); got == 0 || got >= deletion {
+		t.Fatalf("on-again stands at %d, want past 0 and below the deletion %d: the test proves nothing", got, deletion)
+	}
+	// on-seen is enabled and has not passed the deletion: it holds it back.
+	st, err := d.svc.CompactionStatus(ctx, testdb.Repository(t))
+	if err != nil || st.HeldBy == nil || st.HeldBy.Trigger != "on-seen" {
+		t.Fatalf("the status names %+v (%v), want on-seen holding the horizon back", st.HeldBy, err)
+	}
+	if report, err := d.CompactionPass(ctx); err != nil || report.Forgotten != 0 {
+		t.Fatalf("an enabled trigger behind the deletion: the pass forgot %d (%v)", report.Forgotten, err)
+	}
+	// Once it has delivered past it, only the disabled on-again stands
+	// below, and holds nothing.
+	if _, err := d.ProcessTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if report, err := d.CompactionPass(ctx); err != nil || report.Forgotten != 1 {
+		t.Fatalf("with on-seen past the deletion: the pass forgot %d (%v), want the purged widget", report.Forgotten, err)
+	}
+	head, err := d.Head(ctx)
+	if err != nil || head.Horizon == 0 {
+		t.Fatalf("the horizon is %d (%v)", head.Horizon, err)
+	}
+	if got := cursorSeq(t, d, "on-again"); got != 0 {
+		t.Fatalf("on-again, not enabled and below the forgotten deletion, stands at %d after the pass, want started over at 0", got)
+	}
+	// Enabled again, it walks from the beginning.
+	if _, err := d.Patch(ctx, substrate.ActorPerson, typeTrigger, "on-again", substrate.PatchInput{Properties: map[string]any{"enabled": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ProcessTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	rows, err := d.db.QueryContext(ctx, `SELECT id FROM records WHERE kind = $1 AND id LIKE 'again-%'`, ledgerTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range []string{live, gone} {
+			if strings.HasPrefix(id, "again-"+w+"-") {
+				seen[w]++
+			}
+		}
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		t.Fatal(err)
+	}
+	if seen[live] != 1 || seen[gone] != 0 {
+		t.Fatalf("on-again, started over, met the live widget %d times and the forgotten one %d, want once and never", seen[live], seen[gone])
+	}
+	// A recovery cut short, standing past 0 and below the horizon, goes on
+	// from where it stood: no walk sends it back over what it delivered. Its
+	// deliveries so far are purged first, so one made again shows as a task
+	// made again.
+	var liveLine int64
+	if err := d.db.QueryRowContext(ctx, `SELECT min(seq) FROM changelog WHERE record_id = $1`, live).Scan(&liveLine); err != nil {
+		t.Fatal(err)
+	}
+	if liveLine == 0 || liveLine >= head.Horizon {
+		t.Fatalf("the live widget's line %d is not between 0 and the horizon %d: the test proves nothing", liveLine, head.Horizon)
+	}
+	againTasks := func() []string {
+		t.Helper()
+		rows, err := d.db.QueryContext(ctx, `SELECT id FROM records WHERE kind = $1 AND id LIKE 'again-%' AND deleted_at IS NULL`, ledgerTask)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				t.Fatal(err)
+			}
+			ids = append(ids, id)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		return ids
+	}
+	for _, id := range againTasks() {
+		if _, err := d.Delete(ctx, substrate.ActorPerson, ledgerTask, id, substrate.DeleteInput{Purge: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := d.inTx(ctx, substrate.ActorSystem, true, func(tx *txn) error {
+		if err := tx.setCursorTx("on-again", liveLine); err != nil {
+			return err
+		}
+		return tx.settleDelivery("on-again")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CompactionPass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ProcessTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := cursorSeq(t, d, "on-again"); got <= liveLine {
+		t.Fatalf("on-again stands at %d after the walk, want past %d, where it stood", got, liveLine)
+	}
+	for _, id := range againTasks() {
+		if seq, err := strconv.ParseInt(id[strings.LastIndexByte(id, '-')+1:], 10, 64); err != nil || seq <= liveLine {
+			t.Fatalf("on-again delivered %s again: a change at or below seq %d, where it stood (%v)", id, liveLine, err)
+		}
+	}
+	if err := d.ReplayTrigger(ctx, "on-seen", 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := cursorSeq(t, d, "on-seen"); got != 0 {
+		t.Fatalf("a replay from seq 1, below the horizon %d, left on-seen at %d, want 0", head.Horizon, got)
+	}
+}
+
+// The floor is read again under each forgetting batch's lock: an enabled
+// trigger rewound below an old deletion after the pass chose what to forget,
+// and before the batch ran, holds the deletion back, and the pass's mark
+// stays below it.
+func TestATriggerRewoundBeforeAForgettingBatchHoldsItBack(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var rewind atomic.Pointer[func()]
+	d := openInternalDataset(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return time.Now().Add(2 * time.Hour) }),
+		WithTestCompactionFault(func(stage string) error {
+			if stage == compactionToForget {
+				if f := rewind.Swap(nil); f != nil {
+					(*f)()
+				}
+			}
+			return nil
+		}))
+	installSeenConnector(t, d)
+	const widget = "seen.test.dev/seen/widget"
+	w, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, Properties: map[string]any{"name": "gone"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Delete(ctx, substrate.ActorPerson, widget, w.ID, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: widget, Properties: map[string]any{"name": "after"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ProcessTriggers(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lines := func() int {
+		var n int
+		if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE record_id = $1`, w.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := lines()
+	back := func() {
+		if err := d.ReplayTrigger(ctx, "on-seen", 1); err != nil {
+			t.Errorf("rewind on-seen: %v", err)
+		}
+	}
+	rewind.Store(&back)
+	report, err := d.CompactionPass(ctx)
+	if err != nil || report.Forgotten != 0 {
+		t.Fatalf("on-seen rewound below the deletion before the batch: the pass forgot %d (%v), want none", report.Forgotten, err)
+	}
+	if n := lines(); n != before {
+		t.Fatalf("the purged widget has %d lines, %d before the pass", n, before)
+	}
+	st, err := d.svc.CompactionStatus(ctx, testdb.Repository(t))
+	if err != nil || st.ForgotUpTo > 1 {
+		t.Fatalf("deletions looked at up to %d (%v), want no further than on-seen at 1", st.ForgotUpTo, err)
+	}
+}
+
+// The first pass of an archive that has no record yet, whose snapshot came
+// before a compaction committed, publishes the history as it was, and the
+// compaction's marks are kept: the next pass writes again what it changed,
+// and the archive holds the table.
+func TestAFirstArchivePassBesideACompactionKeepsItsMarks(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	var window atomic.Pointer[func()]
+	d := openInternalDataset(t, WithArchiveInterval(time.Hour), WithTestArchiveFault(func(stage string) error {
+		if stage == archiveAfterSnapshot {
+			if f := window.Swap(nil); f != nil {
+				(*f)()
+			}
+		}
+		return nil
+	}))
+	writeRecordHistory(t, d)
+	var records int
+	if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM archive_records`).Scan(&records); err != nil || records != 0 {
+		t.Fatalf("the archive has %d records (%v) before its first pass: the test proves nothing", records, err)
+	}
+	compact := func() {
+		if report, err := d.svc.CompactRepository(ctx, testdb.Repository(t), 0); err != nil || report.Removed == 0 {
+			t.Errorf("compact: %v %+v", err, report)
+		}
+	}
+	window.Store(&compact)
+	if err := d.ArchivePass(ctx); err != nil {
+		t.Fatalf("the first archive pass: %v", err)
+	}
+	if t.Failed() {
+		t.FailNow()
+	}
+	if err := d.ArchivePass(ctx); err != nil {
+		t.Fatalf("the next archive pass: %v", err)
+	}
+	if report, err := d.svc.VerifyRepository(ctx, testdb.Repository(t)); err != nil || !report.OK || report.ArchiveUnverified != "" {
+		t.Fatalf("verify after the next pass: %v %+v %q", err, report.Findings, report.ArchiveUnverified)
+	}
+}
+
+// The measurement a retention is chosen from, on the largest workload this
+// suite builds: a provider-like mirror its sync refreshes, the sync's cursor
+// record, a record trigger's deliveries with their runs and ledger entries,
+// and a person's tasks. Set SUBSTRATE_COMPACTION_TIMING to print it.
+func TestASyncShapedHistoryByKind(t *testing.T) {
+	if os.Getenv("SUBSTRATE_COMPACTION_TIMING") == "" {
+		t.Skip("set SUBSTRATE_COMPACTION_TIMING to measure a sync-shaped history")
+	}
+	ctx := context.Background()
+	d := openInternalDataset(t, WithCompactionInterval(-1))
+	startsAt := nowUTC().Add(-time.Hour).Truncate(time.Minute)
+	installLedgerConnector(t, d, startsAt)
+	const mirror = "mirror.example.substrate.reamde.dev/mirror"
+	if _, err := d.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, []map[string]any{
+		vocabulary.PackageManifest(mirror, 0),
+		vocabulary.KindManifest(mirror, map[string]any{"singular": "message"}, map[string]any{"properties": map[string]any{
+			"subject": map[string]any{"type": "string"}, "body": map[string]any{"type": "text"},
+			"labels": map[string]any{"type": "string"}, "threadId": map[string]any{"type": "string", "fts": false},
+		}}),
+		vocabulary.KindManifest(mirror, map[string]any{"singular": "account"}, map[string]any{"properties": map[string]any{
+			"cursor": map[string]any{"type": "string", "fts": false}, "syncedAt": map[string]any{"type": "string", "fts": false},
+		}}),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := strings.Repeat("A line of an email body the mirror holds. ", 40)
+	for page := range 100 {
+		for i := range 20 {
+			id := fid("m" + strconv.Itoa(page) + "x" + strconv.Itoa(i))
+			for refresh := range 3 {
+				if _, err := d.Put(ctx, "function:mirror.example.substrate.reamde.dev:mirror:sync", substrate.PutInput{Kind: mirror + "/message", ID: id, Properties: map[string]any{
+					"subject": "Subject " + id, "body": body, "labels": "inbox,refresh-" + strconv.Itoa(refresh), "threadId": "t" + strconv.Itoa(i),
+				}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if _, err := d.Put(ctx, "function:mirror.example.substrate.reamde.dev:mirror:sync", substrate.PutInput{Kind: mirror + "/account", ID: fid("account"), Properties: map[string]any{
+			"cursor": "page-" + strconv.Itoa(page), "syncedAt": nowUTC().Format(time.RFC3339Nano),
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := range 150 {
+		if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerWidget, Properties: map[string]any{"name": "w" + strconv.Itoa(i)}}); err != nil {
+			t.Fatal(err)
+		}
+		if i%10 == 9 {
+			if _, err := d.ProcessTriggers(ctx); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for i := range 200 {
+		id := fid("task" + strconv.Itoa(i))
+		for _, name := range []string{"draft", "edited", "done"} {
+			if _, err := d.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: ledgerTask, ID: id, Properties: map[string]any{"name": name}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	kinds, err := d.svc.HistoryByKind(ctx, testdb.Repository(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries, bytes int64
+	for _, h := range kinds {
+		entries, bytes = entries+h.Entries, bytes+h.Bytes
+	}
+	for _, h := range kinds {
+		t.Logf("%-62s %7d entries %10d bytes %5.1f%%", h.Kind, h.Entries, h.Bytes, 100*float64(h.Bytes)/float64(bytes))
+	}
+	t.Logf("total %d entries, %d bytes", entries, bytes)
 }
 
 // A state entry keeps the fold's rule that a mark goes with its value

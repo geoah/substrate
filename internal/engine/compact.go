@@ -121,11 +121,13 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -471,6 +473,15 @@ type CompactReport struct {
 	// it. 0 where it met none.
 	Damaged int64         `json:"damaged,omitempty"`
 	Took    time.Duration `json:"took"`
+	// touched is every seq the compaction rewrote or removed: the archive's
+	// pieces holding one are written again.
+	touched []int64
+	// heldBack is the line of the lowest deletion a forgetting left whole
+	// because an effect that stays holds it, 0 for none.
+	heldBack int64
+	// held is every record it left part of because a hold that ends kept
+	// it, for the pass to try again (compaction_held).
+	held []eref
 }
 
 // compactFamily names which of a record's rows an effect writes.
@@ -515,10 +526,13 @@ type compactPlan struct {
 // compactLine is what the compaction knows of one line it read.
 type compactLine struct {
 	seq, txn int64
-	ts       time.Time
-	addr     eref
-	op       substrate.Op
-	links    stateLinks
+	// effects is how many the line carries: one an edit leaves with none
+	// is removed.
+	effects int
+	ts      time.Time
+	addr    eref
+	op      substrate.Op
+	links   stateLinks
 }
 
 // compactEdit is what the compaction does to one line: effects it removes
@@ -532,6 +546,65 @@ type compactEdit struct {
 // entries up to upTo with one state entry, as the file's header says. scope
 // nil admits every record.
 func (t *txn) compactHistory(upTo int64, scope func(eref) bool) (CompactReport, error) {
+	return t.compactOver(upTo, scope, nil)
+}
+
+// compactRecords is compactHistory for the records refs alone: it reads
+// their own lines (changelog_record_idx) and the lines that carry an effect
+// on them for another record (compactindex.go), never the whole history, so
+// its cost is the records' history and not the repository's. The index must
+// cover the history (backfillForeign).
+func (t *txn) compactRecords(upTo int64, refs []eref) (CompactReport, error) {
+	if len(refs) == 0 {
+		return CompactReport{Repository: t.ds.scope.Repository}, nil
+	}
+	in := make(map[eref]bool, len(refs))
+	byKind := map[string][]string{}
+	for _, r := range refs {
+		if !in[r] {
+			in[r] = true
+			byKind[r.Kind] = append(byKind[r.Kind], r.ID)
+		}
+	}
+	var only []int64
+	for kind, ids := range byKind {
+		rows, err := t.query(`
+			SELECT seq FROM changelog WHERE record_id = ANY($2) AND kind = $1 AND seq <= $3
+			UNION
+			SELECT seq FROM changelog_foreign WHERE record_kind = $1 AND record_id = ANY($2) AND seq <= $3`, kind, ids, upTo)
+		if err != nil {
+			return CompactReport{}, err
+		}
+		for rows.Next() {
+			var seq int64
+			if err := rows.Scan(&seq); err != nil {
+				_ = rows.Close()
+				return CompactReport{}, err
+			}
+			only = append(only, seq)
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return CompactReport{}, err
+		}
+	}
+	slices.Sort(only)
+	only = slices.Compact(only)
+	if only == nil {
+		only = []int64{}
+	}
+	t.held = map[eref]bool{}
+	defer func() { t.held = nil }()
+	report, err := t.compactOver(upTo, func(r eref) bool { return in[r] }, only)
+	for r := range t.held {
+		report.held = append(report.held, r)
+	}
+	slices.SortFunc(report.held, func(a, b eref) int { return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.ID, b.ID)) })
+	return report, err
+}
+
+// compactOver is compactHistory over the lines at only, or every line when
+// only is nil.
+func (t *txn) compactOver(upTo int64, scope func(eref) bool, only []int64) (CompactReport, error) {
 	report := CompactReport{Repository: t.ds.scope.Repository}
 	if err := t.lockChangelog(); err != nil {
 		return report, err
@@ -542,6 +615,30 @@ func (t *txn) compactHistory(upTo int64, scope func(eref) bool) (CompactReport, 
 	}
 	upTo = min(upTo, head)
 	report.UpTo = upTo
+	// Nothing at or above a line known not to verify is compacted (damage.go),
+	// the cut read under the changelog lock.
+	if cut, err := t.damageCut(); err != nil {
+		return report, err
+	} else if cut > 0 && cut <= upTo {
+		upTo, report.Damaged, report.UpTo = cut-1, cut, cut-1
+	}
+	// A batch finds its records' lines by the foreign-effects index
+	// (compactindex.go), so it stays inside what the index covers, read in
+	// the same transaction: a derivation that stopped below a line that does
+	// not verify and could not note it is no cut, and this bound holds all
+	// the same.
+	if only != nil {
+		var indexed int64
+		var whole bool
+		if err := t.row(`
+			SELECT coalesce((SELECT foreign_upto FROM compaction_state), 0),
+				coalesce((SELECT foreign_done FROM compaction_state), false)`).Scan(&indexed, &whole); err != nil {
+			return report, err
+		}
+		if !whole && indexed < upTo {
+			upTo, report.UpTo = indexed, indexed
+		}
+	}
 	if upTo <= 0 {
 		return report, nil
 	}
@@ -564,58 +661,107 @@ func (t *txn) compactHistory(upTo int64, scope func(eref) bool) (CompactReport, 
 	if err != nil {
 		return report, err
 	}
-	plans, lines, damaged, err := t.compactPlans(upTo, scope, barrier, spooled)
-	if err != nil {
-		return report, err
-	}
-	if damaged > 0 {
-		report.Damaged, report.UpTo = damaged, damaged-1
-	}
-	keys := make([]compactKey, 0, len(plans))
-	for k, p := range plans {
-		if p.place > 0 {
-			keys = append(keys, k)
-		}
-	}
-	slices.SortFunc(keys, func(a, b compactKey) int {
-		if a.ref != b.ref {
-			if a.ref.less(b.ref) {
-				return -1
-			}
-			return 1
-		}
-		return int(a.family) - int(b.family)
-	})
-	edits := map[int64]*compactEdit{}
-	edit := func(seq int64) *compactEdit {
-		e := edits[seq]
-		if e == nil {
-			e = &compactEdit{remove: map[int]bool{}, replace: map[int]foldOp{}}
-			edits[seq] = e
-		}
-		return e
-	}
-	for _, k := range keys {
-		p := plans[k]
-		state, at, replaced, err := t.captureState(k, p, lines, barrier)
+	// A batch reads only its records' lines (only): a transaction it
+	// re-frames, one whose end line it leaves with no effect, has other lines
+	// whose `txn` moves, and they are read and held before any edit. A
+	// damaged one among them cuts the batch lower, and it is planned again.
+	var edits map[int64]*compactEdit
+	var lines map[int64]compactLine
+	for {
+		held, forgetHeld := maps.Clone(t.held), t.forgetHeld
+		report.Effects, report.Records, report.Triggers = 0, 0, 0
+		plans, read, damaged, err := t.compactPlans(upTo, scope, only, barrier, spooled)
 		if err != nil {
 			return report, err
 		}
-		if len(replaced) == 0 {
-			continue
+		lines = read
+		if damaged > 0 {
+			if err := t.noteDamage(damaged, "compaction"); err != nil {
+				return report, err
+			}
+			report.Damaged, report.UpTo = damaged, damaged-1
 		}
-		for _, o := range replaced {
-			if o == at {
-				edit(o.seq).replace[o.idx] = state
-			} else {
-				edit(o.seq).remove[o.idx] = true
+		// A record a hold that ends keeps a line of (a parked failure's, a
+		// drain's) is noted for the pass to come back to, before a plan with no
+		// line for its state is dropped: one whose every line in reach is held
+		// has none, and would otherwise be passed over for good.
+		for k, p := range plans {
+			if !slices.ContainsFunc(p.occ, func(o compactOcc) bool { return barrier[o.seq] }) {
+				continue
+			}
+			switch {
+			case t.forgetting && k.family == familyRecord && p.place == 0:
+				if seq := p.occ[len(p.occ)-1].seq; t.forgetHeld == 0 || seq < t.forgetHeld {
+					t.forgetHeld = seq
+				}
+			case !t.forgetting && t.held != nil:
+				t.held[k.ref] = true
 			}
 		}
-		report.Effects += len(replaced)
-		if k.family == familyRecord {
-			report.Records++
-		} else {
-			report.Triggers++
+		keys := make([]compactKey, 0, len(plans))
+		for k, p := range plans {
+			if p.place > 0 {
+				keys = append(keys, k)
+			}
+		}
+		slices.SortFunc(keys, func(a, b compactKey) int {
+			if a.ref != b.ref {
+				if a.ref.less(b.ref) {
+					return -1
+				}
+				return 1
+			}
+			return int(a.family) - int(b.family)
+		})
+		edits = map[int64]*compactEdit{}
+		edit := func(seq int64) *compactEdit {
+			e := edits[seq]
+			if e == nil {
+				e = &compactEdit{remove: map[int]bool{}, replace: map[int]foldOp{}}
+				edits[seq] = e
+			}
+			return e
+		}
+		for _, k := range keys {
+			p := plans[k]
+			state, at, replaced, err := t.captureState(k, p, lines, barrier)
+			if err != nil {
+				return report, err
+			}
+			if len(replaced) == 0 {
+				continue
+			}
+			for _, o := range replaced {
+				if o == at && state.Kind != "" {
+					edit(o.seq).replace[o.idx] = state
+				} else {
+					edit(o.seq).remove[o.idx] = true
+				}
+			}
+			report.Effects += len(replaced)
+			if k.family == familyRecord {
+				report.Records++
+			} else {
+				report.Triggers++
+			}
+		}
+		if only == nil || len(edits) == 0 {
+			break
+		}
+		reframed, err := t.reframedDamage(edits, lines)
+		if err != nil {
+			return report, err
+		}
+		if reframed == 0 {
+			break
+		}
+		if err := t.noteDamage(reframed, "compaction"); err != nil {
+			return report, err
+		}
+		t.held, t.forgetHeld = held, forgetHeld
+		upTo, report.Damaged, report.UpTo = reframed-1, reframed, reframed-1
+		if upTo <= 0 {
+			return report, nil
 		}
 	}
 	if len(edits) == 0 {
@@ -624,7 +770,7 @@ func (t *txn) compactHistory(upTo int64, scope func(eref) bool) (CompactReport, 
 	if err := t.applyCompactEdits(edits, lines, head, &report); err != nil {
 		return report, err
 	}
-	return report, t.markArchiveRewrite(report.From)
+	return report, t.markArchiveRewrite(report.touched)
 }
 
 // compactBarriers is every line a compaction leaves alone: the lines a live
@@ -686,7 +832,11 @@ func (ds *dataset) spoolHolds() (bool, error) {
 // compactPlans reads every line up to upTo once and finds, for each family
 // of each record scope admits, the effects a capture replays and the line
 // its state goes on.
-func (t *txn) compactPlans(upTo int64, scope func(eref) bool, barrier map[int64]bool, spooled bool) (plans map[compactKey]*compactPlan, lines map[int64]compactLine, damaged int64, err error) {
+// compactPlans reads, in order of seq, every line up to upTo or the ones at
+// only, stopping before the first that does not verify, whose seq it
+// reports, and finds for each family of each record scope admits the
+// effects a capture replays and the line its state goes on.
+func (t *txn) compactPlans(upTo int64, scope func(eref) bool, only []int64, barrier map[int64]bool, spooled bool) (plans map[compactKey]*compactPlan, lines map[int64]compactLine, damaged int64, err error) {
 	plans = map[compactKey]*compactPlan{}
 	lines = map[int64]compactLine{}
 	plan := func(k compactKey) *compactPlan {
@@ -697,8 +847,21 @@ func (t *txn) compactPlans(upTo int64, scope func(eref) bool, barrier map[int64]
 		}
 		return p
 	}
+	// The lines read: every line up to upTo, or only the ones at only.
+	next := func(after int64) ([]checksumRow, error) {
+		if only == nil {
+			return queryChecksumRows(t.ctx, t.tx, `WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, after, upTo, rebuildBatch)
+		}
+		i, _ := slices.BinarySearch(only, after+1)
+		j, _ := slices.BinarySearch(only, upTo+1)
+		page := only[i:min(j, i+rebuildBatch)]
+		if len(page) == 0 {
+			return nil, nil
+		}
+		return queryChecksumRows(t.ctx, t.tx, `WHERE seq = ANY($1) ORDER BY seq`, page)
+	}
 	for after := int64(0); after < upTo; {
-		page, err := queryChecksumRows(t.ctx, t.tx, `WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, after, upTo, rebuildBatch)
+		page, err := next(after)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -725,7 +888,7 @@ func (t *txn) compactPlans(upTo int64, scope func(eref) bool, barrier map[int64]
 				continue
 			}
 			l := compactLine{
-				seq: e.Seq, txn: e.Txn, ts: e.TS, addr: eref{Kind: e.Kind, ID: e.RecordID}, op: substrate.Op(e.Op),
+				seq: e.Seq, txn: e.Txn, effects: len(ops), ts: e.TS, addr: eref{Kind: e.Kind, ID: e.RecordID}, op: substrate.Op(e.Op),
 				links: stateLinks{Actor: e.Actor, OnBehalfOf: e.OnBehalfOf, Token: e.Token},
 			}
 			lines[e.Seq] = l
@@ -745,6 +908,9 @@ func (t *txn) compactPlans(upTo int64, scope func(eref) bool, barrier map[int64]
 					continue
 				}
 				if family == familyLedger && spooled {
+					if t.held != nil {
+						t.held[ref] = true
+					}
 					continue
 				}
 				p := plan(compactKey{ref, family})
@@ -756,6 +922,65 @@ func (t *txn) compactPlans(upTo int64, scope func(eref) bool, barrier map[int64]
 		}
 	}
 	return plans, lines, 0, nil
+}
+
+// reframedDamage is the lowest line that does not verify in a transaction
+// the edits re-frame, one whose end line they leave with no effect, 0 for
+// none (transactionDamage).
+func (t *txn) reframedDamage(edits map[int64]*compactEdit, lines map[int64]compactLine) (int64, error) {
+	lowest := int64(0)
+	for _, seq := range slices.Sorted(maps.Keys(edits)) {
+		ed, l := edits[seq], lines[seq]
+		if l.txn != seq || len(ed.replace) > 0 || len(ed.remove) < l.effects {
+			continue
+		}
+		damaged, err := t.transactionDamage(seq)
+		if err != nil {
+			return 0, err
+		}
+		if damaged > 0 && (lowest == 0 || damaged < lowest) {
+			lowest = damaged
+		}
+	}
+	return lowest, nil
+}
+
+// transactionDamage is the lowest line of the transaction that ends at end
+// that does not verify, 0 for none, read a page at a time. A transaction's
+// lines are consecutive seqs ending at its `txn`, so they are the run back
+// from end whose `txn` is end, found by walking the key back (`txn` has no
+// index). The line just below the run counts too: if it does not verify,
+// the damage may have taken its `txn`.
+func (t *txn) transactionDamage(end int64) (int64, error) {
+	var below sql.NullInt64
+	if err := t.row(`SELECT max(seq) FROM changelog WHERE seq <= $1 AND txn IS DISTINCT FROM $1`, end).Scan(&below); err != nil {
+		return 0, err
+	}
+	if below.Valid {
+		row, err := queryChecksumRows(t.ctx, t.tx, `WHERE seq = $1`, below.Int64)
+		if err != nil {
+			return 0, err
+		}
+		if len(row) == 1 && !row[0].verifies() {
+			return below.Int64, nil
+		}
+	}
+	for after := below.Int64; after < end; {
+		page, err := queryChecksumRows(t.ctx, t.tx, `WHERE seq > $1 AND seq <= $2 ORDER BY seq LIMIT $3`, after, end, rebuildBatch)
+		if err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		for _, row := range page {
+			if !row.verifies() {
+				return row.entry.Seq, nil
+			}
+			after = row.entry.Seq
+		}
+	}
+	return 0, nil
 }
 
 // captureState takes one family's state at its place: it replays the
@@ -777,14 +1002,34 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 	}
 	at := p.occ[last]
 	// The state replaces only what follows the family's newest effect that
-	// stays, which replays against the rows everything under it left.
+	// stays, which replays against the rows everything under it left. A
+	// record forgotten keeps no purge.
 	from := 0
 	for i, o := range p.occ[:last] {
-		if o.kind == foldResync || o.kind == foldPurge || barrier[o.seq] {
+		if o.kind == foldResync || barrier[o.seq] || (o.kind == foldPurge && !t.forgetting) {
 			from = i + 1
 		}
 	}
 	replaced := p.occ[from : last+1]
+	if t.forgetting {
+		if k.family != familyRecord {
+			return foldOp{}, compactOcc{}, nil, nil
+		}
+		// A record is forgotten whole or not at all: one with an effect that
+		// stays keeps what is under it, and so its deletion, which the pass
+		// looks at again once nothing holds it (forgetHeld).
+		if from > 0 || last < len(p.occ)-1 {
+			if seq := p.occ[len(p.occ)-1].seq; t.forgetHeld == 0 || seq < t.forgetHeld {
+				t.forgetHeld = seq
+			}
+			return foldOp{}, compactOcc{}, nil, nil
+		}
+	}
+	// A family whose only effect up to its place is already its state has
+	// nothing to replace: compacting again rewrites no line.
+	if len(replaced) == 1 && (at.kind == foldState || at.kind == foldLedger) && !t.forgetting {
+		return foldOp{}, compactOcc{}, nil, nil
+	}
 	sc := &txn{
 		ctx: t.ctx, ds: t.ds, tx: t.tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		internal: true, replaying: true, observed: &observedTouch{all: true},
@@ -801,6 +1046,20 @@ func (t *txn) captureState(k compactKey, p *compactPlan, lines map[int64]compact
 	}
 	if err != nil {
 		return foldOp{}, compactOcc{}, nil, fmt.Errorf("substrate/engine: compact %s %s: %w", k.ref.Kind, k.ref.ID, err)
+	}
+	if t.forgetting {
+		// A record forgotten has no row where its history ends: its
+		// entries go, every purge included, and so does the state, but for
+		// how far they moved the unit graph's revision, which a state with
+		// neither row nor values keeps. A record with a row is not a
+		// deletion, and is left.
+		switch {
+		case state.State == nil || state.State.Row != nil:
+			return foldOp{}, compactOcc{}, nil, nil
+		case state.State.Moves == 0:
+			return foldOp{}, at, replaced, nil
+		}
+		state.State = &recordState{Moves: state.State.Moves}
 	}
 	return state, at, replaced, nil
 }
@@ -1176,7 +1435,16 @@ func (t *txn) applyCompactEdits(edits map[int64]*compactEdit, lines map[int64]co
 			return err
 		}
 	}
-	return t.restampChecksums(changed, report)
+	if err := t.restampChecksums(changed, report); err != nil {
+		return err
+	}
+	report.touched = append(report.touched, seqs...)
+	for seq := range changed {
+		report.touched = append(report.touched, seq)
+	}
+	slices.Sort(report.touched)
+	report.touched = slices.Compact(report.touched)
+	return t.reindexForeign(seqs)
 }
 
 // verifies reports whether a row is what its stored checksum was stamped
@@ -1228,16 +1496,30 @@ func (t *txn) restampChecksums(changed map[int64]bool, report *CompactReport) er
 	return nil
 }
 
-// markArchiveRewrite tells the archive pass that the lines from seq on are
-// not what its pieces hold: the pass writes its pieces again from the one
-// holding seq (archive.go).
-func (t *txn) markArchiveRewrite(seq int64) error {
-	if seq <= 0 {
+// markArchiveRewrite tells the archive pass which lines are not what its
+// pieces hold: each seq the compaction rewrote or removed, stamped with this
+// compaction's number, so a pass clears only the rows its snapshot saw
+// (archive.go). The number is above every stamp a pass can have seen, from
+// the record's count or the rows still there, so a mark is kept whether or
+// not the archive has a record yet: the first pass of an archive may have
+// read its snapshot before this compaction and create its record after it.
+func (t *txn) markArchiveRewrite(seqs []int64) error {
+	if len(seqs) == 0 {
 		return nil
 	}
+	var rewrite int64
+	if err := t.row(`
+		SELECT greatest(
+			coalesce((SELECT rewrites FROM archive_records), 0),
+			coalesce((SELECT max(rewrite) FROM archive_rewritten), 0)) + 1`).Scan(&rewrite); err != nil {
+		return err
+	}
+	if _, err := t.exec(`UPDATE archive_records SET rewrites = $1`, rewrite); err != nil {
+		return err
+	}
 	_, err := t.exec(`
-		UPDATE archive_records
-		SET rewrite_from = least(coalesce(rewrite_from, $1), $1), rewrites = rewrites + 1`, seq)
+		INSERT INTO archive_rewritten (seq, rewrite) SELECT unnest($1::bigint[]), $2
+		ON CONFLICT (repository, seq) DO UPDATE SET rewrite = EXCLUDED.rewrite`, seqs, rewrite)
 	return err
 }
 
@@ -1260,6 +1542,10 @@ func (s *service) CompactRepository(ctx context.Context, repository string, upTo
 	if err != nil {
 		return CompactReport{}, err
 	}
+	// A note whose row was written back goes first (damage.go).
+	if _, err := ds.lookAtDamage(ctx); err != nil {
+		return CompactReport{}, err
+	}
 	report, err := ds.compact(ctx, upTo, nil)
 	report.Took = time.Since(started)
 	return report, err
@@ -1269,41 +1555,66 @@ func (s *service) CompactRepository(ctx context.Context, repository string, upTo
 // committed, empties the change tail's window, which may hold a line it
 // changed.
 func (ds *dataset) compact(ctx context.Context, upTo int64, scope func(eref) bool) (CompactReport, error) {
-	released, err := ds.spoolCopy.hold(ctx)
-	if err != nil {
-		return CompactReport{}, err
+	if upTo <= 0 {
+		upTo = 1<<63 - 1
 	}
-	defer released()
+	var report CompactReport
+	err := ds.withCompactionTx(ctx, true, func(t *txn) error {
+		var err error
+		report, err = t.compactHistory(upTo, scope)
+		return err
+	})
+	if err != nil {
+		return report, err
+	}
+	ds.compacted(report)
+	return report, nil
+}
+
+// compacted is what follows a committed compaction that changed a line: the
+// change tail's window may hold one, so it is emptied, and the streams read
+// again. The archive's next pass reads the mark compactHistory left.
+func (ds *dataset) compacted(report CompactReport) {
+	if report.From > 0 {
+		ds.tail.reset()
+		ds.watch.nudge()
+	}
+}
+
+// withCompactionTx runs fn in a transaction of its own, as a rebuild does: an
+// operator's or the pass's work, which appends no entry. With lock it holds
+// the changelog lock first, which every writer takes, and refuses a history
+// in a newer dialect than this binary's.
+func (ds *dataset) withCompactionTx(ctx context.Context, lock bool, fn func(t *txn) error) error {
+	if lock {
+		// A copy of the spool and its snapshot see no compaction between
+		// them (spoolCopy).
+		released, err := ds.spoolCopy.hold(ctx)
+		if err != nil {
+			return err
+		}
+		defer released()
+	}
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
-		return CompactReport{}, err
+		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	if err := t.lockKey(changelogLockKey); err != nil {
-		return CompactReport{}, err
+	if lock {
+		if err := t.lockKey(changelogLockKey); err != nil {
+			return err
+		}
+		t.seqLocked = true
+		if err := t.refuseNewerChangelogDialect(); err != nil {
+			return err
+		}
 	}
-	t.seqLocked = true
-	if err := t.refuseNewerChangelogDialect(); err != nil {
-		return CompactReport{}, err
+	if err := fn(t); err != nil {
+		return err
 	}
-	if upTo <= 0 {
-		upTo = 1<<63 - 1
-	}
-	report, err := t.compactHistory(upTo, scope)
-	if err != nil {
-		return report, err
-	}
-	if err := tx.Commit(); err != nil {
-		return report, err
-	}
-	// The archive's next pass reads the mark compactHistory left.
-	if report.From > 0 {
-		ds.tail.reset()
-		ds.watch.nudge()
-	}
-	return report, nil
+	return tx.Commit()
 }

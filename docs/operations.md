@@ -172,6 +172,8 @@ boot.
 | `SUBSTRATE_DATA_ROOT`          | required                               | The directory that holds what Postgres does not: `repositories/<id>/` with each repository's blob bytes and webhook spool, and, unless `SUBSTRATE_ARCHIVE` names another place, the archive under `archive/`. See [the repository directory](#the-repository-directory). It must be an absolute path, it must outlive the container, and a host without one refuses to boot, naming the variable. |
 | `SUBSTRATE_ARCHIVE`            | unset: `<SUBSTRATE_DATA_ROOT>/archive` | Where each repository is copied after its writes commit ([the archive](#the-archive)): unset is a directory under the data root; an absolute path is that directory; `s3://<bucket>[/<prefix>]` is a bucket of an S3-compatible service, reached with the `SUBSTRATE_ARCHIVE_S3_*` settings below; `off` writes no archive, so back Postgres up. Any other value refuses the boot, naming the variable. No request is made at boot: a store that cannot be reached is a delay the server reports, never a boot that fails. |
 | `SUBSTRATE_ARCHIVE_INTERVAL`   | `10s`                                  | How often each repository's archive pass runs: with the store answering, the longest a confirmed write waits before it is in the archive. A positive duration. |
+| `SUBSTRATE_COMPACTION_INTERVAL` | `1h`                                 | How often each repository's [compaction pass](#the-compaction-pass) runs, a duration of a minute or more, or `off`, when history only grows. |
+| `SUBSTRATE_DELETIONS_KEPT`     | `720h`                                 | How long a deletion is remembered before the compaction pass forgets the record and moves the repository's horizon; `0` keeps every deletion. |
 | `SUBSTRATE_ARCHIVE_S3_ENDPOINT` | unset: Amazon's                       | The URL of an S3-compatible service that is not Amazon's own, such as `https://s3.example.com`. |
 | `SUBSTRATE_ARCHIVE_S3_REGION`  | `us-east-1`                            | The region the requests are signed for. |
 | `SUBSTRATE_ARCHIVE_S3_PATH_STYLE` | `false`                             | Names the bucket in the path rather than the host name, which most services other than Amazon's need. |
@@ -363,8 +365,9 @@ so a row whose columns are not what that checksum was stamped over fails it
 with `two histories of the repository disagree: seq N: the table's checksum
 is not the checksum of the row it holds`. The archive stays at its last
 manifest and every pass fails at the same seq, as when the store fails, and
-a compaction stops below the row rather than stamp it again, so one such
-row holds back the compaction of everything written after it ([`repository
+the pass notes the row, so a compaction stops below it rather than stamp it
+again and one such row holds back the compaction of everything written after
+it ([while a line is known not to verify](#the-compaction-pass), [`repository
 compact`](#operator-recovery)). The repair is the row: write its columns in
 the `changelog` table back from a whole copy of its line, which is the
 archive's piece that holds the seq where a pass copied it before the damage
@@ -632,6 +635,68 @@ process stopped in the middle of the first copy of a long history (after an
 upgrade, or a new archive) copies it again from the start. Let the first pass
 finish before a planned restart: `repository inspect` shows the archive
 behind the head while it runs, and `0 behind the head` when it is done.
+
+## The compaction pass
+
+Each repository runs a compaction pass every `SUBSTRATE_COMPACTION_INTERVAL`
+([decision 0300](decisions/0300-a-paced-pass-compacts-what-is-past-each-kinds-retention-and-forgets-old-deletions.md)).
+It replaces a record's entries past its kind's retention with one
+[state entry](stored-format.md#state-entries), the record's whole state as of
+the newest entry it replaces: the latest state of every record stays, and so
+does every entry inside the retention. A kind that keeps everything is left
+alone. An entry's age is its own time. The pass keeps, per kind, the seq it
+has compacted up to, and each pass works the stretch between that and the new
+cutoff, reading only the records with a line in it (and the effects other
+records' lines carry on them, from an index the write path keeps), never the
+whole history.
+
+It works in batches of 25 records, each one transaction that holds the
+changelog lock a write waits for, sleeps as long as each batch took, and
+stops after two minutes, leaving the rest to the next pass. A pass stopped
+anywhere (a stop, a crash) leaves the history whole: the next one does its
+stretch again, and a record already compacted is not written again.
+
+It also **forgets a deletion** older than `SUBSTRATE_DELETIONS_KEPT`: every
+entry of a purged record goes. A client that resumed from before it would
+never hear of the deletion, so the repository's **horizon** moves to the line
+the deletion was on, and a `from=` below it is answered `410 compacted`; the
+change page names the horizon. No deletion past an enabled record trigger's
+cursor is forgotten, so a trigger that stands still holds the horizon back,
+and `repository history` names it; one that is not enabled holds nothing,
+and the pass starts it over from the beginning, once, before it forgets past
+it. A purged record with a line that must stay, such as one a parked failure
+names, keeps every line until it goes. So does any record such a line, a
+drain's or the webhook spool holds part of, even one whose every line is
+held: each pass retries one batch of a kind's held records, in turn, so a
+hold that lasts takes no more of a pass than that, and `repository history`
+counts the ones that wait, how many passes a round of their retries takes,
+and whether the last pass finished or ran out of its budget.
+
+**While a line of the history is known not to verify, nothing is compacted
+at or above it, and the repair comes first.** A line is known once a reader
+that writes anyway meets it: `repository compact`, the pass's own reads,
+the pass's first derivation of its index, and the archive pass where it
+refuses the row (`repository verify` reads and writes nothing,
+and notes nothing). The note outlives the failure that found it. So one such
+line holds back the compaction of everything written after it, for every
+record. `repository history` names every noted seq, and each
+pass held by one logs `substrate: a line of the history does not verify`
+once, with the seqs. Each pass reads each noted row once, and the first pass
+after the row is [written back](#the-archive) from a whole copy drops the
+note and goes on by itself.
+
+What stays open is damage no reader has met: a batch of the pass finds a
+record's lines by their `kind` and `record_id` columns and by the index of
+the effects a line carries for other records, so a line whose damage
+changed those is not among the lines of the record it was written for.
+Until some reader meets such a line, a batch can place a state above it
+without the effect it was written with. `repository verify --recanonicalize` reads every line and names it.
+
+The first archive pass that starts after a compaction writes again only the
+pieces holding a line it changed; one already running publishes the cut it
+read first. `substratectl repository history <repository>` measures
+a repository's history by kind, entries and bytes, from the table, beside a
+live server; `repository compact` runs a whole compaction by hand.
 
 ## There is no LLM configuration
 
@@ -2397,14 +2462,14 @@ commands that open the engine also read `SUBSTRATE_DATA_ROOT`, and the
 `SUBSTRATE_ARCHIVE` settings the server runs with, so they read the archive
 the server writes; none of them runs an archive pass.
 
-**Five of them run beside a live server; four need it stopped.** `repository list` and `repository inspect` read the tables
-directly; `repository verify`, `repository reembed` and `user reset` open
-the engine read-only, so they apply no migration, run no boot check and
-append nothing: `verify` reports what it finds instead of repairing it,
-`reembed` writes queue rows, which are not changelog entries, and `user
-reset` writes a person's sign-in, which no repository holds. `repository
-rebuild`, `repository compact`, `repository reindex` and `repository
-rotate-generation` open the
+**Six of them run beside a live server; four need it stopped.** `repository list` and `repository inspect` read the tables
+directly; `repository verify`, `repository history`, `repository reembed`
+and `user reset` open the engine read-only, so they apply no migration, run
+no boot check and append nothing: `verify` reports what it finds instead of
+repairing it, `reembed` writes queue rows, which are not changelog entries,
+and `user reset` writes a person's sign-in, which no repository holds.
+`repository rebuild`, `repository compact`, `repository reindex` and
+`repository rotate-generation` open the
 repository as its writer, and a running server holds its
 [writer lease](#one-writer-per-repository-and-a-second-is-refused): the
 command refuses, naming the lease, until the server is stopped. Opening as
@@ -2419,6 +2484,7 @@ DATABASE_URL=… substratectl repository inspect ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository verify ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rebuild ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository compact ada.example.com
+DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository history ada.example.com
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository reindex ada.example.com --observed
 DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl repository rotate-generation ada.example.com
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… SUBSTRATE_DATA_ROOT=… substratectl user reset ada.example.com
@@ -2635,9 +2701,10 @@ And today:
   repository, no sharing between two, and no query across two. What else
   reads a repository does so on its owner's token or approval: an app, an
   assistant, the owner's own functions and agents.
-- **No erasure, compaction or retention.** The changelog keeps every entry,
-  a delete leaves the values it removed in history, and the
-  [horizon](changelog.md#frames-and-the-horizon) stays 0.
+- **No erasure at once.** A permanent delete leaves the values it removed in
+  history until the [compaction pass](#the-compaction-pass) reaches them:
+  past the kind's retention, or when it forgets the deletion after
+  `SUBSTRATE_DELETIONS_KEPT`.
 - **No bound on the archive's delay.** The server reports how far each
   archive is behind and goes on serving however far that is
   ([the archive](#the-archive)).
