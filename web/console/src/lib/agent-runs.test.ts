@@ -542,6 +542,12 @@ describe("agent runs", () => {
       cents: 300,
     })
     expect(agentCapInForce(undefined, [])).toEqual({ source: "none" })
+    // A cap past the kind's maximum, which only an import stores, sets
+    // none, as the engine reads it.
+    expect(agentCapInForce(300, [budget("a", 2 ** 53)])).toEqual({
+      source: "declared",
+      cents: 300,
+    })
   })
 
   it("picks the override the engine holds where history left several", () => {

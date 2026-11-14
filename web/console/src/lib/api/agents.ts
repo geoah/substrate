@@ -263,9 +263,10 @@ export function llmModelsQueryOptions(enabled = true) {
 /** The owner's overrides of one agent's budgets (`llm/agentbudget`,
  * decision record 0314). The server keeps one live record per agent, so this
  * is one record or none, but an import folds history in without that check,
- * so every record naming the agent is read and the caller picks the one the
- * engine holds to (heldBudget). A server older than the kind refuses it as
- * unknown, which reads as none. */
+ * so every record naming the agent is read, every page of them, and the
+ * caller picks the one the engine holds to (heldBudget): one left unread
+ * could be it, and a save or a removal would leave it standing. A server
+ * older than the kind refuses it as unknown, which reads as none. */
 export function agentBudgetsQueryOptions(agentId: string) {
   const params: FirstPageParams = {
     authority: CORE_AUTHORITY,
@@ -278,7 +279,13 @@ export function agentBudgetsQueryOptions(agentId: string) {
     queryKey: [...recordsQueryOptions(params).queryKey, "agentbudget"],
     queryFn: async ({ signal }): Promise<SubstrateRecord[]> => {
       try {
-        return (await fetchRecordsPage(params, signal)).records
+        const { pages } = await walkPages(
+          AGENT_BUDGET_KIND,
+          (after: string | undefined) =>
+            fetchRecordsPage({ ...params, after }, signal),
+          (page) => page.cursor || undefined
+        )
+        return pages.flatMap((page) => page.records)
       } catch (error) {
         if (kindUnknown(error, AGENT_BUDGET_KIND)) return []
         throw error
@@ -287,8 +294,8 @@ export function agentBudgetsQueryOptions(agentId: string) {
   })
 }
 
-/** How many overrides of one agent the read takes: one is the rule, and more
- * than a handful would be a repository no one has. */
+/** The page size of the overrides read: one override is the rule, so the
+ * first page is the whole list everywhere but after an odd import. */
 const AGENT_BUDGETS_READ = 50
 
 /** Set the owner's daily cap for one agent, in US cents, on the override

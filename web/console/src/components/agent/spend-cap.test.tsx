@@ -38,6 +38,7 @@ describe("AgentSpendCap", () => {
   let stored: ReturnType<typeof budget>[]
   let failNext: boolean
   let unknownKind: boolean
+  let pageSize: number
   const reads: string[] = []
   const writes: { method: string; path: string; body?: unknown }[] = []
 
@@ -48,6 +49,7 @@ describe("AgentSpendCap", () => {
     stored = []
     failNext = false
     unknownKind = false
+    pageSize = 50
     reads.length = 0
     writes.length = 0
     fetchMock.mockImplementation(async (url, init) => {
@@ -64,7 +66,16 @@ describe("AgentSpendCap", () => {
                 'validation failed: unknown type "substrate.reamde.dev/llm/agentbudget"',
             },
           })
-        return json(200, { records: stored })
+        const after = Number(
+          new URL(path, "http://x").searchParams.get("after") ?? 0
+        )
+        const end = after + pageSize
+        return json(200, {
+          records: stored.slice(after, end),
+          head: 1,
+          generation: "g",
+          ...(end < stored.length && { cursor: String(end) }),
+        })
       }
       if (failNext) {
         failNext = false
@@ -229,6 +240,29 @@ describe("AgentSpendCap", () => {
       },
     ])
     expect(await screen.findByText("US$4.00 in any 24 hours")).toBeTruthy()
+  })
+
+  it("reads every page of overrides, so the one the engine holds is never left unread", async () => {
+    stored = [budget("a", 1000), budget("b", 900), budget("c", 100)]
+    pageSize = 2
+    renderCap()
+    expect(await screen.findByText("US$1.00 in any 24 hours")).toBeTruthy()
+    expect(reads).toHaveLength(2)
+    expect(
+      screen.getByText(
+        "3 overrides name this agent, left by an import; the lowest holds. Changing or removing your cap leaves one."
+      )
+    ).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Change" }))
+    fireEvent.click(screen.getByRole("button", { name: "Remove your cap" }))
+    await waitFor(() => expect(writes).toHaveLength(3))
+    expect(writes.map((w) => `${w.method} ${w.path}`)).toEqual([
+      "DELETE a",
+      "DELETE b",
+      "DELETE c",
+    ])
+    expect(await screen.findByText("US$3.00 in any 24 hours")).toBeTruthy()
   })
 
   it("reads a server older than the kind as no override", async () => {

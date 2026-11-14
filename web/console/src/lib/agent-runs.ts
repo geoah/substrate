@@ -489,13 +489,18 @@ export type AgentCapInForce =
   | { source: "declared"; cents: number }
   | { source: "none" }
 
-/** The daily cap an `llm/agentbudget` sets, or undefined where it sets none. */
+/** The daily cap an `llm/agentbudget` sets, or undefined where it sets none.
+ * A value past the kind's maximum, which only an import can store, sets none,
+ * as the engine reads it. */
 export function budgetSpendCap(
   budget: SubstrateRecord | null | undefined
 ): number | undefined {
   if (!budget || budget.deletedAt) return undefined
   const cents = num(budget.properties.spendCentsPerDay)
-  return cents !== undefined && Number.isInteger(cents) && cents >= 0
+  return cents !== undefined &&
+    Number.isInteger(cents) &&
+    cents >= 0 &&
+    cents <= Number.MAX_SAFE_INTEGER
     ? cents
     : undefined
 }
