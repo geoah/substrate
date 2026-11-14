@@ -303,7 +303,10 @@ func TestASeedOverAHeldRecordGoesOneByOne(t *testing.T) {
 // or on disk, and the next registration under the name seeds in bulk.
 func TestAFaultInARegistrationsBulkFlushLeavesNothing(t *testing.T) {
 	t.Parallel()
-	for _, stage := range []string{engine.BulkAfterRecords, engine.BulkAfterRefs, engine.BulkAfterEntries} {
+	for _, stage := range []string{
+		engine.BulkAfterRecords, engine.BulkAfterUses, engine.BulkAfterRevision,
+		engine.BulkAfterRefs, engine.BulkAfterMarks, engine.BulkAfterEntries,
+	} {
 		t.Run(stage, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()

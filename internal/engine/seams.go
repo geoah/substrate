@@ -120,6 +120,10 @@ const (
 	ImportAfterFirstFold = importAfterFirstFold
 	TakeAfterStaged      = takeAfterStaged
 	TakeAfterStaging     = takeAfterStaging
+	// The conversion's, which an import runs between its rows going in and
+	// their fold, and the boot check runs over a live repository.
+	ConversionBeforeCommit = conversionBeforeCommit
+	ConversionAfterCommit  = conversionAfterCommit
 )
 
 // WithTestInvokeHook runs fn with a function's identity as the runner is

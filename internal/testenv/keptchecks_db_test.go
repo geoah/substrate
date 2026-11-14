@@ -745,3 +745,59 @@ func TestAConvertedHistorysMarksSurviveARebuild(t *testing.T) {
 	}
 	t.Logf("%d marks, %d of them pinned, survive the rebuild", all, pinned)
 }
+
+// errKeptKilled is the fault a start stopped at one step of the import
+// returns, as a process killed there stops.
+var errKeptKilled = errors.New("the process died here")
+
+// keptStartStoppedAt starts the engine over root and dsn, the kept
+// directory's copy and a database that holds none of it, and stops the start
+// at stage of the import, as a process killed there would; what the start
+// committed before it stays.
+func keptStartStoppedAt(t *testing.T, dsn, root, key, stage string) {
+	t.Helper()
+	fired := false
+	svc, err := engine.Open(context.Background(), dsn,
+		engine.WithKindsFS(kinds.Seed()), engine.WithDataRoot(root), engine.WithCredentialKey(key),
+		engine.WithTestImportFault(16, func(s string) error {
+			if s == stage && !fired {
+				fired = true
+				return errKeptKilled
+			}
+			return nil
+		}))
+	if err == nil {
+		_ = svc.Close()
+	}
+	if !fired || !errors.Is(err, errKeptKilled) {
+		t.Fatalf("the start did not die at %q: reached %v, %v", stage, fired, err)
+	}
+}
+
+// THE SHIPPED CHAIN STOPPED AT EACH STEP OF THE KEPT DIRECTORY'S IMPORT. The
+// kept directory's history converts through every step this binary carries
+// as it is imported: its rows go in, the chain rewrites them in one
+// transaction under the changelog lock (conversion.go), and they fold. A
+// start killed at each durable step of that import, the conversion's own
+// included, leaves what the next start finishes into the repository a start
+// that was never killed serves: the comparison with what the release served
+// holds, as it does uncut.
+func TestTheKeptDirectorysImportStoppedAtEachStepIsFinishedByTheNextStart(t *testing.T) {
+	dir := filepath.Join(keptRoot, "v0.123.1")
+	var fixture keptFixture
+	readKept(t, filepath.Join(dir, "fixture.json"), &fixture)
+	for _, stage := range []string{
+		engine.ImportAfterRow, engine.ImportAfterSealed, engine.ImportAfterBatch,
+		engine.ConversionBeforeCommit, engine.ConversionAfterCommit, engine.ImportAfterFirstFold,
+		engine.ImportBeforeCleanup, engine.CleanupSetAside, engine.CleanupPartly,
+	} {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			copyKept(t, filepath.Join(dir, changelogfile.RepositoriesDir), filepath.Join(root, changelogfile.RepositoriesDir))
+			dsn := testdb.NewSchema(t)
+			keptStartStoppedAt(t, dsn, root, fixture.CredentialKey, stage)
+			checkKeptDirectoryIn(t, dir, root, keptConversions, testenv.WithDSN(dsn))
+		})
+	}
+}
