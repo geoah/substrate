@@ -140,18 +140,18 @@ func TestOutsideProxyDialsOnlyInsideAConfinedEgress(t *testing.T) {
 // does not map: the request fails with the confinement's refusal, and the
 // system resolver, stood in for here by one that counts and refuses, is never
 // asked, over plain HTTP or through CONNECT. The stand-in also keeps a run
-// against a proxy that would ask it from sending a query anywhere.
+// against a proxy that would ask it from sending a query anywhere. It is the
+// proxy's own (newHostProxyAsking): the process's resolver is shared with
+// every other test's dials.
 func TestAConfinedProxyAsksNoNameServer(t *testing.T) {
 	var asked atomic.Int32
-	system := net.DefaultResolver
-	net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
+	system := &net.Resolver{PreferGo: true, Dial: func(context.Context, string, string) (net.Conn, error) {
 		asked.Add(1)
 		return nil, errors.New("the system resolver was asked")
 	}}
-	t.Cleanup(func() { net.DefaultResolver = system })
 
 	const unmapped = "unmapped.invalid."
-	p, err := newHostProxy([]string{unmapped}, netip.MustParsePrefix("127.0.0.0/8"))
+	p, err := newHostProxyAsking(system, []string{unmapped}, netip.MustParsePrefix("127.0.0.0/8"))
 	if err != nil {
 		t.Fatal(err)
 	}
