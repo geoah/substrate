@@ -39,7 +39,10 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     // The watch
     case watchOpened(fresh: Bool)
     case watchRow(WatchRow)
-    case watchRelist
+    /// The watch's position was refused as `compacted`, at this instant on
+    /// the app's clock: the list is read again, once a minute
+    /// (`WatchFollower.recovers`).
+    case watchRelist(at: Date)
     case watchEnded(String?, Failure?)
     case feedDue
     case feedApplied(Feed)

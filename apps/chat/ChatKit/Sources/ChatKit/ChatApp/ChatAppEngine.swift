@@ -105,8 +105,13 @@ extension ChatApp {
             }
             // Only the wait restarts, never a batch being read.
             next.asks.append(.feedWait(seconds: 0.3))
-        case .watchRelist:
+        case let .watchRelist(at):
             next.watching = false
+            guard WatchFollower.recovers(at: at, after: state.recoveryStarted) else {
+                next.feedProblem = "the server could not resume the chats' history even after reading them again"
+                break
+            }
+            next.recoveryStarted = at
             refresh(&next)
         case let .watchEnded(words, failure):
             next.watching = false

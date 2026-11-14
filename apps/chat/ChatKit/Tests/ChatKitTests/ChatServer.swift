@@ -21,6 +21,8 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         var path: String
         var query: String?
         var answer: Answer
+        /// Answered once, then gone.
+        var once = false
     }
 
     private let lock = NSLock()
@@ -34,8 +36,8 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         self.routes = routes
     }
 
-    func route(_ method: String, _ path: String, query: String? = nil, _ answer: Answer) {
-        lock.withLock { routes.insert(Route(method: method, path: path, query: query, answer: answer), at: 0) }
+    func route(_ method: String, _ path: String, query: String? = nil, once: Bool = false, _ answer: Answer) {
+        lock.withLock { routes.insert(Route(method: method, path: path, query: query, answer: answer, once: once), at: 0) }
     }
 
     /// Takes back the route `route(_:_:query:_:)` put first.
@@ -69,7 +71,9 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         let route = lock.withLock { () -> Route? in
             kept.append("\(method) \(path)?\(query)")
             if let body = request.httpBody { bodies["\(method) \(path)"] = String(decoding: body, as: UTF8.self) }
-            return routes.first { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) }
+            guard let index = routes.firstIndex(where: { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) })
+            else { return nil }
+            return routes[index].once ? routes.remove(at: index) : routes[index]
         }
         while let held = lock.withLock({ heldPaths.first { path.hasSuffix($0.key) }?.value }), !held, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 5_000_000)

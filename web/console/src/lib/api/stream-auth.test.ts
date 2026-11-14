@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { streamChat } from "./agents"
 import { watchChanges, type WatchStatus } from "./changes"
+import { nothingSaved } from "./compacted"
 import { getToken, setToken, setUnauthorizedHandler } from "./session"
 import { ApiError } from "./types"
 
@@ -43,8 +44,10 @@ describe("a stream whose token ended", () => {
     vi.stubGlobal("fetch", fetchMock)
     const statuses: WatchStatus[] = []
     const handle = watchChanges({
+      reader: { key: "tail", drop: nothingSaved, fail: () => {} },
       onRow: () => {},
       onStatus: (s) => statuses.push(s),
+      onCompacted: () => {},
     })
     await vi.waitFor(() => expect(statuses.at(-1)).toBe("off"))
     expect(unauthorized).toHaveBeenCalled()

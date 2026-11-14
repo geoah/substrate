@@ -32,8 +32,9 @@ struct CachedState: Codable, Equatable, Sendable {
     /// absent from a file an earlier build wrote, and until the first read.
     var memories: [Record]?
     var instructions: [Record]?
-    /// The watch's cursor before the kit's record cache kept it: read once,
-    /// to resume from, and written no more.
+    /// The watch's cursor before the kit's record cache kept it: moved to
+    /// the cache at the first open that finds it, and removed from the file
+    /// then, so it is read once.
     var feedSeq: Int?
     var feedGeneration: String?
 }

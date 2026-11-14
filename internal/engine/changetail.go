@@ -48,13 +48,18 @@ type changeTail struct {
 	// fenced is set by a reset until the window reopens under the
 	// changelog lock.
 	fenced bool
+	// horizon is the highest horizon read with the window's rows, each read
+	// in one snapshot with them (changehorizon.go): a stream below it is
+	// refused, as the table refuses it, for the rows past it may lack a
+	// deletion a forgetting removed.
+	horizon int64
 }
 
 // reset empties the window after a commit that may have landed unsignaled.
 func (tail *changeTail) reset() {
 	tail.mu.Lock()
 	defer tail.mu.Unlock()
-	tail.ready, tail.from, tail.upTo, tail.rows = false, 0, 0, nil
+	tail.ready, tail.from, tail.upTo, tail.rows, tail.horizon = false, 0, 0, nil, 0
 	tail.fenced = true
 	tail.gen++
 }
@@ -89,6 +94,9 @@ func (ds *dataset) tailChanges(ctx context.Context, after int64, f substrate.Cha
 	defer tail.mu.Unlock()
 	if !tail.ready || after < tail.from {
 		return nil, false, nil
+	}
+	if heldBelow(after, tail.horizon) {
+		return nil, true, belowHorizon(after, tail.horizon)
 	}
 	i, _ := slices.BinarySearchFunc(tail.rows, after+1, func(c substrate.Change, seq int64) int {
 		return compareSeq(c.Seq, seq)
@@ -129,13 +137,14 @@ func (ds *dataset) catchUpTail(ctx context.Context) error {
 	if !ready {
 		// The window opens at the head: a stream resumed below it reads the
 		// table until it reaches the window.
-		head, err := ds.tailHead(ctx, fenced)
+		head, horizon, err := ds.tailHead(ctx, fenced)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: open the change tail: %w", err)
 		}
 		tail.mu.Lock()
 		if tail.gen == gen {
 			tail.ready, tail.from, tail.upTo, tail.fenced = true, head, head, false
+			tail.horizon = max(tail.horizon, horizon)
 		}
 		tail.mu.Unlock()
 		return nil
@@ -146,7 +155,10 @@ func (ds *dataset) catchUpTail(ctx context.Context) error {
 		b.add(`seq <= ` + b.arg(target))
 		hideDeliveryEntries(b)
 		ds.noteChangeRead()
-		rows, err := ds.queryChanges(ctx, b, `seq`, tailBatch, false)
+		// The window holds no reader's position (0 holds none): its rows are
+		// read whatever the horizon, which comes with them for the streams
+		// it answers.
+		rows, horizon, err := ds.queryChangesWithHorizon(ctx, b, 0, `seq`, tailBatch, false)
 		if err != nil {
 			return err
 		}
@@ -163,6 +175,7 @@ func (ds *dataset) catchUpTail(ctx context.Context) error {
 		}
 		tail.rows = append(tail.rows, rows...)
 		tail.upTo = next
+		tail.horizon = max(tail.horizon, horizon)
 		if drop := len(tail.rows) - tailWindow; drop > 0 {
 			tail.from = tail.rows[drop-1].Seq
 			tail.rows = slices.Clone(tail.rows[drop:])
@@ -177,32 +190,34 @@ func (ds *dataset) catchUpTail(ctx context.Context) error {
 // read waits for the changelog lock first: no writer holds it after that,
 // the doubted one included, and the read that follows sees every commit that
 // ended before.
-func (ds *dataset) tailHead(ctx context.Context, fenced bool) (int64, error) {
-	var head int64
+func (ds *dataset) tailHead(ctx context.Context, fenced bool) (head, horizon int64, err error) {
+	// The head with the horizon, in one statement: the window opens at a
+	// head of the history the horizon belongs to.
+	const headSQL = `SELECT coalesce(max(seq), 0), coalesce((SELECT horizon FROM compaction_state), 0) FROM changelog`
 	if !fenced {
-		err := ds.db.QueryRowContext(ctx, `SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&head)
+		err := ds.db.QueryRowContext(ctx, headSQL).Scan(&head, &horizon)
 		if h := ds.svc.testTailHeadHook; h != nil {
 			h()
 		}
-		return head, err
+		return head, horizon, err
 	}
 	// READ COMMITTED: the head is read on a snapshot taken after the lock
 	// was granted, not when the transaction began waiting for it.
 	tx, err := ds.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(`+advisoryKeySQL+`)`, ds.scope.lockKey(changelogLockKey)); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(seq), 0) FROM changelog`).Scan(&head); err != nil {
-		return 0, err
+	if err := tx.QueryRowContext(ctx, headSQL).Scan(&head, &horizon); err != nil {
+		return 0, 0, err
 	}
 	if h := ds.svc.testTailHeadHook; h != nil {
 		h()
 	}
-	return head, tx.Commit()
+	return head, horizon, tx.Commit()
 }
 
 // changeMatcher is buildChangeFilter in Go, for the arms the window

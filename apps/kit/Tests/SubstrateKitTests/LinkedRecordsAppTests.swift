@@ -147,7 +147,8 @@ struct LinkedRecordsAppTests {
         // A write the device could not keep is the app's problem to say.
         await harness.deliver(.records(.notQueued([], "Not kept.")))
         #expect(await harness.state.problem == "Not kept.")
-        #expect(Shelf.Event.records(.relistNeeded).recordsEvent == .relistNeeded)
+        let refused = Date(timeIntervalSince1970: 1_793_696_400)
+        #expect(Shelf.Event.records(.relistNeeded(at: refused)).recordsEvent == .relistNeeded(at: refused))
         #expect(Shelf.Event.problemDismissed.recordsEvent == nil)
         #expect(shelf().key(of: .records(.read(over: [shelfKind]))) == "records.watch")
         #expect(shelf().key(of: .count(1)) == "count")

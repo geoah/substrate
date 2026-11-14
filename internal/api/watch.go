@@ -76,12 +76,30 @@ func framed(err error) bool {
 
 // writeWatchError encodes that terminal frame. A client-gone encode error is
 // swallowed: there is no one left to tell.
-func writeWatchError(enc *json.Encoder, flusher http.Flusher, err error) {
-	_, p := problemFor(err)
+func writeWatchError(enc *json.Encoder, flusher http.Flusher, p substrate.ErrorPayload) {
 	if encErr := enc.Encode(substrate.ErrorEnvelope{Error: p}); encErr != nil {
 		return
 	}
 	flusher.Flush()
+}
+
+// watchProblem is the terminal frame's problem for err. A batch the engine
+// refused because its cursor fell below the horizon while the stream was open
+// (engine changehorizon.go: a forgetting raised it past the cursor) is the
+// `compacted` frame a resume refused at the start gets, naming the head to
+// list again from; any other error is problemFor's.
+func watchProblem(ctx context.Context, ds substrate.Dataset, err error) substrate.ErrorPayload {
+	if errors.Is(err, substrate.ErrStaleHistory) {
+		if head, herr := ds.Head(ctx); herr == nil {
+			seq := head.Seq
+			return substrate.ErrorPayload{
+				Code: codeCompacted, Message: err.Error() + "; re-list and resume from the head",
+				Head: &seq, Generation: head.Generation,
+			}
+		}
+	}
+	_, p := problemFor(err)
+	return p
 }
 
 func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
@@ -139,6 +157,17 @@ func (h *handler) getChanges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	changes, err := ds.Changes(r.Context(), rs.from, f, changeBatch)
+	if errors.Is(err, substrate.ErrStaleHistory) {
+		// A forgetting raised the horizon past `from` after the cursor was
+		// held to it: the same 410 a resume below it gets.
+		head, herr := ds.Head(r.Context())
+		if herr != nil {
+			writeSubstrateError(w, r, herr)
+			return
+		}
+		writeCompacted(w, head, err.Error()+"; re-list and resume from the head")
+		return
+	}
 	if err != nil {
 		writeSubstrateError(w, r, err)
 		return
@@ -260,7 +289,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 	if err := drain(); err != nil {
 		if framed(err) {
 			frame()
-			writeWatchError(enc, flusher, err)
+			writeWatchError(enc, flusher, watchProblem(ctx, ds, err))
 		}
 		return
 	}
@@ -290,14 +319,14 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
 				if framed(err) {
 					frame()
-					writeWatchError(enc, flusher, err)
+					writeWatchError(enc, flusher, watchProblem(ctx, ds, err))
 				}
 				return
 			}
 			if err := drain(); err != nil {
 				if framed(err) {
 					frame()
-					writeWatchError(enc, flusher, err)
+					writeWatchError(enc, flusher, watchProblem(ctx, ds, err))
 				}
 				return
 			}
@@ -307,7 +336,7 @@ func (h *handler) streamChanges(w http.ResponseWriter, r *http.Request, ds subst
 			if err := leaseFrom(ctx).alive(ctx, 0); err != nil {
 				if framed(err) {
 					frame()
-					writeWatchError(enc, flusher, err)
+					writeWatchError(enc, flusher, watchProblem(ctx, ds, err))
 				}
 				return
 			}

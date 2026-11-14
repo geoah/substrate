@@ -255,9 +255,9 @@ be read again.
 
 | File | Holds |
 | ---- | ----- |
-| `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, read marks, the notified set, the feed cursor |
+| `state.json` | format version, agents, providers, the chat list, opening lines, pending cards, read marks, the notified set; a build before ChatKit kept the feed cursor here too |
 | `cache/<thread>.json` | one thread's rows, the thread `version` they were read under, and whether the window was full (in `messages/` before ChatKit; moved at the first open, the newer copy kept where both areas hold one, and `messages/` removed only once every file in it is moved) |
-| `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit is read into it once |
+| `records/watch.json` | the watch's cursor and the rows it marked to read again (the kit's `RecordCache`); the cursor `state.json` kept before ChatKit moves into it at the first open, which removes it from `state.json`, so it is read once |
 | `drafts.json` | each chat's unsent draft |
 | `link.json` | the link generation (the kit's `LinkGeneration`): moved by every sign-out, and the one file Sign Out keeps, so a refresh job scheduled before it does nothing after the next sign-in |
 
@@ -282,8 +282,16 @@ be read again.
   resumes from the list read's `head` and `generation` (taken before the
   reads, so nothing between them is missed), reads the opening `bookmark`,
   advances its cursor after applying each row, and persists it. A `410` or a
-  terminal `error` frame with code `compacted` re-lists everything and opens
-  again at the new head; another terminal frame stops it with a status line.
+  terminal `error` frame with code `compacted` drops the cursor, which is
+  never sent again, re-lists everything and opens again at the new head: one
+  recovery a minute. Another `compacted` within 60 seconds of the start of
+  the last recovery is a failure, not another re-list, even after the watch
+  opened at its bookmark or delivered rows: the feed stops with a status
+  line and opens again on the next return to the foreground or to the
+  network. Only the minute passing, on the app's clock, makes the allowance
+  whole again (`WatchFollower.recovers`). A list read part way refused
+  `compacted` is read again from its first page once. Another terminal frame
+  stops it with a status line.
   A thread row re-reads the list (debounced 300 ms) and that thread's rows
   where the rules allow; a message row re-reads any background-running chat
   that is open; an agent or provider row re-reads those; an interaction or a

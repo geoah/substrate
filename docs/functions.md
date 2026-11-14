@@ -881,6 +881,7 @@ host.version(record)                              # an int, for if_version
 host.config()
 host.log(msg)
 raise host.Temporary(msg)                         # retried over minutes
+except host.Compacted:                            # a list cursor the substrate can no longer resume
 ```
 
 A body run as an agent's tool writes as the agent, and an agent creates a
@@ -1008,6 +1009,60 @@ page. The cursor is kept in the database, not the changelog, until a park: a
 drain that parked resumes after an import into an empty database, and one
 that stopped between pages starts over from its first page, so a body keys
 its effects to survive a repeated page.
+
+**A list cursor the substrate can no longer resume is `host.Compacted`.**
+`host.records.list` raises it, a `HostError`, for a cursor the substrate
+refuses, and sending the same cursor again is refused again
+([pagination](api.md#pagination)). A list cursor stops being resumable
+four ways:
+
+- the history it was cut from was replaced: a restore, or the operator's
+  `repository rotate-generation` after a database restored from a dump;
+- the server's paging changed: an upgrade that raises the cursor's
+  version, which ships a repository migration that starts every paged
+  drain over at the first open, as repository migration 7 did
+  (`TestEveryKeysetVersionStartsTheDrainsOver` holds every version to one);
+- a unit or a conversion the list's filter or order converts through
+  changed;
+- a declaration changed the order the list's filter and order read in.
+
+A body that lists from a cursor catches `host.Compacted` and lists again from
+the first page, without `after`, dropping what it saved. That is the body's
+part wherever the cursor came from, and the only one where it lists through
+units or orders on a property whose declaration may change.
+
+A paged drain's continuation is the engine's, so the engine answers for the
+cursor it holds. The rule: once the engine has recorded a refusal of a
+cursor the continuation holds, no run sends it again; a server stopped
+before that costs one more refused request at the next start. The runner
+records every list of a run the substrate refused, and the exact cursor
+each sent, as it answers the call, never from an error's words, and those
+of every function the run called through `host.call`, at any depth. They
+travel with whichever way the run ends: an error the body raised or let
+escape, a timeout, a lost process, and an answer too, when what follows it
+fails (its effects refused, its page's commit). A run that caught a refusal
+and answers with the refused cursor as its continuation fails too. When a
+run of a drain resumed from its saved continuation fails so, and the
+continuation holds one of those cursors, anywhere in it, the delivery parks
+at once, never retried over minutes though the run timed out, saying why,
+and the park drops the continuation in the same write, so nothing sends
+that position again and no stop between the two leaves the drain free to
+start over unasked. A person's retry (`substratectl trigger
+retry`, or Retry in the console) then runs the drain from its first page,
+doing the pages it had done again. If the continuation holds none of them,
+the body sent cursors it keeps itself (a record, a setting): the run is a
+failure like any other, its continuation kept, and its words still say a
+list cursor was refused and why.
+
+A restore keeps every continuation, as a park promises
+([0141](decisions/0141-a-paged-drain-names-its-cursor-by-hash-and-a-park-carries-it-whole.md)).
+A drain over an outside service resumes from the page it reached. One that
+held the server's own list cursor parks once with "the repository's history
+was replaced since it was saved", and a retry runs it from its first page.
+The shipped providers' drains meet only the first two ways. google's sweeps
+and whoop's scan keep a list cursor in their continuations, and filter on
+the account, on a reference, or on `at`, `endsAt` or `modifiedTime` from a
+floor, with no order and no unit.
 
 **`host.config()` resolves the callable's configuration.** It carries the
 owning `bundle`, which is its package identity, the bundle's

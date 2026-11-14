@@ -16,11 +16,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query"
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowUpIcon, InboxIcon, SearchXIcon } from "lucide-react"
 
 import {
@@ -47,11 +43,11 @@ import {
 } from "@/components/ui/empty"
 import {
   changesInfiniteOptions,
-  seekQueryOptions,
   watchChanges,
   type ChangeFeedFilter,
   type WatchStatus,
 } from "@/lib/api/changes"
+import { emptyQuery, holdAtRefusal } from "@/lib/api/compacted"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import {
   EMPTY_LIVE_FEED,
@@ -122,21 +118,13 @@ export function ChangelogTable({
   toolbarRight,
 }: ChangelogTableProps) {
   const queryClient = useQueryClient()
-  // The seek answers "where does history ≤ until start" before paging begins.
-  const seek = useQuery({
-    ...seekQueryOptions(untilMs ?? 0),
-    enabled: untilMs !== undefined,
+  // The walk's first page seeks "where does history ≤ until start" itself.
+  const historyOptions = changesInfiniteOptions(filter, {
+    first: CHANGELOG_TABLE_PAGE,
+    untilMs,
+    sinceMs,
   })
-  const start = untilMs === undefined ? { before: 0 } : seek.data
-  const history = useInfiniteQuery({
-    ...changesInfiniteOptions(filter, {
-      first: CHANGELOG_TABLE_PAGE,
-      startBefore: start?.before ?? 0,
-      startGeneration: start?.generation,
-      sinceMs,
-    }),
-    enabled: start !== undefined,
-  })
+  const history = useInfiniteQuery(historyOptions)
 
   const [live, dispatch] = useReducer(liveReducer, EMPTY_LIVE_FEED)
   const [page, setPage] = useState(1)
@@ -155,14 +143,14 @@ export function ChangelogTable({
   // Cursor recovery: a `compacted` watch signal means the resume cursor no
   // longer addresses this changelog (it fell below retention, or a restore
   // replaced the history and its generation). The gap can't be tailed, so the
-  // tail re-opens at the head, with no cursor, and history is re-listed. The
-  // refetch handle stays in a ref (its identity changes each render); a nonce
-  // re-runs the watch effect, and resetRef makes that run open bare instead
-  // of resending the refused cursor.
-  const refetchHistoryRef = useRef(history.refetch)
+  // tail re-opens at the head, with no cursor, and history is re-listed from
+  // its first page. The pages' key stays in a ref, so a new time range does
+  // not reopen the tail; a nonce re-runs the watch effect, and resetRef makes
+  // that run open bare instead of resending the refused cursor.
+  const historyKeyRef = useRef(historyOptions.queryKey)
   useEffect(() => {
-    refetchHistoryRef.current = history.refetch
-  }, [history.refetch])
+    historyKeyRef.current = historyOptions.queryKey
+  })
   const [resetNonce, setResetNonce] = useState(0)
   const resetRef = useRef(false)
 
@@ -181,6 +169,9 @@ export function ChangelogTable({
     [history.data, sinceMs, untilMs]
   )
   const pageCount = pages.length
+  // A walk started over from its first page (compacted.ts) holds fewer pages
+  // than the reader had paged to: they go back to its first.
+  if (pageCount > 0 && page > pageCount) setPage(1)
   const pageRows = pages[page - 1] ?? []
 
   // Live rows join the top of page 1 only; elsewhere they hold in the pill.
@@ -232,6 +223,24 @@ export function ChangelogTable({
       from: resume ? headRef.current : undefined,
       generation: resume ? generationRef.current : undefined,
       filter: JSON.parse(filterKey) as ChangeFeedFilter,
+      reader: {
+        key: `changelog tail ${filterKey}`,
+        // The pages, the head and generation kept from them and the rows the
+        // tail delivered are of the refused history, and so is a kept time
+        // seek: a tail opened later, on this mount or another, would resume
+        // them.
+        drop: () => {
+          dispatch({ kind: "reset" })
+          headRef.current = undefined
+          generationRef.current = undefined
+          void queryClient.invalidateQueries({ queryKey: ["changes", "seek"] })
+          emptyQuery(queryClient, historyKeyRef.current)
+        },
+        // The table says History didn't load, with Try again, and the tail
+        // reports `stopped`.
+        fail: (refusal) =>
+          holdAtRefusal(queryClient, historyKeyRef.current, refusal),
+      },
       onRow: (row) =>
         dispatch({
           kind: "push",
@@ -245,10 +254,10 @@ export function ChangelogTable({
         // resending the refused cursor would only be refused again.
         resetRef.current = true
         setResetNonce((n) => n + 1)
-        // The seek's answer is a position in the OLD history, cached without
-        // expiry; a time-bound view would keep resending it and stay refused.
-        void queryClient.invalidateQueries({ queryKey: ["changes", "seek"] })
-        void refetchHistoryRef.current?.()
+        void queryClient.resetQueries({
+          queryKey: historyKeyRef.current,
+          exact: true,
+        })
       },
     })
     return () => handle.stop()
@@ -314,12 +323,8 @@ export function ChangelogTable({
     defaultHidden,
   })
 
-  const loading = history.isPending || (untilMs !== undefined && seek.isPending)
-  const error = history.isError
-    ? history.error
-    : seek.isError
-      ? seek.error
-      : undefined
+  const loading = history.isPending
+  const error = history.error
 
   const atFeedEnd = page >= pageCount && !history.hasNextPage
 
@@ -341,7 +346,7 @@ export function ChangelogTable({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void (history.isError ? history : seek).refetch()}
+            onClick={() => void history.refetch()}
           >
             Try again
           </Button>

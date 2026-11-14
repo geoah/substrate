@@ -30,7 +30,7 @@ import { recordLink } from "@/components/record/record-model"
 import {
   recordsQueryOptions,
   referenceTitlesQueryOptions,
-  type ListParams,
+  type FirstPageParams,
 } from "@/lib/api/records"
 import {
   readReference,
@@ -631,7 +631,7 @@ function Tiles({
 }: {
   records: readonly SubstrateRecord[]
   block: TableBlock
-  table: ListParams
+  table: FirstPageParams
   label: string
 }) {
   const units = useUnits()

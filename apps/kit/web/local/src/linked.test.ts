@@ -46,6 +46,12 @@ function front(): Connectivity & { show(): void } {
 
 const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms))
 
+/** The `after` of every list the fake was asked, in order. */
+const lists = () =>
+  fake.requests
+    .filter((r) => r.path === "/api/v1/records" && r.method === "GET")
+    .map((r) => r.query.get("after"))
+
 let fake: FakeSubstrate
 let client: SubstrateClient
 let storage: RepositoryStorage
@@ -74,6 +80,7 @@ function link(
     connectivity?: Connectivity
     limit?: number
     readRetryDelays?: number[]
+    now?: () => number
   } = {}
 ): LinkedRecords {
   const linked = new LinkedRecords({
@@ -190,6 +197,121 @@ describe("the linked records", () => {
       "the relist"
     )
     expect(second.getSnapshot().status).toBe("live")
+  })
+
+  it("reads again from the first page when a list's cursor is refused part way, and says nothing", async () => {
+    for (let i = 0; i < 520; i++) fake.seed(kind, `r${i}`, { name: `n${i}` })
+    fake.refuseCursors(1)
+    const linked = link()
+    await until(() => linked.getSnapshot().status === "live", 4000, "live")
+    const snap = linked.getSnapshot()
+    expect(snap.records.size).toBe(520)
+    expect(snap.words).toBeUndefined()
+    expect(lists()).toEqual([null, "500", null, "500"])
+  })
+
+  it("says a list refused again after reading from the first page has failed, and tries no more on its own", async () => {
+    for (let i = 0; i < 520; i++) fake.seed(kind, `r${i}`, { name: `n${i}` })
+    fake.refuseCursors(2)
+    const linked = link()
+    await until(
+      () => linked.getSnapshot().status === "error",
+      4000,
+      "the failure"
+    )
+    expect(linked.getSnapshot().words).toMatch(/not being updated/)
+    await tick(100)
+    expect(lists()).toEqual([null, "500", null, "500"])
+  })
+
+  it("says a watch refused again right after it read everything again has failed, rather than read again", async () => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    const cache = new RecordCache(storage, 0)
+    const first = link({ cache })
+    await until(() => first.getSnapshot().status === "live")
+    first.stop()
+    await cache.save()
+    const watches = () =>
+      fake.requests.filter((r) => r.path === "/api/v1/changes").length
+    const before = watches()
+    fake.fail(
+      { path: /^\/api\/v1\/changes$/ },
+      410,
+      {
+        error: {
+          code: "compacted",
+          message: "the cursor addresses another history",
+        },
+      },
+      {},
+      2
+    )
+
+    const second = link({ cache: new RecordCache(storage, 0) })
+    await until(
+      () => second.getSnapshot().status === "error",
+      2000,
+      "the failure"
+    )
+    expect(second.getSnapshot().words).toMatch(/could not resume/)
+    await tick(100)
+    expect(watches() - before).toBe(2)
+  })
+
+  // Rule W, one recovery a minute: the clock the allowance reads is the
+  // test's, and the history moves twice, the follow refused at each
+  // reconnect.
+  const recoveries = async (secondAfter: number) => {
+    fake.seed(kind, "a1", { name: "Milk" })
+    let clock = 1_000_000
+    const linked = link({ now: () => clock })
+    await until(() => linked.getSnapshot().status === "live", 2000, "live")
+    const listed = lists().length
+    fake.compact()
+    fake.dropWatches()
+    await until(
+      () => lists().length > listed && linked.getSnapshot().status === "live",
+      2000,
+      "the first recovery"
+    )
+    // The recovery's watch opened at the head its read gave, with a
+    // bookmark, its list landed and it delivered a change: nothing of that
+    // makes the allowance whole.
+    await until(() => fake.openWatches === 1, 2000, "the reopened watch")
+    fake.change(kind, "a1", { name: "Oat milk" })
+    await until(
+      () => name(linked.getSnapshot(), "a1") === "Oat milk",
+      2000,
+      "the delivered change"
+    )
+    const recovered = lists().length
+    clock += secondAfter
+    fake.compact()
+    fake.dropWatches()
+    return { linked, recovered }
+  }
+
+  it("says a watch refused again 59,999 ms after its last recovery began has failed, though a bookmark, a list and a change came between", async () => {
+    const { linked, recovered } = await recoveries(59_999)
+    await until(
+      () => linked.getSnapshot().status === "error",
+      2000,
+      "the failure"
+    )
+    expect(linked.getSnapshot().words).toMatch(/could not resume/)
+    await tick(100)
+    expect(lists().length).toBe(recovered)
+  })
+
+  it("recovers again from a refusal 60,000 ms after its last recovery began", async () => {
+    const { linked, recovered } = await recoveries(60_000)
+    await until(
+      () =>
+        lists().length > recovered && linked.getSnapshot().status === "live",
+      2000,
+      "the second recovery"
+    )
+    expect(linked.getSnapshot().words).toBeUndefined()
   })
 
   it("shows a write at once and keeps showing it until the outbox says it landed", async () => {
