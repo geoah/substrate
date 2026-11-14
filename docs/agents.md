@@ -1197,7 +1197,7 @@ rolling 24 hours, both in US cents
   id `substrate.reamde.dev/llm/spendCentsPerDay`. Nothing seeds it, so a
   repository has no cap until it holds that record with a value. The write
   refuses a `type` other than `int` and a value that is not a whole number of
-  cents from 0 to 2^53-1; an empty value is no cap. The console's Settings
+  US cents from 0 to 2^53-1; an empty value is no cap. The console's Settings
   page sets, changes and clears it under Agents → Daily spend cap, in dollars,
   beside what every agent's runs spent in the last 24 hours. A script writes
   it with `substratectl apply` or the record API:

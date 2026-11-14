@@ -201,12 +201,18 @@ function trim(n: number): string {
   return n >= 100 ? String(Math.round(n)) : n.toFixed(1).replace(/\.0$/, "")
 }
 
-/** Dollars, to the cent, and to the tenth of a cent under one. */
+/** How the console writes US dollars: agent spend is counted in USD
+ * whatever currency a vendor bills (decision record 0316), and a bare `$`
+ * would not say which dollar. */
+const USD = "US$"
+
+/** An estimated cost in US dollars, to the cent, and to the tenth of a cent
+ * under one. */
 export function costWords(usd: number): string {
-  if (usd === 0) return "$0"
-  if (usd < 0.001) return "under $0.001"
-  if (usd < 1) return `$${usd.toFixed(3)}`
-  return `$${usd.toFixed(2)}`
+  if (usd === 0) return `${USD}0`
+  if (usd < 0.001) return `under ${USD}0.001`
+  if (usd < 1) return `${USD}${usd.toFixed(3)}`
+  return `${USD}${usd.toFixed(2)}`
 }
 
 // ── when, how long, and who asked ───────────────────────────────────────────
@@ -547,9 +553,9 @@ export function capWindowSpend(
   return { usd, complete: !truncated || reached < from, running }
 }
 
-/** A cap in cents as dollars, to the cent: "$1.50", "$0.00". */
+/** A cap in US cents as US dollars, to the cent: "US$1.50", "US$0.00". */
 export function capWords(cents: number): string {
-  return `$${centsAsDollars(cents)}`
+  return `${USD}${centsAsDollars(cents)}`
 }
 
 /** Whole cents as "1.50", in integers: a float division misreads a cap near
@@ -605,7 +611,7 @@ export function repositorySpendCap(
 export function parseCapDollars(
   text: string
 ): { cents: number } | { error: string } {
-  const typed = text.trim().replace(/^\$\s*/, "")
+  const typed = text.trim().replace(/^(US)?\$\s*/i, "")
   if (typed.startsWith("-")) return { error: "A cap can’t be negative." }
   const m = /^(\d*)(?:\.(\d*))?$/.exec(typed)
   if (!m || (m[1] === "" && !m[2])) {

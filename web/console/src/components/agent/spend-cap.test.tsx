@@ -106,7 +106,7 @@ describe("AgentSpendCap", () => {
 
   it("reads the one override naming the agent, by its reference", async () => {
     renderCap()
-    await screen.findByText("$3.00 in any 24 hours")
+    await screen.findByText("US$3.00 in any 24 hours")
     const filter = JSON.parse(
       new URL(reads[0], "http://x").searchParams.get("filter")!
     )
@@ -116,7 +116,7 @@ describe("AgentSpendCap", () => {
 
   it("holds the agent to its declared cap until you set your own", async () => {
     renderCap()
-    expect(await screen.findByText("$3.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$3.00 in any 24 hours")).toBeTruthy()
     expect(
       screen.getByText("Declared by the agent. A cap you set replaces it.")
     ).toBeTruthy()
@@ -135,17 +135,17 @@ describe("AgentSpendCap", () => {
         properties: { agent: { ref: MOSS_REF }, spendCentsPerDay: 1000 },
       },
     })
-    expect(await screen.findByText("$10.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$10.00 in any 24 hours")).toBeTruthy()
     expect(
-      screen.getByText("Set by you, in place of the $3.00 it declares.")
+      screen.getByText("Set by you, in place of the US$3.00 it declares.")
     ).toBeTruthy()
   })
 
   it("changes your override in place and removes it", async () => {
     stored = budget("moss", 150)
     renderCap()
-    expect(await screen.findByText("$1.50 in any 24 hours")).toBeTruthy()
-    // $2 spent against the $1.50 that holds.
+    expect(await screen.findByText("US$1.50 in any 24 hours")).toBeTruthy()
+    // US$2 spent against the US$1.50 that holds.
     expect(screen.getByText("At the cap")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Change" }))
@@ -159,7 +159,7 @@ describe("AgentSpendCap", () => {
       path: "moss",
       body: { properties: { spendCentsPerDay: 500 } },
     })
-    expect(await screen.findByText("$5.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$5.00 in any 24 hours")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Change" }))
     fireEvent.click(screen.getByRole("button", { name: "Remove your cap" }))
@@ -169,13 +169,13 @@ describe("AgentSpendCap", () => {
       path: "moss",
       body: undefined,
     })
-    expect(await screen.findByText("$3.00 in any 24 hours")).toBeTruthy()
+    expect(await screen.findByText("US$3.00 in any 24 hours")).toBeTruthy()
   })
 
   it("reads the override again after a write that failed", async () => {
     stored = budget("moss", 150)
     renderCap()
-    await screen.findByText("$1.50 in any 24 hours")
+    await screen.findByText("US$1.50 in any 24 hours")
     const before = reads.length
     failNext = true
     fireEvent.click(screen.getByRole("button", { name: "Change" }))

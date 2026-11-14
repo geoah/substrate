@@ -75,7 +75,8 @@ type OperatorInfo struct {
 
 // OperatorAllowance is what the operator pays for one repository in one UTC
 // calendar day: the limit, what its reservations and settled calls hold now,
-// split by slot, and when the day ends.
+// split by slot, and when the day ends. Every amount is whole US cents
+// (decision 0316).
 type OperatorAllowance struct {
 	CentsPerDay int64     `json:"centsPerDay"`
 	UsedCents   int64     `json:"usedCents"`

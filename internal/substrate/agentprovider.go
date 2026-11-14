@@ -11,9 +11,10 @@ type AuthorizationProviderInput struct {
 }
 
 type AuthorizationProviderAgent struct {
-	Agent            string   `json:"agent"`
-	Models           []string `json:"models"`
-	SpendCentsPerDay int      `json:"spendCentsPerDay"`
+	Agent  string   `json:"agent"`
+	Models []string `json:"models"`
+	// SpendCentsPerDay is the agent's declared daily cap, in US cents.
+	SpendCentsPerDay int `json:"spendCentsPerDay"`
 }
 
 type AuthorizationProviderOption struct {

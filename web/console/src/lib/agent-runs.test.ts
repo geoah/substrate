@@ -75,10 +75,10 @@ describe("agent runs", () => {
     expect(tokenWords(12_345)).toBe("12.3k")
     expect(tokenWords(250_000)).toBe("250k")
     expect(tokenWords(1_200_000)).toBe("1.2M")
-    expect(costWords(0)).toBe("$0")
-    expect(costWords(0.0004)).toBe("under $0.001")
-    expect(costWords(0.0213)).toBe("$0.021")
-    expect(costWords(3.456)).toBe("$3.46")
+    expect(costWords(0)).toBe("US$0")
+    expect(costWords(0.0004)).toBe("under US$0.001")
+    expect(costWords(0.0213)).toBe("US$0.021")
+    expect(costWords(3.456)).toBe("US$3.46")
   })
 
   it("says how long a run took, and nothing while it runs", () => {
@@ -388,8 +388,8 @@ describe("agent runs", () => {
       { now, truncated: true }
     )
     expect(floor.complete).toBe(false)
-    expect(capWords(150)).toBe("$1.50")
-    expect(capWords(0)).toBe("$0.00")
+    expect(capWords(150)).toBe("US$1.50")
+    expect(capWords(0)).toBe("US$0.00")
   })
 
   it("says a policy as a sentence about the agent", () => {
@@ -464,7 +464,10 @@ describe("agent runs", () => {
   it("reads a typed cap in dollars as whole cents, refusing what the engine would", () => {
     const typeIt = "Type an amount in dollars, like 20 or 12.50."
     expect(parseCapDollars("20")).toEqual({ cents: 2000 })
+    // The dollar sign the editor's addon shows, typed into the field too.
+    expect(parseCapDollars("US$12.5")).toEqual({ cents: 1250 })
     expect(parseCapDollars("$12.5")).toEqual({ cents: 1250 })
+    expect(parseCapDollars("us$ 12.5")).toEqual({ cents: 1250 })
     expect(parseCapDollars("0.07")).toEqual({ cents: 7 })
     expect(parseCapDollars(".5")).toEqual({ cents: 50 })
     expect(parseCapDollars("0")).toEqual({ cents: 0 })
@@ -492,7 +495,7 @@ describe("agent runs", () => {
     ]) {
       const text = capInputText({ state: "set", cents })
       expect(parseCapDollars(text)).toEqual({ cents })
-      expect(capWords(cents)).toBe(`$${text}`)
+      expect(capWords(cents)).toBe(`US$${text}`)
     }
     expect(capInputText({ state: "set", cents: 9007199254740990 })).toBe(
       "90071992547409.90"

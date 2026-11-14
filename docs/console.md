@@ -1054,9 +1054,12 @@ references and the declaration.
 **Daily spend cap** says what holds the agent's runs and who set it, beside
 what its runs spent in the last 24 hours
 ([the daily spend cap](agents.md#the-daily-spend-cap)). **Set a cap** and
-**Change** write your own cap for it, in dollars, on the agent's
+**Change** write your own cap for it, in US dollars, on the agent's
 `llm/agentbudget`, which replaces the one it declares; **Remove your cap**
-deletes it, so the declared one holds again.
+deletes it, so the declared one holds again. Every price, cost, cap and
+allowance the console shows is in US dollars and written `US$`: agent spend
+is counted in USD whatever a vendor bills in
+([decision 0316](decisions/0316-agent-spend-is-counted-in-us-dollars.md)).
 
 The [`llm/provider`](agents.md#providers) rows are the **AI models** on
 [Providers](#providers): an agent names one by id, its panel says which and

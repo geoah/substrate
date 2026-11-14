@@ -962,9 +962,9 @@ functionSecrets:
   providers.substrate.reamde.dev/firecrawl:
     apiKey: {file: /run/secrets/firecrawl}
     consumers: [websearch, webscrape]          # the functions that receive the key
-    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # cents, one per consumer
+    pricePerCall: {websearch: "0.1", webscrape: "0.1"}   # US cents, one per consumer
 budget:
-  centsPerDay: 200                 # the allowance: per repository, everything operator-paid
+  centsPerDay: 200                 # the allowance in US cents: per repository, everything operator-paid
   repositories:                    # optional; a repository's own allowance, by its id or full name
     rnd-0abcdefghjkmnpqrstvwxyz012:
       centsPerDay: 1000

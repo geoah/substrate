@@ -356,10 +356,14 @@ describe("RunsOn, a list of models", () => {
     const [opus, mini, gone] = entries()
     expect(opus.textContent).toContain("claude-opus-5-5")
     expect(opus.textContent).toContain("Anthropic")
-    expect(opus.textContent).toContain("$4 input · $20 output per 1M tokens")
+    expect(opus.textContent).toContain(
+      "US$4 input · US$20 output per 1M tokens"
+    )
     expect(opus.textContent).toContain("Can’t run nowAnthropic has no API key.")
     expect(mini.textContent).toContain("New chats run on this")
-    expect(mini.textContent).toContain("$0.25 input · $2 output per 1M tokens")
+    expect(mini.textContent).toContain(
+      "US$0.25 input · US$2 output per 1M tokens"
+    )
     expect(mini.textContent).not.toContain("Can’t run now")
     expect(gone.textContent).toContain("gone")
     expect(gone.textContent).toContain(

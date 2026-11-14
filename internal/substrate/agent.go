@@ -37,10 +37,12 @@ type AgentResult struct {
 	Turns     int `json:"turns"`
 	ToolCalls int `json:"toolCalls"`
 	// The token tally, sub-agents rolled up.
-	PromptTokens     int     `json:"promptTokens"`
-	CompletionTokens int     `json:"completionTokens"`
-	TotalTokens      int     `json:"totalTokens"`
-	CostUSD          float64 `json:"costUSD"`
+	PromptTokens     int `json:"promptTokens"`
+	CompletionTokens int `json:"completionTokens"`
+	TotalTokens      int `json:"totalTokens"`
+	// CostUSD is the run's estimated cost in US dollars: the row's prices
+	// applied to the tallies, sub-agents included (decision 0316).
+	CostUSD float64 `json:"costUSD"`
 	// Mentions are the records the final reply links, as the assistant row
 	// stores them; absent when it links none.
 	Mentions []AgentMention `json:"mentions,omitempty"`

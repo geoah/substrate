@@ -238,7 +238,7 @@ function CapEditor({
     >
       <div className="flex flex-wrap items-center gap-2">
         <InputGroup className="w-40">
-          <InputGroupAddon>$</InputGroupAddon>
+          <InputGroupAddon>US$</InputGroupAddon>
           <InputGroupInput
             aria-label={CAP_LABEL}
             aria-invalid={error !== undefined}

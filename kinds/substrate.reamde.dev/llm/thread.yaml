@@ -18,7 +18,9 @@ data:
     so one number answers what a chain cost.
   # version 18: `heldTo`, whose rules hold the work a record stands for
   # (decision record 0276).
-  version: 18
+  # version 19: `costUSD` says it is an estimate in US dollars (decision
+  # record 0316).
+  version: 19
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -171,8 +173,9 @@ data:
     costUSD:
       type: float
       min: 0
-      description: the provider row's rates applied to the uncached, cached,
-        written and completion tallies; 0 when unpriced
+      description: the estimated cost in US dollars, the provider row's rates
+        applied to the uncached, cached, written and completion tallies; 0
+        when unpriced
     startedAt:
       type: datetime
       required: true

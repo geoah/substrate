@@ -868,7 +868,7 @@ describe("the models a card offers", () => {
     renderPage()
     const gemini = await modelCard("Gemini")
     expect(await offers(gemini, /^2 models it offers$/)).toEqual([
-      "Gemini 2.5 Flashgemini-2.5-flashPrice per 1M tokens$0.15 input · $0.60 outputContext window1M tokensPrice fromModel record",
+      "Gemini 2.5 Flashgemini-2.5-flashPrice per 1M tokensUS$0.15 input · US$0.60 outputContext window1M tokensPrice fromModel record",
       "Gemini 2.5 Progemini-2.5-proPrice per 1M tokensNot priced: a spend cap doesn’t count its runs, and an app’s approval doesn’t offer itContext windowNot stated",
     ])
   })
@@ -911,13 +911,13 @@ describe("the models a card offers", () => {
     const gemini = await modelCard("Gemini")
     const listed = await offers(gemini, /^3 models it offers$/)
     expect(listed[0]).toBe(
-      "gemini-1.5Price per 1M tokens$1 input · $2 outputContext windowNot statedPrice fromThis row’s own price list"
+      "gemini-1.5Price per 1M tokensUS$1 input · US$2 outputContext windowNot statedPrice fromThis row’s own price list"
     )
     expect(listed[1]).toContain(
-      "Price per 1M tokens$0.30 input · $2.50 outputContext window32k tokensPrice fromThis row’s own price list"
+      "Price per 1M tokensUS$0.30 input · US$2.50 outputContext window32k tokensPrice fromThis row’s own price list"
     )
     expect(listed[1]).toContain(
-      "Its model record says $0.15 input · $0.60 output; this row’s own price list wins over it."
+      "Its model record says US$0.15 input · US$0.60 output; this row’s own price list wins over it."
     )
     fireEvent.click(
       within(gemini).getByRole("button", {
@@ -927,7 +927,7 @@ describe("the models a card offers", () => {
     const dialog = await screen.findByRole("dialog")
     expect(
       within(dialog).getByText(
-        "This removes gemini-2.5-flash from Gemini’s own price list. Its runs are then priced by its model record: $0.15 input · $0.60 output per 1M tokens."
+        "This removes gemini-2.5-flash from Gemini’s own price list. Its runs are then priced by its model record: US$0.15 input · US$0.60 output per 1M tokens."
       )
     ).toBeTruthy()
     expect(writes).toHaveLength(0)
@@ -1370,7 +1370,7 @@ describe("the allowance", () => {
     expect(group("Accounts you connect").contains(bar)).toBe(false)
     expect(screen.getAllByRole("meter")).toHaveLength(1)
     const box = bar.closest<HTMLElement>('[data-slot="allowance"]')!
-    expect(within(box).getByText("$0.37 of $2.00 used")).toBeTruthy()
+    expect(within(box).getByText("US$0.37 of US$2.00 used")).toBeTruthy()
     expect(within(box).getByText("chat")).toBeTruthy()
     expect(within(box).getByText("search by meaning")).toBeTruthy()
     // Midnight UTC is 02:00 in Athens in November.
@@ -1483,7 +1483,7 @@ describe("the welcome", () => {
     )!
     expect(
       within(welcome).getByText(
-        "Chat, search by meaning and web search are already set up, so you can try them right away, within a daily allowance of $2.00. Connect accounts like Google or WHOOP to bring in your email, calendar and other data. If you’d rather use your own AI accounts, you can switch at any time under AI models, further down this page."
+        "Chat, search by meaning and web search are already set up, so you can try them right away, within a daily allowance of US$2.00. Connect accounts like Google or WHOOP to bring in your email, calendar and other data. If you’d rather use your own AI accounts, you can switch at any time under AI models, further down this page."
       )
     ).toBeTruthy()
     expect(within(welcome).queryByText(/pays|Paid by/)).toBeNull()
