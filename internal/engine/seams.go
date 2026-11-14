@@ -284,6 +284,7 @@ func WithArchivePieceBytes(n int64) Option { return func(o *options) { o.archive
 // The archive pass's stages WithTestArchiveFault reports.
 const (
 	ArchiveAfterSpool     = archiveAfterSpool
+	ArchiveAfterSnapshot  = archiveAfterSnapshot
 	ArchiveAfterListing   = archiveAfterListing
 	ArchiveAfterObjectRow = archiveAfterObjectRow
 	ArchiveAfterObjectPut = archiveAfterObjectPut
@@ -319,4 +320,54 @@ func WithTestEndOfTransactionCheck(check func(declares func(pkg string) bool) er
 // lines for one repository's id, none to let it upgrade.
 func WithTestShippedUpgradeRefusal(refuse func(repository string) []string) Option {
 	return func(o *options) { o.shippedRefusal = refuse }
+}
+
+// WithTestCompactionRetention answers how long each kind's history is kept,
+// in the place of the kinds' own retention (compactpass.go keptFor): keep
+// 0 keeps nothing past a record's latest state, all every entry. Tests only.
+func WithTestCompactionRetention(kept func(kind string) (all bool, keep time.Duration)) Option {
+	return func(o *options) {
+		o.compactionKept = func(kind string) historyKept {
+			all, keep := kept(kind)
+			return historyKept{all: all, keep: keep}
+		}
+	}
+}
+
+// WithTestCompactionClock is the compaction pass's clock: entries are past
+// their retention by it. Tests only.
+func WithTestCompactionClock(now func() time.Time) Option {
+	return func(o *options) { o.compactionNow = now }
+}
+
+// The compaction pass's stages, as its test seam names them
+// (WithTestCompactionFault): inside a batch's transaction, before its
+// commit; after a batch committed; once every batch of a kind's window
+// committed, before its mark moves; inside a batch of the foreign-effects
+// index's derivation; and inside a batch that forgets deletions.
+const (
+	CompactionInBatch    = compactionInBatch
+	CompactionAfterBatch = compactionAfterBatch
+	CompactionBeforeMark = compactionBeforeMark
+	CompactionInIndex    = compactionInIndex
+	CompactionInForget   = compactionInForget
+	CompactionToForget   = compactionToForget
+)
+
+// WithTestCompactionFault hands each stage of a compaction pass to fn; an
+// error from it stops the pass there, as a server killed at that stage
+// would, and a transaction it stops in rolls back. Tests only.
+func WithTestCompactionFault(fn func(stage string) error) Option {
+	return func(o *options) { o.compactionFault = fn }
+}
+
+// WithTestCompactionBatches bounds the pass's batches at records and lines
+// in the place of compactionBatchRecords and compactionBatchLines, 0 keeping
+// the bound, and tells seen, when it is not nil, of every batch a pass
+// committed, a forgetting's included: its kind, its records, the seq it
+// compacted them up to and the distinct lines it took as input for its
+// records (CompactReport.read), not everything its transaction read. Tests
+// only.
+func WithTestCompactionBatches(records, lines int, seen func(kind string, ids []string, upTo int64, lines int)) Option {
+	return func(o *options) { o.compactionBatches, o.compactionBatch = [2]int{records, lines}, seen }
 }

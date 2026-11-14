@@ -1164,7 +1164,10 @@ substrate.reamde.dev/core/triggerrun` then shows `all` under EFFECTIVE.
 A repository overrides one kind's with a record of
 `substrate.reamde.dev/core/retention`: `appliesTo` names the kind's
 declaration, `retention` takes the same values, and one live record per
-kind is admitted. Deleting it restores the declared one. An override of a
+kind is admitted. Deleting it restores the declared one. An override takes
+effect at the compaction pass's next run, for every record that pass has not
+yet reached; what earlier passes compacted stays as they left it
+([operations](operations.md#the-compaction-pass)). An override of a
 kind the repository does not declare applies to nothing until the kind is
 declared, and a kind removed keeps all of its history whatever its override
 said. A kind move on the shipped upgrade carries the override with the rows

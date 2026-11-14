@@ -31,8 +31,8 @@ substratectl export                       # the recovery export, the repository'
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`, `repository
-verify`, `repository rebuild`, `repository compact`, `repository
-rotate-generation`, `repository reembed`, `repository reindex`, and `archive report`, `archive resolve`,
+verify`, `repository rebuild`, `repository compact`, `repository history`,
+`repository rotate-generation`, `repository reembed`, `repository reindex`, and `archive report`, `archive resolve`,
 `archive remove` and `archive import`, which settle an archive that is not
 as the database left it
 ([the archive's contract](operations.md#the-archives-contract)). Every one of
@@ -531,8 +531,9 @@ An upgrade that keeps some kind's history for less time
 ([retention](vocabulary.md#the-reserved-keys)) is refused by `add
 <package>` before it reaches the route, naming each kind with what it keeps
 now and after (`…/contact: all -> P30D`).
-`--allow-shorter-history` takes it, and prints the same lines. Nothing is
-removed until a release that compacts history, and an override of a kind's
+`--allow-shorter-history` takes it, and prints the same lines. What the
+shorter retention lets go is removed by the [compaction
+pass](operations.md#the-compaction-pass), and an override of a kind's
 retention (`substratectl retention`) keeps its history whatever the upgrade
 says.
 

@@ -432,14 +432,14 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			src.Dialect(), max(dialect, 1), max(dialect, 1)), true)
 		return nil
 	}
-	// A compaction rewrote the table's lines from rewriteFrom on (compact.go),
-	// and the archive's next pass writes the pieces that hold them again:
-	// until then they are the history as it was, held to the table nowhere
-	// and, like an archive behind the table, no finding. They are still the
-	// pieces a restore reads, so each is read and held to its manifest and
-	// its lines to their sums.
-	var rewriteFrom sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT rewrite_from FROM archive_records`).Scan(&rewriteFrom); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	// A compaction rewrote the lines at rewritten (compact.go), and the
+	// archive's next pass writes the pieces that hold them again: until then
+	// they are the history as it was, held to the table nowhere and, like an
+	// archive behind the table, no finding. They are still the pieces a
+	// restore reads, so each is read and held to its manifest and its lines
+	// to their sums.
+	rewritten, _, err := readRewritten(ctx, tx)
+	if err != nil {
 		return err
 	}
 	prog := s.progress("verifying the archive against the table", "repository", repo.ID)
@@ -448,12 +448,12 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 	// starts after it, so a table line no piece holds is met, not stepped
 	// over.
 	var tableRead int64
-	rewritten := false
+	awaiting := false
 	for _, p := range src.chain {
-		if !rewritten && rewriteFrom.Valid && p.Last >= rewriteFrom.Int64 {
-			rewritten = true
-			unverified(fmt.Sprintf("a compaction rewrote the history from seq %d, and the next archive pass writes its pieces from there again; the lines from seq %d on were not held to the table",
-				rewriteFrom.Int64, p.First), false)
+		if at, _ := slices.BinarySearch(rewritten, p.First); !awaiting && at < len(rewritten) && rewritten[at] <= p.Last {
+			awaiting = true
+			unverified(fmt.Sprintf("a compaction rewrote lines the archive's pieces hold, and the next archive pass writes those pieces again; the lines from seq %d on were not held to the table",
+				p.First), false)
 		}
 		body, err := read(p.Key)
 		if err != nil {
@@ -467,7 +467,7 @@ func (s *service) verifyArchive(ctx context.Context, tx dbx, repo Repository, re
 			return nil
 		}
 		err = changelogfile.ReadPiece(bytes.NewReader(body), p.First, p.Last, func(e changelogfile.Entry, _ []byte, sum [32]byte) error {
-			if rewritten {
+			if awaiting {
 				return nil
 			}
 			for len(stamps) == 0 || stamps[0].entry.Seq < e.Seq {

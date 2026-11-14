@@ -697,6 +697,7 @@ var releaseAdmission = map[string]struct {
 	"checkMetricValues":  {false, "a release carries no record a metric rule reads"},
 	"settleObserved":     {false, "settling the installer's own writes, which the admission does not make"},
 	"settleFold":         {false, "settling the installer's own writes, which the admission does not make"},
+	"settleForeign":      {false, "settling the installer's own writes, which the admission does not make"},
 	"settleChecksums":    {false, "settling the installer's own writes, which the admission does not make"},
 	"unsettledErr":       {false, "the installer's readiness to commit (its dataset settled), not the closure's"},
 	"commit":             {false, "the installer's commit"},
