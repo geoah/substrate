@@ -751,6 +751,11 @@ func (s *scopedDataset) checkReferenceFilters(ctx context.Context, kinds []strin
 			}
 			for _, v := range condValues(c) {
 				str, ok := v.(string)
+				// `me` names the caller's own actor (decision 0311), which
+				// tells them nothing of anybody else's.
+				if ok && str == substrate.FilterMe && declared == kindActorRow {
+					continue
+				}
 				target := targetKind(str, declared)
 				if !ok || target == "" {
 					return fmt.Errorf("%w: an app's token filters %s only by a record of a kind it reads", substrate.ErrForbidden, name)
@@ -1058,6 +1063,9 @@ func (s *scopedDataset) Search(ctx context.Context, in substrate.SearchInput) (s
 func (s *scopedDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
 	// Every check below reads the registry, which keys an own kind by `~`.
 	in.Kind = s.local(in.Kind)
+	if in.Kind == kindThreadMark {
+		return s.putMark(ctx, actor, in)
+	}
 	if err := s.requireWrite(ctx, in.Kind); err != nil {
 		return nil, err
 	}

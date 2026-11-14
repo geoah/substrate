@@ -18,7 +18,8 @@ import (
 // Those scopes name agents, not kinds, so what they make readable is decided
 // record by record: an agent row whose id matches, a thread whose agent
 // matches, that thread's messages, interactions and approvals (decision
-// 0254), and the change requests such a thread proposed. A kind a read or write scope reaches whole is
+// 0254), each person's mark of it (decision 0311), and the change requests
+// such a thread proposed. A kind a read or write scope reaches whole is
 // answered exactly as before; one the agent verbs alone reach is ROW-GATED.
 const (
 	kindAgent       = corePackage + "/agent"
@@ -26,7 +27,9 @@ const (
 	kindMessage     = llmPackage + "/message"
 	kindInteraction = llmPackage + "/interaction"
 	kindApproval    = vocabulary.KindLLMApproval
+	kindThreadMark  = vocabulary.KindLLMThreadMark
 	kindRequest     = vocabulary.KindRecordPatchRequest
+	kindActorRow    = corePackage + "/actor"
 )
 
 // agentListPage is the page size the grant's agent list is read in.
@@ -39,7 +42,7 @@ const visibleCacheMax = 4096
 // rowKind reports whether the grant's agent verbs reach records of kind.
 func (s *scopedDataset) rowKind(kind string) bool {
 	switch kind {
-	case kindAgent, kindThread, kindMessage, kindInteraction, kindApproval:
+	case kindAgent, kindThread, kindMessage, kindInteraction, kindApproval, kindThreadMark:
 		return s.grant.Talks()
 	case kindRequest:
 		return s.grant.DecidesAny()
@@ -94,7 +97,7 @@ func (s *scopedDataset) rowVisible(ctx context.Context, rec *substrate.Record) (
 		return s.talksTo(ctx, rec.ID)
 	case kindThread:
 		return s.talksTo(ctx, referencedID(rec.Properties["agent"], kindAgent))
-	case kindMessage, kindInteraction, kindApproval:
+	case kindMessage, kindInteraction, kindApproval, kindThreadMark:
 		agent, err := s.agentOfThread(ctx, referencedID(rec.Properties["thread"], kindThread))
 		if err != nil {
 			return false, err
@@ -354,7 +357,7 @@ func (s *scopedDataset) listRows(ctx context.Context, q substrate.Query) (*subst
 			in[i] = vocabulary.RecordPath(kindAgent, a)
 		}
 		props["agent"] = substrate.Cond{In: in}
-	case kindMessage, kindInteraction, kindApproval, kindRequest:
+	case kindMessage, kindInteraction, kindApproval, kindThreadMark, kindRequest:
 		narrowed = "thread"
 		c, named := props["thread"]
 		if !named {
@@ -433,13 +436,85 @@ func (s *scopedDataset) requireRow(ctx context.Context, kind, id string) error {
 }
 
 // rowPatchable names what an app's patch of a row-gated kind may carry: a
-// thread's rename, an interaction's answer or dismissal, a change request's
-// decision. Nothing else of those kinds is written through the agent verbs.
+// thread's rename, an interaction's answer or dismissal, a mark's position
+// and its unread flag, a change request's decision. Nothing else of those
+// kinds is written through the agent verbs.
 var rowPatchable = map[string][]string{
 	kindThread:      {"subject"},
 	kindInteraction: {"state", "answers"},
 	kindApproval:    {"state"},
+	kindThreadMark:  {"readThrough", "markedUnread"},
 	kindRequest:     {"decision", "adjustedDiff"},
+}
+
+// markWritable names what a put of a thread mark may carry through a view.
+// `readAt` is the engine's and dropped there; `readBy` is held there to the
+// person the write acts for, so it names nothing the caller does not hold.
+var markWritable = []string{"thread", "readBy", "readThrough", "readAt", "markedUnread"}
+
+// putMark is a put of a thread mark through a view (decision 0311). A
+// person whose roles write the kind writes it as any other, but for
+// `readBy`: the actor kind is a control kind their rules do not read, and
+// the engine admits there only their own actor. An app's token writes it
+// under `agents:`, for a thread it reaches, the properties above alone. The
+// engine holds the mark to the person the write acts for either way.
+func (s *scopedDataset) putMark(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	whole, err := s.writes(ctx, kindThreadMark)
+	if err != nil {
+		return nil, err
+	}
+	rest := make(map[string]any, len(in.Properties))
+	for name, v := range in.Properties {
+		if name != "readBy" {
+			rest[name] = v
+		}
+	}
+	switch {
+	case whole:
+		if err := s.checkReferenceValues(ctx, kindThreadMark, rest); err != nil {
+			return nil, err
+		}
+	case s.rowKind(kindThreadMark):
+		if len(in.Labels) > 0 || len(in.Annotations) > 0 {
+			return nil, fmt.Errorf("%w: an app's token writes only %s of a %s", substrate.ErrForbidden, strings.Join(markWritable, ", "), kindThreadMark)
+		}
+		for name := range in.Properties {
+			if !slices.Contains(markWritable, name) {
+				return nil, fmt.Errorf("%w: an app's token writes only %s of a %s, not %s",
+					substrate.ErrForbidden, strings.Join(markWritable, ", "), kindThreadMark, name)
+			}
+		}
+		// The thread the write names, or the one the stored mark is of.
+		thread := ""
+		if v, named := in.Properties["thread"]; named {
+			if thread = referencedID(v, kindThread); thread == "" {
+				return nil, fmt.Errorf("%w: a %s names its thread", substrate.ErrValidation, kindThreadMark)
+			}
+		} else if in.ID != "" {
+			if err := s.requireRow(ctx, kindThreadMark, in.ID); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, fmt.Errorf("%w: a %s names its thread", substrate.ErrValidation, kindThreadMark)
+		}
+		if thread != "" {
+			if ok, err := s.threadReached(ctx, kindThreadMark, thread); err != nil {
+				return nil, err
+			} else if !ok {
+				return nil, fmt.Errorf("%w: thread %s", substrate.ErrNotFound, thread)
+			}
+		}
+	default:
+		if err := s.requireWrite(ctx, kindThreadMark); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: an app's token does not write %s", substrate.ErrForbidden, kindThreadMark)
+	}
+	rec, err := s.inner.Put(ctx, s.writer(actor), in)
+	if err != nil {
+		return nil, err
+	}
+	return s.cut(ctx, rec)
 }
 
 // patchRow is an app's patch of a row-gated kind.

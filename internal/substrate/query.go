@@ -31,6 +31,11 @@ type Cond struct {
 	Match string `json:"match,omitempty"`
 }
 
+// FilterMe is the value a condition on a reference to an actor may name for
+// the person the request acts for (decision record 0311): `readBy: {eq: "me"}`
+// lists the caller's own thread marks, whoever else has read the threads.
+const FilterMe = "me"
+
 // Filter is the grammar of the one generic records query. Filterable ≡
 // indexed ≡ declared. State properties filter through Properties like every
 // other property: there is no separate `states` arm.
