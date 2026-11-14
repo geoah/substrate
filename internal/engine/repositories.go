@@ -621,11 +621,14 @@ func repositoryResidue(ctx context.Context, q dbx, id string) (string, error) {
 
 // sweepOrphans erases repository-scoped rows whose repository has NO
 // control-plane row — the durable residue a registration that CRASHED between
-// its scoped commit and its control-plane insert leaves behind. Such rows are
-// unreachable: no login, token or listing can ever name a repository with no
-// `repositories` row, so they are pure garbage the ordering's crash window
-// cannot otherwise reclaim. It runs ONCE at boot, on the maintenance pool, in
-// one transaction.
+// its scoped commit and its control-plane insert leaves behind, or a deletion
+// a crash cut short. Such rows are unreachable: no login, token or listing can
+// ever name a repository with no `repositories` row, so they are pure garbage
+// the ordering's crash window cannot otherwise reclaim. It runs ONCE at boot,
+// on the maintenance pool, in one transaction, before the server serves: so
+// it reads no table whole (orphanKeysSQL), and deletes only the rows of a
+// repository no row names. One transaction keeps an orphan's rows going
+// together; it holds nothing a write waits on for longer than those deletes.
 func (s *service) sweepOrphans(ctx context.Context) error {
 	tx, err := s.maint.BeginTx(ctx, nil)
 	if err != nil {
@@ -634,22 +637,67 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 	defer func() { _ = tx.Rollback() }()
 	var swept int64
 	for _, table := range repositoryScopedTables {
-		res, err := tx.ExecContext(ctx,
-			`DELETE FROM `+table+` WHERE repository NOT IN (SELECT id FROM repositories)`)
+		keys, err := orphanKeys(ctx, tx, table)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: sweep orphans (%s): %w", table, err)
 		}
-		if n, err := res.RowsAffected(); err == nil {
-			swept += n
+		for _, key := range keys {
+			// The key was read by an earlier statement: the delete asks
+			// again, so a repository whose row appeared since keeps its rows.
+			res, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository = $1
+				AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = $1)`, key)
+			if err != nil {
+				return fmt.Errorf("substrate/engine: sweep orphans (%s): %w", table, err)
+			}
+			if n, err := res.RowsAffected(); err == nil {
+				swept += n
+			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("substrate/engine: sweep orphans: commit: %w", err)
 	}
 	if swept > 0 {
-		s.log.Warn("substrate: swept rows of repositories with no control-plane row (a crashed registration)", "rows", swept)
+		s.log.Warn("substrate: swept rows of repositories with no control-plane row (a crashed registration or deletion)", "rows", swept)
 	}
 	return nil
+}
+
+// orphanKeysSQL lists the repository keys table holds that no row of
+// `repositories` names. It walks the keys by a skip scan over an index the
+// table leads with its repository column (every one of these tables has
+// one), one probe per key, so what it reads grows with the repositories the
+// table holds and not with its rows: a whole-table anti-join read a 24 GB
+// changelog at every start to delete nothing.
+func orphanKeysSQL(table string) string {
+	return `
+		WITH RECURSIVE keys(repository) AS (
+			(SELECT repository FROM ` + table + ` ORDER BY repository LIMIT 1)
+			UNION ALL
+			SELECT (SELECT t.repository FROM ` + table + ` t WHERE t.repository > keys.repository ORDER BY t.repository LIMIT 1)
+			FROM keys WHERE keys.repository IS NOT NULL
+		)
+		SELECT repository FROM keys
+		WHERE repository IS NOT NULL
+		  AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = keys.repository)`
+}
+
+// orphanKeys runs orphanKeysSQL on q.
+func orphanKeys(ctx context.Context, q dbx, table string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, orphanKeysSQL(table))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
 }
 
 // repositoryScopedTables is every table carrying a `repository` column — the

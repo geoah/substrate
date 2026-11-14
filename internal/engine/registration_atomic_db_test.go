@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -66,6 +67,11 @@ func plantOrphan(t *testing.T, dsn, id string) {
 		`INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at) VALUES ($1, $2, $3, $4, now())`,
 		secretRefPrefix+"orphan", bindingProviderKind, "orphan-provider", []byte("secret")); err != nil {
 		t.Fatalf("plant orphan sealed: %v", err)
+	}
+	if _, err := raw.Exec(
+		`INSERT INTO changelog (seq, actor, op, record_id, kind, principal) VALUES (1, $1, 'put', $2, $3, '')`,
+		string(substrate.ActorSystem), "orphan-rec", "samples.substrate.reamde.dev/tasks/task"); err != nil {
+		t.Fatalf("plant orphan changelog line: %v", err)
 	}
 }
 
@@ -198,5 +204,110 @@ func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
 	}
 	if legitAfter != legitBefore {
 		t.Fatalf("the sweep touched a legitimate repository: %d records, was %d", legitAfter, legitBefore)
+	}
+}
+
+// The sweep finds which repositories each table holds through an index the
+// table leads with its repository column (orphanKeysSQL), so every table it
+// sweeps must have one: without it each probe reads the table, once per
+// repository, which is worse than the anti-join it replaced. A partial index
+// does not count, since the planner cannot answer a probe that names no
+// predicate from it, and neither does one that is invalid or not yet ready.
+func TestEveryRepositoryScopedTableHasAnIndexLedByItsRepository(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := openBareService(t)
+	for _, table := range repositoryScopedTables {
+		var led bool
+		if err := s.maint.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM pg_index i
+				JOIN pg_class c ON c.oid = i.indrelid
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = i.indkey[0]
+				WHERE n.nspname = current_schema() AND c.relname = $1 AND a.attname = 'repository'
+				  AND i.indpred IS NULL AND i.indisvalid AND i.indisready)`, table).Scan(&led); err != nil {
+			t.Fatalf("%s: %v", table, err)
+		}
+		if !led {
+			t.Errorf("%s has no index led by its repository column: the start's orphan sweep would read it whole", table)
+		}
+	}
+}
+
+// What the sweep reads of a table does not grow with the table (#1107): a
+// changelog of 20,000 lines and then of 100,000, under one repository and
+// with no orphan, is read the same handful of index entries each time, and
+// never scanned whole. The plan is the sweep's own statement, run under
+// EXPLAIN ANALYZE.
+func TestTheOrphanSweepReadsNoMoreOfALargerHistory(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, _ := openBareService(t)
+	if _, err := s.CreateRepository(ctx, "legit.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	legit, err := s.repositoryByName(ctx, "legit.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grow := func(from, n int) {
+		t.Helper()
+		if _, err := s.maint.ExecContext(ctx, `
+			INSERT INTO changelog (repository, seq, actor, op, record_id, kind, principal)
+			SELECT $1, $2 + g, 'act-test', 'put', 'r' || g, 'samples.substrate.reamde.dev/tasks/task', ''
+			FROM generate_series(1, $3) g`, legit.ID, 1_000_000+from, n); err != nil {
+			t.Fatalf("grow the changelog: %v", err)
+		}
+		if _, err := s.maint.ExecContext(ctx, `ANALYZE changelog`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() int {
+		t.Helper()
+		var plan string
+		if err := s.maint.QueryRowContext(ctx, `EXPLAIN (ANALYZE, FORMAT JSON) `+orphanKeysSQL("changelog")).Scan(&plan); err != nil {
+			t.Fatalf("explain the sweep's read: %v", err)
+		}
+		var root []struct {
+			Plan map[string]any `json:"Plan"`
+		}
+		if err := json.Unmarshal([]byte(plan), &root); err != nil || len(root) != 1 {
+			t.Fatalf("decode the plan: %v", err)
+		}
+		rows := 0
+		var walk func(node map[string]any)
+		walk = func(node map[string]any) {
+			if node["Relation Name"] == "changelog" {
+				if node["Node Type"] == "Seq Scan" {
+					t.Errorf("the sweep scans the changelog whole:\n%s", plan)
+				}
+				num := func(k string) int { f, _ := node[k].(float64); return int(f) }
+				rows += (num("Actual Rows") + num("Rows Removed by Filter")) * max(num("Actual Loops"), 1)
+			}
+			children, _ := node["Plans"].([]any)
+			for _, c := range children {
+				if child, ok := c.(map[string]any); ok {
+					walk(child)
+				}
+			}
+		}
+		walk(root[0].Plan)
+		return rows
+	}
+	grow(0, 20_000)
+	small := read()
+	grow(20_000, 80_000)
+	large := read()
+	t.Logf("the sweep read %d changelog entries of 20,000 and %d of 100,000", small, large)
+	if small > 8 || large != small {
+		t.Fatalf("the sweep read %d changelog entries of 20,000 and %d of 100,000, want the same handful", small, large)
+	}
+	if err := s.sweepOrphans(ctx); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+	var n int
+	if err := s.maint.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE repository = $1`, legit.ID).Scan(&n); err != nil || n < 100_000 {
+		t.Fatalf("the sweep touched the repository's history: %d lines left, %v", n, err)
 	}
 }
