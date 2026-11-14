@@ -473,8 +473,9 @@ bubble is a tinted fill. The transcript softens under the composer with
   link's own words are its name, it wraps with the line (a capsule on each
   line it spans), sits on the baseline, takes the size of the text around
   it, and leaves the line's height alone, because the capsule and the tile
-  are drawn behind the words (a `TextRenderer`). A tap on the name opens
-  the record. A link the engine found no record for (the reply row's
+  are drawn behind the words (a `TextRenderer`). A tap anywhere on it
+  opens the record, and one a read found gone is dimmed and struck through
+  like the view. A link the engine found no record for (the reply row's
   `mentions`, marked `missing`) is its text alone, so an invented id never
   reads as a record. Under a settled reply, "Linked records" repeats each
   record it links, by its own name. The `done` event's mentions reach the

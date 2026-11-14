@@ -93,7 +93,10 @@ public final class RecordDirectory {
         records[reference.path]?.title
     }
 
-    /// Whether a read found no such record: deleted, or never written.
+    /// The `kind/id` paths a read found no record at: deleted, or never
+    /// written.
+    public var gone: Set<String> { missing }
+
     public func isGone(_ reference: RecordReference) -> Bool {
         missing.contains(reference.path)
     }

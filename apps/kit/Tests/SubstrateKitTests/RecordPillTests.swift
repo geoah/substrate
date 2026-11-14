@@ -72,13 +72,14 @@ struct RecordPillTests {
         #expect(abs(with - plain) <= 2, "plain \(plain), with a pill \(with)")
     }
 
-    /// The pill's capsule and its tile are drawn: the pixels behind a pill
-    /// in a line are not the page's.
+    /// The pill's capsule and its tile are drawn behind its words: the same
+    /// text covers more of the page with the renderer than without it.
     @Test func thePillInALineIsDrawnBehindItsWords() throws {
         let pill = RecordPillText.text(task, name: AttributedString("Q4 budget"), link: nil)
-        func ink(_ text: Text) throws -> Int {
-            let view = text.font(.body).padding(10).frame(width: 240, height: 44).background(Color.white).recordPillText().environment(\.colorScheme, .light)
-            let hosting = NSHostingView(rootView: view)
+        func ink(drawingPills: Bool) throws -> Int {
+            let text = Text("\(pill)").font(.body).padding(10).frame(width: 240, height: 44).background(Color.white)
+            let view = drawingPills ? AnyView(text.recordPillText()) : AnyView(text)
+            let hosting = NSHostingView(rootView: view.environment(\.colorScheme, .light))
             hosting.frame = CGRect(x: 0, y: 0, width: 240, height: 44)
             let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = hosting
@@ -88,19 +89,25 @@ struct RecordPillTests {
             defer { window.contentView = nil }
             let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
             hosting.cacheDisplay(in: hosting.bounds, to: rep)
-            var dark = 0
+            var covered = 0
             for y in 0 ..< rep.pixelsHigh {
                 for x in 0 ..< rep.pixelsWide {
-                    if let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.redComponent < 0.97 { dark += 1 }
+                    if let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), c.redComponent < 0.97 { covered += 1 }
                 }
             }
-            return dark
+            return covered
         }
-        // The same words with a pill cover more of the page than without:
-        // the capsule's fill and the tile are there.
-        let without = try ink(Text(verbatim: "Q4 budget"))
-        let with = try ink(Text("\(pill)"))
-        #expect(with > without * 2, "without \(without), with \(with)")
+        let words = try ink(drawingPills: false)
+        let pillToo = try ink(drawingPills: true)
+        #expect(words > 0)
+        #expect(pillToo > words * 2, "the words alone \(words), with the pill \(pillToo)")
+    }
+
+    /// Two pills of one record are two parts, so the renderer never joins
+    /// their capsules.
+    @Test func twoPillsOfOneRecordAreToldApartByTheirPlace() {
+        #expect(RecordPillPart(reference: task, occurrence: 1) != RecordPillPart(reference: task, occurrence: 3))
+        #expect(RecordPillPart(reference: task, occurrence: 2) == RecordPillPart(reference: task, occurrence: 2))
     }
 }
 #endif
