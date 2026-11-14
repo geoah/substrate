@@ -1012,11 +1012,19 @@ panel on the right.
 - **A reply that didn't finish says so.** When a chat's last turn was
   stopped, ran out of time or turns, or failed, a note under the chat says
   which, in plain words ("Moss didn't finish: the server restarted while it
-  was working", "What failed: …"), with **Continue**. Continue sends
-  "Continue where you left off." as your message, because a stopped chat
-  goes on only when you write again, and leaves anything you were typing in
-  the box. The chats column marks such a chat **Didn't finish**, **Stopped**
-  or **Failed**.
+  was working", "What failed: …"), with **Continue**, or **Try again** on a
+  turn that failed. Both go on from the chat as it stands and send no
+  message, so nothing you did not write appears in it
+  ([continue](agents.md#continue)), and both leave anything you were typing
+  in the box. The chats column marks such a chat **Didn't finish**,
+  **Stopped** or **Failed**.
+- **A message the server did not answer is sent again by itself.** Every
+  message goes out under an id of its own
+  ([a message with its own id](agents.md#a-message-with-its-own-id)), so
+  sending it again cannot send it twice: the console does so up to three
+  times, keeping the message where it is in the chat, and then shows it in a
+  note with **Send again**. A message the server refused comes back to the
+  box with the server's words.
 - **Suggested changes** are cards inside the thread, not a queue somewhere
   else: each reads the change request's live state, says what it would change
   as before and after, and offers **Apply** (**Add it**, **Delete it**, a

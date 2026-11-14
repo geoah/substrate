@@ -25,13 +25,18 @@
  * their `turn`, and the rest feed the same overlay a send does. Stop ends
  * the turn on the server, and the stream's own `done` settles the overlay.
  *
- * A send is never dropped without a word (#1038), and nothing is ever sent
- * later on its own. While a send cannot go, the text stays in the composer
- * and the composer says why. A handover whose re-read does not land within
- * RELOAD_WAIT_MS is given up on like one that failed. A send the server
- * refuses comes back with the server's words. A send whose connection
- * failed, or that a gateway answered instead of the server, may have started
- * a turn, so the thread is read before the message is offered again. */
+ * A send is never dropped without a word (#1038). While a send cannot go,
+ * the text stays in the composer and the composer says why. A handover whose
+ * re-read does not land within RELOAD_WAIT_MS is given up on like one that
+ * failed. A send the server refuses comes back with the server's words.
+ *
+ * Every send carries an id of its own (`messageId`, decision 0312), so a
+ * send whose connection failed, or that a gateway answered instead of the
+ * server, is sent again as it was: the server runs a message it already
+ * holds no second time, and answers with the turn it started. That is the
+ * one thing this page sends again on its own, and only under the same id.
+ * Going on after a turn that stopped, ran out of budget or failed is the
+ * thread's `continue`, which writes no message. */
 
 import {
   useEffect,
@@ -73,7 +78,8 @@ import {
 import { unfinishedTurn, type UnfinishedTurn } from "@/lib/agent-runs"
 import {
   attachThread,
-  readThreadNow,
+  continueThread,
+  newMessageId,
   stopThread,
   streamChat,
   THREAD_LISTS_KEY,
@@ -106,6 +112,7 @@ import {
   addUnsent,
   keepUnsent,
   moveUnsent,
+  RESEND_DELAYS_MS,
   setUnsent,
   unsentKey,
   useUnsent,
@@ -117,21 +124,6 @@ import {
  * (a request the network or a relay never answers), and a send must not wait
  * on it forever. */
 export const RELOAD_WAIT_MS = 15_000
-
-/** How long after a send whose delivery is unknown the thread is read to
- * find out: the server writes the message row as it admits the turn, which
- * may be a moment after the connection that carried it dropped. */
-export const RECONCILE_DELAY_MS = 1_000
-
-/** The newest turn a transcript page holds, or -1 for none. */
-function newestTurn(records: SubstrateRecord[]): number {
-  let newest = -1
-  for (const r of records) {
-    const turn = Number(r.properties.turn)
-    if (Number.isFinite(turn) && turn > newest) newest = turn
-  }
-  return newest
-}
 
 /** The callout for an agent whose provider row has no key: the run would be
  * refused at dispatch, so the page says why before anybody types. */
@@ -156,11 +148,6 @@ function KeylessCallout({ provider }: { provider: string }) {
   )
 }
 
-/** The message Continue sends. The server resumes a stopped thread only
- * when its owner writes again, so going on is a message like any other, and
- * the transcript shows it. */
-export const CONTINUE_MESSAGE = "Continue where you left off."
-
 const UNFINISHED_TONES: Record<
   UnfinishedTurn["tone"],
   { box: string; icon: ReactNode }
@@ -180,7 +167,7 @@ const UNFINISHED_TONES: Record<
 }
 
 /** A chat whose last turn ended before it finished: what happened, why, and
- * a way to go on. */
+ * a way to go on. The button continues the thread and sends no message. */
 function UnfinishedNote({
   turn,
   onContinue,
@@ -188,7 +175,7 @@ function UnfinishedNote({
 }: {
   turn: UnfinishedTurn
   onContinue: () => void
-  /** Why Continue can't send now, as the composer says it. */
+  /** Why the thread can't be continued now, as the composer says it. */
   blocked?: string
 }) {
   const tone = UNFINISHED_TONES[turn.tone]
@@ -221,9 +208,8 @@ function UnfinishedNote({
           aria-disabled={blocked ? true : undefined}
           aria-describedby={blocked ? why : undefined}
           className={cn(blocked && "cursor-default opacity-50")}
-          title={blocked ? undefined : `Sends “${CONTINUE_MESSAGE}”`}
         >
-          Continue
+          {turn.action}
         </Button>
         {blocked && (
           <span id={why} className="text-[11.5px] text-muted-foreground">
@@ -239,17 +225,21 @@ function UnfinishedNote({
 function OutcomeNote({
   outcome,
   onDiscard,
+  onSendAgain,
+  blocked,
 }: {
   outcome: Unsent
   onDiscard: () => void
+  /** Sends an unanswered message once more, under the id it was sent with. */
+  onSendAgain?: () => void
+  /** Why it can't be sent now, as the composer says it. */
+  blocked?: string
 }) {
   const { kind, reason, message, restored } = outcome
   const lead =
     kind === "refused"
       ? `Your message wasn’t sent. ${restored ? "It was put back in the box below, and a copy is here." : "A copy is here."}`
-      : kind === "checking"
-        ? "The connection dropped before the server confirmed your message. Checking whether it arrived…"
-        : "The connection dropped before the server confirmed your message, so it may not have arrived. Look for it in the chat, or for a new chat in the chat list, before sending it again. It is below, to copy."
+      : "The server didn’t answer, so your message may not have arrived. Sending it again is safe: it cannot be sent twice."
   return (
     <div
       role="alert"
@@ -266,21 +256,27 @@ function OutcomeNote({
       </p>
       {/* Always the saved copy: the composer may have been cleared since
           (switching chats clears it). */}
-      {kind !== "checking" && (
-        <div className="flex items-start gap-2">
-          <p className="min-w-0 flex-1 rounded-md border bg-background px-2.5 py-1.5 whitespace-pre-wrap text-foreground">
-            {message}
-          </p>
-          <CopyButton value={message} label="Copy your message" />
-        </div>
-      )}
-      {kind !== "checking" && (
-        <div>
-          <Button size="sm" variant="outline" onClick={onDiscard}>
-            Dismiss
+      <div className="flex items-start gap-2">
+        <p className="min-w-0 flex-1 rounded-md border bg-background px-2.5 py-1.5 whitespace-pre-wrap text-foreground">
+          {message}
+        </p>
+        <CopyButton value={message} label="Copy your message" />
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {onSendAgain && (
+          <Button
+            size="sm"
+            onClick={() => !blocked && onSendAgain()}
+            aria-disabled={blocked ? true : undefined}
+            className={cn(blocked && "cursor-default opacity-50")}
+          >
+            Send again
           </Button>
-        </div>
-      )}
+        )}
+        <Button size="sm" variant="outline" onClick={onDiscard}>
+          Dismiss
+        </Button>
+      </div>
     </div>
   )
 }
@@ -340,9 +336,10 @@ export function Conversation({
   const [streaming, setStreaming] = useState(false)
   const [result, setResult] = useState<AgentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Every delivery check gets a number; one carrying a stale number (a
-  // newer check, or a conversation that unmounted) does nothing.
-  const checkRef = useRef(0)
+  // An unanswered send waiting to go again, under the same messageId.
+  const [resending, setResending] = useState(false)
+  // A continue the server refused, in the server's words.
+  const [goOnError, setGoOnError] = useState<string | null>(null)
   // The settle whose re-read outlived RELOAD_WAIT_MS.
   const [slowFor, setSlowFor] = useState(0)
   // A turn no client can stream holds the thread (a triggered run): the page
@@ -360,7 +357,6 @@ export function Conversation({
   // remounts on every switch, so coming back still shows them.
   const unsentAt = unsentKey(current, agentId)
   const outcomes = useUnsent(unsentAt)
-  const checking = outcomes.some((o) => o.kind === "checking")
   const unsentAtRef = useRef(unsentAt)
   useEffect(() => {
     // A new chat's entries move to its thread once the thread is named.
@@ -369,10 +365,6 @@ export function Conversation({
       unsentAtRef.current = unsentAt
     }
   }, [unsentAt])
-  // A delivery check found the message and a turn running on it before the
-  // thread's record said so: attached to as if the record had.
-  const [runningHint, setRunningHint] = useState("")
-
   const handleRef = useRef<ChatHandle | null>(null)
   const liveRef = useRef<LiveOverlay>(EMPTY_OVERLAY)
   const seqRef = useRef(0)
@@ -414,6 +406,8 @@ export function Conversation({
 
   // A re-attach waiting out its backoff.
   const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // An unanswered send waiting to go again.
+  const resendRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // The last failure an attach saw, shown if the turn turns out to have
   // ended on it.
   const lastErrorRef = useRef<string | null>(null)
@@ -421,8 +415,8 @@ export function Conversation({
     () => () => {
       handleRef.current?.stop()
       clearTimeout(retryRef.current)
-      // A check outliving its chat would write into another chat's composer.
-      checkRef.current++
+      // A send waiting to go again must not go from a chat that was left.
+      clearTimeout(resendRef.current)
     },
     []
   )
@@ -475,8 +469,8 @@ export function Conversation({
   // send in that window would push onto an overlay the refetch is about to
   // duplicate.
   const busy = streaming || (settledAt > 0 && !handedOver && !reloadFailed)
-  const blockedReason = checking
-    ? "Checking whether your last message arrived"
+  const blockedReason = resending
+    ? "Sending your last message again"
     : busy
       ? "Waiting for the previous turn to finish"
       : undefined
@@ -617,9 +611,7 @@ export function Conversation({
   // The turn running on the thread, attached once per running stretch.
   // Each attach reads the stored rows afresh and freezes them, so the
   // replay's events those rows already hold are dropped by their `turn`.
-  const threadRunning =
-    threadRecord?.properties.status === "running" ||
-    (runningHint !== "" && runningHint === current)
+  const threadRunning = threadRecord?.properties.status === "running"
   const [attachedFor, setAttachedFor] = useState("")
   // The attach to open, decided while rendering or by a stream that ended
   // without its `done`; the effect below opens it.
@@ -631,7 +623,6 @@ export function Conversation({
   if (!threadRunning && background) setBackground(false)
   if (current && threadRunning && !busy && attachedFor !== current) {
     setAttachedFor(current)
-    setRunningHint("")
     setPending({ thread: current, attempt: 0 })
     setError(null)
     setResult(null)
@@ -680,8 +671,8 @@ export function Conversation({
             if (run !== runRef.current) return
             if (ev.kind === "idle") {
               idle = ev.status || "unknown"
-              if (ev.status === "running") setBackground(true)
-              else if (lastErrorRef.current) setError(lastErrorRef.current)
+              if (ev.status !== "running" && lastErrorRef.current)
+                setError(lastErrorRef.current)
               return
             }
             if (ev.kind === "done") {
@@ -706,15 +697,7 @@ export function Conversation({
             if (run !== runRef.current) return
             if (done) return settleRun(run)
             if (!idle) return reattach(run, thread, attempt + 1)
-            if (idle === "running") {
-              // A run no client can stream: nothing to show live.
-              update(EMPTY_OVERLAY)
-              setStreaming(false)
-              setStopping(false)
-              void client.invalidateQueries({ queryKey: ["records"] })
-              return
-            }
-            settleRun(run)
+            settleIdle(run, idle)
           },
         })
       })
@@ -746,73 +729,33 @@ export function Conversation({
     return true
   }
 
-  // Looks for a send of unknown delivery on the thread: a user message past
-  // `baseline` (the newest turn the transcript held when it was sent) with
-  // the sent text, read fresh and outside the transcript cache
-  // (`readThreadNow`). Finding it clears the notice, and a turn running on
-  // it is attached to. Not finding it proves nothing (the request may still
-  // be waiting for admission), so the notice stays, with the message to
-  // copy; nothing is put back in the composer. A check whose conversation
-  // left ends as unknown.
-  async function reconcile(
-    key: string,
-    thread: string,
-    message: string,
-    reason: string,
-    baseline: number | undefined
-  ) {
-    const check = ++checkRef.current
-    console.error("chat: the send's delivery is unknown", { thread, reason })
-    setAttachedFor("")
-    void client.invalidateQueries({ queryKey: ["records"] })
-    const unknown = {
-      kind: "unknown" as const,
-      reason,
-      message,
-      restored: false,
+  // What a stream's `idle` line means for the page: no chat turn runs on the
+  // thread. `running` there is a run no client can stream, shown as working
+  // in the background; any other status is a turn that already settled, and
+  // the stored rows are read. An attach answers it, and so does a send or a
+  // continue the server had already taken.
+  function settleIdle(run: number, status: string) {
+    if (run !== runRef.current) return
+    if (status === "running") {
+      setBackground(true)
+      update(EMPTY_OVERLAY)
+      setStreaming(false)
+      setStopping(false)
+      void client.invalidateQueries({ queryKey: ["records"] })
+      return
     }
-    if (!thread || baseline === undefined) return void addUnsent(key, unknown)
-    const id = addUnsent(key, { ...unknown, kind: "checking" })
-    await new Promise((r) => setTimeout(r, RECONCILE_DELAY_MS))
-    if (check !== checkRef.current) return setUnsent(key, id, unknown)
-    const ctrl = new AbortController()
-    let running = false
-    let arrived = false
-    try {
-      const now = await Promise.race([
-        readThreadNow(thread, ctrl.signal),
-        new Promise<undefined>((r) => setTimeout(r, RELOAD_WAIT_MS)),
-      ])
-      arrived = Boolean(
-        now?.messages.some(
-          (r) =>
-            r.properties.role === "user" &&
-            Number(r.properties.turn) > baseline &&
-            r.properties.content === message
-        )
-      )
-      running = now?.status === "running"
-    } catch {
-      // A read that failed proves nothing either way.
-    } finally {
-      ctrl.abort()
-    }
-    if (!arrived) return setUnsent(key, id, unknown)
-    // Found, even by a check whose conversation has since left: the entry
-    // has nothing left to recover.
-    setUnsent(key, id, null)
-    // The transcript shows it once it is read again, and the thread's record
-    // says whether a turn runs; a live turn's own settle reads both.
-    void client.invalidateQueries({ queryKey: ["records"] })
-    if (running && check === checkRef.current) setRunningHint(thread)
+    settleRun(run)
   }
 
-  function send(text = draft) {
+  // Sends `text`, or sends an unanswered message once more under the id it
+  // went out with (`again`), which cannot send it twice.
+  function send(text = draft, again?: { messageId: string }) {
     const message = text.trim()
     // `blockedReason` says why on the composer, and the text stays there.
     if (!message || blockedReason || !agentId || keylessProvider) return
-    // Continue sends its own words and leaves what is being typed alone.
-    if (text === draft) onDraft("")
+    // A message sent again leaves what is being typed alone.
+    if (!again && text === draft) onDraft("")
+    const messageId = again?.messageId ?? newMessageId()
     const sentContext = context?.length ? context : undefined
     const about = (sentContext ?? []).flatMap((p) => {
       const parts = splitRecordPath(p)
@@ -821,6 +764,7 @@ export function Conversation({
 
     void dropReads()
     setError(null)
+    setGoOnError(null)
     // An outcome stays until its message is sent again or dismissed. One
     // whose message went back into the composer is that composer's now.
     keepUnsent(unsentAt, (o) => o.message !== message)
@@ -830,14 +774,8 @@ export function Conversation({
     // unless its read failed, when the overlay is still the only view of it.
     const kept = reloadFailed ? liveRef.current.turns : []
     const settledBefore = settledAt
-    // Where the transcript stood, for a delivery check: unknown while its
-    // rows are not read, or stale because their re-read failed.
-    const baseline =
-      current && messages.data && !reloadFailed
-        ? newestTurn(messages.data.records)
-        : undefined
     setSettledAt(0)
-    update({
+    const sent: LiveOverlay = {
       turns: [
         ...kept,
         {
@@ -849,98 +787,197 @@ export function Conversation({
         },
       ],
       closed: false,
-    })
+    }
+    update(sent)
     setStreaming(true)
     runThreadRef.current = current
     // This page's own run is not attached to again.
     setAttachedFor(current)
     const run = ++runRef.current
-    const settle = () => settleRun(run)
     const sentTo = current
     const sentKey = unsentAt
 
-    // A run that never named a thread wrote nothing, so no read will ever
-    // hand over and settling would leave the composer busy for good. The
-    // optimistic turn goes, and the message comes back to be retried. A run
-    // that named one and ended without `done` is still running on the
-    // server: it is attached to again.
-    // Whether this request's stream named its thread: before that, a failure
-    // is a refusal (the repository's cap, a running turn, a spend cap) and
-    // nothing ran, so the message comes back.
+    // One request, and the same one again each time it goes unanswered: the
+    // same thread, the same text, the same id.
+    const post = (attempt: number) => {
+      // Whether this request's stream named its thread: before that, a
+      // failure is a refusal (the person's running turns, a running turn, a
+      // spend cap) and nothing ran, so the message comes back. A run that
+      // named one and ended without `done` is still running on the server:
+      // it is attached to again.
+      let done = false
+      let named = false
+      let idle = ""
+      // `unanswered` is why nothing says whether the message arrived: the
+      // connection failed before the server confirmed anything.
+      const end = (unanswered?: string) => {
+        if (run !== runRef.current) return
+        if (named && idle) return settleIdle(run, idle)
+        if (named && done) return settleRun(run)
+        if (named) return reattach(run, runThreadRef.current, 0)
+        if (unanswered !== undefined && attempt < RESEND_DELAYS_MS.length) {
+          // The message keeps its place on the page while it goes again.
+          console.warn("chat: the send went unanswered, sending it again", {
+            thread: sentTo,
+            attempt: attempt + 1,
+            reason: unanswered,
+          })
+          setResending(true)
+          clearTimeout(resendRef.current)
+          resendRef.current = setTimeout(() => {
+            if (run !== runRef.current) return
+            setResending(false)
+            post(attempt + 1)
+          }, RESEND_DELAYS_MS[attempt])
+          return
+        }
+        // No turn showed, so the previous turn's handover (and its failed or
+        // slow re-read, with its retry) is where the page was.
+        update({ ...EMPTY_OVERLAY, turns: kept })
+        setSettledAt(settledBefore)
+        setStreaming(false)
+        setStopping(false)
+        setResending(false)
+        if (unanswered !== undefined) {
+          console.error("chat: the send went unanswered", {
+            thread: sentTo,
+            reason: unanswered,
+          })
+          // The message may have arrived all the same: the thread's rows
+          // and the chat lists are read again.
+          void client.invalidateQueries({ queryKey: ["records"] })
+          addUnsent(sentKey, {
+            kind: "unanswered",
+            reason: unanswered,
+            message,
+            messageId,
+            restored: false,
+          })
+        }
+      }
+
+      handleRef.current = streamChat({
+        agent: agentId,
+        thread: sentTo || undefined,
+        message,
+        messageId,
+        context: sentContext,
+        onEvent: (ev) => {
+          if (run !== runRef.current) return
+          if (ev.kind === "thread" && ev.thread) {
+            named = true
+            setAttachedFor(ev.thread)
+            // The turn holds its context now; a refusal before this kept it
+            // for the retry.
+            if (sentContext) onContextDone?.()
+          }
+          // The server already held the message and its turn has settled.
+          if (ev.kind === "idle") {
+            idle = ev.status || "unknown"
+            return
+          }
+          if (ev.kind === "done") done = true
+          onEvent(ev, run)
+        },
+        onError: (err) => {
+          if (run !== runRef.current) return
+          if (named) {
+            lastErrorRef.current = err.message
+            return end()
+          }
+          // Only a 4xx with the server's envelope says nothing ran. A 5xx
+          // can come after the user message was stored (a shutdown between
+          // the thread's claim and the turn's start answers 503), and a
+          // failure after the 200 came after admission: both go again.
+          if (!(
+            err instanceof ApiError &&
+            err.status >= 400 &&
+            err.status < 500
+          )) {
+            return end(err.message)
+          }
+          // The server's own refusal. What the owner needs to tell a refusal
+          // from a relay failure: the status, the code and the server's words.
+          console.error("chat: send refused before the turn started", {
+            status: err.status,
+            code: err.code,
+            message: err.message,
+          })
+          end()
+          addUnsent(sentKey, {
+            kind: "refused",
+            reason: err.message,
+            message,
+            restored: giveBack(message),
+          })
+        },
+        onDone: () => {
+          // A stream that closed before a single event: the turn may have
+          // started all the same.
+          if (!named && !done) {
+            return end("the connection closed before the server said anything")
+          }
+          end()
+        },
+      })
+    }
+    post(0)
+  }
+
+  // Goes on with a thread whose last turn stopped, ran out of budget or
+  // failed (Continue, Try again): the thread's `continue`, which runs a turn
+  // on the stored rows and writes no message.
+  function goOn() {
+    const thread = current
+    if (!thread || blockedReason || keylessProvider) return
+    void dropReads()
+    setError(null)
+    setGoOnError(null)
+    setResult(null)
+    const kept = reloadFailed ? liveRef.current.turns : []
+    const settledBefore = settledAt
+    setSettledAt(0)
+    update({ turns: kept, closed: false })
+    setStreaming(true)
+    runThreadRef.current = thread
+    setAttachedFor(thread)
+    const run = ++runRef.current
     let done = false
     let named = false
-    // `unknown` is why the send's delivery is uncertain: the connection
-    // failed before the server confirmed anything.
-    const end = (unknown?: string) => {
-      if (run !== runRef.current) return
-      if (named && done) return settle()
-      if (named) return reattach(run, runThreadRef.current, 0)
-      // No turn showed, so the previous turn's handover (and its failed or
-      // slow re-read, with its retry) is where the page was.
-      update({ ...EMPTY_OVERLAY, turns: kept })
-      setSettledAt(settledBefore)
-      setStreaming(false)
-      setStopping(false)
-      if (unknown !== undefined) {
-        void reconcile(sentKey, sentTo, message, unknown, baseline)
-      }
-    }
-
-    handleRef.current = streamChat({
-      agent: agentId,
-      thread: current || undefined,
-      message,
-      context: sentContext,
+    handleRef.current = continueThread({
+      thread,
       onEvent: (ev) => {
-        if (ev.kind === "thread" && ev.thread && run === runRef.current) {
-          named = true
-          setAttachedFor(ev.thread)
-          // The turn holds its context now; a refusal before this kept it
-          // for the retry.
-          if (sentContext) onContextDone?.()
-        }
+        if (run !== runRef.current) return
+        if (ev.kind === "thread") named = true
         if (ev.kind === "done") done = true
         onEvent(ev, run)
       },
       onError: (err) => {
         if (run !== runRef.current) return
-        if (named) {
-          lastErrorRef.current = err.message
-          return end()
-        }
-        // Only a 4xx with the server's envelope says nothing ran. A 5xx can
-        // come after the user message was stored (a shutdown between the
-        // thread's claim and the turn's start answers 503), and a failure
-        // after the 200 came after admission: both are of unknown delivery.
-        if (!(
+        lastErrorRef.current = err.message
+        const refused =
+          !named &&
           err instanceof ApiError &&
           err.status >= 400 &&
           err.status < 500
-        )) {
-          return end(err.message)
+        // A turn is running on the thread (another window's, or this
+        // request's own first copy), or the answer was lost: the thread
+        // says which, and an attach reads it.
+        if (!refused || err.reason === "thread_busy") {
+          return reattach(run, thread, 0)
         }
-        // The server's own refusal. What the owner needs to tell a refusal
-        // from a relay failure: the status, the code and the server's words.
-        console.error("chat: send refused before the turn started", {
-          status: err instanceof ApiError ? err.status : undefined,
-          code: err instanceof ApiError ? err.code : undefined,
-          message: err.message,
-        })
-        end()
-        addUnsent(sentKey, {
-          kind: "refused",
-          reason: err.message,
-          message,
-          restored: giveBack(message),
-        })
+        update({ ...EMPTY_OVERLAY, turns: kept })
+        setSettledAt(settledBefore)
+        setStreaming(false)
+        setStopping(false)
+        // The thread moved on since the page read it: read it again.
+        void client.invalidateQueries({ queryKey: ["records"] })
+        if (err.reason !== "nothing_to_continue") setGoOnError(err.message)
       },
       onDone: () => {
-        // A stream that closed before a single event: the turn may have
-        // started all the same.
-        if (!named && !done) {
-          return end("the connection closed before the server said anything")
-        }
-        end()
+        if (run !== runRef.current) return
+        if (named && done) return settleRun(run)
+        reattach(run, thread, 0)
       },
     })
   }
@@ -1064,18 +1101,40 @@ export function Conversation({
           {unfinished && (
             <UnfinishedNote
               turn={unfinished}
-              onContinue={() => send(CONTINUE_MESSAGE)}
+              onContinue={goOn}
               blocked={
                 blockedReason ??
                 (keylessProvider ? "Add an API key first" : undefined)
               }
             />
           )}
+          {goOnError && unfinished && (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-bad-soft px-3.5 py-2.5 text-[13px] text-destructive"
+            >
+              That didn’t start. The server said: {goOnError}
+            </div>
+          )}
+          {resending && (
+            <p role="status" className="text-sm text-muted-foreground">
+              The server didn’t answer. Sending your message again…
+            </p>
+          )}
           {outcomes.map((o) => (
             <OutcomeNote
               key={o.id}
               outcome={o}
               onDiscard={() => setUnsent(unsentAt, o.id, null)}
+              onSendAgain={
+                o.messageId
+                  ? () => send(o.message, { messageId: o.messageId! })
+                  : undefined
+              }
+              blocked={
+                blockedReason ??
+                (keylessProvider ? "Add an API key first" : undefined)
+              }
             />
           ))}
           {reloadFailed && (

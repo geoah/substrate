@@ -40,6 +40,9 @@ export interface UnfinishedTurn {
   title: string
   /** Why, when the thread says. */
   detail?: string
+  /** What going on is called: a failed turn is tried again, and one that
+   * was cut short is continued. Both continue the thread with no message. */
+  action: "Continue" | "Try again"
 }
 
 /** The reason the loop settles a turn the server's shutdown ended with
@@ -80,19 +83,26 @@ export function unfinishedTurn(
             tone: "warn",
             title: `${name} didn’t finish`,
             detail: "The server restarted while it was working.",
+            action: "Continue",
           }
-        : { tone: "quiet", title: `${name} was stopped before it finished` }
+        : {
+            tone: "quiet",
+            title: `${name} was stopped before it finished`,
+            action: "Continue",
+          }
     case "overbudget":
       return {
         tone: "warn",
         title: `${name} didn’t finish`,
         detail: limitWords(reason),
+        action: "Continue",
       }
     case "error":
       return {
         tone: "bad",
         title: `${name} ran into a problem and didn’t finish`,
         ...(reason && { detail: `What failed: ${reason}` }),
+        action: "Try again",
       }
     default:
       return undefined

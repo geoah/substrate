@@ -227,10 +227,12 @@ describe("agent runs", () => {
       tone: "warn",
       title: "Moss didn’t finish",
       detail: "The server restarted while it was working.",
+      action: "Continue",
     })
     expect(unfinishedTurn(ended("stopped", "stopped by api"), "Moss")).toEqual({
       tone: "quiet",
       title: "Moss was stopped before it finished",
+      action: "Continue",
     })
     expect(
       unfinishedTurn(ended("overbudget", "max turns reached (8)"), "Moss")
@@ -256,6 +258,8 @@ describe("agent runs", () => {
       tone: "bad",
       title: "Moss ran into a problem and didn’t finish",
       detail: "What failed: llm: overloaded",
+      // A failed turn is tried again; one cut short is continued.
+      action: "Try again",
     })
     for (const status of ["ok", "running"]) {
       expect(unfinishedTurn(ended(status), "Moss")).toBeUndefined()

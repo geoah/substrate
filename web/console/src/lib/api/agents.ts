@@ -12,7 +12,6 @@ import { queryOptions } from "@tanstack/react-query"
 
 import {
   createRecord,
-  fetchRecord,
   fetchRecordsPage,
   patchRecord,
   recordsQueryOptions,
@@ -393,32 +392,6 @@ function threadMessagesParams(threadId: string): FirstPageParams {
   }
 }
 
-/** A thread as it stands now: its status, read first, then its newest
- * messages. Read straight from the server and never through the query
- * cache, so it neither joins a read already in flight (which may predate a
- * write) nor writes into the transcript a live turn is drawn over. A turn
- * claims its thread (`running`) before it writes its user message, so a
- * thread that was not running before its messages were read holds every
- * message it admitted by then. */
-export async function readThreadNow(
-  threadId: string,
-  signal?: AbortSignal
-): Promise<{ status: string; messages: SubstrateRecord[] }> {
-  const thread = await fetchRecord(
-    CORE_AUTHORITY,
-    LLM_PACKAGE_NAME,
-    "thread",
-    threadId,
-    signal
-  )
-  const page = await fetchRecordsPage(threadMessagesParams(threadId), signal)
-  const status = thread.properties.status
-  return {
-    status: typeof status === "string" ? status : "",
-    messages: page.records,
-  }
-}
-
 /** How many turns of one thread the surface reads. The wire caps a page at
  * 500, and nothing here pages further: past this a conversation shows its most
  * recent window. */
@@ -717,17 +690,33 @@ export function browserTimezone(): string | undefined {
   }
 }
 
+/** An id for a message this client is about to send: a UUID, which is a
+ * legal record id. The fallback is for a page served without a secure
+ * context, where `randomUUID` is absent. */
+export function newMessageId(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
 /** Open or continue a thread against an agent with one user message and stream
  * the run: one AgentEvent per line (thread first, deltas and tool lifecycle as
  * they happen, one done event carrying the AgentResult). The turn runs on the
  * server whether or not this stream stays open; `attachThread` picks it up
- * again. */
+ * again.
+ *
+ * The message goes under `messageId`, so the same call made again is safe: a
+ * message the server already holds writes nothing and runs nothing, and the
+ * stream is the `thread` event and then what an attach answers (the running
+ * turn, or one `idle` line). */
 export function streamChat(
   opts: {
     agent: string
     /** Continues an existing thread; empty opens one. */
     thread?: string
     message: string
+    /** The id this client chose for the message (`newMessageId`). */
+    messageId: string
     /** The records the message is about, as record paths. */
     context?: string[]
   } & StreamHandlers
@@ -735,6 +724,7 @@ export function streamChat(
   const body: ChatRequest = {
     thread: opts.thread ?? "",
     message: opts.message,
+    messageId: opts.messageId,
     timezone: browserTimezone(),
   }
   if (opts.context?.length) body.context = opts.context
@@ -754,6 +744,21 @@ export function attachThread(
   return openAgentStream(
     threadVerbPath(opts.thread, "events"),
     { method: "GET" },
+    opts
+  )
+}
+
+/** Go on with a thread whose last turn stopped, ran out of budget or failed,
+ * with no new message: the stored rows are the whole conversation, and the
+ * stream is a chat turn's. A thread a turn runs on is refused with the
+ * reason `thread_busy`, and one whose last turn finished with
+ * `nothing_to_continue`. */
+export function continueThread(
+  opts: { thread: string } & StreamHandlers
+): ChatHandle {
+  return openAgentStream(
+    threadVerbPath(opts.thread, "continue"),
+    { method: "POST" },
     opts
   )
 }
