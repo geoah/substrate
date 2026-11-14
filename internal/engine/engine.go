@@ -1329,7 +1329,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	// server, and a newer binary migrating that server's database would close
 	// the server's rollback. It refuses a database it would migrate, as the
 	// runner refuses one a newer binary migrated.
-	schemaGate := migrate
+	schemaGate := func(ctx context.Context, db *sql.DB) error { return migrate(ctx, db, s.log) }
 	if s.readOnly {
 		schemaGate = checkMigrated
 	}

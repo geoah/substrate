@@ -2084,6 +2084,13 @@ webhook arm, and add the names each callable reads; adding a shipped
 sample again does the same for its own trigger but discards a hand-set `key`
 ([functions](functions.md#triggers)).
 
+**Every migration a start applies is logged.** The runner logs
+`substrate: ran a SQL migration` at INFO for each schema migration it
+applies, with its `version`, its `name` and how long it `took`, and
+`substrate: ran no SQL migration: none is pending` when there is none; a
+repository's open logs `substrate: ran a repository migration` for each of
+those. A read-only command applies none and logs neither.
+
 **A migration this binary does not carry stops the boot.** The runner records
 each migration's version, name and sha256 in `schema_migrations` as it applies
 it, and every boot reads that table back before applying anything. A recorded

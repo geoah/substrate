@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"sort"
@@ -230,7 +231,7 @@ func MigrateThroughWithVectorVersion(ctx context.Context, dsn string, through in
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	return migrateWith(ctx, db, through, func(context.Context, *sql.Conn) (string, error) { return version, nil })
+	return migrateWith(ctx, db, through, func(context.Context, *sql.Conn) (string, error) { return version, nil }, slog.New(slog.DiscardHandler))
 }
 
 // VectorVersion is the pgvector version the boot's floor check reads.

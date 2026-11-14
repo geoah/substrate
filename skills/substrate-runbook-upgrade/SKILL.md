@@ -428,7 +428,11 @@ Not `docker compose restart`: it keeps the environment the container was
 created with.
 
 Watch the log until the server is serving: a long boot import logs `still
-booting` every 10 seconds, and that is progress, not a hang. Then switch the
+booting` every 10 seconds, and that is progress, not a hang. Each schema
+migration the boot applies logs `substrate: ran a SQL migration` with its
+number, name and how long it took (`ran no SQL migration: none is pending`
+when there is none), and each repository migration `substrate: ran a
+repository migration`; tell the user which ran. Then switch the
 user's `substratectl` to the one downloaded in step 4; every later step
 uses it.
 
