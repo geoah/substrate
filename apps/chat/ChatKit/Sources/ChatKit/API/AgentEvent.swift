@@ -82,6 +82,9 @@ struct AgentEvent: Codable, Sendable, Equatable {
     /// the seconds a provider asked to wait. Absent from an older server.
     var cause: String?
     var retryAfter: Int?
+    /// Rides an `error` that is not a failed turn and so has no `cause`:
+    /// `auth`, `internal` or `unavailable` (`StreamErrorCode`).
+    var code: String?
 
     /// One ndjson line, or nil: a blank line, an unknown kind (a newer
     /// server's) or garbage. The `{}` heartbeat is `.heartbeat`.
@@ -109,6 +112,7 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.job = string("job")
         event.cause = string("cause")
         event.retryAfter = int("retryAfter")
+        event.code = string("code")
         if let result = object["result"] { event.result = try? ValueCoding.decode(AgentResult.self, from: result) }
         return event
     }

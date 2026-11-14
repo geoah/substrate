@@ -178,6 +178,13 @@ extension ChatApp {
                     }
                 }
             }
+        case .readFeatures:
+            // A read that fails changes nothing: the chat goes on as it
+            // does on a server it knows nothing of.
+            return .once {
+                guard let client = await source.current(), let discovery = try? await client.discovery() else { return nil }
+                return Event(.featuresRead(agents: discovery.feature("agents")?.revision ?? 0))
+            }
         case let .fetchThread(thread):
             return .once {
                 guard let client = await source.current() else { return nil }

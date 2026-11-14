@@ -43,6 +43,9 @@ extension ChatApp {
         case let .refreshFailed(failure):
             next.refreshing = false
             next.listFailure = failure.report == nil ? failure : nil
+        case let .featuresRead(agents):
+            next.agentsRevision = agents
+            next.continueUnserved = false
         case let .threadsRead(threads):
             apply(&next, threads: threads)
             afterList(&next)
@@ -438,7 +441,7 @@ extension ChatApp {
     private func refresh(_ state: inout State) {
         guard state.session != nil, state.opened, !state.accessEnded, state.online else { return }
         state.refreshing = true
-        state.asks.append(.refresh(state.plan))
+        state.asks += [.refresh(state.plan), .readFeatures]
     }
 
     private func refreshed(_ state: inout State, _ refresh: ChatAppStep.Refresh) {

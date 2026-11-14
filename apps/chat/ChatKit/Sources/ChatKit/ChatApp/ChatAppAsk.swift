@@ -30,6 +30,9 @@ enum ChatAppAsk: Codable, Equatable, Sendable {
     case loadCached(Lease, thread: String, epoch: Int)
 
     case refresh(Plan)
+    /// The server's discovery document, for the revision of what the chat
+    /// may call.
+    case readFeatures
     case cards(Plan, threads: [String])
     case openings([String])
     case read(thread: String, first: Int, epoch: Int, version: Int)

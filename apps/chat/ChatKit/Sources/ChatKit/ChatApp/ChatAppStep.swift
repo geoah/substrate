@@ -25,6 +25,8 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case refreshAsked
     case refreshed(Refresh)
     case refreshFailed(Failure)
+    /// The `agents` feature's revision, as the discovery document says it.
+    case featuresRead(agents: Int)
     case threadsRead(Threads)
     case agentsRead(agents: [Record], providers: [Record]?, models: [Record]?, keys: ProviderKeys?)
     case cardsRead(Cards)

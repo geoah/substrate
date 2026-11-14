@@ -104,7 +104,9 @@ enum ChatAPI {
                     }
                     for try await line in lines.lines {
                         guard let event = AgentEvent.parse(line) else { continue }
-                        if let failure = event.failure { throw TurnFailed(text: failure, cause: event.cause, retryAfter: event.retryAfter) }
+                        if let failure = event.failure {
+                            throw TurnFailed(text: failure, cause: event.cause, retryAfter: event.retryAfter, code: event.code)
+                        }
                         continuation.yield(event)
                     }
                     continuation.finish()
@@ -123,10 +125,23 @@ enum ChatAPI {
     }
 }
 
-/// A turn that failed after its stream began: the loop's own words, and
-/// the `cause` and `retryAfter` a server that names causes sends with them.
+/// A stream that ended in an `error` event after it began: the server's own
+/// words, the `cause` and `retryAfter` a server that names causes sends
+/// with a failed turn, and the `code` of an error that is not one.
 struct TurnFailed: Error, Sendable {
     let text: String
     var cause: String?
     var retryAfter: Int?
+    var code: String?
+}
+
+/// The `code` of an `error` event that is not a failed turn and carries no
+/// `cause`.
+enum StreamErrorCode: String, CaseIterable, Sendable {
+    /// The sign-in ended while the stream was open.
+    case auth
+    /// The server panicked.
+    case `internal`
+    /// This client read too slowly and was cut off; the turn runs on.
+    case unavailable
 }

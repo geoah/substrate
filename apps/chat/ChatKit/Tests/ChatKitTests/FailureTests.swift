@@ -32,12 +32,12 @@ private let agentPage = FailureAction.open("https://s.example.com/agents/substra
 struct FailureSentences {
     /// The table of the plan's 8c, a row per cause of the closed set.
     static let causes: [RunCause: (sentence: String, note: String?, button: String, action: FailureAction)] = [
-        .providerKeyMissing: ("Anthropic has no API key yet.", nil, "Add Key", providerPage),
         .providerKeyRefused: ("Anthropic refused the API key.", nil, "Replace Key", providerPage),
         .providerRateLimited: ("Anthropic is limiting requests.", nil, "Try Again", .resume),
         .providerBilling: ("The Anthropic account is out of credit.", nil, "Try Again", .resume),
         .providerOverloaded: ("Anthropic is having trouble.", nil, "Try Again", .resume),
         .providerUnavailable: ("Anthropic is having trouble.", nil, "Try Again", .resume),
+        .providerRejected: ("Anthropic turned this request down.", nil, "New Chat", .newChat(agent: "substrate.reamde.dev/assistant/moss")),
         .modelUnavailable: ("Anthropic does not offer this model to your key.", nil, "Open in Console", agentPage),
         .contextTooLong: ("This chat is too long for the model.", nil, "New Chat", .newChat(agent: "substrate.reamde.dev/assistant/moss")),
         .allowanceSpent: ("Today's allowance is used up.", "It resets at midnight UTC.", "Add Your Own Key", providerPage),
@@ -47,7 +47,7 @@ struct FailureSentences {
         .turnLimit: ("Moss ran out of room before finishing.", nil, "Continue", .resume),
         .toolCallLimit: ("Moss ran out of room before finishing.", nil, "Continue", .resume),
         .deadline: ("Moss ran out of room before finishing.", nil, "Continue", .resume),
-        .owner: ("Moss was stopped before it finished.", nil, "Continue", .resume),
+        .requested: ("Moss was stopped before it finished.", nil, "Continue", .resume),
         .shutdown: ("The server restarted while Moss was working.", nil, "Try Again", .resume),
     ]
 
@@ -77,8 +77,9 @@ struct FailureSentences {
     }
 
     @Test func everyRefusalReasonHasItsSentenceAndItsButton() {
-        let expected: [RefusalReason: (String, String, FailureAction)] = [
+        let expected: [RefusalReason: (String, String?, FailureAction?)] = [
             .threadBusy: ("Moss is still answering in this chat.", "Send Again", .send),
+            .nothingToContinue: ("Moss already finished this reply.", nil, nil),
             .turnCap: ("Too many replies are being written at once.", "Send Again", .send),
             .spendCap: ("Today's spending limit is reached.", "Open in Console", agentPage),
             .providerKeyMissing: ("Anthropic has no API key yet.", "Add Key", providerPage),
@@ -93,6 +94,9 @@ struct FailureSentences {
             #expect(strip.button?.title == expected[reason]!.1, "\(reason)")
             #expect(strip.button?.action == expected[reason]!.2, "\(reason)")
         }
+        // A missing key is a refusal, never a run's cause: the server names it
+        // before any thread opens.
+        #expect(RunCause(rawValue: "provider_key_missing") == nil)
         // A reason this build does not know acts on the status alone.
         let unknown = FailurePresenter.present(Failure(.send, .http(status: 409, code: "conflict", reason: "a_new_reason"), said: "words"), context())
         #expect(unknown.sentence == "Your message wasn't sent." && unknown.note == "Your message is in the box below.")
@@ -186,7 +190,9 @@ struct FailureSentences {
     }
 
     @Test func theKeySheetIsTheAppsOwnWhereItHasOne() {
-        let sheet = FailurePresenter.present(run("provider_key_missing"), context { $0.keySheet = true })
+        let missing = Failure(.send, .http(status: 422, code: "validation", reason: "provider_key_missing"))
+        let sheet = FailurePresenter.present(missing, context { $0.keySheet = true })
+        #expect(sheet.sentence == "Anthropic has no API key yet." && sheet.note == "Your message is in the box below.")
         #expect(sheet.button == FailureButton(title: "Add Key", action: .addKey(provider: "anthropic")))
         // A refused key has a key: no sheet adds one, so the console's page.
         let refused = FailurePresenter.present(run("provider_key_refused"), context { $0.keySheet = true })
@@ -229,6 +235,30 @@ struct FailureSentences {
         let done = try #require(
             AgentEvent.parse(#"{"kind":"done","result":{"thread":"t1","status":"error","reason":"x","cause":"provider_billing","retryAfter":3}}"#))
         #expect(done.result?.cause == "provider_billing" && done.result?.retryAfter == 3)
+    }
+
+    @Test func anErrorEventThatIsNoFailedTurnSaysWhatEndedTheStream() throws {
+        func failure(_ line: String) throws -> Failure {
+            let event = try #require(AgentEvent.parse(line))
+            return Failure(
+                .attach, TurnFailed(text: event.failure ?? "", cause: event.cause, retryAfter: event.retryAfter, code: event.code), server: origin)
+        }
+        // The sign-in ended: the link's to say, on the signed-out screen.
+        let auth = try failure(#"{"kind":"error","code":"auth","error":"the token was revoked"}"#)
+        #expect(auth.why == .sessionEnded && auth.report == .accessEnded)
+        // A panic is a failed turn with the cause a failed turn would name.
+        let panic = try failure(#"{"kind":"error","code":"internal","error":"runtime error"}"#)
+        #expect(panic.why == .run(status: "error", cause: "internal"))
+        #expect(FailurePresenter.present(panic.attempting(.reply), context()).sentence == "Moss ran into a problem and didn't finish.")
+        // A slow reader was cut off: the turn runs on, and the stream is
+        // opened again, never drawn as the turn's failure.
+        let slow = try failure(#"{"kind":"error","code":"unavailable","error":"the client read too slowly"}"#)
+        #expect(slow.why == .streamEnded && slow.refusal() == nil && slow.cause == nil)
+        // A cause wins over a code, and a code this build does not know is a
+        // failed turn whose text is all there is.
+        #expect(try failure(#"{"kind":"error","code":"internal","cause":"provider_billing","error":"x"}"#).cause == "provider_billing")
+        #expect(try failure(#"{"kind":"error","code":"a_new_code","error":"x"}"#).why == .run(status: "error", cause: nil))
+        #expect(Set(StreamErrorCode.allCases.map(\.rawValue)) == ["auth", "internal", "unavailable"])
     }
 }
 
@@ -409,8 +439,8 @@ struct FailureRetries {
         return [.init(method: "GET", path: "/llm/thread/t1", answer: .json(200, failed))] + baseRoutes(threads: threads, status: "error")
     }
 
-    private func open(_ rig: ChatRig) async throws -> ChildKey {
-        try await rig.signIn()
+    private func open(_ rig: ChatRig, agents revision: Int? = 3) async throws -> ChildKey {
+        if let revision { try await rig.signIn(agents: revision) } else { try await rig.signIn() }
         await rig.harness.send(.show(thread: "t1", scene: "s"))
         let key = try #require(await rig.harness.state.scenes["s"]?.current)
         try await rig.harness.until { _ in await rig.turns(key) == ["Hi", "Hello"] }
@@ -436,8 +466,31 @@ struct FailureRetries {
         #expect(await rig.card(key) == nil)
     }
 
-    @Test func continueFallsBackOnAServerWithoutTheRouteAndRemembersIt() async throws {
-        // What a server older than the route answers, word for word.
+    @Test func continueGoesOnAsBeforeOnAServerOlderThanTheRouteAndNeverAsksIt() async throws {
+        // What a server older than the route would answer, were it asked.
+        let missing = #"{"error":{"code":"not_found","message":"no such API path: /api/v1/substrate.reamde.dev/llm/thread/t1/continue"}}"#
+        for revision in [nil, 0, 2] as [Int?] {
+            let rig = ChatRig(
+                failedRoutes() + [
+                    .init(method: "POST", path: "/continue", answer: .json(404, missing)),
+                    .init(method: "POST", path: "/chat", answer: .stream(replyStream)),
+                ])
+            let key = try await open(rig, agents: revision)
+            try await rig.send(.draft("half a thought"), to: key)
+            try await rig.send(.continueTurn, to: key)
+            try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
+            // What Continue did before the route: the words as the person's
+            // own message, and the half-typed one left alone.
+            let body = try #require(JSONValue.parse(rig.server.body("POST", "/chat")))
+            #expect(body["thread"]?.string == "t1" && body["message"]?.string == "Continue where you left off.")
+            try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+            #expect(await rig.live(key)?.draft == "half a thought")
+            // The document said so: the route was never probed.
+            #expect(rig.server.count("/continue") == 0, "revision \(String(describing: revision))")
+        }
+    }
+
+    @Test func aServerThatWentBackSinceItsDocumentWasReadIsBelievedUntilItIsReadAgain() async throws {
         let missing = #"{"error":{"code":"not_found","message":"no such API path: /api/v1/substrate.reamde.dev/llm/thread/t1/continue"}}"#
         let rig = ChatRig(
             failedRoutes() + [
@@ -445,25 +498,23 @@ struct FailureRetries {
                 .init(method: "POST", path: "/chat", answer: .stream(replyStream)),
             ])
         let key = try await open(rig)
-        try await rig.send(.draft("half a thought"), to: key)
         try await rig.send(.continueTurn, to: key)
         try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
-        // What Continue did before the route: the words as the person's own
-        // message, and the half-typed one left alone.
-        let body = try #require(JSONValue.parse(rig.server.body("POST", "/chat")))
-        #expect(body["thread"]?.string == "t1" && body["message"]?.string == "Continue where you left off.")
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
-        #expect(await rig.live(key)?.draft == "half a thought")
-        #expect(await rig.harness.state.continueUnserved)
-
-        // The answer is remembered for the session: the next Continue does
-        // not ask the route again.
+        let went = await rig.harness.state
+        #expect(went.continueUnserved && !went.continues)
+        // The next Continue does not ask the route again.
         try await rig.send(.continueTurn, to: key)
         try await rig.harness.until { _ in rig.server.count("/chat") == 2 }
         #expect(rig.server.count("/continue") == 1)
-        // A new session asks again.
+        // Until the document is read again, and says the route is there.
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 2 }
+        await rig.harness.send(.refresh)
+        try await rig.harness.until { harness in await harness.state.continues }
+        // A new session knows nothing until it reads its own.
         await rig.signOut()
-        #expect(await rig.harness.state.continueUnserved == false)
+        let fresh = await rig.harness.state
+        #expect(fresh.agentsRevision == nil && !fresh.continues)
     }
 
     @Test func aTryAgainThatFailsReplacesTheFailureInTheSamePlace() async throws {
@@ -491,6 +542,22 @@ struct FailureRetries {
         try await rig.send(.continueTurn, to: key)
         try await rig.harness.until { _ in rig.server.count("/events") == 1 }
         #expect(await rig.live(key)?.turnFailure == nil)
+    }
+
+    @Test func aThreadWithNothingToContinueIsReadForWhatItHolds() async throws {
+        let nothing = #"{"error":{"code":"conflict","reason":"nothing_to_continue","message":"the reply is complete"}}"#
+        let rig = ChatRig(
+            failedRoutes() + [
+                .init(method: "POST", path: "/continue", answer: .json(409, nothing)),
+                .init(method: "GET", path: "/events", answer: .stream([#"{"kind":"idle","status":"ok"}"#])),
+            ])
+        let key = try await open(rig)
+        // It finished elsewhere since the list last read it.
+        rig.server.route("GET", "/llm/thread/t1", .json(200, threadJSON(version: 4)))
+        try await rig.send(.continueTurn, to: key)
+        try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
+        let screen = try #require(await rig.conversation(key))
+        #expect(screen.failures == ScreenFailures())
     }
 }
 
@@ -526,13 +593,13 @@ struct FailureCountdown {
             [.init(method: "GET", path: "/llm/thread/t1", answer: .json(200, failed))] + baseRoutes(status: "error") + [
                 .init(method: "POST", path: "/chat", answer: .stream(limit)),
                 .init(method: "GET", path: "/events", answer: .stream([#"{"kind":"idle","status":"error"}"#])),
-                .init(method: "POST", path: "/continue", answer: .stream(limit)),
+                .init(method: "POST", path: "/continue", answer: .stream(limit)), featuresRoute(agents: 3),
             ])
     }
 
     @Test func itTriesAgainOnceAtZeroWhileTheChatIsOnScreen() async throws {
         let rig = limited()
-        try await rig.signIn()
+        try await rig.signIn(agents: 3)
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
@@ -559,7 +626,7 @@ struct FailureCountdown {
         let missing = #"{"error":{"code":"not_found","message":"no such API path: /api/v1/substrate.reamde.dev/llm/thread/t1/continue"}}"#
         let rig = limited()
         rig.server.route("POST", "/continue", .json(404, missing))
-        try await rig.signIn()
+        try await rig.signIn(agents: 3)
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
@@ -577,7 +644,7 @@ struct FailureCountdown {
 
     @Test func itDoesNotTryAgainWhileNobodyLooksAtTheChat() async throws {
         let rig = limited()
-        try await rig.signIn()
+        try await rig.signIn(agents: 3)
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)

@@ -138,9 +138,18 @@ struct Failure: Codable, Hashable, Sendable {
             why = .needsApproval
             said = error.message
         case let error as TurnFailed:
-            why = .run(status: "error", cause: error.cause)
             said = error.text
             retryAfter = error.retryAfter
+            // A failed turn names its cause. An error without one says by
+            // its code what ended the stream instead; a code this build does
+            // not know, and a server older than either, is a failed turn
+            // whose text is all there is.
+            switch error.cause == nil ? error.code.flatMap(StreamErrorCode.init(rawValue:)) : nil {
+            case .auth?: why = .sessionEnded
+            case .unavailable?: why = .streamEnded
+            case .internal?: why = .run(status: "error", cause: RunCause.internal.rawValue)
+            case nil: why = .run(status: "error", cause: error.cause)
+            }
         case let error as StreamBroke:
             let inner = Why(transport: error.underlying)
             why = inner ?? (error.answered ? .streamEnded : .unreachable)

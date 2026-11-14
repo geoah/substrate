@@ -147,7 +147,8 @@ one segment, encoded exactly once: an agent's id
 | Send | `POST /api/v1/substrate.reamde.dev/core/agent/{agent}/chat` `{thread, message}` → ndjson |
 | Attach | `GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events` → ndjson |
 | Stop | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/stop` → the settled result |
-| Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message. A server older than the route answers `404` (`no such API path: …`) or `405`, and the app then sends "Continue where you left off." through Send, remembering the answer until it signs out |
+| What the chat may call | `GET /.well-known/substrate/server.json`, with each list refresh: the `agents` feature's `revision`. 3 or more has the continue route |
+| Try Again, Continue | `POST /api/v1/substrate.reamde.dev/llm/thread/{id}/continue` `{}` → ndjson: the thread run again with no new message, called only where `agents` is at revision 3 or more; below it, or before the document is read, the app sends "Continue where you left off." through Send, as it did before the route. The route is never probed. `409` `thread_busy` or `nothing_to_continue`: the thread is read for what it holds |
 | Rename | `PATCH …/llm/thread/{id}` `{properties: {subject}}` |
 | Answer questions | `PATCH …/llm/interaction/{id}` `{properties: {state: answered, answers: [{question, selected: [stored option values]}]}, ifVersion}`; or `{state: dismissed}` |
 | Decide a suggestion | `PATCH …/core/recordpatchrequest/{id}` `{properties: {decision: accepted\|rejected}, ifVersion}` |
@@ -177,7 +178,7 @@ which is what tells them apart in History.
 | `truncated` | not sent | the replay lost events: the overlay is marked partial ("Part of this answer arrived before you opened the chat; it shows in full when it finishes") |
 | `idle` | not sent | the whole answer: `running` is a turn this server does not stream (background, below); any other status ended between the row read and the attach: hand over |
 | `done` | settle and hand over | same |
-| `error` (after the 200) | settle; the turn's failure, with the `cause` and `retryAfter` the event carries where the server sends them | same |
+| `error` (after the 200) | a failed turn: settle, with the `cause` and `retryAfter` the event carries where the server sends them. With no `cause` and a `code`: `auth` is the sign-in ended (the signed-out screen), `internal` a failed turn, `unavailable` a reader cut off for reading too slowly (the turn runs on: attach again, nothing drawn) | same |
 | `{}` | heartbeat, every 30 s; ignored | same |
 
 | Exit | What follows |
@@ -804,11 +805,11 @@ which the thread, the `error` event and the `done` result carry:
 
 | `cause` | Sentence | Button |
 | ------- | -------- | ------ |
-| `provider_key_missing` | Anthropic has no API key yet. | Add Key |
 | `provider_key_refused` | Anthropic refused the API key. | Replace Key |
 | `provider_rate_limited` | Anthropic is limiting requests. Try again in 20 seconds. | Try Again, counting down |
 | `provider_billing` | The Anthropic account is out of credit. | Try Again |
 | `provider_overloaded`, `provider_unavailable` | Anthropic is having trouble. (What Moss wrote so far is kept., where the transcript holds it) | Try Again |
+| `provider_rejected` | Anthropic turned this request down. | New Chat |
 | `model_unavailable` | Anthropic does not offer this model to your key. | Open in Console |
 | `context_too_long` | This chat is too long for the model. | New Chat |
 | `allowance_spent` | Today's allowance is used up. It resets at midnight UTC. | Add Your Own Key |
@@ -816,7 +817,7 @@ which the thread, the `error` event and the `done` result carry:
 | `write_failed` | The server couldn't save what Moss was doing. | Try Again |
 | `internal` | Moss ran into a problem and didn't finish. | Try Again |
 | `turn_limit`, `tool_call_limit`, `deadline` | Moss ran out of room before finishing. | Continue |
-| `owner` | Moss was stopped before it finished. | Continue |
+| `requested` | Moss was stopped before it finished. | Continue |
 
 A cause this build does not know gets the sentence for its status ("Moss
 couldn't finish this reply.", "Moss ran out of room before finishing.",
@@ -825,8 +826,10 @@ none: only then is its text read for one (`FailureFallback`, the whole of
 that matching, to delete when no such server is left). A reply whose row
 says `cutBy` reads "The reply stopped at the model's limit." with Continue.
 A refusal before the stream opens reads by the envelope's `reason`:
-`thread_busy`, `turn_cap`, `spend_cap` ("Today's spending limit is reached.",
-Open in Console), `provider_key_missing`, and today's `quota` and
+`thread_busy`, `nothing_to_continue`, `turn_cap`, `spend_cap` ("Today's
+spending limit is reached.", Open in Console), `provider_key_missing`
+("Anthropic has no API key yet.", Add Key: a missing key is refused before
+any thread opens, so it is never a run's cause), and today's `quota` and
 `key_refused`. Anything else says what did not happen, with why as its note:
 "You're offline. Your message is in the box below." (Send Again), "Couldn't
 stop Moss. The reply is still being written." (Try Again), "Couldn't load
@@ -841,7 +844,7 @@ never under the server's name.
 **The buttons.**
 
 - Try Again and Continue run the thread again through the continue route,
-  which writes no message. While the request is out the card stays, its
+  which writes no message, where the server's document says it has it. While the request is out the card stays, its
   button working and not pressable; when the server answers the card goes,
   and when it does not the new failure stands in the same place.
 - A rate limit that says how long (`retryAfter`) counts down on its button,
@@ -959,7 +962,8 @@ button and Details stack where the text size leaves no room side by side.
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in
   its place; a failed stop never reads as a failed reply; Continue falls
-  back on a 404 and remembers it; the countdown, and one automatic retry at
+  back below the revision that has the route and never probes it; the
+  `error` event's codes; the countdown, and one automatic retry at
   zero only while the chat is on screen; nothing typed is lost; the colours
   meet 4.5:1. `apple/Tests/GalleryTests.swift` draws each place over
   `FailureFixtures` at an iPhone's and an iPad's size, in light and in

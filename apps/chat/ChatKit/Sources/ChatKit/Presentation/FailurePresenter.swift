@@ -4,12 +4,14 @@ import Foundation
 /// an `error` event and a `done` result carry it in `cause`. A cause this
 /// build does not know reads as the sentence for its status.
 enum RunCause: String, CaseIterable, Sendable {
-    case providerKeyMissing = "provider_key_missing"
     case providerKeyRefused = "provider_key_refused"
     case providerRateLimited = "provider_rate_limited"
     case providerBilling = "provider_billing"
     case providerOverloaded = "provider_overloaded"
     case providerUnavailable = "provider_unavailable"
+    /// The provider turned the request itself down: asking again asks the
+    /// same thing.
+    case providerRejected = "provider_rejected"
     case modelUnavailable = "model_unavailable"
     case contextTooLong = "context_too_long"
     case allowanceSpent = "allowance_spent"
@@ -19,15 +21,19 @@ enum RunCause: String, CaseIterable, Sendable {
     case turnLimit = "turn_limit"
     case toolCallLimit = "tool_call_limit"
     case deadline
-    case owner
+    /// Somebody asked for the stop.
+    case requested
     case shutdown
 }
 
 /// The envelope's `reason` where a chat request is refused before its
 /// stream opens. `quota` and `key_refused` are the two a server answers
-/// with today; the rest arrive with the causes.
+/// with today; the rest arrive with the causes. A missing key is one of
+/// these and never a run's cause: it is refused before any thread opens.
 enum RefusalReason: String, CaseIterable, Sendable {
     case threadBusy = "thread_busy"
+    /// A continue of a thread whose reply is complete.
+    case nothingToContinue = "nothing_to_continue"
     case turnCap = "turn_cap"
     case spendCap = "spend_cap"
     case providerKeyMissing = "provider_key_missing"
@@ -130,7 +136,12 @@ enum FailurePresenter {
                     button: retry(failure, c))
             case .spendCap?:
                 return Words(tone: .bad, sentence: "Today's spending limit is reached.", button: page("Open in Console", c.agentPage) ?? retry(failure, c))
-            case .providerKeyMissing?: return run(.providerKeyMissing, status: "error", failure, c)
+            case .nothingToContinue?:
+                return Words(tone: .quiet, sentence: "\(c.agent) already finished this reply.", whole: true)
+            case .providerKeyMissing?:
+                return Words(
+                    tone: .bad, sentence: "\(provider(c)) has no API key yet.", note: boxNote(failure),
+                    button: key("Add Key", c) ?? retry(failure, c))
             case .quota?: return run(.allowanceSpent, status: "error", failure, c)
             case .keyRefused?: return run(.providerKeyRefused, status: "error", failure, c)
             case nil: return refused(status, failure, c)
@@ -144,8 +155,6 @@ enum FailurePresenter {
     private static func run(_ cause: RunCause?, status: String, _ failure: Failure, _ c: Context) -> Words {
         let again = resume("Try Again", c)
         switch cause {
-        case .providerKeyMissing?:
-            return Words(tone: .bad, sentence: "\(provider(c)) has no API key yet.", button: key("Add Key", c) ?? again)
         case .providerKeyRefused?:
             return Words(tone: .bad, sentence: "\(provider(c)) refused the API key.", button: page("Replace Key", c.providerPage) ?? again)
         case .providerRateLimited?:
@@ -160,6 +169,12 @@ enum FailurePresenter {
             return Words(
                 tone: .warn, sentence: "\(provider(c)) is having trouble.", note: c.kept ? "What \(c.agent) wrote so far is kept." : nil,
                 button: again)
+        case .providerRejected?:
+            // Trying again asks the same thing: a new chat is the way on,
+            // and the provider's own words are under Details.
+            return Words(
+                tone: .bad, sentence: "\(provider(c)) turned this request down.",
+                button: FailureButton(title: "New Chat", action: .newChat(agent: c.agentID)))
         case .modelUnavailable?:
             return Words(
                 tone: .bad, sentence: "\(provider(c)) does not offer this model to your key.",
@@ -182,7 +197,7 @@ enum FailurePresenter {
             return Words(
                 tone: .warn, sentence: "\(c.agent) ran out of room before finishing.",
                 note: FailureFallback.limit(status: status, reason: failure.said), button: resume("Continue", c))
-        case .owner?:
+        case .requested?:
             return Words(tone: .quiet, sentence: "\(c.agent) was stopped before it finished.", button: resume("Continue", c))
         case nil:
             // No cause, or one from a newer server: the sentence for the
