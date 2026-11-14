@@ -5,12 +5,21 @@
  * other agents under a "Runs on its own" caption (`agentListing`).
  * Picking an agent narrows the chats below to that agent's. The chats follow:
  * a search over the loaded chats' titles, Today / Yesterday / Earlier, the
- * most recent few with "Show more". Technical mode adds each thread's stored
- * status and tally. */
+ * most recent few with "Show more". A chat the person has not read through
+ * carries a dot and a heavier title, and each row offers Mark as unread or
+ * Mark as read beside it (`useThreadMarks`); a chat with a question, a
+ * suggested change or a call waiting says it waits on you. Technical mode
+ * adds each thread's stored status and tally. */
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { MessagesSquareIcon, PlusIcon, SearchIcon } from "lucide-react"
+import {
+  MailIcon,
+  MailOpenIcon,
+  MessagesSquareIcon,
+  PlusIcon,
+  SearchIcon,
+} from "lucide-react"
 
 import { AgentRef } from "@/components/agent/agent-ref"
 import { Pill, type PillTone } from "@/components/identity/pill"
@@ -32,12 +41,18 @@ import {
 import { CORE_AUTHORITY, CORE_PACKAGE_NAME } from "@/lib/api/http"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { unfinishedTone, type UnfinishedTurn } from "@/lib/agent-runs"
+import { threadWaiting } from "@/lib/thread-marks"
+import { cn } from "@/lib/utils"
 import { CHAT_PAGE, visibleChats } from "./visible-chats"
 
 const AGENT_ROW =
   "flex h-[30px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-muted-foreground no-underline hover:bg-hover hover:text-foreground aria-[current=true]:bg-selection aria-[current=true]:font-medium aria-[current=true]:text-foreground"
 const CHAT_ROW =
   "flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-hover aria-[current=true]:bg-selection"
+// Shown while the row is pointed at or holds the focus, and always where
+// nothing hovers (a touch screen).
+const ROW_ACTION =
+  "absolute top-1 right-1 inline-flex size-6 cursor-pointer items-center justify-center rounded-md border bg-background text-muted-foreground opacity-0 group-focus-within/chat:opacity-100 group-hover/chat:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none [@media(hover:none)]:opacity-100"
 const HEADING = "px-2 pt-3 pb-1 text-[11.5px] font-medium text-faint"
 
 const UNFINISHED_PILLS = {
@@ -82,6 +97,9 @@ export function ThreadList({
   onSelect,
   onNewChat,
   onAddAgents,
+  unread,
+  onMarkUnread,
+  onMarkRead,
 }: {
   rows: ChatRow[]
   loading: boolean
@@ -98,6 +116,12 @@ export function ThreadList({
   onNewChat: (agent?: string) => void
   /** Offers the shipped samples that bring agents. */
   onAddAgents?: () => void
+  /** The chats the person has not read through. */
+  unread?: ReadonlySet<string>
+  /** Marks a chat unread, or read; absent where the server keeps no marks,
+   * and the rows then offer neither. */
+  onMarkUnread?: (thread: string) => void
+  onMarkRead?: (thread: string) => void
 }) {
   const [query, setQuery] = useState("")
   const [limit, setLimit] = useState(CHAT_PAGE)
@@ -289,43 +313,83 @@ export function ThreadList({
                 <div className="px-1.5 pt-2.5 pb-1 text-[11.5px] font-medium text-faint">
                   {group.day}
                 </div>
-                {group.items.map((row) => (
-                  <button
-                    key={row.thread.id}
-                    type="button"
-                    aria-current={row.thread.id === selected}
-                    onClick={() => onSelect(row.thread.id)}
-                    className={CHAT_ROW}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-[13px] font-medium">
-                        {row.title}
-                      </span>
-                      {row.thread.properties.status === "running" && (
-                        <Pill tone="accent" live className="shrink-0">
-                          Working
-                        </Pill>
+                {group.items.map((row) => {
+                  const isUnread = unread?.has(row.thread.id) ?? false
+                  const mark = isUnread ? onMarkRead : onMarkUnread
+                  return (
+                    <div key={row.thread.id} className="group/chat relative">
+                      <button
+                        type="button"
+                        aria-current={row.thread.id === selected}
+                        data-unread={isUnread || undefined}
+                        onClick={() => onSelect(row.thread.id)}
+                        className={CHAT_ROW}
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {isUnread && (
+                            <>
+                              <span
+                                aria-hidden
+                                className="size-2 shrink-0 rounded-full bg-primary"
+                              />
+                              <span className="sr-only">{"Unread: "}</span>
+                            </>
+                          )}
+                          <span
+                            className={cn(
+                              "truncate text-[13px]",
+                              isUnread ? "font-semibold" : "font-medium"
+                            )}
+                          >
+                            {row.title}
+                          </span>
+                          {row.thread.properties.status === "running" && (
+                            <Pill tone="accent" live className="shrink-0">
+                              Working
+                            </Pill>
+                          )}
+                          <UnfinishedPill thread={row.thread} />
+                          {threadWaiting(row.thread) > 0 && (
+                            <Pill tone="warn" className="shrink-0">
+                              Waiting on you
+                            </Pill>
+                          )}
+                        </span>
+                        {row.preview && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {row.preview}
+                          </span>
+                        )}
+                        <span className="truncate text-xs text-faint">
+                          {agent
+                            ? sinceWords(threadActiveAt(row.thread))
+                            : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${sinceWords(threadActiveAt(row.thread))}`}
+                        </span>
+                        {technical && (
+                          <span className="truncate text-[11.5px] text-faint">
+                            {tallyWords(threadTally(row.thread)).join(" · ") ||
+                              "No tally recorded"}
+                          </span>
+                        )}
+                      </button>
+                      {mark && (
+                        <button
+                          type="button"
+                          onClick={() => mark(row.thread.id)}
+                          aria-label={`${isUnread ? "Mark as read" : "Mark as unread"}: ${row.title}`}
+                          title={isUnread ? "Mark as read" : "Mark as unread"}
+                          className={ROW_ACTION}
+                        >
+                          {isUnread ? (
+                            <MailOpenIcon className="size-3.5" />
+                          ) : (
+                            <MailIcon className="size-3.5" />
+                          )}
+                        </button>
                       )}
-                      <UnfinishedPill thread={row.thread} />
-                    </span>
-                    {row.preview && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {row.preview}
-                      </span>
-                    )}
-                    <span className="truncate text-xs text-faint">
-                      {agent
-                        ? sinceWords(threadActiveAt(row.thread))
-                        : `${row.agentId ? agentName(row.agentId) : "An agent"} · ${sinceWords(threadActiveAt(row.thread))}`}
-                    </span>
-                    {technical && (
-                      <span className="truncate text-[11.5px] text-faint">
-                        {tallyWords(threadTally(row.thread)).join(" · ") ||
-                          "No tally recorded"}
-                      </span>
-                    )}
-                  </button>
-                ))}
+                    </div>
+                  )
+                })}
               </div>
             ))}
             {more > 0 && (

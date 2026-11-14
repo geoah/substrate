@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { useAgentRuns } from "@/hooks/use-agent-runs"
 import { useLiveRecords } from "@/hooks/use-live-records"
+import { useThreadMarks } from "@/hooks/use-thread-marks"
 import {
   agentPurpose,
   chatCapable,
@@ -153,6 +154,9 @@ export function AgentsPage() {
     enabled: Boolean(threadId) && !listed && !conversations.isPending,
   })
   const threadRecord = listed ?? single.data
+  // How far the person has read each chat: the dots in the list, and the
+  // write that follows reading the one that is open.
+  const marks = useThreadMarks(threads, threadRecord)
   const threadAgent = threadRecord ? threadAgentId(threadRecord) : undefined
   // A new chat's agent: the one asked for, else whoever you talked to last
   // (when you still can), else the first you can talk to.
@@ -232,6 +236,9 @@ export function AgentsPage() {
         setChatsSheet(false)
         setAdding(true)
       }}
+      unread={marks.unread}
+      onMarkUnread={marks.supported ? marks.markUnread : undefined}
+      onMarkRead={marks.supported ? marks.markRead : undefined}
     />
   )
   const panel = agent ? (

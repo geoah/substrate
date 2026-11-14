@@ -144,6 +144,60 @@ function renderList(props: Partial<Parameters<typeof ThreadList>[0]> = {}) {
 afterEach(cleanup)
 
 describe("ThreadList", () => {
+  it("marks an unread chat and offers Mark as read on it, Mark as unread on the others", async () => {
+    const fresh = row(0, HELPER, "New reply")
+    const seen = row(1, HELPER, "Old news")
+    const onMarkUnread = vi.fn()
+    const onMarkRead = vi.fn()
+    renderList({
+      rows: [fresh, seen],
+      unread: new Set([fresh.thread.id]),
+      onMarkUnread,
+      onMarkRead,
+    })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    const unread = within(chats).getByRole("button", {
+      name: /^Unread:\s*New reply/,
+    })
+    expect(unread.dataset.unread).toBe("true")
+    expect(
+      within(chats).getByRole("button", { name: /^Old news/ }).dataset.unread
+    ).toBeUndefined()
+
+    fireEvent.click(
+      within(chats).getByRole("button", { name: "Mark as read: New reply" })
+    )
+    expect(onMarkRead).toHaveBeenCalledWith(fresh.thread.id)
+    fireEvent.click(
+      within(chats).getByRole("button", { name: "Mark as unread: Old news" })
+    )
+    expect(onMarkUnread).toHaveBeenCalledWith(seen.thread.id)
+    expect(
+      within(chats).queryByRole("button", { name: "Mark as unread: New reply" })
+    ).toBeNull()
+  })
+
+  it("offers neither action where the server keeps no marks", async () => {
+    renderList({ rows: [row(0, HELPER, "A chat")] })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    expect(within(chats).queryByRole("button", { name: /^Mark as/ })).toBeNull()
+  })
+
+  it("says a chat waits on you while a question, a change or a call waits in it", async () => {
+    const waiting = row(0, HELPER, "Needs an answer")
+    waiting.thread.properties.waitingOnPerson = 2
+    const quiet = row(1, HELPER, "Nothing pending")
+    quiet.thread.properties.waitingOnPerson = 0
+    renderList({ rows: [waiting, quiet] })
+    const chats = await screen.findByRole("navigation", { name: "Chats" })
+    expect(
+      within(chats).getByRole("button", { name: /Needs an answer/ }).textContent
+    ).toContain("Waiting on you")
+    expect(
+      within(chats).getByRole("button", { name: /Nothing pending/ }).textContent
+    ).not.toContain("Waiting on you")
+  })
+
   it("marks a chat whose turn is still running", async () => {
     const running = row(0, HELPER, "Busy chat")
     running.thread.properties.status = "running"
