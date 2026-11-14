@@ -128,6 +128,52 @@ struct PresenterPartsTests {
         rig.server.release()
     }
 
+    @Test func aFailureMakesAgainOnlyThePartThatDrawsIt() async throws {
+        let (rig, shown, live) = try await streaming()
+        let app = rig.runtime.controller
+        var state = await rig.harness.state
+        let conversations = [shown: try #require(await rig.live(shown)), live: try #require(await rig.live(live))]
+        _ = app.present(input(rig, state, conversations))
+        func made() -> [Int] { ["list", "settings", "frame", "chat/\(shown.rawValue)/screen", "chat/\(live.rawValue)/screen"].map(app.kept.made) }
+
+        // The list's own failure and its feed opening again are drawn at
+        // the tree's top, and what the server's document said of the
+        // continue route and a rename still out are nobody's to draw: no
+        // part is made again.
+        var counts = made()
+        state.listFailure = Failure(.refresh, .timeout)
+        state.feedReconnecting = true
+        state.agentsRevision = 5
+        state.continueUnserved = true
+        state.renaming["t-7"] = "Plants"
+        var tree = app.present(input(rig, state, conversations))
+        #expect(made() == counts)
+        #expect(tree.list.failure?.sentence == "Couldn't refresh your chats." && tree.list.reconnecting)
+
+        // A rename the server did not take, of the chat a window shows:
+        // that chat's screen alone, which draws it above its composer.
+        counts = made()
+        state.renameFailure = .init(thread: "t-5", subject: "Plants", failure: Failure(.rename, .timeout))
+        tree = app.present(input(rig, state, conversations))
+        #expect(zip(made(), counts).map { $0 - $1 } == [0, 0, 0, 1, 0])
+        #expect(tree.conversations[shown]?.failures.strip != nil && tree.conversations[live]?.failures.strip == nil)
+
+        // Its rows could not be read: the same.
+        counts = made()
+        state.renameFailure = nil
+        state.rowsFailed["t-5"] = Failure(.rows, .timeout)
+        tree = app.present(input(rig, state, conversations))
+        #expect(zip(made(), counts).map { $0 - $1 } == [0, 0, 0, 1, 0])
+        #expect(tree.conversations[shown]?.failures.strip?.sentence == "Couldn't load this chat's messages.")
+
+        // Another chat's rows: no screen a window shows.
+        counts = made()
+        state.rowsFailed["t-7"] = Failure(.rows, .timeout)
+        _ = app.present(input(rig, state, conversations))
+        #expect(made() == counts)
+        rig.server.release()
+    }
+
     @Test func theListIsKeptUntilTheInstantARowStopsBeingTrue() async throws {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = ChatAppState()
