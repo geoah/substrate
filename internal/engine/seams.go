@@ -503,3 +503,18 @@ func actorValuesAt(v any, path string, emit func(any)) {
 		}
 	}
 }
+
+// ActorPositionsInMarks is every value the marks of a record read hold at
+// the engine's mark positions (actorIDPositions["mark"]), each served as a
+// link to an actor record, not the bare id a line holds there. Tests only.
+func ActorPositionsInMarks(marks map[string]any) []ActorPosition {
+	var out []ActorPosition
+	for _, property := range sortedKeys(marks) {
+		for _, path := range actorIDPositions["mark"] {
+			actorValuesAt(marks[property], path, func(v any) {
+				out = append(out, ActorPosition{Name: "mark/" + path, Ref: true, Value: v})
+			})
+		}
+	}
+	return out
+}

@@ -1227,11 +1227,81 @@ func keptAsText(p engine.ActorPosition) bool {
 	return !keptLinked(p)
 }
 
-// keptTextual is whether a record of kind may spell a hand in its free text:
-// an actor record's own name and title, and a declaration's body. It never
-// exempts a position.
-func keptTextual(kind string) bool {
-	return kind == vocabulary.CoreKind(vocabulary.DocActor) || vocabulary.IsDeclarationRef(kind)
+// keptActorOwn are the fields of an actor record that spell its own hand.
+var keptActorOwn = []string{"name", "key"}
+
+// keptWithoutOwnText is what a record of kind holds, props, with every field
+// that may rightly spell a hand left out: of a declaration, the values the
+// dialect classes as its author's text, code or prompt
+// (vocabulary.WithoutAuthorText, the engine's own table); of an actor record,
+// its own name and key. A field is spared, never a kind: every other value
+// of every record is held to spell no hand.
+func keptWithoutOwnText(kind string, props map[string]any) any {
+	switch {
+	case vocabulary.IsDeclarationRef(kind):
+		return vocabulary.WithoutAuthorText(kind, props)
+	case kind == vocabulary.CoreKind(vocabulary.DocActor):
+		out := maps.Clone(props)
+		for _, k := range keptActorOwn {
+			delete(out, k)
+		}
+		return out
+	}
+	return props
+}
+
+// keptFreePayload is a line's payload, or a change event's, as the free
+// spelling pattern reads it: every record effect's set held to
+// keptWithoutOwnText, and an actor record's title left out.
+func keptFreePayload(t *testing.T, p map[string]any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cp map[string]any
+	if err := json.Unmarshal(raw, &cp); err != nil {
+		t.Fatal(err)
+	}
+	effects, _ := cp["fold"].([]any)
+	for _, e := range effects {
+		ef, _ := e.(map[string]any)
+		delta, _ := ef["delta"].(map[string]any)
+		if delta == nil {
+			continue
+		}
+		ref, _ := ef["ref"].(string)
+		if set, ok := delta["set"].(map[string]any); ok {
+			delta["set"] = keptWithoutOwnText(ref, set)
+		}
+		if ref == vocabulary.CoreKind(vocabulary.DocActor) {
+			delete(delta, "title")
+		}
+	}
+	out, err := json.Marshal(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// keptFreeRecord is a record a read serves, as the free spelling pattern
+// reads it: its properties held to keptWithoutOwnText, and an actor
+// record's title left out.
+func keptFreeRecord(t *testing.T, kind string, read map[string]any) []byte {
+	t.Helper()
+	cp := maps.Clone(read)
+	if props, ok := cp["properties"].(map[string]any); ok {
+		cp["properties"] = keptWithoutOwnText(kind, props)
+	}
+	if kind == vocabulary.CoreKind(vocabulary.DocActor) {
+		delete(cp, "title")
+	}
+	out, err := json.Marshal(cp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // keptSetsIn reports whether a payload sets property on a record of kind.
@@ -1316,7 +1386,7 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 			if keptSetsIn(p, vocabulary.CoreKind("package"), "actors") {
 				asText[keptPackageActors]++
 			}
-			if !keptTextual(e.Kind) && keptActorSpelling.Match(e.Payload) {
+			if keptActorSpelling.Match(keptFreePayload(t, p)) {
 				spelled++
 			}
 		}
@@ -1371,11 +1441,8 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 	}
 	free := func(where, kind string, raw []byte) {
 		t.Helper()
-		if keptTextual(kind) {
-			return
-		}
 		if m := keptActorSpelling.Find(raw); m != nil {
-			t.Errorf("%s (%s) holds the spelling %s", where, kind, m)
+			t.Errorf("%s (%s) holds the spelling %s outside a field that may spell a hand", where, kind, m)
 		}
 	}
 
@@ -1424,7 +1491,7 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 			if keptSetsIn(p, vocabulary.CoreKind("package"), "actors") {
 				t.Errorf("%s sets a package's `actors`", where)
 			}
-			free(where, e.Kind, e.Payload)
+			free(where, e.Kind, keptFreePayload(t, p))
 		}
 	}
 	if lines == 0 {
@@ -1447,11 +1514,7 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 			if keptSetsIn(c.Payload, vocabulary.CoreKind("triggerrun"), "principal") {
 				t.Errorf("%s sets a trigger run's `principal`", where)
 			}
-			body, err := json.Marshal(c.Payload)
-			if err != nil {
-				t.Fatal(err)
-			}
-			free(where, c.Kind, body)
+			free(where, c.Kind, keptFreePayload(t, c.Payload))
 		}
 		if page.Cursor == 0 {
 			break
@@ -1476,14 +1539,85 @@ func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
 		}
 		props, _ := rec.Read["properties"].(map[string]any)
 		positions(path, engine.ActorPositionsInRecord(kind, props))
+		marks, _ := rec.Read["marks"].(map[string]any)
+		positions(path, engine.ActorPositionsInMarks(marks))
 		if kind == vocabulary.CoreKind("triggerrun") && props["principal"] != nil {
 			t.Errorf("%s still holds `principal`: %v", path, props["principal"])
 		}
 		if kind == vocabulary.CoreKind("package") && props["actors"] != nil {
 			t.Errorf("%s still lists actors: %v", path, props["actors"])
 		}
-		free(path, kind, body)
+		free(path, kind, keptFreeRecord(t, kind, rec.Read))
 	}
 
 	t.Logf("imported: %d history lines, %d change events and %d records, naming a hand by an id %d times", lines, events, len(k.got), linked)
+}
+
+// The walker of a read's marks refuses a hand left as text at a mark's
+// setBy or onBehalfOf, as a read serves them, and takes a link. It needs no
+// database.
+func TestAReadsMarkHoldingAHandAsTextIsRefused(t *testing.T) {
+	t.Parallel()
+	link := map[string]any{"ref": vocabulary.CoreKind(vocabulary.DocActor) + "/" + vocabulary.DerivedMintedID("kept", "hand")}
+	marks := map[string]any{
+		"name":  map[string]any{"setBy": "owner", "onBehalfOf": link},
+		"phone": map[string]any{"setBy": link, "pinned": true},
+	}
+	var text, linked []string
+	for _, p := range engine.ActorPositionsInMarks(marks) {
+		switch {
+		case keptAsText(p):
+			text = append(text, fmt.Sprintf("%s=%v", p.Name, p.Value))
+		case keptLinked(p):
+			linked = append(linked, p.Name)
+		}
+	}
+	if len(text) != 1 || text[0] != "mark/setBy=owner" {
+		t.Errorf("the walker found %v as text, want the one textual setBy", text)
+	}
+	if len(linked) != 2 {
+		t.Errorf("the walker found %v linked, want the onBehalfOf and the other setBy", linked)
+	}
+}
+
+// The free spelling pattern spares a field, never a kind, and the fields
+// are the engine's: a declaration's writer is no text, so a hand left
+// spelled there is found; a function's source is code, so one there is not;
+// an actor record spares its own name and title and nothing else. It needs
+// no database.
+func TestTheFreeSpellingSparesAFieldNeverAKind(t *testing.T) {
+	t.Parallel()
+	hand := "bundle:kept.example.com:people"
+	found := func(raw []byte) bool { return keptActorSpelling.Match(raw) }
+	declaration := keptFreeRecord(t, vocabulary.CoreKind(vocabulary.DocKind), map[string]any{
+		"properties": map[string]any{
+			"description": "written by " + hand,
+			"properties":  map[string]any{"name": map[string]any{"type": "string", "writer": hand, "description": hand}},
+		},
+	})
+	if !found(declaration) {
+		t.Error("a hand spelled in a declared property's writer is spared")
+	}
+	function := keptFreeRecord(t, vocabulary.CoreKind(vocabulary.DocFunction), map[string]any{
+		"properties": map[string]any{"source": "return '" + hand + "'", "description": hand},
+	})
+	if found(function) {
+		t.Error("a hand spelled in a function's source or description is found")
+	}
+	actor := vocabulary.CoreKind(vocabulary.DocActor)
+	own := keptFreeRecord(t, actor, map[string]any{"title": hand, "properties": map[string]any{"name": hand, "type": "bundle"}})
+	if found(own) {
+		t.Error("an actor record's own name and title are not spared")
+	}
+	other := keptFreeRecord(t, actor, map[string]any{"properties": map[string]any{"name": hand, "publisher": hand}})
+	if !found(other) {
+		t.Error("an actor record spares a field beside its own name")
+	}
+	line := keptFreePayload(t, map[string]any{"fold": []any{map[string]any{
+		"kind": "record", "ref": vocabulary.CoreKind(vocabulary.DocKind),
+		"delta": map[string]any{"set": map[string]any{"properties": map[string]any{"name": map[string]any{"writer": hand}}}},
+	}}})
+	if !found(line) {
+		t.Error("a hand spelled in a declaration line's writer is spared")
+	}
 }
