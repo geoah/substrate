@@ -412,9 +412,12 @@ included, is left byte for byte (the full list of positions heads
 `when:` reads
 `actorType` and `actorPackage` where it compared a spelling. An actor
 record's id is derived from the hand alone, so the step
-needs nothing but the line; repository migration 9 writes the records those
-ids name at the first open after
-([upgrading the binary](operations.md#upgrading-the-binary)). Step 5,
+needs nothing but the line; the open writes the records those ids name,
+once the shipped upgrade has declared the actor kind this binary writes,
+each by the hand the repository held that derives it, disabled where the
+hand is gone ([upgrading the binary](operations.md#upgrading-the-binary)).
+Repository migration 9 was to write them, and ran too early to: it runs
+before the stored vocabulary loads. Step 5,
 `marks`, rewrites each property's manager row into its mark
 ([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)):
 a `manager` effect becomes a `mark`, or an `unmark` where it named no actor;

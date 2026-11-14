@@ -158,6 +158,8 @@ type options struct {
 	// their declarations at creation and as an open catch-up (recordseed.go).
 	seedRecords    bool
 	seedRecordsSet bool
+	// noActorFill skips the open's actor fill (WithTestActorFillOff).
+	noActorFill bool
 	// perRecordSeed seeds the units one put at a time instead of in one bulk
 	// run, the test seam that holds the two to one answer.
 	perRecordSeed bool
@@ -729,6 +731,9 @@ type service struct {
 	// seedRecords writes shippedRecords at creation and as an open catch-up
 	// (recordseed.go).
 	seedRecords bool
+	// noActorFill skips the open's actor fill, for a test that holds a
+	// repository as a binary from before it left it (actorfill.go).
+	noActorFill bool
 	// shippedRecords are the data records the shipped tree carries beside its
 	// declarations, in file order; none for a service built from a registry.
 	shippedRecords []vocabulary.ShippedRecord
@@ -1085,6 +1090,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		seedLLMProviders: o.seedLLMProviders,
 		seedUnits:        o.seedUnits,
 		seedRecords:      o.seedRecords,
+		noActorFill:      o.noActorFill,
 		shippedRecords:   shippedRecords,
 		shippedModels:    shippedModelIDs(shippedRecords),
 		bulkSeed:         !o.perRecordSeed,
@@ -1735,6 +1741,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// After the upgrade, which declares the identity a person's actor
 		// names and the person a token acts for (people.go).
 		ds.settlePeople,
+		// After the people pass, which writes the person's own (actorfill.go).
+		ds.fillActorRecords,
 		ds.ensureTriggerCursors,
 		ds.reportOpenShippedWebhooks,
 		ds.settleInterruptedSyncs,
@@ -2026,6 +2034,11 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 			// 7 finds the mark at the first open and writes nothing. The put
 			// below is the entry that carries it.
 			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annContinuationOrder, substrate.IdentityOrder); err != nil {
+				return err
+			}
+			// Born holding the record of every hand it links, which each
+			// write ensures: the actor fill finds the mark and reads nothing.
+			if _, err := t.putAnnotation(eref{Kind: kindRepository, ID: repo.ID}, annActorRecordsFilled, 1); err != nil {
 				return err
 			}
 			_, err := t.put(substrate.PutInput{

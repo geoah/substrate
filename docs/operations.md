@@ -1956,10 +1956,23 @@ stored bare, resolving each word the way that binary did. Migration 9,
 tombstones every actor declaration the repository held (core shipped four),
 clears each package's `actors` list, links the stored values that still name
 a hand by its spelling (a package's `declaredBy`, a blob's `createdBy`, a
-call run's `caller`, whose `principal` moves to `token`), and writes an actor
-record for the person, the system, each package, function and agent it
-holds, and each app a live token was approved for, and a disabled one for
-each hand its history names whose code or approval is gone.
+call run's `caller`, whose `principal` moves to `token`), and was to write
+an actor record for every hand the repository held. It cannot: it runs
+before the stored vocabulary loads, while the actor kind is still the
+declaration kind the release kept, and writes none of them, though its log
+line counts them. The open writes them instead, once per repository, after
+the shipped upgrade and the people pass: the record of every actor a line, a
+mark or a stored reference links and the repository holds none of, by the
+hand it held that derives it (the person, the system, each package, function
+and agent it ever declared, and each app a token was approved for), disabled
+where the hand's code or approval is gone. The read takes as long as the
+history is long and holds the open: it logs `reading the repository's
+history once for the actor records it links` before it, and a restart in
+the meantime starts it over; after it, it logs `wrote the actor records the
+repository links and held none of` with what it wrote and how long it took,
+and names every id no hand derives, which it leaves without a record. It leaves
+`substrate/actor-records-filled` on the repository's own record, so the
+opens after read nothing.
 
 **A schema migration never changes what the fold holds.** The fold is every
 table `repository rebuild` clears and fills again from the changelog
