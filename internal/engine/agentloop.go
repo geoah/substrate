@@ -972,6 +972,14 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		l.in.tally.spend = l.spend
 	}
 	l.event(substrate.AgentEvent{Kind: substrate.AgentEventThread, Thread: l.threadID})
+	if in.unanswered {
+		// The turn those messages start reads them at its first call: a
+		// client that still shows one as waiting is told so.
+		for _, r := range unansweredRows(l.rows) {
+			turn, _ := anyFloat(r.props["turn"])
+			l.event(substrate.AgentEvent{Kind: substrate.AgentEventMessageTaken, ID: r.id, Turn: int(turn)})
+		}
+	}
 	return ctx, l, nil
 }
 

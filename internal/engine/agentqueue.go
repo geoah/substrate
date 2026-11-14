@@ -328,6 +328,31 @@ func (ds *dataset) startQueuedTurn(threadID, message string) <-chan struct{} {
 	return opened
 }
 
+// unansweredRows are the user rows no reply came after: those whose ordinal
+// is past every assistant row's, as unansweredMessage reads them.
+func unansweredRows(rows []threadRow) []threadRow {
+	replied := -1
+	turnOf := func(r threadRow) int {
+		t, ok := anyFloat(r.props["turn"])
+		if !ok {
+			return -1
+		}
+		return int(t)
+	}
+	for _, r := range rows {
+		if r.role() == "assistant" {
+			replied = max(replied, turnOf(r))
+		}
+	}
+	var out []threadRow
+	for _, r := range rows {
+		if r.role() == "user" && turnOf(r) > replied {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // replayOrder puts a thread's rows, read in the order they were created, in
 // the order the model read them. Only a message sent while a turn ran is out
 // of place: its row is created at once, before the reply that was streaming

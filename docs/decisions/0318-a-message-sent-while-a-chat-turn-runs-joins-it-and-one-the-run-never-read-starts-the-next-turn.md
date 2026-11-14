@@ -76,9 +76,10 @@ Compaction plans over the rows in replay order, so a summary covers a
 message where the model read it.
 
 **The stream.** Two events: `messageQueued` (the row is written: `id`,
-`turn`, `text`) and `messageTaken` (a model call now reads it). The plan's
-signal, an event whose `turn` is past the message's, is not sound: a tool
-event of the call that did not read it can carry a larger ordinal.
+`turn`, `text`) and `messageTaken` (a model call now reads it), which the
+turn a message starts sends too. The plan's signal, any event whose `turn`
+is past the message's, is not sound: a tool event of the call that did not
+read it can carry a larger ordinal. A reply's does mean it.
 
 **The revision** is `agents` 6. Below it a client must not send to a running
 thread. At it, a client built for 3 to 5 that does so gets a stream where it
