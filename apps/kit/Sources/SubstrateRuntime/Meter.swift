@@ -68,10 +68,14 @@ public final class Meter: @unchecked Sendable {
         fileprivate var key: Key
         fileprivate var began: UInt64
         fileprivate var end: (@Sendable () -> Void)?
+        /// The measurement it began in: it counts in no other.
+        fileprivate var run: Int
     }
 
     private let lock = NSLock()
     private var on = false
+    /// Moved by each `start`: what began under one is not counted in the next.
+    private var run = 0
     private var signposts: (any Signposts)?
     private var stats: [Key: Stat] = [:]
 
@@ -79,14 +83,16 @@ public final class Meter: @unchecked Sendable {
 
     public var isOn: Bool { lock.withLock { on } }
 
-    /// The sink while the meter is on, which may be none; nil while it is off.
-    private var sink: (any Signposts)?? { lock.withLock { on ? .some(signposts) : .none } }
+    /// The measurement under way, and its sink, which may be none; nil
+    /// while the meter is off.
+    private var current: (run: Int, sink: (any Signposts)?)? { lock.withLock { on ? (run, signposts) : nil } }
 
     /// Starts counting from nothing, into `signposts` as well where a
     /// profiler should draw the intervals.
     public func start(signposts: (any Signposts)? = nil) {
         lock.withLock {
             on = true
+            run += 1
             self.signposts = signposts
             stats = [:]
         }
@@ -116,24 +122,29 @@ public final class Meter: @unchecked Sendable {
     }
 
     public func count(_ point: MeterPoint, _ detail: @autoclosure () -> String = "") {
-        guard let sink else { return }
+        guard let current else { return }
         let detail = detail()
-        sink?.event(point.name, detail)
-        lock.withLock { stats[Key(point: "\(point.name)", detail: detail), default: Stat()].count += 1 }
+        current.sink?.event(point.name, detail)
+        lock.withLock {
+            guard on, run == current.run else { return }
+            stats[Key(point: "\(point.name)", detail: detail), default: Stat()].count += 1
+        }
     }
 
     /// Begins an interval; nil while the meter is off.
     public func begin(_ point: MeterPoint, _ detail: @autoclosure () -> String = "") -> Span? {
-        guard let sink else { return nil }
+        guard let current else { return nil }
         let detail = detail()
-        return Span(key: Key(point: "\(point.name)", detail: detail), began: Self.now, end: sink?.begin(point.name, detail))
+        return Span(
+            key: Key(point: "\(point.name)", detail: detail), began: Self.now, end: current.sink?.begin(point.name, detail),
+            run: current.run)
     }
 
     public func end(_ span: Span?) {
         guard let span else { return }
         let took = Self.now - span.began
         span.end?()
-        add(span.key, nanoseconds: took)
+        add(span.key, nanoseconds: took, run: span.run)
     }
 
     /// Times `body` as one interval of `point`.
@@ -146,13 +157,13 @@ public final class Meter: @unchecked Sendable {
     /// An interval measured elsewhere (a run loop's pass, a key's way to the
     /// screen).
     public func record(_ point: MeterPoint, _ detail: @autoclosure () -> String = "", nanoseconds: UInt64) {
-        guard lock.withLock({ on }) else { return }
-        add(Key(point: "\(point.name)", detail: detail()), nanoseconds: nanoseconds)
+        guard let current else { return }
+        add(Key(point: "\(point.name)", detail: detail()), nanoseconds: nanoseconds, run: current.run)
     }
 
-    private func add(_ key: Key, nanoseconds: UInt64) {
+    private func add(_ key: Key, nanoseconds: UInt64, run began: Int) {
         lock.withLock {
-            guard on else { return }
+            guard on, run == began else { return }
             var stat = stats[key, default: Stat()]
             stat.count += 1
             stat.nanoseconds += nanoseconds

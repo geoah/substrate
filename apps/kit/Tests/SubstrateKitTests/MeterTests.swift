@@ -61,6 +61,20 @@ private final class RecordedSignposts: Signposts, @unchecked Sendable {
         #expect(meter.take().isEmpty)
     }
 
+    @Test func whatBeganInOneMeasurementIsNotCountedInTheNext() {
+        let meter = Meter()
+        meter.start()
+        let span = meter.begin(.flush)
+        meter.stop()
+        // Ended after the stop, and after another start: counted in neither.
+        meter.end(span)
+        #expect(meter.take().isEmpty)
+        meter.start()
+        meter.end(span)
+        meter.count(.body, "Turn")
+        #expect(meter.stop().map(\.point) == ["body"])
+    }
+
     @Test func theRuntimeTimesItsPresentersItsFlushesAndItsPublishes() async throws {
         // The process's meter: other suites' runtimes count into it too
         // while it is on, so only this controller's own lines are read.
