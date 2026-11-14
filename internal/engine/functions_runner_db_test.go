@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -152,14 +154,22 @@ func TestTriggerTimeoutParksForItsAutomaticRetry(t *testing.T) {
 	// on its first attempt, waiting for the retry the walk of temporary
 	// failures runs over minutes, rather than holding the lane through two
 	// more timeouts.
-	ds := newFnDataset(t,
+	//
+	// The walk's clock stands at the test's start, before the park, so the
+	// retry it holds, due a gap after the park, never runs inside the test on
+	// a runner slow enough to reach that gap.
+	start := time.Now()
+	_, ds := newDataset(t, engine.WithTestRetryClock(func() time.Time { return start }))
+	if err := enginetest.Install(context.Background(), ds, owner, fnConnector(
 		[]enginetest.Trigger{trigOn("stuck", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("stuck", map[string]any{"timeout": "PT0.25S"}, []any{taskType}, `
 import time
 def main(input, host):
     time.sleep(30)
     return {}
-`))
+`))); err != nil {
+		t.Fatalf("register connector: %v", err)
+	}
 
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	process(t, ds)
