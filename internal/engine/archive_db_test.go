@@ -685,8 +685,8 @@ func TestTheArchiveDelayGrowsWhileTheStoreIsUnreachableAndWritesGoOn(t *testing.
 		t.Fatalf("the first pass: %+v", st)
 	}
 
-	authority := f.ds.Repository().Authority
-	if g := archiveGauges(t, authority); g["substrate_archive_pending_entries"] != 0 || g["substrate_archive_delay_seconds"] != 0 {
+	repository := f.id
+	if g := archiveGauges(t, repository); g["substrate_archive_pending_entries"] != 0 || g["substrate_archive_delay_seconds"] != 0 {
 		t.Fatalf("the gauges once the archive holds every entry: %v", g)
 	}
 
@@ -699,7 +699,7 @@ func TestTheArchiveDelayGrowsWhileTheStoreIsUnreachableAndWritesGoOn(t *testing.
 		if st.Err == nil || st.Failures != i+1 || st.Oldest.IsZero() {
 			t.Fatalf("a pass against an unreachable store: %+v", st)
 		}
-		g := archiveGauges(t, authority)
+		g := archiveGauges(t, repository)
 		if g["substrate_archive_pending_entries"] != float64(st.Pending) || g["substrate_archive_failed_passes"] != float64(i+1) {
 			t.Fatalf("the gauges after failed pass %d: %v, the pass said %+v", i+1, g, st)
 		}
@@ -720,7 +720,7 @@ func TestTheArchiveDelayGrowsWhileTheStoreIsUnreachableAndWritesGoOn(t *testing.
 	if st.Err != nil || st.Pending != 0 || !st.Oldest.IsZero() || st.Failures != 0 {
 		t.Fatalf("the pass after the store came back: %+v", st)
 	}
-	if g := archiveGauges(t, authority); g["substrate_archive_pending_entries"] != 0 || g["substrate_archive_delay_seconds"] != 0 || g["substrate_archive_failed_passes"] != 0 {
+	if g := archiveGauges(t, repository); g["substrate_archive_pending_entries"] != 0 || g["substrate_archive_delay_seconds"] != 0 || g["substrate_archive_failed_passes"] != 0 {
 		t.Fatalf("the gauges after the store came back: %v", g)
 	}
 	sealed, blobs := f.held(t)
@@ -805,7 +805,7 @@ func TestAnArchiveNamesTheBlobsItCouldNotCopyAndTriesThemAgain(t *testing.T) {
 			if err := f.raw.QueryRow(`SELECT archive_missing FROM repositories WHERE id = $1`, f.id).Scan(&marked); err != nil || marked != 1 || st.Missing != 1 {
 				t.Fatalf("the mark says %d missing (%v) and the pass %d, want 1", marked, err, st.Missing)
 			}
-			if g := archiveGauges(t, f.ds.Repository().Authority); g["substrate_archive_missing_blobs"] != 1 {
+			if g := archiveGauges(t, f.id); g["substrate_archive_missing_blobs"] != 1 {
 				t.Fatalf("the gauges: %v", g)
 			}
 

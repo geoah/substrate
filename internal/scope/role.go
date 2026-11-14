@@ -70,17 +70,17 @@ var ShippedRoles = []ShippedRole{
 	},
 }
 
-// Roles are the roles one hand holds, read in the repository whose full name,
-// authority, is another spelling of `~`, where its own kinds are (decision
-// record 0259).
+// Roles are the roles one hand holds, read in the repository whose names
+// that spell `~`, where its own kinds are, are spellings (decision record
+// 0259).
 type Roles struct {
 	roles     []Role
-	authority string
+	spellings []string
 }
 
-// NewRoles holds roles, a pattern naming authority read as `~`.
-func NewRoles(roles []Role, authority string) Roles {
-	return Roles{roles: roles, authority: authority}
+// NewRoles holds roles, a pattern naming one of spellings read as `~`.
+func NewRoles(roles []Role, spellings ...string) Roles {
+	return Roles{roles: roles, spellings: spellings}
 }
 
 // Admin reports whether the roles include `admin`.
@@ -169,9 +169,9 @@ func ruleAllows(rule Rule, verb Verb) bool {
 
 func (r Roles) resolve(pattern string) string {
 	if trait, ok := traitOf(pattern); ok {
-		return TraitPattern(vocabulary.LocalizeRef(trait, r.authority))
+		return TraitPattern(vocabulary.LocalizeRef(trait, r.spellings...))
 	}
-	return vocabulary.LocalizeRef(pattern, r.authority)
+	return vocabulary.LocalizeRef(pattern, r.spellings...)
 }
 
 func (r Roles) patternReaches(pattern string, kind Kind) bool {

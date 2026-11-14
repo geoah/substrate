@@ -89,6 +89,24 @@ describe("fetchAuthPolicy", () => {
     })
   })
 
+  it("tells a server with no name host from one that says nothing", async () => {
+    // A server with no public URL names an empty host: a name is typed
+    // whole. An older one sends no field, and completes under the address
+    // it was reached at.
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { registration: { nameHost: "" } })
+    )
+    expect((await fetchAuthPolicy()).nameHost).toBe("")
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        registration: { nameHost: "substrate.example.com" },
+      })
+    )
+    expect((await fetchAuthPolicy()).nameHost).toBe("substrate.example.com")
+    fetchMock.mockResolvedValue(jsonResponse(200, { registration: {} }))
+    expect((await fetchAuthPolicy()).nameHost).toBeUndefined()
+  })
+
   it("falls back to strict on an unreachable substrate, and asks again", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("offline"))
     expect(await fetchAuthPolicy()).toEqual({

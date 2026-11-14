@@ -109,7 +109,7 @@ func (r *Runner) Run(ctx context.Context, ds substrate.Dataset, actor substrate.
 		}
 		return Outcome{Failure: &substrate.AuthorizationFailure{Row: &row, Message: message}, Moved: moved}
 	}
-	release, err := r.turn(ctx, ds.Repository().Authority)
+	release, err := r.turn(ctx, ds.Repository().ID)
 	if err != nil {
 		return Outcome{Failure: &substrate.AuthorizationFailure{Message: "Another set up in this repository did not finish in time. Try again."}}
 	}

@@ -72,5 +72,5 @@ func countMCPToolCall(ctx context.Context, tool string, failed bool) {
 	if failed {
 		outcome = "error"
 	}
-	metrics.MCPToolCalls.WithLabelValues(metrics.Repository(ds.Repository().Authority), tool, outcome).Inc()
+	metrics.MCPToolCalls.WithLabelValues(metrics.Repository(ds.Repository().ID), tool, outcome).Inc()
 }

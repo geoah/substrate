@@ -77,11 +77,11 @@ func Plan(ctx context.Context, ds substrate.Dataset, cat Catalog, details []subs
 	}
 	// A detail may name the owner's own package or kind by the repository's
 	// full name, which is another spelling of `~` (decision record 0259).
-	home := ds.Repository().Authority
+	names := ds.Repository().LocalNames()
 	local := make([]substrate.AuthorizationDetail, len(details))
 	for i, d := range details {
-		d.Package = vocabulary.LocalizeRef(d.Package, home)
-		d.Kind = vocabulary.LocalizeRef(d.Kind, home)
+		d.Package = vocabulary.LocalizeRef(d.Package, names...)
+		d.Kind = vocabulary.LocalizeRef(d.Kind, names...)
 		local[i] = d
 	}
 	details = local

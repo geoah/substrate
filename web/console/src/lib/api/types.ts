@@ -1523,6 +1523,22 @@ export interface AuthorizationAnswer {
 /** What a credential change answers (`POST /password`, `POST /totp`): the
  * identity the factors proved. No token is minted; the caller signs in
  * again. */
+/** What a rename answers (`POST /repository/rename`, decision 0287): the
+ * repository's id, which no rename moves, its name now, and each former name
+ * it still answers to and holds against everyone else, until when. */
+export interface RepositoryNames {
+  id: string
+  name: string
+  formerNames: FormerName[]
+}
+
+/** One name a repository had before a rename, and when it stops resolving to
+ * it and is free for anyone. */
+export interface FormerName {
+  name: string
+  until: string
+}
+
 export interface SessionCredential {
   identity: string
   /** How many tokens a sign out everywhere ended, where the request asked
@@ -1535,8 +1551,8 @@ export interface SessionCredential {
 export interface MintedToken {
   token: TokenInfo
   secret: string
-  /** The repository the token opens, as the door resolved it: login and
-   * registration echo it, a `POST /tokens` mint omits it. */
+  /** The repository the token opens, by the name it has now: login and
+   * registration answer it, a `POST /tokens` mint omits it. */
   repository?: string
   /** The name of the person the token acts for, as the door resolved it:
    * login and registration echo it (decision 0274). */

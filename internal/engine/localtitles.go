@@ -7,11 +7,11 @@ package engine
 // after the stored vocabulary loads (a repository migration runs before it
 // loads and could not render a kind of the repository's own), and only where
 // the stored title is the OLD SPELLING of what the engine renders now: the
-// same text, with the repository's name where the rendering has `~`. That
-// equality is the proof that the engine wrote the title and that only the
-// spelling moved. Every other title stays exactly as stored, one that spells
-// the name included, and one a template change or a renamed referent left
-// stale.
+// same text, with one of the repository's names where the rendering has `~`.
+// That equality is the proof that the engine wrote the title and that only
+// the spelling moved. Every other title stays exactly as stored, one that
+// spells a name included, and one a template change or a renamed referent
+// left stale.
 //
 // One title may render another's (a trigger's renders its callable's), so
 // the pass goes round, rendering against the titles it has moved so far,
@@ -50,11 +50,13 @@ func (ds *dataset) renderLocalTitles(ctx context.Context) error {
 	}
 	rendered := 0
 	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		moved, err := t.renderTitlesSpelling(ds.info.Authority)
-		if err != nil {
-			return err
+		for _, name := range ds.names() {
+			moved, err := t.renderTitlesSpelling(name)
+			if err != nil {
+				return err
+			}
+			rendered += moved
 		}
-		rendered = moved
 		if _, err := t.putAnnotation(self, annTitlesRenderedLocal, 1); err != nil {
 			return err
 		}

@@ -149,7 +149,7 @@ func linesOf(t *testing.T, ds *dataset, kind, id string) int {
 func TestTheTitlePassLeavesATitleItsWriterGave(t *testing.T) {
 	t.Parallel()
 	ds, open := titlesRepository(t)
-	name := ds.info.Authority
+	name := ds.name()
 	pkg := name + "/notes"
 	memo := func(data map[string]any) map[string]any {
 		data["properties"] = map[string]any{"topic": map[string]any{"type": "string"}}
@@ -181,7 +181,7 @@ func TestTheTitlePassLeavesATitleItsWriterGave(t *testing.T) {
 func TestTheTitlePassLeavesAStaleTitle(t *testing.T) {
 	t.Parallel()
 	ds, open := titlesRepository(t)
-	name := ds.info.Authority
+	name := ds.name()
 	pkg := name + "/notes"
 	note := func(template string) map[string]any {
 		return vocabulary.KindManifest(pkg, map[string]any{"singular": "note"}, map[string]any{
@@ -217,7 +217,7 @@ func TestTheTitlePassLeavesAStaleTitle(t *testing.T) {
 // and each link's title as written, and leaves the titles as before.
 func chain(t *testing.T, ds *dataset, labels ...string) (ids, titles []string) {
 	t.Helper()
-	name := ds.info.Authority
+	name := ds.name()
 	pkg := name + "/chain"
 	applyOwn(t, ds, vocabulary.PackageManifest(pkg, 0), vocabulary.KindManifest(pkg, map[string]any{"singular": "link"}, map[string]any{
 		"displayTemplate": "[{label} {next}]",
@@ -317,7 +317,7 @@ func TestTheTitlePassLocksOnlyWhatItWrites(t *testing.T) {
 			(*p)()
 		}
 	}))
-	name := ds.info.Authority
+	name := ds.name()
 	pkg := name + "/notes"
 	applyOwn(t, ds, vocabulary.PackageManifest(pkg, 0), vocabulary.KindManifest(pkg, map[string]any{"singular": "minute"}, map[string]any{
 		"displayTemplate": "{text}",
@@ -384,7 +384,7 @@ func TestTheTitlePassLocksOnlyWhatItWrites(t *testing.T) {
 func TestTheTitlePassMovesATildeGluedToALiteral(t *testing.T) {
 	t.Parallel()
 	ds, open := titlesRepository(t)
-	name := ds.info.Authority
+	name := ds.name()
 	pkg := name + "/glued"
 	applyOwn(t, ds, vocabulary.PackageManifest(pkg, 0),
 		vocabulary.KindManifest(pkg, map[string]any{"singular": "tail"}, map[string]any{

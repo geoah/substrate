@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -110,6 +111,31 @@ func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 	env := newStubEnv(t, nil)
 	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
+}
+
+// Discovery names the host a short repository name is completed under, the
+// public URL's (decision record 0288), and names it empty where none is
+// configured: always present, so a client tells that server from an older
+// one, which sends no field and completes under the request's host.
+func TestDiscoveryNamesTheHostAShortNameIsCompletedUnder(t *testing.T) {
+	for publicURL, want := range map[string]string{
+		"https://substrate.example.com": "substrate.example.com",
+		"http://localhost:8080":         "localhost",
+		"":                              "",
+	} {
+		env := newStubEnv(t, nil, func(c *Config) { c.PublicURL = publicURL })
+		rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
+		wantStatus(t, rec, http.StatusOK)
+		var doc struct {
+			Registration map[string]any `json:"registration"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if got, present := doc.Registration["nameHost"]; !present || got != want {
+			t.Errorf("public URL %q: registration.nameHost = %v (present %v), want %q", publicURL, got, present, want)
+		}
+	}
 }
 
 // discoveryEmptyList is a repository whose list answers an empty page at a

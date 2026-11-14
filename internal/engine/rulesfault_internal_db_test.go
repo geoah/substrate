@@ -201,7 +201,7 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		return errRefused(err)
 	},
 	"agentvocabulary.go:dispatchVocabulary": func(t *testing.T, r *runsRepository) (bool, string) {
-		pkg := r.ds.info.Authority + "/declared"
+		pkg := r.ds.Repository().Authority + "/declared"
 		return r.toolRefused(t, "declarer", fakeCall{"vocabulary", toolArgs(t, map[string]any{"documents": []any{
 			vocabulary.PackageManifest(pkg, 0),
 			vocabulary.KindManifest(pkg, map[string]any{"singular": "thing"}, map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
@@ -216,14 +216,18 @@ var ruleBoundaries = map[string]func(t *testing.T, r *runsRepository) (bool, str
 		defer r.heal()
 		return errRefused(r.ds.requestMayWrite(r.adaCtx(), substrate.ActorPerson, ty))
 	},
-	"auth.go:mayDeleteRepository": func(t *testing.T, r *runsRepository) (bool, string) {
+	// The admin's check a delete and a rename both take.
+	"auth.go:requireAdmin": func(t *testing.T, r *runsRepository) (bool, string) {
 		repo, err := r.r.s.repositoryByKey(context.Background(), r.ada)
 		if err != nil {
 			return false, err.Error()
 		}
 		r.fail("roles")
 		defer r.heal()
-		return errRefused(r.r.s.mayDeleteRepository(context.Background(), repo, r.adaID))
+		if refused, saw := errRefused(r.r.s.mayDeleteRepository(context.Background(), repo, r.adaID)); !refused {
+			return false, "the delete: " + saw
+		}
+		return errRefused(r.r.s.requireAdmin(context.Background(), repo, r.adaID, "renaming a repository is an admin's"))
 	},
 	"auth.go:rolesHeldIn": func(t *testing.T, r *runsRepository) (bool, string) {
 		repo, err := r.r.s.repositoryByKey(context.Background(), r.ada)

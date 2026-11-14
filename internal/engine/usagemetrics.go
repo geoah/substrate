@@ -45,7 +45,7 @@ func (ds *dataset) countChanges(pending []pendingEntry) {
 	for _, e := range pending {
 		sums[key{e.Kind, e.Op, e.Actor}]++
 	}
-	id := ds.Repository().Authority
+	id := ds.info.ID
 	repo := metrics.Repository(id)
 	for k, n := range sums {
 		// The entry links its actor record; this process derived the id, so
@@ -55,8 +55,8 @@ func (ds *dataset) countChanges(pending []pendingEntry) {
 	}
 }
 
-// countAuth records one account event of the repository named name. Every
-// series names a repository by its name, as the kinds it labels do.
+// countAuth records one account event of repository id. Every series names a
+// repository by its id, which a rename does not move.
 func countAuth(id, event string) {
 	metrics.AuthEvents.WithLabelValues(metrics.Repository(id), event).Inc()
 }
@@ -70,7 +70,7 @@ func forgetUsage(id string) {
 
 // countInvocation records one function body run under the mode that ran it.
 func (ds *dataset) countInvocation(fn *vocabulary.Function, mode string, elapsed time.Duration, err error) {
-	id := ds.Repository().Authority
+	id := ds.info.ID
 	name := metrics.Name(id, fn.Identity())
 	outcome := "ok"
 	if err != nil {
@@ -98,13 +98,13 @@ func (l *agentLoop) countRun(res *substrate.AgentResult, err error) {
 	if err == nil && res != nil {
 		status = res.Status
 	}
-	id := l.ds.Repository().Authority
+	id := l.ds.info.ID
 	metrics.AgentRuns.WithLabelValues(metrics.Repository(id), metrics.Name(id, l.ag.Identity()), invocationMode(l.in.mode), status).Inc()
 }
 
 // countUsage records one completion's tokens and its priced cost.
 func (l *agentLoop) countUsage(u *llm.Usage, cost float64) {
-	id := l.ds.Repository().Authority
+	id := l.ds.info.ID
 	repo, agent, provider := metrics.Repository(id), metrics.Name(id, l.ag.Identity()), metrics.Provider(id, l.provider.id)
 	// An operator entry's models are the operator's choice, and the shipped
 	// records' are public: either is in clear.
@@ -134,7 +134,7 @@ func (ds *dataset) inventory() metrics.Inventory {
 	inv.mu.Lock()
 	defer inv.mu.Unlock()
 	if !inv.refreshing && time.Since(inv.at) >= inventoryMaxAge {
-		inv.refreshing = ds.svc.spawn("usage inventory", ds.Repository().ID, func(ctx context.Context) {
+		inv.refreshing = ds.svc.spawn("usage inventory", ds.info.ID, func(ctx context.Context) {
 			ctx, cancel := context.WithTimeout(ctx, inventoryReadTimeout)
 			defer cancel()
 			snap, err := ds.readInventory(ctx)
@@ -145,7 +145,7 @@ func (ds *dataset) inventory() metrics.Inventory {
 			// whose scan fails is not scanned again on every scrape.
 			inv.at = time.Now()
 			if err != nil {
-				ds.svc.log.Warn("substrate: reading a repository's usage inventory", "repository", ds.Repository().ID, "error", err)
+				ds.svc.log.Warn("substrate: reading a repository's usage inventory", "repository", ds.info.ID, "error", err)
 				return
 			}
 			inv.snap = snap

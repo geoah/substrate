@@ -186,7 +186,7 @@ func TestAResetOfARepositoryWhoseActorNamesAPersonHereMakesNoOther(t *testing.T)
 	r := openRestartable(t)
 	ada := testdb.Repository(t)
 	r.register(ada)
-	repo, err := r.s.repositoryByAuthority(ctx, ada)
+	repo, err := r.s.repositoryByName(ctx, ada)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestARebuildGivesTheIndexItsActorsBack(t *testing.T) {
 	r := openRestartable(t)
 	ada := testdb.Repository(t)
 	r.register(ada)
-	repo, err := r.s.repositoryByAuthority(ctx, ada)
+	repo, err := r.s.repositoryByName(ctx, ada)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestAHistoryThatTakesTheLastPersonOutLeavesNobodyIn(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			repo, err := r.s.repositoryByAuthority(ctx, ada)
+			repo, err := r.s.repositoryByName(ctx, ada)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -426,7 +426,7 @@ func TestARegistrationWhoseClientLeavesBeforeItsCommitLeavesNothing(t *testing.T
 	if _, err := r.s.Register(ctx, substrate.RegisterInput{Identity: ada, Repository: ada, Password: peoplePassword, SkipTOTP: true}); err == nil {
 		t.Fatal("a registration whose client left before its commit answered success")
 	}
-	if _, err := r.s.repositoryByAuthority(context.Background(), ada); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := r.s.repositoryByName(context.Background(), ada); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the left registration's repository: %v, want none", err)
 	}
 	if _, err := r.s.identityByName(context.Background(), r.s.maint, ada); !errors.Is(err, substrate.ErrNotFound) {
@@ -488,7 +488,7 @@ func TestWorkLeftByAPersonTakenOutIsSettledForNobody(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			repo, err := r.s.repositoryByAuthority(ctx, ada)
+			repo, err := r.s.repositoryByName(ctx, ada)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -641,7 +641,7 @@ func TestAnAdditionInDoubtIsIndexedOnlyWhereItsActorLanded(t *testing.T) {
 				})
 				return
 			}
-			repo, err := r.s.repositoryByAuthority(ctx, ada)
+			repo, err := r.s.repositoryByName(ctx, ada)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -665,7 +665,7 @@ func TestAResetCutShortAfterItsActorFinishesWhenRunAgain(t *testing.T) {
 	label := testdb.RepositoryLabel(t)
 	ada := label + "a.example.com"
 	r.register(ada)
-	repo, err := r.s.repositoryByAuthority(ctx, ada)
+	repo, err := r.s.repositoryByName(ctx, ada)
 	if err != nil {
 		t.Fatal(err)
 	}

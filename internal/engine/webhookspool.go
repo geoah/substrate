@@ -285,7 +285,7 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	if err != nil {
 		return "", "", err
 	}
-	sealed, err := ds.sealPayload(raw, spoolAAD(ds.Repository().ID, fid))
+	sealed, err := ds.sealPayload(raw, spoolAAD(ds.info.ID, fid))
 	if err != nil {
 		return "", "", err
 	}
@@ -299,7 +299,7 @@ func (ds *dataset) writeSpooledWebhook(ctx context.Context, tr *trigger, req sub
 	size := int64(len(sealed))
 	if len(sp.entries)+1 > webhookSpoolMaxEntries || sp.bytes+size > webhookSpoolMaxBytes {
 		sp.mu.Unlock()
-		metrics.WebhookSpoolRefusals.WithLabelValues(ds.Repository().Authority).Inc()
+		metrics.WebhookSpoolRefusals.WithLabelValues(ds.info.ID).Inc()
 		return "", "", ErrWebhookSpoolFull
 	}
 	ordinal := max(sp.last+1, at.UnixNano())
@@ -394,7 +394,7 @@ func (ds *dataset) drainSpooled(ctx context.Context, name string) (drainedWebhoo
 	if err != nil {
 		return drainedWebhook{}, err
 	}
-	raw, err := ds.openPayload(sealed, spoolAAD(ds.Repository().ID, fid))
+	raw, err := ds.openPayload(sealed, spoolAAD(ds.info.ID, fid))
 	if err != nil {
 		return drainedWebhook{}, fmt.Errorf("%w: %s: %w", errSpoolUnreadable, name, err)
 	}
@@ -534,7 +534,7 @@ func (ds *dataset) drainSpoolPass(ctx context.Context) bool {
 			ds.spoolDrainFailed(name, err)
 			if aside := changelogfile.SetSpoolFileAside(ds.dir, name, suffix); aside != nil {
 				ds.svc.log.Error("substrate: a spooled webhook request the drain cannot record could not be set aside",
-					"repository", ds.Repository().ID, "file", name, "error", aside)
+					"repository", ds.info.ID, "file", name, "error", aside)
 				return false
 			}
 			ds.forgetSpooled(name)
@@ -562,20 +562,20 @@ func (ds *dataset) spoolDrainFailed(name string, err error) {
 	if errors.Is(err, context.Canceled) {
 		return
 	}
-	metrics.WebhookSpoolDrainFailures.WithLabelValues(ds.Repository().Authority).Inc()
+	metrics.WebhookSpoolDrainFailures.WithLabelValues(ds.info.ID).Inc()
 	outcome := webhookFireOutcome(err)
 	if errors.Is(err, errSpoolUnreadable) {
 		ds.svc.log.Error("substrate: a spooled webhook request does not open; it is set aside under a suffix",
-			"repository", ds.Repository().ID, "file", name, "suffix", changelogfile.UnreadableSpoolSuffix)
+			"repository", ds.info.ID, "file", name, "suffix", changelogfile.UnreadableSpoolSuffix)
 		return
 	}
 	if reason := spoolAdmissionRefused(err); reason != "" {
 		ds.svc.log.Error("substrate: a spooled webhook request was refused at admission; it is set aside under a suffix",
-			"repository", ds.Repository().ID, "file", name, "suffix", changelogfile.RefusedSpoolSuffix, "reason", reason)
+			"repository", ds.info.ID, "file", name, "suffix", changelogfile.RefusedSpoolSuffix, "reason", reason)
 		return
 	}
 	ds.svc.log.Warn("substrate: a spooled webhook request could not be recorded; the drain retries",
-		"repository", ds.Repository().ID, "file", name, "outcome", outcome)
+		"repository", ds.info.ID, "file", name, "outcome", outcome)
 }
 
 // spoolAdmissionRefused names why a spooled request's admission failed for
@@ -616,7 +616,7 @@ func (ds *dataset) fireDrained(got drainedWebhook) {
 	row := got.row
 	if !ds.spawn("webhook fire", func(ctx context.Context) { ds.fireWebhook(ctx, tr, row) }) {
 		ds.svc.log.Info("substrate: webhook fire left pending, the service is shutting down",
-			"repository", ds.Repository().ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID))
+			"repository", ds.info.ID, "trigger", logSafeID(tr.ID), "fire", logSafeID(row.FireID))
 	}
 }
 

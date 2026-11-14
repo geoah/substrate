@@ -345,10 +345,15 @@ func (s *service) reconcileRow(ctx context.Context, repo Repository) (reconcileO
 // caller.
 func (s *service) bareDataset(repo Repository, db *sql.DB) *dataset {
 	dir, _ := changelogfile.RepoDir(s.dataRoot, repo.ID)
-	return &dataset{
+	// No name, as an open's dataset holds none: the names cache answers by
+	// id (namescache.go).
+	ds := &dataset{
 		svc: s, db: db, scope: repo.scope(), dir: dir, generation: repo.HistoryGeneration,
-		reg: repo.registry(vocabulary.NewRegistry()), watch: newBroadcaster(), info: repo.info(),
+		reg: vocabulary.NewRegistry(), watch: newBroadcaster(),
+		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
+	ds.reg.SetNames(ds.answersTo)
+	return ds
 }
 
 // openLocalHistory opens a 0.x directory's segments READ-ONLY. THE UPGRADE
@@ -552,7 +557,7 @@ func (s *service) admitRestore(ctx context.Context, m changelogfile.Manifest, se
 	// One name, one repository: a history whose name another repository in
 	// this database holds is a copy of another repository, not this one. A
 	// take's own repository holds its name under the same id.
-	if other, err := s.repositoryByAuthority(ctx, m.Authority); err == nil && other.ID != m.ID {
+	if other, err := s.repositoryByName(ctx, m.Authority); err == nil && other.ID != m.ID {
 		return adm, &nameHeldError{where: where, name: m.Authority, other: other.ID}
 	} else if err != nil && !errors.Is(err, substrate.ErrNotFound) {
 		return adm, err
@@ -713,6 +718,21 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// A name another repository held as a former name whose hold has lapsed
+	// is taken here as a registration takes it: the hold ends in this
+	// transaction, and that repository's names are fenced around the COMMIT
+	// (repositorynames.go takeFormerName, namescache.go).
+	took, err := takeFormerName(ctx, tx, repo.Authority)
+	if err != nil {
+		return fmt.Errorf("take the name %s: %w", repo.Authority, err)
+	}
+	var fenced []string
+	if took != "" {
+		if err := lockNames(ctx, tx, took); err != nil {
+			return err
+		}
+		fenced = append(fenced, took)
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO repositories (id, authority, created_at, dek, history_generation, dek_key_id, secrets_left_behind)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -743,7 +763,7 @@ func (s *service) insertRestoredRow(ctx context.Context, repo Repository, m chan
 	if err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.commitFencingNames(tx, false, fenced...); err != nil {
 		return err
 	}
 	remember()
@@ -1276,6 +1296,18 @@ func (ds *dataset) loadDeclarationsForReplay(ctx context.Context, q dbx) error {
 // repository's own stamps: the manifest is the archive's record of what a
 // binary must understand to read it, so it says what the stamps say.
 func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (changelogfile.Manifest, error) {
+	// The name the repository has now, asked of the names cache by id as the
+	// manifest is built (namescache.go): repo was read before, and a rename
+	// may have committed since. A repository no row holds yet (a creation, an
+	// import) has the name it is being written under.
+	name := repo.Authority
+	names, err := s.namesOf(ctx, repo.ID)
+	if err != nil {
+		return changelogfile.Manifest{}, err
+	}
+	if len(names) > 0 {
+		name = names[0]
+	}
 	changelog, err := readChangelogDialect(ctx, q)
 	if err != nil {
 		return changelogfile.Manifest{}, err
@@ -1286,7 +1318,7 @@ func (s *service) manifestOf(ctx context.Context, repo Repository, q dbx) (chang
 	}
 	return changelogfile.Manifest{
 		Format: changelogfile.ManifestFormatArchive, ID: repo.ID,
-		Authority: repo.Authority, CreatedAt: repo.CreatedAt,
+		Authority: name, CreatedAt: repo.CreatedAt,
 		ChangelogDialect: changelog, VocabularyDialect: vocabulary, DEK: repo.DEK,
 		DEKKeyID: repo.DEKKeyID,
 	}, nil

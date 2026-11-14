@@ -136,6 +136,13 @@ services:
       # setting this to false later restores the factor. On a reachable
       # deployment a leaked password would then be the account.
       SUBSTRATE_INSECURE_DISABLE_TOTP: ${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}
+      # The origin people and apps reach this server at. A short name typed at
+      # registration is completed under its host (`ada` -> `ada.localhost`),
+      # and a name under localhost or an IP address is admitted only while
+      # this is itself one of those: on a laptop, development. Set it to the
+      # address the server is reached at before anyone else can reach the
+      # port, and new names land under that host.
+      SUBSTRATE_PUBLIC_URL: ${SUBSTRATE_PUBLIC_URL:-http://localhost:${PORT:-8080}}
       # Where every repository's directory lives: the changelog segments, the
       # sealed store's files and the blob bytes. Required and absolute; the
       # substrate-data volume above is mounted here.

@@ -102,6 +102,21 @@ export function shellSession(
     : undefined
 }
 
+/** Tell the app the repository the sign-in holding `tokenId` opens is now
+ * named `repository` (decision 0287): the app keeps the new name with the
+ * sign-in and gives it to the page at its next load. */
+export function renamed(
+  tokenId: string,
+  repository: string,
+  win: unknown = globalThis
+): void {
+  ;(win as ShellWindow).webkit?.messageHandlers?.substrateShell?.postMessage({
+    type: "renamed",
+    tokenId,
+    repository,
+  })
+}
+
 /** Tell the app the sign-in holding `tokenId` ended: the page signed out,
  * or the server refused the token. The app revokes it and asks for a sign-in
  * again; naming the token keeps a late message from ending a newer one. */

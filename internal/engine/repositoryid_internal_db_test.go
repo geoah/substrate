@@ -182,7 +182,7 @@ func holdKeyed(t *testing.T, k keyedByName) {
 	}
 	t.Cleanup(func() { _ = svcI.Close() })
 	s := svcI.(*service)
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestAKeyingCutShortIsFinishedByTheNextBoot(t *testing.T) {
 			}
 			s := svcI.(*service)
 			s.lease = newWriterLease(s.maint, s.log)
-			repo, err := s.repositoryByAuthority(ctx, k.name)
+			repo, err := s.repositoryByName(ctx, k.name)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -275,7 +275,7 @@ func TestAKeyingCutShortIsFinishedByTheNextBoot(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				keyed, err := s.repositoryByAuthority(ctx, k.name)
+				keyed, err := s.repositoryByName(ctx, k.name)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -394,7 +394,7 @@ func TestKeyingTime(t *testing.T) {
 	s := svcI.(*service)
 	s.lease = newWriterLease(s.maint, s.log)
 	t.Cleanup(func() { s.lease.close(); _ = s.Close() })
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,14 +648,14 @@ func TestAResumedKeyingBesideItsDuplicateIsRefusedUntouched(t *testing.T) {
 	}
 	s := svcI.(*service)
 	s.lease = newWriterLease(s.maint, s.log)
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := s.keyRow(ctx, repo); err != nil {
 		t.Fatal(err)
 	}
-	keyed, err := s.repositoryByAuthority(ctx, k.name)
+	keyed, err := s.repositoryByName(ctx, k.name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -884,7 +884,7 @@ func TestAKeyingThatFailsAfterTheIDSetsTheRowAsideAndHoldsNoLease(t *testing.T) 
 		t.Fatalf("the start with one repository whose keying fails: %v", err)
 	}
 	s := svcI.(*service)
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
 		t.Fatalf("the row took no id: %+v, %v", repo, err)
 	}
@@ -943,7 +943,7 @@ func TestARowWhosePreIDDirectoryCannotBeProvenIsSetAsideWithIt(t *testing.T) {
 		t.Fatalf("the start: %v", err)
 	}
 	s := svcI.(*service)
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
 		t.Fatalf("the row took no id: %+v, %v", repo, err)
 	}
@@ -1030,7 +1030,7 @@ func wantKeyedRowAsideWithItsDirectory(t *testing.T, k keyedByName) {
 	}
 	defer func() { _ = svcI.Close() }()
 	s := svcI.(*service)
-	repo, err := s.repositoryByAuthority(ctx, k.name)
+	repo, err := s.repositoryByName(ctx, k.name)
 	if err != nil || !vocabulary.ValidRepositoryID(repo.ID) {
 		t.Fatalf("the row took no id: %+v, %v", repo, err)
 	}

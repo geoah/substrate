@@ -62,6 +62,14 @@ type Service interface {
 	// register again.
 	DeleteRepository(ctx context.Context, in LoginInput) error
 
+	// RenameRepository takes both current factors, like DeleteRepository,
+	// and gives the repository the name newName. The name it had stays one
+	// of its names for 90 days (decision record 0287): it resolves to the
+	// repository on every door and no registration or rename elsewhere takes
+	// it. Nothing stored under `~` moves; the id, the keys and the webhook
+	// address by id do not change.
+	RenameRepository(ctx context.Context, in LoginInput, newName string) (RepositoryNames, error)
+
 	// SignOutEverywhere takes both current factors, like the credential
 	// changes, and ends every token the person holds, answering how many:
 	// every sign-in, every token minted from one, every assistant's and
@@ -86,11 +94,17 @@ type Service interface {
 	// resolves the repository itself and answers the connected record's path.
 	// Its Dataset half is StartOAuth.
 	CompleteOAuth(ctx context.Context, state, code string) (string, error)
+	// RepositoryIDOf is the id of the repository a name or an id names now,
+	// a former name in its hold included (decision record 0287), and
+	// ErrNotFound for none. It is how a door that takes a name turns it into
+	// an id once; past it, nothing is compared by name.
+	RepositoryIDOf(ctx context.Context, nameOrID string) (string, error)
 	// ReceiveWebhook is public webhook ingress. The request carries no
-	// bearer: the path names the repository's AUTHORITY and the trigger, and
-	// the trigger's own key, when it declares one, is the credential, unless
-	// ctx carries the WithWebhookGrant mark for that authority and trigger,
-	// which stands in for it. Returns the fire id the delivery runs under;
+	// bearer: the path names the repository, which the door has resolved to
+	// its id (RepositoryIDOf), and the trigger, and the trigger's own key,
+	// when it declares one, is the credential, unless ctx carries the
+	// WithWebhookGrant mark for that repository id and trigger, which stands
+	// in for it. Returns the fire id the delivery runs under;
 	// every refusal that must not distinguish "no such trigger" from "wrong
 	// key" or "disabled" is ErrNotFound.
 	ReceiveWebhook(ctx context.Context, authority, trigger, key string, req WebhookRequest) (string, error)

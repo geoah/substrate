@@ -546,7 +546,7 @@ func (ds *dataset) conversionPass(ctx context.Context, tx *sql.Tx, step conversi
 		}
 	}
 	repo := conversionRepository{
-		ID: ds.info.ID, Authority: ds.info.Authority, Reseal: ds.reseal, SecretsLeftBehind: leftBehind,
+		ID: ds.info.ID, Authority: ds.name(), Reseal: ds.reseal, SecretsLeftBehind: leftBehind,
 		Declarations: reader(vocabularyKindRefs, declarationVersions),
 		Actors: reader([]string{kindActor}, func(lines []changelogfile.Entry) ([]declarationVersion, error) {
 			return recordVersions(lines, func(ref string) bool { return ref == kindActor })

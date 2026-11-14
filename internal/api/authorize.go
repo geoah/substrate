@@ -284,7 +284,7 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := h.consoleURL + approvalPage + req.ID
-	if hint := loginHint(q.Get("login_hint"), r.Host); hint != "" {
+	if hint := h.loginHint(q.Get("login_hint"), r.Host); hint != "" {
 		target += "?" + url.Values{"login_hint": {hint}}.Encode()
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
@@ -294,11 +294,11 @@ func (h *handler) getAuthorize(w http.ResponseWriter, r *http.Request) {
 // way the sign-in door resolves what an owner types, or "" when it names no
 // valid repository. An invalid hint is dropped, never refused: it only fills
 // the sign-in page's repository field, which the owner can still change.
-func loginHint(hint, host string) string {
+func (h *handler) loginHint(hint, host string) string {
 	if hint == "" || len(hint) > vocabulary.MaxAuthorityLen {
 		return ""
 	}
-	authority := vocabulary.RepositoryAuthority(hint, host)
+	authority := h.names.Lookup(hint, host)
 	if !vocabulary.ValidRepositoryAuthority(authority) {
 		return ""
 	}
@@ -444,15 +444,17 @@ func verifiedAuthority(doc authorize.Document) string {
 func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	authority := ds.Repository().Authority
+	// A request is held to the repository that claimed it by its id, which a
+	// rename does not move; the scopes fold every name it answers to.
+	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().LocalNames()
 	id := pathParam(r, "request")
-	req, err := h.authz.Claim(id, authority)
+	req, err := h.authz.Claim(id, owner)
 	if err != nil {
 		writeAuthorizationGone(w)
 		return
 	}
 	if req.State == substrate.AuthorizationApproved {
-		handed, err := h.authz.HandOver(id, authority)
+		handed, err := h.authz.HandOver(id, owner)
 		if err != nil {
 			writeAuthorizationGone(w)
 			return
@@ -471,7 +473,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 			writeSubstrateError(w, r, err)
 			return
 		}
-		if doc, err = h.authz.Snapshot(id, authority, doc); err != nil {
+		if doc, err = h.authz.Snapshot(id, owner, doc); err != nil {
 			writeAuthorizationGone(w)
 			return
 		}
@@ -480,7 +482,7 @@ func (h *handler) getAuthorization(w http.ResponseWriter, r *http.Request) {
 	// another repository's read of the request learns nothing of it.
 	rows, hash := req.Setup, req.PlanHash
 	if rows == nil {
-		approved, err := pageApproval(req, authority, r.URL.Query())
+		approved, err := pageApproval(req, names, r.URL.Query())
 		if err != nil {
 			writeError(w, http.StatusBadRequest, codeValidation, err.Error())
 			return
@@ -508,11 +510,14 @@ type pageReads struct {
 	// functions are the function rows with their reach, read when a scope
 	// names functions (authorizecall.go).
 	functions []functionRow
+	// names are the names the repository answers to, which a requested
+	// scope's authority folds from.
+	names []string
 }
 
 // readForPage reads what the approval page's view of req needs of ds.
 func readForPage(ctx context.Context, ds substrate.Dataset, req authorize.Request) (pageReads, error) {
-	var out pageReads
+	out := pageReads{names: ds.Repository().LocalNames()}
 	var err error
 	if out.kinds, err = ds.Kinds(ctx); err != nil {
 		return out, err
@@ -611,7 +616,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 			})
 			continue
 		}
-		resolved := s.Localize(authority)
+		resolved := s.Localize(p.names...)
 		// `read:~/tasks/*` and `read:<authority>/tasks/*` are one scope once
 		// localized, and the page lists it once.
 		if seen[resolved.String()] {
@@ -633,7 +638,7 @@ func (p pageReads) view(req authorize.Request, doc authorize.Document, authority
 		case resolved.OverAgents():
 			row.Agents = matchedAgents(resolved, p.agents)
 		case resolved.Verb == scope.Call:
-			row.Functions = matchedFunctions(resolved, p.functions, resolvedScopes(req.Scopes, authority), registry)
+			row.Functions = matchedFunctions(resolved, p.functions, resolvedScopes(req.Scopes, p.names), registry)
 		default:
 			row.Kinds = scopeKinds(resolved, p.kinds, view.Setup)
 		}
@@ -655,12 +660,12 @@ func shownApp(req authorize.Request) (authorize.Document, error) {
 	return *req.Document, nil
 }
 
-// resolvedScopes is every scope of a request with the repository's name
+// resolvedScopes is every scope of a request with the repository's names
 // folded into `~`.
-func resolvedScopes(scopes []scope.Scope, authority string) []scope.Scope {
+func resolvedScopes(scopes []scope.Scope, names []string) []scope.Scope {
 	out := make([]scope.Scope, len(scopes))
 	for i, s := range scopes {
-		out[i] = s.Localize(authority)
+		out[i] = s.Localize(names...)
 	}
 	return out
 }
@@ -754,7 +759,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ds := DatasetFrom(ctx)
-	authority := ds.Repository().Authority
+	authority, owner, names := ds.Repository().Authority, ds.Repository().ID, ds.Repository().LocalNames()
 	id := pathParam(r, "request")
 	actor := ActorFrom(ctx)
 	var selectedRows []substrate.AuthorizationSetup
@@ -772,7 +777,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return authorize.Approval{}, err
 		}
-		scopes, err := approvedScopes(req, authority, in.Scopes)
+		scopes, err := approvedScopes(req, names, in.Scopes)
 		if err != nil {
 			return authorize.Approval{}, err
 		}
@@ -799,7 +804,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		return authorize.Approval{
-			Repository: authority, Dataset: ds, Scopes: scopes,
+			Repository: authority, RepositoryID: owner, Scopes: scopes,
 			Lifetime: time.Duration(*in.LifetimeDays) * 24 * time.Hour, ClientName: approvedName(doc),
 			Details: details, AppAuthority: verifiedAuthority(doc),
 			AppAddons:  appsetup.WaitingAddons(selectedRows),
@@ -811,16 +816,16 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	// loaded leaves the owner approving something the page no longer
 	// describes. The page keeps what it first read, so the request ends
 	// here and the app starts again, which reads the publisher afresh.
-	if shown, err := h.authz.Claim(id, authority); err == nil && shown.State == substrate.AuthorizationPending {
+	if shown, err := h.authz.Claim(id, owner); err == nil && shown.State == substrate.AuthorizationPending {
 		if why := h.publisherMoved(ctx, shown); why != "" {
-			if _, err := h.authz.Deny(id, authority, func(authorize.Request) error { return nil }); err != nil && !errors.Is(err, authorize.ErrNotPending) {
+			if _, err := h.authz.Deny(id, owner, func(authorize.Request) error { return nil }); err != nil && !errors.Is(err, authorize.ErrNotPending) {
 				slog.Warn("authorize: ending a request whose publisher moved", "request", logLine(id), "error", err)
 			}
 			writeError(w, http.StatusConflict, codeConflict, "who publishes this app changed since the page loaded: "+why+". This request has ended: start again from the app")
 			return
 		}
 	}
-	req, err := h.authz.Reserve(id, authority, func(req authorize.Request) error {
+	req, err := h.authz.Reserve(id, owner, func(req authorize.Request) error {
 		_, err := approve(req)
 		return err
 	})
@@ -835,7 +840,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		if moved {
 			end = h.authz.Replan
 		}
-		if err := end(req.ID, authority, nil); err != nil {
+		if err := end(req.ID, owner, nil); err != nil {
 			slog.Warn("authorize: a refused approval could not return its request", "request", req.ID, "error", err)
 		}
 		answer()
@@ -846,7 +851,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 	// The plan is held to the scopes the approval names, as the page's was
 	// to the ones left checked: unchecking one the code needs blocks the
 	// row here as it did there, and the hash the page read is this plan's.
-	checked, err := approvedScopes(req, authority, in.Scopes)
+	checked, err := approvedScopes(req, names, in.Scopes)
 	if err != nil {
 		refuse(false, func() { writeSubstrateError(w, r, err) })
 		return
@@ -904,7 +909,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !appsetup.NeedsAction(rows) && len(in.Settings) == 0 {
-		code, req, err := h.authz.Approve(id, authority, approve)
+		code, req, err := h.authz.Approve(id, owner, approve)
 		if err != nil {
 			refuse(false, func() { writeAuthorizationAnswerError(w, r, err) })
 			return
@@ -921,7 +926,7 @@ func (h *handler) postAuthorization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started := appsetup.Started(approved, rows)
-	if err := h.authz.Begin(id, authority, started, approvedHash); err != nil {
+	if err := h.authz.Begin(id, owner, started, approvedHash); err != nil {
 		writeAuthorizationAnswerError(w, r, err)
 		return
 	}
@@ -987,12 +992,12 @@ func writeAuthorizationAnswerError(w http.ResponseWriter, r *http.Request, err e
 // (decision 0215): the request's scopes, resolved, that the page's `scope`
 // query parameters name, as the owner left them checked, and every one
 // when the parameter is absent. One the app did not ask for is refused.
-func pageApproval(req authorize.Request, authority string, q url.Values) (scope.Approved, error) {
+func pageApproval(req authorize.Request, names []string, q url.Values) (scope.Approved, error) {
 	checked, present := q["scope"]
 	if !present {
 		checked = nil
 		for _, s := range req.Scopes {
-			if resolved := s.Localize(authority).String(); !slices.Contains(checked, resolved) {
+			if resolved := s.Localize(names...).String(); !slices.Contains(checked, resolved) {
 				checked = append(checked, resolved)
 			}
 		}
@@ -1000,14 +1005,14 @@ func pageApproval(req authorize.Request, authority string, q url.Values) (scope.
 	checked = slices.DeleteFunc(slices.Clone(checked), func(s string) bool { return s == "" })
 	if present && len(checked) > 0 {
 		var err error
-		if checked, err = approvedScopes(req, authority, checked); err != nil {
+		if checked, err = approvedScopes(req, names, checked); err != nil {
 			return scope.Approved{}, err
 		}
 	}
 	return scope.ApprovalOf(checked)
 }
 
-func approvedScopes(req authorize.Request, authority string, approved []string) ([]string, error) {
+func approvedScopes(req authorize.Request, names, approved []string) ([]string, error) {
 	if len(approved) == 0 {
 		return nil, validation("an approval names at least one scope: to grant nothing, deny")
 	}
@@ -1016,13 +1021,13 @@ func approvedScopes(req authorize.Request, authority string, approved []string) 
 	want := map[string]bool{}
 	for _, raw := range approved {
 		if s, err := scope.Parse(raw); err == nil {
-			raw = s.Localize(authority).String()
+			raw = s.Localize(names...).String()
 		}
 		want[raw] = true
 	}
 	var out []string
 	for _, s := range req.Scopes {
-		resolved := s.Localize(authority).String()
+		resolved := s.Localize(names...).String()
 		if want[resolved] {
 			out = append(out, resolved)
 			delete(want, resolved)
@@ -1046,10 +1051,10 @@ func approvedScopes(req authorize.Request, authority string, approved []string) 
 }
 
 func (h *handler) deleteAuthorization(w http.ResponseWriter, r *http.Request) {
-	authority := DatasetFrom(r.Context()).Repository().Authority
+	owner := DatasetFrom(r.Context()).Repository().ID
 	// A denial navigates to the app too, so its redirect is held to the
 	// snapshot the page showed, like an approval's.
-	req, err := h.authz.Deny(pathParam(r, "request"), authority, func(req authorize.Request) error {
+	req, err := h.authz.Deny(pathParam(r, "request"), owner, func(req authorize.Request) error {
 		_, err := shownApp(req)
 		return err
 	})
@@ -1185,11 +1190,16 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	ds, err := h.svc.Dataset(ctx, c.Approval.RepositoryID)
+	if err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the repository that approved this app is gone; start again")
+		return
+	}
 	if !first {
 		// Every binding and the verifier, a second time: the code worked
 		// once and is being used again, so what it minted is revoked.
 		if c.MintedTokenID != "" {
-			h.revokeMinted(ctx, c.Approval.Dataset, c.MintedTokenID)
+			h.revokeMinted(ctx, ds, c.MintedTokenID)
 		}
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used")
 		return
@@ -1217,7 +1227,7 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 	// floor of each package detail and its software version. It is minted
 	// standing on the token that approved it, so a sign out everywhere, or a
 	// revoke of that token, since the approval mints nothing (decision 0272).
-	info, secret, err := c.Approval.Dataset.MintToken(substrate.WithPrincipal(ctx, c.Approval.ApprovedBy), substrate.MintTokenInput{
+	info, secret, err := ds.MintToken(substrate.WithPrincipal(ctx, c.Approval.ApprovedBy), substrate.MintTokenInput{
 		Label: c.Request.Client.Host, ExpiresAt: expiresAt, Scopes: scopes,
 		ClientID: c.Request.Client.ID, ClientName: c.Approval.ClientName,
 		AppAuthority: c.Approval.AppAuthority, AppAuthorityFromFile: c.Approval.AppAuthority != "" && c.Request.Document.Publisher.FromFile,
@@ -1239,14 +1249,14 @@ func (h *handler) postOAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.authz.Minted(code, info.ID) {
-		h.revokeMinted(ctx, c.Approval.Dataset, info.ID)
+		h.revokeMinted(ctx, ds, info.ID)
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used")
 		return
 	}
 	res := tokenResponse{
 		AccessToken: secret, TokenType: "Bearer", Scope: strings.Join(c.Approval.Scopes, " "),
-		Repository: c.Approval.Repository, TokenID: info.ID,
-		AuthorizationDetails: grantedDetails(ctx, c.Approval.Dataset, c.Request.Issuer, c.Approval.Repository, c.Approval.Details),
+		Repository: ds.Repository().Authority, TokenID: info.ID,
+		AuthorizationDetails: grantedDetails(ctx, ds, c.Request.Issuer, ds.Repository().Authority, c.Approval.Details),
 	}
 	if c.Approval.Lifetime > 0 {
 		secs := int64(c.Approval.Lifetime / time.Second)

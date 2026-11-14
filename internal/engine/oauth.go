@@ -371,7 +371,7 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 	if err := ds.putOAuthFlow(ctx, nonce, row.ref(), verifier, nowUTC().Add(oauthflow.StateTTL)); err != nil {
 		return "", err
 	}
-	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.Repository().ID, Record: vocabulary.RecordPath(row.Kind, row.ID), Nonce: nonce}, verifier)
+	return fl.AuthCodeURL(ep, oauthflow.State{Repository: ds.info.ID, Record: vocabulary.RecordPath(row.Kind, row.ID), Nonce: nonce}, verifier)
 }
 
 // putOAuthFlow persists one started flow: the nonce hashed (a database read

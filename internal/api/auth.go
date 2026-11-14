@@ -53,7 +53,7 @@ func personView(ctx context.Context, ds substrate.Dataset, tok substrate.TokenIn
 	if err != nil {
 		return nil, false, "", err
 	}
-	roles := rolesOf(held, ds.Repository().Authority)
+	roles := rolesOf(held, ds.Repository().LocalNames()...)
 	if roles.Admin() {
 		return ds, false, at, nil
 	}

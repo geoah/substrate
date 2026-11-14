@@ -1002,29 +1002,97 @@ type Registry struct {
 	// the reason (seededmapping.go). Replaced whole at every build, never
 	// mutated, so a clone shares it.
 	held map[string]string
-	// home is the name of the repository this registry is, which every
-	// lookup by reference takes as another spelling of Local (LocalizeRef).
-	// Empty on the shipped registry, which belongs to no repository.
-	home string
+	// names are the names of the repository this registry is, the name
+	// first and then the former names it still answers to, which every
+	// lookup by reference takes as other spellings of Local (LocalizeRef).
+	// Nil on the shipped registry, which belongs to no repository. A
+	// function, because a former name stops answering at a time of its own
+	// (decision record 0287), whatever the registry was built at.
+	names func() []string
 }
 
-// SetHome names the repository this registry is: its lookups then read the
-// repository's full name as `~`. A clone carries it.
+// SetHome names the repository this registry is, by one name: its lookups
+// then read the repository's full name as `~`. A clone carries it.
 func (r *Registry) SetHome(name string) {
+	r.SetNames(func() []string { return []string{name} })
+}
+
+// SetNames names the repository this registry is by the names it answers to
+// when a lookup runs, its name first. A clone carries it.
+func (r *Registry) SetNames(names func() []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.home = name
+	r.names = names
 }
 
-// Home is the name SetHome gave this registry, or "".
+// Names are the names the repository answers to now, its name first, or
+// none.
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	names := r.names
+	r.mu.RUnlock()
+	if names == nil {
+		return nil
+	}
+	return names()
+}
+
+// Home is the repository's name, or "".
 func (r *Registry) Home() string {
+	if names := r.Names(); len(names) > 0 {
+		return names[0]
+	}
+	return ""
+}
+
+// Localize is ref with this registry's repository names folded into `~`,
+// each but a name a package here is held under (Spellings).
+func (r *Registry) Localize(ref string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	return r.home
+	return r.localizeHeld(ref)
 }
 
-// Localize is ref with this registry's repository name folded into `~`.
-func (r *Registry) Localize(ref string) string { return LocalizeRef(ref, r.Home()) }
+// localizeHeld is Localize for a caller already holding r.mu.
+func (r *Registry) localizeHeld(ref string) string {
+	if r.names == nil {
+		return ref
+	}
+	return LocalizeRef(ref, r.spellingsHeld(r.names())...)
+}
+
+// Spellings are those of names that spell `~` in this registry: every one
+// but a name a package here is held under, which is not `~`'s: one a
+// publisher's install brought, or one this repository published under a
+// name it answers to (decision record 0287). While the registry holds
+// `publisher.example/tasks`, `publisher.example/tasks/task` names that
+// package's kind, whatever the repository is called, so no stored name
+// changes its meaning; the repository's own kinds are then written `~`.
+func (r *Registry) Spellings(names ...string) []string {
+	if r == nil {
+		return names
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.spellingsHeld(names)
+}
+
+func (r *Registry) spellingsHeld(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		held := false
+		for _, id := range r.order {
+			if g := r.packages[id]; g.Authority == n && !g.IsAuthority() {
+				held = true
+				break
+			}
+		}
+		if !held {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
@@ -1053,7 +1121,7 @@ func (r *Registry) Clone() *Registry {
 	}
 	c.version = r.version
 	c.held = r.held
-	c.home = r.home
+	c.names = r.names
 	return c
 }
 
@@ -1077,7 +1145,7 @@ func (r *Registry) Packages() []string {
 func (r *Registry) PackageByName(identity string) (*Package, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	g, ok := r.packages[LocalizeRef(identity, r.home)]
+	g, ok := r.packages[r.localizeHeld(identity)]
 	return g, ok
 }
 
@@ -1160,7 +1228,7 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 func (r *Registry) TraitByIdentity(identity string) (*Trait, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	identity = LocalizeRef(identity, r.home)
+	identity = r.localizeHeld(identity)
 	if g, ok := r.packages[KindPackage(identity)]; ok {
 		if c, ok := g.Traits[KindName(identity)]; ok {
 			return c, true
@@ -1237,7 +1305,7 @@ func (r *Registry) Kinds() []*Kind {
 func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	t, ok := r.byIdent[LocalizeRef(identity, r.home)]
+	t, ok := r.byIdent[r.localizeHeld(identity)]
 	return t, ok
 }
 
@@ -1251,7 +1319,7 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 func (r *Registry) Resolve(nameOrIdentity string) (*Kind, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	nameOrIdentity = LocalizeRef(nameOrIdentity, r.home)
+	nameOrIdentity = r.localizeHeld(nameOrIdentity)
 	if t, ok := r.byIdent[nameOrIdentity]; ok {
 		return t, nil
 	}

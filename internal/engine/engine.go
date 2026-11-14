@@ -209,6 +209,9 @@ type options struct {
 	// afterTitleRounds is the title pass's test seam (localtitles.go): a
 	// hook run between its rounds and its writes. Tests only.
 	afterTitleRounds func()
+	// nameDoorsOpen lifts the early refusals of a name the repository holds a
+	// package under (repositorynames.go). Tests only.
+	nameDoorsOpen bool
 	// measureHook is the measured-value checks' test seam (measured.go): a
 	// hook run with the writing actor each time one of them does work.
 	// Tests only.
@@ -267,6 +270,9 @@ type options struct {
 	// withoutSecrets names the repositories imported without their secrets
 	// (lostsecrets.go WithImportWithoutSecrets).
 	withoutSecrets []string
+	// namesNow is the clock a former name lapses on (repositorynames.go);
+	// the wall clock when nil.
+	namesNow func() time.Time
 	// healthNow is the clock the failing-trigger read measures a park's age
 	// on (seams.go WithTestHealthClock); the wall clock when nil.
 	healthNow func() time.Time
@@ -630,6 +636,13 @@ type service struct {
 	foreignPackages bool
 	// withoutSecrets is options.withoutSecrets, by id and by name.
 	withoutSecrets map[string]bool
+	// testNamesNow is the clock a former name lapses on, or nil for the
+	// database's, run on the monotonic clock (namesNow).
+	testNamesNow func() time.Time
+	// namesBase is the database's clock when the service opened, and
+	// namesStart this process's monotonic reading at that moment: namesNow
+	// runs the one forward by the other.
+	namesBase, namesStart time.Time
 	// healthNow is the failing-trigger read's clock (health.go), never nil.
 	healthNow func() time.Time
 	// scheduleNow is the clock a schedule's due occurrences are read on
@@ -801,6 +814,19 @@ type service struct {
 	// testOpenWaits, when set (tests only), runs when claimOpen finds the
 	// repository's slot held and is about to wait for it.
 	testOpenWaits func(repository string)
+	// names is every repository's names, by id (namescache.go): the one
+	// place in memory they are, and namesProofs its waiters for a COMMIT
+	// whose answer was lost. testNamesCommit, when set (tests only), commits
+	// a transaction that changes names in tx.Commit's place.
+	names           namesCache
+	namesProofs     namesProofs
+	testNamesCommit func(tx *sql.Tx) error
+	// testReconcileRead, when set (tests only), runs when a reconcile of a
+	// repository's record has read the name from its row.
+	testReconcileRead func(id, name string)
+	// testOpenRead, when set (tests only), runs when an open has read the
+	// repository's row under its slot and before it opens the dataset.
+	testOpenRead func(repository string)
 	// testImportFault and testImportBatch are the options' import seams
 	// (repodir.go importFault, history.go insertFrom). Tests only.
 	testImportFault func(stage string) error
@@ -835,6 +861,9 @@ type service struct {
 	// testAfterTitleRounds is the options' title pass seam (localtitles.go).
 	// Tests only.
 	testAfterTitleRounds func()
+	// testNameDoorsOpen is the options' seam lifting the early refusals of a
+	// name the repository holds a package under. Tests only.
+	testNameDoorsOpen bool
 	// testMeasureHook is the options' measured-value seam (measured.go).
 	// Tests only.
 	testMeasureHook func(actor substrate.Actor, check string)
@@ -1083,6 +1112,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		orphanGrace:        o.orphanGrace,
 		healthFailingAfter: o.healthFailingAfter,
 		healthNow:          o.healthNow,
+		testNamesNow:       o.namesNow,
 		retryNow:           o.retryNow,
 		scheduleNow:        o.scheduleNow,
 		foreignPackages:    o.foreignPackages,
@@ -1130,6 +1160,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		testCommitFault:       o.commitFault,
 		testAfterProof:        o.afterProof,
 		testAfterTitleRounds:  o.afterTitleRounds,
+		testNameDoorsOpen:     o.nameDoorsOpen,
 		testCommitTx:          o.commitTx,
 		testTokenProof:        o.tokenProof,
 		testTokenProofAttempt: o.tokenProofAttempt,
@@ -1244,6 +1275,15 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 	maint.SetMaxIdleConns(5)
 	maint.SetConnMaxIdleTime(repositoryConnIdle)
 	s.maint = maint
+	// The clock a former name lapses on: the database's, read once and run
+	// forward on this process's monotonic clock, so a step of this machine's
+	// wall clock moves no hold (repositorynames.go namesNow).
+	if err := maint.QueryRowContext(ctx, `SELECT now()`).Scan(&s.namesBase); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, fmt.Errorf("substrate/engine: read the database's clock: %w", err)
+	}
+	s.namesBase, s.namesStart = s.namesBase.UTC(), time.Now()
 	repoConns := o.repositoryConns
 	if repoConns == 0 {
 		repoConns = DefaultRepositoryConnections
@@ -1496,7 +1536,7 @@ func (s *service) Close() error {
 		// reclaims them: the pool's idle TTL is ten minutes, and a server that
 		// exits first leaves them orphaned. Reconcile against an empty live set
 		// is "this repository runs nothing now", which is true once it closes.
-		runner.Shared.Reconcile(context.Background(), ds.Repository().ID, nil)
+		runner.Shared.Reconcile(context.Background(), ds.info.ID, nil)
 		ds.close()
 	}
 	// Emptied, so a second Close does not close one dataset twice: a test
@@ -1570,6 +1610,9 @@ func (s *service) open(ctx context.Context, repo Repository) (*dataset, error) {
 	if err != nil {
 		release()
 		return nil, err
+	}
+	if s.testOpenRead != nil {
+		s.testOpenRead(repo.ID)
 	}
 	ds, err := s.openNew(ctx, fresh)
 	release()
@@ -1683,10 +1726,13 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		// creation, and has no standing here afterwards. Nothing re-projects
 		// or prunes the tree at open — the only shipped write left is the
 		// version-keyed upgrade below, which APPENDS.
-		reg:   repo.registry(vocabulary.NewRegistry()),
+		reg:   vocabulary.NewRegistry(),
 		watch: newBroadcaster(),
-		info:  repo.info(),
+		// The row's name is not kept: a dataset holds no name, and asks the
+		// names cache by id when it needs one (namescache.go).
+		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State},
 	}
+	ds.reg.SetNames(ds.answersTo)
 	// The lease before the directory: the open ladder appends (the dialect
 	// stamps, the shipped-vocabulary upgrade), so a process that is not this
 	// repository's writer must be refused before the first of them and not
@@ -1727,7 +1773,7 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
 		ds.loadPeople,
-		ds.runRepositoryMigrations,
+		ds.runLandedRepositoryMigrations(repo.Authority),
 		ds.loadStoredVocabulary,
 		// The unit uses' rule before the seed: where the stored uses are
 		// behind it, the request it writes makes the use guard refuse a
@@ -1759,9 +1805,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.settlePeople,
 		// After the people pass, which writes the person's own (actorfill.go).
 		ds.fillActorRecords,
-		// The repository's own record and its first person's actor after an
-		// import under another name, once the people pass wrote the person's
-		// actor (domain.go).
+		// The repository's own record and its first person's actor after a
+		// rename or an import under another name, once the people pass wrote
+		// the person's actor (repositorynames.go).
 		ds.reconcileRepositoryName,
 		// The titles a template rendered from a name the local namespace's
 		// conversion moved, once the stored vocabulary is loaded and the
@@ -1796,12 +1842,12 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	s.datasets[repo.ID] = ds
 	// Published by authority; ds.close drops it, so a repository closed and
 	// reopened publishes its live pool and not the one it let go.
-	unregisterDB := metrics.RegisterDBStats("repository:"+repo.Authority, db)
-	unregisterSpool := metrics.RegisterWebhookSpool(repo.Authority, ds.spoolStats)
-	unregisterInventory := metrics.RegisterInventory(repo.Authority, ds.inventory)
+	unregisterDB := metrics.RegisterDBStats("repository:"+repo.ID, db)
+	unregisterSpool := metrics.RegisterWebhookSpool(repo.ID, ds.spoolStats)
+	unregisterInventory := metrics.RegisterInventory(repo.ID, ds.inventory)
 	unregisterArchive := func() {}
 	if ds.archive != nil {
-		unregisterArchive = metrics.RegisterArchive(repo.Authority, ds.archive.stats)
+		unregisterArchive = metrics.RegisterArchive(repo.ID, ds.archive.stats)
 	}
 	ds.unregisterMetrics = func() { unregisterDB(); unregisterSpool(); unregisterInventory(); unregisterArchive() }
 	return ds, nil
@@ -1897,7 +1943,7 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 	// it does). The authority is checked BEFORE anything is written under it,
 	// because rows land in its scope, and a scope that already belongs to
 	// somebody would be somebody else's data.
-	if _, err := s.repositoryByAuthorityOn(ctx, cp, authority); err == nil {
+	if _, err := s.repositoryByNameOn(ctx, cp, authority); err == nil {
 		return zero, errAuthorityTaken(authority)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
 		return zero, err
@@ -1984,7 +2030,8 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
 		svc: s, db: db, dek: dek, scope: repo.scope(),
-		reg: repo.registry(s.base.Clone()), watch: newBroadcaster(), info: repo.info(),
+		reg: repo.registry(s.base.Clone()), watch: newBroadcaster(),
+		info: substrate.RepositoryInfo{ID: repo.ID, State: repo.info().State}, creating: authority,
 	}
 	// inserted flips once the control-plane row is this creation's, and
 	// decides what a failure may erase (eraseFailedCreation).
@@ -2102,7 +2149,7 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 		}
 	}
 
-	if err := s.insertRepositoryRow(ctx, cp, &repo, person); err != nil {
+	if _, err := s.insertRepositoryRow(ctx, cp, &repo, person); err != nil {
 		return fail("control-plane row", err)
 	}
 	inserted = true

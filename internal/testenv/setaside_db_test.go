@@ -989,3 +989,42 @@ func mustMarshal(t *testing.T, v any) []byte {
 	}
 	return raw
 }
+
+// The webhook door answers a repository the start set aside as main's door
+// did before a name became an id at the door (decision record 0287): by its
+// id, the address the server gave out, `503 set_aside`, so a provider retries
+// rather than drops the delivery; by its name, the door's one refusal, `404`,
+// so a prober learns nothing. Both hold for a row the start set aside and,
+// by its id, for an archive with no row that only claims its name.
+func TestTheWebhookDoorSaysSetAsideByIDAndNothingByName(t *testing.T) {
+	w := newAsideWorld(t)
+	// bob: a row the boot check sets aside, its directory unreadable.
+	w.unreadableDirectory(t, "bob.example.com")
+	// cat: an archive with no row whose key this host does not open.
+	dir := w.archiveDir("cat.example.com")
+	m, _, err := changelogfile.ReadArchiveManifestDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.DEK[len(m.DEK)-1] ^= 1
+	m.Epoch++
+	if _, err := changelogfile.WriteArchiveManifestDir(dir, m); err != nil {
+		t.Fatal(err)
+	}
+	w.eraseRows(t, "cat.example.com")
+
+	e := w.start(t)
+	w.serves(t, e, "ada.example.com", true)
+	u := e.WithToken("")
+	post := func(address string) (int, []byte, http.Header) {
+		return u.DoRaw(http.MethodPost, "/webhooks/"+address+"/mirror-items", []byte(`{}`),
+			map[string]string{"Content-Type": "application/json", "Authorization": ""})
+	}
+	for _, name := range []string{"bob.example.com", "cat.example.com"} {
+		status, raw, header := post(w.ids[name])
+		refusedSetAside(t, name+" addressed by its id", status, raw, header)
+		if status, raw, _ := post(name); status != http.StatusNotFound {
+			t.Errorf("%s addressed by its name = %d %s, want the door's 404", name, status, raw)
+		}
+	}
+}

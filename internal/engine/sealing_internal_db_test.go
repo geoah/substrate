@@ -397,7 +397,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	repo, err := s.repositoryByAuthority(ctx, testdb.Repository(t))
+	repo, err := s.repositoryByName(ctx, testdb.Repository(t))
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}

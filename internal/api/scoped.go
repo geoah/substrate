@@ -153,7 +153,7 @@ func scopeKind(kind string, registry map[string]substrate.KindInfo) scope.Kind {
 // sent, so the grant, which names the repository's own kinds under `~`, is
 // asked about the kind the engine would resolve (decision record 0259).
 func (s *scopedDataset) local(ref string) string {
-	return vocabulary.LocalizeRef(ref, s.inner.Repository().Authority)
+	return vocabulary.LocalizeRef(ref, s.inner.Repository().LocalNames()...)
 }
 
 // reads reports whether the grant reads kind; a kind the registry does not

@@ -236,8 +236,8 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	// callable, the repository's full name is another spelling of `~`
 	// (decision record 0259): it is stored the way the conversion leaves
 	// history (localizeRecord). Nothing else a writer sent is read as a name.
-	in.ID = vocabulary.LocalizeID(ty.Identity, in.ID, t.ds.info.Authority)
-	localized, lerr := localizeRecord(ty.Identity, in.Properties, t.ds.info.Authority)
+	in.ID = vocabulary.LocalizeID(ty.Identity, in.ID, t.names()...)
+	localized, lerr := localizeRecord(ty.Identity, in.Properties, t.names()...)
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -681,8 +681,8 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	}
 	ref.Kind = ty.Identity
 	// As put does (decision record 0259).
-	ref.ID = vocabulary.LocalizeID(ty.Identity, ref.ID, t.ds.info.Authority)
-	if in.Properties, err = localizeRecord(ty.Identity, in.Properties, t.ds.info.Authority); err != nil {
+	ref.ID = vocabulary.LocalizeID(ty.Identity, ref.ID, t.names()...)
+	if in.Properties, err = localizeRecord(ty.Identity, in.Properties, t.names()...); err != nil {
 		return nil, err
 	}
 	// Global lock order: take the registry-dep/subject locks this addressed
@@ -3041,7 +3041,7 @@ func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ
 	// As put does: a machinery record is stored under `~` (decision record
 	// 0259), and a purge compares the id it was handed with the one it
 	// tombstoned.
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: vocabulary.LocalizeID(ty.Identity, id, ds.info.Authority)}, false, in.IfVersion, in.Purge, ceiling)
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: vocabulary.LocalizeID(ty.Identity, id, ds.names()...)}, false, in.IfVersion, in.Purge, ceiling)
 }
 
 func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ifVersion *int64, purge bool, ceiling *effectCeiling) (*substrate.Record, error) {
@@ -3084,7 +3084,7 @@ func (t *txn) softDeleteIf(ref eref, ifVersion *int64) (*substrate.Record, error
 	}
 	// A machinery record named with the repository's full name is the `~`
 	// one, whichever path deletes it: a function's effect too.
-	ref.ID = vocabulary.LocalizeID(ref.Kind, ref.ID, t.ds.info.Authority)
+	ref.ID = vocabulary.LocalizeID(ref.Kind, ref.ID, t.names()...)
 	// A former id denotes its canonical record everywhere, including here, or
 	// a delete through a merged-away id 404s while every read and patch of
 	// the same id resolves. Lock, then resolve: the addressing must not race

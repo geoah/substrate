@@ -19,8 +19,13 @@ repository; a person has one today, named after them unless the
 registration named another
 ([0274](docs/decisions/0274-a-person-signs-in-as-an-identity-beside-the-repositories-and-picks-the-repository.md)).
 The repository's name IS its one **authority** (a bare label is
-completed under the server's host,
+completed under the server's public host, and a name under `localhost` is
+for development,
+[0288](docs/decisions/0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md);
 [0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+It is an alias: an admin may rename it, and the old name keeps resolving,
+held from everyone else, for 90 days
+([0287](docs/decisions/0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md)).
 The kinds the user declares and the samples they add live in the
 repository's **local namespace**, written `~` (`~/tasks/task`), so the name
 never enters their data

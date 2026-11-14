@@ -296,41 +296,57 @@ func (s *service) lockRegistration(ctx context.Context, authority string) (*sql.
 //
 // A creation for a person (registration) inserts their identity and the row
 // that lets it open the repository in the same transaction, so a registration
-// that loses its name to a racing one creates no person either.
-func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository, person *identityRow) error {
+// that loses its name to a racing one creates no person either. The row and
+// the end of any lapsed hold another repository kept on the name commit as
+// one (takeFormerName), and the repository that held it is answered ("" for
+// none).
+func (s *service) insertRepositoryRow(ctx context.Context, cp controlPlane, r *Repository, person *identityRow) (string, error) {
 	generation, err := newHistoryGeneration()
 	if err != nil {
-		return err
+		return "", err
 	}
 	r.HistoryGeneration = generation
 	tx, err := cp.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	took, err := takeFormerName(ctx, tx, r.Authority)
+	if err != nil {
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	}
+	// The repository that held the name as a lapsed former name answers to it
+	// no more: its names are fenced around this COMMIT (namescache.go).
+	var fenced []string
+	if took != "" {
+		if err := lockNames(ctx, tx, took); err != nil {
+			return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+		}
+		fenced = append(fenced, took)
+	}
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO repositories (id, authority, dek, history_generation, dek_key_id)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING created_at`, r.ID, r.Authority, r.DEK, r.HistoryGeneration, nullString(r.DEKKeyID)).Scan(&r.CreatedAt)
 	if err != nil {
 		if taken := repositoryRowTaken(err, r); taken != nil {
-			return taken
+			return "", taken
 		}
-		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	if person != nil {
 		if err := insertIdentity(ctx, tx, person); err != nil {
-			return err
+			return "", err
 		}
 		if err := linkIdentity(ctx, tx, person.ID, r.ID); err != nil {
-			return err
+			return "", err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
+	if err := s.commitFencingNames(tx, false, fenced...); err != nil {
+		return "", fmt.Errorf("substrate/engine: create repository %q: %w", r.ID, err)
 	}
 	r.CreatedAt = r.CreatedAt.UTC()
-	return nil
+	return took, nil
 }
 
 // sqlstateUniqueViolation is Postgres's SQLSTATE for a unique or primary-key
@@ -557,8 +573,13 @@ func (s *service) eraseLocal(ctx context.Context, cp controlPlane, id string) er
 	if _, err := tx.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s (repositories): %w", id, err)
 	}
-	// The repository's tokens, and its people's places in it, go with it.
-	if err := s.commitFencingTokens(tx, id); err != nil {
+	// The repository's tokens, its people's places in it and its names go
+	// with it, all fenced around the one COMMIT (tokencache.go,
+	// namescache.go).
+	if err := lockNames(ctx, tx, id); err != nil {
+		return fmt.Errorf("substrate/engine: erase repository %s: %w", id, err)
+	}
+	if err := s.commitErasing(tx, id); err != nil {
 		return fmt.Errorf("substrate/engine: erase repository %s: commit: %w", id, err)
 	}
 	if s.testAfterErase != nil {
@@ -672,20 +693,6 @@ func scanRepositoryRow(scan func(dest ...any) error) (Repository, error) {
 	return r, nil
 }
 
-// repositoryByAuthority finds the repository that owns an authority: the one
-// it is the name of. Two repositories on one substrate cannot own the same
-// one: a kind reference names its authority and nothing else, so a shared
-// authority would be two homes for one name.
-func (s *service) repositoryByAuthority(ctx context.Context, authority string) (Repository, error) {
-	return s.repositoryByAuthorityOn(ctx, s.maint, authority)
-}
-
-// repositoryByAuthorityOn is the lookup by name on a given maint handle.
-func (s *service) repositoryByAuthorityOn(ctx context.Context, q dbx, authority string) (Repository, error) {
-	return s.scanRepository(q.QueryRowContext(ctx,
-		`SELECT `+repositoryColumns+` FROM repositories WHERE authority = $1`, authority), authority)
-}
-
 // repositoryByKey finds a repository by its id or by its name, which never
 // look alike: an id holds no dot and a name always does. It is the lookup of
 // every door a caller names a repository at (an operator command, a webhook
@@ -694,7 +701,7 @@ func (s *service) repositoryByKey(ctx context.Context, key string) (Repository, 
 	if vocabulary.ValidRepositoryID(key) {
 		return s.repositoryByID(ctx, key)
 	}
-	return s.repositoryByAuthority(ctx, key)
+	return s.repositoryByName(ctx, key)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {

@@ -178,14 +178,14 @@ func (ds *dataset) clearSecretsLeftBehind(ctx context.Context) error {
 	var marked bool
 	if err := ds.svc.maint.QueryRowContext(ctx, `SELECT secrets_left_behind FROM repositories WHERE id = $1`, ds.info.ID).
 		Scan(&marked); err != nil {
-		return fmt.Errorf("substrate/engine: read whether repository %s has secrets left behind: %w", ds.info.Authority, err)
+		return fmt.Errorf("substrate/engine: read whether repository %s has secrets left behind: %w", ds.name(), err)
 	}
 	if !marked {
 		return nil
 	}
 	spooled, err := ds.dropUnopenedSpool()
 	if err != nil {
-		return fmt.Errorf("substrate/engine: delete the spooled requests repository %s left behind: %w", ds.info.Authority, err)
+		return fmt.Errorf("substrate/engine: delete the spooled requests repository %s left behind: %w", ds.name(), err)
 	}
 	var lost, cleared, accounts int
 	var unfound []string
@@ -238,17 +238,17 @@ func (ds *dataset) clearSecretsLeftBehind(ctx context.Context) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("substrate/engine: clear the secrets repository %s (id %s) left behind: %w", ds.info.Authority, ds.info.ID, err)
+		return fmt.Errorf("substrate/engine: clear the secrets repository %s (id %s) left behind: %w", ds.name(), ds.info.ID, err)
 	}
 	if len(unfound) > 0 {
 		ds.svc.log.Warn("substrate: secrets a repository restored without them left behind are not held where their records say; they stay, and the next open looks again once the GC's sweep has taken the ones no record holds",
-			"repository", ds.info.Authority, "id", ds.info.ID, "refs", len(unfound))
+			"repository", ds.name(), "id", ds.info.ID, "refs", len(unfound))
 	} else if _, err := ds.svc.maint.ExecContext(ctx, `UPDATE repositories SET secrets_left_behind = false WHERE id = $1`, ds.info.ID); err != nil {
-		return fmt.Errorf("substrate/engine: lift the mark of the secrets repository %s left behind: %w", ds.info.Authority, err)
+		return fmt.Errorf("substrate/engine: lift the mark of the secrets repository %s left behind: %w", ds.name(), err)
 	}
 	if lost > 0 || spooled > 0 {
 		ds.svc.log.Warn("substrate: cleared the secrets a repository restored without them still named; each is an alert its owner sees, the accounts read erroring, and the owner signs in after `substratectl user reset`",
-			"repository", ds.info.Authority, "id", ds.info.ID, "valuesRemoved", lost, "secretsCleared", cleared, "accountsToReconnect", accounts,
+			"repository", ds.name(), "id", ds.info.ID, "valuesRemoved", lost, "secretsCleared", cleared, "accountsToReconnect", accounts,
 			"spooledRequestsDeleted", spooled)
 	}
 	return nil

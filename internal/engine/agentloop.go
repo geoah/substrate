@@ -496,7 +496,7 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	// the row stores by then (keyrefusals.go).
 	pc := &providerConfig{
 		id: id, pricing: map[string]modelPrice{},
-		key: ownKeyID(ds.Repository().ID, id, storedKey), name: name,
+		key: ownKeyID(ds.info.ID, id, storedKey), name: name,
 	}
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
@@ -879,7 +879,7 @@ func (ds *dataset) prepareAgentRun(ctx context.Context, ag *vocabulary.Agent, in
 		if err != nil {
 			return nil, nil, err
 		}
-		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().ID, id)
+		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.info.ID, id)
 	}
 	if in.hub != nil {
 		in.emit = in.hub.publish
@@ -1046,7 +1046,7 @@ loop:
 				// get the plain refusal and what to do, and the vendor's own
 				// words go to the log.
 				l.ds.svc.log.Warn("substrate: the vendor refused an llm/provider row's key",
-					"repository", l.ds.Repository().ID, "provider", l.provider.id, "status", status, "error", err.Error())
+					"repository", l.ds.info.ID, "provider", l.provider.id, "status", status, "error", err.Error())
 				refusal := l.ds.keyRefusal(l.provider, status)
 				if serr := l.settleAfterFailure(ctx, refusal.Error(), reply); serr != nil {
 					return nil, errors.Join(refusal, serr)

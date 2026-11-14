@@ -241,6 +241,7 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux.HandleFunc("POST /register", f.handleRegister)
 	mux.HandleFunc("POST /login", f.handleLogin)
 	mux.HandleFunc("POST "+pathSignOutAll, f.handleSignOutEverywhere)
+	mux.HandleFunc("POST "+pathRename, f.handleRename)
 	mux.HandleFunc("POST /tokens", f.handleMint)
 	mux.HandleFunc("GET /tokens", f.handleTokens)
 	mux.HandleFunc("DELETE /tokens/{id}", f.handleRevoke)
@@ -707,8 +708,9 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var label string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
 	// The names the way the server answers them: as sent when they carry a
-	// dot, else that label under the host the request reached, and the
-	// repository named after the person unless the request names it.
+	// dot, else that label under the host the request reached, as a server
+	// with no public URL finds it, and the repository named after the person
+	// unless the request names it.
 	identity, repository := f.names(r)
 	answer := map[string]any{
 		"token":      substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
@@ -728,11 +730,11 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (f *fakeSubstrate) names(r *http.Request) (identity, repository string) {
 	_ = json.Unmarshal(f.lastBody["identity"], &identity)
 	_ = json.Unmarshal(f.lastBody["repository"], &repository)
-	identity = vocabulary.RepositoryAuthority(identity, r.Host)
+	identity = vocabulary.NameRule{}.Lookup(identity, r.Host)
 	if repository == "" {
 		return identity, identity
 	}
-	return identity, vocabulary.RepositoryAuthority(repository, r.Host)
+	return identity, vocabulary.NameRule{}.Lookup(repository, r.Host)
 }
 
 // handleLogin mints a token record and hands back its secret once. There is no
@@ -771,6 +773,27 @@ func (f *fakeSubstrate) handleLogin(w http.ResponseWriter, r *http.Request) {
 		"secret":     fakeSecret,
 		"repository": repository,
 		"identity":   identity,
+	})
+}
+
+// handleRename answers as the rename door does: the same two-step code, then
+// the repository under the name it was given, the old one held 90 days.
+func (f *fakeSubstrate) handleRename(w http.ResponseWriter, r *http.Request) {
+	f.noteRequest(r)
+	if f.authFails(w) {
+		return
+	}
+	var code, repository, name string
+	_ = json.Unmarshal(f.lastBody["totpCode"], &code)
+	_ = json.Unmarshal(f.lastBody["repository"], &repository)
+	_ = json.Unmarshal(f.lastBody["name"], &name)
+	if code == "" && !f.totpDisabled && !f.noFactor {
+		writeError(w, http.StatusUnauthorized, "totp_required", "a code from your authenticator is required", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": "rnd-0123456789abcdef", "name": name,
+		"formerNames": []any{map[string]any{"name": repository, "until": "2027-02-11T12:00:00Z"}},
 	})
 }
 

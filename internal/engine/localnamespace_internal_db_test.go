@@ -21,7 +21,7 @@ func TestCarryLocalResealsAndRekeysTheRowsOfOwnKinds(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := newRaceDataset(t)
-	name := ds.info.Authority
+	name := ds.name()
 	own, other := name+"/creds/account", "other.example.com/creds/account"
 	secret := vocabulary.CoreKind("secret")
 	reseal := func(payload []byte, ref, fromKind, fromID, toKind, toID string) ([]byte, error) {
@@ -115,7 +115,7 @@ func TestCarryLocalMovesALeftBehindSecretAsItIs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := newRaceDataset(t)
-	name := ds.info.Authority
+	name := ds.name()
 	own := name + "/creds/account"
 	lost := []byte("sealed under a key this repository no longer has")
 	if _, err := ds.db.ExecContext(ctx, `INSERT INTO sealed (ref, record_kind, record_id, payload) VALUES ('secret-lost', $1, 'a1', $2)`, own, lost); err != nil {
@@ -156,7 +156,7 @@ func TestTheWriteFoldsANameAndLeavesAValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := newRaceDataset(t)
-	name := ds.info.Authority
+	name := ds.name()
 	value := name + "/password-that-is-long-enough"
 	if _, err := ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: kindSecret, ID: name + "/notes/apiKey", Properties: map[string]any{"value": value}}); err != nil {
 		t.Fatalf("write the secret: %v", err)
@@ -185,7 +185,7 @@ func TestTheWriteFoldsANameAndLeavesAValue(t *testing.T) {
 func TestACallableNamedByTheFullNameResolvesToTheLocalOne(t *testing.T) {
 	t.Parallel()
 	ds := newRaceDataset(t)
-	name := ds.info.Authority
+	name := ds.name()
 	b := &callBackend{inv: &invocation{ds: ds}}
 	for in, want := range map[string]string{
 		name + "/crew/helper":      "~/crew/helper",
@@ -211,7 +211,7 @@ func TestCarryLocalMovesTheStoredIdempotencyAnswers(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds := newRaceDataset(t)
-	name := ds.info.Authority
+	name := ds.name()
 	refs := referencePositionsOf([]declarationVersion{{
 		Seq: 1, Ref: kindKind, ID: name + "/tasks/task",
 		Properties: map[string]any{"properties": map[string]any{

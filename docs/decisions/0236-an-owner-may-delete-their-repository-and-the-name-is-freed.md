@@ -2,6 +2,7 @@
 status: accepted
 date: 2026-11-06
 decision-makers: George Antoniadis
+amended-by: 0287
 ---
 
 # 0236. An owner may delete their repository, and the name is freed

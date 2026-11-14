@@ -68,6 +68,14 @@ type registrationInfo struct {
 	// stop asking for a code nothing checks; it is not permission to skip
 	// anything, because the service refuses on its own terms either way.
 	TOTPRequired bool `json:"totpRequired"`
+	// NameHost is the host a short name is completed under, at a
+	// registration and a rename: the host of SUBSTRATE_PUBLIC_URL, never the
+	// address a request arrived at (decision record 0288). Always present,
+	// and empty where none is configured, when a name is typed whole: a
+	// client tells that from an older server, which sends no field and
+	// completes under the request's host. A client previews the name with
+	// it and sends what was typed; the door completes it.
+	NameHost string `json:"nameHost"`
 }
 
 // grammarInfo states the kind grammar in the form a client can check against.
@@ -184,6 +192,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Registration: registrationInfo{
 			InviteRequired: h.inviteCode != "",
 			TOTPRequired:   !h.totpDisabled,
+			NameHost:       h.names.Host,
 		},
 	}
 	if h.site != nil {

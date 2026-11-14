@@ -11,6 +11,7 @@ import {
   retireStoredSession,
   saveSession,
   sessionExpired,
+  setRepository,
   setSessionChangedHandler,
   setToken,
   setUnauthorizedHandler,
@@ -123,6 +124,61 @@ describe("session in the Apple app", () => {
     expect(getTokenId()).toBe("tok-app")
     expect(hasSession()).toBe(true)
     expect(localStorage.getItem("substrate.token")).toBeNull()
+  })
+
+  it("takes a rename at once, tells the app, keeps it across a navigation, and reads the app's name after a reload", async () => {
+    const shell = (session: typeof SESSION) => ({
+      platform: "ios",
+      server: "https://substrate.example.com",
+      session,
+    })
+    vi.stubGlobal(
+      "substrateShell",
+      shell({ ...SESSION, secret: "substrate_tok_renamed" })
+    )
+    setRepository("lovelace.example.com")
+    // The page reads the new name at once, for every request after, while
+    // the app's frozen session still says the old one.
+    expect(getRepository()).toBe("lovelace.example.com")
+    expect(getToken()).toBe("substrate_tok_renamed")
+    expect(post).toHaveBeenCalledWith({
+      type: "renamed",
+      tokenId: "tok-app",
+      repository: "lovelace.example.com",
+    })
+    expect(localStorage.getItem("substrate.repository")).toBeNull()
+    // A navigation inside the page keeps the page's state, and the name.
+    window.history.pushState({}, "", "/settings")
+    expect(getRepository()).toBe("lovelace.example.com")
+    // The rename is that sign-in's: another is read as the app gives it.
+    vi.stubGlobal(
+      "substrateShell",
+      shell({ ...SESSION, secret: "substrate_tok_next" })
+    )
+    expect(getRepository()).toBe("ada.example.com")
+    // A reload starts the page's modules again: nothing of the page's own
+    // survives it, and the name is the one the app's session gives.
+    vi.resetModules()
+    vi.stubGlobal(
+      "substrateShell",
+      shell({
+        ...SESSION,
+        secret: "substrate_tok_renamed",
+        repository: "lovelace.example.com",
+      })
+    )
+    const reloaded = await import("./session")
+    expect(reloaded.getRepository()).toBe("lovelace.example.com")
+    expect(reloaded.getToken()).toBe("substrate_tok_renamed")
+    // So the app has to keep it: a reload under the session it had before
+    // the rename reads the old name, which the server still answers to.
+    vi.resetModules()
+    vi.stubGlobal(
+      "substrateShell",
+      shell({ ...SESSION, secret: "substrate_tok_renamed" })
+    )
+    const stale = await import("./session")
+    expect(stale.getRepository()).toBe("ada.example.com")
   })
 
   it("tells the app which sign-in a 401 ended, once, and reads it no more", () => {

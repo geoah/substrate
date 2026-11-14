@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -487,6 +489,142 @@ func TestBothSpellingsOfAnOwnKindAskOneScope(t *testing.T) {
 	if !reflect.DeepEqual(got["~"], want) {
 		t.Errorf("an authorization asked in `~` is %+v, want %+v", got["~"], want)
 	}
+}
+
+// A PUBLISHER'S NAMES UNDER THE REPOSITORY'S NAME. The repository holds a
+// package `pub` publishes and is renamed `pub`, its early refusal lifted: the
+// name does not spell `~` while the package is held, so on every door the
+// published kind is the publisher's, a reference stored in full keeps
+// pointing at it, the repository's own kinds answer under `~` and under the
+// name it had, and `pub` spelling one of them names nothing.
+func TestAPublishersNamesKeepTheirMeaningUnderTheRepositorysName(t *testing.T) {
+	t.Parallel()
+	const password = "correct-horse-battery-staple"
+	env := newDBEnv(t, withPassword(password), withEngine(engine.WithTestNameDoorsOpen()))
+	ctx := context.Background()
+	old, pub := env.repository, testdb.RepositoryLabel(t)+"-pub.example.com"
+	task := pub + "/tasks/task"
+	if _, err := env.ds.InstallBundleClosure(ctx, substrate.BundleActor(pub, "tasks"), []map[string]any{
+		vocabulary.PackageManifest(pub+"/tasks", 1),
+		vocabulary.KindManifest(pub+"/tasks", map[string]any{"singular": "task"}, map[string]any{
+			"displayTemplate": "{name}",
+			"properties":      map[string]any{"name": map[string]any{"type": "string"}},
+		}),
+		vocabulary.BundleManifest(pub+"/tasks", map[string]any{"description": "a package pub publishes", "installs": []any{task}}),
+	}, nil, substrate.BundleInstall{Published: true}); err != nil {
+		t.Fatalf("install %s/tasks: %v", pub, err)
+	}
+	if _, err := env.ds.ApplyVocabularyDocuments(ctx, substrate.ActorPerson, append(notesDeclarations(old+"/notes"),
+		vocabulary.KindManifest(old+"/notes", map[string]any{"singular": "pin"}, map[string]any{
+			"properties": map[string]any{"about": map[string]any{"type": "reference", "kind": task}},
+		}))); err != nil {
+		t.Fatalf("declare the notes: %v", err)
+	}
+	t1, n1, p1 := mintedID("held-task"), mintedID("held-note"), mintedID("held-pin")
+	env.put(t, task, t1, map[string]any{"name": "published"})
+	env.put(t, "~/notes/note", n1, map[string]any{"name": "own"})
+	env.put(t, "~/notes/pin", p1, map[string]any{"about": map[string]any{"ref": task + "/" + t1}})
+	if _, err := env.svc.RenameRepository(ctx, substrate.LoginInput{Identity: old, Repository: old, Password: password}, pub); err != nil {
+		t.Fatalf("rename onto %s with its refusal lifted: %v", pub, err)
+	}
+	if names := env.ds.Repository().LocalNames(); !reflect.DeepEqual(names, []string{old}) {
+		t.Fatalf("the repository spells ~ with %v, want its former name alone", names)
+	}
+	viewer := addPerson(t, env, "v", scope.RoleViewer)
+	app := appScopedToken(t, env, "read:"+task)
+	_, assistant := mcpAssistantToken(t, env)
+	type answer struct {
+		status int
+		kind   string
+	}
+	read := func(body []byte, status int) answer {
+		var got struct {
+			Kind    string `json:"kind"`
+			Records []struct {
+				Kind string `json:"kind"`
+			} `json:"records"`
+			Changes []struct {
+				Kind string `json:"kind"`
+			} `json:"changes"`
+		}
+		_ = json.Unmarshal(body, &got)
+		kind := got.Kind
+		for _, r := range got.Records {
+			kind = r.Kind
+		}
+		for _, c := range got.Changes {
+			kind = c.Kind
+		}
+		return answer{status: status, kind: kind}
+	}
+	do := func(method, path, token string, body any) answer {
+		rec := env.do(t, method, path, token, body)
+		return read(rec.Body.Bytes(), rec.Code)
+	}
+	list := func(kind string) string {
+		return recordsPath + "?filter=" + url.QueryEscape(`{"kinds":["`+kind+`"]}`)
+	}
+	for _, c := range []struct {
+		door string
+		got  answer
+		want answer
+	}{
+		{"a record's address", do(http.MethodGet, "/api/v1/"+task+"/"+t1, env.token, nil), answer{http.StatusOK, task}},
+		{"the records list", do(http.MethodGet, list(task), env.token, nil), answer{http.StatusOK, task}},
+		{"the change feed", do(http.MethodGet, "/api/v1/changes?first=50&recordKind="+url.QueryEscape(task)+"&recordId="+t1, env.token, nil), answer{http.StatusOK, task}},
+		{"a write by address", do(http.MethodPut, "/api/v1/"+task+"/"+mintedID("held-put"), env.token, map[string]any{"properties": map[string]any{"name": "put"}}), answer{http.StatusCreated, task}},
+		{"a create", do(http.MethodPost, recordsPath, env.token, map[string]any{"kind": task, "properties": map[string]any{"name": "posted"}}), answer{http.StatusCreated, task}},
+		{"a patch by address", do(http.MethodPatch, "/api/v1/"+task+"/"+t1, env.token, map[string]any{"properties": map[string]any{"name": "patched"}}), answer{http.StatusOK, task}},
+		{"an app's scope", do(http.MethodGet, "/api/v1/"+task+"/"+t1, app, nil), answer{http.StatusOK, task}},
+		{"a viewer's role", do(http.MethodGet, list(task), viewer.token, nil), answer{http.StatusOK, task}},
+		{"the repository's own kind under ~", do(http.MethodGet, "/api/v1/~/notes/note/"+n1, env.token, nil), answer{http.StatusOK, "~/notes/note"}},
+		{"the repository's own kind under its former name", do(http.MethodGet, "/api/v1/"+old+"/notes/note/"+n1, env.token, nil), answer{http.StatusOK, "~/notes/note"}},
+		{"a write of its own kind under ~", do(http.MethodPut, "/api/v1/~/notes/note/"+mintedID("held-own"), env.token, map[string]any{"properties": map[string]any{"name": "own"}}), answer{http.StatusCreated, "~/notes/note"}},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: answers %+v, want %+v", c.door, c.got, c.want)
+		}
+	}
+	// The name spelling one of the repository's own kinds names nothing.
+	if a := do(http.MethodGet, "/api/v1/"+pub+"/notes/note/"+n1, env.token, nil); a.status == http.StatusOK {
+		t.Errorf("%s/notes/note answers %+v: it folded to ~ under a name the repository holds a package under", pub, a)
+	}
+	// The assistant's door names the published kind as written.
+	text, isErr := callTool(t, env.h, assistant, "query", map[string]any{"kind": task, "id": t1})
+	if isErr || !strings.Contains(text, `"kind":"`+task+`"`) {
+		t.Errorf("an MCP query of %s answers %s", task, text)
+	}
+	// A reference stored in full keeps pointing at the published record, and
+	// one written in full now lands as written.
+	if got := env.get(t, "~/notes/pin", p1); got == nil || got.Properties["about"].(map[string]any)["ref"] != task+"/"+t1 {
+		t.Errorf("the pin stored before the rename reads %v", got)
+	}
+	p2 := mintedID("held-pin-after")
+	wantStatus(t, env.do(t, http.MethodPut, "/api/v1/~/notes/pin/"+p2, env.token,
+		map[string]any{"properties": map[string]any{"about": map[string]any{"ref": task + "/" + t1}}}), http.StatusCreated)
+	if got := env.get(t, "~/notes/pin", p2); got == nil || got.Properties["about"].(map[string]any)["ref"] != task+"/"+t1 {
+		t.Errorf("a pin written after the rename reads %v", got)
+	}
+	// A declaration and a policy naming the published kind keep its name.
+	tag := vocabulary.KindManifest("~/notes", map[string]any{"singular": "tag"}, map[string]any{
+		"properties": map[string]any{"on": map[string]any{"type": "reference", "kind": task}},
+	})
+	wantStatus(t, env.do(t, http.MethodPost, "/api/v1/vocabulary/apply", env.token, map[string]any{"documents": []any{tag}}), http.StatusOK)
+	if decl := env.get(t, vocabulary.CoreKind(vocabulary.DocKind), "~/notes/tag"); decl == nil || !strings.Contains(jsonOf(decl.Properties), `"kind":"`+task+`"`) {
+		t.Errorf("the tag's declaration reads %v, want its reference to %s as written", decl, task)
+	}
+	rec := env.do(t, http.MethodPut, "/api/v1/substrate.reamde.dev/core/recordpatchpolicy/held", env.token, map[string]any{
+		"properties": map[string]any{"action": "gate", "selector": map[string]any{"kinds": []any{task}}},
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	if got := decodeJSON[substrate.Record](t, rec); !strings.Contains(jsonOf(got.Properties["selector"]), task) {
+		t.Errorf("the policy's selector reads %v, want %s as written", got.Properties["selector"], task)
+	}
+}
+
+func jsonOf(v any) string {
+	raw, _ := json.Marshal(v)
+	return string(raw)
 }
 
 func jsonEqualForTest(a, b any) bool {

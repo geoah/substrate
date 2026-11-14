@@ -108,15 +108,16 @@ user controls (`ada.example.com`, `geoah.me`). The packages its user declares
 kinds in live in the repository's local namespace, `~`, not under the name
 ([0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). Both names keep that DNS-style form, so
 another server could one day vouch for a person's. A name carrying a dot is
-taken as it is; a bare label is completed under the host the request reached
-(`ada` reaching `substrate.example` is `ada.substrate.example`), and the
-response says what was created. A name is lowercase DNS labels with at least
-one dot, within the DNS length limits, and unique across the substrate; a
-repository's is never under `substrate.reamde.dev` (where the shipped
-vocabulary publishes) and is permanent. A request that names no `identity`
-is refused `400` with the field to send. The repository's own `repository`
-record carries its name, so a client that only speaks the record API can
-read it back.
+taken as it is; a bare label is completed under the server's public host
+([the default name](#the-default-name)), and the response says what was
+created. A name is lowercase DNS labels with at least one dot, within the DNS
+length limits, and unique across the substrate; a repository's is never under
+`substrate.reamde.dev` (where the shipped vocabulary publishes), nor a name
+another repository held in the last 90 days. An admin can rename the
+repository ([renaming a repository](#renaming-a-repository)); the person's
+name stays as registered. A request that names no `identity` is refused `400`
+with the field to send. The repository's own `repository` record carries its
+name, so a client that only speaks the record API can read it back.
 
 That one name is everywhere a person or a client names the repository: a
 delivery envelope's `repository.authority` carries it and a webhook URL takes
@@ -136,6 +137,99 @@ half-created user.
 
 Registration therefore ends logged in: the response carries the first token's
 secret.
+
+## The default name
+
+A short name is completed under the server's **configured public host**, the
+host of `SUBSTRATE_PUBLIC_URL`, never under the address a request arrived at,
+which a caller chooses
+([decision record 0288](decisions/0288-a-short-name-is-completed-under-the-configured-public-host-and-a-local-name-is-for-development.md)).
+A name under `localhost` or an IP address names nothing outside one machine,
+so a new repository may take one only in **development**: a server whose own
+public host is `localhost` or a loopback address, which is what `mise run
+dev` and `compose.yaml` configure.
+
+| You type | The server's public URL | The name |
+| --- | --- | --- |
+| `ada` | `https://substrate.example.com` | `ada.substrate.example.com` |
+| `ada` | `http://localhost:8080` | `ada.localhost` |
+| `ada` | `http://127.0.0.1:5173` | `ada.127.0.0.1` |
+| `ada.example.com` | any | `ada.example.com` |
+
+Outside development `ada.localhost` and `ada.127.0.0.1` are refused as a new
+name, at a registration (the person's and the repository's) and as a rename's
+new name. A server with no public
+URL completes nothing: a short name is refused, saying to type the whole name.
+Discovery says the host (`registration.nameHost` in
+`GET /.well-known/substrate/server.json`, empty where none is configured), so
+a client previews the name the person will get. A repository named under `localhost` before the rule keeps
+its name, is found by it, and can be renamed. Finding an existing person or
+repository by a short name (a sign-in, a delete) completes it under the public
+host, or under the request's host where none is configured, as before.
+
+## Renaming a repository
+
+A repository's name is an alias: what people type and see. Its id keys its
+storage and its own kinds are `~`, so a rename moves no stored value
+([decision record 0287](decisions/0287-a-repositorys-name-is-an-alias-and-a-former-name-holds-for-90-days.md)).
+
+```http
+POST /repository/rename
+{"identity": "ada.example.com", "repository": "ada.example.com",
+ "password": "…", "totpCode": "123456", "name": "lovelace.example.com"}
+
+→ 200 {"id": "rnd-01jbx…", "name": "lovelace.example.com",
+       "formerNames": [{"name": "ada.example.com", "until": "2027-02-11T12:00:00Z"}]}
+```
+
+Like the delete, it presents the person and their current factors in the
+body and no token
+([the password-factor rule](#the-credential-and-the-password-factor-rule)),
+and only an admin of the repository renames it ([roles](#roles)): a person
+who may open it and is no admin is refused `403` `not_permitted`, and a
+person who may not open it the plain `403` `forbidden`.
+`name` is completed as a registration's is ([above](#the-default-name)). A
+name another repository holds, as its name or as a former name, is refused
+`422`, as a registration of it is. A name the repository holds a package
+under is refused `409` `conflict`, naming the package: choose another name,
+or uninstall the package first. An archive import under another name is
+refused the same way, against the packages the archive holds. These
+refusals are early ones; what holds the meaning of stored names is that a
+name the repository holds a package under does not spell `~` while it
+does: should a rename and an install pass each other,
+`publisher.example/tasks/task` still names the publisher's kind, and the
+repository's own kinds are written `~`. An authority row with no package
+under it changes no name's meaning, and a rename leaves it as it is.
+
+**For 90 days after the rename the old name is a former name.** It resolves
+to the repository on every door that takes a name: a record address in the
+full-name spelling (`/api/v1/ada.example.com/tasks/task/…` is `~/tasks/task`),
+`filter.kinds`, an app's scopes and its check, the webhook door by name, a
+sign-in's choice of repository (whose answer names the repository by its
+name now), and the operator's commands. No registration or rename elsewhere takes it. At the
+moment the 90 days end it stops resolving and is free, both at once. A
+second rename starts the hold of the name it retires and leaves the first
+former name to its own moment; renaming back to a former name makes it the
+name again. While a former name answers, a package that name publishes is
+not installed here (`409` `conflict`, saying until when). Deleting the
+repository frees its name and every former name at
+once ([0236](decisions/0236-an-owner-may-delete-their-repository-and-the-name-is-freed.md)).
+
+**What moves at once, and what follows:** the name moves at the rename's
+commit, so from then on the new name resolves and the old one is a former
+name. The repository's own record (`name`, `authority`), the `name` of its
+first person's actor record, which reads as the repository's name, and its
+domain proof follow in the background right after; one that does not
+finish is done at the repository's next open. No person's sign-in name moves: it
+is their identity's, held beside the repositories, and the repositories they
+may open are linked by id. A [verified domain](#verify-domain) is a proof for the
+old name, so the stamp and any pending proof are cleared, and Verify domain
+answers the record for the new name. What a webhook URL, an app's token or a
+saved context hold keeps working: a webhook address the server gives out
+names the id, an app's token is bound to the repository, and an address by
+the old name resolves for the 90 days. A client stores the new name from the
+rename's answer; `substratectl rename` does, and so does the console's
+Settings. Actor texts in the history keep the name they were written with.
 
 ## Verify domain
 

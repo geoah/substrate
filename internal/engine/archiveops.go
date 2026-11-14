@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -460,7 +461,7 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID, name
 	}
 	m := src.manifest
 	if name != "" && name != m.Authority {
-		if err := s.admitImportName(src, name); err != nil {
+		if err := s.admitImportName(ctx, src, name); err != nil {
 			return Repository{}, err
 		}
 		m.Authority = name
@@ -500,8 +501,9 @@ func (s *service) ImportArchive(ctx context.Context, repository, archiveID, name
 // row's (conversion step 6), so it is imported under its own name, and its
 // next archive, in the current dialect, under another. And a name another
 // repository the start set aside claims is not taken, as no registration
-// takes it (setaside.go).
-func (s *service) admitImportName(src *archiveSource, name string) error {
+// takes it (setaside.go). Nor is it a name the archive holds a package
+// under (heldUnderNameIn), which the repository could not answer to.
+func (s *service) admitImportName(ctx context.Context, src *archiveSource, name string) error {
 	if err := validRepositoryName(name); err != nil {
 		return fmt.Errorf("%w: --name: %w", substrate.ErrValidation, err)
 	}
@@ -515,7 +517,65 @@ func (s *service) admitImportName(src *archiveSource, name string) error {
 				substrate.ErrConflict, name, r.keys[0])
 		}
 	}
+	if s.testNameDoorsOpen {
+		return nil
+	}
+	held, err := heldUnderNameIn(ctx, src, name)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: read archive %s/%s for what it holds under %s: %w", src.manifest.ID, src.name, name, err)
+	}
+	if held != "" {
+		return fmt.Errorf("--name: %w", errHeldUnderName(name, held))
+	}
 	return nil
+}
+
+// heldUnderNameIn reads src's history for what a repository holding it holds
+// under name at its head, as refuseHeldUnderName reads a repository's rows:
+// a live package under name. It answers the first package, or "".
+func heldUnderNameIn(ctx context.Context, src historySource, name string) (string, error) {
+	cur, err := src.Cursor(ctx, 0)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = cur.Close() }()
+	live := map[string]bool{}
+	for {
+		entries, err := cur.Next(verifyTableBatch)
+		if err != nil {
+			return "", err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, e := range entries {
+			var payload struct {
+				Fold []foldOp `json:"fold"`
+			}
+			if len(e.Payload) == 0 {
+				continue
+			}
+			if err := json.Unmarshal(e.Payload, &payload); err != nil {
+				return "", fmt.Errorf("seq %d: %w", e.Seq, err)
+			}
+			for _, op := range payload.Fold {
+				if op.Ref != kindPackage || !strings.HasPrefix(op.ID, name+"/") {
+					continue
+				}
+				switch op.Kind {
+				case foldRecord:
+					live[op.ID] = true
+				case foldTombstone, foldPurge:
+					delete(live, op.ID)
+				}
+			}
+		}
+	}
+	held := slices.Sorted(maps.Keys(live))
+	if len(held) == 0 {
+		return "", nil
+	}
+	return held[0], nil
 }
 
 // finishDeletionsAndTakes is the boot's first look at every row: a
