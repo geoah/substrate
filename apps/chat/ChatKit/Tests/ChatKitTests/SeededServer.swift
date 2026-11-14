@@ -197,6 +197,16 @@ final class SeededServer: @unchecked Sendable {
         lock.withLock { threads.values.reduce(0) { $0 + $1.rows.filter { $0.role == "user" && $0.content == text }.count } }
     }
 
+    /// Every row id two rows share, in any thread: none, ever.
+    var sharedRowIDs: [String] {
+        lock.withLock {
+            var seen: Set<String> = []
+            var shared: Set<String> = []
+            for row in threads.values.flatMap(\.rows) where !seen.insert(row.id).inserted { shared.insert(row.id) }
+            return shared.sorted()
+        }
+    }
+
     /// The thread whose rows hold a user message with this text.
     func thread(saying text: String) -> String? {
         lock.withLock { order.first { threads[$0]?.rows.contains { $0.role == "user" && $0.content == text } ?? false } }
