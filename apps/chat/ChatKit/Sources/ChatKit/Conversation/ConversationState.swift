@@ -1,10 +1,11 @@
 import Foundation
 import SubstrateCore
 
-/// One chat's run: the overlay a stream draws over the parent's rows, and
-/// every way a send, an attach and a handover can end (the console's
-/// `Conversation`, web/console/src/components/agent/conversation.tsx, with
-/// the exits DESIGN.md's tables list).
+/// One chat's run: what its stream has said of the turns the parent's rows
+/// do not hold yet (`LiveRows`), and every way a send, an attach and the
+/// read of its rows can end (the console's `Conversation`,
+/// web/console/src/components/agent/conversation.tsx, with the exits
+/// DESIGN.md's tables list).
 public struct ConversationState: Codable, Equatable, Sendable {
     enum Phase: String, Codable, Sendable {
         case idle
@@ -22,7 +23,8 @@ public struct ConversationState: Codable, Equatable, Sendable {
         var agent: String
         /// The thread it went to; nil for a new chat.
         var sentTo: String?
-        /// The overlay a failed handover left, still the only view of that run.
+        /// The provisional turns a failed read of the rows left, still the
+        /// only view of that run.
         var kept: [Turn]
         var failedBefore: Failure?
         /// The newest turn held before the send, for a delivery check; nil
@@ -61,6 +63,14 @@ public struct ConversationState: Codable, Equatable, Sendable {
         var held: Set<Int> = []
         var idle: String?
         var done = false
+        /// The server ended this stream for a reader that fell behind
+        /// (`lagged`): the turn runs on, and nothing failed.
+        var lagged = false
+        /// An event of this stream changed what is held.
+        var moved = false
+        /// Opened to see whether a turn nothing streamed has a stream now:
+        /// the conversation stays as it was unless it has.
+        var probe = false
     }
 
     enum Run: Codable, Equatable, Sendable {
@@ -127,8 +137,18 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// The engine rewrote the draft since the field last spoke.
     var rewritten = false
     var phase = Phase.idle
-    var overlay = LiveOverlay.empty
+    /// What the run's stream has said that the rows do not hold yet.
+    var provisional = LiveRows.empty
+    /// By a stored row's id, the id its turn was drawn by while it was
+    /// streamed here, which it keeps: a view is the same view from the
+    /// first piece of a reply to its stored row and after.
+    var aliases: [String: String] = [:]
     var seq = 0
+    /// Moved by every send, for the transcript to go to its end.
+    var sends = 0
+    /// The run's stream is open: the server answered it. False from a
+    /// send or an attach until then.
+    var connected = false
     var stopping = false
     /// The turn's failure, as the stream said it or as a Try Again met it:
     /// drawn at the turn until the next run answers.
@@ -180,7 +200,8 @@ public struct ConversationState: Codable, Equatable, Sendable {
     /// and not by a run's `thread` event: the list is told, and where
     /// another conversation already has that thread, this one gives way.
     var adopted: String?
-    /// The handover read failed or outlasted its wait: the overlay stays.
+    /// The read of the rows failed or outlasted its wait: what the stream
+    /// said stays.
     var reloadFailed: Failure?
     /// The reload failure whose Try Again is out: drawn working in its place.
     var reloading: Failure?
@@ -206,9 +227,11 @@ public struct ConversationState: Codable, Equatable, Sendable {
     var failure: Failure?
     var asks: [Ask] = []
 
-    /// The conversation owns its thread's rows: a run is under way, or its
-    /// overlay waits for a handover read that failed. No other read may
-    /// publish under it, or the overlay and the rows would both show a turn.
+    /// The thread's rows are this conversation's to read: a run is under
+    /// way, or what its stream said waits for a read of its rows that
+    /// failed. The list moves the thread's read epoch as the conversation
+    /// takes them and as it hands them back (rule 4), and keeps the
+    /// conversation while it holds them.
     var ownsTranscript: Bool { phase != .idle || reloadFailed != nil }
     var active: Bool { phase != .idle }
     var streaming: Bool { phase == .streaming }
@@ -219,8 +242,13 @@ public struct ConversationState: Codable, Equatable, Sendable {
         if case let .send(run)? = run, run.resumes, !run.started, phase == .streaming { return true }
         return false
     }
-    /// A stream dropped and is being opened again.
-    var reconnecting: Bool { phase == .streaming && lastFailure != nil }
+    /// A stream dropped and is being opened again. A run that said it
+    /// failed is no dropped stream: its thread is read for how it ended.
+    var reconnecting: Bool {
+        guard phase == .streaming, let lastFailure else { return false }
+        if case .run = lastFailure.why { return false }
+        return true
+    }
     /// What keeps the conversation after its window left: a failure above
     /// the composer still to be read, a check under way, or a message the
     /// server has not taken.

@@ -44,6 +44,45 @@ public struct ConversationScreen: Codable, Equatable, Sendable {
     public var streaming: Bool
     public var stopping: Bool
     public var expandThinking: Bool
+    /// Moved by every send from this conversation: the transcript goes to
+    /// its end, wherever it was.
+    public var sends: Int
+    /// Where the transcript stands when the chat is shown.
+    public var opens: TranscriptOpening
+
+    /// How many messages stand below `turn`, the last one a reader can
+    /// see: what Jump to Latest says. A message is what somebody said, the
+    /// person or the assistant; a line about the run is none.
+    public func messages(below turn: String?) -> Int {
+        guard let turn, let index = turns.firstIndex(where: { $0.id == turn }) else { return 0 }
+        return turns[(index + 1)...].count { turn in
+            switch turn.body {
+            case .user, .assistant: true
+            default: false
+            }
+        }
+    }
+}
+
+/// Where a transcript stands when its chat is shown: at its end, or with
+/// one turn at the top of the screen (a chat opened at the first message
+/// not yet read).
+public enum TranscriptOpening: Codable, Equatable, Sendable {
+    case end
+    case turn(String)
+}
+
+/// What Jump to Latest says: how many messages are below.
+public struct JumpToLatest: Equatable, Sendable {
+    /// Beside the arrow; nil where nothing is counted.
+    public var count: String?
+    /// What a screen reader is told.
+    public var label: String
+
+    public init(below messages: Int) {
+        count = messages > 0 ? (messages > 99 ? "99+" : "\(messages)") : nil
+        label = messages > 0 ? "Jump to Latest, \(plural(messages, "message")) below" : "Jump to Latest"
+    }
 }
 
 /// The line above the first turn the person had not read.
@@ -117,6 +156,26 @@ public struct ComposerPresentation: Codable, Equatable, Sendable {
     public var agentLabel: String
     public var listenOnOpen: Bool
     public var canSend: Bool
+    /// What is happening while a reply is on its way; nil when nothing is.
+    public var status: ComposerStatus?
+}
+
+/// What the composer says is happening while a reply is on its way, from
+/// the send to the end: the stream opening, the model thinking or writing,
+/// the tool that is running, a stream that dropped opening again. A state,
+/// never a failure.
+public struct ComposerStatus: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
+        case connecting, thinking, writing, tool, reconnecting, stopping
+    }
+
+    public var kind: Kind
+    public var words: String
+
+    public init(kind: Kind, words: String) {
+        self.kind = kind
+        self.words = words
+    }
 }
 
 /// A text a rewrite put into the composer that must not be lost with the

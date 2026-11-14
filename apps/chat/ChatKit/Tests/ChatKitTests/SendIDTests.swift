@@ -133,7 +133,8 @@ struct SendsUnderAnID {
         rig.server.release()
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
         // The stored message is the same row: the handover replaced nothing.
-        #expect(await rig.conversation(key)?.turns.map(\.id) == [id, "m2"])
+        // The reply keeps the id the stream gave its turn (`TurnFold`).
+        #expect(await rig.conversation(key)?.turns.map(\.id) == [id, "turn-1"])
         #expect(await rig.turns(key) == ["Hi", "Hello"])
         #expect(rig.server.count("/chat") == 1)
         #expect(await rig.harness.state.unsent.isEmpty)
@@ -283,7 +284,7 @@ struct LostAnswers {
         rig.server.release()
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
         #expect(await rig.turns(key) == ["Hi", "Hello"])
-        #expect(await rig.conversation(key)?.turns.map(\.id) == [id, "m2"])
+        #expect(await rig.conversation(key)?.turns.map(\.id) == [id, "turn-1"])
         #expect(await rig.conversation(key)?.failures == ScreenFailures())
         // The first message of a new chat: one thread, one conversation,
         // one chat in the list.
@@ -551,7 +552,7 @@ struct LostAnswers {
             // The signed-out screen says the rest: no strip, no card, and
             // nothing kept as pending under an id nothing was written for.
             let live = try #require(await rig.live(key))
-            #expect(live.chatFailure == nil && live.pending == nil && live.overlay.turns.isEmpty, "revision \(revision)")
+            #expect(live.chatFailure == nil && live.pending == nil && live.provisional.isEmpty, "revision \(revision)")
         }
     }
 }

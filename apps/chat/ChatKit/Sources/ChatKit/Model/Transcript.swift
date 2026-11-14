@@ -45,6 +45,9 @@ struct ToolCall: Codable, Hashable, Sendable {
     /// A background call's job (decision 0200): `working` until it ends, then
     /// `completed`, `failed` or `canceled`; nil on a call that held the loop.
     var job: String?
+    /// The `turn` ordinal of the call's own `tool` row, as its stream events
+    /// carry it; nil on a call read off the rows, which need none.
+    var ordinal: Int?
 
     var running: Bool { ok == nil }
 }
@@ -76,8 +79,18 @@ struct Mention: Codable, Hashable, Sendable {
 struct Turn: Codable, Hashable, Sendable, Identifiable {
     enum Role: String, Codable, Hashable, Sendable { case user, assistant, system, summary }
 
-    /// Stable across re-renders and across the live-to-stored handover.
+    /// What the turn is drawn by, from its first streamed piece to its
+    /// stored row and after: a stored turn's is its row's id, unless the
+    /// turn was first seen on a stream in this conversation, when it keeps
+    /// the id it was given then (`TurnFold`).
     var id: String
+    /// The stored row's id; nil while the turn is only what a stream said.
+    var row: String?
+    /// The row's `turn` ordinal, unique in its thread: a stored row's own,
+    /// and on a turn being streamed the one its `delta` and `reasoning`
+    /// events carry, which its row will. Nil where no event has said it (a
+    /// message just sent, a reply that is only tool calls so far).
+    var ordinal: Int?
     var role: Role
     var content: String
     var tools: [ToolCall] = []
@@ -201,7 +214,7 @@ func transcript(of messages: [Record]) -> [Turn] {
             let reasoning = role == "assistant" ? record["reasoning"]?.text : nil
             turns.append(
                 Turn(
-                    id: record.id, role: role == "user" ? .user : .assistant,
+                    id: record.id, row: record.id, ordinal: record["turn"]?.int, role: role == "user" ? .user : .assistant,
                     content: record["content"]?.string ?? "", tools: tools,
                     contextRecords: role == "user" ? contextRecords(of: record) : nil,
                     reasoning: reasoning,
@@ -216,13 +229,13 @@ func transcript(of messages: [Record]) -> [Turn] {
             // The engine's fold of older turns; no model said it to the reader.
             turns.append(
                 Turn(
-                    id: record.id, role: .summary, content: record["content"]?.string ?? "",
+                    id: record.id, row: record.id, ordinal: record["turn"]?.int, role: .summary, content: record["content"]?.string ?? "",
                     compaction: compaction(of: record), createdAt: record.createdDate))
         case "system":
             // The substrate's own turn: a decision, an answer or a background
             // job's end. Nothing dispatched it.
             let turn = Turn(
-                id: record.id, role: .system, content: record["content"]?.string ?? "",
+                id: record.id, row: record.id, ordinal: record["turn"]?.int, role: .system, content: record["content"]?.string ?? "",
                 changes: changes(of: record), createdAt: record.createdDate)
             turns.append(turn)
             // A job's end settles its call a second time: the call's own row
@@ -248,7 +261,7 @@ func transcript(of messages: [Record]) -> [Turn] {
                 // rather than attributed to whichever assistant turn is last.
                 turns.append(
                     Turn(
-                        id: record.id, role: .assistant, content: "",
+                        id: record.id, row: record.id, ordinal: record["turn"]?.int, role: .assistant, content: "",
                         tools: [
                             ToolCall(
                                 id: callID, name: record["name"]?.string ?? "", callable: callable,

@@ -247,7 +247,7 @@ struct ParsePaceTests {
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
-        try await rig.harness.until { _ in await rig.live(key)?.overlay.turns.contains { $0.role == .assistant } == true }
+        try await rig.harness.until { _ in await rig.live(key)?.provisional.turns.contains { $0.role == .assistant } == true }
         let app = rig.runtime.controller
         let state = await rig.harness.state
         let conversation = try #require(app.children(in: state)[key])

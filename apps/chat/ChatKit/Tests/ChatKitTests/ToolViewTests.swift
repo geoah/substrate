@@ -285,11 +285,13 @@ struct BackgroundCalls {
     }
 
     @Test func theLiveCardTakesTheJobsEndInPlaceOfItsHandle() {
-        var live = LiveOverlay()
-        live.pushToolStart(ToolCall(id: "c1", name: "web_search", callable: searchCallable, arguments: #"{"query":"q"}"#), seq: 1)
-        live.settleTool(ToolCall(id: "c1", name: "web_search", arguments: ""), output: #"{"job":"c1","status":"working"}"#, ok: true, job: "working", seq: 2)
+        var live = LiveRows()
+        live.hear([
+            .toolStarted("c1", "web_search", callable: searchCallable, args: #"{"query":"q"}"#),
+            .toolFinished("c1", "web_search", output: #"{"job":"c1","status":"working"}"#, job: "working"),
+        ])
         #expect(live.turns[0].tools[0].job == "working")
-        live.settleTool(ToolCall(id: "c1", name: "web_search", arguments: ""), output: searchOutput, ok: true, job: "completed", seq: 3)
+        live.hear([.toolFinished("c1", "web_search", output: searchOutput, job: "completed")])
         #expect(live.turns.count == 1)
         #expect(live.turns[0].tools[0].job == "completed")
         #expect(row(live.turns[0].tools[0]).summary == "Searched for “q”, 2 results")
@@ -398,7 +400,7 @@ struct RunEnds {
     @Test func aRepliesLinksStandFromTheRunsEndBeforeItsRowsLand() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(Self.stream))])
         try await rig.signIn()
-        // The handover's read waits, so the overlay is all there is.
+        // The read of the rows waits, so what the stream drew is all there is.
         rig.server.hold("/llm/thread/t1")
         let key = try await rig.newChat()
         try await rig.send(.draft("What's due?"), to: key)

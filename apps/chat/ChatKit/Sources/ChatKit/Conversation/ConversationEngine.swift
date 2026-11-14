@@ -114,15 +114,14 @@ extension Conversation {
             next.chatFailure = nil
         case let .named(thread):
             guard case var .send(run)? = next.run else { break }
+            next.connected = true
             run.named = true
             run.started = true
             next.run = .send(run)
             if run.resumes { next.turnFailure = nil }
             if next.thread == nil { next.thread = thread }
             // The server took the message: the optimistic turn is confirmed.
-            if let i = next.overlay.turns.lastIndex(where: { $0.role == .user && $0.pending }) {
-                next.overlay.turns[i].pending = false
-            }
+            next.provisional.confirm()
             if run.id != nil {
                 forget(&next)
                 next.lastFailure = nil
@@ -141,12 +140,21 @@ extension Conversation {
             taken(&next, by: rows)
             run.held = persistedTurns(rows)
             next.run = .attach(run)
-            next.overlay = .empty
+            // The rows take the place of what the stream had said of them,
+            // and the stream starts again from the turn's start over the
+            // rest: nothing held is emptied for it.
+            TurnFold.settle(rows, &next.provisional, aliases: &next.aliases, ended: false)
+            next.provisional.begin()
         case let .attachReadFailed(failure):
             guard case let .attach(run)? = next.run else { break }
             if failure.report == .accessEnded {
                 next.failure = failure
                 stopRunning(&next)
+                break
+            }
+            if run.probe {
+                // The wait asks again.
+                next.run = nil
                 break
             }
             reattach(&next, attempt: run.attempt + 1)
@@ -159,7 +167,9 @@ extension Conversation {
                 break
             }
             taken(&next, by: rows)
-            next.overlay = .empty
+            // The run is over and its rows are read: each takes the place,
+            // and the id, of the turn the stream drew.
+            TurnFold.settle(rows, &next.provisional, aliases: &next.aliases, ended: true)
             next.reloadFailed = nil
             next.reloading = nil
             next.phase = .idle
@@ -171,7 +181,12 @@ extension Conversation {
             next.reloading = nil
             next.phase = .idle
             next.run = nil
-        case .pollTick, .nudgedPoll:
+        case .pollTick:
+            // A chat's run streams whatever started it (`agents` 5): one
+            // that had no stream when it was asked for may have one now, so
+            // the wait asks again instead of reading the rows.
+            if streamsEveryRun { probe(&next) } else { poll(&next) }
+        case .nudgedPoll:
             poll(&next)
         case let .polled(record, rows):
             next.polling = false
@@ -181,7 +196,9 @@ extension Conversation {
                 break
             }
             taken(&next, by: rows)
-            if record["status"]?.string != "running" {
+            let ended = record["status"]?.string != "running"
+            TurnFold.settle(rows, &next.provisional, aliases: &next.aliases, ended: ended)
+            if ended {
                 next.asks.append(.cancel("pollTimer"))
                 next.pollAgain = false
                 next.phase = .idle
@@ -400,7 +417,7 @@ extension Conversation {
     /// that thread from here, read for what it holds.
     private func adopt(_ state: inout State, _ thread: String) {
         if case let .send(run)? = state.run, !run.named, run.id == state.pending?.id {
-            state.overlay = LiveOverlay(turns: run.kept)
+            state.provisional.keep(run.kept)
             state.reloadFailed = run.failedBefore
             state.phase = .idle
             state.stopping = false
@@ -439,14 +456,19 @@ extension Conversation {
         state.turnFailure = nil
         state.lastFailure = nil
         state.chatFailure = nil
-        let kept = state.reloadFailed != nil ? state.overlay.turns : []
+        let kept = state.reloadFailed != nil ? state.provisional.turns : []
         var run = State.Send(
             message: pending.message, agent: pending.agent, sentTo: pending.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: nil, sentAt: at)
         run.id = pending.id
         state.reloadFailed = nil
-        state.overlay = LiveOverlay(turns: kept + [Turn(id: pending.id, role: .user, content: pending.message, pending: true)])
+        state.seq += 1
+        state.sends += 1
+        state.provisional.keep(kept)
+        state.provisional.begin()
+        state.provisional.send(pending.message, id: pending.id, seq: state.seq, baseline: nil, at: at)
         state.phase = .streaming
+        state.connected = false
         state.stopping = false
         state.run = .send(run)
         go(&state)
@@ -455,7 +477,7 @@ extension Conversation {
     /// The pending message stands unsent at its place in the chat, with
     /// why: its run is over, and Send Again is the person's to press.
     private func stand(_ state: inout State, _ run: State.Send, _ failure: Failure) {
-        state.overlay = LiveOverlay(turns: run.kept)
+        state.provisional.keep(run.kept)
         state.reloadFailed = run.failedBefore
         state.phase = .idle
         state.stopping = false
@@ -533,19 +555,27 @@ extension Conversation {
         // The strip's failure was about a send or this chat's last run: a
         // new send answers it.
         state.chatFailure = nil
-        // The last run's overlay is the stored rows' job now, unless their
-        // read failed: then it is still the only view of that run.
-        let kept = state.reloadFailed != nil ? state.overlay.turns : []
+        // What the last run's stream said is the stored rows' job now,
+        // unless their read failed: then it is still the only view of that
+        // run.
+        let kept = state.reloadFailed != nil ? state.provisional.turns : []
         var run = State.Send(
             message: message, agent: agent, sentTo: state.thread, kept: kept, failedBefore: state.reloadFailed,
             baseline: baseline, sentAt: at, typed: typed ?? fromDraft)
         run.id = id
         state.reloadFailed = nil
         state.seq += 1
+        state.sends += 1
+        state.provisional.keep(kept)
+        state.provisional.begin()
         // Under its id the bubble is the row from the start: the stored
-        // message has the same id, so the handover replaces nothing.
-        state.overlay = LiveOverlay(turns: kept + [Turn(id: id ?? "live-u\(state.seq)", role: .user, content: message, pending: true)])
+        // message has the same id, and the fold pairs the two by it. With
+        // no id it is paired by its words, past what the thread held: a
+        // new chat's thread holds nothing before this message, so its row
+        // is the first there is.
+        state.provisional.send(message, id: id, seq: state.seq, baseline: state.thread == nil ? -1 : baseline, at: at)
         state.phase = .streaming
+        state.connected = false
         state.stopping = false
         guard let id else {
             state.run = .send(run)
@@ -569,15 +599,17 @@ extension Conversation {
         guard let thread = state.thread, let agent = agent(state) else { return }
         startRun(&state)
         state.lastFailure = nil
-        let kept = state.reloadFailed != nil ? state.overlay.turns : []
+        let kept = state.reloadFailed != nil ? state.provisional.turns : []
         var run = State.Send(
             message: "", agent: agent, sentTo: thread, kept: kept, failedBefore: state.reloadFailed, baseline: nil, sentAt: at,
             typed: false, resumes: true)
         run.automatic = automatic
         run.named = true
         state.reloadFailed = nil
-        state.overlay = LiveOverlay(turns: kept)
+        state.provisional.keep(kept)
+        state.provisional.begin()
         state.phase = .streaming
+        state.connected = false
         state.stopping = false
         state.run = .send(run)
         state.asks.append(.resume(thread: thread))
@@ -592,7 +624,17 @@ extension Conversation {
         state.turnFailure = nil
         state.stopping = false
         state.phase = .streaming
+        state.connected = false
         state.run = .attach(State.Attach(attempt: attempt))
+        state.asks.append(.attach(thread: thread))
+    }
+
+    /// A turn nothing streamed may have a stream by now: asks for it, and
+    /// leaves the conversation as it is unless it has. The ask reads the
+    /// rows first, as the poll it stands in for does.
+    private func probe(_ state: inout State) {
+        guard state.phase == .background, state.run == nil, let thread = state.thread else { return }
+        state.run = .attach(State.Attach(attempt: 0, probe: true))
         state.asks.append(.attach(thread: thread))
     }
 
@@ -613,6 +655,7 @@ extension Conversation {
         if continuing != nil, event.kind == .heartbeat || state.seq % 8 == 0 { state.asks.append(.advance) }
         switch state.run {
         case var .send(run)?:
+            state.connected = true
             if !run.started {
                 // The server answered a continue: the failure it was
                 // pressed on is this run's to replace.
@@ -623,7 +666,7 @@ extension Conversation {
             if event.kind == .done {
                 run.done = true
                 state.run = .send(run)
-                state.overlay.mention(event.result?.mentions)
+                state.provisional.mention(event.result?.mentions)
                 state.turnFailure = ended(event.result, at: at)
                 return
             }
@@ -636,6 +679,18 @@ extension Conversation {
                 return
             }
         case var .attach(run)?:
+            if event.kind != .idle {
+                // The stream is open. One that was only asked after has a
+                // turn to draw: the conversation streams from here.
+                state.connected = true
+                if run.probe {
+                    run.probe = false
+                    state.run = .attach(run)
+                    state.phase = .streaming
+                    state.stopping = false
+                    state.asks.append(.cancel("pollTimer"))
+                }
+            }
             switch event.kind {
             case .idle:
                 run.idle = event.status ?? "unknown"
@@ -656,10 +711,19 @@ extension Conversation {
                 run.done = true
                 state.lastFailure = nil
                 state.run = .attach(run)
-                state.overlay.mention(event.result?.mentions)
+                state.provisional.mention(event.result?.mentions)
                 state.turnFailure = ended(event.result, at: at)
                 return
             case .thread:
+                // Open again after a stream that dropped: no longer
+                // reconnecting. How the turn ended, where it did while the
+                // stream was down, is the `idle` line's to say, which comes
+                // alone.
+                state.lastFailure = nil
+                return
+            case .lagged:
+                run.lagged = true
+                state.run = .attach(run)
                 return
             default:
                 if isReplayed(event, held: run.held) { return }
@@ -668,7 +732,11 @@ extension Conversation {
             return
         }
         state.seq += 1
-        state.overlay.apply(event, seq: state.seq, now: at)
+        let moved = state.provisional.apply(event, seq: state.seq, now: at)
+        if moved, case var .attach(run)? = state.run, !run.moved {
+            run.moved = true
+            state.run = .attach(run)
+        }
     }
 
     /// How a `done` result says its run ended, where it did not finish: a
@@ -719,12 +787,24 @@ extension Conversation {
         case let .attach(run)?:
             guard let failure else {
                 if run.done { return settle(&state) }
-                guard let idle = run.idle else { return reattach(&state, attempt: run.attempt + 1) }
+                guard let idle = run.idle else {
+                    // Cut off for reading too slowly (`lagged`): nothing
+                    // failed, so it attaches again at once. A stream that
+                    // brought nothing new waits first, as any that ended
+                    // early does, so a reader that cannot keep up does not
+                    // ask in a loop.
+                    return reattach(&state, attempt: run.lagged && run.moved ? 0 : run.attempt + 1)
+                }
                 if idle == "running" { return background(&state) }
                 return settle(&state)
             }
             state.failure = failure
             if failure.report == .accessEnded { return stopRunning(&state) }
+            if run.probe {
+                // Nothing was drawn for it: the wait asks again.
+                state.run = nil
+                return
+            }
             if let status = failure.refusal(permanent: true) {
                 if status == 404 { return gone(&state) }
                 // The stream will not open: the strip says so, and the
@@ -789,7 +869,7 @@ extension Conversation {
     /// goes, and the chat is where it was. One whose delivery is unknown is
     /// read for, once, a second later.
     private func end(_ state: inout State, _ run: State.Send, unknown: Failure?, outcome: UUID) {
-        state.overlay = LiveOverlay(turns: run.kept)
+        state.provisional.keep(run.kept)
         state.reloadFailed = run.failedBefore
         state.phase = .idle
         state.stopping = false
@@ -809,16 +889,17 @@ extension Conversation {
         state.run = nil
     }
 
-    /// The run ended: its rows are read and replace the overlay in one
-    /// step. A read that fails or outlasts 15 s keeps the overlay and
-    /// releases the composer.
+    /// The run ended: its rows are read, and each takes the place of the
+    /// turn the stream drew, in the step they land in. A read that fails
+    /// or outlasts 15 s keeps what the stream drew and releases the
+    /// composer.
     private func settle(_ state: inout State) {
         state.stopping = false
         state.lastFailure = nil
         // The turn ended: a stop that failed is no longer a thing to try again.
         if state.chatFailure?.attempt == .stop { state.chatFailure = nil }
         guard let thread = state.thread else {
-            state.overlay = .empty
+            state.provisional = .empty
             state.phase = .idle
             state.run = nil
             return
@@ -842,16 +923,17 @@ extension Conversation {
             forget(&state)
             giveBack(&state, pending.message)
         }
-        state.overlay = .empty
+        state.provisional = .empty
         state.phase = .idle
         state.run = nil
         state.deleted = true
     }
 
-    /// A turn this server does not stream holds the thread: say so, and read
-    /// the thread every 5 s until it settles.
+    /// A turn this server has no stream for holds the thread: say so, and
+    /// every 5 s read the thread, or ask for its stream again where every
+    /// run of a chat has one (`streamsEveryRun`), until it settles. What a
+    /// stream drew of it before stays until its rows are read.
     private func background(_ state: inout State) {
-        state.overlay = .empty
         state.phase = .background
         state.stopping = false
         state.run = nil

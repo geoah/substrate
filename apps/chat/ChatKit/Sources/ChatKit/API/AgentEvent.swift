@@ -46,7 +46,12 @@ struct AgentResult: Codable, Hashable, Sendable {
 struct AgentEvent: Codable, Sendable, Equatable {
     enum Kind: String, Codable, Sendable {
         case thread, delta, reasoning, toolStarted, toolFinished, compacted, truncated, idle, done, error
-        /// The `{}` line the server writes every 30 s while a turn is quiet.
+        /// Ends the stream of a reader that fell behind the turn, with no
+        /// `done`: the turn runs on, and the reader attaches again
+        /// (`agents` 5; before it the same was an `error`).
+        case lagged
+        /// The `{}` line the server writes while a turn is quiet: every 10 s
+        /// from `agents` 5, every 30 s before it.
         /// Not the server's kind: the app's, so a waiting client can tell a
         /// live stream from a dead one.
         case heartbeat = "_heartbeat"
@@ -72,6 +77,11 @@ struct AgentEvent: Codable, Sendable, Equatable {
     /// The `turn` ordinal the matching `llm/message` row carries or will
     /// carry, on delta, reasoning and the tool events.
     var turn: Int?
+    /// Rides `delta` and `reasoning` from a server whose `agents` feature
+    /// is at revision 5: how many Unicode code points of this `turn`'s text
+    /// of that kind came before this piece, so a replay is written over
+    /// what is held and never beside it. Absent from an older server.
+    var at: Int?
     /// Rides `idle`: the thread row's status.
     var status: String?
     /// Rides a background call's `toolFinished`: `working` on the one its
@@ -108,6 +118,7 @@ struct AgentEvent: Codable, Sendable, Equatable {
         event.covered = int("covered")
         event.error = string("error")
         event.turn = int("turn")
+        event.at = int("at")
         event.status = string("status")
         event.job = string("job")
         event.cause = string("cause")

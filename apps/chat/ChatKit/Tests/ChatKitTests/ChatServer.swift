@@ -33,6 +33,7 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
     private var bodies: [String: String] = [:]
     private var sent: [(request: String, body: String)] = []
     private var watchers: [@Sendable (String) -> Void] = []
+    private var timeouts: [String: TimeInterval] = [:]
     private var released = false
     private var heldPaths: [String: Bool] = [:]
 
@@ -76,6 +77,12 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
         lock.withLock { bodies.first { $0.key.hasPrefix(method + " ") && $0.key.hasSuffix(path) }?.value }
     }
 
+    /// How long the last request whose method and path end as given lets
+    /// its answer say nothing.
+    func timeout(_ method: String, _ path: String) -> TimeInterval? {
+        lock.withLock { timeouts.first { $0.key.hasPrefix(method + " ") && $0.key.hasSuffix(path) }?.value }
+    }
+
     private func answer(for request: URLRequest) async -> (Answer, URL) {
         let url = request.url!
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -89,6 +96,7 @@ final class ChatServer: HTTPTransport, @unchecked Sendable {
                 bodies["\(method) \(path)"] = String(decoding: body, as: UTF8.self)
                 sent.append(("\(method) \(path)", String(decoding: body, as: UTF8.self)))
             }
+            timeouts["\(method) \(path)"] = request.timeoutInterval
             guard let index = routes.firstIndex(where: { $0.method == method && path.hasSuffix($0.path) && ($0.query.map(query.contains) ?? true) })
             else { return nil }
             return routes[index].once ? routes.remove(at: index) : routes[index]

@@ -14,9 +14,9 @@ import FoundationNetworking
 /// sign-in's as `api`: `console` would claim a door this app is not.
 enum ChatAPI {
     /// The streams never end on their own while a turn runs; the server
-    /// writes a `{}` heartbeat every 30 seconds, so a stream silent for
-    /// longer than this is dead.
-    static let streamTimeout: TimeInterval = 75
+    /// writes a `{}` heartbeat while one is quiet, so a stream silent for
+    /// longer than its caller's `quiet` is dead (`Conversation.quiet`: past
+    /// two heartbeats of the server it talks to).
 
     /// The chat request's body: `substrate.ChatInput`. The device's zone and
     /// the records the message is about ride along, and the server renders
@@ -35,14 +35,17 @@ enum ChatAPI {
     /// Opens or continues a thread with one user message, and streams the
     /// run. Under a `messageID`, the same request again streams the turn
     /// the first one started, or says how its thread stands.
-    static func chat(_ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, timezone: String)
+    static func chat(
+        _ client: SubstrateClient, agent: String, thread: String?, message: String, messageID: String? = nil, timezone: String,
+        quiet: TimeInterval
+    )
         -> AsyncThrowingStream<AgentEvent, any Error>
     {
         stream(client) {
             try client.request(
                 "POST", "api/v1/\(Kinds.agent)/\(segment(agent))/chat",
                 body: .jsonValue(chatBody(thread: thread, message: message, messageID: messageID, context: [], timezone: timezone)),
-                accept: "application/x-ndjson", timeout: streamTimeout)
+                accept: "application/x-ndjson", timeout: quiet)
         }
     }
 
@@ -59,21 +62,21 @@ enum ChatAPI {
     /// Runs a thread again with no new message (`…/continue`): what Try
     /// Again and Continue ask for. A server older than the route answers
     /// 404, which the conversation falls back on.
-    static func resume(_ client: SubstrateClient, thread: String) -> AsyncThrowingStream<AgentEvent, any Error> {
+    static func resume(_ client: SubstrateClient, thread: String, quiet: TimeInterval) -> AsyncThrowingStream<AgentEvent, any Error> {
         stream(client) {
             try client.request(
                 "POST", "api/v1/\(Kinds.thread)/\(segment(thread))/continue", body: .jsonValue(.object([:])),
-                accept: "application/x-ndjson", timeout: streamTimeout)
+                accept: "application/x-ndjson", timeout: quiet)
         }
     }
 
     /// Attaches to the chat turn running on a thread: its replay, then live
     /// events, then `done`; or one `idle` line when no chat turn runs.
-    static func events(_ client: SubstrateClient, thread: String) -> AsyncThrowingStream<AgentEvent, any Error> {
+    static func events(_ client: SubstrateClient, thread: String, quiet: TimeInterval) -> AsyncThrowingStream<AgentEvent, any Error> {
         stream(client) {
             try client.request(
                 "GET", "api/v1/\(Kinds.thread)/\(segment(thread))/events", accept: "application/x-ndjson",
-                timeout: streamTimeout)
+                timeout: quiet)
         }
     }
 

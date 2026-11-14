@@ -51,6 +51,7 @@ extension ChatApp {
         case let .continued(key, update):
             if update == .ended { next.conversations[key]?.continuing = nil }
         case let .phase(phase): self.phase(&next, phase)
+        case let .paced(paces): next.paces = paces
 
         case .refreshAsked: refresh(&next)
         case let .refreshed(refresh): refreshed(&next, refresh)
@@ -96,14 +97,16 @@ extension ChatApp {
         case let .openingsRead(openings):
             next.openings.merge(openings) { _, new in new }
         case let .rowsRead(thread, epoch, version, rows, full):
+            // Rule 4. Rows may land while a conversation streams the
+            // thread: each is the turn the stream drew of it, in one list
+            // (rule 3, `TurnFold`).
             if next.readEpochs[thread, default: 0] == epoch { next.reading[thread] = nil }
-            guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
+            guard next.readEpochs[thread, default: 0] == epoch else { break }
             publish(&next, thread, rows, version: version, full: full)
         case let .cachedLoaded(thread, epoch, cached):
-            // Rules 3 and 4, as for a read: what the disk held is older than
-            // a send, an attach, a settle or a binding since, and never
-            // lands under a live overlay.
-            guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
+            // Rule 4, as for a read: what the disk held is older than a
+            // send, an attach, a settle or a binding since.
+            guard next.readEpochs[thread, default: 0] == epoch else { break }
             if let cached, next.transcripts[thread] == nil {
                 next.transcripts[thread] = State.Held(
                     records: cached.records, turns: transcript(of: cached.records),
@@ -113,7 +116,7 @@ extension ChatApp {
             // held rows that are not current.
             if next.key(of: thread) != nil { load(&next, thread) }
         case let .prefetched(thread, epoch, version, rows):
-            guard next.readEpochs[thread, default: 0] == epoch, !next.owned(thread) else { break }
+            guard next.readEpochs[thread, default: 0] == epoch else { break }
             publish(&next, thread, rows, version: version, full: rows.count >= 100)
         case let .rowReread(thread, record, mark):
             if let record { upsert(&next, record) }
@@ -714,8 +717,9 @@ extension ChatApp {
     }
 
     /// Reads a thread's rows unless they are current (rule 7) or a
-    /// conversation owns the thread (rule 3). A read under an older thread
-    /// version than the list now holds is replaced.
+    /// conversation is reading them for its own run, whose reads are the
+    /// ones in step with its stream. A read under an older thread version
+    /// than the list now holds is replaced.
     private func load(_ state: inout State, _ thread: String, force: Bool = false) {
         guard state.session != nil, !state.owned(thread), state.online else { return }
         if state.thread(thread)?.running == true, state.key(of: thread) != nil { return }
@@ -833,8 +837,8 @@ extension ChatApp {
         state.scenes[scene, default: State.Scene()].current = key
     }
 
-    /// A conversation stays while a window shows it, it runs, its overlay
-    /// waits for its rows, or an outcome waits to be read.
+    /// A conversation stays while a window shows it, it runs, what its
+    /// stream drew waits for its rows, or an outcome waits to be read.
     private func release(_ state: inout State) {
         let shown = Set(state.scenes.values.compactMap(\.current))
         for (key, entry) in state.conversations where !shown.contains(key) && !entry.owns && !entry.active && entry.outcomes == 0 {
@@ -982,8 +986,8 @@ extension ChatApp {
             state.drafts[name] = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft
         }
         if let read = report.read {
-            // A conversation's own read publishes under its own overlay: the
-            // handover is how its rows replace it in one step.
+            // A conversation's own read: its rows land in the step that
+            // lets go of what its stream drew of them.
             if let record = read.record {
                 // A delivery check that found a new chat's thread read its
                 // row and none of its messages. A thread has its opening

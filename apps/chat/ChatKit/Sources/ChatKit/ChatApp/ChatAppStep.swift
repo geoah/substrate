@@ -23,6 +23,7 @@ enum ChatAppStep: Codable, Equatable, Sendable {
     case continued(ChildKey, ContinuedProcessing.Update)
     case notificationOpened(NotificationResponse)
     case phase(AppPhase)
+    case paced(Bool)
 
     // Reads
     case refreshAsked

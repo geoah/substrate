@@ -178,6 +178,81 @@ public enum ChatFixtures {
         return lines
     }
 
+    // MARK: A run, line by line
+
+    /// One run as a server at `agents` 5 streams it, with the rows the
+    /// thread holds as it goes: the model thinks, says it will look, calls a
+    /// tool, and answers in a second reply. Each piece of text says where
+    /// it belongs (`at`), so an attach that replays the lines from the first
+    /// writes over what a client holds.
+    public struct Run: Sendable {
+        public var message: String
+        public var lines: [String]
+        /// The transcript's page once `after` lines of the stream are out.
+        public var rows: [(after: Int, page: String)]
+        /// The model's thinking, and its two replies, whole.
+        public var thinking: String
+        public var first: String
+        public var second: String
+    }
+
+    public static func run(thread: String) -> Run {
+        let message = "What needs doing on the balcony?"
+        let thinking = [
+            "The balcony list is short this week. ", "The basil was watered on Monday and wilts after three dry days, so it is due. ",
+            "The mint has outgrown its pot: its roots show at the drain holes. ",
+            "The tomatoes were fed last week and can wait. I should look the list up before I say so.",
+        ]
+        let first = "I'll check the list.\n\n"
+        let second = [
+            "Two things need doing:\n\n", "- **Water the basil**: it has gone three days without\n", "- Repot the mint, whose roots show\n\n",
+            "The tomatoes can wait until the weekend. ", "They were fed last week, and their soil is still damp a finger deep.\n\n",
+            "The rosemary and the thyme want nothing before spring: both prefer dry feet, ",
+            "and a pot left out of the rain is care enough.\n\n", "If you only have ten minutes, water the basil and move the mint into the shade. ",
+            "Repotting takes longer and is kinder done in the evening, when the plant has the night to settle.\n\n",
+            "Say the word and I'll add both to your tasks.",
+        ]
+        var lines = [#"{"kind":"thread","thread":"\#(thread)"}"#]
+        func pieces(_ kind: String, _ texts: [String], turn: Int) {
+            var at = 0
+            for text in texts {
+                lines.append(#"{"kind":"\#(kind)","text":\#(quoted(text)),"turn":\#(turn),"at":\#(at)}"#)
+                at += text.unicodeScalars.count
+            }
+        }
+        pieces("reasoning", thinking, turn: 1)
+        pieces("delta", [first], turn: 1)
+        let call = #""id":"c1","tool":"query","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/query","turn":2"#
+        lines.append(#"{"kind":"toolStarted",\#(call),"args":"{\"q\":\"balcony\"}"}"#)
+        let found = lines.count
+        lines.append(#"{"kind":"toolFinished",\#(call),"ok":true,"output":"{\"records\":[],\"total\":0}"}"#)
+        pieces("delta", second, turn: 3)
+        lines.append(#"{"kind":"done","result":{"reply":"Two things need doing.","thread":"\#(thread)","status":"ok","turns":4}}"#)
+
+        func row(_ ordinal: Int, _ properties: String) -> String {
+            record(
+                id: "\(thread)-m\(ordinal)", kind: Kinds.message, version: 1, at: 0,
+                properties: #"{\#(properties),"turn":\#(ordinal),"thread":{"ref":"\#(Kinds.thread)/\#(thread)"}}"#)
+        }
+        let sent = row(0, #""role":"user","content":\#(quoted(message))"#)
+        let asked = row(
+            1,
+            #""role":"assistant","content":\#(quoted(first)),"reasoning":\#(quoted(thinking.joined())),"reasoningMillis":4000,"toolCalls":[{"id":"c1","name":"query","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/query","arguments":"{\"q\":\"balcony\"}"}]"#
+        )
+        let answered = row(2, #""role":"tool","toolCallId":"c1","name":"query","ok":true,"content":"{\"records\":[],\"total\":0}""#)
+        let reply = row(3, #""role":"assistant","content":\#(quoted(second.joined()))"#)
+        return Run(
+            message: message, lines: lines,
+            // Newest first, as the read answers: the message once the turn
+            // is taken, the first reply's row once its call is out, the
+            // call's once it is answered, the second reply's at the end.
+            rows: [
+                (1, page([sent])), (found, page([asked, sent])), (found + 1, page([answered, asked, sent])),
+                (lines.count, page([reply, answered, asked, sent])),
+            ],
+            thinking: thinking.joined(), first: first, second: second.joined())
+    }
+
     // MARK: JSON
 
     public static func page(_ records: [String]) -> String {

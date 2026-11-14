@@ -102,58 +102,6 @@ private func message(_ id: String, _ props: [String: JSONValue]) -> Record {
     }
 }
 
-@Suite(.timeLimit(.minutes(10))) struct LiveOverlayFold {
-    @Test func deltasAppendAndAToolRoundClosesTheTurn() {
-        var live = LiveOverlay()
-        live.pushDelta("Hel", seq: 1)
-        live.pushDelta("lo", seq: 2)
-        live.pushToolStart(ToolCall(id: "c1", name: "query", arguments: ""), seq: 3)
-        live.settleTool(ToolCall(id: "c1", name: "query", arguments: ""), output: "{}", ok: true, seq: 4)
-        live.pushDelta("After", seq: 5)
-        #expect(live.turns.count == 2)
-        #expect(live.turns[0].content == "Hello")
-        #expect(live.turns[0].tools[0].ok == true)
-        #expect(live.turns[1].content == "After")
-    }
-
-    @Test func anUnclaimedFinishOpensASettledCard() {
-        var live = LiveOverlay()
-        live.settleTool(ToolCall(id: "x", name: "query", arguments: ""), output: "{\"error\":\"budget\"}", ok: false, seq: 1)
-        #expect(live.turns.count == 1)
-        #expect(live.turns[0].tools[0].ok == false)
-    }
-
-    @Test func reasoningCountsItsSpanAndTextEndsThinking() {
-        var live = LiveOverlay()
-        let t0 = Date(timeIntervalSince1970: 100)
-        live.pushReasoning("Let me ", seq: 1, now: t0)
-        live.pushReasoning("think", seq: 2, now: t0.addingTimeInterval(2.5))
-        #expect(live.turns[0].thinking)
-        #expect(live.turns[0].reasoningMillis == 2500)
-        live.pushDelta("Answer", seq: 3)
-        #expect(!live.turns[0].thinking)
-        #expect(live.turns[0].reasoning == "Let me think")
-        #expect(live.turns[0].content == "Answer")
-    }
-
-    @Test func truncationMarksTheOverlayIncomplete() {
-        var live = LiveOverlay()
-        live.apply(AgentEvent(kind: .truncated), seq: 1, now: Date())
-        #expect(live.incomplete)
-    }
-
-    @Test func replayIsDroppedBySetMembershipNotACutoff() {
-        // A resolution written while the reply streamed took a later ordinal.
-        let held: Set<Int> = [1, 2, 5]
-        var delta = AgentEvent(kind: .delta)
-        delta.turn = 3
-        #expect(!isReplayed(delta, held: held))
-        delta.turn = 2
-        #expect(isReplayed(delta, held: held))
-        #expect(!isReplayed(AgentEvent(kind: .done), held: held))
-    }
-}
-
 @Suite(.timeLimit(.minutes(10))) struct StreamLines {
     @Test func heartbeatsGarbageAndUnknownKindsReadAsNothing() {
         #expect(AgentEvent.parse("{}")?.kind == .heartbeat)

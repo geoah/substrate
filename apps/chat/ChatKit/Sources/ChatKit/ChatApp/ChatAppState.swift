@@ -305,6 +305,10 @@ public struct ChatAppState: Codable, Equatable, Sendable {
     var scenes: [String: Scene] = [:]
     var route: ChatRoute?
     var appActive = true
+    /// A reply being written is revealed at a steady rate (`TextReveal`).
+    /// The device says so; until it does, and where it asks for less
+    /// motion, each piece is drawn as it arrives.
+    var paces = false
     /// The app is leaving the front or has left it: from the first word of
     /// it (inactive comes before background) until it is in front again.
     /// What a field says meanwhile is written with no wait.

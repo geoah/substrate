@@ -25,6 +25,7 @@ final class PresenterParts: @unchecked Sendable {
     private let lock = NSLock()
     private var held: [String: Held] = [:]
     private var made: [String: Int] = [:]
+    private var states: [String: Any] = [:]
     let verifies: Bool
 
     init(verifies: Bool = false) {
@@ -97,11 +98,31 @@ final class PresenterParts: @unchecked Sendable {
         return (value, nil)
     }
 
+    /// What a part keeps between presentations that its reads do not make:
+    /// where a reply's reveal has got to, which reads the instant and what
+    /// it drew before. Named as a part is and forgotten as one is. Changing
+    /// it twice at one instant must leave it as changing it once does, since
+    /// a kept part is made again to be verified.
+    func state<Value, Result>(_ name: String, from initial: Value, _ change: (inout Value) -> Result) -> Result {
+        lock.withLock {
+            var value = states[name] as? Value ?? initial
+            let result = change(&value)
+            states[name] = value
+            return result
+        }
+    }
+
+    /// The state kept under `name`, where there is any.
+    func state<Value>(_ name: String, as type: Value.Type = Value.self) -> Value? {
+        lock.withLock { states[name] as? Value }
+    }
+
     /// Forgets the parts named under `prefix` that `stays` does not keep: a
     /// window closed, a conversation gone, a live turn its rows replaced.
     func keep(under prefix: String, where stays: (String) -> Bool) {
         lock.withLock {
             for name in held.keys where name.hasPrefix(prefix) && !stays(name) { held[name] = nil }
+            for name in states.keys where name.hasPrefix(prefix) && !stays(name) { states[name] = nil }
         }
     }
 

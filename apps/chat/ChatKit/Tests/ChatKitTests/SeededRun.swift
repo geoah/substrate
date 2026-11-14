@@ -812,9 +812,9 @@ struct SeededRun {
             // of its turns twice and beside the rows. Every other rule
             // still holds this conversation, the last one included.
             var leftover = false
-            if live.phase == .idle, !live.ownsTranscript, !live.overlay.turns.isEmpty {
+            if live.phase == .idle, !live.ownsTranscript, !live.provisional.turns.isEmpty {
                 if noted[.overlay] == nil {
-                    noted[.overlay] = broke(.overlay, "\(name) is idle and still draws \(live.overlay.turns.map(\.content)) from a run that ended")
+                    noted[.overlay] = broke(.overlay, "\(name) is idle and still draws \(live.provisional.turns.map(\.content)) from a run that ended")
                 }
                 leftover = true
             }
@@ -822,7 +822,7 @@ struct SeededRun {
             if case let .send(run)? = live.run, !run.kept.isEmpty { keeps = true }
             if keeps {
                 let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
-                let again = live.overlay.turns.filter { $0.role == .user && !$0.pending && stored.contains($0.content) }.map(\.content)
+                let again = live.provisional.turns.filter { $0.role == .user && !$0.pending && stored.contains($0.content) }.map(\.content)
                 if !again.isEmpty {
                     if noted[.kept] == nil {
                         noted[.kept] = broke(.kept, "\(name) keeps \(again) from a run whose reload failed, and draws it under the rows that hold it")
@@ -836,7 +836,7 @@ struct SeededRun {
                 // names its turns: a message this device sent is drawn
                 // under its own id, and is held by every other rule.
                 let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
-                let carried = live.overlay.turns.filter { turn in
+                let carried = live.provisional.turns.filter { turn in
                     // Of the person's own messages: the app's words for
                     // Continue on a server without the route may stand twice.
                     guard let meant = ever[turn.content] else { return false }
@@ -854,7 +854,7 @@ struct SeededRun {
             let turnIDs = screen.turns.map(\.id)
             if case .attach? = live.run {
                 let rows = Set((live.thread.flatMap { state.transcripts[$0] }?.records ?? []).map(\.id))
-                let again = live.overlay.turns.filter { $0.role == .user && !$0.pending && rows.contains($0.id) }
+                let again = live.provisional.turns.filter { $0.role == .user && !$0.pending && rows.contains($0.id) }
                 if !again.isEmpty, Set(turnIDs).count != turnIDs.count {
                     if noted[.attached] == nil {
                         noted[.attached] = broke(.attached, "\(name) is attached and draws \(again.map(\.content)) from its overlay and from its rows")
@@ -949,7 +949,9 @@ struct SeededRun {
             let want = server.rows(of: thread).map { "\($0.role): \($0.content)" }
             let got = drawn.map { "\($0.role): \($0.text)" }
             if got != want { return broke(.fold, "\(name) draws \(got), and the server holds \(want)") }
-            let rowIDs = server.rows(of: thread).map(\.id)
+            // Each under its row's id, but a turn that was streamed in
+            // this conversation, which keeps the id the stream gave it.
+            let rowIDs = server.rows(of: thread).map { live.aliases[$0.id] ?? $0.id }
             if drawn.map(\.id) != rowIDs { return broke(.fold, "\(name) draws its rows under \(drawn.map(\.id)), and the server holds \(rowIDs)") }
         }
 
@@ -967,7 +969,7 @@ struct SeededRun {
                 if live.pending?.message == watched {
                     places.append("pending in \(key.rawValue.suffix(2))/\(live.thread ?? "new") standing=\(live.standing) finding=\(live.finding)")
                 }
-                if live.overlay.turns.contains(where: { $0.content == watched }) { places.append("overlay of \(key.rawValue.suffix(2))") }
+                if live.provisional.turns.contains(where: { $0.content == watched }) { places.append("overlay of \(key.rawValue.suffix(2))") }
             }
             print("WATCH step \(steps.count) [\(steps.last ?? "")]: \(places)")
         }

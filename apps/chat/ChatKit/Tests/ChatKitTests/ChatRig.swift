@@ -45,6 +45,42 @@ let replyStream = [
     #"{"kind":"done","result":{"reply":"Hello","thread":"t1","status":"ok","turns":2}}"#,
 ]
 
+/// A stream's events, as a test writes them.
+extension AgentEvent {
+    static func delta(_ text: String, turn: Int? = nil, at: Int? = nil) -> AgentEvent {
+        var event = AgentEvent(kind: .delta)
+        (event.text, event.turn, event.at) = (text, turn, at)
+        return event
+    }
+
+    static func reasoning(_ text: String, turn: Int? = nil, at: Int? = nil) -> AgentEvent {
+        var event = AgentEvent(kind: .reasoning)
+        (event.text, event.turn, event.at) = (text, turn, at)
+        return event
+    }
+
+    static func toolStarted(_ id: String, _ name: String = "query", turn: Int? = nil, callable: String? = nil, args: String = "") -> AgentEvent {
+        var event = AgentEvent(kind: .toolStarted)
+        (event.id, event.tool, event.turn, event.callable, event.args) = (id, name, turn, callable, args)
+        return event
+    }
+
+    static func toolFinished(_ id: String, _ name: String = "query", turn: Int? = nil, output: String = "{}", ok: Bool = true, job: String? = nil)
+        -> AgentEvent
+    {
+        var event = AgentEvent(kind: .toolFinished)
+        (event.id, event.tool, event.turn, event.output, event.ok, event.job) = (id, name, turn, output, ok, job)
+        return event
+    }
+}
+
+extension LiveRows {
+    /// Folds events in order, at instants a second apart from `start`.
+    mutating func hear(_ events: [AgentEvent], from start: Date = Date(timeIntervalSince1970: 100)) {
+        for (index, event) in events.enumerated() { apply(event, seq: turns.count + index + 1, now: start.addingTimeInterval(Double(index))) }
+    }
+}
+
 /// The routes every test starts from: the agent, an empty list, the thread
 /// and its rows.
 func baseRoutes(threads: String = emptyPage, threadVersion: Int = 3, status: String = "ok") -> [ChatServer.Route] {

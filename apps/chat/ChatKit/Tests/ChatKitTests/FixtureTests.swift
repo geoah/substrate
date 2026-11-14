@@ -63,4 +63,29 @@ import Testing
         #expect(deltas.allSatisfy { $0.turn == 3 })
         #expect(deltas.compactMap(\.text).joined() == ChatFixtures.reply)
     }
+
+    @Test func aRunWrittenLineByLineFoldsToTheRowsItLeaves() throws {
+        let run = ChatFixtures.run(thread: "t-live")
+        // Every line reads, and the pieces of each text stand end to end.
+        let events = try run.lines.map { try #require(AgentEvent.parse($0), "unread: \($0)") }
+        #expect(events.first?.kind == .thread && events.last?.kind == .done)
+        var live = LiveRows()
+        live.send(run.message, seq: 1, baseline: -1, at: Date())
+        live.hear(Array(events.dropFirst().dropLast()))
+        #expect(live.turns.map(\.id) == ["sent-1", "turn-1", "turn-3"] && !live.incomplete)
+        #expect(live.turns[1].reasoning == run.thinking && live.turns[1].content == run.first && live.turns[2].content == run.second)
+        // Every page reads, each holding the one before, and the last is
+        // the stream's turns as rows.
+        var held = 0
+        for (_, page) in run.rows {
+            let rows = try records(page)
+            #expect(rows.count > held)
+            held = rows.count
+        }
+        let last = try #require(run.rows.last)
+        let folded = TurnFold.fold(StoredTurns(transcript(of: try records(last.page).reversed())), live)
+        #expect(folded.left.isEmpty && folded.turns.map(\.id) == ["sent-1", "turn-1", "turn-3"])
+        #expect(folded.turns.map(\.content) == [run.message, run.first, run.second])
+        #expect(folded.turns[1].tools.map(\.ok) == [true] && folded.turns[1].reasoning == run.thinking)
+    }
 }

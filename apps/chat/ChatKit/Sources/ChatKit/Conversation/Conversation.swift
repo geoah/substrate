@@ -192,6 +192,24 @@ public struct Conversation: Controller, Equatable {
     /// No copy goes on its own later than this after the person pressed:
     /// past it the message stands unsent, with Send Again.
     static let repeatWindow: TimeInterval = 120
+    /// The `agents` feature's revision as the server's document says it; 0
+    /// until it is read, when the chat expects nothing a revision added.
+    let agents: Int
+
+    /// The revision from which a stream's text says where it belongs, a
+    /// chat's every run streams and a quiet stream beats every 10 seconds.
+    static let positionsRevision = 5
+
+    /// How long a stream may say nothing before it is taken for dead and
+    /// opened again: past two of the server's heartbeats, which come every
+    /// 10 seconds from `positionsRevision` and every 30 before it.
+    var quiet: TimeInterval { agents >= Self.positionsRevision ? 25 : 75 }
+
+    /// A run of this thread that has no stream yet will have one: it is a
+    /// chat's, and the server streams a chat's every run. Below the
+    /// revision, and for an automated run at any, the rows are read
+    /// instead.
+    var streamsEveryRun: Bool { agents >= Self.positionsRevision && (facts?.chat ?? true) }
 
     struct Seed: Codable, Hashable, Sendable {
         var thread: String?
@@ -205,7 +223,7 @@ public struct Conversation: Controller, Equatable {
 
     init(
         key: ChildKey, seed: Seed, facts: ThreadFacts?, online: Bool, keyless: String?, newestTurn: Int?, visible: Bool,
-        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, sendsIDs: Bool = false,
+        pollNudge: Int, resumeNudge: Int, continuing: String?, continues: Bool = false, agents: Int = 0, sendsIDs: Bool = false,
         kept: String? = nil, unsaved: String? = nil, landed: Bool = false, landedOn: String? = nil, draftFound: String? = nil
     ) {
         self.key = key
@@ -225,6 +243,7 @@ public struct Conversation: Controller, Equatable {
         self.landed = landed
         self.landedOn = landedOn
         self.draftFound = draftFound
+        self.agents = agents
     }
 
     public var initialState: State {
