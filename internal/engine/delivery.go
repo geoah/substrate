@@ -112,7 +112,7 @@ func (t *txn) applyDelivery(op foldOp) (bool, error) {
 		if op.Page == nil {
 			return false, fmt.Errorf("substrate/engine: a page effect on %s carries no row", op.ID)
 		}
-		return true, t.upsertPage(op.ID, op.Page)
+		return true, t.upsertPage(op.ID, op.Page, t.now)
 	case foldUnpage:
 		if op.Page == nil {
 			return false, fmt.Errorf("substrate/engine: an unpage effect on %s names no chain", op.ID)
@@ -163,11 +163,12 @@ func cursorLengthSQL(column string) string {
 //
 // A live middle page reads the digest and length of what the table stored
 // back onto the row, and p is the row of the effect fold records, so the
-// entry names exactly the stored cursor.
-func (t *txn) upsertPage(triggerID string, p *foldPageRow) error {
+// entry names exactly the stored cursor. at is the row's stamp: the
+// transaction's clock, or the one a ledger carries (compact.go).
+func (t *txn) upsertPage(triggerID string, p *foldPageRow, at time.Time) error {
 	args := []any{
 		p.Chain, nil, int64(p.Pages), int64(p.Version), int64(p.Effects), int64(p.Bytes),
-		p.StartedAt.UTC(), triggerID, p.Kind, p.Identity, t.now,
+		p.StartedAt.UTC(), triggerID, p.Kind, p.Identity, at,
 	}
 	switch {
 	case len(p.staged) > 0:

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -98,8 +99,8 @@ type seedRow struct {
 }
 
 // readSeedRows reads every unit and conversion row q sees, and which of
-// those records another hand ever wrote or deleted (a changelog entry under
-// an actor shippedHands(ActorSeed) does not name), a purged one included.
+// those records another hand ever wrote or deleted (recordHands: an actor
+// shippedHands(ActorSeed) does not name), a purged one included.
 func readSeedRows(ctx context.Context, q dbx) (map[eref]seedRow, map[eref]bool, error) {
 	kinds := []string{vocabulary.KindUnit, vocabulary.KindConversion}
 	rows, err := q.QueryContext(ctx, `SELECT kind, id, props, deleted_at IS NOT NULL FROM records WHERE kind = ANY($1::text[])`, kinds)
@@ -125,22 +126,18 @@ func readSeedRows(ctx context.Context, q dbx) (map[eref]seedRow, map[eref]bool, 
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return nil, nil, err
 	}
-	owned, err := q.QueryContext(ctx, `
-		SELECT DISTINCT kind, record_id FROM changelog
-		WHERE kind = ANY($1::text[]) AND actor <> ALL($2::text[])`, kinds, shippedHands(substrate.ActorSeed))
+	hands, err := recordHands(ctx, q, `c.kind = ANY($1::text[])`, kinds)
 	if err != nil {
-		return nil, nil, fmt.Errorf("substrate/engine: read who wrote the units: %w", err)
+		return nil, nil, err
 	}
+	shipping := shippedHands(substrate.ActorSeed)
 	owner := map[eref]bool{}
-	for owned.Next() {
-		var ref eref
-		if err := owned.Scan(&ref.Kind, &ref.ID); err != nil {
-			_ = owned.Close()
-			return nil, nil, err
+	for ref, hs := range hands {
+		if slices.ContainsFunc(hs, func(h recordHand) bool { return h.another(shipping) }) {
+			owner[ref] = true
 		}
-		owner[ref] = true
 	}
-	return stored, owner, errors.Join(owned.Err(), owned.Close())
+	return stored, owner, nil
 }
 
 // unseededUnit is one shipped record the last seed left unwritten. absent

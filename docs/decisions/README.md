@@ -447,5 +447,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0293](0293-a-publisher-that-moves-leaves-a-pointer-the-server-shows-and-never-follows.md) | A publisher that moves leaves a pointer the server shows and never follows | accepted |
 | [0294](0294-every-route-is-public-for-an-admin-or-held-to-its-rules.md) | Every route is public, for an admin, or held to its rules | accepted |
 | [0295](0295-a-persons-token-is-held-to-that-persons-roles.md) | A person's token is held to that person's roles | accepted |
+| [0296](0296-a-records-history-is-compacted-into-a-state-entry-in-the-line-of-its-newest-write.md) | A record's history is compacted into a state entry in the line of its newest write | accepted |
 | [0298](0298-a-kind-move-sets-off-no-trigger-and-carries-a-records-merge-trail-and-vectors.md) | A kind move sets off no trigger, and carries a record's merge trail and vectors | accepted |
 | [0309](0309-a-conversion-rebuilds-the-fold-only-where-a-line-changed-or-a-step-says-so.md) | A conversion rebuilds the fold only where a line changed or a step says so | accepted |
+| [0310](0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md) | A record a package ships is left out of compaction, for now | accepted |

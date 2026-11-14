@@ -5,10 +5,14 @@ package engine
 // export under `repositories/<id>/`, with the blobs, the sealed values, the
 // webhook spool, the history in pieces and the manifest last, as of one
 // committed point. The manifest carries the sign-in of the person who took
-// it and nobody else's (archiveidentities.go). Put in a store, it is the newest archive there, so a
-// boot with no rows for the repository restores from it. The point is a read snapshot of
-// the table; the lines up to its head never change, so they are read after
-// it, while writes go on. A blob's bytes are held against collection from
+// it and nobody else's (archiveidentities.go). Put in a store, it is the
+// newest archive there, so a boot with no rows for the repository restores
+// from it. The point is a read snapshot of the table, kept open until the
+// stream ends, and every line is read through it while writes go on: a
+// compaction rewrites the lines below the head, and commits beside the
+// export without waiting for it. The snapshot is held as long as the client
+// keeps reading: the API gives each write streamWriteDeadline, and a revoked
+// token or a shutdown ends it too (internal/api/export.go). A blob's bytes are held against collection from
 // before the snapshot until the stream ends (holdExportBlobs), so every blob
 // the point holds is still there to stream. An archive ends with its
 // manifest, so a stream cut short has none, and nothing imports it.
@@ -55,6 +59,10 @@ type export struct {
 	// WriteTo or Close gets there first: a second release would clear the
 	// slot of an export started since.
 	released sync.Once
+	// tx is the point's read snapshot, kept until the stream ends (Close):
+	// a compaction rewrites lines below the head, so the history is read
+	// through it, never from the table as it is by then.
+	tx       *sql.Tx
 	point    substrate.ExportPoint
 	manifest changelogfile.Manifest
 	sealed   map[string]changelogfile.SealedRecord
@@ -86,8 +94,13 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	ds.holdExportBlobs(nil, true)
 	e := &export{ds: ds, ctx: ctx}
 	// The spool is read before the snapshot, for the reason the archive
-	// pass reads it first (archive.go).
-	var err error
+	// pass reads it first (archive.go), and no compaction commits between
+	// the two (spoolCopy).
+	snapshotTaken, err := ds.spoolCopy.share(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer snapshotTaken()
 	if e.spool, err = spoolFilesForCopy(ds.dir); err != nil {
 		return nil, err
 	}
@@ -95,11 +108,17 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
+	pinned := false
+	defer func() {
+		if !pinned {
+			_ = tx.Rollback()
+		}
+	}()
 	head, err := tableChangelogHead(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
+	snapshotTaken()
 	repo, err := ds.svc.repositoryByID(ctx, ds.info.ID)
 	if err != nil {
 		return nil, err
@@ -140,9 +159,7 @@ func (ds *dataset) pinExport(ctx context.Context) (*export, error) {
 	if e.blobs, err = storedBlobs(ctx, tx); err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
+	e.tx, pinned = tx, true
 	held := make(map[string]bool, len(e.blobs))
 	for _, b := range e.blobs {
 		held[b.digest] = true
@@ -165,6 +182,7 @@ func (e *export) Point() substrate.ExportPoint { return e.point }
 // (substrate.Export).
 func (e *export) Close() {
 	e.released.Do(func() {
+		_ = e.tx.Rollback()
 		e.ds.holdExportBlobs(nil, false)
 		e.ds.exporting.Store(false)
 	})
@@ -229,7 +247,7 @@ func (e *export) write(tw *tar.Writer) error {
 		}
 	}
 	if head := m.Head; head > 0 {
-		written, _, err := writePieces(e.ctx, e.ds.db, 0, head, e.ds.svc.archivePieceBytes, nil, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
+		written, _, err := writePieces(e.ctx, e.tx, 0, head, e.ds.svc.archivePieceBytes, nil, func(first, last int64, data []byte) (changelogfile.ArchivePiece, error) {
 			sum := sha256.Sum256(data)
 			name := changelogfile.PieceObjectName(m.ChangelogDialect, first, last, m.Pass, sum)
 			if err := t.Put(e.ctx, prefix+name, bytes.NewReader(data), int64(len(data))); err != nil {

@@ -32,7 +32,7 @@
   {
     "name": "changefeed",
     "stability": "stable",
-    "revision": 3,
+    "revision": 4,
     "routes": [
       "GET /api/v1/changes"
     ]

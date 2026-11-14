@@ -24,11 +24,96 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/geoah/substrate/internal/scope"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 func shippedRecordRef(r vocabulary.ShippedRecord) eref { return eref{Kind: r.Kind, ID: r.ID} }
+
+// shippedRecordRefs is every record an open's seeds would consider writing,
+// read from the lists they write from and where each seed runs: the records
+// the seeded packages ship (here), the units and conversions (unitseed.go),
+// the vendor provider rows (seedproviders.go) and the roles (roles.go). It
+// is one half of what a compaction leaves whole (shippedAmong), so it is the
+// seeds' own enumeration and no second one: a record this binary no longer
+// ships is not in it.
+func (s *service) shippedRecordRefs() (map[eref]bool, error) {
+	out := map[eref]bool{}
+	if s.seedRecords {
+		for _, r := range s.shippedRecords {
+			out[shippedRecordRef(r)] = true
+		}
+	}
+	if s.seedUnits {
+		units, err := shippedUnitRecords()
+		if err != nil {
+			return nil, err
+		}
+		for _, u := range units {
+			out[u.ref()] = true
+		}
+	}
+	if s.seedLLMProviders {
+		for _, p := range defaultLLMProviders {
+			out[eref{Kind: typeProvider, ID: p.id}] = true
+		}
+	}
+	for _, r := range scope.ShippedRoles {
+		out[eref{Kind: kindRole, ID: r.ID}] = true
+	}
+	return out, nil
+}
+
+// shippedAmong is which of refs a package ships, and the hand that ships
+// each: what a compaction leaves whole, for now (decision 0310), because a
+// seed or an install writes a shipped record again unless its history shows
+// a hand other than the shipping ones (anotherHandWrote). A record ships
+// where an open's seeds write it (shippedRecordRefs), under the seed's hand,
+// or where a package's own hand (bundle:<authority>:<package>, catalog
+// install) is among the hands that ever wrote it (recordHands), at its
+// install or an upgrade. A declaration and a trigger are neither: the
+// version decides an upgrade of a declaration, an install writes its
+// triggers again whatever their history says, and a trigger's delivery
+// history is most of what compaction takes.
+func (ds *dataset) shippedAmong(ctx context.Context, q dbx, refs []eref) (map[eref]substrate.Actor, error) {
+	listed, err := ds.svc.shippedRecordRefs()
+	if err != nil {
+		return nil, err
+	}
+	out := map[eref]substrate.Actor{}
+	var asked []eref
+	for _, r := range refs {
+		switch {
+		case listed[r]:
+			out[r] = substrate.ActorSeed
+		case r.Kind != typeTrigger && !vocabulary.IsDeclarationRef(r.Kind):
+			asked = append(asked, r)
+		}
+	}
+	if len(asked) == 0 {
+		return out, nil
+	}
+	hands, err := recordHandsOf(ctx, q, asked)
+	if err != nil {
+		return nil, err
+	}
+	keys := map[string]substrate.Actor{}
+	for r, hs := range hands {
+		for _, h := range hs {
+			key, ok := keys[h.actor]
+			if !ok {
+				key = actorKeyIn(ctx, q, h.actor)
+				keys[h.actor] = key
+			}
+			if substrate.IsBundleActor(key) && key != substrate.ActorSeed {
+				out[r] = key
+				break
+			}
+		}
+	}
+	return out, nil
+}
 
 // seedShippedRecords writes every shipped record the transaction's
 // declarations name that is missing or stale and no other hand holds. It is
@@ -121,9 +206,7 @@ func (ds *dataset) shippedRecordOwed(ctx context.Context, rec vocabulary.Shipped
 	if err != nil || shippedRowCurrent(row, rec) {
 		return false, err
 	}
-	var held bool
-	err = ds.db.QueryRowContext(ctx, anotherHandWroteSQL,
-		rec.ID, rec.Kind, shippedHands(substrate.ActorSeed)).Scan(&held)
+	held, err := anotherHandIn(ctx, ds.db, shippedRecordRef(rec), substrate.ActorSeed)
 	if err != nil || held {
 		return false, err
 	}

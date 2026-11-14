@@ -256,8 +256,8 @@ func (t *txn) requestHolders(req *erow) (map[string]any, error) {
 		return nil, fmt.Errorf("read whom change request %s acts for: %w", req.ID, err)
 	}
 	var actor, behalf, token string
-	err := t.row(`SELECT actor, coalesce(on_behalf_of, ''), coalesce(principal, '') FROM changelog
-		WHERE kind = $1 AND record_id = $2 ORDER BY seq LIMIT 1`, vocabulary.KindRecordPatchRequest, req.ID).Scan(&actor, &behalf, &token)
+	var seq int64
+	err := t.row(creatingLinks, vocabulary.KindRecordPatchRequest, req.ID).Scan(&actor, &behalf, &token, &seq)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

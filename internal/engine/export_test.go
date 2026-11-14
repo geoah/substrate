@@ -1279,3 +1279,11 @@ func LandApproval(ctx context.Context, ds substrate.Dataset, id string, props ma
 		return err
 	})
 }
+
+// SetArchivePageRows reads the history n rows at a time in archive passes
+// and exports for one test, which must not run in parallel.
+func SetArchivePageRows(t *testing.T, n int) {
+	prev := archivePageRows
+	archivePageRows = n
+	t.Cleanup(func() { archivePageRows = prev })
+}

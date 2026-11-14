@@ -147,14 +147,19 @@ func (ds *dataset) fillActorRecords(ctx context.Context) error {
 
 // linkedActorIDs is every actor id the repository links: each line's actor
 // and the one it acted for, every mark's setBy and onBehalfOf in a line's
-// payload and in the fold, and every reference to an actor record in a
-// line's payload or a row's properties.
+// payload and in the fold, the actors of the lines a state entry replaced
+// (its creator's and its writers'; the ones they acted for are an
+// onBehalfOf like a mark's), and
+// every reference to an actor record in a line's payload or a row's
+// properties.
 func (t *txn) linkedActorIDs() ([]string, error) {
 	ref := `substrate\.reamde\.dev/core/actor/([0-9a-z]{26})`
 	rows, err := t.query(`
 		SELECT actor FROM changelog WHERE actor <> ''
 		UNION SELECT on_behalf_of FROM changelog WHERE on_behalf_of <> ''
 		UNION SELECT (regexp_matches(payload::text, '"(?:setBy|onBehalfOf)": "([0-9a-z]{26})"', 'g'))[1] FROM changelog
+		UNION SELECT jsonb_path_query(payload, '$.fold[*] ? (@.kind == "state").state.creator.actor') #>> '{}' FROM changelog
+		UNION SELECT jsonb_path_query(payload, '$.fold[*] ? (@.kind == "state").state.writers[*].actor') #>> '{}' FROM changelog
 		UNION SELECT (regexp_matches(payload::text, $1, 'g'))[1] FROM changelog
 		UNION SELECT (regexp_matches(props::text, $1, 'g'))[1] FROM records
 		UNION SELECT set_by FROM property_marks WHERE set_by <> ''
