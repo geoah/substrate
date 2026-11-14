@@ -137,6 +137,11 @@ extension ChatApp {
             next.scenes[scene, default: State.Scene()].current = nil
             release(&next)
         case let .searched(scene, query): next.scenes[scene, default: State.Scene()].query = query
+        case let .draftKept(key, thread, text):
+            // By the thread the conversation is bound to now, else the one
+            // the field knew it by, else as a new chat's.
+            let name = next.conversations[key]?.thread ?? thread ?? Self.newDraft + key.rawValue
+            next.drafts[name] = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
         case let .routed(route): next.route = route
         case let .routeClaimed(scene, key):
             guard let route = next.route else { break }

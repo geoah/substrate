@@ -11,11 +11,21 @@ extension Conversation {
         switch event.step {
         case let .drafted(text):
             next.draft = text
+            next.rewritten = false
+        case let .rested(text):
+            rewrite(&next, text)
+        case let .filled(text):
+            rewrite(&next, text)
+        case let .heard(words):
+            rewrite(&next, joined(next.draft, words))
         case let .chose(agent):
             next.agent = agent
         case .listened:
             next.listenOnOpen = false
         case .opened:
+            // A field starts from the tree: it takes up what was typed
+            // into the chat before, which the tree did not carry.
+            if next.carried != next.draft { rewrite(&next, next.draft) }
             guard next.thread != nil, !next.active else { break }
             if next.reloadFailed != nil {
                 retryReload(&next)
@@ -136,6 +146,19 @@ extension Conversation {
         return next
     }
 
+    /// The engine writes the draft itself: the tree carries the text and
+    /// the revision moves, so the field takes it, with the draft it stands
+    /// in place of: this rewrite's, and the first's of the rewrites made
+    /// since the field last spoke.
+    private func rewrite(_ state: inout State, _ text: String) {
+        state.draftBefore = state.draft
+        if !state.rewritten { state.draftReplaced = state.draft }
+        state.rewritten = true
+        state.draft = text
+        state.carried = text
+        state.draftRevision += 1
+    }
+
     // MARK: Runs
 
     /// Every key a run's work runs under but its own: a new run cancels
@@ -152,10 +175,7 @@ extension Conversation {
     private func send(_ state: inout State, message: String, agent: String, at: Date, baseline: Int?, fromDraft: Bool) {
         startRun(&state)
         // Continue sends its own words and leaves what is being typed alone.
-        if fromDraft {
-            state.draft = ""
-            state.draftRevision += 1
-        }
+        if fromDraft { rewrite(&state, "") }
         state.error = nil
         state.lastError = nil
         // An outcome stays until its message is sent again or dismissed.
@@ -257,10 +277,7 @@ extension Conversation {
             if let refusal = failure.refusal() {
                 end(&state, run, unknown: nil, outcome: outcome)
                 let restored = state.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                if restored {
-                    state.draft = run.message
-                    state.draftRevision += 1
-                }
+                if restored { rewrite(&state, run.message) }
                 state.outcomes.append(Outcome(id: outcome, kind: .refused, reason: refusal.text, message: run.message, restored: restored))
                 return
             }

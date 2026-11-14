@@ -10,7 +10,14 @@ enum TurnPresenter {
         return turns.map { present($0, agent: agent, live: $0.id == liveKey, decided: decided, titles: titles) }
     }
 
-    static func present(_ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String]) -> TurnPresentation {
+    /// - Parameters:
+    ///   - kept: where a live turn's tool rows are kept, so a call's row is
+    ///     made once and not at every piece of the reply after it.
+    ///   - scope: the conversation the parts are named under.
+    static func present(
+        _ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String], kept: PresenterParts? = nil,
+        scope: String = ""
+    ) -> TurnPresentation {
         switch turn.role {
         case .user:
             if let delivery = deliveryNotice(turn) {
@@ -23,7 +30,9 @@ enum TurnPresenter {
                         text: turn.content, pending: turn.pending,
                         about: turn.contextRecords ?? [], aboutLabel: "About")))
         case .assistant:
-            return TurnPresentation(id: turn.id, body: .assistant(assistant(turn, agent: agent, live: live, decided: decided, titles: titles)))
+            return TurnPresentation(
+                id: turn.id,
+                body: .assistant(assistant(turn, agent: agent, live: live, decided: decided, titles: titles, kept: kept, scope: scope)))
         case .summary:
             return TurnPresentation(id: turn.id, body: .summary(SummaryTurn(label: "Earlier messages were summarized", content: turn.content)))
         case .system:
@@ -79,7 +88,17 @@ enum TurnPresenter {
         return words.isEmpty ? "A tool" : words.capitalizedFirst
     }
 
-    private static func assistant(_ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String]) -> AssistantTurn {
+    /// What a tool's row is made from.
+    struct ToolReads: Equatable, Sendable {
+        var call: ToolCall
+        var agent: Record?
+        var decided: Set<String>
+        var titles: [String: String]
+    }
+
+    private static func assistant(
+        _ turn: Turn, agent: Agent?, live: Bool, decided: Set<String>, titles: [String: String], kept: PresenterParts?, scope: String
+    ) -> AssistantTurn {
         var reasoning: ReasoningPresentation?
         if let text = turn.reasoning, !text.isEmpty {
             let thinking = turn.thinking && live
@@ -100,7 +119,11 @@ enum TurnPresenter {
                     heading: "Sources", label: "Sources",
                     pills: cited.enumerated().map { index, link in pill(link.url, title: link.text, index: index + 1) }, empty: nil),
             tools: turn.tools.enumerated().map { index, call in
-                tool(call, id: "\(turn.id)#\(index)", agent: agent, decided: decided, titles: titles)
+                let id = "\(turn.id)#\(index)"
+                guard let kept else { return tool(call, id: id, agent: agent, decided: decided, titles: titles) }
+                return kept.part(
+                    "\(scope)/tool/\(id)", reading: ToolReads(call: call, agent: agent?.record, decided: decided, titles: titles)
+                ) { tool(call, id: id, agent: agent, decided: decided, titles: titles) }
             })
     }
 

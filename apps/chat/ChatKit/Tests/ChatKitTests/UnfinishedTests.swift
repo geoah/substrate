@@ -78,6 +78,7 @@ struct UnfinishedTurns {
                     tone: .warn, title: "Helper didn’t finish", detail: "The server restarted while it was working.", action: "Continue",
                     blocked: nil, hint: "Sends “Continue where you left off.”"))
 
+        let revision = await rig.conversation(key)?.composer.draftRevision
         try await rig.send(.draft("half a thought"), to: key)
         try await rig.send(.continueTurn, to: key)
         try await rig.harness.until { _ in rig.server.count("/chat") == 1 }
@@ -86,7 +87,8 @@ struct UnfinishedTurns {
         #expect(body["message"]?.string == "Continue where you left off.")
         // The owner's own message, and the half-typed one stays.
         #expect(await rig.turns(key).dropFirst(2).first == "Continue where you left off.")
-        #expect(await rig.conversation(key)?.composer.draft == "half a thought")
+        #expect(await rig.live(key)?.draft == "half a thought")
+        #expect(await rig.conversation(key)?.composer.draftRevision == revision)
         // The turn it started is running: the notice is gone.
         #expect(await rig.conversation(key)?.unfinished == nil)
 

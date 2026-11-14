@@ -15,6 +15,9 @@ public struct ChatPresentation: Codable, Equatable, Sendable {
     public var routePending: Bool
     /// The threads a window in front shows: their notifications stay quiet.
     public var onScreen: [String]
+    /// The conversations a stream is writing, for what offers Stop outside
+    /// a conversation's own screen.
+    public var streaming: [ChildKey]
     public var conversations: [ChildKey: ConversationScreen]
     public var offered: [AgentChoice]
     public var defaultAgent: AgentChoice?
@@ -40,6 +43,9 @@ public struct AgentChoice: Codable, Hashable, Sendable, Identifiable {
 /// One window: the conversation it shows and the list it searched.
 public struct ScenePresentation: Codable, Equatable, Sendable {
     public var current: ChildKey?
+    /// The thread of the conversation it shows; nil for a new chat. Here so
+    /// the list marks its row without reading the conversation.
+    public var thread: String?
     public var query: String
     /// The list as searched; nil while nothing is.
     public var found: [DaySection]?

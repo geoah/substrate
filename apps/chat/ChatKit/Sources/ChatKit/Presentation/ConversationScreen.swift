@@ -105,10 +105,21 @@ public struct OutcomePresentation: Codable, Hashable, Sendable, Identifiable {
 }
 
 public struct ComposerPresentation: Codable, Equatable, Sendable {
+    /// The draft as the app last wrote it, or as the chat held it when it
+    /// was shown: what a field starts from. What is typed is the field's
+    /// own, and is not here.
     public var draft: String
     /// Moved when the app rewrote the draft (a send cleared it, a refusal
-    /// gave it back): the field takes the text.
+    /// gave it back, dictation landed, the chat was shown again): the field
+    /// takes the text.
     public var draftRevision: Int
+    /// The text the rewrites since the field last spoke stand in place of.
+    /// A field holding more than this typed it while a rewrite was on its
+    /// way, and keeps it after the new text (`DraftReports`).
+    public var draftReplaced: String
+    /// The text the last rewrite alone stands in place of, for a field that
+    /// took the one before it.
+    public var draftBefore: String
     public var placeholder: String
     /// Why a send cannot go now.
     public var blocked: String?

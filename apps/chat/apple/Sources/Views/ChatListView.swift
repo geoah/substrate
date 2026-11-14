@@ -15,11 +15,11 @@ struct ChatListView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     #endif
 
-    private var chats: ChatPresentation? { host.chats }
+    private var chats: ChatSurface? { host.chats }
 
     private var selection: Binding<String?> {
         Binding {
-            chats?.scenes[scene]?.current.flatMap { chats?.conversations[$0]?.thread }
+            chats?.scenes[scene]?.thread
         } set: { id in
             if let id { host.send(.show(thread: id, scene: scene)) }
         }

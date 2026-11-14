@@ -88,7 +88,7 @@ struct ChatRig {
             timeZone: TimeZone(identifier: "UTC")!, client: .fixed(client),
             devices: DeviceServices(transport: server, notifications: notifications, background: background))
         harness = ControllerHarness(
-            ChatApp(storage: storage, preferences: preferences, platform: platform), clock: clock,
+            ChatApp(storage: storage, preferences: preferences, platform: platform, verifiesParts: true), clock: clock,
             environment: environment)
     }
 

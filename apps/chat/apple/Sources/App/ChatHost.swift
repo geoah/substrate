@@ -108,8 +108,26 @@ final class ChatHost {
         }
     }
 
-    var link: LinkPresentation<ChatPresentation> { model.presentation }
-    var chats: ChatPresentation? { model.presentation.app }
+    // What a view reads, each a part of the tree of its own (the kit's
+    // `PresentationModel.part(at:)`): a view is drawn again when the part
+    // it reads changes, and for nothing else, so a reply being written
+    // draws its conversation and neither the list nor Settings.
+
+    /// The link's own screens: the banner, the access ended, the status.
+    /// Its `app` is nil: the app's part is `chats`.
+    var link: LinkPresentation<ChatPresentation> {
+        model.part(at: []) ?? model.presentation
+    }
+
+    /// The app's own part: the list, the windows, Settings, the agents.
+    var chats: ChatSurface? {
+        model.part(at: Link.appPath, as: ChatPresentation.self).map(ChatSurface.init)
+    }
+
+    /// One conversation's screen, by its key.
+    func conversation(_ key: ChildKey) -> ConversationScreen? {
+        model.part(at: Link.appPath + [key])
+    }
 
     func send(_ command: ChatApp.Command) {
         model.send(command, to: Link.appPath)
@@ -131,7 +149,7 @@ final class ChatHost {
     /// A run settled: said, and felt on a phone, where its chat is on
     /// screen. Elsewhere its notification says it.
     private func answered(_ answer: ChatAnswer) {
-        guard let thread = answer.thread, chats?.onScreen.contains(thread) == true else { return }
+        guard let thread = answer.thread, model.presentation.app?.onScreen.contains(thread) == true else { return }
         AccessibilityNotification.Announcement(answer.words).post()
         #if os(iOS)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -244,4 +262,22 @@ final class ChatHost {
         #endif
         return "Substrate Chat on \(device)"
     }
+}
+
+/// The app's own part of the tree, as a view reads it: every field of the
+/// presentation but its conversations, each of which is a part of its own
+/// and is read by its key (`ChatHost.conversation(_:)`). Reading one here
+/// would find none, so it does not compile.
+@dynamicMemberLookup
+struct ChatSurface {
+    let own: ChatPresentation
+
+    init(_ own: ChatPresentation) {
+        self.own = own
+    }
+
+    subscript<Value>(dynamicMember path: KeyPath<ChatPresentation, Value>) -> Value { own[keyPath: path] }
+
+    @available(*, unavailable, message: "The app's own part holds no conversation: read one by its key, with ChatHost.conversation(_:).")
+    var conversations: [ChildKey: ConversationScreen] { [:] }
 }

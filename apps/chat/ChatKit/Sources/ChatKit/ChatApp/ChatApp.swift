@@ -22,6 +22,11 @@ public struct ChatApp: LinkedApp {
         /// Back to the list on a phone: nothing is selected.
         case back(scene: String)
         case search(scene: String, query: String)
+        /// A composer's field left the screen holding this text. Its
+        /// conversation was told too, where there still is one: this keeps
+        /// the draft where the conversation is already gone, as when a
+        /// phone went back to the list first.
+        case keepDraft(key: ChildKey, thread: String?, text: String)
         case route(ChatRoute)
         /// The window that takes the route waiting.
         case claimRoute(scene: String)
@@ -68,14 +73,19 @@ public struct ChatApp: LinkedApp {
     public let storage: ChatStorage
     public let preferences: any PreferenceStore
     public let platform: ChatPlatform
-    /// The transcripts as last presented, so a streamed reply presents its
-    /// own turn again and not every one above it.
-    let memo = TurnMemo()
+    /// The presentation's parts as last made, each kept until what it reads
+    /// changes: a streamed reply presents its own turn again, and neither
+    /// the list nor the turns above it.
+    let kept: PresenterParts
 
-    public init(storage: ChatStorage, preferences: any PreferenceStore, platform: ChatPlatform) {
+    /// - Parameter verifiesParts: every part answered from the store is
+    ///   made again and compared, for a test: a part kept past a change to
+    ///   what it reads stops the process.
+    public init(storage: ChatStorage, preferences: any PreferenceStore, platform: ChatPlatform, verifiesParts: Bool = false) {
         self.storage = storage
         self.preferences = preferences
         self.platform = platform
+        kept = PresenterParts(verifies: verifiesParts)
     }
 
     /// The watch stops while no window is in front on a phone, and runs
@@ -102,6 +112,7 @@ public struct ChatApp: LinkedApp {
         case let .newChat(agent, listen, scene): return [Event(.newChat(agent: agent, listen: listen, scene: scene, key: key()))]
         case let .back(scene): return [Event(.back(scene: scene))]
         case let .search(scene, query): return [Event(.searched(scene: scene, query: query))]
+        case let .keepDraft(key, thread, text): return [Event(.draftKept(key: key, thread: thread, text: text))]
         case let .route(route): return [Event(.routed(route))]
         case let .claimRoute(scene):
             guard let route = state.route else { return [] }
@@ -167,7 +178,7 @@ public struct ChatApp: LinkedApp {
         case let .checked(_, found?, _):
             named = found.thread
             read = ChatAppStep.Read(thread: found.thread, record: found.record, rows: found.rows, reload: !found.running)
-        case .drafted, .sent:
+        case .drafted, .rested, .filled, .heard, .sent:
             draft = state.draft
             if case .sent = event.step { sent = true }
         case .streamEnded:

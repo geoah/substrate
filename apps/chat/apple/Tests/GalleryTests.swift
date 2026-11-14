@@ -59,13 +59,13 @@ import Testing
             host.send(.send, to: key)
             try await until { Self.text(host, key)?.count == stop ? true : nil }
         } else {
-            try await until { host.chats?.conversations[key]?.turns.count == 2 ? true : nil }
+            try await until { host.conversation(key)?.turns.count == 2 ? true : nil }
         }
         return (host, key)
     }
 
     static func text(_ host: ChatHost, _ key: ChildKey) -> String? {
-        guard case let .assistant(turn)? = host.chats?.conversations[key]?.turns.last?.body else { return nil }
+        guard case let .assistant(turn)? = host.conversation(key)?.turns.last?.body else { return nil }
         return turn.text
     }
 
@@ -74,7 +74,7 @@ import Testing
     /// draws, nor the glass of the composer over it. A reply still being
     /// written is held at its end, as the screen follows it.
     func view(_ host: ChatHost, _ key: ChildKey, streaming: Bool) -> some View {
-        let screen = host.chats?.conversations[key]
+        let screen = host.conversation(key)
         return VStack(alignment: .leading, spacing: 22) {
             if let screen { TranscriptRows(screen: screen, key: key, onKey: { _ in }) }
         }

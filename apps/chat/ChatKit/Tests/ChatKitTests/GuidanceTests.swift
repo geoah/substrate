@@ -22,7 +22,7 @@ private func instruction(_ id: String, _ text: String, version: Int = 2) -> Reco
         createdAt: "2026-11-07T08:00:00Z", updatedAt: "2026-11-07T08:00:00Z")
 }
 
-private let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+private let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
 
 private func held(_ memories: [Record], _ instructions: [Record] = []) -> ChatAppState {
     var state = signedInState()

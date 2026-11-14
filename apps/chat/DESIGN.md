@@ -85,14 +85,32 @@ apple/Sources/
 The kit's `LinkController<ChatApp>` is the root: the session and its
 revocations, the status check and connectivity are the link's, and it keeps
 `ChatApp` as its one child. `ChatApp` keeps each `Conversation` as a child of
-its own, keyed by the id it minted for it. The views read one
-`PresentationModel`'s tree and send commands down a path of keys; a step that
-changes the list and a conversation publishes one tree.
+its own, keyed by the id it minted for it. A step that changes the list and
+a conversation publishes one tree, and the tree goes out to the views in
+parts (the kit's `Controller.parts(of:)`): the link's own screens, the
+app's own (the list, each window, Settings, the agents) and each
+conversation's screen under its key. A view reads the part it draws
+(`ChatHost.link`, `chats`, `conversation(_:)`) and sends commands down a
+path of keys, so a piece of a reply draws its conversation again and
+neither the list, another conversation nor Settings.
+
+**The presenter is made of parts**, each kept until what it reads changes
+(`PresenterParts`): the list's rows under their days, each window's search,
+each conversation's screen, its stored rows' turns, each live turn, each
+tool's row, Settings. What a part reads is the list's state with the
+fields it never reads emptied (`ChatAppReads.swift`), so a new field is
+read by every part until it is listed there, and the test rig makes every
+kept part again and compares, which stops the process on a part kept past a
+change to what it reads. The list reads the instant ("now", a time, a
+weekday), so it is kept until the instant one of its rows stops being true.
+A streamed delta makes its conversation's screen and the turn being written
+again, and nothing else; a key typed makes nothing.
 
 | What | Where it lives now |
 | ---- | ------------------ |
 | A turn's stream | `Conversation`'s `.sequence` effect under the key `run`: a send, an attach (its read, then the events), the handover read |
 | Streamed text | `Conversation.coalescing(of:)`: a delta or a piece of reasoning presents within 50 ms, structure at once |
+| A draft | the composer's field while it is typed; the conversation after a pause, before a send and when the field stops editing (`DraftReports`), and from there `drafts.json`; the tree only as the engine wrote it |
 | The watch | the kit's `WatchFollower`, its cursor and the rows still to read again in the kit's `RecordCache` (`records/watch.json`) |
 | The cache | `ChatStorage` over the kit's `RepositoryFolder`, at the path every build used (`Application Support/SubstrateChat/<hash>/`): `state.json` and `drafts.json` adopted at the top, transcripts moved from `messages/` into the cache area, bounded by age and budget; a session reaches it only through the `ChatStorage.Lease` its open answered |
 | Notifications | the kit's `Notifications` device service (`SystemNotifications` on an Apple device): scheduled (at once), cancelled and badged as effects; the kit's delegate, installed at launch, hands a tap to `responses()`, which the list follows and turns into a route; the engine never notifies a chat on screen |
@@ -555,6 +573,21 @@ the microphone, and Send, which morphs into Stop while a turn runs
   the answer", "Checking whether your last message arrived", "Offline", "Add
   an API key first").
 - Drafts are kept per chat across launches.
+- **The text is the field's while it is typed.** A key is no command: it
+  runs no engine and no presenter and draws nothing but the field. The
+  conversation is told the text after half a second without a key, never
+  more than two seconds behind while the typing goes on, at once before a
+  send, and when the field stops editing: it lost the focus, the app left
+  the front, or its chat left the screen, when the list is told as well,
+  since on a phone the conversation may be gone first. The tree carries the
+  draft only as the engine wrote it: a send cleared it, a refusal gave it
+  back, dictation landed, an opener was picked, or the chat was shown again
+  and takes up what was typed into it. Each such rewrite moves the draft's
+  revision and says what text it stands in place of, and the field takes
+  the new text with whatever it held beyond the replaced one kept at its
+  end, so a key pressed while a rewrite is on its way is never lost
+  (`DraftTests`: on a send, on leaving the front, on switching chats, on a
+  refusal, on dictation).
 
 ### Settings
 
@@ -715,7 +748,7 @@ may do and for how long; the app never sees the password.
 
 **Polish (v1)**
 
-22. Delta coalescing; memoized Markdown; equatable turn views.
+22. Delta coalescing; memoized Markdown; equatable turn views; a presenter made of kept parts, and a tree published in parts.
 23. Haptics; the send/stop morph; the thinking shimmer.
 24. Search over titles, previews and cached transcripts.
 25. Technical details.
@@ -754,6 +787,12 @@ may do and for how long; the app never sees the password.
   keeps its own folder; a refresh job from before a sign-out does nothing,
   and one the system takes back or that outlives its budget lands nothing
   (`BackgroundTests.swift`, over the kit's `ScriptedBackground`).
+- What draws what (`PartsTests`, `DraftTests`): a delta makes its own
+  conversation's screen and live turn again and moves that conversation's
+  part alone; a state that moved makes again only the parts that read what
+  moved; the list is kept until the instant a row stops being true; a
+  tool's row is made once; and no key is lost by a send, a refusal, leaving
+  the front or switching chats.
 - A run against the dev substrate (`mise run dev`) with a model stub: sign
   in, the list, Markdown, streaming, a tool call, a question answered and the
   agent resumed, Stop, a new chat, Settings.

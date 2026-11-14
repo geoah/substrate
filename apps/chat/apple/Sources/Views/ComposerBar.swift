@@ -6,10 +6,14 @@ import SwiftUI
 /// in one container with Jump to Latest so the two merge rather than stack.
 /// The trailing button is the microphone while the field is empty, Send once
 /// it is not, and Stop while a turn runs; it morphs between them. The text
-/// is the conversation's: each edit goes to it, and the field takes what it
-/// writes back itself (a send clears it, a refusal gives it back).
+/// is the field's own while it is typed: the conversation is told after a
+/// pause, before a send and when the field stops editing (`DraftReports`),
+/// so a key draws nothing but the field. The field takes what the
+/// conversation writes back itself (a send clears it, a refusal gives it
+/// back), and keeps what was typed meanwhile after it.
 struct ComposerBar: View {
     @Environment(ChatHost.self) private var host
+    @Environment(\.scenePhase) private var phase
     let key: ChildKey
     let screen: ConversationScreen
     let dictation: Dictation
@@ -17,7 +21,7 @@ struct ComposerBar: View {
     let onJump: () -> Void
     let onKey: (String) -> Void
     @State private var text = ""
-    @State private var revision = -1
+    @State private var reports = DraftReports()
     @FocusState private var focused: Bool
     @State private var selection: TextSelection?
     @Namespace private var glass
@@ -79,12 +83,30 @@ struct ComposerBar: View {
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
         .sensoryFeedback(.impact(weight: .light), trigger: sent)
-        .onChange(of: composer.draftRevision, initial: true) { _, next in
-            guard next != revision else { return }
-            revision = next
-            text = composer.draft
+        .onChange(of: composer.draftRevision, initial: true) { _, _ in
+            if let next = reports.take(composer, holding: text) { text = next }
+            say()
         }
-        .onChange(of: text) { _, text in host.send(.draft(text), to: key) }
+        .onChange(of: text) { _, text in reports.typed(text, at: .now) }
+        .task(id: reports.due) {
+            guard let due = reports.due else { return }
+            try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
+            guard !Task.isCancelled, let command = reports.paused(at: .now) else { return }
+            host.send(command, to: key)
+        }
+        .onChange(of: focused) { _, focused in
+            if !focused { say() }
+        }
+        .onChange(of: phase) { _, phase in
+            if phase != .active { say() }
+        }
+        .onDisappear {
+            // The chat left the screen: the tree carries the text for the
+            // field that comes after. Its conversation may be gone before
+            // it hears, so the list keeps the draft either way.
+            host.send(reports.leave(text), to: key)
+            host.send(.keepDraft(key: key, thread: screen.thread, text: text))
+        }
         .task {
             if composer.listenOnOpen {
                 host.send(.listened, to: key)
@@ -229,10 +251,20 @@ struct ComposerBar: View {
         Task {
             if dictation.active { await toggleListening() }
             guard composer.canSend, !empty else { return }
-            host.send(.draft(text), to: key)
+            // The conversation sends what it holds: everything typed first.
+            reports.typed(text, at: .now)
+            say()
             host.send(.send, to: key)
             sent += 1
         }
+    }
+
+    /// Tells the conversation what it has not heard of the field, now.
+    @discardableResult
+    private func say() -> Conversation.Command? {
+        guard let command = reports.say() else { return nil }
+        host.send(command, to: key)
+        return command
     }
 
     private func toggleListening() async {
@@ -244,6 +276,18 @@ struct ComposerBar: View {
             focused = false
             await dictation.start(localeID: host.chats?.settings.voiceLocale)
         }
+    }
+}
+
+/// Drawn again only for what it draws: of the conversation's screen, its
+/// composer, its agent and thread and whether a turn streams or stops, so a
+/// piece of a reply arriving above it draws nothing here. A field of the
+/// screen the bar comes to read goes into this comparison with it.
+extension ComposerBar: @MainActor Equatable {
+    static func == (lhs: ComposerBar, rhs: ComposerBar) -> Bool {
+        lhs.key == rhs.key && lhs.screen.composer == rhs.screen.composer && lhs.screen.streaming == rhs.screen.streaming
+            && lhs.screen.stopping == rhs.screen.stopping && lhs.screen.agent == rhs.screen.agent
+            && lhs.screen.thread == rhs.screen.thread && lhs.atBottom == rhs.atBottom && lhs.dictation === rhs.dictation
     }
 }
 

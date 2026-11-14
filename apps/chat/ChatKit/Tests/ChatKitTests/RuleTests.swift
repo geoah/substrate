@@ -75,7 +75,7 @@ struct SevenRules {
     }
 
     @Test func rule4_aReadIsDroppedWhenItsThreadsEpochMoved() throws {
-        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = ChatAppState()
         state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository))
         state.readEpochs["t1"] = 1
@@ -88,7 +88,7 @@ struct SevenRules {
     }
 
     @Test func rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped() throws {
-        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = signedInState()
         // The chat was opened, its disk read asked for; then a send took it.
         state.conversations[ChildKey("k")] = .init(
@@ -100,7 +100,7 @@ struct SevenRules {
     }
 
     @Test func rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved() throws {
-        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = signedInState()
         let key = ChildKey("k")
         state.conversations[key] = .init(seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1", agent: helper)
@@ -186,7 +186,7 @@ struct SevenRules {
             transport: server,
             client: .fixed(SubstrateClient(server: origin, token: "secret", transport: server)))
         environment.devices.notifications = RecordedNotifications()
-        let app = ChatApp(storage: ChatStorage(base: temporaryFolder("chat")), preferences: MemoryPreferenceStore(), platform: .macos)
+        let app = ChatApp(storage: ChatStorage(base: temporaryFolder("chat")), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         let link = LinkController(
             app: app, manifest: manifest, sessions: sessions,
             words: StatusWords(app: ChatManifest.appName, device: "this Mac", kept: "saved chats"))
@@ -295,7 +295,7 @@ struct ConversationRuns {
 @Suite("The list", .timeLimit(.minutes(10)))
 struct ListRules {
     @Test func olderRowsNeverReplaceNewerOnes() throws {
-        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = ChatAppState()
         state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository))
         let newer = [Record(id: "a", kind: Kinds.message, properties: ["role": "user", "content": "new"])]

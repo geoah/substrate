@@ -88,7 +88,7 @@ enum Measure {
             host.send(.show(thread: thread, scene: scene))
             guard
                 let key = await until({ () -> ChildKey? in
-                    guard let key = host.chats?.scenes[scene]?.current, let screen = host.chats?.conversations[key],
+                    guard let key = host.chats?.scenes[scene]?.current, let screen = host.conversation(key),
                         screen.thread == thread, screen.turns.count >= held
                     else { return nil }
                     return key
@@ -108,7 +108,7 @@ enum Measure {
             host.send(.send, to: key)
             // Streamed, settled, and its rows read in its place.
             let settled = await until(seconds: 300) { () -> Bool? in
-                guard let screen = host.chats?.conversations[key], !screen.streaming, screen.turns.count >= held + 2,
+                guard let screen = host.conversation(key), !screen.streaming, screen.turns.count >= held + 2,
                     screen.turns.last?.id.hasPrefix("live-") == false
                 else { return nil }
                 return true
