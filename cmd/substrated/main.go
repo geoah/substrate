@@ -868,6 +868,7 @@ func loadOperatorDefaults(path, siteDir string) (*operatordefaults.Config, error
 		embeddings = e.ID + "/" + e.Embeddings.Model
 	}
 	slog.Info("operator defaults loaded: empty llm/provider rows of these ids run on the operator's keys, under a daily allowance per repository",
-		"providers", strings.Join(providers, ","), "embeddings", embeddings, "centsPerDay", c.Budget.CentsPerDay)
+		"providers", strings.Join(providers, ","), "embeddings", embeddings, "centsPerDay", c.Budget.CentsPerDay,
+		"repositoryAllowances", len(c.Budget.Repositories))
 	return c, nil
 }

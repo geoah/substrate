@@ -416,10 +416,11 @@ describe("AgentPage", () => {
   })
 
   it("shows a declared daily spend cap beside what its finished runs spent in the last 24 hours", async () => {
-    // Without a cap there is nothing to show.
+    // Without a declared cap or one of yours it has none, and you may set one.
     mount()
     await screen.findByRole("table", { name: "What it spent" })
-    expect(screen.queryByText("Daily spend cap")).toBeNull()
+    expect(await screen.findByText("No cap")).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Set a cap" })).toBeTruthy()
     cleanup()
 
     const base = fetchMock.getMockImplementation()!
@@ -437,7 +438,10 @@ describe("AgentPage", () => {
     await screen.findByText("Daily spend cap")
     const value = (label: string) =>
       screen.getByText(label).nextElementSibling?.textContent ?? ""
-    expect(value("Cap")).toBe("$0.01 in any 24 hours")
+    await waitFor(() => expect(value("Cap")).toBe("$0.01 in any 24 hours"))
+    expect(
+      screen.getByText("Declared by the agent. A cap you set replaces it.")
+    ).toBeTruthy()
     // The chat it started (1.2 cents, 2 hours ago) counts; the run another
     // agent asked it for is on that agent's cap.
     await waitFor(() =>

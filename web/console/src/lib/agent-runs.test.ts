@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  agentCapInForce,
   agentLimits,
   agentSpendCap,
   askedByAgent,
@@ -496,5 +497,39 @@ describe("agent runs", () => {
     expect(capInputText({ state: "set", cents: 9007199254740990 })).toBe(
       "90071992547409.90"
     )
+  })
+
+  it("holds an agent to the cap its owner's budget sets, else to the one it declares", () => {
+    const budget = (cents: unknown, deletedAt?: string): SubstrateRecord => ({
+      ...rec({
+        agent: {
+          ref: "substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss",
+        },
+        spendCentsPerDay: cents,
+      }),
+      kind: "substrate.reamde.dev/llm/agentbudget",
+      deletedAt,
+    })
+    // The owner's cap replaces the declared one, raising or lowering it.
+    expect(agentCapInForce(300, budget(1000))).toEqual({
+      source: "own",
+      cents: 1000,
+    })
+    expect(agentCapInForce(300, budget(0))).toEqual({ source: "own", cents: 0 })
+    // A budget that sets no cap, a deleted one and none at all leave the
+    // declared cap holding.
+    expect(agentCapInForce(300, budget(undefined))).toEqual({
+      source: "declared",
+      cents: 300,
+    })
+    expect(agentCapInForce(300, budget(500, "2026-11-14T00:00:00Z"))).toEqual({
+      source: "declared",
+      cents: 300,
+    })
+    expect(agentCapInForce(300, null)).toEqual({
+      source: "declared",
+      cents: 300,
+    })
+    expect(agentCapInForce(undefined, null)).toEqual({ source: "none" })
   })
 })

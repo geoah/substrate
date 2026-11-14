@@ -58,6 +58,11 @@ functionSecrets:
     pricePerCall: {websearch: "0.1", webscrape: "0.1"}
 budget:
   centsPerDay: 200
+  repositories:
+    ada.example.com:
+      centsPerDay: 1000
+    rnd-0abcdefghjkmnpqrstvwxyz012:
+      centsPerDay: 0
 `, keyFile(t, "openai-fixture"), keyFile(t, "client-secret-fixture"))
 }
 
@@ -87,6 +92,9 @@ func TestParseReadsAWholeFile(t *testing.T) {
 	}
 	if c.Budget.CentsPerDay != 200 {
 		t.Fatalf("budget = %d", c.Budget.CentsPerDay)
+	}
+	if got := c.Budget.Repositories; len(got) != 2 || got["ada.example.com"] != 1000 || got["rnd-0abcdefghjkmnpqrstvwxyz012"] != 0 {
+		t.Fatalf("budget.repositories = %v", got)
 	}
 	if got := c.OAuthClients["providers.substrate.reamde.dev/google"]; got == nil || got.ClientSecret.Value() != "client-secret-fixture" || got.Notice == "" {
 		t.Fatalf("oauth client = %+v", got)
@@ -145,8 +153,13 @@ func TestParseRefuses(t *testing.T) {
 		{"an unknown request param", "defaults: {reasoningEffort: low}", "defaults: {topP: 1}", "topP is not a request param"},
 		{"an unknown wire", "wire: anthropic", "wire: bedrock", `wire "bedrock" is not one of`},
 		{"an unknown cache ttl", "ttl: onehour", "ttl: 1h", `cache.ttl "1h"`},
-		{"no budget", "budget:\n  centsPerDay: 200\n", "", "budget.centsPerDay is required"},
+		{"no budget", "budget:\n  centsPerDay: 200\n  repositories:\n    ada.example.com:\n      centsPerDay: 1000\n    rnd-0abcdefghjkmnpqrstvwxyz012:\n      centsPerDay: 0\n", "", "budget.centsPerDay is required"},
+		{"no allowance", "  centsPerDay: 200\n", "", "budget.centsPerDay is required"},
 		{"a negative budget", "centsPerDay: 200", "centsPerDay: -1", "at or above 0"},
+		{"a repository's negative budget", "centsPerDay: 1000", "centsPerDay: -1", "budget.repositories.ada.example.com: centsPerDay is a whole number of cents at or above 0"},
+		{"a repository without centsPerDay", "    ada.example.com:\n      centsPerDay: 1000\n", "    ada.example.com: {}\n", "budget.repositories.ada.example.com: centsPerDay is required"},
+		{"a repository key that is no name", "    ada.example.com:\n", "    Ada Example:\n", `"Ada Example" is not a repository's name or id`},
+		{"an unknown key in a repository's budget", "      centsPerDay: 1000\n", "      centsPerDay: 1000\n      centsPerMonth: 1\n", "field centsPerMonth not found"},
 		{"an idempotency header", "name: X-Title, value: substrate", "name: Idempotency-Key, value: k", "replay a request"},
 		{"an idempotency header in any case", "name: X-Title, value: substrate", "name: x-idempotency-key, value: k", "replay a request"},
 		{"a function consumer without a price", `pricePerCall: {websearch: "0.1", webscrape: "0.1"}`, `pricePerCall: {websearch: "0.1"}`, "webscrape has no price"},

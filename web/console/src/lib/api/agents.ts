@@ -11,11 +11,14 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import {
+  createRecord,
   fetchRecord,
   fetchRecordsPage,
+  patchRecord,
   recordsQueryOptions,
   type FirstPageParams,
 } from "./records"
+import { deleteRecord } from "./sync"
 import {
   collectionPath,
   corePath,
@@ -30,11 +33,12 @@ import { walkPages } from "./compacted"
 import { getToken, sessionExpired } from "./session"
 import {
   ApiError,
+  REFERENCE_KEY,
   type Page,
   type ServerErrorCode,
   type SubstrateRecord,
 } from "./types"
-import { LLM_MODEL_KIND } from "@/lib/core-kinds"
+import { AGENT_BUDGET_KIND, AGENT_KIND, LLM_MODEL_KIND } from "@/lib/core-kinds"
 
 /** The agent rows — declared agents, one per `substrate.reamde.dev/core/agent` record. */
 export function agentsQueryOptions() {
@@ -205,11 +209,16 @@ export function llmProvidersQueryOptions() {
  * it (422, code `validation`, `unknown type "<kind>"`), which is what a
  * server older than the kind answers; any other refusal is a real one. */
 export function modelKindUnknown(error: unknown): boolean {
+  return kindUnknown(error, LLM_MODEL_KIND)
+}
+
+/** Whether a read was refused because the server does not know the kind. */
+function kindUnknown(error: unknown, kind: string): boolean {
   return (
     error instanceof ApiError &&
     error.status === 422 &&
     error.code === "validation" &&
-    error.message.includes(`unknown type "${LLM_MODEL_KIND}"`)
+    error.message.includes(`unknown type "${kind}"`)
   )
 }
 
@@ -249,6 +258,63 @@ export function llmModelsQueryOptions(enabled = true) {
     },
     enabled,
   })
+}
+
+/** The owner's override of one agent's budgets (`llm/agentbudget`, decision
+ * record 0314), or null where there is none. The server keeps one live record
+ * per agent, so the first match is the one. A server older than the kind
+ * refuses it as unknown, which reads as none. */
+export function agentBudgetQueryOptions(agentId: string) {
+  const params: ListParams = {
+    authority: CORE_AUTHORITY,
+    package: LLM_PACKAGE_NAME,
+    name: "agentbudget",
+    first: 1,
+    filter: { properties: { agent: { eq: `${AGENT_KIND}/${agentId}` } } },
+  }
+  return queryOptions({
+    queryKey: [...recordsQueryOptions(params).queryKey, "agentbudget"],
+    queryFn: async ({ signal }): Promise<SubstrateRecord | null> => {
+      try {
+        const page = await fetchRecordsPage(params, signal)
+        return page.records[0] ?? null
+      } catch (error) {
+        if (kindUnknown(error, AGENT_BUDGET_KIND)) return null
+        throw error
+      }
+    },
+  })
+}
+
+/** Set the owner's daily cap for one agent, in US cents: on its override
+ * where there is one, else on a new one. */
+export async function saveAgentSpendCap(
+  agentId: string,
+  cents: number,
+  budget: SubstrateRecord | null
+): Promise<void> {
+  if (budget) {
+    await patchRecord(
+      CORE_AUTHORITY,
+      LLM_PACKAGE_NAME,
+      "agentbudget",
+      budget.id,
+      { properties: { spendCentsPerDay: cents } }
+    )
+    return
+  }
+  await createRecord(CORE_AUTHORITY, LLM_PACKAGE_NAME, "agentbudget", {
+    properties: {
+      agent: { [REFERENCE_KEY]: `${AGENT_KIND}/${agentId}` },
+      spendCentsPerDay: cents,
+    },
+  })
+}
+
+/** Remove the owner's override of one agent's budgets, so the cap it
+ * declares holds again. The daily cap is the only limit it carries today. */
+export function removeAgentBudget(budget: SubstrateRecord): Promise<void> {
+  return deleteRecord(budget)
 }
 
 /** The standing rules for agent writes (`recordpatchpolicy`). */

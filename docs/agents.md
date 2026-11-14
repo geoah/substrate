@@ -128,7 +128,8 @@ data:
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
   600), and `depth` (default 3, max 3). Its optional `spendCentsPerDay` caps
   what the agent's runs may spend in a rolling 24 hours, in US cents: absent
-  is no cap, and 0 holds every run ([the daily spend cap](#the-daily-spend-cap)).
+  is no cap, and 0 holds every run. Your own override of the agent's budgets
+  replaces it ([the daily spend cap](#the-daily-spend-cap)).
   Two more bound each tool call. `toolTimeoutSeconds` (max 600) is one
   `query` or function call's wall clock, never past the run's own deadline:
   a call past it answers the model a tool error naming the limit, and the
@@ -1188,7 +1189,10 @@ Two optional caps stop agent runs once they have spent a set amount in a
 rolling 24 hours, both in US cents
 ([decision 0149](decisions/0149-a-spend-cap-holds-an-agent-trigger-a-third-state-beside-running-and-parked.md)):
 
-- an agent's own `budgets.spendCentsPerDay`, over the runs it starts;
+- an agent's cap, over the runs it starts: the cap your `llm/agentbudget`
+  for the agent sets, where it sets one, and otherwise what the agent
+  declares in `budgets.spendCentsPerDay`
+  ([decision 0314](decisions/0314-an-owner-overrides-an-agents-budgets-and-the-operator-sets-each-repositorys-allowance.md));
 - the repository's, over every agent's runs: a core `setting` record with the
   id `substrate.reamde.dev/llm/spendCentsPerDay`. Nothing seeds it, so a
   repository has no cap until it holds that record with a value. The write
@@ -1208,6 +1212,32 @@ rolling 24 hours, both in US cents
       type: int
       value: "2000"
   ```
+
+**Your override of an agent's budgets** replaces the limits it declares,
+which is how you raise or lower the cap of an agent you cannot edit, such as
+Moss or an app's agent. The console's agent page sets, changes and removes
+its daily cap under Daily spend cap. It is a record of
+`substrate.reamde.dev/llm/agentbudget`:
+
+```yaml
+kind: substrate.reamde.dev/llm/agentbudget
+metadata:
+  id: moss
+data:
+  properties:
+    agent:
+      ref: substrate.reamde.dev/core/agent/substrate.reamde.dev/assistant/moss
+    spendCentsPerDay: 1000
+```
+
+An agent has one: writing a second is refused with `conflict`, naming the
+first, so change that one instead. A limit it leaves out keeps the declared
+value, and deleting it brings the declared cap back. Both caps hold on any
+key, your own or the operator's, where the operator's
+[allowance](#providers) holds beside them. Only the numeric limits of
+`budgets` belong here; `spendCentsPerDay` is the one it carries today. The
+kind is internal: a glob in an agent's `writes` never reaches it, so an agent
+that writes `*` cannot raise its own cap.
 
 Spend is what the threads recorded: the `costUSD` of every root thread whose
 `finishedAt` falls inside the window, times 100, plus what runs still going
@@ -1333,9 +1363,12 @@ defaults, cache, title model, models and prices. The row's own transport
 fields are ignored for it. An agent that names a model outside the entry's
 `models` is refused with the allowed list. The entry's `maxOutputTokens` is
 sent where the agent names no `maxTokens` and caps one that names more. Each
-such call is charged to the repository's allowance for the UTC day, apart
-from your own spend cap; at the limit a trigger is held and a chat or a call
-is refused, naming the site and when the allowance resets. Writing a key on
+such call is charged to the repository's allowance for the UTC day: the
+file's `budget.centsPerDay`, or the repository's own line under
+`budget.repositories` ([operations](operations.md#operator-defaults)). At the
+limit a trigger is held and a chat or a call is refused, naming the site and
+when the allowance resets. The agent's and the repository's own
+[spend caps](#the-daily-spend-cap) hold beside it. Writing a key on
 the row moves it to your key, and clearing the key moves it back. A deleted
 row stays deleted: recreate it under the same id, without a key, to use the
 operator's again.
@@ -1798,6 +1831,8 @@ and has kind `substrate.reamde.dev/llm/provider`. One to eight model ids
 are accepted, best first. The bound provider, the record named `default`,
 or the sole provider resolves it. The first model priced exactly or behind
 a gateway prefix runs; no match refuses the run. Published agents must
-declare `budgets.spendCentsPerDay` between 0 and 1000 US cents.
+declare `budgets.spendCentsPerDay` between 0 and 1000 US cents. Your own
+override of the agent's budgets replaces it
+([the daily spend cap](#the-daily-spend-cap)).
 
 Next: the [bundles catalog](bundles-catalog.md), what ships today.

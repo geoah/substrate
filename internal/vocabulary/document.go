@@ -74,6 +74,10 @@ const KindLLMMemory = PackageLLM + "/memory"
 // read into its system prompt (record 0241).
 const KindLLMInstruction = PackageLLM + "/instruction"
 
+// KindLLMAgentBudget is the owner's override of one agent's budgets, each
+// limit it sets replacing the declared one (record 0314).
+const KindLLMAgentBudget = PackageLLM + "/agentbudget"
+
 // SeededOwnerData reports whether a kind of a substrate-state package holds
 // the owner's own data, so its records are listed, edited and merged like any
 // of the owner's: the generic merge admits them (engine merge.go) and the

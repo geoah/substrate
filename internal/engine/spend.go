@@ -1,12 +1,14 @@
 package engine
 
-// The spend cap (decision 0149). An agent's `budgets.spendCentsPerDay` and the
-// repository's `substrate.reamde.dev/llm/spendCentsPerDay` setting cap what
-// root agent runs may spend in a rolling 24 hours. At a cap the dispatcher
-// HOLDS the agent's triggers: the delivery is not claimed, so the cursor or
-// fire state stays, no run row and no park is written, and the next pass
-// checks again. A chat, a direct call, a hand's run, wake or retry, and any
-// other root run are refused before the loop opens a thread.
+// The spend cap (decision 0149). An agent's cap and the repository's
+// `substrate.reamde.dev/llm/spendCentsPerDay` setting cap what root agent
+// runs may spend in a rolling 24 hours, whoever's key pays. An agent's cap
+// is the `spendCentsPerDay` of the owner's `llm/agentbudget` for it, where
+// that sets one, and otherwise its declared `budgets.spendCentsPerDay`
+// (decision 0314). At a cap the dispatcher HOLDS the agent's triggers: the delivery is not claimed, so the
+// cursor or fire state stays, no run row and no park is written, and the
+// next pass checks again. A chat, a direct call, a hand's run, wake or
+// retry, and any other root run are refused before the loop opens a thread.
 //
 // Spend is what the threads RECORDED: llm/thread.costUSD over the
 // repository's root threads whose `finishedAt` falls inside the window (a
@@ -88,10 +90,9 @@ type spendLedger struct {
 	fill sync.Mutex
 
 	mu sync.Mutex
-	// repo is the last read of the repository cap, sums the last snapshot
-	// of the window; nil until a check needs one and after a pass expires
-	// them.
-	repo *spendRepoCap
+	// caps is the last read of the owner's caps, sums the last snapshot of
+	// the window; nil until a check needs one and after a pass expires them.
+	caps *spendCaps
 	sums *spendSums
 	// runs is every root run going now, and the ones that ended lately whose
 	// cost a snapshot may not hold yet (spendRun).
@@ -150,14 +151,25 @@ type spendRun struct {
 	at time.Time
 }
 
-// spendRepoCap is one read of the repository's cap.
-type spendRepoCap struct {
+// spendCaps is one read of the caps the owner wrote: the repository's
+// setting and the cap of every live llm/agentbudget that sets one.
+type spendCaps struct {
 	readAt time.Time
 	// cents is the setting's value; nil is no cap.
 	cents *int
 	// bad is the setting's value when it is not a whole number of cents at
 	// or above 0; every agent run is held until it is.
 	bad string
+	// agents is the owner's cap of each agent an agentbudget sets one for,
+	// by agent identity.
+	agents map[string]ownerSpendCap
+}
+
+// ownerSpendCap is the cap the owner's llm/agentbudget sets for one agent.
+type ownerSpendCap struct {
+	cents int
+	// id is that record's id, which a hold names.
+	id string
 }
 
 // spendSums is one snapshot of the window's settled spend, in USD.
@@ -175,19 +187,19 @@ type spendThread struct {
 	usd   float64
 }
 
-// expire drops both reads, so the next check reads the cap and the snapshot
-// again. The dispatcher calls it at the start of every pass.
+// expire drops both reads, so the next check reads the caps and the
+// snapshot again. The dispatcher calls it at the start of every pass.
 func (s *spendLedger) expire() {
 	s.mu.Lock()
-	s.repo, s.sums = nil, nil
+	s.caps, s.sums = nil, nil
 	s.mu.Unlock()
 }
 
-// expireCap drops the cap's read alone: a hand's entry and a status read
+// expireCap drops the caps' read alone: a hand's entry and a status read
 // see a cap written a moment ago, while the snapshot stays one per pass.
 func (s *spendLedger) expireCap() {
 	s.mu.Lock()
-	s.repo = nil
+	s.caps = nil
 	s.mu.Unlock()
 }
 
@@ -323,9 +335,15 @@ func (s *spendLedger) unsettled(sums *spendSums, now time.Time) (map[string]floa
 	return byAgent, all
 }
 
-// spendCap reads the repository's cap: the setting row's value, parsed.
-func (ds *dataset) spendCap(ctx context.Context) (*spendRepoCap, error) {
-	out := &spendRepoCap{readAt: ds.spend.clock()}
+// readSpendCaps reads the caps the owner wrote: the setting row's value,
+// parsed, and the cap each live llm/agentbudget sets.
+func (ds *dataset) readSpendCaps(ctx context.Context) (*spendCaps, error) {
+	out := &spendCaps{readAt: ds.spend.clock()}
+	agents, err := ds.ownerSpendCaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out.agents = agents
 	row, err := ds.loadRowDB(ctx, eref{Kind: kindSetting, ID: spendSettingID})
 	if err != nil || row == nil || row.DeletedAt != nil {
 		return out, err
@@ -343,6 +361,43 @@ func (ds *dataset) spendCap(ctx context.Context) (*spendRepoCap, error) {
 	return out, nil
 }
 
+// ownerSpendCapsQuery reads every live llm/agentbudget that sets a daily
+// cap: its id, the agent it names and the cap.
+var ownerSpendCapsQuery = `
+	SELECT id, ` + referencePathSQL("props", propAgentBudgetAgent) + `, props->>'spendCentsPerDay'
+	FROM records
+	WHERE kind = $1 AND deleted_at IS NULL AND props ? 'spendCentsPerDay'`
+
+// ownerSpendCaps is the cap each live llm/agentbudget sets, by agent
+// identity. The write keeps one live record per agent
+// (guardAgentBudgetWrite), so where history holds two all the same, the
+// lower holds. A cap that does not read as whole cents is skipped: the kind
+// bounds it on write.
+func (ds *dataset) ownerSpendCaps(ctx context.Context) (map[string]ownerSpendCap, error) {
+	rows, err := ds.db.QueryContext(ctx, ownerSpendCapsQuery, vocabulary.KindLLMAgentBudget)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]ownerSpendCap{}
+	for rows.Next() {
+		var id string
+		var agent, value sql.NullString
+		if err := rows.Scan(&id, &agent, &value); err != nil {
+			return nil, err
+		}
+		n, ok := parseSpendCents(value.String)
+		if !agent.Valid || !ok {
+			continue
+		}
+		ident := strings.TrimPrefix(agent.String, kindAgent+"/")
+		if have, seen := out[ident]; !seen || n < have.cents || (n == have.cents && id < have.id) {
+			out[ident] = ownerSpendCap{cents: n, id: id}
+		}
+	}
+	return out, rows.Err()
+}
+
 // parseSpendCents reads a cap: a whole number of cents from 0 to the largest
 // integer an `int` property holds exactly. Parsed at the platform's int width,
 // so where int is 32 bits a cap past it is refused rather than truncated into
@@ -355,15 +410,15 @@ func parseSpendCents(value string) (int, bool) {
 	return n, true
 }
 
-// spendRepo returns the repository cap, read again when the last read is
+// spendCapsNow returns the owner's caps, read again when the last read is
 // gone or older than spendViewMaxAge.
-func (ds *dataset) spendRepo(ctx context.Context) (*spendRepoCap, error) {
+func (ds *dataset) spendCapsNow(ctx context.Context) (*spendCaps, error) {
 	s := &ds.spend
-	fresh := func() *spendRepoCap {
+	fresh := func() *spendCaps {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.repo != nil && s.clock().Sub(s.repo.readAt) < spendViewMaxAge {
-			return s.repo
+		if s.caps != nil && s.clock().Sub(s.caps.readAt) < spendViewMaxAge {
+			return s.caps
 		}
 		return nil
 	}
@@ -375,12 +430,12 @@ func (ds *dataset) spendRepo(ctx context.Context) (*spendRepoCap, error) {
 	if r := fresh(); r != nil {
 		return r, nil
 	}
-	r, err := ds.spendCap(ctx)
+	r, err := ds.readSpendCaps(ctx)
 	if err != nil {
 		return nil, err
 	}
 	s.mu.Lock()
-	s.repo = r
+	s.caps = r
 	s.mu.Unlock()
 	return r, nil
 }
@@ -473,19 +528,20 @@ func (ds *dataset) spendHold(ctx context.Context, ag *vocabulary.Agent, threadID
 }
 
 // personSpendHold says why a root run of ag is held at the person's own caps,
-// or "" when it may run: the agent's own cap first, then the repository's,
-// compared in cents against the spend, so a zero cap holds every run.
+// or "" when it may run: the agent's cap first (agentSpendCap), then the
+// repository's, compared in cents against the spend, so a zero cap holds
+// every run.
 func (ds *dataset) personSpendHold(ctx context.Context, ag *vocabulary.Agent) (string, error) {
-	agentCap := ag.Budgets.SpendCentsPerDay
-	repo, err := ds.spendRepo(ctx)
+	caps, err := ds.spendCapsNow(ctx)
 	if err != nil {
 		return "", err
 	}
-	if repo.bad != "" {
+	if caps.bad != "" {
 		return fmt.Sprintf("spend cap unreadable: setting %s holds %q, which is not a whole number of cents, so every agent run is held until it is",
-			spendSettingID, repo.bad), nil
+			spendSettingID, caps.bad), nil
 	}
-	if agentCap == nil && repo.cents == nil {
+	agentCap, where := agentSpendCap(ag, caps)
+	if agentCap == nil && caps.cents == nil {
 		return "", nil
 	}
 	agentUSD, allUSD, err := ds.spendOf(ctx, ag)
@@ -493,14 +549,28 @@ func (ds *dataset) personSpendHold(ctx context.Context, ag *vocabulary.Agent) (s
 		return "", err
 	}
 	if agentCap != nil && reachedCap(agentUSD, *agentCap) {
-		return fmt.Sprintf("spend cap reached: agent %s spent %d of its %d cents in the last 24 hours (budgets.spendCentsPerDay)",
-			ag.Identity(), spentCents(agentUSD), *agentCap), nil
+		return fmt.Sprintf("spend cap reached: agent %s spent %d of its %d cents in the last 24 hours (%s)",
+			ag.Identity(), spentCents(agentUSD), *agentCap, where), nil
 	}
-	if repo.cents != nil && reachedCap(allUSD, *repo.cents) {
+	if caps.cents != nil && reachedCap(allUSD, *caps.cents) {
 		return fmt.Sprintf("spend cap reached: the repository spent %d of its %d cents in the last 24 hours (setting %s)",
-			spentCents(allUSD), *repo.cents, spendSettingID), nil
+			spentCents(allUSD), *caps.cents, spendSettingID), nil
 	}
 	return "", nil
+}
+
+// agentSpendCap is the cap a root run of ag is held to, and where it is
+// written, or nil for none: the cap the owner's llm/agentbudget for the
+// agent sets, which replaces the declared one, else the declared
+// `budgets.spendCentsPerDay` (decision 0314).
+func agentSpendCap(ag *vocabulary.Agent, caps *spendCaps) (*int, string) {
+	if own, set := caps.agents[ag.Identity()]; set {
+		return &own.cents, vocabulary.KindLLMAgentBudget + " " + own.id
+	}
+	if ag.Budgets.SpendCentsPerDay == nil {
+		return nil, ""
+	}
+	return ag.Budgets.SpendCentsPerDay, "budgets.spendCentsPerDay"
 }
 
 // reachedCap compares a spend in USD against a cap in cents. The epsilon

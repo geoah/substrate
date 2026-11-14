@@ -221,9 +221,12 @@ type dataset struct {
 	// reads (bm25.go), refreshed after statsTTL.
 	statsCache searchStatsCache
 	// spend is the spend cap's bookkeeping (spend.go): the cached read of
-	// the window's settled spend and the repository cap, what running agent
+	// the window's settled spend and the owner's caps, what running agent
 	// chains have charged, and which triggers are held.
 	spend spendLedger
+	// allowance is the repository's allowance from the operator defaults
+	// file, resolved once (operatorallowance.go).
+	allowance repositoryAllowance
 	// unseeded, under unseededMu, is what the last unit seed skipped or
 	// failed to write (unitseed.go), which GET /api/v1/units lists.
 	unseededMu sync.Mutex

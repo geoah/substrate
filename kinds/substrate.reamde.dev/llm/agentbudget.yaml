@@ -1,0 +1,45 @@
+# The owner's override of one agent's budgets (decision record 0314). An
+# agent declares its budgets in `budgets`, and a shipped or published
+# agent's declaration is one no token may write, so this record is how the
+# owner changes them. Each property it sets replaces the declared one of the
+# same name, on whichever key the agent's runs go; one it leaves out keeps
+# the declared value. One live record per agent: the write of a second is
+# refused, so the record the owner reads is the one that holds.
+#
+# Only the numeric limits of `budgets` belong here. What an agent may read,
+# write or call, its prompt and its provider each have their own door, and
+# none is reachable through this record.
+#
+# INTERNAL: a glob in an agent's writes never reaches it, so an agent that
+# writes `*` cannot raise its own budgets; only a grant that names this kind
+# does.
+kind: substrate.reamde.dev/core/kind
+metadata:
+  id: substrate.reamde.dev/llm/agentbudget
+data:
+  authority: substrate.reamde.dev
+  package: llm
+  description: >-
+    The owner's override of one agent's budgets. Each limit it sets replaces
+    the one the agent declares; one it leaves out keeps the declared value.
+  purpose: internal
+  names:
+    singular: agentbudget
+  label:
+    singular: Agent budget
+    plural: Agent budgets
+  displayTemplate: "{agent}"
+  properties:
+    agent:
+      type: reference
+      kind: substrate.reamde.dev/core/agent
+      required: true
+      mustExist: true
+      description: the agent whose budgets this overrides
+    spendCentsPerDay:
+      type: int
+      min: 0
+      max: 9007199254740991
+      displayName: Daily spend cap
+      description: what the runs the agent starts may spend in any 24 hours,
+        in US cents; 0 holds every run

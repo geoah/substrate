@@ -167,6 +167,7 @@
   "substrate.reamde.dev/labs/analyte": "all",
   "substrate.reamde.dev/labs/labreport": "all",
   "substrate.reamde.dev/labs/labresult": "all",
+  "substrate.reamde.dev/llm/agentbudget": "all",
   "substrate.reamde.dev/llm/approval": "all",
   "substrate.reamde.dev/llm/instruction": "all",
   "substrate.reamde.dev/llm/interaction": "all",

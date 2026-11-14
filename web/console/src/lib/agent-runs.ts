@@ -479,6 +479,37 @@ export function agentSpendCap(agent: SubstrateRecord): number | undefined {
   return cents !== undefined && cents >= 0 ? cents : undefined
 }
 
+/** The cap one agent's runs are held to, whoever's key pays (decision
+ * record 0314): the cap the owner's override of its budgets sets, which
+ * replaces the declared one, else the cap it declares. */
+export type AgentCapInForce =
+  | { source: "own"; cents: number }
+  | { source: "declared"; cents: number }
+  | { source: "none" }
+
+/** The daily cap an `llm/agentbudget` sets, or undefined where it sets none. */
+export function budgetSpendCap(
+  budget: SubstrateRecord | null | undefined
+): number | undefined {
+  if (!budget || budget.deletedAt) return undefined
+  const cents = num(budget.properties.spendCentsPerDay)
+  return cents !== undefined && Number.isInteger(cents) && cents >= 0
+    ? cents
+    : undefined
+}
+
+/** Which cap holds an agent's runs, read as the engine reads it
+ * (`engine/spend.go` agentSpendCap). */
+export function agentCapInForce(
+  declared: number | undefined,
+  budget: SubstrateRecord | null | undefined
+): AgentCapInForce {
+  const own = budgetSpendCap(budget)
+  if (own !== undefined) return { source: "own", cents: own }
+  if (declared !== undefined) return { source: "declared", cents: declared }
+  return { source: "none" }
+}
+
 export interface CapSpend {
   /** What the runs counted against the cap recorded, in US dollars. */
   usd: number

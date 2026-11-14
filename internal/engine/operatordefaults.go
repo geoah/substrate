@@ -25,8 +25,8 @@ const embeddingsLabel = "Search by meaning"
 // operator's file offers it and whether it works, resolved by the same reads
 // dispatch, the embed drain, client resolution and function injection use
 // (operatorEntryFor, resolveProvider, resolveEmbedProvider, oauthClientFrom,
-// operatorFunctionEntry), and today's allowance. The operator's name is the site's, as the service
-// was given it.
+// operatorFunctionEntry), and this repository's allowance for today. The
+// operator's name is the site's, as the service was given it.
 func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefaults, error) {
 	out := substrate.OperatorDefaults{Items: []substrate.OperatorDefault{}}
 	op := ds.svc.operatorDefaults
@@ -35,8 +35,12 @@ func (ds *dataset) OperatorDefaults(ctx context.Context) (substrate.OperatorDefa
 		if err != nil {
 			return out, err
 		}
+		cents, err := ds.allowanceCents(ctx)
+		if err != nil {
+			return out, err
+		}
 		allowance := &substrate.OperatorAllowance{
-			CentsPerDay: op.Budget.CentsPerDay, UsedCents: wholeCents(used), ResetsAt: resets.UTC(),
+			CentsPerDay: cents, UsedCents: wholeCents(used), ResetsAt: resets.UTC(),
 		}
 		for _, slot := range slices.Sorted(maps.Keys(bySlot)) {
 			if c := wholeCents(bySlot[slot]); c > 0 {
