@@ -53,11 +53,15 @@ extension ChatApp {
     /// composer: a pending message the device could not save, then the
     /// conversation's own, then a rename, then a read of its rows that
     /// failed.
-    func failures(_ state: State, live: ConversationLive, row: ChatThread?, stored: [Turn], turns: [TurnPresentation]) -> ScreenFailures {
+    ///
+    /// - Parameter all: the chat's turns as one list, the rows' and what the
+    ///   stream has said since (`TurnFold`). Only a stored row says how it
+    ///   was cut, or went unanswered.
+    func failures(_ state: State, live: ConversationLive, row: ChatThread?, all: [Turn], turns: [TurnPresentation]) -> ScreenFailures {
         var out = ScreenFailures(reconnecting: live.failures.reconnecting)
         var context = failureContext(state, agent: live.agent, thread: live.thread)
         context.blocked = live.blocked
-        let all = stored + live.turns
+        let stored = all.filter { $0.row != nil }
 
         // Older turns first: the newest turn's card is the run's, below.
         var older = context

@@ -24,7 +24,7 @@ struct PresenterPartsTests {
         let live = try #require(await rig.harness.state.scenes["b"]?.current)
         try await rig.send(.draft("Hi"), to: live)
         try await rig.send(.send, to: live)
-        try await rig.harness.until { _ in await rig.live(live)?.overlay.turns.contains { $0.role == .assistant } == true }
+        try await rig.harness.until { _ in await rig.live(live)?.provisional.turns.contains { $0.role == .assistant } == true }
         // Nothing is on its way: the prefetch and the saves have ended.
         let mark = await rig.harness.effectsStarted
         try await rig.harness.untilIdle(since: mark, advancing: 2)

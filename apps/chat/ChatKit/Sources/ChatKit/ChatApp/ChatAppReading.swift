@@ -182,8 +182,8 @@ extension ChatAppState {
         conversations.first { $0.value.thread == thread }?.key
     }
 
-    /// Rule 3: a conversation owns its thread's rows while it runs, or
-    /// while its overlay waits for a handover read that failed.
+    /// A conversation reads its thread's rows itself while it runs, or
+    /// while what its stream drew waits for a read of them that failed.
     func owned(_ thread: String) -> Bool {
         conversations.values.contains { $0.thread == thread && $0.owns }
     }

@@ -93,6 +93,7 @@ extension ChatAppState {
         state.keys = nil
         state.others = [:]
         state.appActive = true
+        state.paces = false
         return state
     }
 
@@ -131,6 +132,7 @@ extension ChatAppState {
         state.automated = []
         state.others = [:]
         state.openings = [:]
+        state.paces = false
         return state
     }
 
@@ -153,6 +155,7 @@ extension ChatAppState {
         state.interactions = []
         state.requests = []
         state.approvals = []
+        state.paces = false
         return state
     }
 }

@@ -88,7 +88,7 @@ extension ChatApp {
                 reading: ConversationReads(live: live, state: state.conversed(live.thread), newFrom: state.conversations[key]?.newFrom),
                 at: input.now
             ) {
-                let pace = TurnPresenter.Pace(now: input.now)
+                let pace = TurnPresenter.Pace(now: input.now, reveals: state.paces)
                 let screen = conversation(state, key, live, pace: pace)
                 return (screen, pace.due ?? .distantFuture)
             }
@@ -273,10 +273,14 @@ extension ChatApp {
         let row = live.thread.flatMap { state.thread($0) }
         let held = live.thread.flatMap { state.transcripts[$0] }
         let agent = state.agent(live.agent)
-        let stored = held?.turns ?? []
-        // The stored rows' turns, presented once per read; a live turn each
-        // time it moves, and a tool's row once.
         let scope = "chat/\(key.rawValue)"
+        // The rows' turns, under the ids they are drawn by, made and
+        // presented once per read; a turn the stream draws each time it
+        // moves, and a tool's row once.
+        let rows = kept.part("\(scope)/rows", reading: RowReads(turns: held?.turns ?? [], aliases: live.aliases)) {
+            StoredTurns(held?.turns ?? [], aliases: live.aliases)
+        }
+        let stored = rows.turns
         let made = kept.part("\(scope)/stored", reading: StoredReads(turns: stored, agent: agent?.record)) {
             let titles = recordTitles(stored)
             let scan = CardScan(stored)
@@ -284,37 +288,63 @@ extension ChatApp {
                 turns: TurnPresenter.present(stored, agent: agent, liveKey: nil, titles: titles), titles: titles,
                 decided: Set(scan.decisions.keys), scan: scan)
         }
-        let tools = live.turns.map(\.tools)
-        let titles = kept.part("\(scope)/titles", reading: TitleReads(stored: made.titles, tools: tools)) {
-            made.titles.merging(recordTitles(live.turns)) { held, _ in held }
+        // One list of the two (`TurnFold`): a turn the stream drew, until
+        // the row with its key is read, which then takes its place and
+        // its id. A row whose reply is still being revealed is drawn on as
+        // the stream's turn was.
+        let reveal = { (turn: Turn) in "\(scope)/reveal/\(turn.id)" }
+        var entries: [TurnFold.Entry]?
+        var claims: [String: String] = [:]
+        if !live.provisional.isEmpty {
+            let folded = TurnFold.fold(rows, live.provisional)
+            (entries, claims) = (folded.entries, folded.claims)
+        } else if stored.contains(where: { kept.state(reveal($0), as: TextReveal.self)?.waits == true }) {
+            entries = stored.enumerated().map { TurnFold.Entry(turn: $1, stored: $0) }
+        }
+        if let folded = entries {
+            entries = folded.map { entry in
+                guard entry.stored != nil, kept.state(reveal(entry.turn), as: TextReveal.self)?.waits == true else { return entry }
+                return TurnFold.Entry(turn: entry.turn, stored: nil)
+            }
+        }
+        let own = entries?.filter { $0.stored == nil }.map(\.turn) ?? []
+        let all = entries?.map(\.turn) ?? stored
+        let titles = kept.part("\(scope)/titles", reading: TitleReads(stored: made.titles, tools: own.map(\.tools))) {
+            made.titles.merging(recordTitles(own)) { held, _ in held }
         }
         let decided = made.decided
         let turns =
-            made.turns
-            + live.turns.map { turn in
-                let isLive = turn.id == live.liveKey
+            entries?.map { entry -> TurnPresentation in
+                if let index = entry.stored { return made.turns[index] }
+                let turn = entry.turn
+                // Being written: the stream's last assistant turn, until
+                // its row is read.
+                let isLive = turn.row == nil && turn.id == live.liveKey
                 let presented = kept.timed(
                     "\(scope)/turn/\(turn.id)",
-                    reading: TurnReads(turn: turn, live: isLive, agent: agent?.record, decided: decided, titles: titles), at: pace.now
+                    reading: TurnReads(turn: turn, live: isLive, agent: agent?.record, decided: decided, titles: titles, reveals: pace.reveals),
+                    at: pace.now
                 ) {
-                    let own = TurnPresenter.Pace(now: pace.now)
+                    let own = TurnPresenter.Pace(now: pace.now, reveals: pace.reveals)
                     let presented = TurnPresenter.present(
                         turn, agent: agent, live: isLive, decided: decided, titles: titles, kept: kept, scope: scope, pace: own)
                     return (presented, own.due ?? .distantFuture)
                 }
                 // Kept or made: where its rows wait for their next parse,
-                // the screen is made again then too.
+                // or more of its text for its turn to be drawn, the screen
+                // is made again then too.
                 if presented.until != .distantFuture { pace.wait(until: presented.until) }
                 return presented.value
-            }
-        kept.keep(under: "\(scope)/turn/") { name in live.turns.contains { name == "\(scope)/turn/\($0.id)" } }
-        kept.keep(under: "\(scope)/tool/") { name in live.turns.contains { name.hasPrefix("\(scope)/tool/\($0.id)#") } }
-        kept.keep(under: "\(scope)/blocks/") { name in live.turns.contains { name == "\(scope)/blocks/\($0.id)" } }
+            } ?? made.turns
+        kept.keep(under: "\(scope)/turn/") { name in own.contains { name == "\(scope)/turn/\($0.id)" } }
+        kept.keep(under: "\(scope)/tool/") { name in own.contains { name.hasPrefix("\(scope)/tool/\($0.id)#") } }
+        kept.keep(under: "\(scope)/blocks/") { name in own.contains { name == "\(scope)/blocks/\($0.id)" } }
+        kept.keep(under: "\(scope)/reveal/") { name in own.contains { name == reveal($0) } }
         var scan = made.scan
-        scan.merge(CardScan(live.turns))
+        scan.merge(CardScan(own))
         let working = live.phase == .streaming || live.phase == .background
         var hero: NewChatHero?
-        if live.thread == nil, stored.isEmpty, live.turns.isEmpty {
+        if live.thread == nil, all.isEmpty {
             if let agent {
                 hero = NewChatHero(title: agent.name, description: agent.description, prompts: agent.examplePrompts, empty: nil)
             } else {
@@ -363,15 +393,19 @@ extension ChatApp {
             shown[id] = CardPresentation(
                 approval: CardPresenter.approval(id, card: state.cards[id], pending: state.approvals.first { $0.id == id }, outcome: nil))
         }
+        // The "New" line stands above a turn as it is drawn: a row whose
+        // turn was streamed in this conversation keeps the id the stream
+        // gave it.
+        var newLine = Self.newLine(held, from: state.conversations[key]?.newFrom)
+        if let row = newLine?.turn, let drawn = claims[row] ?? live.aliases[row] { newLine?.turn = drawn }
         return ConversationScreen(
             key: key, thread: live.thread, threadPath: live.thread.map { "\(Kinds.thread)/\($0)" },
             title: row.map(state.title) ?? (live.thread == nil ? "New Chat" : "Chat"),
             subtitle: working ? "\(live.name) is working…" : "with \(live.name)", subject: row?.subject ?? row.map(state.title) ?? "",
             agent: live.agent, agentName: live.name, hero: hero,
             olderHidden: (held?.records.count ?? 0) >= 500 ? "Older messages aren't shown here." : nil,
-            turns: turns, newLine: Self.newLine(held, from: state.conversations[key]?.newFrom), typing: live.awaitingFirstEvent,
-            status: status,
-            failures: failures(state, live: live, row: row, stored: stored, turns: turns), technical: technical,
+            turns: turns, newLine: newLine, typing: live.awaitingFirstEvent, status: status,
+            failures: failures(state, live: live, row: row, all: all, turns: turns), technical: technical,
             cards: shown, approvals: asked, titles: titles,
             composer: ComposerPresentation(
                 draft: live.draft, draftRevision: live.draftRevision, draftReplaced: live.draftReplaced, draftBefore: live.draftBefore,
@@ -380,9 +414,25 @@ extension ChatApp {
                 blocked: keyless == nil ? blocked : nil, blockedWhenEmpty: blocked == "Offline",
                 keyless: hero?.keyless == nil ? callout : nil,
                 picksAgent: live.thread == nil, agentLabel: live.agent.map(agentName) ?? "No assistant", listenOnOpen: live.listenOnOpen,
-                canSend: blocked == nil),
+                canSend: blocked == nil, status: Self.status(live, agent: agent)),
             streaming: live.phase == .streaming, stopping: live.stopping,
-            expandThinking: state.preferences.expandThinking)
+            expandThinking: state.preferences.expandThinking, sends: live.sends, opens: newLine.map { .turn($0.turn) } ?? .end)
+    }
+
+    /// What the composer says is happening, from the send to the end of
+    /// the reply: the newest thing the stream said.
+    static func status(_ live: ConversationLive, agent: Agent?) -> ComposerStatus? {
+        guard live.phase == .streaming else { return nil }
+        if live.stopping { return ComposerStatus(kind: .stopping, words: "Stopping…") }
+        if live.failures.reconnecting { return ComposerStatus(kind: .reconnecting, words: "Reconnecting…") }
+        if !live.connected { return ComposerStatus(kind: .connecting, words: "Connecting…") }
+        if let call = live.provisional.turns.reversed().lazy.compactMap({ $0.tools.last(where: \.running) }).first {
+            return ComposerStatus(kind: .tool, words: TurnPresenter.runningWords(call, agent: agent))
+        }
+        if let writing = live.provisional.writing, !writing.thinking, !writing.content.isEmpty, writing.tools.isEmpty {
+            return ComposerStatus(kind: .writing, words: "Writing…")
+        }
+        return ComposerStatus(kind: .thinking, words: "Thinking…")
     }
 
     /// The stored rows' part of a conversation: its turns as drawn, what
@@ -393,6 +443,11 @@ extension ChatApp {
         /// The suggestions a stored turn decided.
         var decided: Set<String>
         var scan: CardScan
+    }
+
+    struct RowReads: Equatable, Sendable {
+        var turns: [Turn]
+        var aliases: [String: String]
     }
 
     struct StoredReads: Equatable, Sendable {
@@ -411,6 +466,7 @@ extension ChatApp {
         var agent: Record?
         var decided: Set<String>
         var titles: [String: String]
+        var reveals: Bool
     }
 
     /// The cards some turns land, by what their rows say alone: each

@@ -66,6 +66,17 @@ public struct ReasoningPresentation: Codable, Hashable, Sendable {
     public var label: String
     public var thinking: Bool
     public var text: String
+    /// While the model thinks: the newest of its thinking, for a window of
+    /// a few lines that shows where it has got to. Empty once it has
+    /// thought, when the whole text is behind the label.
+    public var tail: String
+
+    public init(label: String, thinking: Bool, text: String, tail: String = "") {
+        self.label = label
+        self.thinking = thinking
+        self.text = text
+        self.tail = tail
+    }
 }
 
 public struct SummaryTurn: Codable, Hashable, Sendable {

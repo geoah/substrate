@@ -11,13 +11,15 @@ extension Conversation {
         let clock = environment.clock
         let ids = environment.ids
         let timeZone = environment.timeZone.identifier
+        let quiet = quiet
         switch effect.ask {
         case let .chat(agent, thread, message, id):
             return .sequence {
                 Self.relay { yield in
                     guard let client = await source.current() else { return }
                     do {
-                        let events = ChatAPI.chat(client, agent: agent, thread: thread, message: message, messageID: id, timezone: timeZone)
+                        let events = ChatAPI.chat(
+                            client, agent: agent, thread: thread, message: message, messageID: id, timezone: timeZone, quiet: quiet)
                         for try await event in events {
                             if event.kind == .thread, let named = event.thread {
                                 yield(.named(named))
@@ -37,7 +39,7 @@ extension Conversation {
                 Self.relay { yield in
                     guard let client = await source.current() else { return }
                     do {
-                        for try await event in ChatAPI.resume(client, thread: thread) {
+                        for try await event in ChatAPI.resume(client, thread: thread, quiet: quiet) {
                             if event.kind == .thread, let named = event.thread {
                                 yield(.named(named))
                             } else {
@@ -89,7 +91,7 @@ extension Conversation {
                         return
                     }
                     do {
-                        for try await event in ChatAPI.events(client, thread: thread) {
+                        for try await event in ChatAPI.events(client, thread: thread, quiet: quiet) {
                             yield(.streamed(event, at: clock.now))
                         }
                         yield(.streamEnded(nil, outcome: ids.next()))
@@ -147,7 +149,7 @@ extension Conversation {
                 }
             }
         case let .stop(thread):
-            // The stream's own `done` settles the overlay.
+            // The stream's own `done` settles the run.
             return .once {
                 guard let client = await source.current() else { return nil }
                 do {

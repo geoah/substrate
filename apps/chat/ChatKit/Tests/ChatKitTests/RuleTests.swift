@@ -55,23 +55,28 @@ struct SevenRules {
         try await rig.harness.until { await $0.runtime.state(of: key)?.settles == 1 }
     }
 
-    @Test func rule3_noRowsPublishUnderALiveOverlay() async throws {
+    @Test func rule3_rowsReadUnderAStreamTakeTheirTurnsPlaceAndDoubleNothing() async throws {
         let rig = ChatRig(baseRoutes() + [.init(method: "POST", path: "/chat", answer: .stream(replyStream, holdAfter: 2))])
         try await rig.signIn()
         let key = try await rig.newChat()
         try await rig.send(.draft("Hi"), to: key)
         try await rig.send(.send, to: key)
-        try await rig.harness.until { _ in await rig.live(key)?.overlay.turns.contains { $0.role == .assistant } == true }
-        // An ordinary read of the thread while it streams: refused outright.
+        try await rig.harness.until(advancing: 0.1) { _ in await rig.turns(key) == ["Hi", "Hel"] }
+        let ids = await rig.conversation(key)?.turns.map(\.id)
+        #expect(ids == ["sent-1", "turn-1"])
+        // While its conversation streams the thread, the list starts no read
+        // of its rows: the conversation's own are the ones in step with its
+        // stream.
         let mark = await rig.harness.effectsStarted
         await rig.harness.send(.show(thread: "t1", scene: "other"))
         try await rig.harness.untilIdle(since: mark, advancing: 1)
         #expect(rig.server.count("/api/v1/records", query: "llm/message") == 0)
-        #expect(await rig.harness.state.transcripts["t1"] == nil)
         rig.server.release()
-        // Its own handover read does.
+        // Its own read lands the rows, each in the place and under the id
+        // of the turn the stream drew.
         try await rig.harness.until { _ in await rig.live(key)?.settles == 1 }
         #expect(await rig.turns(key) == ["Hi", "Hello"])
+        #expect(await rig.conversation(key)?.turns.map(\.id) == ids)
     }
 
     @Test func rule4_aReadIsDroppedWhenItsThreadsEpochMoved() throws {
@@ -87,16 +92,43 @@ struct SevenRules {
         #expect(current.transcripts["t1"]?.records == rows)
     }
 
-    @Test func rule3_aCachedReadThatLandsUnderALiveOverlayIsDropped() throws {
+    @Test func rule3_rowsThatLandUnderAStreamAreDrawnOnceWithWhatItHasSaid() throws {
         let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos, verifiesParts: true)
         var state = signedInState()
         // The chat was opened, its disk read asked for; then a send took it.
-        state.conversations[ChildKey("k")] = .init(
+        let key = ChildKey("k")
+        state.conversations[key] = .init(
             seed: .init(thread: "t1", agent: helper, draft: "", listen: false), thread: "t1",
             agent: helper, owns: true)
-        let late = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 0, cachedRows)), to: state)
-        #expect(late.transcripts["t1"] == nil)
-        #expect(!late.asks.contains { if case .read = $0 { true } else { false } })
+        // Rows land under the stream that hold the message it sent and the
+        // reply it is part way through drawing.
+        let rows = CachedTranscript(
+            threadVersion: 3, full: false,
+            records: [messageRow("m1", "user", "Hi", turn: 0), messageRow("m2", "assistant", "Hello", turn: 1)], openedAt: nil)
+        state = try app.apply(.init(.cachedLoaded(thread: "t1", epoch: 0, rows)), to: state)
+        #expect(state.transcripts["t1"]?.records == rows.records)
+        // And no read of the list's own follows while the conversation reads.
+        #expect(!state.asks.contains { if case .read = $0 { true } else { false } })
+
+        let conversation = try #require(app.children(in: state)[key])
+        var live = conversation.initialState
+        let now = Date(timeIntervalSince1970: 1000)
+        live = try conversation.apply(.init(.sent(message: "Hi", agent: helper, at: now, baseline: nil, fromDraft: true, id: nil)), to: live)
+        live = try conversation.apply(.init(.named("t1")), to: live)
+        live = try conversation.apply(.init(.streamed(.delta("Hel", turn: 1, at: 0), at: now)), to: live)
+        let tree = app.present(
+            PresenterInput(
+                state: state, children: [key: conversation.present(PresenterInput(state: live, now: now))], now: now,
+                locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!))
+        // One message and one reply, under the ids the stream's turns
+        // had: the row of ordinal 1 is the turn the stream writes, whole.
+        let turns = try #require(tree.conversations[key]?.turns)
+        #expect(turns.map(\.id) == ["sent-1", "turn-1"])
+        guard case let .assistant(reply)? = turns.last?.body else {
+            Issue.record("The reply is not the last turn.")
+            return
+        }
+        #expect(reply.text == "Hello")
     }
 
     @Test func rule4_aCachedReadIsDroppedWhenItsThreadsEpochMoved() throws {
@@ -240,9 +272,9 @@ struct ConversationRuns {
         try await rig.harness.until { await $0.presentation.answered.serial == 1 }
         #expect(await rig.harness.presentation.answered.value == ChatAnswer(thread: "t1", words: "Helper answered"))
         let live = try #require(await rig.live(key))
-        #expect(live.phase == .idle && live.overlay.turns.isEmpty)
-        // The rows landed and the overlay cleared in one step: no tree ever
-        // held the turn twice.
+        #expect(live.phase == .idle && live.provisional.isEmpty)
+        // The rows landed and took the stream's turns' place in one step:
+        // no tree ever held a turn twice.
         await rig.harness.settle()
         #expect(seen.counts.allSatisfy { $0 <= 2 })
     }
@@ -259,7 +291,7 @@ struct ConversationRuns {
         #expect(live.chatFailure?.attempt == .send && live.chatFailure?.why == .http(status: 409, code: "conflict", reason: nil))
         #expect(live.chatFailure?.said == "a turn is already running on this thread" && live.chatFailure?.unconfirmed == false)
         #expect(live.draft == "Hi")
-        #expect(live.phase == .idle && live.overlay.turns.isEmpty && live.thread == nil)
+        #expect(live.phase == .idle && live.provisional.isEmpty && live.thread == nil)
         // The field takes the text it gave back.
         #expect(await rig.conversation(key)?.composer.draft == "Hi")
     }

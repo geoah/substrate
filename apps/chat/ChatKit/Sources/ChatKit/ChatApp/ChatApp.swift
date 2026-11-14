@@ -65,6 +65,9 @@ public struct ChatApp: LinkedApp {
         /// Whether the sign-out that follows forgets the saved chats.
         case forgetOnSignOut(Bool)
         case phase(AppPhase)
+        /// Whether a reply being written is revealed at a steady rate: the
+        /// device's to say, and false where it asks for less motion.
+        case pace(Bool)
     }
 
     /// An event, opaque outside ChatKit.
@@ -172,6 +175,7 @@ public struct ChatApp: LinkedApp {
         case .clearSavedChats: return [Event(.clearAsked)]
         case let .forgetOnSignOut(forget): return [Event(.forget(forget))]
         case let .phase(phase): return [Event(.phase(phase))]
+        case let .pace(paces): return paces == state.paces ? [] : [Event(.paced(paces))]
         }
     }
 
@@ -356,8 +360,8 @@ public struct ChatApp: LinkedApp {
                 keyless: state.keyless(agent, thread: entry.thread)?.name,
                 newestTurn: held.map { newestTurn($0.records) }, visible: entry.thread.map(visible.contains) ?? state.shown(key),
                 pollNudge: entry.pollNudge, resumeNudge: entry.resumeNudge, continuing: entry.continuing,
-                continues: state.continues, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved, landed: landed, landedOn: landedOn,
-                draftFound: entry.draftFound)
+                continues: state.continues, agents: state.agentsRevision ?? 0, sendsIDs: state.sendsIDs, kept: kept, unsaved: unsaved,
+                landed: landed, landedOn: landedOn, draftFound: entry.draftFound)
         }
         return out
     }

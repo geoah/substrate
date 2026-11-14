@@ -16,10 +16,15 @@ enum TurnPresenter {
     /// last parse was too recent.
     final class Pace {
         let now: Date
+        /// A reply being written is revealed at a steady rate
+        /// (`TextReveal`); false where motion is reduced, when each piece
+        /// is drawn as it arrives.
+        let reveals: Bool
         private(set) var due: Date?
 
-        init(now: Date) {
+        init(now: Date, reveals: Bool = false) {
             self.now = now
+            self.reveals = reveals
         }
 
         func wait(until instant: Date?) {
@@ -141,16 +146,43 @@ enum TurnPresenter {
         var reasoning: ReasoningPresentation?
         if let text = turn.reasoning, !text.isEmpty {
             let thinking = turn.thinking && live
-            reasoning = ReasoningPresentation(label: thinking ? "Thinking…" : thoughtFor(turn.reasoningMillis), thinking: thinking, text: text)
+            reasoning = ReasoningPresentation(
+                label: thinking ? "Thinking…" : thoughtFor(turn.reasoningMillis), thinking: thinking, text: text,
+                tail: thinking ? thinkingTail(text) : "")
+        }
+        // A reply being written is drawn up to where its reveal has got
+        // to, and is still being written, to everything that draws it,
+        // until all of it is drawn: a reply that ended a moment ago, or
+        // whose row has just been read, goes on arriving at the same rate.
+        var written = turn.content
+        var live = live
+        if let kept {
+            let name = "\(scope)/reveal/\(turn.id)"
+            let total = turn.content.unicodeScalars.count
+            if let pace, pace.reveals, live || kept.state(name, as: TextReveal.self)?.waits == true {
+                let (shown, due) = kept.state(name, from: TextReveal()) { reveal in
+                    let due = reveal.advance(to: total, at: pace.now)
+                    return (reveal.shown, due)
+                }
+                pace.wait(until: due)
+                if shown < total {
+                    written = String(String.UnicodeScalarView(turn.content.unicodeScalars.prefix(shown)))
+                    live = true
+                }
+            } else if live {
+                // Nothing is paced: what is held is drawn, and a reveal
+                // that starts later starts from there.
+                kept.state(name, from: TextReveal()) { $0.finish(total) }
+            }
         }
         let linked = live ? [] : (turn.mentions ?? []).filter { !$0.missing }.map { RecordReference(kind: $0.kind, id: $0.id) }
         // A reply cites its pages once it is finished: a streaming one is
         // still choosing them.
-        let cited = live || turn.content.isEmpty ? [] : replyLinks(turn.content)
+        let cited = live || written.isEmpty ? [] : replyLinks(written)
         // Parsed here, on the runtime's executor, and once for a text: a
         // piece of reasoning or a tool's event leaves the reply's rows as
         // they were.
-        let reads = BlockReads(text: turn.content, open: live)
+        let reads = BlockReads(text: written, open: live)
         let name = "\(scope)/blocks/\(turn.id)"
         let blocks: Blocks
         if let kept, let pace, live {
@@ -166,10 +198,10 @@ enum TurnPresenter {
             blocks = kept?.part(name, reading: reads) { Blocks(reads.text, open: reads.open) } ?? Blocks(reads.text, open: reads.open)
         }
         return AssistantTurn(
-            live: live, reasoning: reasoning, text: turn.content.isEmpty ? nil : turn.content,
+            live: live, reasoning: reasoning, text: written.isEmpty ? nil : written,
             blocks: KeyedList(blocks.rows), pages: blocks.pages,
             missing: (turn.mentions ?? []).filter(\.missing).map(\.path),
-            typing: live && turn.content.isEmpty && turn.tools.isEmpty && turn.reasoning == nil,
+            typing: live && written.isEmpty && turn.tools.isEmpty && turn.reasoning == nil,
             linked: linked, linkedLabel: "Linked records",
             sources: cited.isEmpty
                 ? nil
@@ -202,6 +234,39 @@ enum TurnPresenter {
         case let .webPage(page):
             SourceList(heading: nil, label: "Page", pills: [pill(page.url, title: page.title, index: nil)], empty: nil)
         }
+    }
+
+    /// The newest of a model's thinking: its last few lines' worth, from
+    /// the start of a word.
+    static let tailLength = 320
+
+    static func thinkingTail(_ text: String) -> String {
+        let scalars = text.unicodeScalars
+        guard scalars.count > tailLength else { return text }
+        var tail = Substring(scalars.suffix(tailLength))
+        if let space = tail.firstIndex(where: \.isWhitespace) { tail = tail[tail.index(after: space)...] }
+        return String(tail)
+    }
+
+    /// What a call runs, for a line that says it is running: a sub-agent by
+    /// its name, the substrate's own functions by what they do, any other
+    /// by its own words.
+    static func runningWords(_ call: ToolCall, agent: Agent?) -> String {
+        let resolved = resolveTool(agent: agent, name: call.name, callable: call.callable)
+        if let sub = resolved.subagent { return "Asking \(agentName(sub))…" }
+        switch resolved.function {
+        case HostFunction.query: return "Looking through your records…"
+        case HostFunction.write, HostFunction.edit: return "Writing a record…"
+        case HostFunction.propose: return "Suggesting a change…"
+        case HostFunction.ask: return "Asking you…"
+        case HostFunction.wait: return "Waiting for work in the background…"
+        case HostFunction.vocabulary: return "Declaring a kind…"
+        default: break
+        }
+        let fn = resolved.function ?? call.name
+        let local = fn.split(separator: "/").last.map(String.init) ?? fn
+        let words = local.splittingWords().joined(separator: " ").lowercased()
+        return words.isEmpty ? "Running a tool…" : "Running \(words)…"
     }
 
     static func thoughtFor(_ millis: Int?) -> String {

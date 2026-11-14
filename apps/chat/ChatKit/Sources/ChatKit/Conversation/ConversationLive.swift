@@ -11,13 +11,21 @@ public struct ConversationLive: Codable, Equatable, Sendable {
     var draftReplaced: String
     var draftBefore: String
     var draftGiven: [DraftGiven] = []
-    var turns: [Turn]
-    /// An attach's replay lost events: the overlay may miss text.
+    /// What the run's stream has said that the rows may not hold yet, with
+    /// the message the server has not taken after it, and the ids the rows
+    /// it has read keep (`TurnFold`).
+    var provisional: LiveRows
+    var aliases: [String: String]
+    /// An attach's replay lost events: a turn may miss text its row holds.
     var incomplete: Bool
     /// The assistant turn the stream is writing.
     var liveKey: String?
     /// A send is out and nothing has come back yet.
     var awaitingFirstEvent: Bool
+    /// The run's stream is open: the server answered it.
+    var connected: Bool
+    /// Moved by every send.
+    var sends: Int
     var phase: ConversationState.Phase
     var stopping: Bool
     var failures: ConversationFailures
@@ -41,18 +49,19 @@ extension Conversation {
         let streaming = state.phase == .streaming
         // A pending message no run is sending stands after everything
         // else, under the id its row will have.
-        var turns = state.overlay.turns
+        var provisional = state.provisional
         var unsent: String?
-        if let pending = state.pending, !turns.contains(where: { $0.id == pending.id }) {
-            turns.append(Turn(id: pending.id, role: .user, content: pending.message, pending: true))
+        if let pending = state.pending, !provisional.turns.contains(where: { $0.id == pending.id }) {
+            provisional.turns.append(Turn(id: pending.id, role: .user, content: pending.message, pending: true))
             unsent = pending.id
         }
         return ConversationLive(
             thread: state.thread, agent: agent(state), name: name(state), draft: state.carried, draftRevision: state.draftRevision,
             draftReplaced: state.draftReplaced, draftBefore: state.draftBefore, draftGiven: state.given,
-            turns: turns, incomplete: state.overlay.incomplete,
-            liveKey: streaming ? state.overlay.turns.last(where: { $0.role == .assistant })?.id : nil,
-            awaitingFirstEvent: streaming && state.overlay.turns.last?.role == .user,
+            provisional: provisional, aliases: state.aliases, incomplete: state.provisional.incomplete,
+            liveKey: streaming ? state.provisional.writing?.id : nil,
+            awaitingFirstEvent: streaming && state.provisional.turns.last?.role == .user,
+            connected: state.connected, sends: state.sends,
             phase: state.phase, stopping: state.stopping, failures: failures(state),
             deleted: state.deleted, listenOnOpen: state.listenOnOpen, blocked: blockedReason(state),
             unsent: unsent, resendBlocked: unsent == nil ? nil : resendBlocked(state), keyless: keyless, online: online)
