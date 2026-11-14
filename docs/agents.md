@@ -2032,15 +2032,19 @@ event, what the turn emitted so far, then its live events to its `done` or
 - A message with no `messageTaken` before the stream ends was not read by
   this run. Where the run ended on its own (`status: "ok"`, or
   `"overbudget"`) the message starts the next turn at once, with nobody
-  asking: the thread is `running` again, and an attach streams that turn. A
+  asking: the thread is `running` again, and an attach streams that turn,
+  which opens with a `messageTaken` for each message it starts from. A
   message sent while the final answer streams always goes this way.
 - A run that was stopped, or that failed, starts nothing. The message stays
   in the thread, and the person's next message or [continue](#continue)
   reads it with the rest.
 
-A message is `messageTaken` when the event says so and at no other time: do
-not infer it from ordinals, because the result of a tool call that was
-already under way can carry a `turn` past the message's.
+`messageTaken` is the signal. A client that missed it (an attach whose
+replay was cut) may read the same from ordinals, with care: a `delta`, a
+`reasoning` event or an `assistant` row whose `turn` is past the message's
+belongs to a call that read it. A tool event or a `tool` row says nothing:
+the result of a call already under way can carry a `turn` past the
+message's.
 
 A message adds no model call to the run it joins and moves none of its
 budgets: a steered run is one run under its turns, its tool calls and its

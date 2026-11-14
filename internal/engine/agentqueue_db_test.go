@@ -139,11 +139,12 @@ func TestAMessageSentWhileATurnRunsIsReadAtTheNextCall(t *testing.T) {
 	arrived1, release1 := make(chan struct{}), make(chan struct{})
 	arrived2, release2 := make(chan struct{}), make(chan struct{})
 	hold3, release3 := heldTurn(t)
+	arrived4, release4 := make(chan struct{}), make(chan struct{})
 	fake.script("lib",
 		fakeTurn{calls: []fakeCall{{"query", listWidgets}}, arrived: arrived1, release: release1},
 		fakeTurn{calls: []fakeCall{{"query", listWidgets}}, arrived: arrived2, release: release2},
 		fakeTurn{pieces: []string{"found ", "none"}, content: "found none", hold: hold3},
-		fakeTurn{content: "counted: none"},
+		fakeTurn{content: "counted: none", arrived: arrived4, release: release4},
 	)
 	turn := startChat(ds, librarian, substrate.ChatInput{Message: "list widgets", MessageID: "m0"})
 	waitArrived(t, arrived1, "the first call")
@@ -196,14 +197,21 @@ func TestAMessageSentWhileATurnRunsIsReadAtTheNextCall(t *testing.T) {
 	if eventOf(q3.log, substrate.AgentEventMessageTaken, "q3") != nil {
 		t.Fatal("the run said it took a message sent during its final answer")
 	}
-	// The next turn is the thread's by the time the run says done.
-	next, err := ds.AttachAgentTurn(ctx, thread, nil)
-	if errors.Is(err, substrate.ErrNoRunningTurn) {
-		waitUntil(t, "the next turn's settle", func() bool {
-			return len(fake.requestsOf("lib")) == 4 && threadProps(t, ds, thread)["status"] == threadOK
-		})
-	} else if err != nil || next.Reply != "counted: none" {
-		t.Fatalf("the turn the last message started = %+v, %v", next, err)
+	// The next turn is the thread's by the time the run says done, and its
+	// stream says which message it starts from.
+	following := newEventLog()
+	attached := make(chan chatEnd, 1)
+	go func() {
+		res, err := ds.AttachAgentTurn(ctx, thread, following.emit)
+		attached <- chatEnd{res, err}
+	}()
+	waitArrived(t, arrived4, "the next turn's call")
+	waitUntil(t, "the next turn to say what it starts from", func() bool {
+		return eventOf(following, substrate.AgentEventMessageTaken, "q3") != nil
+	})
+	close(release4)
+	if next := <-attached; next.err != nil || next.res == nil || next.res.Reply != "counted: none" {
+		t.Fatalf("the turn the last message started = %+v, %v", next.res, next.err)
 	}
 	waitUntil(t, "the next turn's settle", func() bool {
 		_, live := ds.runningThreads.Load(thread)
