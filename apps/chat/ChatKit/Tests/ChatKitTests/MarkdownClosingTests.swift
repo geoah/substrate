@@ -290,8 +290,14 @@ struct MarkdownClosingTests {
         // In a list's item and in a quote, whatever marks begin their lines.
         #expect(writing("- one\n- **two") == [.list(ordered: false, start: 0, items: [item("one"), item("**two**")])])
         #expect(writing("> said **so\n> and *more") == [.quote([.paragraph("said **so\nand *more***")])])
-        // A paragraph a blank line ended keeps what its writer left open.
+        // A paragraph a blank line ended keeps what its writer left open,
+        // through a line after it that waits and the block that line becomes.
         #expect(writing("a **bold\n\n") == [.paragraph("a **bold")])
+        #expect(writing("a **bold\n\n-") == [.paragraph("a **bold")])
+        #expect(writing("a **bold\n\n- [") == [.paragraph("a **bold")])
+        #expect(writing("a **bold\n\n---") == [.paragraph("a **bold"), .rule])
+        // Under it with no blank line between, the paragraph is still open.
+        #expect(writing("a **bold\n-") == [.paragraph("a **bold**")])
     }
 
     private func item(_ text: String, checked: Bool? = nil) -> MarkdownListItem {
@@ -355,6 +361,8 @@ struct MarkdownClosingTests {
         #expect(
             writing("| Item | Owner |\n| :--- | ---: |\n| Q4 | **A\n")
                 == [.table(header: ["Item", "Owner"], alignments: [.leading, .trailing], rows: [["Q4", "**A"]])])
+        // Under a heading, which is a block by itself, as under a blank line.
+        #expect(writing("## Costs\n| Item | Ow") == [.heading(level: 2, text: "Costs")] + header(["Item", "Ow"]))
         // Under a line of text it is that text's, as the parser reads it.
         #expect(writing("text\n| a | b") == [.paragraph("text\n| a | b")])
     }
