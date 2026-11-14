@@ -21,7 +21,7 @@ data:
   # version 19: `costUSD` says it is an estimate in US dollars (decision
   # record 0316).
   # version 20: `lastMessage` and `waitingOnPerson`, the two facts a chat
-  # list reads beside a person's mark (decision record 0311).
+  # list reads beside a person's mark (decision record 0313).
   version: 20
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
@@ -131,7 +131,7 @@ data:
       description: the start of the last reply a turn settled with; a turn
         that ends with no reply leaves the previous one
     # Stamped by the ENGINE on every write that settles the thread (decision
-    # record 0311): what a person's mark is compared with, so a list tells
+    # record 0313): what a person's mark is compared with, so a list tells
     # read from unread without reading a message. A `summary` row is the
     # engine's note on older rows and is never the one named.
     lastMessage:
@@ -141,7 +141,7 @@ data:
       description: the newest message the thread held when it last settled,
         by `turn` and then by when it was written; never a summary row
     # Counted again by the ENGINE in each write that creates or resolves one
-    # of the three (decision record 0311), so a list says a thread waits on
+    # of the three (decision record 0313), so a list says a thread waits on
     # somebody from the thread alone.
     waitingOnPerson:
       type: int

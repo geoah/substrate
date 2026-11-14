@@ -145,7 +145,7 @@ func (t *txn) handWrites(hand substrate.Actor, k scope.Kind) error {
 		return nil
 	case substrate.ActorTypeFunction, substrate.ActorTypeAgent:
 		// A person's place in a thread is theirs to keep: no declaration
-		// hands it to code (decision 0311).
+		// hands it to code (decision 0313).
 		if k.Ref == typeThreadMark {
 			return refuse("only a person, or an app acting for them, keeps their place in a thread")
 		}

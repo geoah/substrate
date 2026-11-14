@@ -1,7 +1,7 @@
 /** Read state of a chat, from two records: the thread, whose `lastMessage`
  * names the newest message it held when it last settled, and the signed-in
  * person's mark of it (`llm/threadmark`), whose `readThrough` names the
- * newest message they have seen (decision 0311). Nothing here is stored:
+ * newest message they have seen (decision 0313). Nothing here is stored:
  * unread is derived each time the list is drawn.
  *
  * A thread with no `lastMessage` settled on a server from before marks, or

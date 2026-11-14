@@ -1,7 +1,7 @@
 package engine
 
 // Repository migration 14 (repomigration_0014_mark_existing_threads_read.go,
-// decision 0311): threads from before marks are given their newest message
+// decision 0313): threads from before marks are given their newest message
 // and their count, every person a mark that reads through it, a second run
 // finds nothing to do, and a rebuild reproduces the fold.
 

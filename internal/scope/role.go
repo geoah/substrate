@@ -66,7 +66,7 @@ var ShippedRoles = []ShippedRole{
 	},
 	{
 		// A viewer reads chats, and reading one moves their own mark of it
-		// (decision 0311): the one kind a viewer writes, held by the engine
+		// (decision 0313): the one kind a viewer writes, held by the engine
 		// to the person's own record.
 		Role: Role{ID: RoleViewer, Rules: []Rule{
 			{Verbs: []Verb{Read}, Kinds: []string{"*"}},

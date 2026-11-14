@@ -1187,7 +1187,7 @@ or until the next start, whose first trigger pass reruns it once
 
 How far a person has read a thread is a record of their own, so a reply read
 on one device is read on every other
-([decision 0311](decisions/0311-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md)).
+([decision 0313](decisions/0313-how-far-a-person-has-read-a-thread-is-a-record-of-their-own-and-its-position-only-moves-forward.md)).
 The kind is `substrate.reamde.dev/llm/threadmark`, one record per thread and
 person:
 

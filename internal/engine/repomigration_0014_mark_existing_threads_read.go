@@ -2,7 +2,7 @@ package engine
 
 // Repository migration 14: every thread a chat list shows is given its
 // newest message and what waits on a person in it, and every person a mark
-// that reads through it (decision 0311).
+// that reads through it (decision 0313).
 //
 // A thread from before this release settled without `lastMessage`, and
 // nobody has a mark of it. Left so, every one of them would read as never
