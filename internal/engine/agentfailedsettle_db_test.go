@@ -10,6 +10,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -228,20 +229,28 @@ func TestATurnThatLostItsLeaseLeavesTheNewerClaimRunning(t *testing.T) {
 // The settle after a failed write goes ahead of background writers queued at
 // the write gate: with the lock held, one background writer admitted and two
 // queued, the reply write times out in the queue, and the settle commits
-// before the writer queued last runs.
+// before either queued writer runs. The writers' wait is kept out of reach of
+// the gate's bound (backgroundMaxWait), past which the gate admits a queued
+// writer while a person's write is still on its way to the lock.
 func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T) {
 	t.Parallel()
 	ds, fake := openAgentDataset(t)
 	ds.agentWriteTimeout = 300 * time.Millisecond
 	ds.failedSettleTimeout = 30 * time.Second
+	ds.gate.maxWait = time.Hour
 	lock := newChangelogHolder(t, ds)
 	const writers = 3
 	var mu sync.Mutex
 	var seen []string // the thread status each background writer saw, in run order
 	var wg sync.WaitGroup
+	// placed is closed once the hook has the lock held and the writers at the
+	// gate; stood says whether they stood one admitted and the rest queued.
+	placed := make(chan struct{})
+	var stood bool
 	fake.script("chat", fakeTurn{content: "never lands"})
 	turn, log := chatInBackground(ds, "chatter", "hi")
 	onFirstReply(ds, func() {
+		defer close(placed)
 		thread := log.snapshot()[0].Thread
 		lock.hold()
 		for range writers {
@@ -262,19 +271,31 @@ func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T
 			}()
 		}
 		// The reply write queues behind them.
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			admitted, queued, _ := gateState(&ds.gate)
-			if admitted && queued == writers-1 {
-				return
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
+		stood = gateReaches(&ds.gate, func(admitted bool, queued, _ int) bool {
+			return admitted && queued == writers-1
+		})
 	})
-	waitUntil(t, "the settle to wait at the changelog lock as an owner write", func() bool {
-		_, _, owners := gateState(&ds.gate)
-		return owners == 1
-	})
+	// The settle is waited for only once the hook holds the lock: the chat's
+	// own message is a person's write too, and taking it for the settle
+	// releases the lock before the hook takes it, so the writers run with
+	// nothing to queue behind.
+	select {
+	case <-placed:
+	case err := <-turn:
+		t.Fatalf("the turn ended (%v) before its reply write was held", err)
+	case <-time.After(hangWait):
+		t.Fatal("the turn never reached its reply write")
+	}
+	if !stood {
+		admitted, queued, owners := gateState(&ds.gate)
+		t.Fatalf("the writers never stood one admitted and %d queued: admitted=%v queued=%d owners=%d", writers-1, admitted, queued, owners)
+	}
+	if !gateReaches(&ds.gate, func(admitted bool, queued, owners int) bool {
+		return admitted && queued == writers-1 && owners == 1
+	}) {
+		admitted, queued, owners := gateState(&ds.gate)
+		t.Fatalf("the settle never reached the gate as a person's write with the writers in place: admitted=%v queued=%d owners=%d", admitted, queued, owners)
+	}
 	lock.release()
 	_ = waitTurn(t, turn)
 	wg.Wait()
@@ -283,9 +304,28 @@ func TestASettleAfterAFailedWriteGoesAheadOfQueuedBackgroundWriters(t *testing.T
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(seen) != writers || seen[writers-1] != threadError {
-		t.Fatalf("background writers saw %v, want the last one to see the settled thread", seen)
+	if len(seen) != writers || slices.ContainsFunc(seen[1:], func(s string) bool { return s != threadError }) {
+		t.Fatalf("background writers saw %v, want both queued ones to see the settled thread", seen)
 	}
+}
+
+// hangWait bounds a wait for a state a test sets up: a deadline only a hang
+// reaches, since a loaded runner takes seconds over what a laptop does at
+// once.
+const hangWait = 2 * time.Minute
+
+// gateReaches waits for the write gate to reach cond and reports whether it
+// did within hangWait. It never fails the test, so the agent's own goroutine
+// may wait with it.
+func gateReaches(g *writeGate, cond func(admitted bool, queued, owners int) bool) bool {
+	deadline := time.Now().Add(hangWait)
+	for !cond(gateState(g)) {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return true
 }
 
 // A settle that fails too leaves the thread `running`, and the reaper that
