@@ -233,11 +233,11 @@ public struct ChatApp: LinkedApp {
             // A field tells its conversation what it holds as the app leaves
             // the front, in either order with the app's own word of it: so
             // the drafts are written at once on that word, and at once for
-            // whatever changes them while the app is away.
-            var leaving = false
-            if case let .phase(phase) = event.step { leaving = phase != .active }
-            if leaving || state.drafts != previous.drafts {
-                asks.append(.saveDrafts(disk, state.drafts, atOnce: leaving || !state.appActive))
+            // whatever changes them until the app is in front again.
+            var left = false
+            if case let .phase(phase) = event.step { left = phase != .active }
+            if left || state.drafts != previous.drafts {
+                asks.append(.saveDrafts(disk, state.drafts, atOnce: state.leaving))
             }
             if state.preferences != previous.preferences { asks.append(.savePreferences(disk, state.preferences)) }
         }

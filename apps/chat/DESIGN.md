@@ -589,9 +589,11 @@ the microphone, and Send, which morphs into Stop while a turn runs
   (`DraftTests`: on a send, on leaving the front, on switching chats, on a
   refusal, on dictation). A send tells the field's whole text first,
   whatever was told before, so two windows on one chat each send what their
-  own field shows. The drafts are written to the disk at once when the app
-  leaves the front, and at once for whatever a field says while it is
-  away; at any other time the write waits 0.6 s for more.
+  own field shows. The drafts are written to the disk at once from the
+  app's first word of leaving the front (inactive) until it is in front
+  again, whichever of that word and the field's own arrives first, and in
+  the order the writes were asked for, so an older one that comes to run
+  later is dropped; at any other time the write waits 0.6 s for more.
 
 ### Settings
 
