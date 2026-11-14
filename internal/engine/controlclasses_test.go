@@ -25,7 +25,9 @@ var seededNoControl = map[string]string{
 		"and its accept writes as the hand that decides, held to that hand's rules",
 	"substrate.reamde.dev/core/recordpatchrequest": "a proposed change waiting for the owner: a request is the gate, writes nothing until it is decided, " +
 		"and its accept writes as the hand that decides, held to that hand's rules",
-	"substrate.reamde.dev/core/repository":          "the repository's read-only description of itself, projected from the control plane by the engine",
+	"substrate.reamde.dev/core/repository": "the repository's read-only description of itself, projected from the control plane by the engine",
+	"substrate.reamde.dev/core/release": "one version of a package the repository publishes: a system kind the generic surface refuses every write of " +
+		"(forbidSystemKind), written only by the publish and the release behind mayPublish, and never changed or removed",
 	"substrate.reamde.dev/core/triggerrun":          "one trigger delivery attempt, written by the engine once it settles",
 	"substrate.reamde.dev/llm/approval":             "a call an agent waits to make: approving it runs a call the agent's grant already allows",
 	"substrate.reamde.dev/llm/instruction":          "the owner's standing direction to one agent: text its prompt reads, which grants it nothing",
