@@ -5,6 +5,7 @@ package testenv_test
 // material the records only name.
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -13,12 +14,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -800,4 +803,153 @@ func TestTheKeptDirectorysImportStoppedAtEachStepIsFinishedByTheNextStart(t *tes
 			checkKeptDirectoryIn(t, dir, root, keptConversions, testenv.WithDSN(dsn))
 		})
 	}
+}
+
+// keptActorSpelling is a prefixed hand's retired spelling as a whole JSON
+// string; a label or annotation key keeps its `<actor>/<name>` namespace and
+// carries a slash, which this never matches. keptHandAsText is a key that
+// names a hand, holding a string: a stored attribution is a link, an object,
+// so a string under one of the three is the retired spelling.
+var (
+	keptActorSpelling = regexp.MustCompile(`"(?:function|agent|bundle|app|mapping|policy|connector):[^"/]*"`)
+	keptHandAsText    = regexp.MustCompile(`"(declaredBy|createdBy|caller)":"([^"]*)"`)
+	keptHandOnALine   = regexp.MustCompile(`"(actor|triggeredBy)":"([^"]*)"`)
+	keptActorRef      = regexp.MustCompile(`"ref":"` + regexp.QuoteMeta(vocabulary.CoreKind(vocabulary.DocActor)) + `/([^"]+)"`)
+)
+
+// AN IMPORTED KEPT DIRECTORY HOLDS NO ACTOR AS TEXT (validation item 1 of the
+// 1.0 review). The kept release's repository, imported and converted under
+// the current code, is read where a client reads it: its history as the
+// export carries it, every change event the feed serves, and every record
+// with its marks. No line, event or value names a hand by its spelling, a
+// line's token is never `principal`, and every hand is named by an actor
+// record's id. That each id resolves to a record of its hand's type is the
+// actor fill's test (actorfill_db_test.go).
+func TestAnImportedKeptDirectoryHoldsNoActorAsText(t *testing.T) {
+	k := checkKeptDirectory(t, filepath.Join(keptRoot, "v0.123.1"), keptConversions)
+	linked := 0
+	link := func(where, id string) {
+		t.Helper()
+		if id == "" {
+			return
+		}
+		if !vocabulary.MintedID(id) {
+			t.Errorf("%s holds %q, which is no actor record's id", where, id)
+			return
+		}
+		linked++
+	}
+	textual := func(kind string) bool {
+		// A record of the actor kind holds its own name, and a declaration's
+		// text is its own.
+		return kind == vocabulary.CoreKind(vocabulary.DocActor) || vocabulary.IsDeclarationRef(kind)
+	}
+
+	// The history, as the export carries it.
+	status, raw, _ := k.e.DoRaw(http.MethodGet, "/api/v1/export", nil, nil)
+	if status != http.StatusOK {
+		t.Fatalf("the export: %d %s", status, raw)
+	}
+	lines := 0
+	tr := tar.NewReader(bytes.NewReader(raw))
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(hdr.Name, "/"+changelogfile.ChangelogSubdir+"/") || !strings.HasSuffix(hdr.Name, ".ndjson") {
+			continue
+		}
+		body, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range bytes.Split(bytes.TrimSpace(body), []byte("\n")) {
+			e, _, err := changelogfile.Decode(line)
+			if err != nil {
+				t.Fatalf("%s: %v", hdr.Name, err)
+			}
+			lines++
+			where := fmt.Sprintf("line %d", e.Seq)
+			link(where+" actor", e.Actor)
+			link(where+" onBehalfOf", e.OnBehalfOf)
+			if e.HasPrincipal {
+				t.Errorf("%s carries `principal`", where)
+			}
+			if textual(e.Kind) {
+				continue
+			}
+			if m := keptActorSpelling.Find(e.Payload); m != nil {
+				t.Errorf("%s (%s %s) holds the spelling %s", where, e.Op, e.Kind, m)
+			}
+			for _, m := range keptHandAsText.FindAllSubmatch(e.Payload, -1) {
+				t.Errorf("%s (%s %s) names a hand by %s %q, not a link", where, e.Op, e.Kind, m[1], m[2])
+			}
+			for _, m := range keptHandOnALine.FindAllSubmatch(e.Payload, -1) {
+				link(where+" "+string(m[1]), string(m[2]))
+			}
+			for _, m := range keptActorRef.FindAllSubmatch(e.Payload, -1) {
+				link(where+" link", string(m[1]))
+			}
+			if bytes.Contains(e.Payload, []byte(`"principal"`)) {
+				t.Errorf("%s carries principal in its payload", where)
+			}
+		}
+	}
+	if lines == 0 {
+		t.Fatal("the export carried no history line")
+	}
+
+	// Every change event the feed serves.
+	events := 0
+	q := url.Values{"first": {"500"}}
+	for {
+		var page substrate.ChangePage
+		k.e.MustJSON(http.MethodGet, "/api/v1/changes?"+q.Encode(), nil, &page)
+		for _, c := range page.Changes {
+			events++
+			link(fmt.Sprintf("change %d actor", c.Seq), c.Actor)
+			link(fmt.Sprintf("change %d onBehalfOf", c.Seq), c.OnBehalfOf)
+		}
+		if page.Cursor == 0 {
+			break
+		}
+		q = url.Values{"first": {"500"}, "before": {fmt.Sprint(page.Cursor)}, "generation": {page.Generation}}
+	}
+	// The feed serves the record changes, not every line (a trigger's
+	// bookkeeping is a line and no event), so the two counts differ.
+	if events == 0 {
+		t.Fatal("the feed served no event")
+	}
+
+	// Every record as a single read serves it, its marks among it.
+	for path, rec := range k.got {
+		kind := fmt.Sprint(rec.Read["kind"])
+		body, err := json.Marshal(rec.Read)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range keptActorRef.FindAllSubmatch(body, -1) {
+			link(path, string(m[1]))
+		}
+		if textual(kind) {
+			continue
+		}
+		if m := keptActorSpelling.Find(body); m != nil {
+			t.Errorf("%s holds the spelling %s", path, m)
+		}
+		for _, m := range keptHandAsText.FindAllSubmatch(body, -1) {
+			t.Errorf("%s names a hand by %s %q, not a link", path, m[1], m[2])
+		}
+		if kind == vocabulary.CoreKind("package") {
+			if props, _ := rec.Read["properties"].(map[string]any); props["actors"] != nil {
+				t.Errorf("%s still lists actors: %v", path, props["actors"])
+			}
+		}
+	}
+
+	t.Logf("%d history lines, %d change events and %d records, naming a hand by an id %d times", lines, events, len(k.got), linked)
 }
