@@ -71,6 +71,14 @@ struct Desk: Controller {
 
     func resetting(of event: Event, on state: State) -> Bool { event == .cleared }
 
+    /// The desk's own under no key, with no clerk in it, and each clerk
+    /// under its key.
+    func parts(of presentation: Presentation) -> [PresentationPart] {
+        var own = presentation
+        own.clerks = [:]
+        return [PresentationPart(own)] + presentation.clerks.keys.sorted().map { PresentationPart(presentation.clerks[$0], at: [$0]) }
+    }
+
     func children(in state: State) -> [ChildKey: Clerk] {
         Dictionary(uniqueKeysWithValues: state.clerks.map { ($0, Clerk(notice: state.notice, gates: gates)) })
     }

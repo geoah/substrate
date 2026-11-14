@@ -28,6 +28,11 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     private var pending: [() -> Void] = []
     private var subscribers: [Int: AsyncStream<Root.Presentation>.Continuation] = [:]
     private var nextSubscriber = 0
+    /// The readers of parts: what each has not read yet, and its wake-up.
+    private var partReaders: [Int: (box: PartsBox<Root.Presentation>, wake: AsyncStream<Void>.Continuation)] = [:]
+    /// The parts as last sent to them, by path, in the order the root named
+    /// them; nil while nobody reads parts, when none are made.
+    private var sentParts: (order: [[ChildKey]], held: [[ChildKey]: PresentationPart])?
 
     init(
         environment: AppEnvironment, options: RuntimeOptions,
@@ -117,8 +122,9 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     /// events asked for, in the order the events were applied.
     private func flush() {
         Meter.shared.time(.flush) {
-            root.present()
-            publish()
+            // The root's host has compared the tree with the one before:
+            // nothing here compares it again.
+            if root.present() { publish() }
         }
         runPending()
     }
@@ -145,10 +151,64 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
     private func publish() {
         let span = Meter.shared.begin(.publish)
         defer { Meter.shared.end(span) }
-        guard let presentation = root.presentation, presentation != published else { return }
+        guard let presentation = root.presentation else { return }
         published = presentation
         trace(.published)
         for continuation in subscribers.values { continuation.yield(presentation) }
+        guard !partReaders.isEmpty else { return }
+        let moved = split(presentation)
+        for reader in partReaders.values {
+            reader.box.put(presentation, changed: moved.changed, removed: moved.removed)
+            reader.wake.yield()
+        }
+    }
+
+    /// The presentation in the parts its root names, against the parts last
+    /// sent: the ones whose value differs, and the paths no longer named.
+    /// A path named twice keeps the part named last.
+    private func split(_ presentation: Root.Presentation) -> (changed: [PresentationPart], removed: [[ChildKey]]) {
+        let before = sentParts?.held ?? [:]
+        var order: [[ChildKey]] = []
+        var held: [[ChildKey]: PresentationPart] = [:]
+        for part in root.controller.parts(of: presentation) {
+            if held.updateValue(part, forKey: part.path) == nil { order.append(part.path) }
+        }
+        var changed: [PresentationPart] = []
+        for path in order {
+            guard let part = held[path] else { continue }
+            if let sent = before[path], sent.same(as: part) { continue }
+            changed.append(part)
+        }
+        let removed = (sentParts?.order ?? []).filter { held[$0] == nil }
+        sentParts = (order, held)
+        return (changed, removed)
+    }
+
+    /// A reader of parts: every part as it stands first, then what each
+    /// publish moved.
+    func subscribeParts() -> PresentationParts<Root.Presentation> {
+        let (wakes, wake) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let box = PartsBox<Root.Presentation>()
+        nextSubscriber += 1
+        let id = nextSubscriber
+        if let published {
+            if sentParts == nil { _ = split(published) }
+            let parts = sentParts.map { sent in sent.order.compactMap { sent.held[$0] } } ?? []
+            box.put(published, changed: parts, removed: [])
+            wake.yield()
+        }
+        partReaders[id] = (box, wake)
+        let hop = hop
+        let loop = Weak(self)
+        wake.onTermination = { _ in
+            Task { await hop { loop.target?.dropPartReader(id) } }
+        }
+        return PresentationParts(box: box, wakes: wakes)
+    }
+
+    private func dropPartReader(_ id: Int) {
+        partReaders[id] = nil
+        if partReaders.isEmpty { sentParts = nil }
     }
 
     func subscribe() -> AsyncStream<Root.Presentation> {
@@ -174,5 +234,8 @@ final class Loop<Root: Controller>: LoopServices, @unchecked Sendable {
         pending = []
         for continuation in subscribers.values { continuation.finish() }
         subscribers = [:]
+        for reader in partReaders.values { reader.wake.finish() }
+        partReaders = [:]
+        sentParts = nil
     }
 }

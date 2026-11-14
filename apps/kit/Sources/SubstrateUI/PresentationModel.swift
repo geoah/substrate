@@ -3,13 +3,23 @@ import Observation
 import SwiftUI
 import SubstrateRuntime
 
-/// A root's presentations republished on the main actor for SwiftUI: a
-/// view reads `presentation` and sends commands, and the runtime itself
-/// runs on its own executor, where it opens (a journal folded) at the first
-/// command or read, never on the main actor. Commands reach it in the order
-/// they were sent, so a field's edits are never applied out of order. One
-/// per root, made where the root is, once: a view keeps it in its state,
-/// never makes it in an initialiser SwiftUI calls again.
+/// A root's presentations republished on the main actor for SwiftUI, in
+/// parts: a view reads the part it draws by the path its controller says it
+/// goes out under (`part(at:)`, from `Controller.parts(of:)`), and is drawn
+/// again only when that part changes, so a list is not drawn again for what
+/// moved in a child beside it. `presentation` is the whole tree, for a view
+/// that draws all of it and for code that reads it outside a view; it is
+/// set at every publish, so a view reading it is drawn again at each.
+///
+/// The runtime itself runs on its own executor, where it opens (a journal
+/// folded) at the first command or read, never on the main actor, and where
+/// each publish is split into its parts and compared with the one before:
+/// the main actor only takes the parts that moved. Parts of one publish are
+/// set together, so a view never sees one half of a step. Commands reach
+/// the runtime in the order they were sent, so a field's edits are never
+/// applied out of order. One per root, made where the root is, once: a view
+/// keeps it in its state, never makes it in an initialiser SwiftUI calls
+/// again.
 @MainActor
 @Observable
 public final class PresentationModel<Root: Controller> {
@@ -21,6 +31,12 @@ public final class PresentationModel<Root: Controller> {
     @ObservationIgnored private var signalHandlers: [(Root.Presentation) -> Void] = []
     /// The model made the runtime, so it closes it when it goes.
     @ObservationIgnored private var ownsRuntime = false
+    /// One observable value per path a part goes out under, made when the
+    /// part is first published or first read, whichever comes first.
+    @ObservationIgnored private var slots: [[ChildKey]: PartSlot] = [:]
+    /// The runtime has said how the tree stands: until it has, the parts
+    /// are the first presentation's.
+    @ObservationIgnored private var followed = false
 
     private enum Command: Sendable {
         case root(Root.Command)
@@ -34,6 +50,7 @@ public final class PresentationModel<Root: Controller> {
         presentation = first
         let (stream, commands) = AsyncStream<Command>.makeStream()
         self.commands = commands
+        for part in runtime.controller.parts(of: first) { slot(part.path).value = part.value }
         sending = Task {
             for await command in stream {
                 switch command {
@@ -44,13 +61,9 @@ public final class PresentationModel<Root: Controller> {
             }
         }
         following = Task { [weak self, runtime] in
-            for await next in await runtime.presentations() {
+            for await update in await runtime.parts() {
                 guard let self else { return }
-                let span = Meter.shared.begin(.republish)
-                defer { Meter.shared.end(span) }
-                guard next != presentation else { continue }
-                presentation = next
-                for handler in signalHandlers { handler(next) }
+                take(update)
             }
         }
     }
@@ -65,6 +78,44 @@ public final class PresentationModel<Root: Controller> {
                 locale: environment.locale, timeZone: environment.timeZone))
         self.init(Runtime(root, environment: environment, options: options), first: first)
         ownsRuntime = true
+    }
+
+    /// The part published under `path`, the keys from the root down, nil
+    /// while none is: a conversation's screen under its key, an app's own
+    /// under `[LinkController.appKey]`. Read in a view's body, it draws the
+    /// view again when this part changes, appears or goes, and for nothing
+    /// else.
+    public func part<Value>(at path: [ChildKey], as type: Value.Type = Value.self) -> Value? {
+        slot(path).value as? Value
+    }
+
+    private func slot(_ path: [ChildKey]) -> PartSlot {
+        if let slot = slots[path] { return slot }
+        let slot = PartSlot()
+        slots[path] = slot
+        return slot
+    }
+
+    /// One update's parts, set in one turn of the main actor.
+    private func take(_ update: PartsUpdate<Root.Presentation>) {
+        let span = Meter.shared.begin(.republish)
+        defer { Meter.shared.end(span) }
+        var gone = update.removed
+        if !followed {
+            // The first update is every part the tree has: what the first
+            // presentation named beyond them is gone.
+            followed = true
+            let held = Set(update.changed.map(\.path))
+            gone += slots.keys.filter { !held.contains($0) }
+        }
+        for path in gone {
+            // Whoever read it is drawn again and finds none; the next reader
+            // starts a slot afresh.
+            slots.removeValue(forKey: path)?.value = nil
+        }
+        for part in update.changed { slot(part.path).value = part.value }
+        presentation = update.presentation
+        for handler in signalHandlers { handler(update.presentation) }
     }
 
     public func send(_ command: Root.Command) {
@@ -108,6 +159,13 @@ public final class PresentationModel<Root: Controller> {
         let runtime = runtime
         Task { await runtime.close() }
     }
+}
+
+/// One part as SwiftUI observes it.
+@MainActor
+@Observable
+private final class PartSlot {
+    var value: (any Sendable)?
 }
 
 private extension Signal {

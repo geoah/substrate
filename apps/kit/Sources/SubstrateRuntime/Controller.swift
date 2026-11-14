@@ -15,7 +15,7 @@ import Foundation
 /// **The names.** The loop's three stages are verbs: `apply`, `present`,
 /// `perform`. Every other requirement is a noun, named for what it
 /// answers (`events`, `event`, `journaling`, `transient`, `coalescing`,
-/// `effects`, `key`, `nextChange`, `children`, `link`, `journal`), and its
+/// `effects`, `key`, `nextChange`, `parts`, `children`, `link`, `journal`), and its
 /// argument label says what it answers about: `of` an event, an effect or a
 /// presentation; `for` a command or the link; `at` the open or a tick;
 /// `from` a child or the state before an event; `replacing` the value
@@ -27,7 +27,8 @@ import Foundation
 /// once; no effects, and the effects seen from the state before an event
 /// those of the state after alone; no keys, no work; no next change and no
 /// tick event; no event at open, for the link, from a child (one event or
-/// several) or for a new value; no event resets; no children; no link.
+/// several) or for a new value; no event resets; no children; no link; the
+/// presentation published as one part.
 public protocol Controller: Sendable {
     associatedtype Command: Codable & Equatable & Sendable
     associatedtype Event: Codable & Equatable & Sendable
@@ -134,6 +135,16 @@ public protocol Controller: Sendable {
     /// The instant the presentation stops being true as drawn (a countdown's
     /// end), when the runtime delivers `event(atTick:)`.
     func nextChange(of presentation: Presentation) -> Date?
+    /// The parts the presentation goes out in to a UI that observes parts
+    /// (SubstrateUI's `PresentationModel`), each under the path of keys a
+    /// view reads it by, from this controller down: its own under no key,
+    /// what it draws of a child under the child's key. A view is then drawn
+    /// again only when the part it reads changed, so a part should hold
+    /// what one view draws and leave out what the parts beside it hold. The
+    /// parts are for drawing alone: the whole presentation is still what a
+    /// test pins and the Android bridge sends. The default is the whole
+    /// presentation as one part.
+    func parts(of presentation: Presentation) -> [PresentationPart]
 
     // MARK: What the state holds
 
@@ -177,6 +188,7 @@ public extension Controller {
     }
     func key(of effect: Effect) -> String? { nil }
     func nextChange(of presentation: Presentation) -> Date? { nil }
+    func parts(of presentation: Presentation) -> [PresentationPart] { [PresentationPart(presentation)] }
     func children(in state: State) -> [ChildKey: Child] { [:] }
     func children(in state: State, environment: AppEnvironment) -> [ChildKey: Child] { children(in: state) }
     func link(in state: State) -> LinkSnapshot? { nil }
