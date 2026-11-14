@@ -72,6 +72,7 @@ type options struct {
 	compactionNow      func() time.Time
 	deletionsKept      time.Duration
 	compactionFault    func(stage string) error
+	purgeKeepsHistory  bool
 	deletionsKeptSet   bool
 	// compactionBatches and compactionBatch are the pass's batch bounds and
 	// what it is told of each batch, in a test (WithTestCompactionBatches).
@@ -703,6 +704,7 @@ type service struct {
 	compactionFault    func(stage string) error
 	compactionBatches  [2]int
 	compactionBatch    func(kind string, ids []string, upTo int64, lines int)
+	purgeKeepsHistory  bool
 	archive            archive.Store
 	archiving          bool
 	archiveInterval    time.Duration
@@ -1226,6 +1228,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		compactionFault:       o.compactionFault,
 		compactionBatches:     o.compactionBatches,
 		compactionBatch:       o.compactionBatch,
+		purgeKeepsHistory:     o.purgeKeepsHistory,
 		archivePieceBytes:     o.archivePieceBytes,
 		archiveStepBytes:      o.archiveStepBytes,
 		archiveProcess:        process,
@@ -2159,6 +2162,9 @@ func (s *service) createSeededRepositoryFor(ctx context.Context, authority strin
 			return err
 		}
 		if err := t.markUnitUsesDerived(); err != nil {
+			return err
+		}
+		if err := t.markForeignIndexed(); err != nil {
 			return err
 		}
 		// The repository's own read-only description of itself. `lifecycle` is

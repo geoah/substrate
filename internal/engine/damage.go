@@ -1,16 +1,17 @@
 package engine
 
 // KNOWN DAMAGE. While a line of the history is known not to verify, nothing
-// is compacted at or above it, and the repair comes first.
+// is compacted or erased at or above it, and the repair comes first.
 //
 // A reader that finds a line whose columns are not what its stored checksum
 // was stamped over (checksumRow.verifies) notes its seq in changelog_damage:
 // a compaction (the door's whole-history run, the pass's batches),
-// backfillForeign, and the archive pass where it refuses a row. A batch
+// backfillForeign, an erasure, and the archive pass where it refuses a row. A batch
 // finds a record's lines by the very columns damage may change, so it can
 // miss a line a whole-history reader meets; the note makes what one reader
 // found hold for all of them. Every compaction reads the lowest noted seq
-// under the changelog lock and stays below it (compactOver). A note outlives
+// under the changelog lock and stays below it (compactOver); an erasure is
+// whole or held on it, intent kept (erase.go). A note outlives
 // the failure that found it: the archive pass and the backfill commit theirs
 // on their own. `repository verify` notes nothing: it reads and writes
 // nothing, beside a running server.
@@ -18,7 +19,8 @@ package engine
 // A note goes once its row verifies again or is gone: each pass looks at
 // every noted row once (lookAtDamage). Damage no reader has met is unknown
 // to all of them: until one meets it, a batch can place a state above it
-// without the effect it was written with. `repository verify
+// without the effect it was written with, and an erasure can leave a value
+// in it. `repository verify
 // --recanonicalize` reads every line and names it.
 
 import (
@@ -66,6 +68,14 @@ func (ds *dataset) knownDamage(ctx context.Context) (int64, error) {
 	var cut int64
 	err := ds.db.QueryRowContext(ctx, `SELECT coalesce(min(seq), 0) FROM changelog_damage`).Scan(&cut)
 	return cut, err
+}
+
+// damageNoter names the reader a compaction's note is from.
+func (t *txn) damageNoter() string {
+	if t.erasing {
+		return "erasure"
+	}
+	return "compaction"
 }
 
 // damageCut is the lowest line known not to verify, 0 for none: a
@@ -117,6 +127,6 @@ func (ds *dataset) noticeDamage(still []int64) {
 	if len(still) == 0 {
 		return
 	}
-	ds.svc.log.Warn("substrate: a line of the history does not verify: nothing at or above it is compacted until its row is written back from a whole copy",
+	ds.svc.log.Warn("substrate: a line of the history does not verify: nothing at or above it is compacted or erased until its row is written back from a whole copy",
 		"repository", ds.info.ID, "below", slices.Min(still), "seqs", still)
 }

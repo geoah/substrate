@@ -122,7 +122,9 @@ var featureTable = []feature{
 	// actions (decision 0284).
 	// Revision 6: the repository's own kinds read `~/…`, and its full name
 	// is another spelling of `~` on input (decision 0259).
-	{name: "records", stability: substrate.StabilityStable, revision: 6, surfaces: []string{surfaceREST}, routes: []string{
+	// Revision 7: the `forget` action, and a permanent delete's reply naming
+	// what remains of its erasure (`erasure`, decision 0304).
+	{name: "records", stability: substrate.StabilityStable, revision: 7, surfaces: []string{surfaceREST}, routes: []string{
 		recordsRead,
 		"POST /api/v1/records",
 		"GET /api/v1/{a1}/{a2}/{a3}/{a4}",
@@ -131,6 +133,7 @@ var featureTable = []feature{
 		"DELETE /api/v1/{a1}/{a2}/{a3}/{a4}",
 		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/pin",
 		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/release",
+		"POST /api/v1/{a1}/{a2}/{a3}/{a4}/forget",
 	}},
 	// The error envelope and its closed code set (errorCodes), which every
 	// route under /api and the sign-in door answers with. It holds no route

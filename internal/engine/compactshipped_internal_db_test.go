@@ -10,6 +10,7 @@ package engine
 import (
 	"cmp"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -641,4 +642,403 @@ func (b *batchedRefs) has(r eref) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.refs[r]
+}
+
+// The owner's erasure of a shipped record, the one door that still takes a
+// shipped record's history (decision 0310), and what the seeds' and the
+// install's rule reads afterwards. A permanent delete leaves the record's
+// purge line alone, under the hand that deleted it, with no value and, for
+// what a package's hand created, that hand: the pass never forgets that
+// deletion, and neither the next open nor the package's upgrade writes the
+// record again. A forget stands where the record's newest line is the
+// owner's, and is refused where it is a shipping hand's: the engine's after
+// the owner, or the package's or the seed's alone.
+func TestTheOwnersErasureOfARecordAPackageShipsStands(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	clock := time.Now().UTC()
+	f := newShippedFixture(t, WithCompactionInterval(-1), WithDeletionsKept(time.Hour),
+		WithTestCompactionClock(func() time.Time { return clock }))
+	f.install("first")
+	ds := f.ds
+	view := func(id string) eref { return eref{Kind: shippedViewKind, ID: id} }
+	preset := func(id string) eref { return eref{Kind: presetKind, ID: id} }
+	units, err := shippedUnitRecords()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conversion eref
+	for _, u := range units {
+		if u.kind == vocabulary.KindConversion {
+			conversion = u.ref()
+			break
+		}
+	}
+
+	purged := []eref{view("memory-retired"), conversion, {Kind: typeProvider, ID: "gemini"}, preset("deleted")}
+	for _, r := range purged {
+		if _, err := ds.Delete(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.DeleteInput{Purge: true}); err != nil {
+			t.Fatalf("the permanent delete of %s %s: %v", r.Kind, r.ID, err)
+		}
+	}
+	shippers := []string{actorID(substrate.ActorSeed), actorID(substrate.ActorSystem), actorID(substrate.BundleActor(shipperAuthority, "shipper"))}
+	purgeLine := func(r eref) {
+		t.Helper()
+		rows, err := ds.db.QueryContext(ctx, `SELECT op, actor, payload::text FROM changelog WHERE kind = $1 AND record_id = $2`, r.Kind, r.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ops []string
+		for rows.Next() {
+			var op, actor, payload string
+			if err := rows.Scan(&op, &actor, &payload); err != nil {
+				t.Fatal(err)
+			}
+			ops = append(ops, op)
+			if op != string(substrate.OpGC) || slices.Contains(shippers, actor) {
+				t.Errorf("%s %s keeps a %s line by %s, want its purge alone, by the hand that deleted it", r.Kind, r.ID, op, actor)
+			}
+			for _, value := range []string{"Retired", "generativelanguage", `"first"`} {
+				if strings.Contains(payload, value) {
+					t.Errorf("%s %s's purge line keeps the value %s: %s", r.Kind, r.ID, value, payload)
+				}
+			}
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			t.Fatal(err)
+		}
+		if len(ops) != 1 {
+			t.Errorf("%s %s keeps %v, want its purge line alone", r.Kind, r.ID, ops)
+		}
+	}
+	for _, r := range purged {
+		purgeLine(r)
+	}
+
+	// Forgotten: the owner's line is the newest.
+	for r, change := range map[eref]map[string]any{
+		view("memory-active"): {"name": "Mine"},
+		preset("edited"):      {"name": "Mine", "note": "mine"},
+	} {
+		if _, err := ds.Patch(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.PatchInput{Properties: change}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ds.Forget(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.ForgetInput{}); err != nil {
+			t.Fatalf("forget %s: %v", r.ID, err)
+		}
+		var kept int
+		if err := ds.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2 AND (payload::text LIKE '%"Active"%' OR payload::text LIKE '%"first"%')`, r.Kind, r.ID).Scan(&kept); err != nil {
+			t.Fatal(err)
+		}
+		if kept != 0 {
+			t.Errorf("%s keeps %d lines with its earlier value after its forget", r.ID, kept)
+		}
+	}
+
+	// Refused: the engine wrote after the owner, and nobody but the shipping
+	// hands wrote.
+	under := view("contact-1-people")
+	if _, err := ds.Patch(ctx, substrate.ActorPerson, under.Kind, under.ID, substrate.PatchInput{Properties: map[string]any{"name": "Folks"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		_, err := t.patch(under, substrate.PatchInput{Labels: map[string]any{"system/backfilled": true}})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []eref{under, view("contact-2-organizations"), preset("untouched")} {
+		lines := f.lines(r)
+		if _, err := ds.Forget(ctx, substrate.ActorPerson, r.Kind, r.ID, substrate.ForgetInput{}); !errors.Is(err, substrate.ErrConflict) {
+			t.Errorf("the forget of %s, whose newest line is a shipping hand's, answered %v, want refused", r.ID, err)
+		}
+		if n := f.lines(r); n != lines {
+			t.Errorf("the refused forget of %s left %d lines of %d", r.ID, n, lines)
+		}
+	}
+
+	// The pass, past the deletion period, forgets none of the deletions.
+	f.mirror("after")
+	clock = time.Now().UTC().Add(2 * time.Hour)
+	if report, err := ds.CompactionPass(ctx); err != nil || report.Forgotten != 0 {
+		t.Fatalf("the pass forgot %d deletions (%v), want none of a shipped record", report.Forgotten, err)
+	}
+	for _, r := range purged {
+		purgeLine(r)
+	}
+
+	f.shipNewer()
+	f.reopen()
+	f.install("newer")
+	for _, r := range purged {
+		if row := f.row(r); row != nil {
+			t.Errorf("%s %s is back after the next open and the upgrade, which the owner permanently deleted", r.Kind, r.ID)
+		}
+	}
+	for r, want := range map[eref]string{
+		view("memory-active"): "Mine", preset("edited"): "Mine", under: "Folks",
+		view("contact-2-organizations"): "Companies", preset("untouched"): "untouched",
+	} {
+		if row := f.row(r); row == nil || row.DeletedAt != nil || row.Props["name"] != want {
+			t.Errorf("%s is %+v after the next open and the upgrade, want it named %s", r.ID, row, want)
+		}
+	}
+	if row := f.row(preset("untouched")); row == nil || row.Props["note"] != "newer" {
+		t.Errorf("the preset nobody touched is %+v after the upgrade, want the newer note", row)
+	}
+}
+
+// A preset the package installed, merged into the owner's record that is
+// then permanently deleted, goes with it, under the engine's hand acting for
+// the owner, and stays gone: the next open and the package's upgrade read
+// that the owner removed it, and neither writes it again.
+func TestAShippedRecordMergedIntoOneErasedStaysGone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newShippedFixture(t)
+	f.install("first")
+	mine, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: presetKind, Properties: map[string]any{"name": "mine"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merged := eref{Kind: presetKind, ID: "untouched"}
+	if _, err := f.ds.Merge(ctx, substrate.ActorPerson, substrate.MergeInput{Kind: presetKind, Winner: mine.ID, Loser: merged.ID}); err != nil {
+		t.Fatalf("merge the installed preset into the owner's: %v", err)
+	}
+	deleted, err := f.ds.Delete(ctx, substrate.ActorPerson, presetKind, mine.ID, substrate.DeleteInput{Purge: true})
+	if err != nil {
+		t.Fatalf("the permanent delete: %v", err)
+	}
+	if e := deleted.Erasure; e == nil || e.Pending || !slices.Contains(e.Purged, vocabulary.RecordPath(merged.Kind, merged.ID)) {
+		t.Fatalf("the delete's erasure is %+v, want it done and the merged preset purged with it", e)
+	}
+	f.reopen()
+	f.install("newer")
+	if row := f.row(merged); row != nil {
+		t.Fatalf("the installed preset merged away and permanently deleted is back after the next open and the upgrade: %+v", row)
+	}
+}
+
+const (
+	feedKind    = shipperPkg + "/feed"
+	feedMapping = shipperPkg + "/feedpreset"
+)
+
+// installFed takes the shipper package as an upgrade does, with a feed
+// whose mapping copies its note into the preset it names by its name. A
+// kind a mapping points at refuses a chosen id at a create (write.go
+// checkCreateID), so the presets are the ones an earlier version shipped
+// (install), which an upgrade updates.
+func (f *shippedFixture) installFed(note string) {
+	f.t.Helper()
+	docs := []map[string]any{
+		vocabulary.PackageManifest(shipperPkg, 0),
+		vocabulary.BundleManifest(shipperPkg, map[string]any{"description": "the presets", "installs": []any{presetKind, feedKind, feedMapping}}),
+		vocabulary.KindManifest(shipperPkg, map[string]any{"singular": "preset"}, map[string]any{
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"note": map[string]any{"type": "string"},
+			},
+		}),
+		vocabulary.KindManifest(shipperPkg, map[string]any{"singular": "feed"}, map[string]any{
+			"properties": map[string]any{
+				"name": map[string]any{"type": "string"},
+				"note": map[string]any{"type": "string"},
+				"preset": map[string]any{
+					"type": "reference", "kind": presetKind,
+					"required": true, "mustExist": true, "subject": true,
+				},
+			},
+		}),
+		vocabulary.MappingManifest(shipperPkg, "feedpreset", map[string]any{
+			"from": feedKind, "to": presetKind, "property": "preset",
+			"match": []any{map[string]any{"from": "name", "to": "name"}},
+			"map":   map[string]any{"note": map[string]any{"path": "note"}},
+		}),
+	}
+	var data []substrate.PutInput
+	for _, id := range []string{"edited", "deleted", "untouched"} {
+		data = append(data, substrate.PutInput{Kind: presetKind, ID: id, Properties: map[string]any{"name": id, "note": note}})
+	}
+	if _, err := f.ds.InstallBundleClosure(context.Background(), substrate.BundleActor(shipperAuthority, "shipper"), docs, data, substrate.BundleInstall{}); err != nil {
+		f.t.Fatalf("take the shipper package: %v", err)
+	}
+}
+
+// A forget and a permanent delete of a mapping's source erase the copy it
+// made in a preset the package installed, which the owner renamed and the
+// engine wrote after: the rename stands at the next open and the upgrade.
+// The package's later version declares the mapping onto its own presets.
+// With no erasure the rename stands as well, which is what the erasures
+// are held to.
+func TestErasingAMappingsSourceKeepsTheOwnersEditOfAShippedTarget(t *testing.T) {
+	t.Parallel()
+	const (
+		none   = "no erasure"
+		forget = "a forget of the source"
+		purge  = "a permanent delete of the source"
+	)
+	for _, name := range []string{none, forget, purge} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			f := newShippedFixture(t)
+			f.install("first")
+			f.installFed("first")
+			target := eref{Kind: presetKind, ID: "edited"}
+			if _, err := f.ds.Patch(ctx, substrate.ActorPerson, target.Kind, target.ID, substrate.PatchInput{Properties: map[string]any{"name": "Mine"}}); err != nil {
+				t.Fatalf("the owner renames the preset: %v", err)
+			}
+			feed, err := f.ds.Put(ctx, substrate.ActorPerson, substrate.PutInput{Kind: feedKind, Properties: map[string]any{"name": "Mine", "note": "fed"}})
+			if err != nil {
+				t.Fatalf("put the feed: %v", err)
+			}
+			if row := f.row(target); row == nil || row.Props["note"] != "fed" {
+				t.Fatalf("the mapping did not copy the feed's note into the preset (%+v): the test proves nothing", row)
+			}
+			if err := f.ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+				_, err := t.patch(target, substrate.PatchInput{Labels: map[string]any{"system/backfilled": true}})
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			switch name {
+			case purge:
+				if _, err := f.ds.Delete(ctx, substrate.ActorPerson, feed.Kind, feed.ID, substrate.DeleteInput{Purge: true}); err != nil {
+					t.Fatalf("the permanent delete of the feed: %v", err)
+				}
+			case forget:
+				if _, err := f.ds.Forget(ctx, substrate.ActorPerson, feed.Kind, feed.ID, substrate.ForgetInput{}); err != nil {
+					t.Fatalf("the forget of the feed: %v", err)
+				}
+			}
+			var copies int
+			if err := f.ds.db.QueryRowContext(ctx, `SELECT count(*) FROM compaction_erasures WHERE record_kind = $1 AND record_id = $2`, target.Kind, target.ID).Scan(&copies); err != nil || copies != 0 {
+				t.Fatalf("the preset's erasure waits (%d, %v), want it done", copies, err)
+			}
+			f.reopen()
+			f.installFed("newer")
+			if row := f.row(target); row == nil || row.DeletedAt != nil || row.Props["name"] != "Mine" {
+				t.Fatalf("the preset the owner renamed is %+v after the next open and the upgrade, want it named Mine", row)
+			}
+		})
+	}
+}
+
+// Decision 0311's answer is the same after a compaction of the purge. The
+// engine deletes and purges a preset the package installed, acting for the
+// owner, and an erasure compacts what is left of it: one line, the purge's,
+// carrying a state whose writers keep each replaced line's hand with its
+// operation (a compaction never replaces a purge that is not a record's
+// last effect, so the purge's line stays while the history does). The
+// upgrade still reads the owner's deletion and does not write the preset.
+func TestTheEnginesPurgeForAHandSurvivesACompaction(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newShippedFixture(t)
+	f.install("first")
+	ref := eref{Kind: presetKind, ID: "untouched"}
+	if err := f.ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		t.onBehalfOf = substrate.ActorPerson
+		row, err := t.softDelete(ref)
+		if err != nil {
+			return err
+		}
+		return t.purgeNow(ref, row.Finalizers)
+	}); err != nil {
+		t.Fatalf("the engine purges the preset for the owner: %v", err)
+	}
+	head, err := f.ds.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ds.withCompactionTx(ctx, true, func(t *txn) error {
+		t.erasing = true
+		defer func() { t.erasing = false }()
+		report, err := t.forgetRecords(head.Seq, []eref{ref})
+		if err == nil && report.unindexed {
+			err = errors.New("the history's index is not whole")
+		}
+		return err
+	}); err != nil {
+		t.Fatalf("compact the preset: %v", err)
+	}
+	var lines int
+	var writers string
+	if err := f.ds.db.QueryRowContext(ctx, `
+		SELECT count(*), coalesce(string_agg(w::text, ' '), '') FROM changelog c
+		LEFT JOIN LATERAL jsonb_array_elements(c.payload -> 'fold') e ON e ->> 'kind' = 'state'
+		LEFT JOIN LATERAL jsonb_array_elements(coalesce(e #> '{state,writers}', '[]'::jsonb)) w ON true
+		WHERE c.kind = $1 AND c.record_id = $2`, ref.Kind, ref.ID).Scan(&lines, &writers); err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []substrate.Op{substrate.OpPut, substrate.OpDelete, substrate.OpGC} {
+		if !strings.Contains(writers, `"op": "`+string(op)+`"`) {
+			t.Errorf("the state's writers are %s, want the %s line's hand with its operation", writers, op)
+		}
+	}
+	hands, err := recordHandsOf(ctx, f.ds.db, []eref{ref})
+	if err != nil {
+		t.Fatal(err)
+	}
+	purge := recordHand{actorID(substrate.ActorSystem), actorID(substrate.ActorPerson), string(substrate.OpGC)}
+	if !slices.Contains(hands[ref], purge) {
+		t.Fatalf("the preset's hands after the compaction are %+v, want the engine's purge for the owner among them", hands[ref])
+	}
+	f.reopen()
+	f.install("newer")
+	if row := f.row(ref); row != nil {
+		t.Fatalf("the preset the engine purged for the owner is back after the compaction and the upgrade: %+v", row)
+	}
+}
+
+// Decision 0311 for what an erased record owned: a package ships a shelf
+// and an item the shelf owns, the owner permanently deletes the shelf, and
+// the delete's cascade takes the item under the engine's hand acting for
+// the owner. Neither the next open nor the upgrade writes either again.
+func TestAShippedRecordTheErasedRecordOwnedStaysGone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	f := newShippedFixture(t)
+	const pkg = shipperAuthority + "/shelves"
+	shelf, item := eref{Kind: pkg + "/shelf", ID: "s1"}, eref{Kind: pkg + "/item", ID: "i1"}
+	install := func(note string) {
+		t.Helper()
+		docs := []map[string]any{
+			vocabulary.PackageManifest(pkg, 0),
+			vocabulary.BundleManifest(pkg, map[string]any{"description": "the shelves", "installs": []any{shelf.Kind, item.Kind}}),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "shelf"}, map[string]any{
+				"properties": map[string]any{"name": map[string]any{"type": "string"}},
+			}),
+			vocabulary.KindManifest(pkg, map[string]any{"singular": "item"}, map[string]any{
+				"properties": map[string]any{
+					"name":  map[string]any{"type": "string"},
+					"shelf": map[string]any{"type": "reference", "kind": shelf.Kind, "onDelete": "cascade"},
+				},
+			}),
+		}
+		data := []substrate.PutInput{
+			{Kind: shelf.Kind, ID: shelf.ID, Properties: map[string]any{"name": note}},
+			{Kind: item.Kind, ID: item.ID, Properties: map[string]any{"name": note, "shelf": map[string]any{"ref": vocabulary.RecordPath(shelf.Kind, shelf.ID)}}},
+		}
+		if _, err := f.ds.InstallBundleClosure(ctx, substrate.BundleActor(shipperAuthority, "shelves"), docs, data, substrate.BundleInstall{}); err != nil {
+			t.Fatalf("take the shelves package: %v", err)
+		}
+	}
+	install("first")
+	if _, err := f.ds.Delete(substrate.WithOnBehalfOf(ctx, substrate.ActorPerson), substrate.ActorPerson, shelf.Kind, shelf.ID, substrate.DeleteInput{Purge: true}); err != nil {
+		t.Fatalf("the permanent delete of the shelf: %v", err)
+	}
+	var cascaded int
+	if err := f.ds.db.QueryRowContext(ctx, `SELECT count(*) FROM changelog WHERE kind = $1 AND record_id = $2 AND op = $3 AND actor = $4 AND on_behalf_of = $5`,
+		item.Kind, item.ID, string(substrate.OpGC), actorID(substrate.ActorSystem), actorID(substrate.ActorPerson)).Scan(&cascaded); err != nil || cascaded != 1 {
+		t.Fatalf("the cascade wrote %d of the engine's purges of the item for the owner (%v), want one", cascaded, err)
+	}
+	f.reopen()
+	install("newer")
+	for _, r := range []eref{shelf, item} {
+		if row := f.row(r); row != nil && row.DeletedAt == nil {
+			t.Errorf("%s is back after the next open and the upgrade: %+v", r.ID, row)
+		}
+	}
 }

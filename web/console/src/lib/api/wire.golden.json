@@ -766,6 +766,28 @@
   "Downsample": {
     "points": true
   },
+  "Erasure": {
+    "damaged": false,
+    "held": false,
+    "id": true,
+    "kept": false,
+    "kind": true,
+    "live": true,
+    "pending": true,
+    "purged": false,
+    "since": false,
+    "tombstoned": false,
+    "waits": false
+  },
+  "ErasureKept": {
+    "record": true,
+    "why": true
+  },
+  "ErasureWait": {
+    "cursor": true,
+    "since": true,
+    "trigger": true
+  },
   "ErrorEnvelope": {
     "error": true
   },
@@ -1103,6 +1125,7 @@
     "computed": false,
     "createdAt": true,
     "deletedAt": false,
+    "erasure": false,
     "finalizers": false,
     "formerIds": false,
     "id": true,

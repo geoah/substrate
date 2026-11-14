@@ -149,7 +149,8 @@ func TestTheActorMigrationNamesAnAppWhoseTokenWasPurged(t *testing.T) {
 	if testing.Short() {
 		t.Skip("db test")
 	}
-	ds := newTierDataset(t)
+	// A token purged by a release before the erasure, whose history stays.
+	ds := newTierDataset(t, WithTestPurgeKeepsHistory())
 	ctx := context.Background()
 	tok, _, err := ds.MintToken(ctx, substrate.MintTokenInput{
 		Label: "purged", ClientID: "https://purged.example.org/client.json", ClientName: "Purged",

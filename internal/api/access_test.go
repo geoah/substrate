@@ -95,6 +95,7 @@ var routeList = map[string]access{
 	"GET /api/v1/{a1}/{a2}/{a3}/{a4}":                                        accessRules,
 	"PATCH /api/v1/{a1}/{a2}/{a3}/{a4}":                                      accessRules,
 	"PUT /api/v1/{a1}/{a2}/{a3}/{a4}":                                        accessRules,
+	"POST /api/v1/{a1}/{a2}/{a3}/{a4}/forget":                                accessAdmin,
 	"POST /api/v1/{a1}/{a2}/{a3}/{a4}/pin":                                   accessRules,
 	"POST /api/v1/{a1}/{a2}/{a3}/{a4}/release":                               accessRules,
 	"GET /favicon.ico":                                                       accessPublic,

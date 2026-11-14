@@ -351,6 +351,7 @@ the marks it left.
 | `forget` | Drops every delivery row a deleted trigger owned | |
 | `state` | A [state entry](#state-entries): writes the record's row whole, its version and times included, states its annotations and its marks again (a mark only beside a value the row holds), and moves the unit graph's revision by `moves`; with no `row`, does what `purge` does | `version`; `state`: `row` (`title`, `states`, `at`, `endsAt`, `dueAt`, `props`, `labels`, `finalizers`, `kindVersion`, `version`, `createdAt`, `updatedAt`, `deletedAt`), `annotations` (`key`, `value`, `updatedAt`), `marks` (`property`, `pinned`, `setBy`, `onBehalfOf`, `derivedFrom`, `setAt`), `created`, `creator` (`actor`, `onBehalfOf`, `token`), `movedFrom`, `writers` (`actor`, `onBehalfOf`, `op`), `moves` |
 | `ledger` | A [state entry](#state-entries) of a trigger's delivery rows: drops them and writes the ones it carries | `ledger`: `cursor` (`seq`, `updatedAt`), `schedule` (`firedAt`, `updatedAt`), `failures` (as `park`'s `failure`), `pages` (as `page`'s `page`, and `updatedAt`) |
+| `erase` | The intent to [erase](#erasures) a record's history up to a line: notes it in `compaction_erasures`, and the erasure takes it off its line | `ref`, `id`, `seq` (the line its history is erased up to), `live` (its current state stays) |
 
 Times inside an effect are RFC 3339. A number reads from any JSON spelling of
 it, because a piece holds the canonical one and Postgres prints its own.
@@ -404,6 +405,11 @@ record (which package shipped a trigger, whether an actor other than a
 shipped record's shipping hands ever wrote it) reads the lines that remain
 and these, so a compaction leaves its answer as it was
 ([decision 0310](decisions/0310-a-record-a-package-ships-is-left-out-of-compaction-for-now.md)).
+A purge (`gc`) the engine wrote acting for a hand other than the shipping
+ones is that hand's deletion to the last question, read from the line's or
+the writer's `op` and whom it acted for, and no other line the engine wrote
+for a hand is
+([decision 0311](decisions/0311-a-purge-the-engine-writes-for-a-hand-is-that-hands-deletion-of-a-shipped-record.md)).
 
 A `state` that stands for a creation a kind move made, the carry of a record
 from another kind (its line's `movedFrom`), keeps that kind as `movedFrom`:
@@ -425,14 +431,34 @@ snapshot read, from before the compaction, first. An archive taken before the
 compaction still holds it, and a restore of it is the history before the
 compaction.
 
+## Erasures
+
+A permanent delete, and a forget of a live record, erase a record's history
+([decision 0304](decisions/0304-a-permanent-delete-erases-the-records-history-and-the-intent-is-in-the-history.md)).
+What remains to erase is part of what the delete commits: an `erase` effect
+for each record, on the transaction's last line, naming the record and the
+line its history is erased up to, and no value. The fold notes each in
+`compaction_erasures`, a fold table, so a rebuild, an import and a restore
+of any archive that holds the line know what remains. The erasure is a
+compaction in a transaction of its own that takes the effect off its line
+and the row out together, so in any one cut of the history a value an
+erasure names is never there without its intent, and an intent is never
+left once nothing it names is left. It is the one compaction that changes a
+fold table, and the history it leaves replays into the table it leaves. A
+purged record's history becomes one state with neither row nor value on its
+`gc` line, which stays and names the hand that deleted it, and keeps the
+`writers` of what it replaced; a live record's, one state with its current
+values.
+
 ## Dialects
 
 A repository's **changelog dialect** names the shapes its lines are in: the
 ops, the effects and their keys. It is stamped in the database and in the
-manifest, and it is 7 today: dialect 7 added the [state entries](#state-entries),
-which a server of an earlier dialect cannot replay; dialect 6 is the line
-above, which spells the repository's own kinds `~/…`; dialect 5 is the line
-before it, whose effects mark a property; dialect 4 is the line before it, which
+manifest, and it is 8 today: dialect 8 added the [`erase` effect](#erasures),
+and dialect 7 the [state entries](#state-entries), which a server of an
+earlier dialect cannot replay; dialect 6 is the line above, which spells the
+repository's own kinds `~/…`; dialect 5 is the line before it, whose effects
+mark a property; dialect 4 is the line before it, which
 held a manager row and a tier for one and carries a record's `body` among its
 properties; dialect 3 is the line before that, whose actor, `onBehalfOf` and
 `token` link records; and dialects 1 and 2 are the lines before that, which
@@ -459,6 +485,7 @@ next step the one after. The chain is in `internal/engine/conversion.go`:
 | 5 | `marks` | Every line's marks: a `manager` effect becomes a `mark`, or an `unmark` where it named no actor; a resync's manager rows and a merge's moved managers become marks; a recompute's payload `managers` goes; and a manager row on a property an earlier step took out of the line becomes no mark, as the paragraph below says ([0284](decisions/0284-a-propertys-mark-stores-whether-sync-may-replace-it-apart-from-where-its-value-came-from.md)). |
 | 6 | `local_namespace` | Every line of a repository's history: a kind under the repository's name, a declaration's or a callable's id under it, an effect's `ref` and `id` (a split's kept effects included), a reference value at a position the declaration of its kind in force at the line makes a reference, a declaration's every reference position, in whatever form the loader accepts there (the dialect's key sets, each key classed as naming something or not), and the named positions of the substrate's own records (a token's scopes, a trigger's kinds, a run's callable) read `~/` where they read the name and a slash ([decision 0259](decisions/0259-a-repositorys-own-kinds-live-in-the-local-namespace.md)). A line it moves nothing in keeps its bytes. Its carry moves the rows outside history bound to a record it moved (a sealed value, sealed again bound to the new address; a vector, its queue row and a pending OAuth flow) and each stored Idempotency-Key answer that is a record, keeping the key, its fingerprint and its settlement. Outside the actor records' own lines it never edits a title: a writer's is theirs, and one a template rendered is what it rendered then. The first open after it moves a record's current title only where that title is the old spelling of what the engine renders now, the same text with the name where the rendering has `~`, once, as an ordinary record write. It rewrites lines, so the records are rebuilt after it without `Refolds`. Each actor record id derived from a hand of the repository's own that carried the name becomes the id of the same hand under `~`, by position: the line's `actor` and `onBehalfOf`, a mark's hands, a link to an actor record, and the actor records' own lines, which move whole. A person's own values, a description and a function's source stay as written. |
 | 7 | `state_entries` | No line: it raises the stamp to the dialect that may hold [state entries](#state-entries), which a history written before it does not. |
+| 8 | `erasures` | No line: it raises the stamp to the dialect that may hold an [`erase` effect](#erasures), which a history written before it does not. |
 
 A step declares how it rewrites one line in place: it may
 not move the line's `seq` or `txn`, and the server recomputes the `sum`. A

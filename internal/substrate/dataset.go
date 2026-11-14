@@ -70,6 +70,9 @@ type Dataset interface {
 	// with its marks (decision 0284).
 	Pin(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
 	Release(ctx context.Context, actor Actor, typ, id string, in MarkInput) (*Record, error)
+	// Forget erases a live record's history but its current state, or
+	// finishes an erasure that waits (decision 0304): the owner's alone.
+	Forget(ctx context.Context, actor Actor, typ, id string, in ForgetInput) (*Erasure, error)
 
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,

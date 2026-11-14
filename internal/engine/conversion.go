@@ -232,6 +232,7 @@ var conversionSteps = []conversionStep{
 	// name, so the records are rebuilt for it without Refolds.
 	{Dialect: localNamespaceDialect, Name: "local_namespace", ForRepository: convertLocalNamespace},
 	conversionStateEntries,
+	conversionErasures,
 }
 
 // The conversion's steps, as the import's test seam names them
