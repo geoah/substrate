@@ -4,9 +4,10 @@ import SwiftUI
 
 /// The colours Chat's own views choose, named in one place by what each is
 /// for, as light and dark sRGB values: words, and the fills words are laid
-/// on. `pairs` lists every pairing the views draw, and the app's tests hold
-/// each to WCAG's ratio (`ColourContrast`), so a value changed to one that
-/// does not read fails by name. What another app would share is the kit's
+/// on. `pairs` lists the pairings the list, the transcript and the cards
+/// draw from these names, and the app's tests hold each to WCAG's ratio
+/// (`ColourContrast`), so a value changed to one that does not read fails
+/// by name. What another app would share is the kit's
 /// (`DesignTokens`: quiet text, a tone as words, the page).
 enum ChatColours {
     typealias Colour = DesignTokens.Colour
@@ -30,8 +31,9 @@ enum ChatColours {
     /// The fill behind the selected chat while the list has the focus. An
     /// iPad fills it with the list's tint, which the list sets to
     /// `accentFill`. A Mac's source list fills it with the system's own
-    /// tone of the app's accent (`selectedContentBackgroundColor`), which a
-    /// test reads from the system.
+    /// tone of the app's accent (`selectedContentBackgroundColor`): these
+    /// are what it made of this app's accent when they were read, and a
+    /// test holds the row's words to whatever the system makes of it.
     #if os(macOS)
     static let selection = Colour(light: 0x552CC4, dark: 0x7D63D1)
     #else

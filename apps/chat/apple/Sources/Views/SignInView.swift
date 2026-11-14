@@ -115,6 +115,9 @@ private struct PasswordDoor: View {
                 .frame(maxWidth: .infinity, minHeight: 30)
             }
             .buttonStyle(.borderedProminent)
+            // White on the accent as a fill: on the dark mode's accent,
+            // which is a text tone, it is 2.8:1.
+            .tint(.accentFill)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
             .disabled(busy || !ready)
@@ -200,6 +203,7 @@ struct NoChatAccessView: View {
                 }
             }
             .buttonStyle(.glassProminent)
+            .tint(.accentFill)
             .controlSize(.large)
             .disabled(host.authorizing && !WebAuthenticator.opensBrowser)
             if host.authorizing, WebAuthenticator.opensBrowser {
