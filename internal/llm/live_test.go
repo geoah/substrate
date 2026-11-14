@@ -92,6 +92,9 @@ func (m liveMeter) Complete(ctx context.Context, req Request, onDelta func(Delta
 // never buys anything on a laptop that happens to hold keys.
 func liveKey(t *testing.T, name string) string {
 	t.Helper()
+	if liveFixtureOf(t) != nil {
+		return "fixture-key"
+	}
 	if testing.Short() {
 		t.Skip("live LLM test: skipped in -short mode")
 	}
@@ -145,12 +148,26 @@ func (e liveEndpoint) modelName() string {
 // meter.
 func (e liveEndpoint) client(t *testing.T) (Client, string) {
 	t.Helper()
-	key := liveKey(t, e.keyEnv)
-	c, err := New(e.wire, e.config(key))
-	if err != nil {
-		t.Fatalf("build %s client: %v", e.wire, err)
+	return liveClientFor(t, e.wire, e.config(liveKey(t, e.keyEnv))), e.modelName()
+}
+
+// liveClientFor builds a case's client on cfg: behind the pass's meter, or,
+// in the run that holds every case's fixture (TestEveryLiveCaseReachesItsFirstCall), on the
+// local endpoint that ends the case at its first completion.
+func liveClientFor(t *testing.T, wire Wire, cfg Config) Client {
+	t.Helper()
+	fixture := liveFixtureOf(t)
+	if fixture != nil {
+		cfg.BaseURL = fixture.url(wire)
 	}
-	return liveMeter{string(e.wire), liveLedger, c}, e.modelName()
+	c, err := New(wire, cfg)
+	if err != nil {
+		t.Fatalf("build %s client: %v", wire, err)
+	}
+	if fixture != nil {
+		return liveFirstCall{t: t, fixture: fixture, Client: c}
+	}
+	return liveMeter{string(wire), liveLedger, c}
 }
 
 func liveContext(t *testing.T) context.Context {
@@ -398,11 +415,7 @@ func TestLiveOpenAIAcceptsThePromptCacheKey(t *testing.T) {
 	key := liveKey(t, liveOpenAI.keyEnv)
 	cfg := liveOpenAI.config(key)
 	cfg.CacheKey = true
-	c, err := New(WireOpenAI, cfg)
-	if err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	client := liveMeter{string(WireOpenAI), liveLedger, c}
+	client := liveClientFor(t, WireOpenAI, cfg)
 	res, err := client.Complete(liveContext(t), Request{
 		Model: liveOpenAI.modelName(), System: liveOneWordSystem,
 		Messages: []Message{{Role: RoleUser, Content: liveOneWordUser}},
