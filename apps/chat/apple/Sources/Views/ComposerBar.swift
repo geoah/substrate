@@ -169,25 +169,34 @@ struct ComposerBar: View {
 
     // MARK: The field
 
-    /// At the accessibility text sizes the assistant's picker stands over
-    /// the words being typed, which then have the field's whole width.
-    @ViewBuilder private var field: some View {
-        if composer.picksAgent, size.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 0) {
+    /// The assistant's picker, then what is typed or heard. At the
+    /// accessibility text sizes the picker stands over the words, which
+    /// then have the field's whole width. One layout in either form, and
+    /// the words after the picker in both: the text field keeps its
+    /// place, so what is typed, the keyboard and a word an input method is
+    /// part way through stay when the picker goes (a new chat gets its
+    /// thread) or the form changes.
+    private var field: some View {
+        let over = composer.picksAgent && size.isAccessibilitySize
+        let form =
+            over
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 0))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: ChatSpace.beside))
+        return form {
+            if composer.picksAgent {
                 AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
-                    .padding(.leading, ChatSpace.lines)
-                typing(picker: false)
             }
-        } else {
-            typing(picker: composer.picksAgent)
+            typing
+                // Under the picker the words start where they do with
+                // none beside them.
+                .padding(.leading, over ? ChatSpace.edge - ChatSpace.lines : 0)
         }
+        .padding(.leading, composer.picksAgent ? ChatSpace.lines : ChatSpace.edge)
+        .frame(minHeight: control)
     }
 
-    private func typing(picker: Bool) -> some View {
+    private var typing: some View {
         HStack(alignment: .bottom, spacing: ChatSpace.beside) {
-            if picker {
-                AgentChip(key: key, current: screen.agent, label: composer.agentLabel)
-            }
             if dictation.active {
                 listening
             } else {
@@ -216,11 +225,9 @@ struct ComposerBar: View {
                 }
             }
         }
-        .padding(.leading, picker ? ChatSpace.lines : ChatSpace.edge)
         // The microphone's target reaches the field's edge; anything else
         // stands off it.
         .padding(.trailing, !dictation.active && !empty ? 0 : ChatSpace.beside)
-        .frame(minHeight: control)
     }
 
     /// What is being heard: the finalized words, then the guess, dimmed.
