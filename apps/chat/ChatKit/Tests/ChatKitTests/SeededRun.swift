@@ -9,9 +9,11 @@ import SubstrateTesting
 /// One seed's run of the app against a server that misbehaves by it: a
 /// person's steps chosen from the seed (sends, stops, Try Again and
 /// Continue, Send Again and Edit Message, opening and closing chats,
-/// leaving and coming back to the front, kills and relaunches), the
-/// server's turns moved and the clock advanced between them, and after
-/// every step the rules a chat must keep whatever the server does.
+/// leaving and coming back to the front, kills and relaunches, scrolling to
+/// a chat's end and away from it, Mark as Unread and Mark as Read), the
+/// server's turns moved, another device of theirs moving a mark, and the
+/// clock advanced between them, and after every step the rules a chat must
+/// keep whatever the server does.
 ///
 /// The seed fixes everything: the steps, the faults, the clock, and the
 /// order the app's concurrent work runs in, because a run is made on a
@@ -27,6 +29,7 @@ struct SeededRun {
         var what: String
         var steps: [String]
         var revision: Int
+        var records: Int
         var rate: Double
 
         var description: String {
@@ -34,7 +37,7 @@ struct SeededRun {
             return """
                 seed \(seed) broke a rule at step \(steps.count): \(rule)
                 \(what)
-                server: agents revision \(revision), \(Int(rate * 100))% of requests faulted
+                server: agents revision \(revision), records revision \(records), \(Int(rate * 100))% of requests faulted
                 steps:
                 \(listed)
                 replay: CHATKIT_SEED=\(seed) CHATKIT_STEPS=\(steps.count) swift test --filter SeededChat
@@ -55,6 +58,18 @@ struct SeededRun {
         case resent = "without an id nothing is sent again on the app's own"
         case list = "the list holds each chat once"
         case settles = "every conversation settles once the server behaves"
+        /// Read state (`ChatAppMarks.swift`), where the server keeps the
+        /// person's marks. A dot that went for a message, with the server
+        /// holding it read, is drawn again only once somebody marked the
+        /// chat unread.
+        case dot = "a dot never comes back for a message already read unless Mark as Unread was set"
+        /// A read is written only of a message whose chat stood open at
+        /// its end, in front, for a second, or one Mark as Read was
+        /// pressed on; Mark as Unread only where it was pressed; and
+        /// nothing at all to a server that keeps no marks.
+        case sight = "a mark is never written for a chat whose end was not on screen in front"
+        case badge = "the badge equals the number of unread chats by the rule"
+        case notified = "no notification stands for a reply a mark already reads through"
         /// The run's own: work that left its thread is ordered by the
         /// scheduler again, and the seed no longer says what happens. Held
         /// where the run can look (`SeededServer.watch`): a job that left
@@ -64,6 +79,10 @@ struct SeededRun {
         case overlay = "no run's overlay is left drawn once the run is over"
         /// Broken today, in the same code.
         case kept = "an overlay kept for a failed reload is not drawn beside rows that hold its turns"
+        /// Broken today, in the same code.
+        case carried = "an overlay kept for a failed reload is not carried into the next send"
+        /// Broken today, in the same code.
+        case attached = "an attach does not draw again a message its rows hold under its id"
     }
 
     /// Rules the app is known to break today, each in code another group
@@ -81,6 +100,19 @@ struct SeededRun {
         answer is read for by the delivery check (a server without message ids), and what the check finds is published as \
         the thread's rows while the kept overlay still stands: the run is drawn twice until Try Again on the reload. Also \
         the two models of a turn (A4).
+        """,
+        .carried: """
+        The same kept overlay, once Try Again on the reload has read the rows: its turns stay in the overlay, and the next \
+        send streams under them, so the turns the rows now hold are drawn a second time above the new message until that \
+        run hands over. Found by seed 1048 at 90 steps (agents 3, records 8), where t6 drew "say 4." and "say 5." twice. \
+        Also the two models of a turn (A4).
+        """,
+        .attached: """
+        A first message sent under its id, the app left and brought back to the front while its turn runs: the conversation \
+        attaches with the message still in its overlay, and the list reads the thread's rows beside it (`read(thread:)` right \
+        after the attach is asked for), so the message is drawn twice under one id, as a bubble and as a stored row, until \
+        the run hands over. Found by seed 9059 at 16 steps (agents 3, records 8); no mark moved in that run. The rows a \
+        conversation owns while it runs, and the two models of a turn (A4).
         """,
     ]
 
@@ -123,6 +155,26 @@ struct SeededRun {
     /// each without sending it: what a kill may and may not take.
     private var composed: Set<String> = []
     private var typedAt: [String: Date] = [:]
+    /// The conversation whose view is on screen, and whether its end is,
+    /// as that view last said.
+    private var viewed: ChildKey?
+    private var atEnd = false
+    /// The end the person is looking at, in front: the thread, the newest
+    /// message the app holds of it, and since when on the clock.
+    private var looking: (thread: String, message: String, since: Date)?
+    /// The messages of each thread whose end stood so for a second: what a
+    /// read by sight may name. A person's, so a kill takes none.
+    private var ripe: [String: Set<String>] = [:]
+    /// What Mark as Read was pressed on: each thread, with the newest
+    /// message its row named then ("" where it named none), and where Mark
+    /// as Unread was.
+    private var pressedRead: [String: Set<String>] = [:]
+    private var pressedUnread: Set<String> = []
+    /// The writes of marks judged so far.
+    private var judged = 0
+    /// Each chat drawn with no dot while the server held it read, with the
+    /// message it was read through: where a dot must not come back.
+    private var cleared: [String: String] = [:]
     /// The first rule the run broke that it is not known to break.
     private(set) var broken: Violation?
     /// The known rules this run broke, each once, with where.
@@ -145,7 +197,10 @@ struct SeededRun {
         let clock = TestClock()
         let ids = SequentialIDs()
         let base = temporaryFolder("seeded")
-        let server = SeededServer(seed: seed, clock: clock, revision: revision ?? drawn)
+        // Of its own stream, so what the seed drew before marks it draws
+        // still: mostly a server that keeps them.
+        var marks = SeededNumbers(seed: seed ^ SeededNumbers.hash("marks"))
+        let server = SeededServer(seed: seed, clock: clock, revision: revision ?? drawn, records: marks.below(6) == 0 ? 7 : 8)
         self.clock = clock
         self.ids = ids
         self.base = base
@@ -212,6 +267,7 @@ struct SeededRun {
                 await rig.runtime.linkChanged(link)
                 await drain()
             }
+            await appears()
             if let broken = await confirmed(settled: false) { return broken }
         }
         steps.append("the server behaves, and everything is given time to settle")
@@ -241,6 +297,11 @@ struct SeededRun {
                                             ? "person: finds a text in the chat and does not resend"
                                             : nil
             if let name { out[name, default: 0] += 1 }
+            let marks = [
+                "scrolls to the end": "person: scrolls to a chat's end", "scrolls up": "person: scrolls up from a chat's end",
+                "marks chat": "person: Mark as Unread or Mark as Read", "another device": "another device moves a mark",
+            ]
+            for (prefix, name) in marks where step.hasPrefix(prefix) { out[name, default: 0] += 1 }
         }
         return out
     }
@@ -275,6 +336,8 @@ struct SeededRun {
 
     private mutating func step() async {
         var choices: [(weight: Int, name: String)] = [(12, "time"), (16, "work"), (3, "kill")]
+        // The person's other device, whatever this one is doing.
+        if server.keepsMarks, !server.threadIDs.isEmpty { choices += [(4, "elsewhereRead"), (1, "elsewhereUnread")] }
         let current = await shown()
         if signedOut {
             choices.append((10, "signIn"))
@@ -285,9 +348,9 @@ struct SeededRun {
             // talks in it.
             let idle = current == nil
             choices += [(idle ? 24 : 4, "newChat"), (2, "refresh"), (4, "leave")]
-            if !(await rig.harness.state.chats.isEmpty) { choices.append((idle ? 16 : 5, "show")) }
+            if !(await rig.harness.state.chats.isEmpty) { choices += [(idle ? 16 : 5, "show"), (2, "markUnread"), (2, "markRead")] }
             if let current {
-                choices.append((2, "back"))
+                choices += [(2, "back"), (8, "scroll")]
                 if current.screen.composer.canSend { choices.append((30, "send")) }
                 if current.screen.streaming { choices.append((5, "stop")) }
                 if !buttons(current.screen).isEmpty { choices.append((14, "button")) }
@@ -317,11 +380,41 @@ struct SeededRun {
             steps.append("comes back to the front")
             inFront = true
             await rig.harness.send(.phase(.active))
+            await says(atEnd)
         case "leave":
             steps.append("leaves the app")
             inFront = false
+            // The chat's view says its end is no longer looked at, before
+            // or after the app hears it left the front: either order.
+            let first = numbers.chance(0.5)
+            if first { await says(false) }
             await rig.harness.send(.phase(.inactive))
+            if !first { await says(false) }
             await rig.harness.send(.phase(.background))
+        case "scroll":
+            atEnd.toggle()
+            steps.append(atEnd ? "scrolls to the end of the chat" : "scrolls up from the end of the chat")
+            await says(atEnd)
+        case "markUnread":
+            let thread = numbers.pick(await rig.harness.state.chats.map(\.id))
+            steps.append("marks chat \(thread) as unread")
+            pressedUnread.insert(thread)
+            cleared[thread] = nil
+            await rig.harness.send(.markUnread(thread))
+        case "markRead":
+            let state = await rig.harness.state
+            let thread = numbers.pick(state.chats.map(\.id))
+            steps.append("marks chat \(thread) as read")
+            pressedRead[thread, default: []].insert(state.thread(thread)?.lastMessage ?? "")
+            await rig.harness.send(.markRead(thread))
+        case "elsewhereRead":
+            let thread = numbers.pick(server.threadIDs)
+            steps.append("another device reads chat \(thread) to its end")
+            server.elsewhere(thread, unread: false)
+        case "elsewhereUnread":
+            let thread = numbers.pick(server.threadIDs)
+            steps.append("another device marks chat \(thread) as unread")
+            server.elsewhere(thread, unread: true)
         case "newChat":
             steps.append("opens a new chat")
             await rig.harness.send(.newChat(agent: helper, listen: false, scene: scene))
@@ -343,6 +436,25 @@ struct SeededRun {
         default:
             if let current { await press(numbers.pick(buttons(current.screen)), current.key, current.screen) }
         }
+    }
+
+    /// The view of the open chat says whether its end is on screen to
+    /// somebody looking at it.
+    private func says(_ shown: Bool) async {
+        if let viewed { await rig.harness.send(.end(scene: scene, key: viewed, shown: shown)) }
+    }
+
+    /// The view of a chat that came on screen says at once whether its end
+    /// is in view, as the app's does: a chat opens at its end, or at its
+    /// "New" line where that is further up. One that left the screen says
+    /// nothing, and the list knows by what the window shows.
+    private mutating func appears() async {
+        let key = signedOut ? nil : await rig.harness.state.scenes[scene]?.current
+        guard key != viewed else { return }
+        viewed = key
+        atEnd = key != nil && numbers.chance(0.7)
+        if inFront { await says(atEnd) }
+        await drain()
     }
 
     /// The next message's text: no other message's is a part of it, so a
@@ -481,6 +593,12 @@ struct SeededRun {
         scanned = 0
         stuck = [:]
         composed = []
+        // The view is gone with the process, and what the launch draws
+        // first is the folder's: a dot it kept may be older than the read.
+        viewed = nil
+        atEnd = false
+        looking = nil
+        cleared = [:]
         rig = ChatRig(
             platform: .ios, base: base, transport: server.connect(), clock: clock, ids: WatchedIDs(ids: ids, watch: server.watch),
             watch: server.watch)
@@ -509,7 +627,7 @@ struct SeededRun {
     // MARK: The rules
 
     private func broke(_ rule: Rule, _ what: String) -> Violation {
-        Violation(seed: seed, rule: rule.rawValue, what: what, steps: steps, revision: server.revision, rate: rate)
+        Violation(seed: seed, rule: rule.rawValue, what: what, steps: steps, revision: server.revision, records: server.records, rate: rate)
     }
 
     /// The transcript as a screen draws it: who said what, in order.
@@ -622,6 +740,8 @@ struct SeededRun {
                 case .saveState: wait = Wait(end: now.addingTimeInterval(0.4), key: "state")
                 case .saveDrafts: wait = Wait(end: now.addingTimeInterval(0.6), key: "drafts")
                 case let .feedWait(seconds): wait = Wait(end: now.addingTimeInterval(seconds), key: "feedWait")
+                case let .sight(thread, _): wait = Wait(end: now.addingTimeInterval(ChatApp.sightSeconds), key: "sight:\(thread)")
+                case let .marksWait(until): wait = Wait(end: until, key: "marksWait")
                 case let .cancel(cancelled): listWaits.removeAll { $0.key == cancelled }
                 default: break
                 }
@@ -711,9 +831,40 @@ struct SeededRun {
                 }
             }
 
+            if live.run != nil, !keeps {
+                // A turn an attach replayed, which is how a kept overlay
+                // names its turns: a message this device sent is drawn
+                // under its own id, and is held by every other rule.
+                let stored = Set((live.thread.flatMap { state.transcripts[$0] }?.turns ?? []).filter { $0.role == .user }.map(\.content))
+                let carried = live.overlay.turns.filter { turn in
+                    // Of the person's own messages: the app's words for
+                    // Continue on a server without the route may stand twice.
+                    guard let meant = ever[turn.content] else { return false }
+                    return turn.role == .user && !turn.pending && turn.id.hasPrefix("live-") && stored.contains(turn.content)
+                        && said.filter { $0.role == "user" && $0.text == turn.content }.count > meant
+                }
+                if !carried.isEmpty {
+                    if noted[.carried] == nil {
+                        noted[.carried] = broke(.carried, "\(name) sends under \(carried.map(\.content)), kept from a run before, which its rows hold")
+                    }
+                    leftover = true
+                }
+            }
+
+            let turnIDs = screen.turns.map(\.id)
+            if case .attach? = live.run {
+                let rows = Set((live.thread.flatMap { state.transcripts[$0] }?.records ?? []).map(\.id))
+                let again = live.overlay.turns.filter { $0.role == .user && !$0.pending && rows.contains($0.id) }
+                if !again.isEmpty, Set(turnIDs).count != turnIDs.count {
+                    if noted[.attached] == nil {
+                        noted[.attached] = broke(.attached, "\(name) is attached and draws \(again.map(\.content)) from its overlay and from its rows")
+                    }
+                    leftover = true
+                }
+            }
+
             // No row is drawn twice: not by its id, and no message of the
             // person's as a bubble and a stored row both.
-            let turnIDs = screen.turns.map(\.id)
             if !leftover, Set(turnIDs).count != turnIDs.count { return broke(.drawnTwice, "\(name) draws a turn's id twice: \(turnIDs)") }
             for (text, meant) in ever.sorted(by: { $0.key < $1.key }) where !leftover && said.filter({ $0.role == "user" && $0.text == text }).count > meant {
                 return broke(.drawnTwice, "\(name) draws \"\(text)\" twice: \(said.map(\.text))")
@@ -838,11 +989,154 @@ struct SeededRun {
         for text in sent.keys.sorted() where server.userRows(saying: text) == 0 && !homes.contains(text) {
             return broke(.lost, "\"\(text)\" is in no stored row, no composer and on no message")
         }
+        if let broken = marks(state, presentation) { return broken }
         // The list holds each chat once, and once settled every chat.
         let listed = state.chats.map(\.id)
         if Set(listed).count != listed.count { return broke(.list, "the list holds a chat twice: \(listed)") }
         if settled, Set(listed) != Set(server.threadIDs) {
             return broke(.list, "the list holds \(listed.sorted()), and the server \(server.threadIDs.sorted())")
+        }
+        return nil
+    }
+
+    /// Whether a chat is unread by the rule, from the row and the mark the
+    /// app holds: marked unread, or its newest message is not the one read
+    /// through. What this device moved and has not heard back about counts
+    /// while it names that newest message.
+    private static func unread(_ state: ChatAppState, _ thread: ChatThread) -> Bool {
+        guard !thread.running, let mark = known(state, thread) else { return false }
+        if mark.markedUnread { return true }
+        // Its row is older than its mark, and is being read again.
+        if state.rowsBehind.contains(thread.id) { return false }
+        guard let last = thread.lastMessage else { return false }
+        return mark.readThrough != last
+    }
+
+    /// What the person is looking at the end of, read again each time the
+    /// clock has moved: what stood there, in front, through the second
+    /// that just passed is ripe, and then what stands there now is noted.
+    /// Every wait that ended in a move of the clock began on what was seen
+    /// before it.
+    private mutating func regard(_ state: ChatAppState) {
+        if let held = looking, clock.now >= held.since.addingTimeInterval(ChatApp.sightSeconds - 0.000_001) {
+            ripe[held.thread, default: []].insert(held.message)
+        }
+        let current = state.scenes[scene]?.current.flatMap { state.conversations[$0]?.thread }
+        if inFront, !signedOut, atEnd, viewed == state.scenes[scene]?.current, let current, let last = state.thread(current)?.lastMessage {
+            if looking?.thread != current || looking?.message != last { looking = (current, last, clock.now) }
+        } else {
+            looking = nil
+        }
+    }
+
+    /// The mark the app holds of a thread: the server's as it last heard
+    /// it, with what this device moved and has not heard back about laid
+    /// over it where that names the thread's newest message. Nil where it
+    /// knows nothing of it.
+    private static func known(_ state: ChatAppState, _ thread: ChatThread) -> ThreadMark? {
+        let moved = [state.markSending[thread.id], state.marking[thread.id]].compactMap { $0 }
+        guard var mark = state.marks?[thread.id] ?? (moved.isEmpty ? nil : ThreadMark.none) else { return nil }
+        for change in moved {
+            if let read = change.readThrough, thread.lastMessage == nil || read == thread.lastMessage {
+                mark.readThrough = read
+                mark.markedUnread = change.markedUnread ?? false
+            } else if let flag = change.markedUnread {
+                mark.markedUnread = flag
+            }
+        }
+        return mark
+    }
+
+    /// The rules of read state, on what the app draws and what the server
+    /// was sent.
+    private mutating func marks(_ state: ChatAppState, _ presentation: ChatPresentation) -> Violation? {
+        regard(state)
+        if let watched = ProcessInfo.processInfo.environment["CHATKIT_MARK"] {
+            let row = state.thread(watched).map { "\($0.status), newest \($0.lastMessage ?? "none")" } ?? "not held"
+            print(
+                "MARK step \(steps.count) [\(steps.last ?? "")]: row \(row); the app holds \(String(describing: state.marks?[watched])), moved "
+                    + "\(String(describing: state.marking[watched] ?? state.markSending[watched])); the server \(String(describing: server.mark(of: watched))); "
+                    + "notifications \(rig.notifications.pending.keys.sorted())")
+        }
+        let writes = server.markWrites
+        for write in writes.dropFirst(judged) {
+            if !server.keepsMarks { return broke(.sight, "a mark of \(write.thread) was sent to a server that keeps none") }
+            if let read = write.readThrough, ripe[write.thread]?.contains(read) != true, pressedRead[write.thread]?.contains(read) != true {
+                return broke(
+                    .sight,
+                    "\(write.thread) was written as read through \(read), which never stood at the chat's end in front for a second "
+                        + "(those did: \((ripe[write.thread] ?? []).sorted())) and was not marked read by hand")
+            }
+            if write.markedUnread == true, !pressedUnread.contains(write.thread) {
+                return broke(.sight, "\(write.thread) was written as marked unread, and nobody pressed Mark as Unread on it")
+            }
+            if write.readThrough == nil, write.markedUnread == false, pressedRead[write.thread]?.contains("") != true {
+                return broke(.sight, "\(write.thread) had its Mark as Unread taken back with no position, and nobody pressed Mark as Read on it")
+            }
+        }
+        judged = writes.count
+
+        let rows = presentation.list.sections.flatMap(\.rows)
+        // The badge is the dots, counted.
+        var badge: Int?
+        for case let .badge(count) in rig.notifications.calls { badge = count }
+        let dots = rows.filter(\.unread).count
+        if let badge, badge != dots { return broke(.badge, "the badge says \(badge), and \(dots) chats are drawn unread") }
+        guard state.marks != nil else {
+            // The device's own map says what is unread, as before marks.
+            cleared = [:]
+            return nil
+        }
+        for row in rows.sorted(by: { $0.id < $1.id }) {
+            guard let thread = state.thread(row.id) else { continue }
+            let rule = Self.unread(state, thread)
+            if row.unread != rule {
+                return broke(
+                    .badge, "\(row.id) is drawn \(row.unread ? "unread" : "read"), and by its mark and its newest message it is \(rule ? "unread" : "read")")
+            }
+            guard !thread.running, let last = thread.lastMessage else { continue }
+            let truth = server.mark(of: row.id)
+            let held = server.rows(of: row.id).map(\.id)
+            // The server holds the message read: at or before the position.
+            let read = truth?.readThrough.flatMap { held.firstIndex(of: $0) }.map { at in held.firstIndex(of: last).map { $0 <= at } ?? false } ?? false
+            let flagged = truth?.markedUnread == true
+            if row.unread {
+                let pressed = state.marking[row.id]?.markedUnread == true || state.markSending[row.id]?.markedUnread == true
+                // The app hears of a mark's moves in their order: one it
+                // holds marked unread, from before the server's newest, is
+                // a Mark as Unread that was set and it has not heard taken
+                // back yet.
+                let behind = state.marks?[row.id].map { $0.markedUnread && $0.version < (truth?.version ?? 0) } ?? false
+                if cleared[row.id] == last, !flagged, !pressed, !behind {
+                    return broke(
+                        .dot,
+                        "\(row.id) is drawn unread again for \(last), which the server holds read (through \(truth?.readThrough ?? "nothing")) and the "
+                            + "list drew read before; the app holds the mark \(String(describing: state.marks?[row.id]))")
+                }
+                if flagged { cleared[row.id] = nil }
+            } else if read, !flagged, let mark = Self.known(state, thread), mark.readThrough == last, !mark.markedUnread {
+                // Drawn read because the app holds it read, and the server
+                // does: from here a dot is one that came back. A chat drawn
+                // read while its row is read again is not yet that.
+                cleared[row.id] = last
+            }
+        }
+        // A reply's notification, pending or shown, for a chat the app
+        // itself holds read.
+        for (id, request) in rig.notifications.pending.sorted(by: { $0.key < $1.key }) where id.hasSuffix("|reply") {
+            guard let name = request.thread, let thread = state.thread(name), !thread.running, state.marked(name), !Self.unread(state, thread)
+            else { continue }
+            // A call that failed is told whoever read the reply before it:
+            // it stands until somebody has looked since it settled.
+            if thread.status == "error", let settled = thread.record["finishedAt"]?.string.flatMap(Timestamp.parse),
+                Self.known(state, thread)?.readAt.map({ $0 <= settled }) ?? true
+            {
+                continue
+            }
+            return broke(
+                .notified,
+                "a notification of \(name)'s reply stands (\(request.fireAt.map { $0 <= clock.now ? "shown" : "waiting" } ?? "shown")) while the app "
+                    + "holds the chat read through \(thread.lastMessage ?? "nothing")")
         }
         return nil
     }
@@ -859,14 +1153,18 @@ struct SeededRun {
         if !inFront {
             inFront = true
             await rig.harness.send(.phase(.active))
+            await says(atEnd)
         }
         await drain()
+        await appears()
         for round in 0 ..< 60 {
             forgetTrace()
             server.finishTurns()
             await drain()
+            regard(await rig.harness.state)
             clock.advance(by: 4)
             await drain()
+            regard(await rig.harness.state)
             if round % 6 == 5 {
                 // The list reads again, as it does whenever the app comes
                 // to the front: what moved while it could not hear is read.
@@ -887,6 +1185,7 @@ struct SeededRun {
         }
         await rig.harness.send(.refresh)
         await drain()
+        regard(await rig.harness.state)
         clock.advance(by: 1)
         await drain()
         if let broken = await confirmed(settled: false) { return broken }

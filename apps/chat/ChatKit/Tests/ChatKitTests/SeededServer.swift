@@ -56,6 +56,16 @@ struct SeededNumbers: Sendable {
 /// test says (`work`), so every interleaving is the test's to choose.
 /// `rows(of:)` is what a transcript must end up equal to.
 ///
+/// **The marks.** Where its `records` feature is at revision 8 it keeps the
+/// person's mark of each thread as #1405's server does: one a thread, a
+/// position that only moves forward through the thread's rows, a Mark as
+/// Unread a position taken clears unless the same write sets it, and the
+/// thread's `lastMessage`, the newest row it settled with, a message no
+/// reply came after passed over (#1419). Another device
+/// of the same person moves a mark when the test says (`elsewhere`), and
+/// every mark that moved is a row on the change feed, in the order it
+/// moved. Below that revision it does not know the kind.
+///
 /// **The faults.** Each request draws its fault from the seed, the request's
 /// own signature and how many like it came before, so the draw does not
 /// turn on the order two requests of different kinds arrive in: a `500`, a
@@ -110,7 +120,26 @@ final class SeededServer: @unchecked Sendable {
         var updatedAt: Date
         var finishedAt: Date?
         var lastReply: String?
+        /// The newest row when the thread last settled.
+        var lastMessage: String?
         var turn: Turn?
+    }
+
+    /// The person's mark of a thread.
+    struct Mark: Equatable, Sendable {
+        var readThrough: String?
+        /// Absent until set.
+        var markedUnread: Bool?
+        var version = 0
+        var readAt: Date?
+    }
+
+    /// A write of a mark the app sent, whatever became of it.
+    struct MarkWrite: Equatable, Sendable {
+        var thread: String
+        var readThrough: String?
+        var markedUnread: Bool?
+        var at: Date
     }
 
     /// What a stream does wrong once it is open.
@@ -150,8 +179,17 @@ final class SeededServer: @unchecked Sendable {
     /// The `agents` feature's revision the discovery document states: below
     /// 3 the server refuses `messageId` and has no continue route.
     let revision: Int
+    /// The `records` feature's revision: 8 keeps the person's marks.
+    let records: Int
     let agent: String
     private let lock = NSLock()
+    private var marks: [String: Mark] = [:]
+    private var written: [MarkWrite] = []
+    /// The change feed: a row for each mark that moved, and who follows.
+    private var feedSeq = 1
+    private var ordered = Date.distantPast
+    private var feed: [(seq: Int, line: String)] = []
+    private var watchers: [Int: (port: Int, to: AsyncThrowingStream<String, any Error>.Continuation)] = [:]
     private var threads: [String: Thread] = [:]
     private var order: [String] = []
     private var minted = 0
@@ -176,10 +214,11 @@ final class SeededServer: @unchecked Sendable {
     private let home = SeededThread.current
     private var strays: [String] = []
 
-    init(seed: UInt64, clock: TestClock, revision: Int = 3, agent: String = helper) {
+    init(seed: UInt64, clock: TestClock, revision: Int = 3, records: Int = 8, agent: String = helper) {
         self.seed = seed
         self.clock = clock
         self.revision = revision
+        self.records = records
         self.agent = agent
     }
 
@@ -195,6 +234,87 @@ final class SeededServer: @unchecked Sendable {
     func running(_ thread: String) -> Bool { lock.withLock { threads[thread]?.turn != nil } }
 
     var anyRunning: Bool { lock.withLock { threads.values.contains { $0.turn != nil } } }
+
+    var keepsMarks: Bool { records >= 8 }
+
+    /// The newest row a thread settled with.
+    func lastMessage(of thread: String) -> String? { lock.withLock { threads[thread]?.lastMessage } }
+
+    /// The person's mark of a thread as the server holds it.
+    func mark(of thread: String) -> Mark? { lock.withLock { marks[thread] } }
+
+    /// Every write of a mark the app sent, in the order they came.
+    var markWrites: [MarkWrite] { lock.withLock { written } }
+
+    /// Another device of the same person moves a mark: reads the thread to
+    /// its newest row, or marks it unread. False where it had nothing to
+    /// move.
+    @discardableResult func elsewhere(_ thread: String, unread: Bool) -> Bool {
+        lock.withLock {
+            guard keepsMarks, let held = threads[thread] else { return false }
+            if unread { return put(thread, readThrough: nil, markedUnread: true) }
+            guard let last = held.lastMessage else { return false }
+            return put(thread, readThrough: last, markedUnread: nil)
+        }
+    }
+
+    /// The server's own time for what it orders by, a thread settling and
+    /// a position taken: the clock's, and never the same instant twice,
+    /// since the run's clock stands still between its steps and a real
+    /// server's does not. A position is taken after the thread settled
+    /// with its message, and the stamps say so.
+    private func instant() -> Date {
+        ordered = max(clock.now, ordered.addingTimeInterval(0.001))
+        return ordered
+    }
+
+    /// Called under the lock: the rules of a mark's write. True when the
+    /// mark moved.
+    private func put(_ thread: String, readThrough: String?, markedUnread: Bool?) -> Bool {
+        guard let rows = threads[thread]?.rows else { return false }
+        var mark = marks[thread] ?? Mark()
+        var changed = marks[thread] == nil
+        if let readThrough, let place = rows.firstIndex(where: { $0.id == readThrough }) {
+            let stored = mark.readThrough.flatMap { id in rows.firstIndex { $0.id == id } }
+            // Forward only: an earlier row leaves the position alone.
+            if stored.map({ place >= $0 }) ?? true {
+                let cleared = mark.markedUnread == true && markedUnread != true
+                if mark.readThrough != readThrough || cleared { changed = true }
+                // Taken after the thread settled with it, never at the
+                // same instant: the reader had to see it first.
+                if mark.readThrough != readThrough { mark.readAt = instant() }
+                mark.readThrough = readThrough
+                if cleared { mark.markedUnread = false }
+            }
+        }
+        if let markedUnread, mark.markedUnread != markedUnread {
+            mark.markedUnread = markedUnread
+            changed = true
+        }
+        guard changed else { return false }
+        mark.version += 1
+        marks[thread] = mark
+        feedSeq += 1
+        let row = line([
+            "seq": feedSeq, "ts": stamp(clock.now), "kind": "substrate.reamde.dev/llm/threadmark", "recordId": "\(thread).me", "op": "patch",
+        ])
+        feed.append((feedSeq, row))
+        for id in watchers.keys.sorted() where watchers[id]?.port == port { watchers[id]?.to.yield(row) }
+        return true
+    }
+
+    private func record(_ mark: Mark, thread: String) -> [String: Any] {
+        var properties: [String: Any] = [
+            "thread": ["ref": "substrate.reamde.dev/llm/thread/\(thread)"], "readBy": ["ref": "substrate.reamde.dev/core/actor/me"],
+        ]
+        if let read = mark.readThrough { properties["readThrough"] = ["ref": "substrate.reamde.dev/llm/message/\(read)"] }
+        if let at = mark.readAt { properties["readAt"] = stamp(at) }
+        if let unread = mark.markedUnread { properties["markedUnread"] = unread }
+        return [
+            "id": "\(thread).me", "kind": "substrate.reamde.dev/llm/threadmark", "version": mark.version,
+            "createdAt": "2026-10-30T10:00:00Z", "updatedAt": stamp(mark.readAt ?? clock.now), "properties": properties,
+        ]
+    }
 
     /// How many user rows hold exactly this text, in every thread.
     func userRows(saying text: String) -> Int {
@@ -358,8 +478,15 @@ final class SeededServer: @unchecked Sendable {
         thread.cause = status == "error" ? "provider_overloaded" : status == "stopped" ? "requested" : nil
         thread.version += 1
         thread.updatedAt = clock.now
-        thread.finishedAt = clock.now
+        thread.finishedAt = instant()
         thread.turn = nil
+        // The newest row, passing over a message of the person's that no
+        // reply came after (#1419): after a call that wrote no reply it
+        // still names the reply before, and names the message only in a
+        // chat that holds nothing else. It never moves back.
+        let named = thread.rows.lastIndex { $0.role != "user" } ?? (thread.lastMessage == nil ? thread.rows.indices.last : nil)
+        let held = thread.lastMessage.flatMap { id in thread.rows.firstIndex { $0.id == id } }
+        if let named, held.map({ named > $0 }) ?? true { thread.lastMessage = thread.rows[named].id }
         threads[id] = thread
         let last: String
         if status == "error" {
@@ -428,12 +555,13 @@ final class SeededServer: @unchecked Sendable {
         case events(String)
         case stop(String)
         case resume(String)
-        case watch
+        case watch(kinds: Set<String>, from: Int?)
+        case mark([String: Any])
         case other
 
         var writes: Bool {
             switch self {
-            case .chat, .stop, .resume: true
+            case .chat, .stop, .resume, .mark: true
             default: false
             }
         }
@@ -458,7 +586,16 @@ final class SeededServer: @unchecked Sendable {
             return String(path[range.upperBound...]).removingPercentEncoding
         }
         if path.hasSuffix("/.well-known/substrate/server.json") { return (.discovery, "discovery", nil) }
-        if path.hasSuffix("/api/v1/changes") { return (.watch, "watch", nil) }
+        if path.hasSuffix("/api/v1/changes") {
+            let items = components?.queryItems ?? []
+            let kinds = Set(items.filter { $0.name == "kinds" }.flatMap { ($0.value ?? "").split(separator: ",").map(String.init) })
+            return (.watch(kinds: kinds, from: query["from"].flatMap(Int.init)), "watch", nil)
+        }
+        if method == "POST", path.hasSuffix("/api/v1/records") {
+            let body = (request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            let properties = body["properties"] as? [String: Any] ?? [:]
+            return (.mark(body), "mark|\(properties["thread"] as? String ?? "")", nil)
+        }
         if method == "GET", path.hasSuffix("/api/v1/records") {
             let filter = (query["filter"].flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]) ?? [:]
             let kind = (filter["kinds"] as? [String])?.first ?? ""
@@ -550,6 +687,12 @@ final class SeededServer: @unchecked Sendable {
             guard number == port else { return nil }
             seen += 1
             if case let .chat(_, body) = call, let text = body["message"] as? String { chats[text, default: 0] += 1 }
+            if case let .mark(body) = call, let properties = body["properties"] as? [String: Any] {
+                written.append(
+                    MarkWrite(
+                        thread: properties["thread"] as? String ?? "", readThrough: properties["readThrough"] as? String,
+                        markedUnread: properties["markedUnread"] as? Bool, at: clock.now))
+            }
             return fault(for: call, signature: signature)
         }
         // A launch that was killed: what it still had on its way is lost.
@@ -582,6 +725,12 @@ final class SeededServer: @unchecked Sendable {
             outcome = lock.withLock {
                 let done = perform(call, url: url)
                 // A write the server took whose answer the fault then eats.
+                if case .mark = call, case .json(200 ... 201, _) = done {
+                    switch fault {
+                    case .status, .gateway, .hang, .dropped, .page: note("a mark taken and its answer lost")
+                    default: break
+                    }
+                }
                 if call.writes, case .stream = done {
                     switch fault {
                     case .status, .gateway, .hang, .dropped, .page: note("a write taken and its answer lost")
@@ -616,12 +765,34 @@ final class SeededServer: @unchecked Sendable {
         switch outcome ?? .json(500, "{}") {
         case let .json(status, body):
             return json(status, body, url: url)
-        case .parked:
-            // The change feed: its bookmark, then nothing, for as long as
-            // the app listens.
-            return ndjson(url: url) { continuation in
-                continuation.yield(#"{"bookmark":1,"generation":"g"}"#)
-                return nil
+        case let .watching(kinds, from):
+            // The change feed: its bookmark, what a watch resumed from a
+            // cursor missed, then each mark as it moves, for as long as the
+            // app listens. Nothing else is told on it: the app hears of a
+            // thread from its reads.
+            return ndjson(url: url) { [self] continuation in
+                lock.withLock {
+                    continuation.yield(line(["bookmark": from ?? feedSeq, "generation": "g"]))
+                    guard kinds.contains("substrate.reamde.dev/llm/threadmark") else { return nil as Int? }
+                    // The server refuses, whole, a watch that names a kind
+                    // it does not declare.
+                    guard keepsMarks else {
+                        continuation.yield(#"{"error":{"code":"validation","message":"unknown type \"substrate.reamde.dev/llm/threadmark\""}}"#)
+                        continuation.finish()
+                        return nil
+                    }
+                    if let from {
+                        for row in feed where row.seq > from { continuation.yield(row.line) }
+                    }
+                    readers += 1
+                    watchers[readers] = (number, continuation)
+                    return readers
+                }
+            } ended: { [self] reader in
+                Task.detached { [self] in
+                    watch("a stream's cleanup")
+                    lock.withLock { if let reader { watchers[reader] = nil } }
+                }
             }
         case let .stream(thread, opening, broken):
             entered = false
@@ -704,7 +875,7 @@ final class SeededServer: @unchecked Sendable {
         case json(Int, String)
         /// The stream's first lines, then the thread's running turn.
         case stream(thread: String, opening: [String], fault: StreamFault)
-        case parked
+        case watching(kinds: Set<String>, from: Int?)
     }
 
     private func refuse(_ status: Int, _ code: String, reason: String? = nil, _ message: String) -> Outcome {
@@ -724,6 +895,7 @@ final class SeededServer: @unchecked Sendable {
             properties["cause"] = cause
             properties["reason"] = "the run ended: \(cause)"
         }
+        if keepsMarks, let last = thread.lastMessage { properties["lastMessage"] = ["ref": "substrate.reamde.dev/llm/message/\(last)"] }
         return [
             "id": thread.id, "kind": "substrate.reamde.dev/llm/thread", "version": thread.version, "createdAt": stamp(thread.startedAt),
             "updatedAt": stamp(thread.updatedAt), "properties": properties,
@@ -741,7 +913,9 @@ final class SeededServer: @unchecked Sendable {
     }
 
     private func page(_ records: [[String: Any]]) -> Outcome {
-        .json(200, line(["head": seen, "generation": "g", "records": records]))
+        // The feed's place as of this read: a watch opened from it is told
+        // what moved since.
+        .json(200, line(["head": feedSeq, "generation": "g", "records": records]))
     }
 
     private func perform(_ call: Call, url: URL) -> Outcome {
@@ -751,10 +925,26 @@ final class SeededServer: @unchecked Sendable {
                 200,
                 line([
                     "server": ["version": "seeded"],
-                    "features": [["name": "agents", "stability": "experimental", "revision": revision]],
+                    "features": [
+                        ["name": "agents", "stability": "experimental", "revision": revision],
+                        ["name": "records", "stability": "stable", "revision": records],
+                    ],
                 ]))
-        case .watch:
-            return .parked
+        case let .watch(kinds, from):
+            return .watching(kinds: kinds, from: from)
+        case let .mark(body):
+            let kind = body["kind"] as? String ?? ""
+            guard keepsMarks, kind == "substrate.reamde.dev/llm/threadmark" else { return refuse(404, "not_found", "unknown kind \(kind)") }
+            let properties = body["properties"] as? [String: Any] ?? [:]
+            let thread = properties["thread"] as? String ?? ""
+            guard let held = threads[thread] else { return refuse(404, "not_found", "substrate: not found: thread \(thread)") }
+            let read = properties["readThrough"] as? String
+            if let read, !held.rows.contains(where: { $0.id == read }) {
+                return refuse(422, "validation", "readThrough names no message of thread \(thread)")
+            }
+            let created = marks[thread] == nil
+            if put(thread, readThrough: read, markedUnread: properties["markedUnread"] as? Bool) { note("a mark moved by the app") }
+            return .json(created ? 201 : 200, line(record(marks[thread] ?? Mark(), thread: thread)))
         case let .thread(id):
             guard let thread = threads[id] else { return refuse(404, "not_found", "substrate: not found: thread \(id)") }
             return .json(200, line(record(thread)))
@@ -887,6 +1077,10 @@ final class SeededServer: @unchecked Sendable {
             if let role = equal("role") { rows = rows.filter { $0.0.role == role } }
             if query["orderBy"]?.hasPrefix("turn:desc") == true { rows.reverse() }
             return page(rows.prefix(first).map { record($0.0, thread: $0.1) })
+        case "substrate.reamde.dev/llm/threadmark":
+            guard keepsMarks else { return refuse(404, "not_found", "unknown kind \(kind)") }
+            let named = (properties["thread"] as? [String: Any])?["in"] as? [String] ?? []
+            return page(named.compactMap { thread in marks[thread].map { record($0, thread: thread) } }.prefix(first).map { $0 })
         default:
             return page([])
         }

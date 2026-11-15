@@ -18,8 +18,9 @@ import FoundationNetworking
 /// the bounded run every `swift test` makes. For a seed that broke a rule:
 /// `CHATKIT_VERBOSE` adds every conversation's state and the last step's
 /// trace to what it prints, `CHATKIT_TRACE` keeps the trace of the whole
-/// run, and `CHATKIT_WATCH=<text>` prints where that text is after each
-/// step.
+/// run, `CHATKIT_WATCH=<text>` prints where that text is after each
+/// step, and `CHATKIT_MARK=<thread>` what the app and the server hold of
+/// that thread's mark.
 private struct SeedPlan {
     var seeds: [UInt64]
     var steps: Int
