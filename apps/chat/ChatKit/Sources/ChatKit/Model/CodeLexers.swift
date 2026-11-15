@@ -567,6 +567,9 @@ enum CodeLexers {
                 while j < s.end, s.line[j] != quote { j += s.line[j] == backslash ? 2 : 1 }
                 guard j < s.end else { return nil }
                 i = j
+            } else if c == apostrophe, s.byte(i + 2) == apostrophe {
+                // A character (`'}'`): no mark of the group's.
+                i += 2
             }
             i += 1
         }
@@ -640,7 +643,7 @@ enum CodeLexers {
 
     /// The byte after a template literal's closing backtick, from inside
     /// it. `depth` is how many braces of an interpolation are open, where a
-    /// backtick belongs to a template inside it and closes nothing here.
+    /// string, and a template inside it, is read past whole.
     static func templateEnd(_ s: CodeScan, from: Int, depth: inout Int) -> Int? {
         var i = from
         while i < s.end {
@@ -660,6 +663,13 @@ enum CodeLexers {
                 depth += 1
             } else if c == UInt8(ascii: "}") {
                 depth -= 1
+            } else if c == quote || c == apostrophe || c == tick {
+                // A string inside the interpolation, a template of its own
+                // too: its braces open and close nothing. One that does not
+                // close on this line is left to the marks that follow.
+                var j = i + 1
+                while j < s.end, s.line[j] != c { j += s.line[j] == backslash ? 2 : 1 }
+                if j < s.end { i = j }
             }
             i += 1
         }

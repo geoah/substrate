@@ -194,13 +194,37 @@ struct CodeHighlightTests {
         #expect(Self.painted("let a = \"for the win", "swift") == [.keyword: ["let"]])
         #expect(Self.painted("const s = 'it is for now", "js") == [.keyword: ["const"]])
         #expect(Self.painted("{\"name\": \"half", "json") == [.name: ["\"name\""]])
-        #expect(Self.painted("<a href=\"half", "html") == [.keyword: ["a"], .name: ["href"]])
         // The next line starts clean.
         #expect(Self.painted("let a = \"half\nlet b = 1", "swift") == [.keyword: ["let", "let"], .number: ["1"]])
         // One that may run over lines is coloured from where it opens.
         #expect(Self.painted("x = \"\"\"half", "python")[.string] == ["\"\"\"half"])
         #expect(Self.painted("echo 'half", "sh")[.string] == ["'half"])
         #expect(Self.painted("/* half", "go")[.comment] == ["/* half"])
+        #expect(Self.painted("<a href=\"half", "html") == [.keyword: ["a"], .name: ["href"], .string: ["\"half"]])
+    }
+
+    @Test func whatRunsOverLinesClosesWhereItShouldAndTheLinesAfterItAreCode() {
+        // A brace in a string inside a template's interpolation opens
+        // nothing: the template ends at its backtick.
+        let template = Self.painted("const s = `${\"{\"}`;\nconst answer = 42;", "js")
+        #expect(template[.string] == ["`${\"{\"}`"])
+        #expect(template[.keyword] == ["const", "const"] && template[.number] == ["42"])
+        let nested = Self.painted("const s = `a ${ok ? `}` : '{'} b`;\nlet n = 1;", "ts")
+        #expect(nested[.string] == ["`a ${ok ? `}` : '{'} b`"])
+        #expect(nested[.keyword] == ["const", "let"])
+        // A character that is a brace, in Kotlin's.
+        #expect(Self.painted("val s = \"${if (c == '}') 1 else 2}\" + x", "kotlin")[.string] == ["\"${if (c == '}') 1 else 2}\""])
+        // A here-document whose word is quoted: its body is text, and the
+        // commands after it are commands.
+        for word in ["'EOF'", "\"EOF\"", "EOF", "-EOF"] {
+            let painted = Self.painted("cat <<\(word)\nif it's \"text\"\nEOF\nexport PATH=/tmp # set", "bash")
+            #expect(painted == [.keyword: ["export"], .comment: ["# set"]], "\(word)")
+        }
+        // An attribute's value over two lines is one string, and the tags
+        // after it are tags.
+        let html = Self.painted("<div title=\"hello\nworld\" id=x>\n<p>Text</p>\n</div>", "html")
+        #expect(html[.string] == ["\"hello", "world\""])
+        #expect(html[.keyword] == ["div", "p", "p", "div"] && html[.name] == ["title", "id"])
     }
 
     @Test func aDiffIsColouredByItsLinesFirstCharacterAndItsHunksCounts() {

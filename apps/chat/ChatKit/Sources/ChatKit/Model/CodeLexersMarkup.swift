@@ -313,10 +313,14 @@ extension CodeLexers {
                 let strips = s.byte(i) == UInt8(ascii: "-")
                 if strips { i += 1 }
                 i = s.pastSpaces(i)
-                if s.byte(i) == quote || s.byte(i) == apostrophe { i += 1 }
+                let quoting = s.byte(i) == quote || s.byte(i) == apostrophe ? s.byte(i) : nil
+                if quoting != nil { i += 1 }
                 var end = i
                 while end < s.end, s.line[end].inName { end += 1 }
                 if end > i { heredoc = (s.text(i, end), strips) }
+                // The quote that closes a quoted word is the word's own,
+                // and opens no string.
+                if end > i, quoting != nil, s.byte(end) == quoting { end += 1 }
                 s.at = max(end, from + 2)
             } else if shellBreaks.contains(c) {
                 s.at += 1
@@ -365,10 +369,19 @@ extension CodeLexers {
 
     /// Tags' names, attributes and their quoted values, comments, and a
     /// doctype. The body of a `script` or a `style` is another language and
-    /// is left plain.
+    /// is left plain. An attribute's value may run over lines: the state is
+    /// then a string's, with the tag's name kept.
     static func html(_ s: inout CodeScan, _ state: inout LexState) {
         while s.at < s.end {
             switch state.mode {
+            case let .string(mark):
+                guard let close = s.find([mark], from: s.at) else {
+                    s.paint(s.at, s.end, .string)
+                    return
+                }
+                s.paint(s.at, close + 1, .string)
+                s.at = close + 1
+                state.mode = .tag
             case .markupComment:
                 guard let close = s.find(Array("-->".utf8), from: s.at) else {
                     s.paint(s.at, s.end, .comment)
@@ -398,11 +411,18 @@ extension CodeLexers {
                     s.at += 1
                     state.word = ""
                 } else if c == quote || c == apostrophe {
-                    guard let end = quoted(s, from: s.at, escapes: false) else { return }
+                    guard let end = quoted(s, from: s.at, escapes: false) else {
+                        s.paint(s.at, s.end, .string)
+                        state.mode = .string(c)
+                        return
+                    }
                     s.paint(s.at, end, .string)
                     s.at = end
                 } else if c == UInt8(ascii: "=") {
-                    s.at += 1
+                    // A value with no quotes is no attribute's name: it is
+                    // read past, plain.
+                    s.at = s.pastSpaces(s.at + 1)
+                    while s.at < s.end, !" >\"'{".utf8.contains(s.line[s.at]) { s.at += 1 }
                 } else if c == UInt8(ascii: "{") {
                     // An expression in braces, as JSX and templates write
                     // them: not markup.
