@@ -293,6 +293,11 @@ func agentEntryError(err error) error {
 // and is answered as an attach to the message's thread is. Such a message
 // sent to a thread a chat turn runs on is not refused: it joins that turn
 // (decision 0318, agentqueue.go).
+//
+// A message may name the pending question it answers in the person's own
+// words (in.RepliesTo, decision 0327): the transaction that writes the
+// message resolves the question, on either path, and nothing else resumes
+// the thread for it.
 func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name string, in substrate.ChatInput, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error) {
 	ag, err := ds.registry().ResolveAgent(name)
 	if err != nil {
@@ -310,6 +315,19 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 	if in.Thread != "" {
 		if err := ds.mayContinue(ctx, actor, in.Thread, false); err != nil {
 			return nil, err
+		}
+	}
+	if in.RepliesTo != "" {
+		// The question is resolved in the transaction that writes the
+		// message, which only a message that names its id is written in: a
+		// repeat then finds the row and resolves nothing twice.
+		switch {
+		case in.Thread == "":
+			return nil, fmt.Errorf("%w: repliesTo names a question of a thread: send it with thread", substrate.ErrValidation)
+		case in.MessageID == "":
+			return nil, fmt.Errorf("%w: repliesTo needs messageId: the answer is written with the message, so the message names its id", substrate.ErrValidation)
+		case !vocabulary.ValidID(in.RepliesTo):
+			return nil, fmt.Errorf("%w: repliesTo %q is not a record id", substrate.ErrValidation, in.RepliesTo)
 		}
 	}
 	if in.MessageID != "" {
@@ -348,7 +366,7 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name st
 				return agentInvocation{}, err
 			}
 			return agentInvocation{
-				user: in.Message, userActor: actor, messageID: in.MessageID,
+				user: in.Message, userActor: actor, messageID: in.MessageID, repliesTo: in.RepliesTo,
 				turnContext: turnCtx, threadID: in.Thread,
 			}, nil
 		})

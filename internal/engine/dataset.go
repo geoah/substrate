@@ -719,6 +719,11 @@ type txn struct {
 	// running, done and failed states (approvals.go).
 	approvalLoop bool
 	approvalRun  bool
+	// replying is the id of the chat message whose send is answering an
+	// interaction in words, set while that send's transaction moves it to
+	// `replied`: the one writer of that state and of `repliedIn`
+	// (interactions.go replyToInteraction).
+	replying string
 	// migrating marks a repository migration's transaction (repomigrate.go):
 	// it folds before the stored vocabulary loads, so a row whose kind the
 	// registry does not yet hold keeps its derived indexes as they stand,

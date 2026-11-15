@@ -723,6 +723,7 @@
     "context": false,
     "message": true,
     "messageId": false,
+    "repliesTo": false,
     "thread": false,
     "timezone": false
   },

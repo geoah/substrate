@@ -197,6 +197,10 @@ type agentInvocation struct {
 	// claims or opens the thread, so a record with the id exists exactly
 	// when the turn was admitted. Empty mints an id, in a write of its own.
 	messageID string
+	// repliesTo is the interaction the message answers in the person's own
+	// words (decision record 0327): the transaction that writes the user
+	// row moves it to `replied`. Only with messageID.
+	repliesTo string
 	// threadID continues an existing thread (chat); empty mints one.
 	threadID string
 	// continued marks the person's own Continue (decision 0312): a
@@ -744,6 +748,10 @@ type agentLoop struct {
 	// unread are the queued messages the run never handed a model call, as
 	// its last settle found them.
 	unread []string
+	// replied is set by the transaction that wrote the turn's user row when
+	// that message answered a question in words (in.repliesTo) which still
+	// waited: the row's block then says so.
+	replied bool
 	// openedAt marks when this invocation loaded (or minted) its thread: a
 	// resolution row landing AFTER it was not in the replayed history, so the
 	// settle-time re-check knows what this run could not have consumed.
@@ -1782,7 +1790,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 				return nil, l.failWrite(ctx, err)
 			}
 		}
-		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user, Context: l.in.turnContext.text})
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user, Context: l.userContext().text})
 	}
 	return messages, nil
 }
@@ -1791,8 +1799,18 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // ordinal and its thread.
 func (l *agentLoop) userRowProps() map[string]any {
 	props := map[string]any{"role": "user", "content": l.in.user}
-	l.in.turnContext.stamp(props)
+	l.userContext().stamp(props)
 	return props
+}
+
+// userContext is the block the turn's user row carries: the one the
+// invocation rendered, saying so where the message answered a question in
+// the person's own words (putSentMessage).
+func (l *agentLoop) userContext() turnContext {
+	if l.replied {
+		return l.in.turnContext.answering(l.in.repliesTo)
+	}
+	return l.in.turnContext
 }
 
 // putSentMessage writes the user row of a message that names its own id
@@ -1806,6 +1824,18 @@ func (l *agentLoop) userRowProps() map[string]any {
 func (l *agentLoop) putSentMessage(t *txn) error {
 	if l.in.messageID == "" || l.in.user == "" {
 		return nil
+	}
+	// A message that names the question it answers resolves it here, with
+	// its own row (decision record 0327). Whether the question still waits
+	// is read first, under its lock, because the row says so to the model.
+	l.replied = false
+	var asked *int64
+	if l.in.repliesTo != "" {
+		var err error
+		if asked, err = t.pendingQuestion(l.threadID, l.in.repliesTo); err != nil {
+			return err
+		}
+		l.replied = asked != nil
 	}
 	turn, err := t.nextThreadTurn(l.threadID)
 	if err != nil {
@@ -1829,6 +1859,11 @@ func (l *agentLoop) putSentMessage(t *txn) error {
 		return err
 	}); err != nil {
 		return err
+	}
+	if l.replied {
+		if err := t.replyToInteraction(l.in.repliesTo, l.in.messageID, asked, userActor); err != nil {
+			return err
+		}
 	}
 	l.turnMu.Lock()
 	l.turn = max(l.turn, int(turn)+1)
@@ -1950,6 +1985,10 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		}}); err != nil {
 			return err
 		}
+		// The claim is that one patch: a later write of the thread in this
+		// transaction (the count of what waits on a person, where the
+		// message answers a question) is not it.
+		t.claiming = false
 		return l.putSentMessage(t)
 	})
 }

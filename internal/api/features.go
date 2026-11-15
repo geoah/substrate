@@ -337,8 +337,12 @@ var featureTable = []feature{
 	// a thread a chat turn runs on, where it was refused `thread_busy`; the
 	// stream says so with `messageQueued` and `messageTaken`; and a continue
 	// takes up a thread that settled with a message unanswered (decision
-	// 0318).
-	{name: "agents", stability: substrate.StabilityExperimental, revision: 6, surfaces: []string{surfaceREST}, routes: []string{
+	// 0318). Revision 7: a chat message may name the pending question it
+	// answers in the person's own words, `repliesTo`, which moves the
+	// interaction to the new state `replied` with `repliedIn`; and a resolved
+	// interaction, approval and change request link whose hand resolved it,
+	// `resolvedBy` and `decidedBy` (decision 0327).
+	{name: "agents", stability: substrate.StabilityExperimental, revision: 7, surfaces: []string{surfaceREST}, routes: []string{
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/chat",
 		"POST /api/v1/substrate.reamde.dev/core/agent/{name}/call",
 		"GET /api/v1/substrate.reamde.dev/llm/thread/{id}/events",

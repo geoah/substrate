@@ -1097,6 +1097,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				row.Props[stamp] = t.now.Format(time.RFC3339Nano)
 				accepted = append(accepted, stamp)
 			}
+			// Whose hand resolved a question, an approval or a change
+			// request, beside the time the stamp above keeps (resolvedby.go).
+			accepted = t.stampResolver(sp.ty, row, name, cur, accepted)
 			switch tr.OnEnter {
 			case onEnterApplyDiff, onEnterApplyMerge:
 				// The diff or the merge names its own target, which no scope
