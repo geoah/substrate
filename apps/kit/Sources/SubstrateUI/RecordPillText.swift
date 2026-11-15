@@ -34,12 +34,48 @@ public enum RecordPillText {
         }
         let gap = Text(space("\u{202F}")).customAttribute(part)
         // Its label is the kind, so that a screen reader reads the pill as
-        // `RecordPill`'s label.
-        let tile = Text(space("\u{00A0}\u{00A0}\u{00A0}\u{00A0}"))
-            .accessibilityLabel("\(kindDisplayName(reference.kind)):")
-            .customAttribute(RecordPillTile(kind: reference.kind))
-            .customAttribute(part)
+        // `RecordPill`'s label; the filler keeps the links of the line
+        // where they are (`SpokenPiece`), and is no part of the tile's
+        // place, so the tile is drawn once.
+        let place = "\u{00A0}\u{00A0}\u{00A0}\u{00A0}"
+        let spoken = SpokenPiece.fill(place.utf16.count, for: "\(kindDisplayName(reference.kind)):")
+        let tile = Text(
+            "\(Text(space(place)).customAttribute(RecordPillTile(kind: reference.kind)).customAttribute(part))\(Text(space(spoken.filler)).customAttribute(part))"
+        )
+        .accessibilityLabel(spoken.label)
         return Text("\(gap)\(tile)\(gap)\(Text(name).customAttribute(RecordPillName()).customAttribute(part))\(gap)")
+    }
+}
+
+/// A piece of a line of text that a screen reader is told other words for
+/// (`Text.accessibilityLabel`): a mark that is an image, the place a pill's
+/// tile takes.
+///
+/// On a Mac, SwiftUI finds each link of a line in the line's words with
+/// every such piece replaced by its label, and then reads the link's own
+/// words out of the line as it is drawn. A label longer or shorter than
+/// what it stands for moves every link after it: the link is read as other
+/// words, or, where that runs past the end of the line, AppKit raises and
+/// the link has no label at all. So there a labelled piece is made as long
+/// as its label, in UTF-16 units, with word joiners: they draw nothing and
+/// break no line. An iPhone and an iPad read a link from where it is, and
+/// their line is left as it was.
+public enum SpokenPiece {
+    static let joiner = "\u{2060}"
+
+    /// What to put after a piece `drawn` units long so that it is as long
+    /// as `label`, and the label to give the two together: itself, or made
+    /// up to `drawn` where it is the shorter.
+    public static func fill(_ drawn: Int, for label: String) -> (filler: String, label: String) {
+        #if os(macOS)
+        let spoken = label.utf16.count
+        return (
+            String(repeating: joiner, count: max(spoken - drawn, 0)),
+            label + String(repeating: joiner, count: max(drawn - spoken, 0))
+        )
+        #else
+        return ("", label)
+        #endif
     }
 }
 

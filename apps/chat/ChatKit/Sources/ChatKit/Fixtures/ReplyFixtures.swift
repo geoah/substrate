@@ -9,6 +9,15 @@ public extension ChatFixtures {
         Nothing else on the balcony needs you this week.
         """
 
+    /// One paragraph with every kind of link a reply holds, several to a
+    /// line: records, pages that open in the browser, and an address to
+    /// write to. What a screen reader is told of each is what this is for.
+    static let links = """
+        The [Q4 budget](substrate://ada.example.com/tasks/task/q4) is in [the planning notes](https://example.com/notes/planning) and \
+        in [the board deck](https://example.com/deck); ask [Grace Hopper](substrate://ada.example.com/people/person/grace) or write \
+        to [finance](mailto:finance@example.com).
+        """
+
     /// Code with lines longer than a phone is wide, and a block with none.
     static let longLines = """
         The request, on one line:

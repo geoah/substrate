@@ -16,7 +16,8 @@ import SubstrateKit
 /// nothing running, for a transcript to scroll. `reply:<name>` shows a chat
 /// that holds one settled reply of the fixtures: `week` (every block),
 /// `short`, `lines` (code with long lines), `tables`, `table` (a small
-/// one), or a language's name for its code sample.
+/// one), `links` (records and pages linked in one paragraph), or a
+/// language's name for its code sample.
 ///
 /// And how a person answers: `question` and `approval` show a card that
 /// waits, `words` the same question being answered in the person's own
@@ -50,6 +51,7 @@ enum Demo {
         case "lines": return ChatFixtures.longLines
         case "tables": return ChatFixtures.tables
         case "table": return ChatFixtures.smallTable
+        case "links": return ChatFixtures.links
         case let language: return CodeFixtures.reply([language])
         }
     }

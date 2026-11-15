@@ -109,5 +109,18 @@ struct RecordPillTests {
         #expect(RecordPillPart(reference: task, occurrence: 1) != RecordPillPart(reference: task, occurrence: 3))
         #expect(RecordPillPart(reference: task, occurrence: 2) == RecordPillPart(reference: task, occurrence: 2))
     }
+
+    /// A piece a screen reader is told other words for is as long as those
+    /// words, whichever of the two is the longer. What that is for, a link
+    /// after a pill read as its own words, is seen only in an app's window:
+    /// the chat app's tests hold it (`ReplyPartsTests`).
+    @Test func aLabelledPieceIsMadeAsLongAsItsLabel() {
+        let joiner = SpokenPiece.joiner
+        #expect(SpokenPiece.fill(4, for: "Task:") == (joiner, "Task:"))
+        #expect(SpokenPiece.fill(4, for: "Tag:") == ("", "Tag:"))
+        #expect(SpokenPiece.fill(4, for: "X:") == ("", "X:" + joiner + joiner))
+        // In UTF-16 units, which is what a Mac counts a line in.
+        #expect(SpokenPiece.fill(1, for: "📎:").filler.utf16.count == 2)
+    }
 }
 #endif
