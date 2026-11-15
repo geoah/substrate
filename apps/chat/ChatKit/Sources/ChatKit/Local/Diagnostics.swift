@@ -75,7 +75,8 @@ public struct Diagnostic: Codable, Hashable, Sendable {
     /// Letters, digits and an underscore: what a word of a closed set is
     /// made of, so no set can carry a sentence in.
     private static func plain(_ word: String) -> Bool {
-        !word.isEmpty && word.count <= 40 && word.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0" ... "9").contains($0) || $0 == "_") }
+        !word.isEmpty && word.count <= 40
+            && word.unicodeScalars.allSatisfy { $0.isASCII && ($0.properties.isAlphabetic || ("0" ... "9").contains($0) || $0 == "_") }
     }
 }
 
