@@ -335,14 +335,16 @@ extension ChatApp {
         case let .cardFailed(id, failure):
             if failure.report == nil { next.cards[id, default: State.Card()].problem = failure }
         case let .answerAsked(id, picks):
-            guard let record = next.cards[id]?.record else { break }
+            // A card is drawn from the pending list before its own read
+            // lands: its buttons answer over that record's version.
+            guard let record = next.cards[id]?.record ?? next.interactions.first(where: { $0.id == id }) else { break }
             let questions = (record["questions"]?.array ?? []).compactMap { $0["id"]?.text }
             let answers: [JSONValue] = questions.map { q in
                 ["question": .string(q), "selected": .array((picks[q] ?? []).map(JSONValue.string))]
             }
             write(&next, id, record, ["state": "answered", "answers": .array(answers)], as: "answer")
         case let .questionsDismissed(id):
-            guard let record = next.cards[id]?.record else { break }
+            guard let record = next.cards[id]?.record ?? next.interactions.first(where: { $0.id == id }) else { break }
             write(&next, id, record, ["state": "dismissed"], as: "dismiss")
         case let .decideAsked(id, accept, shown):
             next.cards[id, default: State.Card()].busy = accept ? "accept" : "reject"
