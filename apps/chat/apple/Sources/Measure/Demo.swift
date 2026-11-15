@@ -14,6 +14,15 @@ import SubstrateKit
 /// stream part way and keeps the next from opening; `play` writes the whole
 /// run a line every 0.7 seconds; `long` shows the chat of 200 turns, with
 /// nothing running, for a transcript to scroll.
+///
+/// And how a person answers: `question` and `approval` show a card that
+/// waits, `words` the same question being answered in the person's own
+/// words, `folded` and `approved` each once it ended; `queued` holds a run
+/// a message joined while it was written, with more typed in the field,
+/// and `taken` the same run once a call read the message; `notify` posts
+/// the app's three notifications that take an answer, through the
+/// device's own notification service, and `notify-reply`, `notify-question`
+/// and `notify-approval` post one of them, for its banner to be pulled open.
 @MainActor
 enum Demo {
     static let asked = ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO"]
@@ -22,14 +31,38 @@ enum Demo {
 
     private static var server: FixtureServer?
     private static let run = ChatFixtures.run(thread: thread)
+    private static let joined = ChatFixtures.queued(thread: thread)
+
+    /// The states that are a card's: the chat that holds it, and whether
+    /// it has ended.
+    private static func card(_ state: String) -> (asked: ChatFixtures.Asked, resolved: Bool, words: Bool)? {
+        switch state {
+        case "question": (ChatFixtures.question(), false, false)
+        case "words": (ChatFixtures.question(), false, true)
+        case "folded": (ChatFixtures.question(), true, false)
+        case "approval": (ChatFixtures.approval(), false, false)
+        case "approved": (ChatFixtures.approval(), true, false)
+        default: nil
+        }
+    }
 
     /// The fixture's parts, where the launch asked for a demo.
     static func parts() -> ChatHost.Parts? {
-        guard asked != nil else { return nil }
-        let server = FixtureServer(reply: "")
-        server.script(thread, lines: run.lines, rows: run.rows)
+        guard let asked else { return nil }
+        // A message joins a run where the server's `agents` is at 6.
+        let queues = asked == "queued" || asked == "taken"
+        let server = FixtureServer(reply: "", agents: queues ? 6 : 0)
+        if queues {
+            server.script(thread, lines: joined.lines, rows: joined.rows)
+        } else {
+            server.script(thread, lines: run.lines, rows: run.rows)
+        }
+        if let card = card(asked) { server.ask(card.asked, resolved: card.resolved) }
         self.server = server
-        return .fixture(server)
+        var parts = ChatHost.Parts.fixture(server)
+        // The device's own service, for the notifications alone.
+        if notified(asked) != nil { parts.notifications = ChatServices.notifications }
+        return parts
     }
 
     /// How many lines of the run are out at each stop.
@@ -52,10 +85,22 @@ enum Demo {
         Task {
             guard let scene = await until({ host.chats?.scenes.keys.first }) else { return }
             _ = await until { host.chats?.list.loading == false ? true : nil }
-            host.send(.show(thread: asked == "long" ? ChatFixtures.long : thread, scene: scene))
+            if let only = notified(asked) { return await notify(only) }
+            let card = card(asked)
+            host.send(.show(thread: asked == "long" ? ChatFixtures.long : card?.asked.thread ?? thread, scene: scene))
             if asked == "long" { return }
             guard let key = await until({ host.chats?.scenes[scene]?.current }) else { return }
             _ = await until { host.conversation(key) != nil ? true : nil }
+            if let card {
+                // The card's view reads its record when it appears.
+                _ = await until { host.conversation(key)?.cards[card.asked.card.id]?.stands == !card.resolved ? true : nil }
+                if card.words {
+                    host.send(.answerInWords(card.asked.card.id), to: key)
+                    host.send(.fill("Thursday, but after eleven if she can."), to: key)
+                }
+                return
+            }
+            if asked == "queued" || asked == "taken" { return await join(host, key, server, taken: asked == "taken") }
             // Time for a hand to bring the keyboard up before the run.
             let wait = Double(ProcessInfo.processInfo.environment["SUBSTRATE_CHAT_DEMO_WAIT"] ?? "") ?? 1
             try? await Task.sleep(for: .seconds(wait))
@@ -74,6 +119,54 @@ enum Demo {
                 try? await Task.sleep(for: .milliseconds(600))
                 server.drop(thread)
             }
+        }
+    }
+
+    /// A run a message joins while it is written: the first message, the
+    /// reply part way, the second message sent from the composer as a
+    /// person would, and then, for `taken`, the call that reads it.
+    private static func join(_ host: ChatHost, _ key: ChildKey, _ server: FixtureServer, taken: Bool) async {
+        try? await Task.sleep(for: .milliseconds(600))
+        host.send(.draft(joined.message), to: key)
+        host.send(.send, to: key)
+        try? await Task.sleep(for: .milliseconds(600))
+        server.step(thread, joined.joins)
+        _ = await until { host.conversation(key)?.composer.canSend == true && host.conversation(key)?.streaming == true ? true : nil }
+        host.send(.draft(joined.joining), to: key)
+        host.send(.send, to: key)
+        try? await Task.sleep(for: .milliseconds(600))
+        server.step(thread, joined.queued - joined.joins)
+        _ = await until { host.conversation(key)?.composer.queued != nil ? true : nil }
+        if taken {
+            server.step(thread, joined.lines.count)
+        } else {
+            // More in the field: Send stands beside Stop.
+            host.send(.fill("And the thyme?"), to: key)
+        }
+    }
+
+    /// The notifications a state posts, by their place in the fixture's:
+    /// all three for `notify`, one where it names one.
+    private static func notified(_ state: String) -> [Int]? {
+        switch state {
+        case "notify": [0, 1, 2]
+        case "notify-reply": [0]
+        case "notify-question": [1]
+        case "notify-approval": [2]
+        default: nil
+        }
+    }
+
+    /// The app's notifications that take an answer, posted through the
+    /// device's service once the person has allowed them.
+    private static func notify(_ which: [Int]) async {
+        let service = ChatServices.notifications
+        guard await service.requestPermission() != .off else { return }
+        let made = ChatFixtures.notifications()
+        await service.register(made.categories)
+        for (index, request) in made.requests.enumerated() where which.contains(index) {
+            await service.schedule(request)
+            try? await Task.sleep(for: .seconds(1))
         }
     }
 

@@ -216,6 +216,121 @@ import Testing
         }
     }
 
+    // MARK: How a person answers
+
+    /// The states of answering a picture is taken of: a card that waits,
+    /// the same once it ended (closed, and opened), and a message sent
+    /// while a reply is written (queued, taken, and left unread by a stop).
+    static let answers = ["question", "question-folded", "question-opened", "approval", "approval-opened", "queued", "taken", "stopped"]
+
+    /// A host on the fixture showing the chat of one of those states, once
+    /// its transcript is the one the picture is of.
+    func host(answering state: String) async throws -> (ChatHost, ChildKey) {
+        let server = FixtureServer(reply: "", agents: 6)
+        var thread = "t-live"
+        var card: (asked: ChatFixtures.Asked, resolved: Bool)?
+        switch state {
+        case "question": card = (ChatFixtures.question(), false)
+        case "question-folded", "question-opened": card = (ChatFixtures.question(), true)
+        case "approval": card = (ChatFixtures.approval(), false)
+        case "approval-opened": card = (ChatFixtures.approval(), true)
+        default: break
+        }
+        // Another device's message, so its id is the fixture's to say.
+        let joined = ChatFixtures.queued(thread: thread, stopped: state == "stopped", id: "q-phone")
+        if let card {
+            thread = card.asked.thread
+            server.ask(card.asked, resolved: card.resolved)
+        } else {
+            server.script(thread, lines: joined.lines, rows: joined.rows)
+        }
+        let host = ChatHost(.fixture(server))
+        host.send(.sceneAppeared(scene: Self.scene, restoring: nil))
+        try await until { host.chats?.list.loading == false ? true : nil }
+        host.send(.show(thread: thread, scene: Self.scene))
+        let key = try await until { host.chats?.scenes[Self.scene]?.current }
+        if let card {
+            // The card's view reads its record when it appears.
+            host.send(.loadCard(card.asked.card))
+            try await until {
+                host.conversation(key)?.cards[card.asked.card.id].map { $0.stands == !card.resolved && $0.waits == !card.resolved } == true ? true : nil
+            }
+            if card.resolved { try await until { Self.tool(host, key)?.resolution?.loading == false ? true : nil } }
+            return (host, key)
+        }
+        host.send(.draft(joined.message), to: key)
+        host.send(.send, to: key)
+        try await until { host.conversation(key)?.streaming == true ? true : nil }
+        switch state {
+        case "queued":
+            server.step(thread, joined.queued)
+            try await until { Self.queued(host, key) == 1 ? true : nil }
+        case "taken":
+            server.step(thread, joined.lines.count - 1)
+            try await until { Self.queued(host, key) == 0 && (host.conversation(key)?.turns.count ?? 0) == 4 ? true : nil }
+        default:
+            server.step(thread, joined.lines.count)
+            try await until { host.conversation(key)?.streaming == false && host.conversation(key)?.failures.turns.isEmpty == false ? true : nil }
+        }
+        return (host, key)
+    }
+
+    /// The first call's row a chat draws.
+    static func tool(_ host: ChatHost, _ key: ChildKey) -> ToolRowPresentation? {
+        for turn in host.conversation(key)?.turns ?? [] {
+            if case let .assistant(reply) = turn.body, let tool = reply.tools.first { return tool }
+        }
+        return nil
+    }
+
+    /// How many messages a chat draws as queued.
+    static func queued(_ host: ChatHost, _ key: ChildKey) -> Int {
+        (host.conversation(key)?.turns ?? []).count { if case let .user(message) = $0.body { message.queued != nil } else { false } }
+    }
+
+    @Test func aCardStandsWhileItWaitsAndIsItsCallsMarkOnceItEnded() async throws {
+        let (waiting, first) = try await host(answering: "question")
+        let asked = try #require(Self.tool(waiting, first))
+        #expect(asked.attachment != nil && asked.status == .held && asked.resolution == nil)
+        let (ended, second) = try await host(answering: "question-folded")
+        let folded = try #require(Self.tool(ended, second))
+        #expect(folded.attachment == nil && folded.status == .done && folded.statusLabel == "You answered")
+        #expect(folded.resolution?.facts == [CardResolution.Fact(label: "Which morning suits you for the dentist?", value: "Thursday at 10:15")])
+        // The same row under the same id, waiting and ended.
+        #expect(asked.id == folded.id)
+        let (approved, third) = try await host(answering: "approval-opened")
+        #expect(Self.tool(approved, third)?.statusLabel == "You approved sendmail, and it ran")
+    }
+
+    @Test func aMessageThatJoinsARunIsDrawnQueuedThenReadAndAStopSaysItWasNot() async throws {
+        let (waiting, first) = try await host(answering: "queued")
+        #expect(Self.queued(waiting, first) == 1 && waiting.conversation(first)?.composer.queued != nil)
+        let (read, second) = try await host(answering: "taken")
+        #expect(Self.queued(read, second) == 0)
+        let (stopped, third) = try await host(answering: "stopped")
+        let card = try #require(stopped.conversation(third)?.failures.turns.values.first)
+        #expect(card.note == "It hadn't read your last message. Continue has it read." && Self.queued(stopped, third) == 0)
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["SUBSTRATE_GALLERY"] != nil), .timeLimit(.minutes(5)))
+    func everyAnswerDraws() async throws {
+        for state in Self.answers {
+            let (host, key) = try await host(answering: state)
+            for (device, size) in [("iphone", OffscreenDrawing.phone), ("ipad", Self.pad)] {
+                for scheme in [ColorScheme.light, .dark] {
+                    let drawn = view(host, key, streaming: false)
+                        .environment(\.conversationKey, key)
+                        .environment(\.opensEndedCards, state.hasSuffix("-opened"))
+                        .frame(maxWidth: 780)
+                        .frame(maxWidth: .infinity)
+                    Attachment.record(
+                        try await OffscreenDrawing.png(drawn, size: CGSize(width: size.width, height: 700), scheme: scheme),
+                        named: "answer-\(state)-\(device)-\(scheme == .dark ? "dark" : "light").png")
+                }
+            }
+        }
+    }
+
     /// The first answer `read` gives; fails after a minute without one.
     @discardableResult
     func until<T>(_ read: () -> T?) async throws -> T {

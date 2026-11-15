@@ -1,4 +1,6 @@
 import Foundation
+import SubstrateCore
+import SubstrateDevice
 
 /// A repository's chats as a server would answer for them, made up and the
 /// same every time: what a measurement streams into and a gallery draws.
@@ -118,9 +120,12 @@ public enum ChatFixtures {
     public static func thread(_ id: String, version: Int = 3, status: String = "ok") -> String {
         let index = id == long ? 0 : id == full ? 1 : Int(id.dropFirst(2)) ?? 2
         let subject =
-            switch index {
-            case 0: "The week ahead"
-            case 1: "Planning the offsite"
+            switch (id, index) {
+            case ("t-ask", _): "Dentist check-up"
+            case ("t-approve", _): "Lunch with Sam"
+            case ("t-live", _): "The balcony"
+            case (_, 0): "The week ahead"
+            case (_, 1): "Planning the offsite"
             default: "Chat \(index) about \(index % 2 == 0 ? "tasks" : "notes")"
             }
         let age = index < 2 ? (index + 1) * 60 : index * 37 * 60
@@ -225,7 +230,9 @@ public enum ChatFixtures {
         let call = #""id":"c1","tool":"query","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/query","turn":2"#
         lines.append(#"{"kind":"toolStarted",\#(call),"args":"{\"q\":\"balcony\"}"}"#)
         let found = lines.count
-        lines.append(#"{"kind":"toolFinished",\#(call),"ok":true,"output":"{\"records\":[],\"total\":0}"}"#)
+        lines.append(
+            #"{"kind":"toolFinished",\#(call),"ok":true,"output":"{\"records\":[{\"kind\":\"~/tasks/task\",\"id\":\"basil\",\"title\":\"Water the basil\"},{\"kind\":\"~/tasks/task\",\"id\":\"mint\",\"title\":\"Repot the mint\"}],\"total\":2}"}"#
+        )
         pieces("delta", second, turn: 3)
         lines.append(#"{"kind":"done","result":{"reply":"Two things need doing.","thread":"\#(thread)","status":"ok","turns":4}}"#)
 
@@ -239,7 +246,10 @@ public enum ChatFixtures {
             1,
             #""role":"assistant","content":\#(quoted(first)),"reasoning":\#(quoted(thinking.joined())),"reasoningMillis":4000,"toolCalls":[{"id":"c1","name":"query","callable":"substrate.reamde.dev/core/function/substrate.reamde.dev/core/query","arguments":"{\"q\":\"balcony\"}"}]"#
         )
-        let answered = row(2, #""role":"tool","toolCallId":"c1","name":"query","ok":true,"content":"{\"records\":[],\"total\":0}""#)
+        let answered = row(
+            2,
+            #""role":"tool","toolCallId":"c1","name":"query","ok":true,"content":"{\"records\":[{\"kind\":\"~/tasks/task\",\"id\":\"basil\",\"title\":\"Water the basil\"},{\"kind\":\"~/tasks/task\",\"id\":\"mint\",\"title\":\"Repot the mint\"}],\"total\":2}""#
+        )
         let reply = row(3, #""role":"assistant","content":\#(quoted(second.joined()))"#)
         return Run(
             message: message, lines: lines,
@@ -251,6 +261,188 @@ public enum ChatFixtures {
                 (lines.count, page([reply, answered, asked, sent])),
             ],
             thinking: thinking.joined(), first: first, second: second.joined())
+    }
+
+    // MARK: Answering
+
+    /// A chat whose reply asked the person something that waits on them:
+    /// the rows while it waits and once it ended, and the card's record at
+    /// each.
+    public struct Asked: Sendable {
+        public var thread: String
+        public var card: CardReference
+        /// The record's path under `/api/v1/`.
+        public var path: String
+        public var pending: String
+        public var resolved: String
+        /// The transcript's page while it waits, and once it ended.
+        public var rows: String
+        public var rowsResolved: String
+    }
+
+    private static func row(_ thread: String, _ ordinal: Int, _ properties: String) -> String {
+        record(
+            id: "\(thread)-m\(ordinal)", kind: Kinds.message, version: 1, at: -(60 - ordinal * 5),
+            properties: #"{\#(properties),"turn":\#(ordinal),"thread":{"ref":"\#(Kinds.thread)/\#(thread)"}}"#)
+    }
+
+    /// The assistant asked one question of three options, and waits.
+    public static func question(thread: String = "t-ask") -> Asked {
+        let id = "01k9z3v8q4c0d5m2r7w1x6y8ab"
+        let ask = #""id":"c1","name":"ask","callable":"\#(Kinds.function)/substrate.reamde.dev/core/ask""#
+        let questions =
+            #"[{"id":"day","prompt":"Which morning suits you for the dentist?","options":[{"value":"tue","label":"Tuesday at 9:00"},{"value":"wed","label":"Wednesday at 8:30"},{"value":"thu","label":"Thursday at 10:15","description":"The only slot with Dr. Okafor"}]}]"#
+        let sent = row(thread, 0, #""role":"user","content":"Book me a check-up at the dentist next week.""#)
+        let asked = row(
+            thread, 1,
+            #""role":"assistant","content":"Three mornings are free next week. One thing before I book it.","toolCalls":[{\#(ask),"arguments":"{}"}]"#)
+        let landed = row(
+            thread, 2,
+            #""role":"tool","toolCallId":"c1","name":"ask","ok":true,"content":"{\"id\":\"\#(id)\"}","changes":[{"seq":7,"op":"put","kind":"\#(Kinds.interaction)","id":"\#(id)"}]"#
+        )
+        let said = row(
+            thread, 3,
+            #""role":"system","content":"{\"event\":\"interactionAnswered\",\"interaction\":\"\#(Kinds.interaction)/\#(id)\",\"answers\":[{\"question\":\"day\",\"selected\":[\"thu\"]}]}""#
+        )
+        let booked = row(thread, 4, #""role":"assistant","content":"Booked: Thursday at 10:15 with Dr. Okafor. It is in your calendar.""#)
+        func card(_ state: String, _ more: String, version: Int) -> String {
+            record(
+                id: id, kind: Kinds.interaction, version: version, at: -30,
+                properties: #"{"thread":{"ref":"\#(Kinds.thread)/\#(thread)"},"state":"\#(state)","questions":\#(questions)\#(more)}"#)
+        }
+        return Asked(
+            thread: thread, card: .question(id), path: "\(Kinds.interaction)/\(id)", pending: card("pending", "", version: 1),
+            resolved: card("answered", #","answers":[{"question":"day","selected":["thu"]}],"resolvedAt":"\#(stamp(-20))""#, version: 2),
+            rows: page([landed, asked, sent]), rowsResolved: page([booked, said, landed, asked, sent]))
+    }
+
+    /// The assistant wants to send a mail, which waits for approval.
+    public static func approval(thread: String = "t-approve") -> Asked {
+        let id = "01h2xcejqtf2nbrexx3vqjhp42"
+        let function = "\(Kinds.function)/providers.substrate.reamde.dev/google/sendmail"
+        let arguments = #"{"to":["sam@example.com"],"subject":"Lunch on Friday","body":"Friday at 12:30 works for me. See you at the usual place."}"#
+        let sent = row(thread, 0, #""role":"user","content":"Tell Sam that Friday works for lunch.""#)
+        let asked = row(
+            thread, 1,
+            #""role":"assistant","content":"I've written it. It goes once you approve it.","toolCalls":[{"id":"c2","name":"sendmail","callable":"\#(function)","arguments":\#(quoted(arguments))}]"#
+        )
+        let landed = row(
+            thread, 2,
+            #""role":"tool","toolCallId":"c2","name":"sendmail","ok":true,"content":"{\"output\":{\"approval\":\"\#(id)\",\"status\":\"waiting for the owner's approval\"}}","changes":[{"seq":9,"op":"put","kind":"\#(Kinds.approval)","id":"\#(id)"}]"#
+        )
+        let said = row(
+            thread, 3,
+            #""role":"system","content":"{\"event\":\"approvalDecided\",\"approval\":\"\#(Kinds.approval)/\#(id)\",\"decision\":\"approved\",\"tool\":\"sendmail\",\"ok\":true}""#
+        )
+        let done = row(thread, 4, #""role":"assistant","content":"Sent. Sam has your reply.""#)
+        func card(_ state: String, _ more: String, version: Int) -> String {
+            record(
+                id: id, kind: Kinds.approval, version: version, at: -30,
+                properties:
+                    #"{"thread":{"ref":"\#(Kinds.thread)/\#(thread)"},"state":"\#(state)","agent":{"ref":"\#(Kinds.agent)/\#(agent)"},"function":{"ref":"\#(function)"},"tool":"sendmail","arguments":\#(arguments)\#(more)}"#
+            )
+        }
+        return Asked(
+            thread: thread, card: .approval(id), path: "\(Kinds.approval)/\(id)", pending: card("pending", "", version: 1),
+            resolved: card("done", #","decidedAt":"\#(stamp(-20))""#, version: 3),
+            rows: page([landed, asked, sent]), rowsResolved: page([done, said, landed, asked, sent]))
+    }
+
+    /// A run a message joins while it is written (`agents` 6): the reply
+    /// starts, the message is queued, the reply's tool runs, the next call
+    /// takes the message and answers it. `stopped` ends the run before
+    /// that, with the message unread. `$Q` in a line stands for the
+    /// message's id, which is the sender's to mint.
+    public struct Queued: Sendable {
+        public var message: String
+        public var joining: String
+        public var lines: [String]
+        /// How many lines are out when the message joins, once it is said
+        /// queued, and once it is said taken.
+        public var joins: Int
+        public var queued: Int
+        public var taken: Int
+        public var rows: [(after: Int, page: String)]
+    }
+
+    public static func queued(thread: String, stopped: Bool = false, id: String = "$Q") -> Queued {
+        let message = "What needs doing on the balcony?"
+        let joining = "Only what I can do before Friday."
+        var lines = [#"{"kind":"thread","thread":"\#(thread)"}"#]
+        func pieces(_ texts: [String], turn: Int) {
+            var at = 0
+            for text in texts {
+                lines.append(#"{"kind":"delta","text":\#(quoted(text)),"turn":\#(turn),"at":\#(at)}"#)
+                at += text.unicodeScalars.count
+            }
+        }
+        let first = ["I'll look at the list. ", "The basil and the mint both need a hand this week."]
+        pieces(first, turn: 1)
+        let joins = lines.count
+        lines.append(#"{"kind":"messageQueued","id":"\#(id)","turn":2,"text":\#(quoted(joining))}"#)
+        let queued = lines.count
+        let call = #""id":"c1","tool":"query","callable":"\#(Kinds.function)/substrate.reamde.dev/core/query","turn":3"#
+        var second: [String] = []
+        if stopped {
+            lines.append(#"{"kind":"done","result":{"reply":"","thread":"\#(thread)","status":"stopped","cause":"requested","turns":2}}"#)
+        } else {
+            lines.append(#"{"kind":"toolStarted",\#(call),"args":"{\"q\":\"balcony\"}"}"#)
+            lines.append(
+                #"{"kind":"toolFinished",\#(call),"ok":true,"output":"{\"records\":[{\"kind\":\"~/tasks/task\",\"id\":\"basil\",\"title\":\"Water the basil\"},{\"kind\":\"~/tasks/task\",\"id\":\"mint\",\"title\":\"Repot the mint\"}],\"total\":2}"}"#
+            )
+            lines.append(#"{"kind":"messageTaken","id":"\#(id)","turn":2}"#)
+        }
+        let taken = lines.count
+        if !stopped {
+            second = ["Before Friday, then: ", "water the basil today, ", "and leave the mint for the weekend."]
+            pieces(second, turn: 4)
+            lines.append(#"{"kind":"done","result":{"reply":"Before Friday, then.","thread":"\#(thread)","status":"ok","turns":5}}"#)
+        }
+        func row(_ ordinal: Int, id row: String? = nil, _ properties: String) -> String {
+            record(
+                id: row ?? "\(thread)-m\(ordinal)", kind: Kinds.message, version: 1, at: 0,
+                properties: #"{\#(properties),"turn":\#(ordinal),"thread":{"ref":"\#(Kinds.thread)/\#(thread)"}}"#)
+        }
+        let sent = row(0, #""role":"user","content":\#(quoted(message))"#)
+        let reply = row(
+            1,
+            stopped
+                ? #""role":"assistant","content":\#(quoted(first.joined())),"cutBy":"stop""#
+                : #""role":"assistant","content":\#(quoted(first.joined())),"toolCalls":[{"id":"c1","name":"query","callable":"\#(Kinds.function)/substrate.reamde.dev/core/query","arguments":"{\"q\":\"balcony\"}"}]"#
+        )
+        let joined = row(2, id: id, #""role":"user","content":\#(quoted(joining))"#)
+        let found = row(
+            3,
+            #""role":"tool","toolCallId":"c1","name":"query","ok":true,"content":"{\"records\":[{\"kind\":\"~/tasks/task\",\"id\":\"basil\",\"title\":\"Water the basil\"},{\"kind\":\"~/tasks/task\",\"id\":\"mint\",\"title\":\"Repot the mint\"}],\"total\":2}""#
+        )
+        let answer = row(4, #""role":"assistant","content":\#(quoted(second.joined()))"#)
+        return Queued(
+            message: message, joining: joining, lines: lines, joins: joins, queued: queued, taken: taken,
+            rows: [(1, page([sent])), (queued, page([joined, sent]))]
+                + (stopped ? [(lines.count, page([joined, reply, sent]))] : [(lines.count, page([answer, found, joined, reply, sent]))]))
+    }
+
+    /// The notifications the app posts of those chats, with the categories
+    /// their actions come from: a reply that takes text, a question that
+    /// takes its options, and an approval that shows all of what would
+    /// run. Made by what makes the app's own.
+    public static func notifications() -> (categories: [NotificationCategory], requests: [NotificationRequest]) {
+        func parsed(_ json: String) -> Record? { JSONValue.parse(json).flatMap { try? ValueCoding.decode(Record.self, from: $0) } }
+        let asked = question()
+        let sending = approval()
+        guard let interaction = parsed(asked.pending), let call = parsed(sending.pending),
+            let settled = parsed(thread("t-live")).map(ChatThread.init(record:))
+        else { return ([], []) }
+        var reply = settled.record
+        reply.properties["lastReply"] = "Before Friday, then: water the basil today, and leave the mint for the weekend."
+        return (
+            ChatNotifications.categories(for: [interaction]),
+            [
+                ChatNotifications.reply(thread: ChatThread(record: reply), agent: "Moss", title: "The balcony", replies: true),
+                ChatNotifications.attention(record: interaction, thread: asked.thread, agent: "Moss", title: "Dentist check-up"),
+                ChatNotifications.attention(record: call, thread: sending.thread, agent: "Moss", title: "Lunch with Sam"),
+            ]
+        )
     }
 
     // MARK: JSON
