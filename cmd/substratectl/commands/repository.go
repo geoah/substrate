@@ -420,8 +420,14 @@ compacted.`,
 				if e.Live {
 					what = "its history before its current state"
 				}
-				fmt.Fprintf(a.out, "the erasure of %s/%s (%s, up to seq %d) waits since %s, %s ago: the pass finishes it, and a forget with finish finishes it now\n",
+				fmt.Fprintf(a.out, "the erasure of %s/%s (%s, up to seq %d) waits since %s, %s ago: the pass finishes it, in steps within its bounds where it is long, and a forget with finish takes its next step now, past the triggers it waits for\n",
 					e.Kind, e.ID, what, e.UpTo, e.Since.Format(time.RFC3339), time.Since(e.Since).Round(time.Second))
+				if e.Searched > 0 {
+					fmt.Fprintf(a.out, "  its search for the saved positions that hold the record's values has read the history up to seq %d\n", e.Searched)
+				}
+				if e.Held != "" {
+					fmt.Fprintf(a.out, "  held: %s\n", e.Held)
+				}
 			}
 			if h := status.HeldBy; h != nil {
 				fmt.Fprintf(a.out, "held back by trigger %s, its cursor at seq %d since %s: no deletion past it is forgotten\n", h.Trigger, h.Seq, h.Since.Format(time.RFC3339))

@@ -460,6 +460,21 @@ purged record's history becomes one state with neither row nor value on its
 `writers` of what it replaced; a live record's, one state with its current
 values.
 
+An erasure longer than the compaction pass's bounds is done in steps, each a
+transaction within them
+([decision 0330](decisions/0330-an-erasure-longer-than-the-passs-bounds-is-done-in-steps.md)).
+The first steps strip the saved positions and the merge copies that hold
+the record's values; each later one is the erasure's own compaction up to a
+line below the intent, which leaves a state holding the record's values as
+of that line; the last is the erasure as above. The intent stays until the
+last step, so the cut above holds at every step, and between any two steps
+the history verifies and replays into the fold the live repository holds.
+How far the search for saved positions has read is kept on a progress row
+beside the intent (`compaction_erasure_progress`), not in the history. A
+rebuild keeps it, since the lines it read are unchanged; a restore or an
+import starts without it, and the search starts again and finds nothing
+twice.
+
 An erasure also edits a merge's or a split's `resync` at or below the
 record's state, which a compaction otherwise never replaces: it takes out
 the annotation and mark rows the resync restated for the record, its values

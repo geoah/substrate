@@ -314,6 +314,12 @@ const (
 // presets under the package's own hand, each with note.
 func (f *shippedFixture) install(note string) {
 	f.t.Helper()
+	installShipper(f.t, f.ds, note)
+}
+
+// installShipper is install on any dataset.
+func installShipper(t *testing.T, d *dataset, note string) {
+	t.Helper()
 	docs := []map[string]any{
 		vocabulary.PackageManifest(shipperPkg, 0),
 		vocabulary.BundleManifest(shipperPkg, map[string]any{"description": "the presets", "installs": []any{presetKind}}),
@@ -328,8 +334,8 @@ func (f *shippedFixture) install(note string) {
 	for _, id := range []string{"edited", "deleted", "untouched"} {
 		data = append(data, substrate.PutInput{Kind: presetKind, ID: id, Properties: map[string]any{"name": id, "note": note}})
 	}
-	if _, err := f.ds.InstallBundleClosure(context.Background(), substrate.BundleActor(shipperAuthority, "shipper"), docs, data, substrate.BundleInstall{}); err != nil {
-		f.t.Fatalf("take the shipper package: %v", err)
+	if _, err := d.InstallBundleClosure(context.Background(), substrate.BundleActor(shipperAuthority, "shipper"), docs, data, substrate.BundleInstall{}); err != nil {
+		t.Fatalf("take the shipper package: %v", err)
 	}
 }
 

@@ -3106,7 +3106,7 @@ func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref er
 	if err := ds.compactionFault(erasureBetween); err != nil {
 		return nil, err
 	}
-	report, err := ds.eraseNow(ctx, erasing, false)
+	report, err := ds.eraseNow(ctx, erasing, false, time.Time{}, nil)
 	if err != nil {
 		ds.svc.log.Warn("substrate: a permanent delete's erasure is left to the compaction pass",
 			"repository", ds.info.ID, "kind", ref.Kind, "id", ref.ID, "error", err)

@@ -209,57 +209,13 @@ func (ds *dataset) erasureWaits(ctx context.Context, kind string, upTo int64) ([
 	return out, rows.Err()
 }
 
-// eraseNow does what compaction_erasures holds for the refs only names (every
-// record where only is nil), each in a transaction of its own; finish passes
-// every trigger it would wait for. What it leaves is in the report, with
-// what it waits on.
-func (ds *dataset) eraseNow(ctx context.Context, only []eref, finish bool) (EraseReport, error) {
-	var report EraseReport
-	// A note whose row was written back goes first (damage.go).
-	if _, err := ds.lookAtDamage(ctx); err != nil {
-		return report, err
-	}
-	pending, err := ds.pendingErasures(ctx, ds.db, only)
-	if err != nil {
-		return report, err
-	}
-	for _, e := range pending {
-		if !finish && !e.Live {
-			waits, err := ds.erasureWaits(ctx, e.Kind, e.UpTo)
-			if err != nil {
-				return report, err
-			}
-			if len(waits) > 0 {
-				e.Waits = waits
-				report.Waiting = append(report.Waiting, e)
-				continue
-			}
-		}
-		var done CompactReport
-		var held string
-		if err := ds.withCompactionTx(ctx, true, func(t *txn) error {
-			var err error
-			done, held, err = t.eraseOne(e)
-			return err
-		}); err != nil {
-			return report, fmt.Errorf("substrate/engine: erase %s %s: %w", e.Kind, e.ID, err)
-		}
-		ds.compacted(done)
-		if held != "" {
-			e.Held, e.Damaged = held, done.Damaged
-			report.Waiting = append(report.Waiting, e)
-			continue
-		}
-		report.Erased = append(report.Erased, eref{Kind: e.Kind, ID: e.ID})
-		report.Removed += done.Removed
-	}
-	return report, nil
-}
-
 // eraseOne erases one record's history as compaction_erasures says, takes
 // its intents off their lines and its rows out, all in the caller's
-// transaction. It reports what holds it instead where something does.
-func (t *txn) eraseOne(e pendingErasure) (CompactReport, string, error) {
+// transaction: an erasure whose every part fits within the compaction
+// pass's bounds, or the last step of one in steps (erasestep.go), whose
+// search for saved positions has read the history up to from. It reports
+// what holds it instead where something does.
+func (t *txn) eraseOne(e pendingErasure, from int64) (CompactReport, string, error) {
 	ref := eref{Kind: e.Kind, ID: e.ID}
 	var report CompactReport
 	// What remains is read again under the changelog lock: another call
@@ -276,7 +232,7 @@ func (t *txn) eraseOne(e pendingErasure) (CompactReport, string, error) {
 	}
 	// Read before the compaction takes the record's lines, whose seqs name
 	// the drains' chains.
-	checkpoints, err := t.checkpointLines(ref, e.UpTo)
+	checkpoints, err := t.checkpointLines(ref, e.UpTo, from, 0)
 	if err != nil {
 		return report, "", err
 	}
@@ -377,6 +333,12 @@ func (t *txn) finishErasure(ref eref, lines []int64, report CompactReport) (Comp
 		ref.Kind, ref.ID, lines); err != nil {
 		return report, "", err
 	}
+	if _, err := t.exec(`
+		DELETE FROM compaction_erasure_progress WHERE record_kind = $1 AND record_id = $2
+		  AND NOT EXISTS (SELECT 1 FROM compaction_erasures WHERE record_kind = $1 AND record_id = $2)`,
+		ref.Kind, ref.ID); err != nil {
+		return report, "", err
+	}
 	if len(removed.touched) > 0 {
 		if err := t.markArchiveRewrite(removed.touched); err != nil {
 			return report, "", err
@@ -388,9 +350,24 @@ func (t *txn) finishErasure(ref eref, lines []int64, report CompactReport) (Comp
 // mergeLines is every merge or split line up to upTo whose payload names
 // ref as its winner or its loser: what the line moved (labels,
 // annotations, marks) is a copy of the pair's values outside the fold.
+//
+// The lines read are ref's own and those the foreign-effects index lists
+// for it (compactindex.go), never every merge of the kind. A merge or split
+// line names both records in its resync's scope, which the index lists and
+// an erasure keeps (decision 0331), and a line whose resync a build before
+// #1460 removed had its moved and skipped stripped whole by that erasure
+// (stripMergeCopies), so it holds a copy for neither. Only lines of ref's
+// kind count: the index lists a line of any kind that carries an effect on
+// ref, an effect a transaction left pending rides whatever line it appends
+// next, and ids repeat across kinds, so another kind's merge whose pair
+// shares ref's id is none of ref's. The set is whole only where the index
+// covers the history: a step waits for the index first (erasestep.go
+// indexCovers), and the last step's compaction does too.
 func (t *txn) mergeLines(ref eref, upTo int64) ([]int64, error) {
 	rows, err := t.query(`
-		SELECT seq FROM changelog WHERE op = ANY($1) AND kind = $2 AND seq <= $3
+		SELECT seq FROM changelog WHERE op = ANY($1) AND kind = $2 AND seq <= $3 AND seq IN (
+			SELECT seq FROM changelog WHERE kind = $2 AND record_id = $4 AND seq <= $3
+			UNION SELECT seq FROM changelog_foreign WHERE record_kind = $2 AND record_id = $4 AND seq <= $3)
 		  AND (payload->>'winner' = $4 OR payload->>'loser' = $4) ORDER BY seq`,
 		[]string{string(substrate.OpMerge), string(substrate.OpSplit)}, ref.Kind, upTo, ref.ID)
 	if err != nil {
@@ -422,14 +399,16 @@ type checkpointAt struct{ effect, page int }
 // about (a keyset cursor carries its boundary row's sort values). A record
 // drain's chain is the repository's id, the trigger's and the line's seq
 // (functions.go recordChainKey). It is read before the erasure compacts the
-// record's lines, whose seqs it matches.
-func (t *txn) checkpointLines(ref eref, upTo int64) (map[int64][]checkpointAt, error) {
+// record's lines, whose seqs it matches. It reads the trigger lines past
+// from, and up to to where to is not 0: a search held to the compaction
+// pass's bounds reads them a range a step (erasestep.go searchStep).
+func (t *txn) checkpointLines(ref eref, upTo, from, to int64) (map[int64][]checkpointAt, error) {
 	rows, err := t.query(`
 		WITH lines AS (SELECT seq FROM changelog WHERE kind = $1 AND record_id = $2 AND seq <= $3),
 		effects AS (
 			SELECT d.seq, (e.n - 1)::int AS effect, e.eff FROM changelog d
 			CROSS JOIN LATERAL jsonb_array_elements(d.payload->'fold') WITH ORDINALITY AS e(eff, n)
-			WHERE d.kind = $5 AND d.seq > (SELECT min(seq) FROM lines)
+			WHERE d.kind = $5 AND d.seq > (SELECT min(seq) FROM lines) AND d.seq > $8 AND ($9 = 0 OR d.seq <= $9)
 		)
 		SELECT x.seq, x.effect, -1 FROM effects x
 		WHERE x.eff->>'kind' = $6 AND x.eff->'page' ? 'cursor'
@@ -440,7 +419,7 @@ func (t *txn) checkpointLines(ref eref, upTo int64) (map[int64][]checkpointAt, e
 		WHERE x.eff->>'kind' = $7 AND p.pg ? 'cursor'
 		  AND EXISTS (SELECT 1 FROM lines c WHERE p.pg->>'chain' = $4 || '/' || (x.eff->>'id') || '/' || c.seq::text)
 		ORDER BY 1, 2, 3`,
-		ref.Kind, ref.ID, upTo, t.ds.info.ID, typeTrigger, string(foldPage), string(foldLedger))
+		ref.Kind, ref.ID, upTo, t.ds.info.ID, typeTrigger, string(foldPage), string(foldLedger), from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -1095,15 +1074,42 @@ func (t *txn) formerBelow(ref eref, seq int64) (bool, error) {
 	return named, err
 }
 
+// firstFormerBelow is the lowest line below seq that names a former id with
+// ref at either end, 0 for none: the lines formerBelow reads, in seq order,
+// so the read stops at the first such line.
+func (t *txn) firstFormerBelow(ref eref, seq int64) (int64, error) {
+	var first int64
+	err := t.row(`
+		SELECT c.seq FROM changelog c CROSS JOIN LATERAL jsonb_array_elements(c.payload->'fold') e
+		WHERE c.seq < $3 AND c.seq IN (
+			SELECT seq FROM changelog WHERE kind = $1 AND record_id = $2
+			UNION SELECT seq FROM changelog_foreign WHERE record_kind = $1 AND record_id = $2)
+		  AND (
+			(e->>'kind' = $4 AND e->>'ref' = $1 AND (e->>'id' = $2 OR e->>'formerId' = $2))
+			OR (e->>'kind' = $5 AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements(coalesce(e->'rows'->'formerIds', '[]'::jsonb)) f
+				WHERE f->>'kind' = $1 AND (f->>'recordId' = $2 OR f->>'formerId' = $2))))
+		ORDER BY c.seq LIMIT 1`,
+		ref.Kind, ref.ID, seq, string(foldFormerID), string(foldResync)).Scan(&first)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return first, err
+}
+
 // unerasableLive is why a live erasure of ref could never finish, "" where
 // it can: an earlier purge of the record, a release before the erasure
 // kept, that took a former id a merge had given it (formerBelow). The door
 // refuses it when it is asked for, leaving no intent.
 func (t *txn) unerasableLive(ref eref) (string, error) {
+	// A purge rides the gc line its delete appends (rows.go hardDelete), so
+	// the payloads read are those lines' alone, not the record's history:
+	// the doors call this under the changelog lock.
 	rows, err := t.query(`
-		SELECT c.seq FROM changelog c CROSS JOIN LATERAL jsonb_array_elements(c.payload->'fold') e
-		WHERE c.kind = $1 AND c.record_id = $2 AND e->>'kind' = $3 AND e->>'ref' = $1 AND e->>'id' = $2
-		ORDER BY c.seq`, ref.Kind, ref.ID, string(foldPurge))
+		SELECT c.seq FROM (SELECT seq, payload FROM changelog WHERE kind = $1 AND record_id = $2 AND op = $4) c
+		CROSS JOIN LATERAL jsonb_array_elements(c.payload->'fold') e
+		WHERE e->>'kind' = $3 AND e->>'ref' = $1 AND e->>'id' = $2
+		ORDER BY c.seq`, ref.Kind, ref.ID, string(foldPurge), string(substrate.OpGC))
 	if err != nil {
 		return "", err
 	}
@@ -1119,12 +1125,23 @@ func (t *txn) unerasableLive(ref eref) (string, error) {
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return "", err
 	}
+	if len(purges) == 0 {
+		return "", nil
+	}
+	// The first purge above the lowest line that names a former id of the
+	// record is the first formerBelow holds for, so one read stands for a
+	// call per purge. It is not bounded by op as the purges are: a former
+	// effect rides whatever line its transaction appends next (a merge's,
+	// the merge record's put; a move's, the line after its carried put), so
+	// it reads the record's lines below its newest purge, payload and all,
+	// and only for a record purged before, a read outside the bounds beside
+	// #1453.
+	first, err := t.firstFormerBelow(ref, purges[len(purges)-1])
+	if err != nil || first == 0 {
+		return "", err
+	}
 	for _, seq := range purges {
-		named, err := t.formerBelow(ref, seq)
-		if err != nil {
-			return "", err
-		}
-		if named {
+		if seq > first {
 			return fmt.Sprintf("an earlier permanent deletion of %s, at seq %d, whose entry a compaction keeps: it took a former id a merge had given the record, which a replay without it would bring back (issue #1401)",
 				vocabulary.RecordPath(ref.Kind, ref.ID), seq), nil
 		}
@@ -1324,6 +1341,13 @@ func (ds *dataset) erasureOf(ctx context.Context, ref eref, live bool, report Er
 		}
 	}
 	if out.Held == "" {
+		// What its last step failed on, noted where the pass took it
+		// (erasestep.go).
+		if out.Held, err = ds.erasureHeldNote(ctx, ref); err != nil {
+			return nil, err
+		}
+	}
+	if out.Held == "" {
 		cut, err := ds.knownDamage(ctx)
 		if err != nil {
 			return nil, err
@@ -1422,7 +1446,7 @@ func (ds *dataset) Forget(ctx context.Context, actor substrate.Actor, typ, id st
 			return nil, err
 		}
 	}
-	report, err := ds.eraseNow(ctx, follow, in.Finish)
+	report, err := ds.eraseNow(ctx, follow, in.Finish, time.Time{}, nil)
 	if err != nil {
 		return nil, err
 	}

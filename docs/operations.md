@@ -715,12 +715,17 @@ about twice its stored size, an opaque value its stored size, and a value
 that compresses ten to one takes ten times its stored size. For the shape
 measured, a batch holds about one archive piece (64 MiB) of text.
 
-Two reads of the pass are outside these bounds. An erasure (below) takes its
-record whole, in one transaction, however long its history
-([#1452](https://github.com/geoah/substrate/issues/1452)). And a batch that
-removes the line ending a transaction verifies that whole transaction's
-lines, which neither bound counts
-([#1453](https://github.com/geoah/substrate/issues/1453)). Beside its
+Three reads are outside these bounds. A batch that removes the line ending
+a transaction verifies that whole transaction's lines, and an erasure's
+step verifies the whole transaction of every line it edits (a merge's copy,
+a saved position, an intent), which a sync's page of records can make long;
+neither bound counts them
+([#1453](https://github.com/geoah/substrate/issues/1453)). And a forget's or
+a permanent delete's check for an earlier permanent deletion that took a
+former id reads the record's lines below that deletion, where the record
+has one. An erasure (below) is held to the bounds too, in steps, but where
+what a record keeps below the lines a step takes (its merges' lines and its
+id trail) passes a bound alone, each step reads that and one new line. Beside its
 records' lines, a batch's transaction also reads the repository's barriers
 (the lines its parked failures, drains and parked webhook fires name), which
 grow with what waits to be delivered, not with the history.
@@ -803,8 +808,22 @@ delete's own ([api](api.md#the-records-route),
 What remains to erase is written into the history, so a crash, a rebuild or
 a restore between the two leaves it there, and each pass finishes what
 waits: a crash's leftover, a trigger that has delivered the deletion, a
-line written back. `repository history` names each waiting erasure and
-since when. After an upgrade, an import or a restore, whose history came in
+line written back. An erasure longer than the pass's bounds is done in
+steps, each a transaction within them
+([decision 0330](decisions/0330-an-erasure-longer-than-the-passs-bounds-is-done-in-steps.md)):
+the request takes the first and answers pending, and each pass spends a
+quarter of its time on pending erasures, a step of each in turn, before it
+compacts. A record is erased in one transaction only where its lines, the
+merge lines that copy it and the trigger lines written since its first line
+fit within the bounds together. On a repository whose triggers hold a long
+delivery history, every permanent delete and every forget of an older
+record therefore reads pending for some passes. Measured, a GiB of trigger
+lines of 100 KB takes about 32 steps, two to three passes, and a pass
+spends 30 seconds on erasures, half of it pauses. Lines under 32 KiB are
+held by the line bound instead, a thousand a step. One whose step fails is noted, saying why, and tried again at the
+next pass; the erasures behind it and the compaction go on. `repository
+history` names each waiting erasure and since when, how far its search for
+saved positions has read, and what holds it. After an upgrade, an import or a restore, whose history came in
 without the write path's index of it, an erasure also waits until the pass
 has derived that index: one pass on a small history and many on a long one,
 a pass an hour by default (`SUBSTRATE_COMPACTION_INTERVAL` shortens it). The
@@ -850,9 +869,16 @@ webhook fire or the webhook spool holds stays, with what is under it, until
 the hold ends, as does a record the pass passes by. A drain that has not finished, parked or
 not, keeps its position in the trigger's resume row and in that ledger
 entry until it ends, and the week starts then. `substratectl repository
-history` shows what the pass has done and what it holds back. A saved
-position goes at once when the trigger is permanently deleted, and stays as
-long as a retention override for `core/trigger` keeps the lines. Like every value a compaction removes, it
+history` shows what the pass has done and what it holds back. A permanent
+delete of the trigger does not take its saved positions with it: its
+erasure passes the trigger's delivery lines by. A history within the pass's
+bounds, erased in one transaction, keeps every one of them; a longer one,
+erased in steps, keeps those its last step reaches, at most what fits within
+the bounds, and the steps before it leave the trigger's ledger entry in
+place of the rest (see
+[#1471](https://github.com/geoah/substrate/issues/1471)). Otherwise a saved
+position stays as long as a retention override for `core/trigger` keeps
+the lines. Like every value a compaction removes, it
 stays in the archive until its next pass publishes, and in a backup or a
 database's dead tuples and WAL until those go.
 

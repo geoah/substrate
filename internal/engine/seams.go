@@ -430,8 +430,10 @@ func WithTestCompactionClock(now func() time.Time) Option {
 // (WithTestCompactionFault): inside a batch's transaction, before its
 // commit; after a batch committed; once every batch of a kind's window
 // committed, before its mark moves; inside a batch of the foreign-effects
-// index's derivation; inside a batch that forgets deletions; and between a
-// permanent delete's or a forget's commit and its erasure.
+// index's derivation; inside a batch that forgets deletions; between a
+// permanent delete's or a forget's commit and its erasure; and inside a step
+// of an erasure, before its commit, the stage followed by ": " and the
+// record's kind and id, and after one committed (erasestep.go).
 const (
 	CompactionInBatch    = compactionInBatch
 	CompactionAfterBatch = compactionAfterBatch
@@ -440,6 +442,8 @@ const (
 	CompactionInForget   = compactionInForget
 	CompactionToForget   = compactionToForget
 	ErasureBetween       = erasureBetween
+	ErasureInStep        = erasureInStep
+	ErasureAfterStep     = erasureAfterStep
 )
 
 // WithTestPurgeKeepsHistory makes a permanent delete keep the record's
@@ -478,20 +482,27 @@ func WithTestVerifyStoreRead(fn func(stage, key string)) Option {
 // WithTestCompactionBatches bounds the pass's batches at records and lines
 // in the place of compactionBatchRecords and compactionBatchLines, 0 keeping
 // the bound, and tells seen, when it is not nil, of every batch a pass
-// committed, a forgetting's included: its kind, its records, the seq it
-// compacted them up to and the distinct lines it took as input for its
-// records (CompactReport.read), not everything its transaction read. Tests
-// only.
+// committed, a forgetting's included, and of every step of an erasure, a
+// request's included: its kind, its records, the seq it compacted them up
+// to and the distinct lines it took as input for its records
+// (CompactReport.read), not everything its transaction read. Tests only.
 func WithTestCompactionBatches(records, lines int, seen func(kind string, ids []string, upTo int64, lines int)) Option {
 	return func(o *options) { o.compactionBatches, o.compactionBatch = [2]int{records, lines}, seen }
+}
+
+// WithTestErasureShare gives a pass d for its pending erasures in the place
+// of erasureShare. Tests only.
+func WithTestErasureShare(d time.Duration) Option {
+	return func(o *options) { o.erasureShare = d }
 }
 
 // WithTestCompactionBytes bounds the pass's batches at n stored bytes beyond
 // their largest line in the place of compactionBatchBytes, 0 keeping the
 // bound, and tells read, when it is not nil, of every batch a pass
-// committed, a forgetting's included: its kind, its records, and the lines
-// it took as input for them, their stored bytes and the two largest of
-// them. Tests only.
+// committed, a forgetting's included, and of every step of an erasure, a
+// request's included: its kind, its records, and the lines it took as
+// input for them, their stored bytes and the two largest of them. Tests
+// only.
 func WithTestCompactionBytes(n int64, read func(kind string, ids []string, lines int, bytes, largest, second int64)) Option {
 	return func(o *options) { o.compactionBytes, o.compactionRead = n, read }
 }

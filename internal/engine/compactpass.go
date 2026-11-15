@@ -74,6 +74,8 @@ const (
 	compactionInForget   = "inside a batch that forgets deletions"
 	compactionToForget   = "before a batch that forgets deletions takes the lock"
 	erasureBetween       = "after a permanent delete or a forget committed, before its erasure"
+	erasureInStep        = "inside a step of an erasure, before its commit, of the record named after this"
+	erasureAfterStep     = "after a step of an erasure committed"
 )
 
 // compactionFault is the pass's test seam: nil but in a test.
@@ -119,10 +121,14 @@ func (ds *dataset) compactionFault(stage string) error {
 // archive piece (DefaultArchivePieceBytes), about a piece of text for the
 // shape measured.
 //
-// Two reads of the pass are outside the bounds. An erasure takes its record
-// whole, in one transaction (erase.go eraseOne, #1452). And a batch that
-// removes a transaction's last line verifies that whole transaction's lines
-// (reframedDamage, transactionDamage, #1453), which neither bound counts.
+// Two reads are outside the bounds, both #1453's: a batch that removes a
+// transaction's last line verifies that whole transaction's lines
+// (reframedDamage, transactionDamage), and an erasure's step verifies the
+// whole transaction of every line it edits, a merge's copy, a saved
+// position, an intent (erasestep.go linesDamage), which a sync's page of
+// records can make long; neither bound counts them. An erasure is held to
+// the bounds in steps (erasestep.go), but for what a record retains past
+// them alone.
 // Beside them a batch reads the repository's barriers (compactBarriers: the
 // lines its parked failures, its drains and its parked webhook fires name),
 // which grow with what waits to be delivered, not with the history.
@@ -219,8 +225,9 @@ func (ds *dataset) CompactionPass(ctx context.Context) (report CompactionPassRep
 		return report, budgetEnded(err)
 	}
 	// What a call left of an erasure (erase.go): a crash between its two
-	// transactions, a hold that ended, a row written back.
-	erased, err := ds.eraseNow(ctx, nil, false)
+	// transactions, a hold that ended, a row written back, the steps of one
+	// longer than the bounds, within the pass's share for them (erasestep.go).
+	erased, err := ds.eraseNow(ctx, nil, false, time.Now().Add(ds.erasureShare()), pace)
 	report.Erased = len(erased.Erased)
 	if err != nil {
 		report.Took = time.Since(started)
@@ -629,13 +636,17 @@ type CompactionStatus struct {
 	Erasures []WaitingErasure `json:"erasures,omitempty"`
 }
 
-// WaitingErasure is one record whose history waits to be erased.
+// WaitingErasure is one record whose history waits to be erased: Searched
+// is how far its search for saved positions has read, for one in steps, and
+// Held why its last step failed on its own (erasestep.go).
 type WaitingErasure struct {
-	Kind  string    `json:"kind"`
-	ID    string    `json:"id"`
-	UpTo  int64     `json:"upTo"`
-	Live  bool      `json:"live"`
-	Since time.Time `json:"since"`
+	Kind     string    `json:"kind"`
+	ID       string    `json:"id"`
+	UpTo     int64     `json:"upTo"`
+	Live     bool      `json:"live"`
+	Since    time.Time `json:"since"`
+	Searched int64     `json:"searched,omitempty"`
+	Held     string    `json:"held,omitempty"`
 }
 
 // CompactedKind is one kind's compaction mark.
@@ -698,7 +709,14 @@ func (s *service) CompactionStatus(ctx context.Context, repository string) (Comp
 		return st, err
 	}
 	for _, e := range pending {
-		st.Erasures = append(st.Erasures, WaitingErasure{Kind: e.Kind, ID: e.ID, UpTo: e.UpTo, Live: e.Live, Since: e.Since})
+		w := WaitingErasure{Kind: e.Kind, ID: e.ID, UpTo: e.UpTo, Live: e.Live, Since: e.Since}
+		if err := ds.db.QueryRowContext(ctx, `
+			SELECT coalesce((SELECT searched FROM compaction_erasure_progress WHERE record_kind = $1 AND record_id = $2 AND upto = $3), 0),
+				coalesce((SELECT held FROM compaction_erasure_progress WHERE record_kind = $1 AND record_id = $2), '')`,
+			e.Kind, e.ID, e.UpTo).Scan(&w.Searched, &w.Held); err != nil {
+			return st, err
+		}
+		st.Erasures = append(st.Erasures, w)
 	}
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT m.kind, m.upto, m.records, m.removed,
@@ -1285,11 +1303,16 @@ const recordLinesSQL = `
 // recordLines is what the lines up to to of each record of ids of kind come
 // to (recordLinesSQL).
 func (ds *dataset) recordLines(ctx context.Context, kind string, ids []string, to int64) (map[string]lineSize, error) {
+	return ds.recordLinesIn(ctx, ds.db, kind, ids, to)
+}
+
+// recordLinesIn is recordLines read through q, a transaction's.
+func (ds *dataset) recordLinesIn(ctx context.Context, q dbx, kind string, ids []string, to int64) (map[string]lineSize, error) {
 	out := map[string]lineSize{}
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := ds.db.QueryContext(ctx, `
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, count(*), coalesce(sum(size), 0)::bigint, coalesce(max(size), 0)::bigint FROM (`+recordLinesSQL+`) l GROUP BY id`, kind, ids, to)
 	if err != nil {
 		return nil, err
@@ -1319,9 +1342,14 @@ func (ds *dataset) recordLines(ctx context.Context, kind string, ids []string, t
 // every step takes at least one, and reads at most the byte bound beyond
 // the two largest lines it reads.
 func (ds *dataset) stepAt(ctx context.Context, kind, id string, after, to int64) (int64, error) {
+	return ds.stepAtIn(ctx, ds.db, kind, id, after, to)
+}
+
+// stepAtIn is stepAt read through q, a transaction's.
+func (ds *dataset) stepAtIn(ctx context.Context, q dbx, kind, id string, after, to int64) (int64, error) {
 	var seq, prev int64
 	var n int
-	err := ds.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT seq, coalesce(prev, 0), n FROM (
 			SELECT seq, lag(seq) OVER w AS prev,
 				count(*) FILTER (WHERE seq > $4) OVER w AS n,

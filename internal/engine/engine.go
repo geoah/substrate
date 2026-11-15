@@ -85,6 +85,9 @@ type options struct {
 	// it is told each batch read, in a test (WithTestCompactionBytes).
 	compactionBytes int64
 	compactionRead  func(kind string, ids []string, lines int, bytes, largest, second int64)
+	// erasureShare is the pass's share for its erasures, in a test
+	// (WithTestErasureShare).
+	erasureShare time.Duration
 	// archiveFault is the archive pass's test seam (WithTestArchiveFault).
 	archiveFault func(stage string) error
 	// shippedRefusal is the shipped upgrade's test seam
@@ -740,6 +743,7 @@ type service struct {
 	compactionBatch    func(kind string, ids []string, upTo int64, lines int)
 	compactionBytes    int64
 	compactionRead     func(kind string, ids []string, lines int, bytes, largest, second int64)
+	erasureShare       time.Duration
 	purgeKeepsHistory  bool
 	// oldResyncErasure: options.oldResyncErasure.
 	oldResyncErasure  bool
@@ -1299,6 +1303,7 @@ func open(ctx context.Context, dsn string, opts ...Option) (*service, error) {
 		compactionBatch:       o.compactionBatch,
 		compactionBytes:       o.compactionBytes,
 		compactionRead:        o.compactionRead,
+		erasureShare:          o.erasureShare,
 		purgeKeepsHistory:     o.purgeKeepsHistory,
 		oldResyncErasure:      o.oldResyncErasure,
 		archivePieceBytes:     o.archivePieceBytes,
