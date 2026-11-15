@@ -19,6 +19,10 @@ data:
     One call an agent wants to make that waits for your approval: what would
     run, with exactly what, and which agent asked. Approving runs it, declining
     does not, and the agent hears either way.
+  # version 10: `decidedBy`, whose hand approved or declined the call
+  # (decision record 0327). The kind took its package's version, 9, until
+  # then.
+  version: 10
   purpose: internal
   names:
     singular: approval
@@ -106,6 +110,16 @@ data:
       type: datetime
       managed: true
       description: when the owner approved or declined it
+    # Stamped by the engine with the hand that made the deciding write: the
+    # person, or the person an app acted for. Absent on a call decided before
+    # the property existed.
+    decidedBy:
+      type: reference
+      kind: substrate.reamde.dev/core/actor
+      managed: true
+      description: the person who approved or declined the call, stamped by
+        the engine from the hand that did; absent on one decided before this
+        was kept
     finishedAt:
       type: datetime
       description: when the approved call finished running

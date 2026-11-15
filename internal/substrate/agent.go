@@ -287,6 +287,13 @@ type ChatInput struct {
 	// names its id is admitted to a thread a chat turn runs on (decision
 	// 0318); one without is refused as busy.
 	MessageID string `json:"messageId,omitempty"`
+	// RepliesTo is the id of the `llm/interaction` this message answers in
+	// the person's own words (decision 0327): a pending question asked in
+	// Thread. The transaction that writes the message moves the interaction
+	// to `replied` and links the message, so the turn that reads the message
+	// is the one continuation. It needs Thread and MessageID. An interaction
+	// resolved since is left as it is and the message is sent as any other.
+	RepliesTo string `json:"repliesTo,omitempty"`
 	// Timezone is the client's IANA zone (`Europe/London`). Empty falls
 	// back to the repository's `substrate.reamde.dev/llm/timezone` setting,
 	// then UTC.

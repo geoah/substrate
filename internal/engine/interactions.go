@@ -29,7 +29,14 @@ const (
 	interactionPending   = "pending"
 	interactionAnswered  = "answered"
 	interactionDismissed = "dismissed"
+	// interactionReplied is a batch its person answered in a chat message of
+	// their own words (decision record 0327).
+	interactionReplied = "replied"
 )
+
+// propRepliedIn links the chat message a `replied` interaction was answered
+// with.
+const propRepliedIn = "repliedIn"
 
 // admitInteraction validates the CREATING write. The envelope is immutable
 // afterwards, so this is the one moment the questions are judged — and the
@@ -126,6 +133,13 @@ func (t *txn) guardInteraction(sp *applySpec) error {
 			return fmt.Errorf("%w: an interaction is resolved by a person, never by installed code", substrate.ErrForbidden)
 		}
 	}
+	// Answering in words is the chat send's alone (replyToInteraction): the
+	// state and the link land with the message that says the words, so no
+	// write of the record claims a message that was never sent.
+	if transitioning && target == interactionReplied && target != cur && t.replying == "" {
+		return fmt.Errorf("%w: an interaction is answered in words by the chat message that says them: send the message with repliesTo naming it",
+			substrate.ErrForbidden)
+	}
 	answers, answersNamed := sp.props["answers"]
 	answering := transitioning && target == interactionAnswered && cur == interactionPending
 	if answersNamed && !answering {
@@ -141,6 +155,51 @@ func (t *txn) guardInteraction(sp *applySpec) error {
 		return fmt.Errorf("%w: a dismissal carries no answers — it declines the whole batch", substrate.ErrValidation)
 	}
 	return nil
+}
+
+// pendingQuestion reads, under its row's lock, whether interaction is a
+// question of thread that still waits: what a chat message that names it
+// (ChatInput.RepliesTo) would answer. It answers the version it read, which
+// the reply's transition is held to, or nil for one resolved meanwhile: that
+// is no error, and the message is then sent as any other. An id that names
+// no interaction of this thread is refused in the same words whatever it
+// does name, so a guessed id says nothing about another thread's questions.
+func (t *txn) pendingQuestion(thread, interaction string) (*int64, error) {
+	ref := eref{Kind: vocabulary.KindLLMInteraction, ID: interaction}
+	if err := t.lockRecord(ref); err != nil {
+		return nil, err
+	}
+	row, err := t.loadRow(ref, true)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.DeletedAt != nil || row.Kind != vocabulary.KindLLMInteraction || referenceID(row.Props[msgRelThread]) != thread {
+		return nil, fmt.Errorf("%w: repliesTo %q is not a question asked in thread %s", substrate.ErrValidation, interaction, thread)
+	}
+	if row.States[propInteractionState] != interactionPending {
+		return nil, nil
+	}
+	return &row.Version, nil
+}
+
+// replyToInteraction moves the pending interaction to `replied` and links
+// message, the chat message that answers it, as sender: the hand that sends
+// the message is the hand that resolves the question, held as any write of
+// the kind is. version is what pendingQuestion read in this transaction, and
+// the caller has written the message in it too, so the two land together or
+// not at all. The transition notifies nothing: the message is what the
+// thread hears, and the turn that reads it is the one continuation.
+func (t *txn) replyToInteraction(interaction, message string, version *int64, sender substrate.Actor) error {
+	was := t.replying
+	t.replying = message
+	defer func() { t.replying = was }()
+	return t.asActor(sender, func() error {
+		_, err := t.patch(eref{Kind: vocabulary.KindLLMInteraction, ID: interaction}, substrate.PatchInput{
+			Properties: map[string]any{propInteractionState: interactionReplied},
+			IfVersion:  version,
+		})
+		return err
+	})
 }
 
 // validateInteractionAnswers holds the answers to the STORED questions:

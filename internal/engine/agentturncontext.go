@@ -51,6 +51,25 @@ func (tc turnContext) stamp(props map[string]any) {
 	}
 }
 
+// turnContextEnd closes the block.
+const turnContextEnd = "</turn_context>"
+
+// answering is tc with one more entry: the turn's message answers the
+// interaction in the person's own words (decision record 0327). The model
+// asked the question through `ask` and was told only its id, and no
+// resolution row follows a question answered this way, so the block of the
+// message that answers it is where the model learns the question is closed.
+// It is rendered once and stored with the row, as the rest of the block is.
+func (tc turnContext) answering(interaction string) turnContext {
+	entry := "answers: substrate://" + vocabulary.RecordPath(vocabulary.KindLLMInteraction, interaction) +
+		"\n  This message is the person's answer to that question, in their own words instead of its options. The question is closed: read the answer from the message, and do not wait for the options or ask it again.\n"
+	text, ok := strings.CutSuffix(tc.text, turnContextEnd)
+	if !ok {
+		text = "<turn_context>\n"
+	}
+	return turnContext{text: text + entry + turnContextEnd, records: tc.records}
+}
+
 // loadZone resolves an IANA zone name. `Local` is refused: it names the
 // server's zone, which is nobody's.
 func loadZone(name string) (*time.Location, error) {
@@ -126,7 +145,7 @@ func renderTurnContext(at time.Time, loc *time.Location, about []*substrate.Reco
 		b.WriteString("\n")
 		records = append(records, map[string]any{"kind": r.Kind, "id": r.ID})
 	}
-	b.WriteString("</turn_context>")
+	b.WriteString(turnContextEnd)
 	return turnContext{text: b.String(), records: records}
 }
 

@@ -7,6 +7,11 @@
 # different freeze times (creation, then resolution), so the guards stay
 # whole-property checks. There is no forking wizard and no free text in this
 # shape; a wizard is a sequence of interactions, and prose belongs in chat.
+# So a person who would rather say it in their own words sends a chat message
+# that names the interaction (decision record 0327): the send's own
+# transaction moves it to `replied` and links the message, and the turn that
+# reads the message is the one continuation. No write of the record itself
+# reaches that state.
 kind: substrate.reamde.dev/core/kind
 metadata:
   id: substrate.reamde.dev/llm/interaction
@@ -16,10 +21,14 @@ data:
   description: >-
     One batch of questions an agent asked the user, waiting in the thread
     it came from: answering (or dismissing) it is one reviewed transition,
-    which reports back into the thread and resumes the agent.
+    which reports back into the thread and resumes the agent. A chat message
+    that names it answers it in the person's own words instead.
   # version 13: `heldTo`, whose rules hold the work a record stands for
   # (decision record 0276).
-  version: 13
+  # version 14: the state `replied` with `repliedIn`, a question answered by
+  # a chat message, and `resolvedBy`, whose hand resolved it (decision record
+  # 0327).
+  version: 14
   # Where this kind was before it moved out of core (decision record
   # 0078). Admitting it on a repository that still declares the old kind
   # carries every live row here, same id and same properties, and
@@ -125,21 +134,43 @@ data:
     resolvedAt:
       type: datetime
       managed: true
-      description: when the batch was answered or dismissed, stamped by the
-        transition
+      description: when the batch was answered, replied to or dismissed, stamped
+        by the transition
+    # Stamped by the engine with the hand that made the resolving write: the
+    # person, or the person an app acted for. Absent on a record resolved
+    # before the property existed, which says nothing about whose hand it was.
+    resolvedBy:
+      type: reference
+      kind: substrate.reamde.dev/core/actor
+      managed: true
+      description: the person who answered, replied to or dismissed the batch,
+        stamped by the engine from the hand that did; absent on one resolved
+        before this was kept
+    # Stamped by the chat send that answers the batch in words, in the
+    # transaction that writes the message and moves the state to `replied`.
+    repliedIn:
+      type: reference
+      kind: substrate.reamde.dev/llm/message
+      managed: true
+      description: the chat message the person answered the batch with in
+        their own words, where they did; stamped by the send
     # Answering and dismissing are the OWNER's transitions (a bundle actor is
     # refused: asks are always the user's) and require ifVersion at every
     # tier. `dismissed` is the user declining the whole batch — the agent is
     # told, not left waiting — and may carry a note annotation like any
-    # decision.
+    # decision. `replied` is the person answering in a chat message that
+    # names the batch: the send performs it and no write of this record does,
+    # it carries no `answers`, and it notifies nothing, because the message
+    # is what the thread hears.
     state:
       type: state
-      description: pending until the user answers or dismisses; either way
-        the thread hears it
+      description: pending until the user answers, replies in a chat message
+        of their own words or dismisses; each way the thread hears it
       states:
         - pending
         - answered
         - dismissed
+        - replied
       initial: pending
       transitions:
         - from: pending
@@ -150,5 +181,9 @@ data:
         - from: pending
           to: dismissed
           notifies: thread
+          stamps:
+            resolvedAt: now
+        - from: pending
+          to: replied
           stamps:
             resolvedAt: now

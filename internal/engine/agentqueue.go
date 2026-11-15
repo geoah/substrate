@@ -116,6 +116,7 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 	queued := false
 	err = ds.runRecordTx(ctx, l.actor, exemptConversation, func(t *txn) error {
 		queued = false
+		m.message.Context = turnCtx.text
 		// The lock order of claimThread and settle.
 		if err := t.lockRegistryDepShared(); err != nil {
 			return err
@@ -141,12 +142,27 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 		if err != nil {
 			return err
 		}
+		// A message that names the question it answers resolves it with its
+		// own row (decision record 0327), and says so in its block where the
+		// question still waits. Read before the message joins the queue, so
+		// a call never reads a block this transaction has yet to settle.
+		said := turnCtx
+		var asked *int64
+		if in.RepliesTo != "" {
+			if asked, err = t.pendingQuestion(in.Thread, in.RepliesTo); err != nil {
+				return err
+			}
+			if asked != nil {
+				said = turnCtx.answering(in.RepliesTo)
+				m.message.Context = said.text
+			}
+		}
 		if !l.enqueue(int(stored), m) {
 			return errQueueClosed
 		}
 		queued = true
 		props := map[string]any{"role": "user", "content": in.Message}
-		turnCtx.stamp(props)
+		said.stamp(props)
 		if hook := ds.agentRowWrite; hook != nil {
 			if err := hook(t.ctx, props); err != nil {
 				return err
@@ -155,10 +171,16 @@ func (ds *dataset) queueMessage(ctx context.Context, actor substrate.Actor, ag *
 		props["turn"] = m.turn
 		props[msgRelThread] = in.Thread
 		var unwritten int64
-		return t.asActor(actor, func() error {
+		if err := t.asActor(actor, func() error {
 			_, err := t.put(substrate.PutInput{Kind: typeMessage, ID: m.id, Properties: props, IfVersion: &unwritten})
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		if asked != nil {
+			return t.replyToInteraction(in.RepliesTo, m.id, asked, actor)
+		}
+		return nil
 	})
 	committed, doubted := err == nil, false
 	if queued && errors.Is(err, substrate.ErrWriteInDoubt) {

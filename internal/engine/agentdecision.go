@@ -13,8 +13,10 @@ package engine
 // Resume is BOUNDED, because a resume is a paid agent turn: the agent's own
 // `resume: never` withholds it (the row still lands), a transition performed
 // by the thread's own agent never resumes that thread (the self-actor
-// exclusion precedent), and a per-thread hourly budget caps how often any
-// thread wakes. Delivery is at-least-once, not fire-and-forget: a resume
+// exclusion precedent), a question dismissed while a chat turn already
+// answers its person's later message starts no turn of its own
+// (dismissedAfterTheirWord), and a per-thread hourly budget caps how often
+// any thread wakes. Delivery is at-least-once, not fire-and-forget: a resume
 // that loses the lease mid-turn is recovered by the loop's settle-time
 // re-check (agentloop.go), and a resume lost to a restart by the sweep
 // (SweepResolutions), both keyed on rows the records already hold.
@@ -81,9 +83,55 @@ func (t *txn) recordResolution(ty *vocabulary.Kind, rec *erow, note *resolutionN
 	if err != nil {
 		return err
 	}
+	if quiet, err := t.dismissedAfterTheirWord(ty, rec, note, threadID, row); err != nil || quiet {
+		return err
+	}
 	ds, decider := t.ds, t.actor
 	t.afterCommit = append(t.afterCommit, func() { ds.resumeNotifiedThread(threadID, decider, row) })
 	return nil
+}
+
+// dismissedAfterTheirWord reports whether this resolution is a question
+// dismissed while a chat turn runs on its thread and after its person sent a
+// message there since it was asked (decision record 0327): a client from
+// before a message could name its question sends the person's words and then
+// dismisses the card. The words are what the running turn, or the one
+// before it, answers; a turn for the dismissal alone would be a second reply
+// nobody asked for. So the row, already written, starts nothing: the loop is
+// told it needs no turn of its own (consume), and the next turn's replay
+// reads it. Told inside the transaction, before the commit a settle-time
+// re-check could otherwise see first; a rollback leaves the loop skipping a
+// row that does not exist.
+//
+// Only a dismissal: an answer, a decision and an approval carry what the
+// agent acts on. Only a chat turn: there every `user` row is a person's. And
+// only while one runs: a dismissal into a settled thread resumes it as
+// before, since nothing else would tell the agent.
+func (t *txn) dismissedAfterTheirWord(ty *vocabulary.Kind, rec *erow, note *resolutionNote, threadID, row string) (bool, error) {
+	if ty.Identity != vocabulary.KindLLMInteraction || note.machine != propInteractionState || note.state != interactionDismissed {
+		return false, nil
+	}
+	v, _ := t.ds.runningThreads.Load(threadID)
+	l, _ := v.(*agentLoop)
+	if l == nil || l.hub == nil || l.in.mode != agentModeChat {
+		return false, nil
+	}
+	b := &builder{}
+	kind := b.arg(typeMessage)
+	thread, err := threadMessagesWhere(t.ctx, t.tx, b, "e", threadID)
+	if err != nil {
+		return false, err
+	}
+	var spoke bool
+	if err := t.row(`
+		SELECT EXISTS (SELECT 1 FROM records e
+		WHERE e.kind = `+kind+` AND e.deleted_at IS NULL AND `+thread+`
+		  AND e.props->>'role' = 'user' AND e.created_at > `+b.arg(rec.CreatedAt)+`)`,
+		b.args...).Scan(&spoke); err != nil || !spoke {
+		return false, err
+	}
+	l.consume(row)
+	return true, nil
 }
 
 // resolutionEnvelope is the system row's content: self-describing JSON,

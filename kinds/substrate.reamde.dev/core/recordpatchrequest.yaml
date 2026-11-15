@@ -12,7 +12,9 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
-  version: 20
+  # version 21: `decidedBy`, whose hand accepted or rejected the request
+  # (decision record 0327).
+  version: 21
   purpose: internal
   names:
     singular: recordpatchrequest
@@ -136,6 +138,17 @@ data:
       type: datetime
       managed: true
       description: when the decision was made, stamped by the transition
+    # Stamped by the engine with the hand that made the deciding write: the
+    # person, the person an app acted for, or the function or agent that
+    # decided. A policy rule's decision links none: `policy` names the rule.
+    # Absent on a request decided before the property existed.
+    decidedBy:
+      type: reference
+      kind: substrate.reamde.dev/core/actor
+      managed: true
+      description: who accepted or rejected the request, stamped by the engine
+        from the hand that did; absent where a policy rule decided it and
+        on one decided before this was kept
     # accepting is what applies the change: the transition runs `applyDiff`,
     # which branches on `op` — a patch checks the diff against `targetVersion`
     # and fails the transition if the target moved underneath it, a create
