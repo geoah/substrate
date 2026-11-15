@@ -90,7 +90,7 @@ func refoldedKeptDirectory(t *testing.T, kept string, whole bool) (string, strin
 	svc, err := OpenForTest(t, ctx, MigratedDSN(t), WithKindsFS(SeedKinds), WithDataRoot(root),
 		WithCredentialKey(fixture.CredentialKey), WithTestReplay(nil, end),
 		WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
-		func(o *options) { o.refoldWhole = whole })
+		func(o *options) { o.refoldWhole, o.declarationsFirst = whole, !whole })
 	if err != nil {
 		t.Fatalf("import the kept directory: %v", err)
 	}

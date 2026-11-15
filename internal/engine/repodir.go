@@ -1353,9 +1353,27 @@ func (ds *dataset) refold(ctx context.Context) error {
 // When it did not, or the first pass failed, it reports false with the fold
 // tables to be cleared again by the caller's two full passes, whose first
 // runs under no declarations as before.
+//
+// An import into a repository whose fold holds no row keeps the whole first
+// pass. The second pass's statements are planned against the tables as they
+// stand, and the rows the whole first pass leaves are what has them planned
+// by their keys from the first page: after the declarations alone, a table
+// of a few hundred wide rows is planned as the small table it is
+// (TestAnImportIntoAnEmptyDatabaseKeepsItsPlans). Over an old fold the
+// tables keep their pages and their statistics, and the plans hold
+// (TestAConversionsReplaysKeepTheirPlans).
 func (ds *dataset) refoldFromDeclarations(ctx context.Context, tx *sql.Tx, replay func(bool) (*txn, error)) (*txn, bool, error) {
 	if ds.svc.testRefoldWhole {
 		return nil, false, nil
+	}
+	if !ds.svc.testDeclarationsFirst {
+		var folded bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM records)`).Scan(&folded); err != nil {
+			return nil, false, err
+		}
+		if !folded {
+			return nil, false, nil
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT substrate_refold_declarations`); err != nil {
 		return nil, false, err
