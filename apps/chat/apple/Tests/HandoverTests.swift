@@ -374,8 +374,12 @@ extension OffscreenTranscript {
 
     @MainActor
     final class Stage: OffscreenTranscript {
-        /// A window short enough that a few turns outgrow it.
-        static let size = CGSize(width: 280, height: 150)
+        /// A window short enough that a few turns outgrow it, and tall
+        /// enough to show some of them over the composer, which says what
+        /// the run is doing above its field: in one 150 points high the
+        /// composer left the transcript no room at all, and a scroll view
+        /// that shows none of its content is held to no end of it.
+        static let size = CGSize(width: 280, height: 260)
         let host: ChatHost
         let key: ChildKey
         let window: NSWindow
