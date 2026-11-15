@@ -276,8 +276,11 @@ entry could name only a function.
   [0172](decisions/0172-an-agent-names-the-kinds-it-searches-and-its-prompt-lists-them.md)),
   and `filter.purposes` alone is not enough. The REST route, the direct call
   of this function and the console's search still take a search that names
-  nothing. Otherwise `filter` (the whole [grammar](api.md#the-filter-grammar),
-  `referencing` included), `orderBy`, `first`, `after`, `expand` and `count`
+  nothing. Otherwise `filter` (the [grammar](api.md#the-filter-grammar),
+  `referencing` included, and all of it but
+  [`referencedBy`](api.md#what-points-at-each-record-referencedby), which
+  names a kind beside the ones the read is held to and is refused by name),
+  `orderBy`, `first`, `after`, `expand` and `count`
   list a page, which answers `{records, cursor, head, generation, included?,
   matches?, count?}` exactly as the route does: `count` is the size of the
   whole filtered set, so `first: 1` with it answers a kind's count beside at
@@ -1312,6 +1315,8 @@ data:
       ref: substrate.reamde.dev/llm/message/01m7dj2yrqekmrn868s52f6gj2
     readAt: "2026-11-14T09:41:07.412Z"
     markedUnread: false
+    pinned: true
+    archived: false
 ```
 
 | Property | Holds |
@@ -1321,6 +1326,8 @@ data:
 | `readThrough` | the newest message of that thread the person has seen |
 | `readAt` | when the position was last taken, stamped by the server |
 | `markedUnread` | the person chose Mark as Unread |
+| `pinned` | the person keeps the thread pinned above the rest of their list ([below](#pinned-and-archived-chats)) |
+| `archived` | the person keeps the thread out of their list |
 
 The id is `<thread id>.<actor id>`. A client that holds its person's actor
 id reads or puts the mark at that id. One that does not creates it with no
@@ -1386,6 +1393,11 @@ job's) does not move it until the run it starts settles.
 Unread is derived, never stored. A settled thread that holds a `lastMessage`
 is unread for a person when they have no mark of it, when their mark says
 `markedUnread`, or when its `lastMessage` is not their mark's `readThrough`.
+A mark may hold no `readThrough`: a person who pins or archives a chat from
+the list, or marks it unread, before ever opening it has a mark with no
+position, and the last rule reads that chat as unread, like one with no mark.
+So a person has never opened a thread when they have no mark of it or their
+mark holds no `readThrough`; a mark alone does not say it was opened.
 A running thread is working, not unread. So a client marks a chat read by
 writing the thread's `lastMessage` as `readThrough`, once the person has
 seen the end of the settled transcript.
@@ -1397,9 +1409,9 @@ server counts them again in each write that creates, resolves or deletes
 one, so a list says a chat waits on somebody from the thread row alone.
 Absent reads as 0.
 
-A viewer may write their own mark: the shipped `viewer` role carries one
-`write` rule, over this kind ([roles](auth.md#roles)). An app reaches the
-marks of the threads its `agents:` scope reaches
+A viewer may write their own mark, its flags included: the shipped `viewer`
+role carries one `write` rule, over this kind ([roles](auth.md#roles)). An
+app reaches the marks of the threads its `agents:` scope reaches
 ([apps](apps.md#talk-to-agents)). A mark's history is kept whole, as a
 person's own records are ([retention](api.md#retention)).
 
@@ -1410,11 +1422,88 @@ its `lastMessage` and its count, and each person of the repository a mark
 that reads through it. It writes one changelog line per thread and one per
 thread and person, in one transaction, before the repository serves: about
 20 seconds for 5,000 threads and four people on a laptop. After it, a
-thread nobody has a mark of has never been opened. It runs once for a
-repository wherever its history goes: a restore of an archive taken after it
-ran does not run it again, so each mark comes back as its person left it,
-and a restore of one taken before runs it at the restored repository's first
-open ([upgrading the binary](operations.md#upgrading-the-binary)).
+thread a person has no `readThrough` for is one they never opened. It runs
+once for a repository wherever its history goes: a restore of an archive
+taken after it ran does not run it again, so each mark comes back as its
+person left it, and a restore of one taken before runs it at the restored
+repository's first open
+([upgrading the binary](operations.md#upgrading-the-binary)).
+
+### Pinned and archived chats
+
+A person pins a chat to keep it at the top of their list and archives one to
+put it away. Both are flags on their own mark of the thread, `pinned` and
+`archived`, so both follow them to every device and neither shows in anybody
+else's list
+([decision 0322](decisions/0322-a-person-pins-and-archives-a-thread-on-their-own-mark-and-a-list-is-narrowed-by-the-records-that-point-at-its-rows.md)).
+A flag is written as the position is, with or without a mark already there:
+
+```http
+POST /api/v1/records
+{"kind": "substrate.reamde.dev/llm/threadmark",
+ "properties": {"thread": "01m7dj2ybsebnbkvnx67dmknvv", "archived": true}}
+```
+
+`201` when the write made the mark, `200` when the mark was there; `false`
+takes the flag back. The mark's rules hold for both flags: a person writes
+only their own, a viewer may, and an app's `agents:` scope reaches them. A
+write of a flag never moves `readThrough`, `readAt` or `markedUnread`, and
+reading the chat moves neither flag. Neither flag moves the other.
+
+**Only the person's own write changes a flag.** The server never writes
+either: no reply, no report from a background job and no settle unarchives a
+chat or unpins one.
+
+**An archive hides a chat and changes nothing else.** The thread is not
+deleted, its run is not stopped (a running chat may be archived, and runs
+on), its cost still counts, and every other person's list is as it was. The
+person finds it again by listing what they archived, and unarchives it there.
+
+**What waits on a person is never hidden.** A thread whose
+[`waitingOnPerson`](#read-state) is above 0 holds a question, a proposed
+change or a call needing approval. A client lists it, counts it and notifies
+for it whether or not its reader archived it. The archive is not cleared:
+once nothing waits, the chat leaves the list again.
+
+What a client does, since these are rules about a list and a badge:
+
+- It leaves an archived chat out of the list and out of any unread count,
+  and raises no notification for a reply in one. In the list of archived
+  chats the chat shows unread like any other.
+- It shows a pinned chat above the rest, however old. A chat that is both
+  pinned and archived is with the archived ones; it keeps its pin, and is
+  pinned again once unarchived.
+- When its person sends a message into a chat they archived, or continues
+  it, the client writes `archived: false` first: they are following it
+  again, and its reply should find them. The server's send writes no mark,
+  so a client from before this leaves such a chat archived.
+
+**Reading the list.** The flags are on the mark, not on the thread, so a
+list of threads is narrowed by the reader's own marks with the
+[`referencedBy`](api.md#what-points-at-each-record-referencedby) filter arm,
+which filters before the page is cut. Three reads, each a list of threads
+most recently active first, and each followed by the usual read of the
+person's marks of that page:
+
+```http
+# the chats not archived: no mark of mine with `archived: true` points at them
+GET /api/v1/records?orderBy=updatedAt:desc&first=100&filter={"kinds":["substrate.reamde.dev/llm/thread"],"referencedBy":{"kind":"substrate.reamde.dev/llm/threadmark","property":"thread","properties":{"readBy":{"eq":"me"},"archived":{"eq":true}},"exists":false}}
+
+# the archived chats: the same, without `"exists":false`
+
+# the pinned chats, however old: `"pinned":{"eq":true}` in place of `archived`, without `"exists":false`
+```
+
+A thread the person never opened has no mark, so it is not archived and not
+pinned. The pinned read also answers a pinned chat its person archived;
+their mark of it says so, and the client keeps it with the archived ones.
+The archived chats that wait on a person are the second read with
+`"properties":{"waitingOnPerson":{"gt":0}}` beside `kinds`.
+
+A server below revision 9 of `records` refuses the arm (`400 bad_request`)
+and the two properties (`422 validation`, or `403 forbidden` to an app's
+token), so a client reads the revision first and, below 9, lists every
+thread and offers neither action.
 
 ### The daily spend cap
 

@@ -964,13 +964,26 @@ panel on the right.
   device: how far you have read is a record of yours
   ([read state](agents.md#read-state)), so a reply read in an app is read
   here. Opening a chat reads it once it has been in front for a second.
-  Pointing at a chat offers **Mark as unread**, or **Mark as read** on an
+  A chat's menu offers **Mark as unread**, or **Mark as read** on an
   unread one; a chat marked unread while it is open stays unread until you
   leave it. A chat with a question, a suggested change or a call waiting for
   you says **Waiting on you**. The console reads a chat when it is open and
   its window is in front, and does not check that its last message is
   scrolled into view. On a server from before marks, no chat reads as
   unread.
+- **Pinned and archived chats.** Each chat's menu (the **…** beside it) has
+  **Pin**, which keeps the chat in a **Pinned** section above the rest
+  however old it is, and **Archive**, which takes it out of the list at
+  once: nothing is asked first, and **Undo** is offered for a few seconds.
+  **Archived**, beside the Chats heading, lists what you put away, each with
+  **Unarchive**. Both follow you to every device and change nobody else's
+  list ([pinned and archived chats](agents.md#pinned-and-archived-chats)).
+  Archiving deletes nothing and stops nothing: the chat runs on and its cost
+  still counts. An archived chat that comes to wait on you shows in the list
+  again, marked **Archived**, until it is answered; a reply in one does not
+  bring it back. An archived chat you open says so with **Unarchive** in its
+  header, and saying something in it unarchives it. On a server from before
+  them, the menu offers neither and there is no Archived view.
 - **The conversation** is a thread, and a thread is a run. It is rebuilt from
   the `llm/message` records the loop wrote, not from the browser's memory, so a
   reload shows the same conversation; while a run streams, the same turns fill

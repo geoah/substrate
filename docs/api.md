@@ -119,10 +119,10 @@ learn, not one uniform grammar.
 
 | Mode | Selected by | Parameters | Filter arms | Answer |
 | --- | --- | --- | --- | --- |
-| **list** | none of `q`, `watch=1`, `aggregate` and `downsample` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them | `{records, cursor?, head, generation, included?, matches?, count?}` |
+| **list** | none of `q`, `watch=1`, `aggregate` and `downsample` | `filter`, `orderBy`, `first`, `after` or `offset`, `expand`, `withAnnotations`, `count` | all of them (`referencedBy` is this mode's alone) | `{records, cursor?, head, generation, included?, matches?, count?}` |
 | **ranked** | `q` | `q`, `mode`, `filter`, `first` | `kinds` and `purposes` | `{records, scores, pending}` |
 | **watch** | `watch=1` | `watch`, `filter`, `from`, `generation` | `kinds` alone | the ndjson tail |
-| **aggregate** | `aggregate` (or `downsample`) | `aggregate`, `downsample`, `filter` | a metric read: `kinds`, `implements` and the stream properties; a property read: all of them | `{metric?, property?, unit?, units?, bucket?, from?, exact, rows, sources?, head}` ([the aggregate read](#the-aggregate-read)) |
+| **aggregate** | `aggregate` (or `downsample`) | `aggregate`, `downsample`, `filter` | a metric read: `kinds`, `implements` and the stream properties; a property read: all of them but `referencedBy` | `{metric?, property?, unit?, units?, bucket?, from?, exact, rows, sources?, head}` ([the aggregate read](#the-aggregate-read)) |
 
 A kind named in `filter.kinds` that this repository never declared is
 `404 not_found`, exactly as the record path answers for an unknown kind.
@@ -232,6 +232,61 @@ It is the GENERAL question, and it stays paged for that reason: any record can
 be pointed at from anywhere, by any property. The narrow one — which MIRRORS
 converged on this subject — is answered inline on the single-record read, as
 [`linkedFrom`](#the-flat-record).
+
+### What points at each record: `referencedBy`
+
+`referencedBy` narrows a list by the records of ONE other kind that point at
+each row, from revision 9 of `records`
+([decision 0322](decisions/0322-a-person-pins-and-archives-a-thread-on-their-own-mark-and-a-list-is-narrowed-by-the-records-that-point-at-its-rows.md)).
+It is for a fact about a row that is kept on another record. Whether a
+person archived a chat is on their own [mark](agents.md#read-state) of the
+thread, so "the threads I have not archived" is the threads no mark of mine
+with `archived: true` points at:
+
+```http
+GET /api/v1/records?filter={"kinds":["substrate.reamde.dev/llm/thread"],
+                            "referencedBy":{"kind":"substrate.reamde.dev/llm/threadmark",
+                                            "property":"thread",
+                                            "properties":{"readBy":{"eq":"me"},"archived":{"eq":true}},
+                                            "exists":false}}
+                    &orderBy=updatedAt:desc&first=100
+```
+
+| Key | Holds |
+| --- | --- |
+| `kind` | the kind whose records point, in full; an unknown one is `404` |
+| `property` | a single reference that kind declares, the one that points at the row |
+| `properties` | conditions on the POINTING record, one per property, in the grammar `filter.properties` takes, `me` included; optional |
+| `exists` | absent or `true` keeps a row at least one such record points at; `false` keeps a row none points at |
+
+Only live pointing records count. A pointer written under an id the row had
+before a [merge](projection.md#merges) counts, as it does for `referencing`.
+The answer is an ordinary page: the arm composes with `kinds`, `properties`,
+`orderBy`, the cursor and `count`, and it filters before the page is cut, so
+a page is never short for it.
+
+What it refuses, each `422 validation` naming the fault: a missing `kind` or
+`property`; a `property` that is not a single reference of the kind (a
+repeated or keyed one, or no reference at all); a condition on a name the
+pointing kind does not declare, which would otherwise read as "none of
+them"; and a `property` that can point at no kind in `filter.kinds`.
+
+**A list alone takes it.** The ranked read, the tail and a metric aggregate
+refuse it by name (`400 bad_request`), and the window read and a property
+aggregate with `422`. An agent's `query` tool, an agent's pinned read and a
+function body's `list` refuse it too: each holds a read to an allowlist of
+kinds by `filter.kinds`, and this arm names a kind beside them. An app's
+token names a kind its scopes read whole, or, on a list of threads, a kind
+its `agents:` scope reaches through its thread, through `thread`
+([apps](apps.md#talk-to-agents)).
+
+**What it costs.** Each row the read passes over costs one probe of the
+index of pointers and one read of each record of the kind that points at it.
+A page is cut from the rows that pass, so a list most of whose rows are
+filtered out reads further than its page: the cost follows the rows passed
+over, not the page size. It is not one of the index-backed conditions the
+grammar otherwise holds itself to. Where it was measured, a page of 100 from
+3,000 threads with 6,300 marks pointing at them took 30 to 50 ms.
 
 ### Creating a record: `POST /api/v1/records`
 
@@ -828,6 +883,11 @@ and the same document an agent's [`query` tool](agents.md#tools) and the CLI's
   `{"ref": "<kind>/<id>", "property": …}` with `property` optional, or at any
   of several, `{"refs": ["<kind>/<id>", …]}`, at most 256
   ([above](#who-points-at-a-record-referencing)).
+- `referencedBy` narrows by the records of one other kind that point at each
+  row, or keeps the rows none points at:
+  `{"kind": "<kind>", "property": "<reference>", "properties": {…}, "exists": false}`.
+  A list alone takes it
+  ([above](#what-points-at-each-record-referencedby)).
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`, or
 a JSON list of `{property, desc}`). A kind and an id sort in plain byte order,
@@ -1167,7 +1227,7 @@ them:
 | Feature | Stability | What it covers |
 | ------- | --------- | -------------- |
 | `discovery` | `stable` | This document and `GET /healthz`. |
-| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 7 adds it, and the record's `erasure`, `kept` among its fields, on a permanent delete's reply; revision 8 adds `me` in a filter on a reference to an actor). |
+| `records` | `stable` | [The records route](#the-records-route), `GET` and `POST /api/v1/records`, the record path with its four verbs, and its `pin` and `release` (revision 4 adds them, and `marks` in place of `propertyMeta`) and `forget` (revision 7 adds it, and the record's `erasure`, `kept` among its fields, on a permanent delete's reply; revision 8 adds `me` in a filter on a reference to an actor; revision 9 adds the `referencedBy` filter arm). |
 | `errors` | `stable` | The [error](#errors) shape and its closed code set. It holds no route: every route answers with it. |
 | `changefeed` | `stable` | `GET /api/v1/changes`, and the `watch=1` tail of the records route ([the changelog and watch](changelog.md)). |
 | `blobs` | `stable` | [Blob](#blobs) upload and read. |

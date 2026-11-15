@@ -976,7 +976,10 @@ delivery's own staged effects, so a local overlay can never lie. They are held
 to the `permissions.reads` grant: with no `reads:` block the allowlist is
 empty, so every `list` and `search` is refused and every `get` answers absent.
 A `list` whose `filter.referencing` names a record of a kind outside the
-allowlist trips as one naming that kind in `filter.kinds` does. The record
+allowlist trips as one naming that kind in `filter.kinds` does, and a `list`
+does not take
+[`filter.referencedBy`](api.md#what-points-at-each-record-referencedby),
+which names a second kind: it is refused by name. The record
 the delivery's envelope names is the exception, a delete's included: a
 `list` or `aggregate` may name it, which is how `host.observed.reconcile`
 finds what the body wrote from that record before, whatever kinds the
