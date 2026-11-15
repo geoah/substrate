@@ -372,12 +372,14 @@ import Testing
         /// watcher behind the scroll view is told as the event's monitor
         /// tells it, and the scroll view moves as the wheel moves it. (A
         /// wheel's event cannot be made for a window no screen shows.)
-        func wheel(up points: CGFloat) {
+        func wheel(up points: CGFloat, held: Bool = false) {
             guard let content = window.contentView, let scroll, let document = scroll.documentView else { return }
             func all(_ view: NSView) -> [WheelWatcher.Watching] {
                 ((view as? WheelWatcher.Watching).map { [$0] } ?? []) + view.subviews.flatMap(all)
             }
-            for watcher in all(content) { watcher.turned(by: points, at: CGPoint(x: content.bounds.midX, y: content.bounds.midY)) }
+            for watcher in all(content) {
+                watcher.turned(by: points, at: CGPoint(x: content.bounds.midX, y: content.bounds.midY), held: held)
+            }
             var origin = scroll.contentView.bounds.origin
             origin.y += document.isFlipped ? -points : points
             scroll.contentView.scroll(to: origin)
@@ -490,12 +492,21 @@ import Testing
         try await stage.settle()
         let end = try #require(stage.reach)
         try #require(abs(end.below) < 1 && end.offset > 115, "not back at the end: \(end)")
-        // Up by 100 points, 20 at a time, with no rest between.
-        for _ in 0 ..< 5 {
-            stage.wheel(up: 20)
+        // Two fingers on a trackpad take it up 20 points and pause there
+        // for longer than a wheel takes to rest: it is still theirs.
+        stage.wheel(up: 20, held: true)
+        try await Task.sleep(for: .milliseconds(450))
+        try await stage.settle()
+        let paused = try #require(stage.reach)
+        #expect(abs(paused.offset - (end.offset - 20)) < 2, "taken back under fingers that paused: \(end) then \(paused)")
+        // On up to 100 points, 20 at a time, with no rest between, and the
+        // fingers leave.
+        for _ in 0 ..< 4 {
+            stage.wheel(up: 20, held: true)
             stage.window.contentView?.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(40))
         }
+        stage.wheel(up: 0)
         let turning = try #require(stage.reach)
         #expect(abs(turning.offset - (end.offset - 100)) < 2, "taken back while the wheel turned: \(end) then \(turning)")
         // At rest past where following takes up again: it stays.
