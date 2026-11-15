@@ -8,6 +8,7 @@ struct CardBackground: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .keepsToItsWidth()
             .padding(ChatSpace.inset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ChatColours.cardStyle(tone), in: .rect(cornerRadius: ChatRadius.card))
