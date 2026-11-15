@@ -1,9 +1,12 @@
 # Plan: a chat that keeps its place, streams evenly and fails in plain words
 
-Status: proposed 2026-11-14 and being built group by group;
-[#1400](https://github.com/geoah/substrate/issues/1400) says where each
-group is. A plan, not a contract. It covers the agent API as a chat client
-uses it, and Substrate Chat, the iPhone, iPad and Mac app
+Status: proposed 2026-11-14 and built since, as two stacks of open pull
+requests, one for the server and the console and one for the app.
+[#1400](https://github.com/geoah/substrate/issues/1400) lists them and
+says where each is. Changes 1 to 6 and 8 to 10 are built; change 7, push,
+is not. This page says what was built, so it is the design as it stands,
+not as first proposed. A plan, not a contract. It covers the agent API as
+a chat client uses it, and Substrate Chat, the iPhone, iPad and Mac app
 ([its design](../../apps/chat/DESIGN.md)). It follows
 [detached chat turns](chat-turns.md), which landed, and sits beside
 [what Moss needs next](moss-capabilities.md), which owns attachments,
@@ -15,35 +18,34 @@ products solve the same problems. The public sources are listed at the end.
 
 ## The short version
 
-Four things the owner notices today, each with its cause further down:
+Four things the owner noticed, each with its cause further down:
 
-1. Reading a chat on the phone does not mark it read on the Mac, and the
-   app knows only that a chat changed, never how far the owner read.
-2. A reply arrives in bursts, and the half-written text disappears and
-   comes back whenever the app returns to the front.
-3. A failure is the server's own sentence on a red card with no button.
-4. The interface lacks the small things a chat is judged by: actions under
-   a reply, code and tables that read well, a list that says what is
+1. Reading a chat on the phone did not mark it read on the Mac, and the
+   app knew only that a chat changed, never how far the owner read.
+2. A reply arrived in bursts, and the half-written text disappeared and
+   came back whenever the app returned to the front.
+3. A failure was the server's own sentence on a red card with no button.
+4. The interface lacked the small things a chat is judged by: actions
+   under a reply, code and tables that read well, a list that says what is
    running, motion that explains what changed.
 
 Ten changes answer them. Sizes are S, M and L as in the other plans.
 
 | # | Change | Side | Size | What the owner gets |
 | --- | --- | --- | --- | --- |
-| 1 | How far the owner has read is a record | server, app | M | Read on one device is read on all; dots, badges and notifications agree; a line where the new part starts |
+| 1 | How far the owner has read is a record, with pin and archive beside it | server, app | M | Read on one device is read on all; dots, badges and notifications agree; a line where the new part starts |
 | 2 | A stream a client can join twice without a blink | server, app | M | No blink on return; an answer after an approval streams; text is kept when a provider drops the call |
 | 3 | A failure with a cause from a closed set | server, app | M | One sentence, one button, on every failure |
 | 4 | A send that carries its own id, and a continue that writes no message | server, app | S | No "it may not have arrived"; no words put in the owner's mouth |
 | 5 | Small facts a chat list reads from the thread | server | S | A list that says who is waiting on whom, from one read |
-| 6 | A message sent while the assistant works | server, app | M | The owner corrects course without stopping the run |
-| 7 | Push to a closed device, through the app publisher's relay | server, app, relay | L | A reply or a question reaches a phone in a pocket |
+| 6 | A message sent while the assistant works; an answer in words | server, app | M | The owner corrects course without stopping the run |
+| 7 | Push to a closed device, through the app publisher's relay (not built) | server, app, relay | L | A reply or a question reaches a phone in a pocket |
 | 8 | Even streaming, plain failures and a fuller interface in the app | app | M | The app reads as carefully as the answers do |
 | 9 | Tests that hold all of it | app | S | The polish does not wear off |
 | 10 | The app's structure: draw only what changed, one model of a turn, failures kept as values | app, kit | M | Typing and streaming stay smooth in a long chat; the fixes above stop being patches |
 
-[The order](#the-order) puts the app-only work first, because it needs no
-server change and removes the blink, the bursts and the button-less
-failures within one release.
+[Where it stands](#where-it-stands) lists the pull requests that carry
+each, and what nobody has yet seen on a device.
 
 ## What holds
 
@@ -214,8 +216,10 @@ data:
 | `thread` | the thread these marks are about | one `llm/thread` |
 | `readBy` | the person whose marks these are | one `core/actor` of type `person` |
 | `readThrough` | the newest message the owner has seen | one `llm/message` of that thread |
-| `readAt` | when that was | a time |
+| `readAt` | when that was, stamped by the server; a value a client sends is dropped | a time |
 | `markedUnread` | the owner chose Mark as Unread | a bool |
+| `pinned` | the owner pinned the chat | a bool |
+| `archived` | the owner archived the chat | a bool |
 
 The thread gains one property, `lastMessage`, a reference to the newest
 `llm/message` the run wrote, set in the settle patch the engine already
@@ -237,18 +241,36 @@ The rules:
   the flag apart from the position for this reason.
 - **Unread is derived, never stored.** No count is written anywhere. The
   badge is the number of loaded chats that are unread by the rule above.
-- **An ordinary write.** A client puts the record at
-  `…/llm/threadmark/<thread id>` like any other. The forward-only rule is
-  the engine's, at admission, so the console, the app and `substratectl`
-  cannot disagree.
+- **A person's own mark, and nobody else's.** The mark's id is the
+  thread's id, a dot, and the id of the person's actor record. A client
+  never needs that id. It reads its marks for a page of threads with one
+  list read whose filter says `readBy` is `me`, and it moves a mark by
+  posting the thread and `readThrough` with no id, which the server
+  completes from the token's person. A person, or an app acting for them,
+  writes only their own mark; an agent, a function and a package are
+  refused. The shipped `viewer` role may move its own mark, and an app's
+  `agents:` scope reaches the marks of the threads it reaches. The
+  forward-only rule is the engine's, at admission, so the console, the app
+  and `substratectl` cannot disagree.
 - **Devices learn through the change feed.** The kind joins the kinds the
   app watches. A suspended phone learns at its next refresh, or at once by
   [push](#7-push-to-a-closed-device-l).
 - **History is read.** One repository migration
   ([0099](../decisions/0099-a-repository-migration-is-code-the-boot-runs-once-and-records.md))
-  gives every existing chat thread its `lastMessage` and a mark that reads
-  through it. After it, a thread with no mark has never been opened, and
-  no client keeps a second rule for old threads.
+  gives every existing chat thread its `lastMessage` and, for each person,
+  a mark that reads through it. After it, a mark with no `readThrough`, or
+  no mark, means the thread was never opened, and no client keeps a second
+  rule for old threads. A restore of an archive from before the migration
+  runs it once; one taken after runs nothing. It cost about 24 seconds at
+  first open for 5,000 threads and four people, and it closes the rollback
+  to an older server.
+
+`lastMessage` names the newest message the thread held when it last
+settled, never a summary row. It passes over a person's message that no
+reply came after, so a message queued behind a run, or one whose call
+failed, does not make the chat read as unread to the person who sent it,
+and it never moves back. A chat whose last send failed shows as failed by
+its status.
 
 What was considered and set aside:
 
@@ -271,9 +293,29 @@ reply, which is the cost 0132 accepted for preferences. One more kind in
 `llm`, one more list read for a page of threads, one more kind on the
 watch.
 
-The same record is where `pinned` and `archived` go later. Archive is the
-answer to "delete a chat": a thread is a run and its cost counts, so it is
-hidden, not removed.
+**Pin and archive** are two more facts on the same record, each one
+person's own. Archive is the answer to "delete a chat": a thread is a run
+and its cost counts, so it is hidden, not removed.
+
+- A flag never moves the read position, and reading moves no flag.
+- An archived chat is out of that person's list, badge and reply
+  notifications on every device. A reply on it leaves it archived and
+  silent.
+- A chat that waits on a person is always listed, counted and notified
+  for, archived or not, so an approval cannot be hidden.
+- Archived wins over pinned, and the pin is kept for when it returns.
+- A person's own message into an archived chat unarchives it. The client
+  writes that with the send and never holds the message for it.
+- A running chat may be archived and keeps running.
+
+A list of threads cannot be narrowed by marks read first, because threads
+are ordered by their own activity and a thread never opened has no mark.
+So the records list takes one more filter arm, `referencedBy`: rows that
+some record of a named kind points at through a named property, or rows
+none does. "My newest chats that are not archived" is the threads no mark
+of mine with `archived` set points at. Written as joins, one such read
+over 3,000 threads ran for minutes; as a subplan per row it takes 30 to
+50 ms.
 
 ### 2. A stream a client can join twice without a blink (M)
 
@@ -298,9 +340,9 @@ which is what a cursor would have bought.
 
 **Every run of a chat thread streams.** A continuation after an answer, a
 decision, an approval or a background job publishes into a hub exactly as
-a sent turn does. Attach streams it and Stop stops it. It takes one of the
-repository's four chat-turn slots; when all four are taken it waits for
-the sweep that already retries resumes.
+a sent turn does. Attach streams it and Stop stops it. It counts under its
+person's chat-turn cap; when the cap is full it waits, and starts when one
+of that person's turns settles.
 
 **What streamed is kept when a call fails.** The text a failed model call
 had streamed is written as the assistant row before the thread settles, as
@@ -309,15 +351,17 @@ paragraphs costs the owner the fourth, not all of them.
 
 **A reply says how it ended.** An assistant `llm/message` gains `cutBy`,
 absent when the model finished the reply: `length` (the model's output
-limit), `filter` (the provider withheld the rest), `stop` (the owner or a
-shutdown) and `failure` (the call failed). A client offers Continue on a
-row that carries it.
+limit), `filter` (the provider withheld the rest), `stop` (the owner, a
+shutdown, or the run's own deadline; the thread's `cause` says which) and
+`failure` (the call failed). A client offers Continue on a row that
+carries it.
 
 **A quiet stream is noticed sooner.** A turn's stream writes its heartbeat
 every 10 seconds, not 30, so a client can say "Reconnecting" after 25
 seconds of silence. A client that read too slowly gets its own event,
-`lagged`, and attaches again; that is not a failure of the turn and should
-not travel as one.
+`lagged`, carrying the thread's id, which ends that reader's stream; it
+attaches again. That is not a failure of the turn and does not travel as
+one.
 
 Not proposed: a stored event stream. 0169 rejected a queue in Postgres
 because a repository has one writer, and that reasoning stands. A crash
@@ -334,12 +378,12 @@ server's words, which a client shows under Details and nowhere else.
 
 | `status` | `cause` | When |
 | --- | --- | --- |
-| `error` | `provider_key_missing` | the provider row has no key |
 | `error` | `provider_key_refused` | the vendor refused the key |
 | `error` | `provider_rate_limited` | the vendor is limiting requests; carries `retryAfter` |
 | `error` | `provider_billing` | the vendor account is out of credit or over its quota |
 | `error` | `provider_overloaded` | the vendor is shedding load |
 | `error` | `provider_unavailable` | a vendor fault, a timeout or no connection |
+| `error` | `provider_rejected` | the vendor refused the request, and trying again would not help |
 | `error` | `model_unavailable` | the vendor does not offer the model to this key |
 | `error` | `context_too_long` | too long even after the one compaction retry |
 | `error` | `allowance_spent` | the operator's daily allowance is used up |
@@ -347,18 +391,26 @@ server's words, which a client shows under Details and nowhere else.
 | `error` | `write_failed` | a write of the run failed |
 | `error` | `internal` | anything else |
 | `overbudget` | `turn_limit`, `tool_call_limit`, `deadline` | which budget ended the run |
-| `stopped` | `owner`, `shutdown` | who stopped it |
+| `stopped` | `requested`, `shutdown` | a person, an app or an agent asked, or the server stopped |
 
 Each wire in `internal/llm` already tells one case apart
 (`ErrContextTooLong`). The same place sorts a vendor's status and error
 code into the other classes, so no client reads vendor prose again.
 
-A refusal before the stream opens keeps its status and gains a `reason`
-in the envelope's closed set: `thread_busy` and `turn_cap` on `conflict`,
-`spend_cap` on `guard`, `provider_key_missing` on `validation`. A
+A missing key is never a thread's cause: it is refused before any thread
+opens. A refusal before the stream opens keeps its status and gains a
+`reason` in the envelope's closed set: `thread_busy`,
+`nothing_to_continue`, `turn_cap` and `message_id_taken` on `conflict`;
+`spend_cap`, and `quota` for the operator's allowance, on `guard`;
+`provider_key_missing` on `validation`; `key_refused` on `unavailable`. A
 provider failure on the call route stops answering as `validation`, which
 says the caller's input was wrong, and answers `unavailable` with the
-cause as its reason.
+cause as its reason and a `Retry-After`.
+
+While a thread is running again, its `reason`, `cause` and `retryAfter`
+are the last settle's, so a client reads `status` first. `retryAfter`
+counts from the thread's `finishedAt`. `reason` never holds a key or an
+internal address.
 
 What it costs: the set is closed, so a new cause is a wire change. A
 client that meets a cause it does not know falls back to the sentence for
@@ -379,39 +431,96 @@ still runs, or answers the one `idle` line an attach answers. So a send
 whose answer was lost is simply sent again, on a new chat as well as an
 old one, and the app's bubble and the stored row are one row from the
 start. The "It may not have arrived" card and the comparison of message
-text go away.
+text go away. An id that already names another message is refused,
+`conflict` with the reason `message_id_taken`; the refusal says which
+message only to a hand that may continue that thread.
 
 `POST …/llm/thread/{id}/continue` runs a continuation with no user
 message: the stored rows are the whole context, the path a resolution
 already takes. It is what Continue does on a stopped, over-budget or
 cut-off turn, and what Try Again does on a failed one. It is the owner's
 word, so 0169's rule holds: nothing resumes a stopped thread on its own.
-A thread that is running refuses it with `thread_busy`.
+A thread that is running refuses it with `thread_busy`, and one with
+nothing to go on from (settled `ok` with a whole reply and no unanswered
+message) with `nothing_to_continue`. Where the stored rows end on the
+assistant's own text, the request to the model ends with one sentence from
+the engine, never stored, because providers refuse a conversation that
+ends on the assistant's turn.
+
+A server refuses a request body field it does not know. So a client reads
+the feature revisions in the discovery document before it sends
+`messageId` or calls continue, and behaves as before on a server that has
+neither ([what a client checks](#what-a-client-checks-before-it-uses-any-of-this)).
 
 ### 5. Small facts a chat list reads from the thread (S)
 
 - `lastMessage`, from change 1.
-- `waitingOnOwner`, a count of the thread's questions, suggestions and
+- `waitingOnPerson`, a count of the thread's questions, suggestions and
   approvals that are not yet resolved, kept by the engine in the writes
   that create and resolve them. Today the app reads three more lists to
   put a mark on a row (`ChatAppReading.swift:149`), and a push sender
-  would need the same three.
+  would need the same three. It is one count for the thread, not one per
+  person: with several people in a repository, a waiting chat shows as
+  waiting to each of them.
 
 ### 6. A message sent while the assistant works (M)
 
-Today a second message on a running thread is `409 conflict`. Proposed:
-it is admitted. The user row is written at once, under its `messageId`.
-The loop reads the rows it has not seen before each model call, so the
-message steers the run at the next tool boundary. If the run ends first,
-the message starts the next turn.
+A second message on a running thread used to be `409 conflict`. Now a
+send that carries a `messageId`, into a thread a chat turn is running on,
+is admitted. The user row is written at once and the request is answered
+with the running turn's stream. The loop reads the rows it has not seen
+before each model call, so the message steers the run at the next tool
+boundary, adds no model call and moves no budget.
 
-The app shows such a message as queued until an event carries a `turn`
-past it. Stop stays a separate act that ends the run and keeps its work.
-This is what the coding assistants do, and it removes the most common
-reason to stop a run: to say "not that one".
+```json
+{"kind":"messageQueued","id":"c41a7e9b02","turn":4,"text":"Not the red one."}
+{"kind":"messageTaken","id":"c41a7e9b02","turn":4}
+```
 
-It changes 0169, which admits the next message once the turn settles, so
-it needs a record of its own.
+`messageQueued` says the row was written, so another window can show it.
+`messageTaken` says a model call has read it. A client shows the message
+as queued between the two, and only while a stream of that turn is open:
+with the connection down it does not know, so it says nothing it cannot
+know.
+
+- If the run ends `ok` or over budget before reading the message, the
+  message starts the next turn itself. It is the person's word, so 0169's
+  rule holds.
+- A stop or a failure starts nothing. The message stays, unanswered, and
+  Continue or the next message reads it.
+- After a restart, the server finds a chat that settled within the hour
+  with an unanswered message and starts its turn.
+- A send without a `messageId` into a running thread is refused as before,
+  so an older client sees no change.
+- A queued message cannot be withdrawn.
+
+Stop stays a separate act that ends the run and keeps its work. This is
+what the coding assistants do, and it removes the most common reason to
+stop a run: to say "not that one".
+
+### 6a. An answer in words, and whose hand resolved a card (S)
+
+A question card offers its options, and a person may prefer to answer in
+a sentence. Sending the sentence and then dismissing the question cost two
+assistant turns, because every resolution resumes the thread. So a chat
+message may name the question it answers:
+
+```json
+{"thread": "8f2c41d07a", "messageId": "e07b1c22d9", "message": "Neither. Use the blue one.", "repliesTo": "2d6f90a7c1"}
+```
+
+The transaction that writes the message moves the question to a state of
+its own, `replied`, and links the message. Nothing else resumes: the one
+turn that reads the message is the only one. A question of another thread
+is refused, and one resolved meanwhile on another device is left alone and
+the message goes as an ordinary one.
+
+Each of the three things a person resolves also says whose hand did it:
+`resolvedBy` on a question, `decidedBy` on an approval and on a suggested
+change, each a reference to the person's actor record, stamped by the
+engine. A client asks which are its own with `me` in a filter, and says
+"You" only where that read says so. Records resolved before this have no
+link, and a client says only how they ended.
 
 ### 7. Push to a closed device (L)
 
@@ -479,6 +588,25 @@ which the Moss plan already marked as needing a decision. The console can
 use Web Push with no relay, since a browser's push service needs no
 publisher key; that is a follow-up.
 
+### What a client checks before it uses any of this
+
+The discovery document lists features, each with a revision. A server
+refuses a body field it does not know, so a client reads the revision
+first and never probes.
+
+| Feature, revision | Carries |
+| --- | --- |
+| `agents` 3 | `messageId` on a send; the continue route |
+| `agents` 4 | `cause` and `retryAfter` |
+| `agents` 5 | `at`, `lagged`, `cutBy`, resumed runs that stream, a 10 second heartbeat |
+| `agents` 6 | a message sent during a run, `messageQueued`, `messageTaken` |
+| `agents` 7 | `repliesTo`, the `replied` state, `resolvedBy` and `decidedBy` |
+| `records` 8 | the thread mark, the `me` filter, `lastMessage`, `waitingOnPerson` |
+| `records` 9 | `pinned` and `archived`, the `referencedBy` filter |
+| `errors` 6, 7 | the reasons named in changes 3 and 4 |
+
+Below a revision the app behaves as it did before that change.
+
 ## The app
 
 ### 8a. Reading and notifications
@@ -486,9 +614,10 @@ publisher key; that is a follow-up.
 - The mark moves when the newest settled message has been on screen in a
   front window for a second. Writes are debounced by two seconds and
   flushed on leaving the chat.
-- A chat with unread messages that do not fit on one screen opens at the
-  first of them, under a "New" line. Otherwise it opens at its end, as
-  today.
+- A chat with unread messages opens at the first of them, under a "New"
+  line; otherwise at its end. Where the read position lies above the rows
+  the app holds, it reads toward it, a bounded number of pages, and says
+  so meanwhile.
 - When a mark arrives from the feed, a push or a refresh, the app takes
   back that thread's delivered notifications and recounts the badge. It
   already does this when the chat is opened on the same device.
@@ -604,7 +733,7 @@ later.
   with the first column held in place. At the largest text sizes, one card
   per row.
 - **The list:** a spinner on a running chat's row, the waiting mark from
-  `waitingOnOwner`, swipe to pin and to archive once the mark record
+  `waitingOnPerson`, swipe to pin and to archive on the mark record
   carries them, rows that take their place with motion, and placeholder
   rows while the first read is out.
 - **Search:** the server's ranked read over `llm/message`, merged under
@@ -637,12 +766,17 @@ later.
 ### 8e. Interaction
 
 - **Answer in your own words.** A question card offers it beside its
-  options. It dismisses the card and puts the cursor in the composer. The
-  interaction kind says prose belongs in chat, and this keeps that.
+  options. The card steps aside, the cursor goes to the composer, and the
+  message sent names the question it answers (change 6a). The interaction
+  kind says prose belongs in chat, and this keeps that.
 - **A resolved card folds into its tool row.** A card stands in the
   transcript only while it waits on the owner. Once answered it is a check
-  or a cross on the call that asked, opened on a tap.
+  or a cross on the call that asked, opened on a tap, saying whose hand it
+  was where the server says so.
 - **Queued messages**, from change 6.
+- **Answers from a notification:** a reply in text, Approve or Decline
+  where the whole call fits in the notification, or the options of a short
+  question. A typed reply is saved on the device before it is sent.
 - **Later:** suggested next messages under a reply (a small model call per
   turn, so the owner's switch); a spoken conversation on the device's own
   speech recognition and voices (listen, send, speak sentence by sentence,
@@ -842,33 +976,52 @@ One small repair while there: `SystemNotificationDelegate` is declared
 three times in `apps/kit/Sources/SubstrateDeviceApple/SystemNotifications.swift`,
 two of them nested inside functions.
 
-## The order
+## Where it stands
 
-| Phase | Pull requests | What the owner gets |
+Two stacks of open pull requests, each one line, bottom first. Each pull
+request was reviewed before it was called ready, and
+[#1400](https://github.com/geoah/substrate/issues/1400) has each one's
+state.
+
+| Stack | Pull requests, in merge order | What it holds |
 | --- | --- | --- |
-| 1, app only | Measurement from 10 H first; then 10 A to D, which carry 8b rules 1 to 5 and 10 and 8c's card with today's matching; 8b rules 7 to 9; permission timing and the notification hold from 8a; reply actions, code and tables from 8d on the tokens of 10 G; the seeded server from 9 | No blink, steady text, smooth typing in a long chat, a button on every failure |
-| 2, server and both clients | Change 1 with its migration; change 2; change 3; change 4 | Read state on every device; resumed answers stream; failures named; safe resend |
-| 3 | Change 5; change 6; notification actions; pin and archive on the mark; search, and paging on 10 F; 10 E if the numbers ask for it | A list that says more, steering, answers from the lock screen |
-| 4 | Change 7; a Live Activity; Web Push for the console | A closed phone hears about it |
+| Server and console | #1405, #1403, #1409, #1416, #1419, #1459, #1467 | Changes 1 to 6 and 6a, each with the console's side |
+| App | #1402, #1410, #1414, #1404, #1411, #1415, #1407, #1413, #1417, #1418, #1450, #1464, #1465, #1466, #1468, #1469 | Changes 8 to 10, and the app's side of 1 to 6a |
 
-Phase 2's four changes are independent of each other and each is one pull
-request: the kind or wire change, the engine, the console, the app. Each
-declaration change ships its version bump, and the wire golden file moves
-with every new field.
+The app reads every revision before it uses what the revision carries, so
+the two stacks can merge in either order, and the app works against a
+server that has none of it.
 
-## Decisions this needs
+Not built: change 7, push. It waits on where the relay runs and on the key
+that signs an Apple push, neither of which is in this tree. With it wait a
+Live Activity and Web Push for the console.
 
-One record each, written with its pull request:
+What nobody has seen yet, because the machine that built this had a locked
+screen and no device attached: the app on a real iPhone or iPad, and the
+Mac app in a window. On a Mac, scrolling a chat with a trackpad or a
+wheel, a selected row in dark mode, and VoiceOver on a line that holds
+links want a hand and an eye before a release.
 
-- The thread mark and its forward-only rule. It amends 0195 so that the
-  `agents:` verb reaches the mark of a thread it reaches.
-- Positions on stream events, and a resumed chat run as a detached turn.
-  It amends 0169.
-- The closed set of causes, and the reasons added to the error envelope.
-- `messageId` and the continue route.
-- A message admitted during a run. It amends 0169.
-- Push: the device kind, the relay named by the authority document, and
-  the server calling out on its own initiative.
+## Decisions made
+
+One record each, in the pull request that carries it:
+
+- 0312: a chat message may name its own id, and a thread is continued
+  with no message.
+- 0313: how far a person has read a thread is a record of their own, and
+  its position only moves forward. It amends 0195 so that the `agents:`
+  verb reaches the mark of a thread it reaches.
+- 0315: the closed set of causes, and the reasons added to the error
+  envelope.
+- 0317: positions on stream events, and a resumed chat run as a detached
+  turn. It amends 0169.
+- 0318: a message admitted during a run. It amends 0169.
+- 0322: pin and archive on the mark, and what archive means.
+- 0327: a message that names the question it answers, and the link to the
+  hand that resolved a card.
+
+Still to make, with change 7: the device kind, the relay named by the
+authority document, and the server calling out on its own initiative.
 
 ## Positions this questions
 
@@ -900,16 +1053,30 @@ One record each, written with its pull request:
 - Drafts synced across devices. A draft is a fact of one window, and
   syncing it is a changelog entry per pause in typing.
 
-## Open questions, with the default taken
+## Open questions
 
-- The kind's name, `threadmark`, follows the rule that a kind belonging
-  to another starts with its name. The kind review may prefer another.
-- The unit of `at` is Unicode code points, because Go, Swift and
-  JavaScript can all count them the same way.
-- A resumed run takes a chat-turn slot.
-- The hold before a notification is five seconds.
-- `cause` is on the thread, not on each message: a thread has one run at
-  a time and the list reads threads.
+- **The flush budget.** The target is 8 ms of main thread per flush in a
+  200-turn chat. The line stands at about 10.5 ms on an iPhone simulator
+  on the build machine, down from about 23 before change 10. Paced text
+  flushes about twice as often as before, and about 0.4 ms a step added
+  with reply actions, code colours and tables was never placed. It has
+  not been measured on a device.
+- **A reader's place on a Mac.** When older rows arrive above, a reader
+  part way down a tall row keeps their line on an iPhone and an iPad, and
+  is put at that row's top on a Mac, where the same code could not be
+  tried under a real wheel.
+- **`waitingOnPerson` is one count for the thread.** A waiting chat shows
+  as waiting to every person in a repository, including one who archived
+  it. A count per person is a larger change.
+- **Search with a scoped token.** An app's `agents:` token is refused the
+  ranked read of messages, so a scoped app searches only what the device
+  holds. Holding the ranked read to the token's own threads means
+  narrowing before the search's own cap, which the read path does not do.
+- **An approval is not forgiving.** Approve cannot be undone and looks
+  like any other button. That is the approval's design, not a view's.
+- The hold before a notification is five seconds, and the unit of `at` is
+  Unicode code points, because Go, Swift and JavaScript can all count them
+  the same way.
 
 ## Public practice this draws on
 
