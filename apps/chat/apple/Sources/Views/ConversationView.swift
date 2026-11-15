@@ -40,7 +40,9 @@ struct ConversationView: View {
     private func transcript(_ screen: ConversationScreen) -> some View {
         let _ = Meter.shared.count(.body, "Transcript")
         return TranscriptScroll(
-            opens: screen.opens, anchor: opening(screen), sends: screen.sends, visit: screen.visit, above: screen.above, looked: { atBottom = $0 }
+            opens: screen.opens, anchor: opening(screen), sends: screen.sends, visit: screen.visit, above: screen.above,
+            first: { TranscriptPiece.firstRow(among: $0, of: screen.turns) },
+            looked: { atBottom = $0 }
         ) {
             LazyVStack(alignment: .leading, spacing: 22) {
                 TranscriptRows(screen: screen, key: key, onKey: { keySheet = host.chats?.keys[$0] }, act: act)
@@ -209,6 +211,9 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// them, which the transcript is kept at where it does not follow its
     /// end.
     var above: RowsAbove?
+    /// The first, in the transcript's order, of the rows named: the rows on
+    /// screen come in no order this view knows.
+    var first: ([String]) -> String? = { $0.first }
     /// Told whether the transcript follows its end with the end on screen:
     /// the reader's intent and what the scroll view shows, both. A chat
     /// opened further up, or scrolled up, is not at its end whatever
@@ -236,6 +241,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
 
     init(
         opens: TranscriptOpening, anchor: String? = nil, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
+        first: @escaping ([String]) -> String? = { $0.first },
         looked: @escaping (Bool) -> Void = { _ in },
         @ViewBuilder rows: () -> Rows,
         @ViewBuilder bar: @escaping (_ atEnd: Bool, _ seen: [String], _ jump: @escaping () -> Void) -> Bar
@@ -245,6 +251,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         self.sends = sends
         self.visit = visit
         self.above = above
+        self.first = first
         self.looked = looked
         self.rows = rows()
         self.bar = bar
@@ -299,8 +306,13 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// reach the row, and keeping the old first turn would take it away.
     private func keep(_ reader: ScrollViewProxy, at above: RowsAbove?) {
         guard let above, placed, above != landed, !follow.following else { return }
+        // A reader who went on down the transcript while the rows were out
+        // no longer has that turn on screen: they stay at the first row
+        // they do have.
+        let own = seen.filter { $0 == above.turn || $0.hasPrefix(above.turn + "/") }
+        let row = own.contains(above.turn) ? above.turn : first(own.isEmpty ? seen : own) ?? above.turn
         position = ScrollPosition(idType: String.self)
-        DispatchQueue.main.async { reader.scrollTo(above.turn, anchor: .top) }
+        DispatchQueue.main.async { reader.scrollTo(row, anchor: .top) }
     }
 
     private var scroll: some View {

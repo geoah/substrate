@@ -113,6 +113,13 @@ struct MarkChange: Codable, Equatable, Sendable {
     /// refusal is said.
     var flags: Bool { pinned != nil || archived != nil }
 
+    /// The change without its flags; nil where it moved nothing else.
+    var unflagged: MarkChange? {
+        var out = self
+        (out.pinned, out.archived) = (nil, nil)
+        return out.readThrough == nil && out.markedUnread == nil ? nil : out
+    }
+
     /// The mark as it reads once this is written over it, for a thread
     /// whose newest message is `last`. Taking a position clears Mark as
     /// Unread unless the same write sets it. A read of a message that is no

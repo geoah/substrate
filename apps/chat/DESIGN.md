@@ -859,7 +859,9 @@ bubble is a tinted fill. The transcript softens under the composer with
   a transcript that does not follow its end stays at the turn that stood
   first (`TranscriptScroll`'s `above`: the scroll view is put at that turn
   again once the rows are laid out, since content that grows above a
-  reader moves what they read down). The next read of the newest rows
+  reader moves what they read down). A reader who went on down the
+  transcript while the rows were out stays at the first row they have on
+  screen. The next read of the newest rows
   (the thread moved, a run handed over) keeps the older ones where it
   begins among the rows held, and starts the transcript over where it
   does not: more rows were written since than a read holds. The folder
@@ -1284,14 +1286,21 @@ merged into the window:
   over from the page, and grows again from its cursor.
 - Pull to refresh, and Try Again on the list's strip, start the window
   over too: the person asked for the list anew. So does a cursor the
-  server can no longer go on from (`410`).
+  server can no longer go on from (`410`). The archived chats' window
+  starts over with them, and when Automated Runs is switched: a cursor
+  goes on only under the filter it was cut for.
 
 **What no list read reaches is read by name.** A read of the first page
 says nothing of a chat past it, of one that just left its list, or of one
 a window shows that no list holds. Each thread held that a row of the
 change feed names (its own, or its mark's, whose id starts with the
-thread's), and each thread a conversation is on, is read on its own with
-the person's mark of it wherever the lists read beside it do not hold it.
+thread's), each thread a conversation is on and each thread a notification
+stands for is read on its own with the person's mark of it wherever the
+lists read beside it do not hold it, in a background refresh too. A row
+going missing from a list says nothing by itself, since a read may have
+left the server before the chat was there: a notification is taken back
+by the mark that says the chat was archived, or by the read that finds
+the thread gone.
 The watch resumes from where it stopped, so what moved while a phone was
 away is told when it is back.
 
@@ -1353,7 +1362,10 @@ not shown; one the server refuses for good is said in the list's strip
 again, and the chat reads as the server says. A list read that left the
 server before the write was taken brings the chat back in its page and
 moves nothing: what this device moved stays laid over until its own
-answer.
+answer. A pin or an archive still to be written when the server turns out
+to keep none (a rollback) is never sent, and the position it waited
+beside is; one already on its way is refused whole, and its position goes
+again alone.
 
 **Archive asks nothing and offers Undo.** The row leaves at once and a bar
 at the list's end says "Archived “Title”" with Undo for six seconds. Undo
@@ -1755,7 +1767,10 @@ button and Details stack where the text size leaves no room side by side.
   archived chat ends its archive; the archived list is read when shown
   and grows; a chat archived or unarchived on another device, on the
   first page and past it; every chat archived and one coming back; a
-  write that races the list reads; a flag refused for good; the lists as
+  write that races the list reads; a flag refused for good; a flag still
+  to be written when the server stops keeping them; what a chat notified
+  taken back by its mark read by name, and never by its row going
+  missing; the archived list going on under Automated Runs; the lists as
   what says which chat is which until a mark is read. Below revision 9
   nothing of it is offered or sent, and a server that stops keeping the
   flags is read as one that never did. A search's titles at once and its
@@ -1779,7 +1794,8 @@ button and Details stack where the text size leaves no room side by side.
   very place; a search draws each message under the chat that holds it.
   At the end the list is pulled and scrolled to its end, and must draw
   every chat the server lists, once, the pinned ones in their section,
-  with each chat's flags as the server holds them.
+  with each chat's flags as the server holds them, and no notification
+  may stand for a chat the server holds archived with nothing waiting.
 - Failures (`FailureTests.swift`, `FailureFallbackTests.swift`): every
   cause, refusal reason, cut and attempt has its sentence and its button
   asserted against a table that must name every case; each attempt lands in

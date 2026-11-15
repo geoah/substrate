@@ -288,16 +288,23 @@ extension ChatApp {
         state.waiting.removeAll { $0.id == id }
         state.archive.rows.removeAll { $0.id == id }
         state.others[id] = nil
+        if state.announced.remove(id) != nil { state.asks.append(.cancelGroup(id)) }
     }
 
-    /// The threads held beside the lists: the ones a conversation is on,
-    /// and the ones read on their own. No list read says anything of them,
-    /// so each read of the lists reads their rows and the person's marks of
-    /// them too: a chat on screen that was archived on another device, or
-    /// by a write of this one whose answer was lost, is then known to be.
+    /// The threads read beside the lists where the lists read do not hold
+    /// them: the ones a conversation is on, the ones read on their own, and
+    /// the ones a notification stands for. A list read says nothing of a
+    /// thread it does not hold (it may have left the server before the
+    /// chat was there, or the chat may have been archived on another
+    /// device, or deleted), so each read of the lists reads these threads'
+    /// rows and the person's marks of them too: a chat on screen that was
+    /// archived elsewhere, or by a write of this one whose answer was
+    /// lost, is then known to be, and what an archived chat notified is
+    /// taken back by its mark and never by its row going missing.
     func beside(_ state: State) -> [String] {
         var seen: Set<String> = []
-        return (state.conversations.values.compactMap(\.thread).sorted() + state.others.keys.sorted()).filter { seen.insert($0).inserted }
+        return (state.conversations.values.compactMap(\.thread).sorted() + state.others.keys.sorted() + state.announced.sorted())
+            .filter { seen.insert($0).inserted }
     }
 
     /// The server keeps no flags after all: the lists read by them go, and
@@ -307,6 +314,10 @@ extension ChatApp {
         state.waiting = []
         state.archive = State.Archive()
         state.undo = nil
+        state.flagRefused = nil
+        // A pin or an archive still to be written is never sent to a server
+        // that keeps neither; the position it waited beside still goes.
+        for (thread, change) in state.marking where change.flags { state.marking[thread] = change.unflagged }
         for scene in state.scenes.keys { state.scenes[scene]?.archived = false }
     }
 
@@ -316,7 +327,10 @@ extension ChatApp {
     func more(_ state: inout State, archived: Bool) {
         guard state.session != nil, state.online, !state.accessEnded else { return }
         if archived {
-            guard state.flags, state.archive.window.read, !state.archive.window.reading, let cursor = state.archive.window.cursor else { return }
+            // Not from a cursor the list is about to leave: one cut under
+            // another filter (Automated Runs switched) is refused.
+            let window = state.archive.window
+            guard state.flags, window.read, !window.reading, !window.restart, let cursor = window.cursor else { return }
             state.archive.window.reading = true
             state.asks.append(.page(state.plan, part: .archived, after: cursor))
         } else {

@@ -452,6 +452,25 @@ struct PinsAndArchives {
         #expect(await rig.listed() == Array(server.listed.filter { server.mark($0)?.archived != true }.prefix(100)))
     }
 
+    @Test func theArchivedListGoesOnFromItsOwnFilterWhenAutomatedRunsAreSwitchedOn() async throws {
+        let server = MarkServer(records: 9)
+        server.chats(140)
+        for n in 1 ... 130 { server.write(String(format: "c%03d", n), archived: true) }
+        let rig = ChatRig(marks: server)
+        try await rig.signIn(flagged: server)
+        await rig.harness.send(.sceneAppeared(scene: "s", restoring: nil))
+        await rig.harness.send(.showArchived(scene: "s", shown: true))
+        try await rig.harness.until { harness in await harness.presentation.list.archived?.rows.count == 100 }
+        // With the runs among them the archived chats are another list: the
+        // cursor cut for the one without is not the server's to go on from.
+        let mark = await rig.harness.effectsStarted
+        await rig.harness.send(.settings(.toggle(row: .app("showAutomated"), on: true)))
+        try await rig.harness.untilIdle(since: mark, advancing: 1)
+        await rig.harness.send(.more(archived: true))
+        try await rig.harness.until(advancing: 1) { harness in await harness.presentation.list.archived?.rows.count == 130 }
+        #expect(await rig.harness.presentation.list.failure == nil)
+    }
+
     @Test func aChatArchivedOnAnotherDeviceLeavesTheListAndOneUnarchivedComesBack() async throws {
         let server = MarkServer(records: 9)
         server.chats(160)
@@ -532,6 +551,89 @@ struct PinsAndArchives {
         try await rig.caughtUp()
         #expect(await rig.harness.presentation.list.failure == nil)
         #expect(await rig.listed() == ["c003", "c001"])
+    }
+
+    @Test func aChatThatLeftTheListsGivesBackWhatItNotifiedWhateverReadSaidSo() {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        // Each with a reply its person has not read.
+        func thread(_ id: String, minutes: Int) -> Record {
+            let at = String(format: "2026-11-14T10:%02d:00Z", minutes)
+            let properties: [String: JSONValue] = [
+                "mode": "chat", "status": "ok", "lastMessage": ["ref": .string("\(Kinds.message)/\(id)-m2")], "finishedAt": .string(at),
+            ]
+            return Record(id: id, kind: Kinds.thread, properties: properties, version: 1, createdAt: "2026-11-01T08:00:00Z", updatedAt: at)
+        }
+        func lists(_ chats: [Record], cursor: String? = nil) -> ChatAppStep.Threads {
+            var threads = ChatAppStep.Threads(chats: chats, automated: [], cursor: cursor)
+            (threads.pinned, threads.waiting) = ([], [])
+            return threads
+        }
+        var state = ChatAppState()
+        state.session = ChatSession(LinkSnapshot(phase: .signedIn, server: origin, repository: repository, scopes: nil, online: true))
+        state.recordsRevision = 9
+        state.marks = [:]
+        state.baselined = true
+        state.chats = [thread("c", minutes: 30), thread("b", minutes: 20), thread("a", minutes: 10)]
+        (state.window.read, state.window.part, state.window.cursor) = (true, .kept, "after-a")
+        state.announced = ["a", "b"]
+        // Every read of the lists, a refresh in the background too, reads
+        // by name the threads a notification stands for that it does not
+        // hold. One archived on another device is gone from the chats, and
+        // its mark says why: a row going missing alone says nothing, since
+        // a read may have left the server before the chat was there.
+        #expect(app.beside(state) == ["a", "b"])
+        var read = lists([thread("c", minutes: 30), thread("a", minutes: 10)], cursor: "after-a")
+        read.named = [thread("b", minutes: 20)]
+        let mark = Record(
+            id: "b.me", kind: Kinds.threadMark, properties: ["thread": ["ref": .string("\(Kinds.thread)/b")], "archived": true], version: 2)
+        read.marks = ChatAppStep.Marks(threads: ["c", "a", "b"], records: [mark])
+        app.apply(&state, threads: read)
+        app.settleMarks(&state)
+        #expect(state.thread("b") == nil && state.announced == ["a"])
+        #expect(state.asks.contains(.cancelGroup("b")) && !state.asks.contains(.cancelGroup("a")))
+        // More chats moved than a page holds: the window starts over, and a
+        // row past the page is let go though its chat is still listed. What
+        // it notified stands until its mark says otherwise.
+        state.asks = []
+        app.apply(&state, threads: lists([thread("z", minutes: 50), thread("y", minutes: 40)], cursor: "after-y"))
+        app.settleMarks(&state)
+        #expect(state.chats.map(\.id) == ["z", "y"] && state.announced == ["a"] && app.beside(state) == ["a"])
+        // A deleted one is told gone by its read by name.
+        var gone = lists([thread("z", minutes: 50), thread("y", minutes: 40)], cursor: "after-y")
+        gone.gone = ["a"]
+        app.apply(&state, threads: gone)
+        #expect(state.announced.isEmpty && state.asks.contains(.cancelGroup("a")))
+    }
+
+    @Test func aFlagStillToBeWrittenNeverGoesToAServerThatKeepsNoneAndItsPositionStillDoes() {
+        let app = ChatApp(storage: ChatStorage(base: nil), preferences: MemoryPreferenceStore(), platform: .macos)
+        var state = ChatAppState()
+        state.recordsRevision = 9
+        state.marks = [:]
+        var both = MarkChange()
+        (both.readThrough, both.archived, both.held) = ("a-m2", true, true)
+        var flag = MarkChange()
+        (flag.pinned, flag.held) = (true, true)
+        state.marking = ["a": both, "b": flag]
+        // Rolled back while the writes waited: the server's document says so.
+        app.featuresRead(&state, agents: 3, records: 8)
+        #expect(state.marking["b"] == nil)
+        #expect(state.marking["a"]?.readThrough == "a-m2" && state.marking["a"]?.flags == false)
+        // One that waited through it all the same is cut where it is sent.
+        var late = MarkChange()
+        (late.readThrough, late.pinned) = ("c-m2", true)
+        state.marking = ["c": late]
+        state.asks = []
+        app.settleMarks(&state)
+        var position = MarkChange()
+        position.readThrough = "c-m2"
+        #expect(state.asks.contains(.writeMark(thread: "c", position)))
+        // And one on its way when the server stopped keeping them is
+        // refused whole: its position goes again alone.
+        state.recordsRevision = 9
+        state.markSending = ["d": late]
+        app.markWriteFailed(&state, thread: "d", sent: late, .dropped, nil)
+        #expect(state.marking["d"] == position)
     }
 
     @Test func untilAMarkIsReadTheListTheServerAnsweredAChatInSaysWhichItIs() {

@@ -509,7 +509,7 @@ extension ChatApp {
                     }
                 }
             }
-        case let .backgroundRefresh(run, lease, plan, threads):
+        case let .backgroundRefresh(run, lease, plan, threads, beside):
             return .once {
                 // Checked before it reads and again before its result can
                 // write: a sign-out between lands nothing.
@@ -517,7 +517,7 @@ extension ChatApp {
                     return Event(.backgroundRefreshed(run, threads: nil, cards: nil))
                 }
                 let reading = { @Sendable () async -> ChatAppStep in
-                    let read = try? await Self.threads(client, plan)
+                    let read = try? await Self.threads(client, plan, beside: beside)
                     let cards = try? await Self.cards(client, plan, threads: Self.cardThreads(plan, read, held: threads))
                     return .backgroundRefreshed(run, threads: read, cards: cards)
                 }
