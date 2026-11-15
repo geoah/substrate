@@ -132,6 +132,9 @@ import Testing
             file: "ConversationView.swift", holds: "try? await Task.sleep(for: .milliseconds(", rule: "a literal duration",
             why: "TranscriptScroll's waits before it asks the scroll view again: its rule's, and no motion"),
         Allowance(
+            file: "ChatListParts.swift", holds: "static let dwell: Duration = .milliseconds(250)", rule: "a literal duration",
+            why: "how long the older-rows row stands on screen before it reads more: a wait of the reading rule's, and no motion"),
+        Allowance(
             file: "RootView.swift", holds: "try? await Task.sleep(for: .milliseconds(80))", rule: "a literal duration",
             why: "how long a Mac window that is not the key one waits before it takes a route: no motion"),
         Allowance(
