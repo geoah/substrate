@@ -77,7 +77,7 @@ struct SubstrateChatApp: App {
             } else {
                 Text("Sign in to change settings.")
                     .ink(.quiet, on: .page)
-                    .frame(width: ChatSize.settingsEmpty.width, height: ChatSize.settingsEmpty.height)
+                    .frame(width: ChatSize.sheet.width, height: ChatSize.sheet.height)
             }
         }
         #endif

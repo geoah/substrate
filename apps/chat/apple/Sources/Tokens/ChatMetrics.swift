@@ -108,8 +108,7 @@ struct ChatSize: Sendable {
     func points(at size: DynamicTypeSize) -> CGFloat {
         #if canImport(UIKit)
         let held = most.map { min(size, $0) } ?? size
-        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(held))
-        return UIFontMetrics(forTextStyle: Self.styles[style] ?? .body).scaledValue(for: points, compatibleWith: traits)
+        return Self.scaled.value(points, style, held)
         #else
         // A Mac has one text size.
         return points
@@ -120,6 +119,33 @@ struct ChatSize: Sendable {
     private static let styles: [Font.TextStyle: UIFont.TextStyle] = [
         .body: .body, .subheadline: .subheadline, .footnote: .footnote, .caption: .caption1, .title2: .title2,
     ]
+
+    /// Each size at each text size, worked out once: a row reads its sizes
+    /// every time it is drawn, and a reply being written is drawn at every
+    /// flush.
+    private final class Scaling: @unchecked Sendable {
+        private struct Key: Hashable {
+            let points: CGFloat
+            let style: Font.TextStyle
+            let size: DynamicTypeSize
+        }
+
+        private let lock = NSLock()
+        private var known: [Key: CGFloat] = [:]
+
+        func value(_ points: CGFloat, _ style: Font.TextStyle, _ size: DynamicTypeSize) -> CGFloat {
+            let key = Key(points: points, style: style, size: size)
+            lock.lock()
+            defer { lock.unlock() }
+            if let value = known[key] { return value }
+            let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(size))
+            let value = UIFontMetrics(forTextStyle: ChatSize.styles[style] ?? .body).scaledValue(for: points, compatibleWith: traits)
+            known[key] = value
+            return value
+        }
+    }
+
+    private static let scaled = Scaling()
     #endif
 
     // MARK: Not scaled
@@ -142,11 +168,9 @@ struct ChatSize: Sendable {
     /// The least a Mac's sheet is, and the sheet a reply is selected in.
     static let sheet = CGSize(width: 420, height: 260)
     static let readingSheet = (least: CGSize(width: 520, height: 420), ideal: CGSize(width: 620, height: 560))
-    /// A Mac's windows as they first open: the chats, Settings, and
-    /// Settings with nobody signed in.
+    /// A Mac's windows as they first open: the chats, and Settings.
     static let window = CGSize(width: 1080, height: 760)
     static let settings = CGSize(width: 560, height: 620)
-    static let settingsEmpty = CGSize(width: 360, height: 160)
     /// The list's column on an iPad and a Mac.
     static let sidebar = (least: CGFloat(260), ideal: CGFloat(320), most: CGFloat(420))
     /// The far side of a bubble: a message never runs the transcript's

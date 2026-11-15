@@ -257,6 +257,13 @@ private struct BlockView: View {
         }
     }
 
+    /// A list's number with its full stop, padded before to as many
+    /// digits as the list's last number has.
+    private static func number(_ number: Int, among last: Int) -> String {
+        let digits = String(number)
+        return String(repeating: "\u{2007}", count: max(0, String(last).count - digits.count)) + digits + "."
+    }
+
     var body: some View {
         let _ = Meter.shared.count(.body, "MarkdownBlock")
         switch block {
@@ -296,12 +303,14 @@ private struct BlockView: View {
                             Image(systemName: checked ? "checkmark.square.fill" : "square")
                                 .ink(checked ? .accent : .quiet, on: .page, .card)
                         } else if ordered {
-                            // As wide as the list's last number, at the
-                            // text's size, so every item starts in one
-                            // column however many there are.
-                            Text("\(start + items.count - 1).").monospacedDigit().hidden()
-                                .overlay(alignment: .trailing) { Text("\(start + index).").monospacedDigit().fixedSize() }
+                            // Every number as wide as the list's last, by
+                            // figure spaces before it and digits of one
+                            // width, so the items start in one column at
+                            // any text size, however many there are.
+                            Text(verbatim: Self.number(start + index, among: start + items.count - 1))
+                                .monospacedDigit()
                                 .ink(.quiet, on: .page, .card)
+                                .accessibilityLabel("\(start + index).")
                         } else {
                             Text("•").ink(.quiet, on: .page, .card)
                         }
