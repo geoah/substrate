@@ -243,6 +243,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     /// The rows on screen: what Jump to Latest counts from.
     @State private var seen: [String] = []
     @State private var reach = TranscriptReach()
+    @State private var before = RowsBefore()
 
     init(
         opens: TranscriptOpening, anchor: String? = nil, sends: Int, visit: Int = 0, above: RowsAbove? = nil,
@@ -264,6 +265,7 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
     }
 
     var body: some View {
+        let _ = before.drawn(above: above, seen: seen)
         ScrollViewReader { reader in
             scroll
                 // A chat with more than its reader had seen opens at the
@@ -313,7 +315,8 @@ struct TranscriptScroll<Rows: View, Bar: View>: View {
         guard let above, placed, above != landed, !follow.following else { return }
         // A reader who went on down the transcript while the rows were out
         // no longer has that turn on screen: they stay at the first row
-        // they do have.
+        // they do have. Had, before these rows were laid out (`RowsBefore`).
+        let seen = before.seen
         let own = seen.filter { $0 == above.turn || $0.hasPrefix(above.turn + "/") }
         let row = own.contains(above.turn) ? above.turn : first(own.isEmpty ? seen : own) ?? above.turn
         position = ScrollPosition(idType: String.self)
