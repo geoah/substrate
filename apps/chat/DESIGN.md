@@ -2279,9 +2279,14 @@ no outcome depends on how long they took.
   starts; a runtime that honoured the hook for some enqueues and not for
   others could pass it, and would be caught only where the run is met.
   A rule the app is known to break is listed in `SeededRun.known`, noted
-  and not failed, and an entry that no longer fails must not stay. It is
-  empty. Its first four were the two models of a turn, gone with them;
-  its last three each have a plain test beside the seed that found them:
+  and not failed, and an entry that no longer fails must not stay. It
+  holds one: a message drawn queued, as the app last heard, while its
+  conversation has no stream to hear on and a call reads the message in
+  that time (seed 4487 at 40 steps on a server at `agents` 6). The check
+  notes it only where the conversation is not connected or waits to ask
+  for its stream again, and breaks the run anywhere else. Its first four
+  entries were the two models of a turn, gone with them; the three after
+  them each have a plain test beside the seed that found them:
   a message sent under no id paired with an older row of the same words
   (seed 1171 at 101 steps on a server at `agents` 7; `FoldTests`), a
   message a call had read drawn queued again by a chat that joined its
