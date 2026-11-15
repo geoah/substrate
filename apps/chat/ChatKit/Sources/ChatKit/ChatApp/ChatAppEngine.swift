@@ -131,7 +131,7 @@ extension ChatApp {
             let learned = apply(&next, marks: marks)
             for thread in marks.threads { noteBehind(&next, thread) }
             announceLearned(&next, learned)
-            spokeBefore(&next, in: thread)
+            spokeBefore(&next, in: thread, marks: marks)
         case let .endShown(scene, key, shown):
             if shown {
                 next.scenes[scene]?.atEnd = key

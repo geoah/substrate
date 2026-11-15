@@ -1552,7 +1552,9 @@ newest version any of them holds.
   typed into a notification, and since the app may have been away when
   the chat was archived on another device, the chat's mark is read beside
   that send (`confirmMark`), and the archive ends when the read says it
-  was archived. Answering a card (an option, Approve, Decline) is no
+  was archived. Only that read's word counts, and only while this device
+  has moved no flag of the chat since: a chat its person archives here
+  after they spoke stays archived, and the read is let go. Answering a card (an option, Approve, Decline) is no
   message: the chat stays archived, and leaves the list once nothing
   waits in it.
 - Until the person's mark of a chat is read, and where that read failed,

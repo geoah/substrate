@@ -432,6 +432,9 @@ extension ChatApp {
     /// archived ones, so Undo puts back exactly what was there.
     func archive(_ state: inout State, _ id: String, at: Date) {
         guard state.flags, let thread = state.thread(id), !state.archived(id) else { return }
+        // Archived after its person spoke in it: the mark read beside
+        // that message has nothing left to say.
+        state.asks.append(.cancel("confirmMark:\(id)"))
         flag(&state, id, archived: true)
         if !state.archive.rows.contains(where: { $0.id == id }) { state.archive.rows.insert(thread.record, at: 0) }
         state.undo = State.Undo(thread: id, until: at.addingTimeInterval(Self.undoSeconds))
@@ -472,8 +475,14 @@ extension ChatApp {
 
     /// The mark read beside a message the person sent says what the chat
     /// was when they spoke: archived, its archive ends.
-    func spokeBefore(_ state: inout State, in thread: String) {
-        if state.archived(thread) { unarchive(&state, thread) }
+    ///
+    /// - Parameter marks: what the read answered. Only its word counts,
+    ///   and only while this device has moved no flag of the chat since:
+    ///   a chat its person archived here after they spoke stays archived.
+    func spokeBefore(_ state: inout State, in thread: String, marks: ChatAppStep.Marks) {
+        let was = marks.records.contains { $0.deletedAt == nil && $0["thread"]?.referenceID == thread && $0["archived"]?.bool == true }
+        guard was, !state.moved(thread).contains(where: { $0.archived != nil }), state.archived(thread) else { return }
+        unarchive(&state, thread)
     }
 
     // MARK: Search
